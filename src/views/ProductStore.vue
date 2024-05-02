@@ -52,7 +52,6 @@ const router = useRouter();
 function createStore() {
   router.push("create-product-store")
 }
-
 </script>
 
 <style scoped>

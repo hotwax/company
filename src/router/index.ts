@@ -42,6 +42,10 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import("@/views/CreateProductStore.vue")
       },
       {
+        path: "add-configurations",
+        component: () => import("@/views/AddConfigurations.vue")
+      },
+      {
         path: "settings",
         component: () => import("@/views/Settings.vue")
       }

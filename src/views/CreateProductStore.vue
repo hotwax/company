@@ -37,7 +37,7 @@
           </ion-chip>
         </ion-item>
 
-        <ion-button class="ion-margin-top">
+        <ion-button class="ion-margin-top" @click="manageConfigurations()">
           {{ translate("Manage configurations") }}
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
@@ -50,7 +50,13 @@
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+import { useRouter } from "vue-router";
 
+const router = useRouter();
+
+function manageConfigurations() {
+  router.push("add-configurations")
+}
 </script>
 
 <style scoped>
