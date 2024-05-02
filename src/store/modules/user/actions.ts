@@ -26,16 +26,12 @@ const actions: ActionTree<UserState, RootState> = {
 
       const userProfile = await UserService.getUserProfile(token);
 
-      // TODO: fetch only associated product stores for user, currently api does not support this
-      userProfile.stores = await UserService.getEComStores(token);
-
       if (userProfile.timeZone) {
         Settings.defaultZone = userProfile.timeZone;
       }
 
       commit(types.USER_TOKEN_CHANGED, { newToken: token })
       commit(types.USER_INFO_UPDATED, userProfile);
-      commit(types.USER_CURRENT_ECOM_STORE_UPDATED, userProfile.stores.length ? userProfile.stores[0] : {});
       emitter.emit("dismissLoader")
       return Promise.resolve({ token })
     } catch (err: any) {
@@ -74,14 +70,6 @@ const actions: ActionTree<UserState, RootState> = {
   setUserInstanceUrl({ commit }, payload) {
     commit(types.USER_INSTANCE_URL_UPDATED, payload)
   },
-
-  setEcomStore({ commit, state }, payload) {
-    let productStore = payload.productStore;
-    if(!productStore) {
-      productStore = (state.current as any).stores.find((store: any) => store.productStoreId === payload.productStoreId);
-    }
-    commit(types.USER_CURRENT_ECOM_STORE_UPDATED, productStore);
-  }
 }
 
 export default actions;

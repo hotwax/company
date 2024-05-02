@@ -48,24 +48,6 @@
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
         </ion-card>
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>
-              {{ translate("Product Store") }}
-            </ion-card-subtitle>
-            <ion-card-title>
-              {{ translate("Store") }}
-            </ion-card-title>
-          </ion-card-header>
-          <ion-card-content>
-            {{ translate("A store repesents a company or a unique catalog of products. If your OMS is connected to multiple eCommerce stores sellling different collections of products, you may have multiple Product Stores set up in HotWax Commerce.") }}
-          </ion-card-content>
-          <ion-item lines="none">
-            <ion-select :label="translate('Select store')" interface="popover" :value="currentEComStore.productStoreId" @ionChange="setEComStore($event)">
-              <ion-select-option v-for="store in (userProfile ? userProfile.stores : [])" :key="store.productStoreId" :value="store.productStoreId" >{{ store.storeName || store.productStoreId }}</ion-select-option>
-            </ion-select>
-          </ion-item>
-        </ion-card>
       </section>
       <hr />
       <div class="section-header">
@@ -112,21 +94,12 @@ const appVersion = ref("")
 const appInfo = (process.env.VUE_APP_VERSION_INFO ? JSON.parse(process.env.VUE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => store.getters["user/getUserProfile"])
-const currentEComStore = computed(() => store.getters["user/getCurrentEComStore"])
 const token = computed(() => store.getters["user/getUserToken"])
 const oms = computed(() => store.getters["user/getInstanceUrl"])
 
 onMounted(() => {
   appVersion.value = appInfo.branch ? (appInfo.branch + "-" + appInfo.revision) : appInfo.tag;
 })
-
-function setEComStore(event: CustomEvent) {
-  if(userProfile.value?.stores) {
-    store.dispatch("user/setEcomStore", {
-      "productStoreId": event.detail.value
-    })
-  }
-}
 
 async function changeTimeZone() {
   const timeZoneModal = await modalController.create({

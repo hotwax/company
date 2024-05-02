@@ -45,30 +45,6 @@ const getUserProfile = async (token: any): Promise<any> => {
   }
 }
 
-const getEComStores = async (token: any): Promise<any> => {
-  try {
-    const url = store.getters["user/getBaseUrl"]
-    const baseURL = url.startsWith('http') ? url.includes('/rest/s1/order-routing') ? url : `${url}/rest/s1/order-routing/` : `https://${url}.hotwax.io/rest/s1/order-routing/`;
-    const resp = await client({
-      url: "user/productStore",
-      method: "GET",
-      baseURL,
-      headers: {
-        "api_key": token,
-        "Content-Type": "application/json"
-      }
-    });
-    // Disallow login if the user is not associated with any product store
-    if (hasError(resp) || resp.data.length === 0) {
-      throw resp.data;
-    } else {
-      return Promise.resolve(resp.data);
-    }
-  } catch(error: any) {
-    return Promise.reject(error)
-  }
-}
-
 const getAvailableTimeZones = async (): Promise <any>  => {
   return api({
     url: "user/getAvailableTimeZones",
@@ -86,7 +62,6 @@ const setUserTimeZone = async (payload: any): Promise <any>  => {
 
 export const UserService = {
   getAvailableTimeZones,
-  getEComStores,
   getUserProfile,
   login,
   setUserTimeZone,
