@@ -245,6 +245,11 @@ http://ionicframework.com/docs/theming/ */
   }
 }
 
+body {
+  /** Border variable **/
+  --border-medium: 1px solid var(--ion-color-medium);
+}
+
 .empty-state {
   max-width: 100%;
   display: flex;

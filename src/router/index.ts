@@ -31,7 +31,15 @@ const routes: Array<RouteRecordRaw> = [
     children: [
       {
         path: "",
-        redirect: "/settings"
+        redirect: "/product-store"
+      },
+      {
+        path: "product-store",
+        component: () => import("@/views/ProductStore.vue")
+      },
+      {
+        path: "create-product-store",
+        component: () => import("@/views/CreateProductStore.vue")
       },
       {
         path: "settings",
