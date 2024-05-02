@@ -14,4 +14,4 @@ Closes #
 ### Contribution and Currently Important Rules Acceptance
 <!-- Please get familiar with following info -->
 
-- [ ] I read and followed [contribution rules](https://github.com/hotwax/order-routing-rules#contribution-guideline)
+- [ ] I read and followed [contribution rules](https://github.com/hotwax/company#contribution-guideline)
