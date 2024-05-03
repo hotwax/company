@@ -39,7 +39,7 @@
           </ion-item>
         </ion-list>
 
-        <ion-button class="ion-margin-top">
+        <ion-button class="ion-margin-top" @click="setupProductStore()">
           {{ translate("Setup product store") }}
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
@@ -52,6 +52,13 @@
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+
+function setupProductStore() {
+  router.push("product-store-details")
+}
 </script>
 
 <style scoped>
