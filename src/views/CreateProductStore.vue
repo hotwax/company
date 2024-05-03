@@ -6,18 +6,19 @@
         <ion-title>{{ translate("Create product store") }}</ion-title>
       </ion-toolbar>
     </ion-header>
+
     <ion-content>
       <main>
         <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
 
         <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" />
+          <ion-input label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('Name')" :helper-text="translate('Product store represents a brand in OMS')" />
+          <ion-input label-placement="floating" :label="translate('Name')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('ID')" :helper-text="translate('Product store represents a brand in OMS')" />
+          <ion-input label-placement="floating" :label="translate('ID')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
 
         <ion-item>
@@ -70,12 +71,10 @@ async function openSelectOperatingCountriesModal() {
 </script>
 
 <style scoped>
-
   @media (min-width: 700px) {
     main {
       max-width: 375px;
       margin: auto;
     }
   }
-
 </style>

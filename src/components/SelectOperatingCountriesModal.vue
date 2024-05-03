@@ -39,6 +39,7 @@
         </ion-checkbox>
       </ion-item>
     </ion-list>
+
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
       <ion-fab-button>
         <ion-icon :icon="checkmarkOutline" />
@@ -53,12 +54,12 @@ import { checkmarkOutline, closeOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 
 function closeModal() {
-  modalController.dismiss();
+  modalController.dismiss({ dismissed: true });
 }
 </script>
 
 <style scoped>
-ion-content {
+  ion-content {
   --padding-bottom: 80px;
-}
+  }
 </style>

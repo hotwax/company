@@ -30,6 +30,7 @@
             </ion-chip>
           </div>
         </div>
+
         <div class="ion-text-center ion-margin">
           <ion-button fill="outline" @click="createStore()">
             <ion-icon slot="start" :icon="addOutline"/>

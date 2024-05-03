@@ -11,6 +11,7 @@
         </ion-buttons>
       </ion-toolbar>
     </ion-header>
+
     <ion-content>
       <main>
         <h1 class="ion-margin-start">{{ translate('Configurations') }}</h1>
@@ -32,7 +33,7 @@
           </ion-list-header>
 
           <ion-item>
-            <ion-toggle label-placement="start" justify="space-between">{{ translate("Auto approve orders") }}</ion-toggle>
+            <ion-toggle>{{ translate("Auto approve orders") }}</ion-toggle>
           </ion-item>
           <ion-item lines="none">
             <ion-input label-placement="floating" label="Sales order ID prefix" helper-text="Add a custom prefix to HotWax order IDs: <inputValue>10001" />

@@ -6,6 +6,7 @@
         <ion-title>{{ "<productStoreName>" }}</ion-title>
       </ion-toolbar>
     </ion-header>
+
     <ion-content>
       <main>
         <div class="store-info">
@@ -43,9 +44,7 @@
         <section>
           <ion-card>
             <ion-card-header>
-              <ion-card-title>
-                {{ translate("Order") }}
-              </ion-card-title>
+              <ion-card-title>{{ translate("Order") }}</ion-card-title>
             </ion-card-header>
 
             <ion-list>
@@ -70,11 +69,11 @@
                   <p>{{ translate("Store billing information associated with orders in OMS.") }}</p>
                 </ion-label>
               </ion-item>
-              
+
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Approval") }}</ion-label>
               </ion-item-divider>
-              
+
               <ion-item>
                 <ion-toggle>{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
@@ -101,16 +100,14 @@
 
           <ion-card>
             <ion-card-header>
-              <ion-card-title>
-                {{ translate("Brokering") }}
-              </ion-card-title>
+              <ion-card-title>{{ translate("Brokering") }}</ion-card-title>
             </ion-card-header>
 
             <ion-list>
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Seat Allocation") }}</ion-label>
               </ion-item-divider>
-              
+
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
                 <ion-button fill="clear" @click="createUpdateTag()">
@@ -122,7 +119,7 @@
                   <p>{{ translate("Orders tagged with this tag will undergo line item check for fulfillment facility selection.") }}</p>
                 </ion-label>
               </ion-item>
-                
+
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
                 <ion-chip outline @click="createUpdateTag()">{{ "<tagName>" }}</ion-chip>
@@ -132,7 +129,7 @@
                   <p>{{ translate("Tag will hold the preselected fulfillment facility value.") }}</p>
                 </ion-label>
               </ion-item>
-                
+
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Routing") }}</ion-label>
               </ion-item-divider>
@@ -155,10 +152,9 @@
           <div>
             <ion-card>
               <ion-card-header>
-                <ion-card-title>
-                  {{ translate("Fulfillment") }}
-                </ion-card-title>
+                <ion-card-title>{{ translate("Fulfillment") }}</ion-card-title>
               </ion-card-header>
+
               <ion-list>
                 <ion-item-divider color="light">
                   <ion-label>{{ translate("Notifications") }}</ion-label>
@@ -194,9 +190,7 @@
 
             <ion-card>
               <ion-card-header>
-                <ion-card-title>
-                  {{ translate("Store pickup") }}
-                </ion-card-title>
+                <ion-card-title>{{ translate("Store pickup") }}</ion-card-title>
               </ion-card-header>
 
               <ion-list>
@@ -216,9 +210,7 @@
         <section>
           <ion-card>
             <ion-card-header>
-              <ion-card-title>
-                {{ translate("Inventory") }}
-              </ion-card-title>
+              <ion-card-title>{{ translate("Inventory") }}</ion-card-title>
             </ion-card-header>
 
             <ion-list>
@@ -234,20 +226,18 @@
                   <p>{{ translate("Display current physical quantity expected at locations while inventory counting.") }}</p>
                 </ion-label>
               </ion-item>
-              
+
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Pre-order computation") }}</ion-label>
               </ion-item-divider>
-              
+
               <ion-item>
                 <ion-toggle>{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
                 <ion-select :label="translate('Pre-order group')" interface="popover" value="">
-                  <ion-select-option value="">
-                    {{ "<facilityGroup>" }}
-                  </ion-select-option>
+                  <ion-select-option value="">{{ "<facilityGroup>" }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -260,20 +250,17 @@
 
           <ion-card>
             <ion-card-header>
-              <ion-card-title>
-                {{ translate("Product") }}
-              </ion-card-title>
+              <ion-card-title>{{ translate("Product") }}</ion-card-title>
             </ion-card-header>
+
             <ion-list>
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Identifier") }}</ion-label>
               </ion-item-divider>
-              
+
               <ion-item>
                 <ion-select :label="translate('Global identifier')" interface="popover" value="">
-                  <ion-select-option value="">
-                    {{ "<UPCA>" }}
-                    </ion-select-option>
+                  <ion-select-option value="">{{ "<UPCA>" }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -281,24 +268,20 @@
                   <p>{{ translate("The identifier used globally throughout the business operations.") }}</p>
                 </ion-label>
               </ion-item>
-              
+
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Preferred identifier") }}</ion-label>
               </ion-item-divider>
 
               <ion-item>
                 <ion-select :label="translate('Primary identifier')" interface="popover" value="">
-                  <ion-select-option value="">
-                    {{ "Product Id" }}
-                    </ion-select-option>
+                  <ion-select-option value="">{{ "Product Id" }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
                 <ion-select :label="translate('Secondary identifier')" interface="popover" value="">
-                  <ion-select-option value="">
-                    {{ "SKU" }}
-                    </ion-select-option>
+                  <ion-select-option value="">{{ "SKU" }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -325,9 +308,7 @@
 
               <ion-item>
                 <ion-select :label="translate('Shipment method')" interface="popover" value="">
-                  <ion-select-option value="">
-                    {{ "Two day" }}
-                    </ion-select-option>
+                  <ion-select-option value="">{{ "Two day" }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -422,7 +403,6 @@ ion-card-header {
 }
 
 @media screen and (min-width: 700px) {
-
   ion-content > main {
     margin: var(--spacer-lg)
   }
