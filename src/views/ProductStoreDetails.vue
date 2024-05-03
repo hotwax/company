@@ -16,7 +16,7 @@
                 <h1>{{ "Product store name" }}</h1>
                 <p>{{ "Company name" }}</p>
               </ion-label>
-              <ion-button fill="outline">{{ translate("Edit") }}</ion-button>
+              <ion-button fill="outline" @click="renameProductStore()">{{ translate("Edit") }}</ion-button>
             </ion-item>
 
             <div class="ion-margin-top">
@@ -112,7 +112,10 @@
               </ion-item-divider>
               
               <ion-item>
-                <ion-input :label="translate('Preselected facility tag')" placeholder="<tagName>" />
+                <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
+                <ion-button fill="clear" @click="createUpdateTag()">
+                  <ion-icon slot="icon-only" :icon="addCircleOutline" />
+                </ion-button>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -121,7 +124,8 @@
               </ion-item>
                 
               <ion-item>
-                <ion-input :label="translate('Shipping facility tag')" placeholder="<tagName>" />
+                <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
+                <ion-chip outline @click="createUpdateTag()">{{ "<tagName>" }}</ion-chip>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -338,7 +342,7 @@
               <ion-item>
                 <ion-toggle>{{ translate("Cancel order before fulfillment") }}</ion-toggle>
               </ion-item>
-              <ion-item>
+              <ion-item lines="none">
                 <ion-label>
                   <p>{{ translate("Control what your customers are allowed to edit on their own when they are editing their order on Re-route Fulfillment.") }}</p>
                 </ion-label>
@@ -352,9 +356,45 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar } from "@ionic/vue";
-import { mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
+import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController } from "@ionic/vue";
+import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+
+async function renameProductStore() {
+  const alert = await alertController.create({
+    header: translate("Product store name"),
+    inputs: [{
+      name: "storeName"
+    }],
+    buttons: [{
+      text: translate("Cancel"),
+      role: "cancel"
+    },
+    {
+      text: translate("Confirm")
+    }]
+  })
+
+  await alert.present()
+}
+
+async function createUpdateTag() {
+  const alert = await alertController.create({
+    header: translate("Create new tag"),
+    inputs: [{
+      name: "storeName"
+    }],
+    buttons: [{
+      text: translate("Cancel"),
+      role: "cancel"
+    },
+    {
+      text: translate("Add")
+    }]
+  })
+
+  await alert.present()
+}
 </script>
 
 <style scoped>
