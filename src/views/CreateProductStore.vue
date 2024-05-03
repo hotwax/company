@@ -23,7 +23,7 @@
         <ion-item>
           <ion-icon slot="start" :icon="mapOutline"/>
           <ion-label>{{ translate("Operating countries") }}</ion-label>
-          <ion-button fill="outline" slot="end">{{ translate("Add") }}</ion-button>
+          <ion-button fill="outline" slot="end" @click="openSelectOperatingCountriesModal()">{{ translate("Add") }}</ion-button>
         </ion-item>
 
         <ion-item lines="none">
@@ -47,15 +47,25 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
+import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
 
 const router = useRouter();
 
 function manageConfigurations() {
   router.push("add-configurations")
+}
+
+async function openSelectOperatingCountriesModal() {
+  const modal = await modalController.create({
+    component: SelectOperatingCountriesModal,
+    showBackdrop: true
+  })
+
+  modal.present()
 }
 </script>
 
