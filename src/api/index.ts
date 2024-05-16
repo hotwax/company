@@ -88,6 +88,7 @@ const api = async (customConfig: any) => {
   const baseURL = store.getters["user/getInstanceUrl"];
   if (baseURL) config.baseURL = baseURL.startsWith('http') ? baseURL.includes('/rest/s1/admin') ? baseURL : `${baseURL}/rest/s1/admin/` : `https://${baseURL}.hotwax.io/rest/s1/admin/`;
   if(customConfig.cache) config.adapter = axiosCache.adapter;
+  
   const networkStatus =  await OfflineHelper.getNetworkStatus();
   if (customConfig.queue && !networkStatus.connected) {
     if (!config.headers) config.headers = { ...axios.defaults.headers.common, ...config.headers };
