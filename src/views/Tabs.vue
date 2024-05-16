@@ -25,7 +25,7 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 
 function showFooter() {
-  if (['/tabs/settings'].includes(router.currentRoute.value.path)) return true
+  if (['/tabs/product-store', '/tabs/settings'].includes(router.currentRoute.value.path)) return true
   return false
 }
 </script>
