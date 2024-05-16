@@ -3,6 +3,9 @@ import { RouteRecordRaw } from "vue-router";
 import Login from "@/views/Login.vue"
 import store from "@/store"
 import Tabs from "@/views/Tabs.vue"
+import CreateProductStore from "@/views/CreateProductStore.vue";
+import AddConfigurations from "@/views/AddConfigurations.vue";
+import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
 
 const authGuard = (to: any, from: any, next: any) => {
   if (store.getters["user/isAuthenticated"]) {
@@ -38,23 +41,24 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import("@/views/ProductStore.vue")
       },
       {
-        path: "create-product-store",
-        component: () => import("@/views/CreateProductStore.vue")
-      },
-      {
-        path: "add-configurations",
-        component: () => import("@/views/AddConfigurations.vue")
-      },
-      {
-        path: "product-store-details",
-        component: () => import("@/views/ProductStoreDetails.vue")
-      },
-      {
         path: "settings",
         component: () => import("@/views/Settings.vue")
       }
     ],
     beforeEnter: authGuard
+  },
+  {
+    path: "/create-product-store",
+    component: CreateProductStore
+  },
+  {
+    path: "/add-configurations",
+    component: AddConfigurations
+  },
+  {
+    path: "/product-store-details/:productStoreId",
+    component: ProductStoreDetails,
+    props: true
   },
   {
     path: "/login",

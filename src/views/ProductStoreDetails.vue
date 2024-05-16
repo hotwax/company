@@ -13,9 +13,9 @@
           <ion-card class="store-info store-details">
             <ion-item lines="none" class="ion-margin-top">
               <ion-label>
-                <p class="overline">{{ "PRODUCT STORE ID" }}</p>
-                <h1>{{ "Product store name" }}</h1>
-                <p>{{ "Company name" }}</p>
+                <p class="overline">{{ productStore.productStoreId }}</p>
+                <h1>{{ productStore.storeName ? productStore.storeName : productStore.productStoreId }}</h1>
+                <p>{{ productStore.companyName }}</p>
               </ion-label>
               <ion-button fill="outline" @click="renameProductStore()">{{ translate("Edit") }}</ion-button>
             </ion-item>
@@ -337,9 +337,21 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController } from "@ionic/vue";
+import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+import { useStore } from "vuex";
+import { computed, defineProps } from "vue";
+
+const props = defineProps(["productStoreId"]);
+const store = useStore();
+
+const productStore = computed(() => store.getters["productStore/getCurrent"])
+
+onIonViewWillEnter(async() => {
+  await store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId)
+  console.log(productStore.value)
+})
 
 async function renameProductStore() {
   const alert = await alertController.create({

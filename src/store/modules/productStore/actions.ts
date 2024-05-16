@@ -29,6 +29,23 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     }
     commit(types.PRODUCT_STORE_STORES_UPDATED, productStores);
   },
+  
+  async fetchProductStoreDetails({ commit }, productStoreId) {
+    let current = {} as any;
+
+    try {
+      const resp = await ProductStoreService.fetchProductStoreDetails(productStoreId);
+      
+      if(!hasError(resp)) {
+        current = resp.data;
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.PRODUCT_STORE_CURRENT_UPDATED, current);
+  },
 
   async fetchProductStoresFacilityCount() {
     const productStoresFacilityCount = {} as any;

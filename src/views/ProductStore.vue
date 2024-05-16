@@ -8,7 +8,7 @@
 
     <ion-content>
       <main>
-        <div class="list-item" v-for="store in productStores" :key="store.productStoreId">
+        <div class="list-item" v-for="store in productStores" :key="store.productStoreId" @click="viewProductStoreDetails(store.productStoreId)">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="storefrontOutline" />
             <ion-label class="ion-text-wrap">
@@ -58,6 +58,10 @@ const productStores = computed(() => store.getters["productStore/getProductStore
 onIonViewWillEnter(async () => {
   await store.dispatch("productStore/fetchProductStores");
 })
+
+async function viewProductStoreDetails(productStoreId: string) {
+  router.push({ path: `/product-store-details/${productStoreId}` })
+}
 
 function createStore() {
   router.push("create-product-store")

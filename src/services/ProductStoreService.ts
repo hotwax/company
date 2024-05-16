@@ -14,7 +14,15 @@ const fetchProductStoresFacilityCount = async (): Promise <any>  => {
   });
 }
 
+const fetchProductStoreDetails = async (productStoreId: any): Promise <any>  => {
+  return api({
+    url: `productStores/${productStoreId}`,
+    method: "get"
+  });
+}
+
 export const ProductStoreService = {
+  fetchProductStoreDetails,
   fetchProductStores,
   fetchProductStoresFacilityCount
 }
