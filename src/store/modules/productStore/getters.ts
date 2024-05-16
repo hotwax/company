@@ -8,6 +8,9 @@ const getters: GetterTree <ProductStoreState, RootState> = {
   },
   getCurrent(state) {
     return state.current ? JSON.parse(JSON.stringify(state.current)) : {};
+  },
+  getCurrentStoreSettings(state) {
+    return state.currentStoreSettings
   }
 }
 export default getters;

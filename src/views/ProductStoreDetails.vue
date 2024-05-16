@@ -30,12 +30,12 @@
 
               <ion-item>
                 <ion-icon :icon="thunderstormOutline" slot="start"/>
-                <ion-toggle>{{ translate("Order brokering") }}</ion-toggle>
+                <ion-toggle :checked="productStore.enableBrokering === 'Y' ? true : false">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
               <ion-item lines="none">
                 <ion-icon :icon="wineOutline" slot="start"/>
-                <ion-toggle>{{ translate("Inventory reservation") }}</ion-toggle>
+                <ion-toggle :checked="productStore.reserveInventory === 'Y' ? true : false">{{ translate("Inventory reservation") }}</ion-toggle>
               </ion-item>
             </div>
           </ion-card>
@@ -53,7 +53,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Id prefix')" placeholder="<prefixValue>" />
+                <ion-input :label="translate('Id prefix')" placeholder="<prefixValue>" :value="productStore.orderNumberPrefix" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -62,7 +62,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Save billing information") }}</ion-toggle>
+                <ion-toggle :checked="settings['SAVE_BILL_TO_INF']?.settingValue === 'Y' ? true : false">{{ translate("Save billing information") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -75,7 +75,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Approve on import") }}</ion-toggle>
+                <ion-toggle :checked="productStore.autoApproveOrder === 'Y' ? true : false">{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -88,7 +88,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" placeholder="<days count>" />
+                <ion-input :label="translate('Create deadline days')" placeholder="<days count>" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -110,7 +110,8 @@
 
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
-                <ion-button fill="clear" @click="createUpdateTag()">
+                <ion-chip outline @click="createUpdateTag()" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag()" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>
@@ -119,10 +120,13 @@
                   <p>{{ translate("Orders tagged with this tag will undergo line item check for fulfillment facility selection.") }}</p>
                 </ion-label>
               </ion-item>
-
+              
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag()">{{ "<tagName>" }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag()" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag()" v-else>
+                  <ion-icon slot="icon-only" :icon="addCircleOutline" />
+                </ion-button>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -135,11 +139,11 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Order splitting") }}</ion-toggle>
+                <ion-toggle :checked="productStore.allowSplit">{{ translate("Order splitting") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" placeholder="<value>" />
+                <ion-input :label="translate('Minimum shipment threshold')" placeholder="<value>" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -161,7 +165,7 @@
                 </ion-item-divider>
   
                 <ion-item>
-                  <ion-toggle>{{ translate("Send notification to Shopify") }}</ion-toggle>
+                  <ion-toggle :checked="settings['FULFILL_NOTIF']?.settingValue === 'Y' ? true : false">{{ translate("Send notification to Shopify") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -178,7 +182,7 @@
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" placeholder="<days count>" />
+                  <ion-input :label="translate('Auto cancellations days')" value="productStore.daysToCancelNonPay" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -195,7 +199,7 @@
 
               <ion-list>
                 <ion-item>
-                  <ion-toggle>{{ translate("Partial order rejection") }}</ion-toggle>
+                  <ion-toggle :checked="settings['BOPIS_PART_ODR_REJ']?.settingValue">{{ translate("Partial order rejection") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -219,7 +223,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Show systemic inventory") }}</ion-toggle>
+                <ion-toggle :checked="settings['INV_CNT_VIEW_QOH']?.settingValue">{{ translate("Show systemic inventory") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -232,11 +236,11 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
+                <ion-toggle :checked="settings['HOLD_PRORD_PHYCL_INV']?.settingValue">{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" value="">
+                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue">
                   <ion-select-option value="">{{ "<facilityGroup>" }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -303,7 +307,7 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle>{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="settings['CUST_DLVR_MTHD_UPD']?.settingValue">{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
@@ -313,15 +317,15 @@
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Delivery address") }}</ion-toggle>
+                <ion-toggle :checked="settings['CUST_DLVRADR_UPDATE']?.settingValue">{{ translate("Delivery address") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Pick up location") }}</ion-toggle>
+                <ion-toggle :checked="settings['ORD_ITM_PICKUP_FAC']?.settingValue">{{ translate("Pick up location") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Cancel order before fulfillment") }}</ion-toggle>
+                <ion-toggle :checked="settings['CUST_ALLOW_CNCL']?.settingValue">{{ translate("Cancel order before fulfillment") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -347,10 +351,10 @@ const props = defineProps(["productStoreId"]);
 const store = useStore();
 
 const productStore = computed(() => store.getters["productStore/getCurrent"])
+const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
 
 onIonViewWillEnter(async() => {
-  await store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId)
-  console.log(productStore.value)
+  await Promise.allSettled([store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId)])
 })
 
 async function renameProductStore() {

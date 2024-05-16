@@ -46,7 +46,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     }
     commit(types.PRODUCT_STORE_CURRENT_UPDATED, current);
   },
-
+  
   async fetchProductStoresFacilityCount() {
     const productStoresFacilityCount = {} as any;
 
@@ -62,6 +62,25 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       logger.error(error);
     }
     return productStoresFacilityCount;
+  },
+
+  async fetchCurrentStoreSettings({ commit }, productStoreId) {
+    const storeSettings = {} as any;
+
+    try {
+      const resp = await ProductStoreService.fetchCurrentStoreSettings(productStoreId);
+
+      if(!hasError(resp)) {
+        resp.data.map((setting: any) => {
+          storeSettings[setting.settingTypeEnumId] = setting
+        })
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.PRODUCT_STORE_CURRENT_SETTINGS_UPDATED, storeSettings);
   },
 }
 

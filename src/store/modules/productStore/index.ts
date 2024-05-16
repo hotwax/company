@@ -9,7 +9,8 @@ const productStoreModule: Module<ProductStoreState, RootState> = {
   namespaced: true,
   state: {
     productStores: [],
-    current: {}
+    current: {},
+    currentStoreSettings: {}
   },
   getters,
   actions,
