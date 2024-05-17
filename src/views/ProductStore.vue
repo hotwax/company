@@ -51,7 +51,7 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 
 function createStore() {
-  router.push("create-product-store")
+  router.push("/create-product-store")
 }
 </script>
 

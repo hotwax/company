@@ -57,7 +57,7 @@ import SelectOperatingCountriesModal from "@/components/SelectOperatingCountries
 const router = useRouter();
 
 function manageConfigurations() {
-  router.push("add-configurations")
+  router.push("/add-configurations")
 }
 
 async function openSelectOperatingCountriesModal() {
