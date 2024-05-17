@@ -82,6 +82,10 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     }
     commit(types.PRODUCT_STORE_CURRENT_SETTINGS_UPDATED, storeSettings);
   },
+
+  async updateCurrent({ commit }, current) {
+    commit(types.PRODUCT_STORE_CURRENT_UPDATED, current);
+  },
 }
 
 export default actions;

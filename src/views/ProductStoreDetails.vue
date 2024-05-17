@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/tabs/product-store"/>
-        <ion-title>{{ "<productStoreName>" }}</ion-title>
+        <ion-title>{{ productStore.storeName }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -346,6 +346,9 @@ import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "
 import { translate } from "@/i18n";
 import { useStore } from "vuex";
 import { computed, defineProps } from "vue";
+import { hasError, showToast } from "@/utils";
+import logger from "@/logger";
+import { ProductStoreService } from "@/services/ProductStoreService";
 
 const props = defineProps(["productStoreId"]);
 const store = useStore();
@@ -361,14 +364,40 @@ async function renameProductStore() {
   const alert = await alertController.create({
     header: translate("Product store name"),
     inputs: [{
-      name: "storeName"
+      name: "storeName",
+      value: productStore.value.storeName
     }],
     buttons: [{
       text: translate("Cancel"),
       role: "cancel"
     },
     {
-      text: translate("Confirm")
+      text: translate("Confirm"),
+      handler: async(data) => {
+        if(!data.storeName) {
+          showToast(translate("Product store name can't be empty."));
+          return false;
+        }
+
+        if(data.storeName === productStore.value.storeName) return;
+
+        const updatedStore = JSON.parse(JSON.stringify(productStore.value));
+        updatedStore.storeName = data.storeName;
+
+        try {
+          const resp = await ProductStoreService.updateProductStore(updatedStore);
+
+          if(!hasError(resp)) {
+            store.dispatch("productStore/updateCurrent", updatedStore);
+            showToast(translate("Product store name updated successfully."))
+          } else {
+            throw resp.data;
+          }
+        } catch(error: any) {
+          logger.error(error);
+          showToast(translate("Failed to update product store name."))
+        }
+      }
     }]
   })
 

@@ -28,9 +28,18 @@ const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any>  =>
   });
 }
 
+const updateProductStore = async (payload: any): Promise <any>  => {
+  return api({
+    url: `productStores/${payload.productStoreId}`,
+    method: "post",
+    data: payload
+  });
+}
+
 export const ProductStoreService = {
   fetchCurrentStoreSettings,
   fetchProductStoreDetails,
   fetchProductStores,
-  fetchProductStoresFacilityCount
+  fetchProductStoresFacilityCount,
+  updateProductStore
 }
