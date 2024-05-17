@@ -241,7 +241,7 @@
 
               <ion-item>
                 <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue">
-                  <ion-select-option value="">{{ "<facilityGroup>" }}</ion-select-option>
+                  <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -353,11 +353,12 @@ import { ProductStoreService } from "@/services/ProductStoreService";
 const props = defineProps(["productStoreId"]);
 const store = useStore();
 
+const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
 const productStore = computed(() => store.getters["productStore/getCurrent"])
 const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
 
 onIonViewWillEnter(async() => {
-  await Promise.allSettled([store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId)])
+  await Promise.allSettled([store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups")])
 })
 
 async function renameProductStore() {

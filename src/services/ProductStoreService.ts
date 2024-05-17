@@ -1,15 +1,8 @@
 import api from "@/api"
 
-const fetchProductStores = async (): Promise <any>  => {
+const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any>  => {
   return api({
-    url: "productStores",
-    method: "get"
-  });
-}
-
-const fetchProductStoresFacilityCount = async (): Promise <any>  => {
-  return api({
-    url: "productStores/facilities/counts",
+    url: `productStores/${productStoreId}/settings`,
     method: "get"
   });
 }
@@ -21,9 +14,16 @@ const fetchProductStoreDetails = async (productStoreId: any): Promise <any>  => 
   });
 }
 
-const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any>  => {
+const fetchProductStores = async (): Promise <any>  => {
   return api({
-    url: `productStores/${productStoreId}/settings`,
+    url: "productStores",
+    method: "get"
+  });
+}
+
+const fetchProductStoresFacilityCount = async (): Promise <any>  => {
+  return api({
+    url: "productStores/facilities/counts",
     method: "get"
   });
 }

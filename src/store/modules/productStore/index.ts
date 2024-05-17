@@ -8,9 +8,9 @@ import RootState from "@/store/RootState"
 const productStoreModule: Module<ProductStoreState, RootState> = {
   namespaced: true,
   state: {
-    productStores: [],
     current: {},
-    currentStoreSettings: {}
+    currentStoreSettings: {},
+    productStores: [],
   },
   getters,
   actions,
