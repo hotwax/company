@@ -51,7 +51,9 @@ import { useRouter } from "vue-router";
 import { useStore } from "vuex";
 import { ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { generateInternalId } from "@/utils";
+import { generateInternalId, hasError, showToast } from "@/utils";
+import logger from "@/logger";
+import { ProductStoreService } from "@/services/ProductStoreService";
 
 const store = useStore();
 const router = useRouter();
@@ -68,8 +70,27 @@ onIonViewWillEnter(() => {
   store.dispatch("util/fetchOperatingCountries");
 })
 
-function manageConfigurations() {
-  router.push("add-configurations")
+async function manageConfigurations() {
+  try {
+    const payload = {
+      storeName: formData.value.storeName,
+      productStoreId: formData.value.productStoreId,
+      companyName: formData.value.companyName
+    }
+
+    const resp = await ProductStoreService.createProductStore(payload);
+
+    if(!hasError(resp)) {
+      const productStoreId = resp.data.productStoreId;
+      showToast(translate("Product store created successfully."))
+      router.push(`add-configurations/${productStoreId}`);
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    showToast(translate("Failed to create product store."))
+    logger.error(error);
+  } 
 }
 
 async function openSelectOperatingCountriesModal() {

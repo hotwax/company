@@ -1,5 +1,13 @@
 import api from "@/api"
 
+const createProductStore = async (payload: any): Promise <any>  => {
+  return api({
+    url: `productStores`,
+    method: "post",
+    data: payload
+  });
+}
+
 const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any>  => {
   return api({
     url: `productStores/${productStoreId}/settings`,
@@ -37,6 +45,7 @@ const updateProductStore = async (payload: any): Promise <any>  => {
 }
 
 export const ProductStoreService = {
+  createProductStore,
   fetchCurrentStoreSettings,
   fetchProductStoreDetails,
   fetchProductStores,

@@ -20,23 +20,24 @@
           <ion-list-header>
             <ion-label>{{ translate("Product") }}</ion-label>
           </ion-list-header>
-          
+
           <ion-item>
             <ion-icon slot="start" :icon="shirtOutline"/>
-            <ion-select interface="popover" :label="translate('Product Identifier')" value="sku">
-              <ion-select-option value="sku">{{ "SKU" }}</ion-select-option>
+            <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifier">
+              <ion-select-option value="SHOPIFY_PRODUCT_SKU">{{ translate("Shopify Product SKU") }}</ion-select-option>
+              <ion-select-option value="SHOPIFY_PRODUCT_ID">{{ translate("Shopify Product ID") }}</ion-select-option>
             </ion-select>
           </ion-item>
-          
+
           <ion-list-header>
             <ion-label>{{ translate("Order") }}</ion-label>
           </ion-list-header>
 
           <ion-item>
-            <ion-toggle>{{ translate("Auto approve orders") }}</ion-toggle>
+            <ion-toggle v-model="formData.autoApproveOrder">{{ translate("Auto approve orders") }}</ion-toggle>
           </ion-item>
           <ion-item lines="none">
-            <ion-input label-placement="floating" label="Sales order ID prefix" helper-text="Add a custom prefix to HotWax order IDs: <inputValue>10001" />
+            <ion-input v-model="formData.orderNumberPrefix" label-placement="floating" label="Sales order ID prefix" helper-text="Add a custom prefix to HotWax order IDs: <inputValue>10001" />
           </ion-item>
         </ion-list>
 
@@ -50,15 +51,63 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar } from "@ionic/vue";
+import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
+import logger from "@/logger";
+import { ProductStoreService } from "@/services/ProductStoreService";
+import { defineProps, ref } from "vue";
+import { hasError, showToast } from "@/utils";
 
 const router = useRouter();
 
-function setupProductStore() {
-  router.push("product-store-details")
+const props = defineProps(["productStoreId"]);
+
+const productStore = ref({}) as any;
+const formData = ref({
+  autoApproveOrder: false,
+  orderNumberPrefix: "",
+  productIdentifier: "SHOPIFY_PRODUCT_SKU"
+})
+
+onIonViewWillEnter(() => {
+  fetchProductStore();
+})
+
+async function fetchProductStore() {
+  try {
+    const resp = await ProductStoreService.fetchProductStoreDetails(props.productStoreId)
+    if(!hasError(resp)) {
+      productStore.value = resp.data;
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error("Failed to fetch product store details.")
+  }
+}
+
+async function setupProductStore() {
+  try {
+    const payload = {
+      ...productStore.value,
+      orderNumberPrefix: formData.value.orderNumberPrefix,
+      autoApproveOrder: formData.value.autoApproveOrder
+    }
+
+    const resp = await ProductStoreService.updateProductStore(payload);
+    if(!hasError(resp)) {
+      showToast(translate("Product store configurations updated successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error)
+    showToast(translate("Failed to add configurations to the product store."))
+  }
+
+  // router.push("product-store-details")
 }
 </script>
 

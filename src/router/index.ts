@@ -52,8 +52,9 @@ const routes: Array<RouteRecordRaw> = [
     component: CreateProductStore
   },
   {
-    path: "/add-configurations",
-    component: AddConfigurations
+    path: "/add-configurations/:productStoreId",
+    component: AddConfigurations,
+    props: true
   },
   {
     path: "/product-store-details/:productStoreId",
