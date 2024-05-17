@@ -73,6 +73,7 @@
   "Product": "Product",
   "Product Identifier": "Product Identifier",
   "Product store": "Product store",
+  "Product store ID cannot be more than 20 characters.": "Product store ID cannot be more than 20 characters.",
   "Product store name": "Product store name",
   "Product store represents a brand in OMS": "Product store represents a brand in OMS",
   "Returns": "Returns",

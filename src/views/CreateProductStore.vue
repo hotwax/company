@@ -12,13 +12,13 @@
         <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
 
         <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
+          <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('Name')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
+          <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :label="translate('Name')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
-        <ion-item lines="none">
-          <ion-input label-placement="floating" :label="translate('ID')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
+        <ion-item  lines="none">
+          <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
 
         <ion-item>
@@ -28,13 +28,9 @@
         </ion-item>
 
         <ion-item lines="none">
-          <ion-chip outline>
-            {{ "<countryName>" }}
-            <ion-icon :icon="closeCircleOutline" />
-          </ion-chip>
-          <ion-chip outline>
-            {{ "<countryName>" }}
-            <ion-icon :icon="closeCircleOutline" />
+          <ion-chip outline v-for="country in selectedCountries" :key="country.geoId">
+            {{ country.geoName }}
+            <ion-icon :icon="closeCircleOutline" @click="removeCountry(country.geoId)" />
           </ion-chip>
         </ion-item>
 
@@ -48,13 +44,29 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
+import { useStore } from "vuex";
+import { ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
+import { generateInternalId } from "@/utils";
 
+const store = useStore();
 const router = useRouter();
+
+const formData = ref({
+  companyName: "",
+  storeName: "",
+  productStoreId: ""
+}) as any;
+const selectedCountries = ref([]) as any;
+const storeId = ref({}) as any;
+
+onIonViewWillEnter(() => {
+  store.dispatch("util/fetchOperatingCountries");
+})
 
 function manageConfigurations() {
   router.push("add-configurations")
@@ -63,10 +75,43 @@ function manageConfigurations() {
 async function openSelectOperatingCountriesModal() {
   const modal = await modalController.create({
     component: SelectOperatingCountriesModal,
+    componentProps: {
+      selectedCountries: selectedCountries.value
+    },
     showBackdrop: true
   })
 
+  modal.onDidDismiss().then((result: any) => {
+    if(result.data?.selectedCountries) {
+      selectedCountries.value = result.data?.selectedCountries
+    }
+  })
+
   modal.present()
+}
+
+function removeCountry(geoId: string) {
+  selectedCountries.value = selectedCountries.value.filter((country: any) => country.geoId !== geoId);
+}
+
+function setProductStoreId(storeName: string) {
+  formData.value.productStoreId = generateInternalId(storeName)
+  validateGroupId(formData.productStoreId);
+}
+
+function validateGroupId(value: any) {
+  storeId.value.$el.classList.remove('ion-valid');
+  storeId.value.$el.classList.remove('ion-invalid');
+
+  if (value === '') return;
+
+  formData.value.productStoreId.length <= 20
+    ? storeId.value.$el.classList.add('ion-valid')
+    : storeId.value.$el.classList.add('ion-invalid');
+}
+
+function markGroupIdTouched() {
+  storeId.value.$el.classList.add('ion-touched');
 }
 </script>
 

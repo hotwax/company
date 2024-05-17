@@ -5,7 +5,6 @@ import { hasError } from "@/utils";
 const login = async (username: string, password: string): Promise <any> => {
   const url = store.getters["user/getBaseUrl"]
   const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url.replace("admin", "available-to-promise") : `${url}/rest/s1/available-to-promise/` : `https://${url}.hotwax.io/rest/s1/available-to-promise/`;
-  console.log(baseURL)
   let token = ""
   try {
     const resp = await client({
