@@ -17,7 +17,6 @@ const actions: ActionTree<UtilState, RootState> = {
       const resp = await UtilService.fetchFacilityGroups({ pageSize: 100 });
 
       if(!hasError(resp)) {
-        console.log(resp);
         facilityGroups = resp.data;
       } else {
         throw resp.data;
@@ -27,20 +26,30 @@ const actions: ActionTree<UtilState, RootState> = {
     }
     commit(types.UTIL_FACILITY_GROUPS_UPDATED, facilityGroups);
   },
-
-  async fetchOperatingCountries({ commit }) {
-    let operatingCountries = [] as any;
-    let resp = {} as any;
+  
+  async fetchDBICCountries({ commit }) {
+    let countries = [] as any;
 
     try {
-      resp = await UtilService.fetchDBICCountries({ geoIdTo: "DBIC", pageSize: 200 })
-      if(hasError(resp)) {
+      const resp = await UtilService.fetchDBICCountries({ geoIdTo: "DBIC", pageSize: 200 })
+      if(!hasError(resp)) {
+        countries = resp.data;
+      } else {
         throw resp.data;
       }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.UTIL_DBIC_COUNTRIES_UPDATED, { list: countries, total: countries.length })
+  },
 
-      const geoIds = resp.data.map((response: any) => response.geoId);
+  async fetchOperatingCountries({ commit, state }) {
+    if(state.operatingCountries.length) return;
 
-      resp = await UtilService.fetchOperatingCountries({ geoId: geoIds.join(","), geoId_op: "in", pageSize: 200 })
+    let operatingCountries = [] as any;
+
+    try {
+      const resp = await UtilService.fetchOperatingCountries({ pageSize: 200 })
       if(!hasError(resp)) {
         operatingCountries = resp.data;
       } else {

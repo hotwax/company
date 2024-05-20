@@ -11,23 +11,25 @@
       <main>
         <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
 
-        <ion-item lines="none">
+        <ion-item lines="none" v-if="!productStores.length">
           <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :label="translate('Name')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
+          <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true">
+            <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
+          </ion-input>
         </ion-item>
         <ion-item  lines="none">
           <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
 
-        <ion-item>
+        <ion-item  v-if="!dbicCountriesCount">
           <ion-icon slot="start" :icon="mapOutline"/>
           <ion-label>{{ translate("Operating countries") }}</ion-label>
           <ion-button fill="outline" slot="end" @click="openSelectOperatingCountriesModal()">{{ translate("Add") }}</ion-button>
         </ion-item>
 
-        <ion-item lines="none">
+        <ion-item lines="none" v-if="!dbicCountriesCount">
           <ion-chip outline v-for="country in selectedCountries" :key="country.geoId">
             {{ country.geoName }}
             <ion-icon :icon="closeCircleOutline" @click="removeCountry(country.geoId)" />
@@ -49,7 +51,7 @@ import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/ic
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
 import { generateInternalId, hasError, showToast } from "@/utils";
 import logger from "@/logger";
@@ -66,16 +68,34 @@ const formData = ref({
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
 
-onIonViewWillEnter(() => {
-  store.dispatch("util/fetchOperatingCountries");
+const productStores = computed(() => store.getters["productStore/getProductStores"])
+const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
+
+onIonViewWillEnter(async () => {
+  await store.dispatch("util/fetchDBICCountries");
+  if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
 })
 
 async function manageConfigurations() {
+  if (!formData.value.storeName?.trim()) {
+    showToast(translate('Please fill all the required fields'))
+    return;
+  }
+
+  if(!formData.value.productStoreId) {
+    formData.value.productStoreId = generateInternalId(formData.value.storeName)
+  }
+
   try {
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
-      companyName: formData.value.companyName
+    } as any;
+
+    if(!productStores.value.length) {
+      payload["companyName"] = formData.value.companyName
+    } else {
+      payload["companyName"] = productStores.value[0].companyName
     }
 
     const resp = await ProductStoreService.createProductStore(payload);

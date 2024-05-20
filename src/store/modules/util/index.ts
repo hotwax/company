@@ -9,7 +9,8 @@ const utilModule: Module<UtilState, RootState> = {
   namespaced: true,
   state: {
     facilityGroups: [],
-    operatingCountries: []
+    operatingCountries: [],
+    dbicCountries: {}
   },
   getters,
   actions,

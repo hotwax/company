@@ -9,5 +9,9 @@ const mutations: MutationTree <UtilState> = {
   [types.UTIL_OPERATING_COUNTRIES_UPDATED] (state, payload) {
     state.operatingCountries = payload
   },
+  [types.UTIL_DBIC_COUNTRIES_UPDATED] (state, payload) {
+    state.dbicCountries.list = payload.list;
+    state.dbicCountries.total = payload.total;
+  },
 }
 export default mutations;

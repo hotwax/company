@@ -15,7 +15,7 @@ import utilModule from "./modules/util"
 const state: any = {}
 
 const persistState = createPersistedState({
-  paths: ["user"],
+  paths: ["user", "util", "productStore"],
   fetchBeforeUse: true
 })
 
