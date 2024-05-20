@@ -23,9 +23,8 @@
             <div class="ion-margin-top">
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
-                <ion-select :label="translate('Operating in')" value="countries" interface="popover">
-                  <ion-select-option value="countries">{{ "3 countries" }}</ion-select-option>
-                </ion-select>
+                <ion-label>{{ translate("Operating in") }}</ion-label>
+                <ion-label slot="end">{{ dbicCountriesCount > 1 ? translate("countries", {count: dbicCountriesCount}) : translate("country", {count: dbicCountriesCount}) }}</ion-label>
               </ion-item>
 
               <ion-item>
@@ -356,9 +355,10 @@ const store = useStore();
 const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
 const productStore = computed(() => store.getters["productStore/getCurrent"])
 const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
+const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
 
 onIonViewWillEnter(async() => {
-  await Promise.allSettled([store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups")])
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups")])
 })
 
 async function renameProductStore() {

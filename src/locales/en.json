@@ -22,6 +22,8 @@
   "Configure when no further order information is needed prior to order approval.": "Configure when no further order information is needed prior to order approval.",
   "Confirm": "Confirm",
   "Control what your customers are allowed to edit on their own when they are editing their order on Re-route Fulfillment.": "Control what your customers are allowed to edit on their own when they are editing their order on Re-route Fulfillment.",
+  "Country": "{count} country",
+  "countries": "{count} countries",
   "Create a new product store": "Create a new product store",
   "Create deadline days": "Create deadline days",
   "Create new product store": "Create new product store",
