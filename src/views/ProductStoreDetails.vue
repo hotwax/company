@@ -29,12 +29,12 @@
 
               <ion-item>
                 <ion-icon :icon="thunderstormOutline" slot="start"/>
-                <ion-toggle :checked="productStore.enableBrokering === 'Y' ? true : false">{{ translate("Order brokering") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
               <ion-item lines="none">
                 <ion-icon :icon="wineOutline" slot="start"/>
-                <ion-toggle :checked="productStore.reserveInventory === 'Y' ? true : false">{{ translate("Inventory reservation") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)">{{ translate("Inventory reservation") }}</ion-toggle>
               </ion-item>
             </div>
           </ion-card>
@@ -52,7 +52,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Id prefix')" placeholder="<prefixValue>" :value="productStore.orderNumberPrefix" />
+                <ion-input :label="translate('Id prefix')" :value="productStore.orderNumberPrefix" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -61,7 +61,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="settings['SAVE_BILL_TO_INF']?.settingValue === 'Y' ? true : false">{{ translate("Save billing information") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['SAVE_BILL_TO_INF']?.settingValue)">{{ translate("Save billing information") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -74,7 +74,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="productStore.autoApproveOrder === 'Y' ? true : false">{{ translate("Approve on import") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)">{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" placeholder="<days count>" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" />
+                <ion-input :label="translate('Create deadline days')" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -109,7 +109,7 @@
 
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag()" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag(settings['PRE_SLCTD_FAC_TAG'].settingValue)" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
                 <ion-button fill="clear" @click="createUpdateTag()" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
@@ -122,7 +122,7 @@
               
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag()" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag(settings['ORD_ITM_SHIP_FAC'].settingValue)" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
                 <ion-button fill="clear" @click="createUpdateTag()" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
@@ -142,7 +142,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" placeholder="<value>" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" />
+                <ion-input :label="translate('Minimum shipment threshold')" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -164,7 +164,7 @@
                 </ion-item-divider>
   
                 <ion-item>
-                  <ion-toggle :checked="settings['FULFILL_NOTIF']?.settingValue === 'Y' ? true : false">{{ translate("Send notification to Shopify") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['FULFILL_NOTIF']?.settingValue)">{{ translate("Send notification to Shopify") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -181,7 +181,7 @@
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" value="productStore.daysToCancelNonPay" />
+                  <ion-input :label="translate('Auto cancellations days')" :value="productStore.daysToCancelNonPay" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -198,7 +198,7 @@
 
               <ion-list>
                 <ion-item>
-                  <ion-toggle :checked="settings['BOPIS_PART_ODR_REJ']?.settingValue">{{ translate("Partial order rejection") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['BOPIS_PART_ODR_REJ']?.settingValue)">{{ translate("Partial order rejection") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -222,7 +222,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="settings['INV_CNT_VIEW_QOH']?.settingValue">{{ translate("Show systemic inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['INV_CNT_VIEW_QOH']?.settingValue)">{{ translate("Show systemic inventory") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -235,7 +235,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="settings['HOLD_PRORD_PHYCL_INV']?.settingValue">{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['HOLD_PRORD_PHYCL_INV']?.settingValue)">{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
@@ -306,25 +306,25 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle :checked="settings['CUST_DLVR_MTHD_UPD']?.settingValue">{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)">{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" value="">
+                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue">
                   <ion-select-option value="">{{ "Two day" }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="settings['CUST_DLVRADR_UPDATE']?.settingValue">{{ translate("Delivery address") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRADR_UPDATE']?.settingValue)">{{ translate("Delivery address") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="settings['ORD_ITM_PICKUP_FAC']?.settingValue">{{ translate("Pick up location") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['ORD_ITM_PICKUP_FAC']?.settingValue)">{{ translate("Pick up location") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="settings['CUST_ALLOW_CNCL']?.settingValue">{{ translate("Cancel order before fulfillment") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_ALLOW_CNCL']?.settingValue)">{{ translate("Cancel order before fulfillment") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -408,11 +408,12 @@ async function renameProductStore() {
   await alert.present()
 }
 
-async function createUpdateTag() {
+async function createUpdateTag(tag?: any) {
   const alert = await alertController.create({
     header: translate("Create new tag"),
     inputs: [{
-      name: "storeName"
+      name: "storeName",
+      value: tag,
     }],
     buttons: [{
       text: translate("Cancel"),
@@ -424,6 +425,13 @@ async function createUpdateTag() {
   })
 
   await alert.present()
+}
+
+function getBooleanValue(value: any) {
+  if(value === 'Y' || value === 'N') {
+    return value === 'Y' ? true : false;
+  }
+  return value;
 }
 </script>
 
