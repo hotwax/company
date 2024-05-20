@@ -11,7 +11,8 @@ const utilModule: Module<UtilState, RootState> = {
     facilityGroups: [],
     operatingCountries: [],
     dbicCountries: {},
-    productIdentifiers: []
+    productIdentifiers: [],
+    shipmentMethodTypes: []
   },
   getters,
   actions,

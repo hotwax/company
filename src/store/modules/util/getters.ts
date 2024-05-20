@@ -14,6 +14,9 @@ const getters: GetterTree <UtilState, RootState> = {
   },
   getProductIdentifiers(state) {
     return state.productIdentifiers;
+  },
+  getShipmentMethodTypes(state) {
+    return state.shipmentMethodTypes;
   }
 }
 export default getters;

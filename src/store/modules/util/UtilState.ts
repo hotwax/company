@@ -3,4 +3,5 @@ export default interface UtilState {
   operatingCountries: any;
   dbicCountries: any;
   productIdentifiers: any;
+  shipmentMethodTypes: any;
 }

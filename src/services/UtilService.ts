@@ -32,9 +32,18 @@ const fetchEnums = async (payload: any): Promise <any>  => {
   });
 }
 
+const fetchShipmentMethodTypes = async (payload: any): Promise <any>  => {
+  return api({
+    url: "shipmentMethodTypes",
+    method: "get",
+    params: payload
+  });
+}
+
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
   fetchFacilityGroups,
-  fetchOperatingCountries
+  fetchOperatingCountries,
+  fetchShipmentMethodTypes
 }

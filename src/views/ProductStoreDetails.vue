@@ -310,8 +310,8 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue">
-                  <ion-select-option value="">{{ "Two day" }}</ion-select-option>
+                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue ? settings['RF_SHIP_MTHD'].settingValue : shipmentMethodTypes[0].shipmentMethodTypeId">
+                  <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -359,9 +359,10 @@ const productStore = computed(() => store.getters["productStore/getCurrent"])
 const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
 const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
+const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 
 onIonViewWillEnter(async() => {
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers")])
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])
 })
 
 async function renameProductStore() {

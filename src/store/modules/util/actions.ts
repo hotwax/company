@@ -77,6 +77,24 @@ const actions: ActionTree<UtilState, RootState> = {
       logger.error(error);
     }
     commit(types.UTIL_PRODUCT_IDENTIFIERS_UPDATED, productIdentifiers)
+  },
+
+  async fetchShipmentMethodTypes({ commit, state }, payload) {
+    if(state.shipmentMethodTypes.length) return;
+
+    let shipmentMethodTypes = [] as any;
+
+    try {
+      const resp = await UtilService.fetchShipmentMethodTypes(payload)
+      if(!hasError(resp)) {
+        shipmentMethodTypes = resp.data;
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.UTIL_SHIPMENT_METHOD_TYPES_UPDATED, shipmentMethodTypes)
   }
 }
 
