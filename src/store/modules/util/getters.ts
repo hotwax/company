@@ -11,6 +11,9 @@ const getters: GetterTree <UtilState, RootState> = {
   },
   getDBICCountriesCount(state) {
     return state.dbicCountries.total;
+  },
+  getProductIdentifiers(state) {
+    return state.productIdentifiers;
   }
 }
 export default getters;

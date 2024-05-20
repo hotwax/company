@@ -13,5 +13,8 @@ const mutations: MutationTree <UtilState> = {
     state.dbicCountries.list = payload.list;
     state.dbicCountries.total = payload.total;
   },
+  [types.UTIL_PRODUCT_IDENTIFIERS_UPDATED] (state, payload) {
+    state.productIdentifiers = payload;
+  },
 }
 export default mutations;

@@ -10,7 +10,8 @@ const utilModule: Module<UtilState, RootState> = {
   state: {
     facilityGroups: [],
     operatingCountries: [],
-    dbicCountries: {}
+    dbicCountries: {},
+    productIdentifiers: []
   },
   getters,
   actions,

@@ -24,8 +24,7 @@
           <ion-item>
             <ion-icon slot="start" :icon="shirtOutline"/>
             <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifier">
-              <ion-select-option value="SHOPIFY_PRODUCT_SKU">{{ translate("Shopify Product SKU") }}</ion-select-option>
-              <ion-select-option value="SHOPIFY_PRODUCT_ID">{{ translate("Shopify Product ID") }}</ion-select-option>
+              <ion-select-option v-for="identifer in productIdentifiers" :key="identifer.enumId" :value="identifer.enumId">{{ identifer.description }}</ion-select-option>
             </ion-select>
           </ion-item>
 
@@ -57,9 +56,11 @@ import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
-import { defineProps, ref } from "vue";
+import { computed, defineProps, ref } from "vue";
 import { hasError, showToast } from "@/utils";
+import { useStore } from "vuex";
 
+const store = useStore();
 const router = useRouter();
 
 const props = defineProps(["productStoreId"]);
@@ -71,7 +72,10 @@ const formData = ref({
   productIdentifier: "SHOPIFY_PRODUCT_SKU"
 })
 
+const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
+
 onIonViewWillEnter(() => {
+  store.dispatch("util/fetchProductIdentifiers");
   fetchProductStore();
 })
 

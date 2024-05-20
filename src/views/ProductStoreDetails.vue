@@ -262,8 +262,8 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "<UPCA>" }}</ion-select-option>
+                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId">
+                  <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -278,13 +278,13 @@
 
               <ion-item>
                 <ion-select :label="translate('Primary identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "Product Id" }}</ion-select-option>
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
                 <ion-select :label="translate('Secondary identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "SKU" }}</ion-select-option>
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -352,13 +352,16 @@ import { ProductStoreService } from "@/services/ProductStoreService";
 const props = defineProps(["productStoreId"]);
 const store = useStore();
 
+const productIdentificationOptions = ["productId", "groupId", "groupName", "internalName", "parentProductName", "primaryProductCategoryName", "sku", "title", "SHOPIFY_PROD_SKU"];
+
 const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
 const productStore = computed(() => store.getters["productStore/getCurrent"])
 const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
+const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
 
 onIonViewWillEnter(async() => {
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups")])
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers")])
 })
 
 async function renameProductStore() {

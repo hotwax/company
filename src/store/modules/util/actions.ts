@@ -59,6 +59,24 @@ const actions: ActionTree<UtilState, RootState> = {
       logger.error(error);
     }
     commit(types.UTIL_OPERATING_COUNTRIES_UPDATED, operatingCountries)
+  },
+
+  async fetchProductIdentifiers({ commit, state }) {
+    if(state.productIdentifiers.length) return;
+
+    let productIdentifiers = [] as any;
+
+    try {
+      const resp = await UtilService.fetchEnums({ enumTypeId: "SHOP_PROD_IDENTITY" })
+      if(!hasError(resp)) {
+        productIdentifiers = resp.data;
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.UTIL_PRODUCT_IDENTIFIERS_UPDATED, productIdentifiers)
   }
 }
 

@@ -24,8 +24,17 @@ const fetchOperatingCountries = async (payload: any): Promise <any>  => {
   });
 }
 
+const fetchEnums = async (payload: any): Promise <any>  => {
+  return api({
+    url: "enums",
+    method: "get",
+    params: payload
+  });
+}
+
 export const UtilService = {
   fetchDBICCountries,
+  fetchEnums,
   fetchFacilityGroups,
   fetchOperatingCountries
 }
