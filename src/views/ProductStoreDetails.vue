@@ -29,12 +29,12 @@
 
               <ion-item>
                 <ion-icon :icon="thunderstormOutline" slot="start"/>
-                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)">{{ translate("Order brokering") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)" @ionChange="updateProductStoreDetail($event, 'enableBrokering', true)">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
               <ion-item lines="none">
                 <ion-icon :icon="wineOutline" slot="start"/>
-                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)">{{ translate("Inventory reservation") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)" @ionChange="updateProductStoreDetail($event, 'reserveInventory', true)">{{ translate("Inventory reservation") }}</ion-toggle>
               </ion-item>
             </div>
           </ion-card>
@@ -52,7 +52,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Id prefix')" :value="productStore.orderNumberPrefix" />
+                <ion-input :label="translate('Id prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -74,7 +74,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)">{{ translate("Approve on import") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)" @ionChange="updateProductStoreDetail($event, 'autoApproveOrder', true)">{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -138,7 +138,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="productStore.allowSplit">{{ translate("Order splitting") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.allowSplit)" @ionChange="updateProductStoreDetail($event, 'allowSplit', true)">{{ translate("Order splitting") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
@@ -177,11 +177,11 @@
                 </ion-item-divider>
 
                 <ion-item>
-                  <ion-toggle>{{ translate("Auto order cancellation") }}</ion-toggle>
+                  <ion-toggle :checked="productStore.daysToCancelNonPay ? true : false">{{ translate("Auto order cancellation") }}</ion-toggle>
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" :value="productStore.daysToCancelNonPay" />
+                  <ion-input :label="translate('Auto cancellations days')" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -348,6 +348,7 @@ import { computed, defineProps } from "vue";
 import { hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
+import emitter from "@/event-bus";
 
 const props = defineProps(["productStoreId"]);
 const store = useStore();
@@ -366,7 +367,7 @@ onIonViewWillEnter(async() => {
 })
 
 function getPreferredIdentification(id: string) {
-  const identifications = JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue)
+  const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
   return identifications[id];
 }
 
@@ -439,6 +440,41 @@ function getBooleanValue(value: any) {
   }
   return value;
 }
+
+async function updateProductStoreDetail(event: any, fieldName: string, isToggle: boolean) {
+  let payload;
+
+  if(isToggle) {
+    event.stopImmediatePropagation();
+
+    payload = {
+      [fieldName]: productStore.value[fieldName] === 'Y' ? 'N' : 'Y'
+    }
+  } else {
+    payload = {
+      [fieldName]: event.target.value
+    }
+  }
+
+  emitter.emit("presentLoader")
+  
+  try {
+    payload = { ...productStore.value, ...payload }
+    
+    const resp = await ProductStoreService.updateProductStore(payload);
+    if(!hasError(resp)) {
+      showToast("Product store setting updated successfully.")
+      store.dispatch("productStore/updateCurrent", payload)
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+  }
+  emitter.emit("dismissLoader")
+}
+
+
 </script>
 
 <style scoped>
