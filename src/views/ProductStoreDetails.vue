@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue"  @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
+                <ion-input :label="translate('Create deadline days')" type="number" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -109,8 +109,8 @@
 
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag(settings['PRE_SLCTD_FAC_TAG'].settingValue)" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
-                <ion-button fill="clear" @click="createUpdateTag()" v-else>
+                <ion-chip outline @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>
@@ -122,8 +122,8 @@
               
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag(settings['ORD_ITM_SHIP_FAC'].settingValue)" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
-                <ion-button fill="clear" @click="createUpdateTag()" v-else>
+                <ion-chip outline @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>
@@ -142,7 +142,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
+                <ion-input :label="translate('Minimum shipment threshold')" type="number" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -177,11 +177,11 @@
                 </ion-item-divider>
 
                 <ion-item>
-                  <ion-toggle :checked="productStore.daysToCancelNonPay ? true : false">{{ translate("Auto order cancellation") }}</ion-toggle>
+                  <ion-toggle :checked="autoCancellationActive" @ionChange="updateOrderCancellationStatus()">{{ translate("Auto order cancellation") }}</ion-toggle>
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" />
+                  <ion-input :label="translate('Auto cancellations days')" type="number" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -239,7 +239,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
+                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue ? settings['PRE_ORDER_GROUP_ID'].settingValue : facilityGroups[0].facilityGroupId" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
                   <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -262,7 +262,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
+                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId ? productStore.productIdentifierEnumId : productIdentifiers[0].enumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
                   <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -344,7 +344,7 @@ import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonC
 import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useStore } from "vuex";
-import { computed, defineProps } from "vue";
+import { computed, defineProps, ref } from "vue";
 import { hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
@@ -355,6 +355,7 @@ const props = defineProps(["productStoreId"]);
 const store = useStore();
 
 const productIdentificationOptions = ["productId", "groupId", "groupName", "internalName", "parentProductName", "primaryProductCategoryName", "sku", "title", "SHOPIFY_PROD_SKU"];
+const autoCancellationActive = ref(false);
 
 const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
 const productStore = computed(() => store.getters["productStore/getCurrent"])
@@ -365,6 +366,9 @@ const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethod
 
 onIonViewWillEnter(async() => {
   await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])  
+  if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
+
+  console.log(window.matchMedia('(prefers-color-scheme: dark)'))
 })
 
 function getPreferredIdentification(id: string) {
@@ -416,19 +420,56 @@ async function renameProductStore() {
   await alert.present()
 }
 
-async function createUpdateTag(tag?: any) {
+async function createUpdateTag(enumId: string) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
   const alert = await alertController.create({
     header: translate("Create new tag"),
     inputs: [{
-      name: "storeName",
-      value: tag,
+      name: "tag",
+      value: settingEnums[enumId]?.settingValue,
     }],
     buttons: [{
       text: translate("Cancel"),
       role: "cancel"
     },
     {
-      text: translate("Add")
+      text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
+      handler: async(data) => {
+        if(!data.tag) {
+          showToast(translate("Tags can't be empty."));
+          return false;
+        }
+
+        if(data.tag === settingEnums[enumId]?.settingValue) return;
+
+        let payload;
+        if(settingEnums[enumId]?.productStoreId) {
+          payload = settingEnums[enumId];
+          payload.settingValue = data.tag;
+        } else {
+          payload = {
+            fromDate: DateTime.now().toMillis(),
+            productStoreId: productStore.value.productStoreId,
+            settingTypeEnumId: enumId,
+            settingValue: data.tag
+          }
+        }
+
+        try {
+          const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+
+          if(!hasError(resp)) {
+            if(!settingEnums[enumId]?.productStoreId) settingEnums[enumId] = payload;
+            store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+            showToast(translate("Product store setting updated successfully."))
+          } else {
+            throw resp.data;
+          }
+        } catch(error: any) {
+          logger.error(error);
+          showToast(translate("Failed to update product store settings."))
+        }
+      }
     }]
   })
 
@@ -458,6 +499,7 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
     
     const resp = await ProductStoreService.updateProductStore(payload);
     if(!hasError(resp)) {
+      if(fieldName === "daysToCancelNonPay" && (!payload.daysToCancelNonPay || parseInt(payload.daysToCancelNonPay) === 0)) autoCancellationActive.value = false;
       showToast("Product store setting updated successfully.")
       store.dispatch("productStore/updateCurrent", payload)
     } else {
@@ -465,6 +507,7 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
     }
   } catch(error: any) {
     logger.error(error);
+    showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }
@@ -515,12 +558,38 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
       if(!settingEnums[enumId]) settingEnums[enumId] = payload;
 
       store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
-      showToast("Product store setting updated successfully.")
+      showToast(translate("Product store setting updated successfully."))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
+}
+
+async function updateOrderCancellationStatus() {
+  if(!autoCancellationActive.value) {
+    autoCancellationActive.value = true;
+    return;
+  }
+
+  const currentStore = JSON.parse(JSON.stringify(productStore.value));
+  currentStore.daysToCancelNonPay = 0;
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateProductStore(currentStore);
+    if(!hasError(resp)) {
+      showToast(translate("Product store setting updated successfully."))
+      store.dispatch("productStore/updateCurrent", currentStore)
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }
