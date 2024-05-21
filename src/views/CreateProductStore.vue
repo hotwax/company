@@ -63,8 +63,7 @@ function manageConfigurations() {
 
 async function openSelectOperatingCountriesModal() {
   const modal = await modalController.create({
-    component: SelectOperatingCountriesModal,
-    showBackdrop: true
+    component: SelectOperatingCountriesModal
   })
 
   modal.present()

@@ -38,10 +38,12 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: "product-store",
+        name: "ProductStore",
         component: () => import("@/views/ProductStore.vue")
       },
       {
         path: "settings",
+        name: "Settings",
         component: () => import("@/views/Settings.vue")
       }
     ],
@@ -49,14 +51,17 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: "/create-product-store",
+    name: "CreateProductStore",
     component: CreateProductStore
   },
   {
     path: "/add-configurations",
+    name: "AddConfigurations",
     component: AddConfigurations
   },
   {
     path: "/product-store-details/:productStoreId",
+    name: "ProductStoreDetails",
     component: ProductStoreDetails,
     props: true
   },
