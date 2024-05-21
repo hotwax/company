@@ -23,7 +23,7 @@
 
           <ion-item>
             <ion-icon slot="start" :icon="shirtOutline"/>
-            <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifier">
+            <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifierEnumId">
               <ion-select-option v-for="identifer in productIdentifiers" :key="identifer.enumId" :value="identifer.enumId">{{ identifer.description }}</ion-select-option>
             </ion-select>
           </ion-item>
@@ -69,7 +69,7 @@ const productStore = ref({}) as any;
 const formData = ref({
   autoApproveOrder: false,
   orderNumberPrefix: "",
-  productIdentifier: "SHOPIFY_PRODUCT_SKU"
+  productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU"
 })
 
 const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
@@ -97,12 +97,14 @@ async function setupProductStore() {
     const payload = {
       ...productStore.value,
       orderNumberPrefix: formData.value.orderNumberPrefix,
-      autoApproveOrder: formData.value.autoApproveOrder
+      autoApproveOrder: formData.value.autoApproveOrder ? "Y" : "N",
+      productIdentifierEnumId: formData.value.productIdentifierEnumId
     }
 
     const resp = await ProductStoreService.updateProductStore(payload);
     if(!hasError(resp)) {
       showToast(translate("Product store configurations updated successfully."))
+      router.push(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
       throw resp.data;
     }
@@ -111,7 +113,6 @@ async function setupProductStore() {
     showToast(translate("Failed to add configurations to the product store."))
   }
 
-  // router.push("product-store-details")
 }
 </script>
 

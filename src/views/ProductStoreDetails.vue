@@ -277,13 +277,13 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Primary identifier')" interface="popover" value="">
+                <ion-select :label="translate('Primary identifier')" interface="popover" :value="getPreferredIdentification('primaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Secondary identifier')" interface="popover" value="">
+                <ion-select :label="translate('Secondary identifier')" interface="popover" :value="getPreferredIdentification('secondaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -362,8 +362,13 @@ const productIdentifiers = computed(() => store.getters["util/getProductIdentifi
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 
 onIonViewWillEnter(async() => {
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])  
 })
+
+function getPreferredIdentification(id: string) {
+  const identifications = JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue)
+  return identifications[id];
+}
 
 async function renameProductStore() {
   const alert = await alertController.create({

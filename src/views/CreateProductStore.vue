@@ -70,9 +70,11 @@ const storeId = ref({}) as any;
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
+const company = computed(() => store.getters["productStore/getCompany"])
 
 onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchDBICCountries");
+  store.dispatch("productStore/fetchCompany");
   if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
 })
 
@@ -86,22 +88,43 @@ async function manageConfigurations() {
     formData.value.productStoreId = generateInternalId(formData.value.storeName)
   }
 
+  let resp;
+
   try {
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
+      companyName: company.value.companyName
     } as any;
 
     if(!productStores.value.length) {
       payload["companyName"] = formData.value.companyName
-    } else {
-      payload["companyName"] = productStores.value[0].companyName
     }
 
-    const resp = await ProductStoreService.createProductStore(payload);
+    resp = await ProductStoreService.createProductStore(payload);
 
     if(!hasError(resp)) {
       const productStoreId = resp.data.productStoreId;
+      
+      if(!dbicCountriesCount.value) {
+        const responses = await Promise.allSettled(selectedCountries.value
+        .map(async (country: any) => await ProductStoreService.updateDBICCountries({
+          geoId: country.geoId,
+          geoIdTo: "DBIC",
+          geoAssocTypeId: "GROUP_MEMBER"
+          }))
+        )
+        
+        const hasFailedResponse = responses.some((response: any) => response.status === 'rejected')
+        if(hasFailedResponse) {
+          logger.error("Failed to associate update some DBIC countries.")
+        }
+      }
+      
+      if(!productStores.value.length && formData.value.companyName) {
+        resp = await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+      }
+
       showToast(translate("Product store created successfully."))
       router.push(`add-configurations/${productStoreId}`);
     } else {

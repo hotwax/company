@@ -44,11 +44,38 @@ const updateProductStore = async (payload: any): Promise <any>  => {
   });
 }
 
+const updateDBICCountries = async (payload: any): Promise <any>  => {
+  return api({
+    url: "countries/dbic",
+    method: "post",
+    data: payload
+  });
+}
+
+const fetchCompany = async (payload: any): Promise <any>  => {
+  return api({
+    url: `organizations/${payload.partyId}`,
+    method: "get",
+    params: payload
+  });
+}
+
+const updateCompany = async (payload: any): Promise <any>  => {
+  return api({
+    url: `organizations/${payload.partyId}`,
+    method: "get",
+    data: payload
+  });
+}
+
 export const ProductStoreService = {
   createProductStore,
+  fetchCompany,
   fetchCurrentStoreSettings,
   fetchProductStoreDetails,
   fetchProductStores,
   fetchProductStoresFacilityCount,
+  updateCompany,
+  updateDBICCountries,
   updateProductStore
 }

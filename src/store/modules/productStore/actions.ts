@@ -83,6 +83,23 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     commit(types.PRODUCT_STORE_CURRENT_SETTINGS_UPDATED, storeSettings);
   },
 
+  async fetchCompany({ commit }) {
+    let company = {};
+
+    try {
+      const resp = await ProductStoreService.fetchCompany({ partyId: process.env.VUE_APP_COMPANY_PARTY_ID });
+
+      if(!hasError(resp)) {
+        company = resp.data;
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.PRODUCT_STORE_COMPANY_UPDATED, company);
+  },
+
   async updateCurrent({ commit }, current) {
     commit(types.PRODUCT_STORE_CURRENT_UPDATED, current);
   },

@@ -11,6 +11,7 @@ const productStoreModule: Module<ProductStoreState, RootState> = {
     current: {},
     currentStoreSettings: {},
     productStores: [],
+    company: {}
   },
   getters,
   actions,

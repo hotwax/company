@@ -12,5 +12,8 @@ const getters: GetterTree <ProductStoreState, RootState> = {
   getProductStores(state) {
     return state.productStores
   },
+  getCompany(state) {
+    return state.company
+  },
 }
 export default getters;
