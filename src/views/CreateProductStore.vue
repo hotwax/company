@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
