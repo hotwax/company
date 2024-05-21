@@ -68,6 +68,14 @@ const updateCompany = async (payload: any): Promise <any>  => {
   });
 }
 
+const updateCurrentStoreSettings = async (payload: any): Promise <any>  => {
+  return api({
+    url: `productStores/${payload.productStoreId}/settings`,
+    method: "post",
+    data: payload
+  });
+}
+
 export const ProductStoreService = {
   createProductStore,
   fetchCompany,
@@ -76,6 +84,7 @@ export const ProductStoreService = {
   fetchProductStores,
   fetchProductStoresFacilityCount,
   updateCompany,
+  updateCurrentStoreSettings,
   updateDBICCountries,
   updateProductStore
 }

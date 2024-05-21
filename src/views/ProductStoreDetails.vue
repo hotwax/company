@@ -29,12 +29,12 @@
 
               <ion-item>
                 <ion-icon :icon="thunderstormOutline" slot="start"/>
-                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)" @ionChange="updateProductStoreDetail($event, 'enableBrokering', true)">{{ translate("Order brokering") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)" @click.prevent="updateProductStoreDetail($event, 'enableBrokering', true)">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
               <ion-item lines="none">
                 <ion-icon :icon="wineOutline" slot="start"/>
-                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)" @ionChange="updateProductStoreDetail($event, 'reserveInventory', true)">{{ translate("Inventory reservation") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)" @click.prevent="updateProductStoreDetail($event, 'reserveInventory', true)">{{ translate("Inventory reservation") }}</ion-toggle>
               </ion-item>
             </div>
           </ion-card>
@@ -61,7 +61,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['SAVE_BILL_TO_INF']?.settingValue)">{{ translate("Save billing information") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['SAVE_BILL_TO_INF']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'SAVE_BILL_TO_INF', true)">{{ translate("Save billing information") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -74,7 +74,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)" @ionChange="updateProductStoreDetail($event, 'autoApproveOrder', true)">{{ translate("Approve on import") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)" @click.prevent="updateProductStoreDetail($event, 'autoApproveOrder', true)">{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" />
+                <ion-input :label="translate('Create deadline days')" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue"  @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -104,7 +104,7 @@
 
             <ion-list>
               <ion-item-divider color="light">
-                <ion-label>{{ translate("Seat Allocation") }}</ion-label>
+                <ion-label>{{ translate("Soft Allocation") }}</ion-label>
               </ion-item-divider>
 
               <ion-item>
@@ -138,11 +138,11 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(productStore.allowSplit)" @ionChange="updateProductStoreDetail($event, 'allowSplit', true)">{{ translate("Order splitting") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.allowSplit)" @click.prevent="updateProductStoreDetail($event, 'allowSplit', true)">{{ translate("Order splitting") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" />
+                <ion-input :label="translate('Minimum shipment threshold')" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -164,7 +164,7 @@
                 </ion-item-divider>
   
                 <ion-item>
-                  <ion-toggle :checked="getBooleanValue(settings['FULFILL_NOTIF']?.settingValue)">{{ translate("Send notification to Shopify") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['FULFILL_NOTIF']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'FULFILL_NOTIF', true)" >{{ translate("Send notification to Shopify") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -198,7 +198,7 @@
 
               <ion-list>
                 <ion-item>
-                  <ion-toggle :checked="getBooleanValue(settings['BOPIS_PART_ODR_REJ']?.settingValue)">{{ translate("Partial order rejection") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['BOPIS_PART_ODR_REJ']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'BOPIS_PART_ODR_REJ', true)" >{{ translate("Partial order rejection") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -222,7 +222,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['INV_CNT_VIEW_QOH']?.settingValue)">{{ translate("Show systemic inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['INV_CNT_VIEW_QOH']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'INV_CNT_VIEW_QOH', true)" >{{ translate("Show systemic inventory") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -235,11 +235,11 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['HOLD_PRORD_PHYCL_INV']?.settingValue)">{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['HOLD_PRORD_PHYCL_INV']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'HOLD_PRORD_PHYCL_INV', true)" >{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue">
+                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
                   <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -262,7 +262,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId">
+                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
                   <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -306,25 +306,25 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)">{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVR_MTHD_UPD', true)" >{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue ? settings['RF_SHIP_MTHD'].settingValue : shipmentMethodTypes[0].shipmentMethodTypeId">
+                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue ? settings['RF_SHIP_MTHD'].settingValue : shipmentMethodTypes[0].shipmentMethodTypeId" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
                   <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRADR_UPDATE']?.settingValue)">{{ translate("Delivery address") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRADR_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVRADR_UPDATE', true)" >{{ translate("Delivery address") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['ORD_ITM_PICKUP_FAC']?.settingValue)">{{ translate("Pick up location") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_PCKUP_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_PCKUP_UPDATE', true)" >{{ translate("Pick up location") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['CUST_ALLOW_CNCL']?.settingValue)">{{ translate("Cancel order before fulfillment") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_ALLOW_CNCL']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_ALLOW_CNCL', true)" >{{ translate("Cancel order before fulfillment") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -349,6 +349,7 @@ import { hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import emitter from "@/event-bus";
+import { DateTime } from "luxon";
 
 const props = defineProps(["productStoreId"]);
 const store = useStore();
@@ -446,18 +447,12 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
 
   if(isToggle) {
     event.stopImmediatePropagation();
-
-    payload = {
-      [fieldName]: productStore.value[fieldName] === 'Y' ? 'N' : 'Y'
-    }
+    payload = {[fieldName]: productStore.value[fieldName] === 'Y' ? 'N' : 'Y' };
   } else {
-    payload = {
-      [fieldName]: event.target.value
-    }
+    payload = { [fieldName]: event.target.value };
   }
 
   emitter.emit("presentLoader")
-  
   try {
     payload = { ...productStore.value, ...payload }
     
@@ -465,6 +460,62 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
     if(!hasError(resp)) {
       showToast("Product store setting updated successfully.")
       store.dispatch("productStore/updateCurrent", payload)
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+  }
+  emitter.emit("dismissLoader")
+}
+
+async function updateProductStoreSettings(event: any, enumId: string, isToggle: boolean) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+  let payload;
+  if(isToggle) {
+    event.stopImmediatePropagation();
+
+    if(settingEnums[enumId]) {
+      payload = settingEnums[enumId]
+      
+      if(enumId === 'SAVE_BILL_TO_INF' || enumId === 'FULFILL_NOTIF') {
+        payload.settingValue = settingEnums[enumId].settingValue === 'Y' ? 'N' : 'Y'
+      } else {
+        payload.settingValue = settingEnums[enumId].settingValue === "true" ? "false" : "true"
+      }
+    } else {
+      payload = {
+        fromDate: DateTime.now().toMillis(),
+        productStoreId: productStore.value.productStoreId,
+        settingTypeEnumId: enumId,
+        settingValue: (enumId === 'SAVE_BILL_TO_INF' || enumId === 'FULFILL_NOTIF') ? "Y" : "true"
+      }
+    }
+  } else {
+    if(settingEnums[enumId]) {
+      payload =  {
+        ...settingEnums[enumId],
+        settingValue: event.target.value
+      }
+      settingEnums[enumId].settingValue = event.target.value
+    } else {
+      payload = {
+        fromDate: DateTime.now().toMillis(),
+        productStoreId: productStore.value.productStoreId,
+        settingTypeEnumId: enumId,
+        settingValue: event.target.value
+      }
+    }
+  }
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    if(!hasError(resp)) {
+      if(!settingEnums[enumId]) settingEnums[enumId] = payload;
+
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast("Product store setting updated successfully.")
     } else {
       throw resp.data;
     }

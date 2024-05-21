@@ -72,7 +72,9 @@ const actions: ActionTree<ProductStoreState, RootState> = {
 
       if(!hasError(resp)) {
         resp.data.map((setting: any) => {
-          storeSettings[setting.settingTypeEnumId] = setting
+          if(!setting.thruDate) {
+            storeSettings[setting.settingTypeEnumId] = setting
+          }
         })
       } else {
         throw resp.data;
@@ -98,6 +100,10 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       logger.error(error);
     }
     commit(types.PRODUCT_STORE_COMPANY_UPDATED, company);
+  },
+
+  async updateCurrentStoreSettings({ commit }, payload) {
+    commit(types.PRODUCT_STORE_CURRENT_SETTINGS_UPDATED, payload);
   },
 
   async updateCurrent({ commit }, current) {
