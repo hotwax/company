@@ -262,7 +262,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId ? productStore.productIdentifierEnumId : productIdentifiers[0].enumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
+                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
                   <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -277,13 +277,13 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Primary identifier')" interface="popover" :value="getPreferredIdentification('primaryId')">
+                <ion-select :label="translate('Primary identifier')" interface="popover" :value="getPreferredIdentification('primaryId')" @ionChange="updatePreferredIdentification($event, 'primaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Secondary identifier')" interface="popover" :value="getPreferredIdentification('secondaryId')">
+                <ion-select :label="translate('Secondary identifier')" interface="popover" :value="getPreferredIdentification('secondaryId')" @ionChange="updatePreferredIdentification($event, 'secondaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -310,7 +310,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue ? settings['RF_SHIP_MTHD'].settingValue : shipmentMethodTypes[0].shipmentMethodTypeId" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
+                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
                   <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -367,13 +367,54 @@ const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethod
 onIonViewWillEnter(async() => {
   await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])  
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
-
-  console.log(window.matchMedia('(prefers-color-scheme: dark)'))
 })
 
 function getPreferredIdentification(id: string) {
   const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
   return identifications[id];
+}
+
+async function updatePreferredIdentification(event: any, identifier: string) {
+  let payload;
+  const identification = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
+  identification[identifier] = event.detail.value;
+  
+  if(settings.value['PRDT_IDEN_PREF']) {
+    
+    payload = {
+      ...settings.value['PRDT_IDEN_PREF'],
+      settingValue: JSON.stringify(identification)
+    }
+  } else {
+    payload = {
+      fromDate: DateTime.now().toMillis(),
+      productStoreId: productStore.value.productStoreId,
+      settingTypeEnumId: "PRDT_IDEN_PREF",
+      settingValue: JSON.stringify(identification)
+    }
+  }
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    if(!hasError(resp)) {
+      const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+      if(settingEnums[payload.settingTypeEnumId]) {
+        settingEnums[payload.settingTypeEnumId].settingValue = payload.settingValue;
+      } else {
+        settingEnums[payload.settingTypeEnumId] = payload;
+      }
+
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast(translate("Product store setting updated successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
 }
 
 async function renameProductStore() {
