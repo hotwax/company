@@ -20,7 +20,7 @@
             <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
           </ion-input>
         </ion-item>
-        <ion-item  lines="none">
+        <ion-item lines="none">
           <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
         </ion-item>
 

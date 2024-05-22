@@ -2,7 +2,7 @@ import { ActionTree } from "vuex"
 import RootState from "@/store/RootState"
 import ProductStoreState from "./ProductStoreState"
 import * as types from "./mutation-types"
-import { hasError, showToast } from "@/utils"
+import { hasError } from "@/utils"
 import logger from "@/logger"
 import { ProductStoreService } from "@/services/ProductStoreService"
 
@@ -71,6 +71,8 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       const resp = await ProductStoreService.fetchCurrentStoreSettings(productStoreId);
 
       if(!hasError(resp)) {
+        // Api returning expired record also hence manually removing them.
+        // Todo: update after fixed in api backend
         resp.data.map((setting: any) => {
           if(!setting.thruDate) {
             storeSettings[setting.settingTypeEnumId] = setting
