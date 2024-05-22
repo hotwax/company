@@ -9,6 +9,7 @@
             <ion-icon :icon="informationCircleOutline" />
           </ion-button>
         </ion-buttons>
+        <ion-progress-bar value="0.75" />
       </ion-toolbar>
     </ion-header>
 
@@ -50,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";

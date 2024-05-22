@@ -86,6 +86,6 @@ function closeModal() {
 
 <style scoped>
   ion-content {
-  --padding-bottom: 80px;
+    --padding-bottom: 80px;
   }
 </style>

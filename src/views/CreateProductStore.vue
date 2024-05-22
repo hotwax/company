@@ -4,6 +4,7 @@
       <ion-toolbar>
         <ion-back-button default-href="/tabs/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Create product store") }}</ion-title>
+        <ion-progress-bar value="0.25" />
       </ion-toolbar>
     </ion-header>
 
@@ -46,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
@@ -141,8 +142,7 @@ async function openSelectOperatingCountriesModal() {
     component: SelectOperatingCountriesModal,
     componentProps: {
       selectedCountries: selectedCountries.value
-    },
-    showBackdrop: true
+    }
   })
 
   modal.onDidDismiss().then((result: any) => {
