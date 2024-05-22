@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" type="number" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
+                <ion-input :label="translate('Create deadline days')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -142,7 +142,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" type="number" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
+                <ion-input :label="translate('Minimum shipment threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -181,7 +181,7 @@
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" type="number" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" />
+                  <ion-input :label="translate('Auto cancellations days')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>

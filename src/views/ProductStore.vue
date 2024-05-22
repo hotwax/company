@@ -17,14 +17,14 @@
             </ion-label>
           </ion-item>
 
-          <div class="tablet">
+          <div class="tablet" @click.stop="">
             <ion-chip outline>
               <ion-label>{{ translate("facilities", { count: store.facilityCount }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
           </div>
 
-          <div class="tablet">
+          <div class="tablet" @click.stop="">
             <ion-chip outline>
               <ion-label>{{ translate("shipping methods", { count: store.shipmentMethodCount }) }}</ion-label>
             </ion-chip>
