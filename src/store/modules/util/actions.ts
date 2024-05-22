@@ -95,6 +95,10 @@ const actions: ActionTree<UtilState, RootState> = {
       logger.error(error);
     }
     commit(types.UTIL_SHIPMENT_METHOD_TYPES_UPDATED, shipmentMethodTypes)
+  },
+
+  async clearUtilState({ commit }) {
+    commit(types.UTIL_CLEARED)
   }
 }
 

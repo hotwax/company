@@ -18,6 +18,13 @@ const mutations: MutationTree <UtilState> = {
   },
   [types.UTIL_SHIPMENT_METHOD_TYPES_UPDATED] (state, payload) {
     state.shipmentMethodTypes = payload;
+  },
+  [types.UTIL_CLEARED] (state) {
+    state.facilityGroups = []
+    state.operatingCountries = []
+    state.dbicCountries = {}
+    state.productIdentifiers = []
+    state.shipmentMethodTypes = []
   }
 }
 export default mutations;

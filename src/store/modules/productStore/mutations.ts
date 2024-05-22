@@ -15,5 +15,11 @@ const mutations: MutationTree <ProductStoreState> = {
   [types.PRODUCT_STORE_COMPANY_UPDATED] (state, payload) {
     state.company = payload
   },
+  [types.PRODUCT_STORE_CLEARED] (state) {
+    state.current = {}
+    state.currentStoreSettings = {}
+    state.productStores = []
+    state.company = {}
+  },
 }
 export default mutations;
