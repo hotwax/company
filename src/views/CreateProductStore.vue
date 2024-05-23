@@ -109,10 +109,10 @@ async function manageConfigurations() {
       
       if(!dbicCountriesCount.value) {
         const responses = await Promise.allSettled(selectedCountries.value
-        .map(async (country: any) => await ProductStoreService.updateDBICCountries({
-          geoId: country.geoId,
-          geoIdTo: "DBIC",
-          geoAssocTypeId: "GROUP_MEMBER"
+        .map((country: any) => ProductStoreService.updateDBICCountries({
+            geoId: country.geoId,
+            geoIdTo: "DBIC",
+            geoAssocTypeId: "GROUP_MEMBER"
           }))
         )
         

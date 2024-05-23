@@ -25,7 +25,7 @@
           <ion-item>
             <ion-icon slot="start" :icon="shirtOutline"/>
             <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifierEnumId">
-              <ion-select-option v-for="identifer in productIdentifiers" :key="identifer.enumId" :value="identifer.enumId">{{ identifer.description }}</ion-select-option>
+              <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description || identifier.enumId }}</ion-select-option>
             </ion-select>
           </ion-item>
 

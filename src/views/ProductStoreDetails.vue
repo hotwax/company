@@ -24,7 +24,7 @@
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
                 <ion-label>{{ translate("Operating in") }}</ion-label>
-                <ion-label slot="end">{{ dbicCountriesCount > 1 ? translate("countries", {count: dbicCountriesCount}) : translate("country", {count: dbicCountriesCount}) }}</ion-label>
+                <ion-label slot="end">{{  translate(dbicCountriesCount > 1 || dbicCountriesCount == 0 ? "countries" : "country", {count: dbicCountriesCount}) }}</ion-label>
               </ion-item>
 
               <ion-item>
