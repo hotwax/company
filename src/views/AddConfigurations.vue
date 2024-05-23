@@ -37,7 +37,7 @@
             <ion-toggle v-model="formData.autoApproveOrder">{{ translate("Auto approve orders") }}</ion-toggle>
           </ion-item>
           <ion-item lines="none">
-            <ion-input v-model="formData.orderNumberPrefix" label-placement="floating" label="Sales order ID prefix" helper-text="Add a custom prefix to HotWax order IDs: <inputValue>10001" />
+            <ion-input v-model="formData.orderNumberPrefix" label-placement="floating" :label="translate('Sales order ID prefix')" :helper-text="translate('Add a custom prefix to HotWax order IDs: <inputValue>10001')" />
           </ion-item>
         </ion-list>
 

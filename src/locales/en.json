@@ -1,5 +1,6 @@
 {
   "Add": "Add",
+  "Add a custom prefix to HotWax order IDs: <inputValue>10001": "Add a custom prefix to HotWax order IDs: <inputValue>10001",
   "Add configurations": "Add configurations",
   "App": "App",
   "Approval": "Approval",
@@ -89,6 +90,7 @@
   "Returns": "Returns",
   "Re-route fulfillment": "Re-route fulfillment",
   "Routing": "Routing",
+  "Sales order ID prefix": "Sales order ID prefix",
   "Save billing information": "Save billing information",
   "Search country": "Search country",
   "Search time zones": "Search time zones",
