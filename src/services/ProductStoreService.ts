@@ -1,4 +1,6 @@
 import api from "@/api"
+import logger from "@/logger";
+import { hasError } from "@/utils";
 
 const createProductStore = async (payload: any): Promise <any>  => {
   return api({
@@ -61,11 +63,22 @@ const fetchCompany = async (payload: any): Promise <any>  => {
 }
 
 const updateCompany = async (payload: any): Promise <any>  => {
-  return api({
-    url: `organizations/${payload.partyId}`,
-    method: "get",
-    data: payload
-  });
+  try {
+    const resp = await api({
+      url: `organizations/${payload.partyId}`,
+      method: "get",
+      data: payload
+    }) as any;
+
+    if(hasError(resp)) {
+      return Promise.resolve(resp.data);
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    return Promise.resolve({});
+  }
 }
 
 const updateCurrentStoreSettings = async (payload: any): Promise <any>  => {

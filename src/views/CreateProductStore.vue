@@ -122,7 +122,7 @@ async function manageConfigurations() {
       }
       
       if(!productStores.value.length && formData.value.companyName) {
-        resp = await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
       showToast(translate("Product store created successfully."))
