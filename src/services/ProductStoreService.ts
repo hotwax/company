@@ -2,43 +2,43 @@ import api from "@/api"
 import logger from "@/logger";
 import { hasError } from "@/utils";
 
-const createProductStore = async (payload: any): Promise <any>  => {
+const createProductStore = async (payload: any): Promise <any> => {
   return api({
-    url: `productStores`,
+    url: "productStores",
     method: "post",
     data: payload
   });
 }
 
-const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any>  => {
+const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any> => {
   return api({
     url: `productStores/${productStoreId}/settings`,
     method: "get"
   });
 }
 
-const fetchProductStoreDetails = async (productStoreId: any): Promise <any>  => {
+const fetchProductStoreDetails = async (productStoreId: any): Promise <any> => {
   return api({
     url: `productStores/${productStoreId}`,
     method: "get"
   });
 }
 
-const fetchProductStores = async (): Promise <any>  => {
+const fetchProductStores = async (): Promise <any> => {
   return api({
     url: "productStores",
     method: "get"
   });
 }
 
-const fetchProductStoresFacilityCount = async (): Promise <any>  => {
+const fetchProductStoresFacilityCount = async (): Promise <any> => {
   return api({
     url: "productStores/facilities/counts",
     method: "get"
   });
 }
 
-const updateProductStore = async (payload: any): Promise <any>  => {
+const updateProductStore = async (payload: any): Promise <any> => {
   return api({
     url: `productStores/${payload.productStoreId}`,
     method: "post",
@@ -46,7 +46,7 @@ const updateProductStore = async (payload: any): Promise <any>  => {
   });
 }
 
-const updateDBICCountries = async (payload: any): Promise <any>  => {
+const updateDBICCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries/dbic",
     method: "post",
@@ -54,7 +54,7 @@ const updateDBICCountries = async (payload: any): Promise <any>  => {
   });
 }
 
-const fetchCompany = async (payload: any): Promise <any>  => {
+const fetchCompany = async (payload: any): Promise <any> => {
   return api({
     url: `organizations/${payload.partyId}`,
     method: "get",
@@ -62,11 +62,11 @@ const fetchCompany = async (payload: any): Promise <any>  => {
   });
 }
 
-const updateCompany = async (payload: any): Promise <any>  => {
+const updateCompany = async (payload: any): Promise <any> => {
   try {
     const resp = await api({
       url: `organizations/${payload.partyId}`,
-      method: "get",
+      method: "post",
       data: payload
     }) as any;
 
@@ -81,7 +81,7 @@ const updateCompany = async (payload: any): Promise <any>  => {
   }
 }
 
-const updateCurrentStoreSettings = async (payload: any): Promise <any>  => {
+const updateCurrentStoreSettings = async (payload: any): Promise <any> => {
   return api({
     url: `productStores/${payload.productStoreId}/settings`,
     method: "post",

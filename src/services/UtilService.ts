@@ -1,6 +1,6 @@
 import api from "@/api"
 
-const fetchDBICCountries = async (payload: any): Promise <any>  => {
+const fetchDBICCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries/dbic",
     method: "get",
@@ -8,15 +8,15 @@ const fetchDBICCountries = async (payload: any): Promise <any>  => {
   });
 }
 
-const fetchFacilityGroups = async (payload: any): Promise <any>  => {
+const fetchFacilityGroups = async (payload: any): Promise <any> => {
   return api({
-    url: `facilityGroups`,
+    url: "facilityGroups",
     method: "get",
     params: payload
   });
 }
 
-const fetchOperatingCountries = async (payload: any): Promise <any>  => {
+const fetchOperatingCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries",
     method: "get",
@@ -24,7 +24,7 @@ const fetchOperatingCountries = async (payload: any): Promise <any>  => {
   });
 }
 
-const fetchEnums = async (payload: any): Promise <any>  => {
+const fetchEnums = async (payload: any): Promise <any> => {
   return api({
     url: "enums",
     method: "get",
@@ -32,7 +32,7 @@ const fetchEnums = async (payload: any): Promise <any>  => {
   });
 }
 
-const fetchShipmentMethodTypes = async (payload: any): Promise <any>  => {
+const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   return api({
     url: "shipmentMethodTypes",
     method: "get",
