@@ -109,7 +109,10 @@
 
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">{{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">
+                  {{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}
+                  <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('PRE_SLCTD_FAC_TAG')" />
+                </ion-chip>
                 <ion-button fill="clear" @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
@@ -122,7 +125,10 @@
               
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">{{ settings['ORD_ITM_SHIP_FAC'].settingValue }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">
+                  {{ settings['ORD_ITM_SHIP_FAC'].settingValue }}
+                  <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('ORD_ITM_SHIP_FAC')" />
+                </ion-chip>
                 <ion-button fill="clear" @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
@@ -341,7 +347,7 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
-import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
+import { addCircleOutline, closeCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useStore } from "vuex";
 import { computed, defineProps, ref } from "vue";
@@ -476,11 +482,6 @@ async function createUpdateTag(enumId: string) {
     {
       text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
       handler: async(data) => {
-        if(!data.tag) {
-          showToast(translate("Tags can't be empty."));
-          return false;
-        }
-
         if(data.tag === settingEnums[enumId]?.settingValue) return;
 
         let payload;
@@ -515,6 +516,29 @@ async function createUpdateTag(enumId: string) {
   })
 
   await alert.present()
+}
+
+async function removeTag(enumId: string) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+  const payload = {
+    ...settingEnums[enumId],
+    settingValue: ""
+  };
+
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+
+    if(!hasError(resp)) {
+      settingEnums[enumId] = payload;
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast(translate("Tag removed successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to remove tag."))
+  }
 }
 
 function getBooleanValue(value: any) {
