@@ -624,7 +624,7 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
   try {
     const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
     if(!hasError(resp)) {
-      if(settingEnums[enumId]) settingEnums[enumId].settingValue = event.target.value
+      if(settingEnums[enumId]) settingEnums[enumId].settingValue = payload.settingValue
       else settingEnums[enumId] = payload;
 
       store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
