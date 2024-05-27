@@ -482,6 +482,11 @@ async function createUpdateTag(enumId: string) {
     {
       text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
       handler: async(data) => {
+        if(!data.tag) {
+          showToast(translate("Tags can't be empty."));
+          return false;
+        }
+
         if(data.tag === settingEnums[enumId]?.settingValue) return;
 
         let payload;
