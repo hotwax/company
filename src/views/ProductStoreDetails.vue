@@ -24,7 +24,7 @@
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
                 <ion-label>{{ translate("Operating in") }}</ion-label>
-                <ion-label slot="end">{{  translate(dbicCountriesCount > 1 || dbicCountriesCount == 0 ? "countries" : "country", {count: dbicCountriesCount}) }}</ion-label>
+                <ion-label slot="end">{{  translate(dbicCountriesCount == 1 ? "country" : "countries", {count: dbicCountriesCount}) }}</ion-label>
               </ion-item>
 
               <ion-item>
@@ -239,7 +239,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue ? settings['PRE_ORDER_GROUP_ID'].settingValue : facilityGroups[0].facilityGroupId" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
+                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
                   <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -581,7 +581,6 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
         ...settingEnums[enumId],
         settingValue: event.target.value
       }
-      settingEnums[enumId].settingValue = event.target.value
     } else {
       payload = {
         fromDate: DateTime.now().toMillis(),
@@ -596,7 +595,8 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
   try {
     const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
     if(!hasError(resp)) {
-      if(!settingEnums[enumId]) settingEnums[enumId] = payload;
+      if(settingEnums[enumId]) settingEnums[enumId].settingValue = event.target.value
+      else settingEnums[enumId] = payload;
 
       store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
       showToast(translate("Product store setting updated successfully."))
