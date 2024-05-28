@@ -437,7 +437,7 @@ async function renameProductStore() {
     {
       text: translate("Confirm"),
       handler: async(data) => {
-        if(!data.storeName) {
+        if(!data.storeName.trim()) {
           showToast(translate("Product store name can't be empty."));
           return false;
         }
