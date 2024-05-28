@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" :placeholder="translate('days count')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
+                <ion-input :label="translate('Create deadline days')" :placeholder="translate('days count')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" @keydown="validateInput($event)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -148,7 +148,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
+                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -187,7 +187,7 @@
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" :placeholder="translate('days count')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" />
+                  <ion-input :label="translate('Auto cancellations days')" :placeholder="translate('days count')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" @keydown="validateInput($event)" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -665,6 +665,9 @@ async function updateOrderCancellationStatus() {
   emitter.emit("dismissLoader")
 }
 
+function validateInput(event: any) {
+  if(/[`!@#$%^&*()_+\-=\\|,.<>?~]/.test(event.key)) event.preventDefault();
+}
 
 </script>
 
