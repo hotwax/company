@@ -8,25 +8,25 @@
 
     <ion-content>
       <main>
-        <div class="list-item">
+        <div class="list-item" v-for="store in productStores" :key="store.productStoreId" @click="viewProductStoreDetails(store.productStoreId)">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="storefrontOutline" />
             <ion-label class="ion-text-wrap">
-              <p class="overline">{{ "PRODUCT STORE ID" }}</p>
-              {{ "Product store name" }}
+              <p class="overline">{{ store.productStoreId }}</p>
+              {{ store.storeName ? store.storeName : store.productStoreId }}
             </ion-label>
           </ion-item>
 
-          <div class="tablet">
+          <div class="tablet" @click.stop="">
             <ion-chip outline>
-              <ion-label>{{ "<count> facilities" }}</ion-label>
-              <ion-icon :icon="openOutline" />
+              <ion-label>{{ translate("facilities", { count: store.facilityCount }) }}</ion-label>
+              <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
           </div>
 
-          <div class="tablet">
+          <div class="tablet" @click.stop="">
             <ion-chip outline>
-              <ion-label>{{ "<count> shipping methods" }}</ion-label>
+              <ion-label>{{ translate("shipping methods", { count: store.shipmentMethodCount }) }}</ion-label>
             </ion-chip>
           </div>
         </div>
@@ -43,12 +43,25 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar } from "@ionic/vue";
+import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
+import { computed } from "vue";
+import { useStore } from "vuex";
 
+const store = useStore();
 const router = useRouter();
+
+const productStores = computed(() => store.getters["productStore/getProductStores"])
+
+onIonViewWillEnter(async () => {
+  await store.dispatch("productStore/fetchProductStores");
+})
+
+async function viewProductStoreDetails(productStoreId: string) {
+  router.push({ path: `/product-store-details/${productStoreId}` })
+}
 
 function createStore() {
   router.push("/create-product-store")

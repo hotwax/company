@@ -26,7 +26,7 @@ const loginGuard = (to: any, from: any, next: any) => {
 const routes: Array<RouteRecordRaw> = [
   {
     path: "/",
-    redirect: "/tabs/settings"
+    redirect: "/tabs/product-store"
   },
   {
     path: "/tabs",
@@ -34,7 +34,7 @@ const routes: Array<RouteRecordRaw> = [
     children: [
       {
         path: "",
-        redirect: "/product-store"
+        redirect: "/tabs/product-store"
       },
       {
         path: "product-store",
@@ -55,7 +55,7 @@ const routes: Array<RouteRecordRaw> = [
     component: CreateProductStore
   },
   {
-    path: "/add-configurations",
+    path: "/add-configurations/:productStoreId",
     name: "AddConfigurations",
     component: AddConfigurations
   },

@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/tabs/product-store"/>
-        <ion-title>{{ "<productStoreName>" }}</ion-title>
+        <ion-title>{{ productStore.storeName }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -13,9 +13,9 @@
           <ion-card class="store-info store-details">
             <ion-item lines="none" class="ion-margin-top">
               <ion-label>
-                <p class="overline">{{ "PRODUCT STORE ID" }}</p>
-                <h1>{{ "Product store name" }}</h1>
-                <p>{{ "Company name" }}</p>
+                <p class="overline">{{ productStore.productStoreId }}</p>
+                <h1>{{ productStore.storeName ? productStore.storeName : productStore.productStoreId }}</h1>
+                <p>{{ productStore.companyName }}</p>
               </ion-label>
               <ion-button fill="outline" @click="renameProductStore()">{{ translate("Edit") }}</ion-button>
             </ion-item>
@@ -23,19 +23,18 @@
             <div class="ion-margin-top">
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
-                <ion-select :label="translate('Operating in')" value="countries" interface="popover">
-                  <ion-select-option value="countries">{{ "3 countries" }}</ion-select-option>
-                </ion-select>
+                <ion-label>{{ translate("Operating in") }}</ion-label>
+                <ion-label slot="end">{{  translate(dbicCountriesCount == 1 ? "country" : "countries", {count: dbicCountriesCount}) }}</ion-label>
               </ion-item>
 
               <ion-item>
                 <ion-icon :icon="thunderstormOutline" slot="start"/>
-                <ion-toggle>{{ translate("Order brokering") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)" @click.prevent="updateProductStoreDetail($event, 'enableBrokering', true)">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
               <ion-item lines="none">
                 <ion-icon :icon="wineOutline" slot="start"/>
-                <ion-toggle>{{ translate("Inventory reservation") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.reserveInventory)" @click.prevent="updateProductStoreDetail($event, 'reserveInventory', true)">{{ translate("Inventory reservation") }}</ion-toggle>
               </ion-item>
             </div>
           </ion-card>
@@ -53,7 +52,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Id prefix')" placeholder="<prefixValue>" />
+                <ion-input :label="translate('Id prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -62,7 +61,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Save billing information") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['SAVE_BILL_TO_INF']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'SAVE_BILL_TO_INF', true)">{{ translate("Save billing information") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -75,7 +74,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Approve on import") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.autoApproveOrder)" @click.prevent="updateProductStoreDetail($event, 'autoApproveOrder', true)">{{ translate("Approve on import") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -88,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" placeholder="<days count>" />
+                <ion-input :label="translate('Create deadline days')" :placeholder="translate('days count')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" @keydown="validateInput($event)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -105,12 +104,16 @@
 
             <ion-list>
               <ion-item-divider color="light">
-                <ion-label>{{ translate("Seat Allocation") }}</ion-label>
+                <ion-label>{{ translate("Soft Allocation") }}</ion-label>
               </ion-item-divider>
 
               <ion-item>
                 <ion-label>{{ translate("Preselected facility tag") }}</ion-label>
-                <ion-button fill="clear" @click="createUpdateTag()">
+                <ion-chip outline @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-if="settings['PRE_SLCTD_FAC_TAG']?.settingValue">
+                  {{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}
+                  <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('PRE_SLCTD_FAC_TAG')" />
+                </ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>
@@ -119,10 +122,16 @@
                   <p>{{ translate("Orders tagged with this tag will undergo line item check for fulfillment facility selection.") }}</p>
                 </ion-label>
               </ion-item>
-
+              
               <ion-item>
                 <ion-label>{{ translate("Shipping facility tag") }}</ion-label>
-                <ion-chip outline @click="createUpdateTag()">{{ "<tagName>" }}</ion-chip>
+                <ion-chip outline @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-if="settings['ORD_ITM_SHIP_FAC']?.settingValue">
+                  {{ settings['ORD_ITM_SHIP_FAC'].settingValue }}
+                  <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('ORD_ITM_SHIP_FAC')" />
+                </ion-chip>
+                <ion-button fill="clear" @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-else>
+                  <ion-icon slot="icon-only" :icon="addCircleOutline" />
+                </ion-button>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -135,11 +144,11 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Order splitting") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(productStore.allowSplit)" @click.prevent="updateProductStoreDetail($event, 'allowSplit', true)">{{ translate("Order splitting") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" placeholder="<value>" />
+                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -161,7 +170,7 @@
                 </ion-item-divider>
   
                 <ion-item>
-                  <ion-toggle>{{ translate("Send notification to Shopify") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['FULFILL_NOTIF']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'FULFILL_NOTIF', true)" >{{ translate("Send notification to Shopify") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -174,11 +183,11 @@
                 </ion-item-divider>
 
                 <ion-item>
-                  <ion-toggle>{{ translate("Auto order cancellation") }}</ion-toggle>
+                  <ion-toggle :checked="autoCancellationActive" @ionChange="updateOrderCancellationStatus()">{{ translate("Auto order cancellation") }}</ion-toggle>
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" placeholder="<days count>" />
+                  <ion-input :label="translate('Auto cancellations days')" :placeholder="translate('days count')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" @keydown="validateInput($event)" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -195,7 +204,7 @@
 
               <ion-list>
                 <ion-item>
-                  <ion-toggle>{{ translate("Partial order rejection") }}</ion-toggle>
+                  <ion-toggle :checked="getBooleanValue(settings['BOPIS_PART_ODR_REJ']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'BOPIS_PART_ODR_REJ', true)" >{{ translate("Partial order rejection") }}</ion-toggle>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -219,7 +228,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Show systemic inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['INV_CNT_VIEW_QOH']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'INV_CNT_VIEW_QOH', true)" >{{ translate("Show systemic inventory") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -232,12 +241,12 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-toggle>{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['HOLD_PRORD_PHYCL_INV']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'HOLD_PRORD_PHYCL_INV', true)" >{{ translate("Hold pre-order physical inventory") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" value="">
-                  <ion-select-option value="">{{ "<facilityGroup>" }}</ion-select-option>
+                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
+                  <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -259,8 +268,8 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "<UPCA>" }}</ion-select-option>
+                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
+                  <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
@@ -274,14 +283,14 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Primary identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "Product Id" }}</ion-select-option>
+                <ion-select :label="translate('Primary identifier')" interface="popover" :value="getPreferredIdentification('primaryId')" @ionChange="updatePreferredIdentification($event, 'primaryId')">
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Secondary identifier')" interface="popover" value="">
-                  <ion-select-option value="">{{ "SKU" }}</ion-select-option>
+                <ion-select :label="translate('Secondary identifier')" interface="popover" :value="getPreferredIdentification('secondaryId')" @ionChange="updatePreferredIdentification($event, 'secondaryId')">
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -303,25 +312,25 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle>{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVR_MTHD_UPD', true)" >{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" value="">
-                  <ion-select-option value="">{{ "Two day" }}</ion-select-option>
+                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
+                  <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Delivery address") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRADR_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVRADR_UPDATE', true)" >{{ translate("Delivery address") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Pick up location") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_PCKUP_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_PCKUP_UPDATE', true)" >{{ translate("Pick up location") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-toggle>{{ translate("Cancel order before fulfillment") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_ALLOW_CNCL']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_ALLOW_CNCL', true)" >{{ translate("Cancel order before fulfillment") }}</ion-toggle>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -337,45 +346,329 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController } from "@ionic/vue";
-import { addCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
+import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
+import { addCircleOutline, closeCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+import { useStore } from "vuex";
+import { computed, defineProps, ref } from "vue";
+import { hasError, showToast } from "@/utils";
+import logger from "@/logger";
+import { ProductStoreService } from "@/services/ProductStoreService";
+import emitter from "@/event-bus";
+import { DateTime } from "luxon";
+
+const props = defineProps(["productStoreId"]);
+const store = useStore();
+
+const productIdentificationOptions = ["productId", "groupId", "groupName", "internalName", "parentProductName", "primaryProductCategoryName", "sku", "title", "SHOPIFY_PROD_SKU"];
+const autoCancellationActive = ref(false);
+
+const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
+const productStore = computed(() => store.getters["productStore/getCurrent"])
+const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
+const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
+const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
+const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
+
+onIonViewWillEnter(async() => {
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])  
+  if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
+})
+
+function getPreferredIdentification(id: string) {
+  const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
+  return identifications[id];
+}
+
+async function updatePreferredIdentification(event: any, identifier: string) {
+  let payload;
+  const identification = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
+  identification[identifier] = event.detail.value;
+  
+  if(settings.value['PRDT_IDEN_PREF']) {
+    
+    payload = {
+      ...settings.value['PRDT_IDEN_PREF'],
+      settingValue: JSON.stringify(identification)
+    }
+  } else {
+    payload = {
+      fromDate: DateTime.now().toMillis(),
+      productStoreId: productStore.value.productStoreId,
+      settingTypeEnumId: "PRDT_IDEN_PREF",
+      settingValue: JSON.stringify(identification)
+    }
+  }
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    if(!hasError(resp)) {
+      const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+      if(settingEnums[payload.settingTypeEnumId]) {
+        settingEnums[payload.settingTypeEnumId].settingValue = payload.settingValue;
+      } else {
+        settingEnums[payload.settingTypeEnumId] = payload;
+      }
+
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast(translate("Product store setting updated successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
+}
 
 async function renameProductStore() {
   const alert = await alertController.create({
     header: translate("Product store name"),
     inputs: [{
-      name: "storeName"
+      name: "storeName",
+      value: productStore.value.storeName
     }],
     buttons: [{
       text: translate("Cancel"),
       role: "cancel"
     },
     {
-      text: translate("Confirm")
+      text: translate("Confirm"),
+      handler: async(data) => {
+        if(!data.storeName) {
+          showToast(translate("Product store name can't be empty."));
+          return false;
+        }
+
+        if(data.storeName === productStore.value.storeName) return;
+
+        const updatedStore = JSON.parse(JSON.stringify(productStore.value));
+        updatedStore.storeName = data.storeName;
+
+        try {
+          const resp = await ProductStoreService.updateProductStore(updatedStore);
+
+          if(!hasError(resp)) {
+            store.dispatch("productStore/updateCurrent", updatedStore);
+            showToast(translate("Product store name updated successfully."))
+          } else {
+            throw resp.data;
+          }
+        } catch(error: any) {
+          logger.error(error);
+          showToast(translate("Failed to update product store name."))
+        }
+      }
     }]
   })
 
   await alert.present()
 }
 
-async function createUpdateTag() {
+async function createUpdateTag(enumId: string) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
   const alert = await alertController.create({
     header: translate("Create new tag"),
     inputs: [{
-      name: "storeName"
+      name: "tag",
+      value: settingEnums[enumId]?.settingValue,
     }],
     buttons: [{
       text: translate("Cancel"),
       role: "cancel"
     },
     {
-      text: translate("Add")
+      text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
+      handler: async(data) => {
+        if(!data.tag) {
+          showToast(translate("Tags can't be empty."));
+          return false;
+        }
+
+        if(data.tag === settingEnums[enumId]?.settingValue) return;
+
+        let payload;
+        if(settingEnums[enumId]?.productStoreId) {
+          payload = settingEnums[enumId];
+          payload.settingValue = data.tag;
+        } else {
+          payload = {
+            fromDate: DateTime.now().toMillis(),
+            productStoreId: productStore.value.productStoreId,
+            settingTypeEnumId: enumId,
+            settingValue: data.tag
+          }
+        }
+
+        try {
+          const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+
+          if(!hasError(resp)) {
+            if(!settingEnums[enumId]?.productStoreId) settingEnums[enumId] = payload;
+            store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+            showToast(translate("Product store setting updated successfully."))
+          } else {
+            throw resp.data;
+          }
+        } catch(error: any) {
+          logger.error(error);
+          showToast(translate("Failed to update product store settings."))
+        }
+      }
     }]
   })
 
   await alert.present()
 }
+
+async function removeTag(enumId: string) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+  const payload = {
+    ...settingEnums[enumId],
+    settingValue: ""
+  };
+
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+
+    if(!hasError(resp)) {
+      settingEnums[enumId] = payload;
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast(translate("Tag removed successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to remove tag."))
+  }
+}
+
+function getBooleanValue(value: any) {
+  if(value === 'Y' || value === 'N') {
+    return value === 'Y' ? true : false;
+  }
+  return value;
+}
+
+async function updateProductStoreDetail(event: any, fieldName: string, isToggle: boolean) {
+  let payload;
+
+  if(isToggle) {
+    event.stopImmediatePropagation();
+    payload = {[fieldName]: productStore.value[fieldName] === 'Y' ? 'N' : 'Y' };
+  } else {
+    payload = { [fieldName]: event.target.value };
+  }
+
+  emitter.emit("presentLoader")
+  try {
+    payload = { ...productStore.value, ...payload }
+    
+    const resp = await ProductStoreService.updateProductStore(payload);
+    if(!hasError(resp)) {
+      if(fieldName === "daysToCancelNonPay" && (!payload.daysToCancelNonPay || parseInt(payload.daysToCancelNonPay) === 0)) autoCancellationActive.value = false;
+      showToast("Product store setting updated successfully.")
+      store.dispatch("productStore/updateCurrent", payload)
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
+}
+
+async function updateProductStoreSettings(event: any, enumId: string, isToggle: boolean) {
+  const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
+  let payload;
+  if(isToggle) {
+    event.stopImmediatePropagation();
+
+    if(settingEnums[enumId]) {
+      payload = settingEnums[enumId]
+      
+      if(enumId === 'SAVE_BILL_TO_INF' || enumId === 'FULFILL_NOTIF') {
+        payload.settingValue = settingEnums[enumId].settingValue === 'Y' ? 'N' : 'Y'
+      } else {
+        payload.settingValue = settingEnums[enumId].settingValue === "true" ? "false" : "true"
+      }
+    } else {
+      payload = {
+        fromDate: DateTime.now().toMillis(),
+        productStoreId: productStore.value.productStoreId,
+        settingTypeEnumId: enumId,
+        settingValue: (enumId === 'SAVE_BILL_TO_INF' || enumId === 'FULFILL_NOTIF') ? "Y" : "true"
+      }
+    }
+  } else {
+    if(settingEnums[enumId]) {
+      payload =  {
+        ...settingEnums[enumId],
+        settingValue: event.target.value
+      }
+    } else {
+      payload = {
+        fromDate: DateTime.now().toMillis(),
+        productStoreId: productStore.value.productStoreId,
+        settingTypeEnumId: enumId,
+        settingValue: event.target.value
+      }
+    }
+  }
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    if(!hasError(resp)) {
+      if(settingEnums[enumId]) settingEnums[enumId].settingValue = payload.settingValue
+      else settingEnums[enumId] = payload;
+
+      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
+      showToast(translate("Product store setting updated successfully."))
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
+}
+
+async function updateOrderCancellationStatus() {
+  if(!autoCancellationActive.value) {
+    autoCancellationActive.value = true;
+    return;
+  }
+
+  const currentStore = JSON.parse(JSON.stringify(productStore.value));
+  currentStore.daysToCancelNonPay = 0;
+
+  emitter.emit("presentLoader")
+  try {
+    const resp = await ProductStoreService.updateProductStore(currentStore);
+    if(!hasError(resp)) {
+      showToast(translate("Product store setting updated successfully."))
+      store.dispatch("productStore/updateCurrent", currentStore)
+      autoCancellationActive.value = false;
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update product store settings."))
+  }
+  emitter.emit("dismissLoader")
+}
+
+function validateInput(event: any) {
+  if(/[`!@#$%^&*()_+\-=\\|,.<>?~]/.test(event.key)) event.preventDefault();
+}
+
 </script>
 
 <style scoped>

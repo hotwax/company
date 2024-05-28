@@ -3,11 +3,14 @@ import store from "@/store";
 import { hasError } from "@/utils";
 
 const login = async (username: string, password: string): Promise <any> => {
+  const url = store.getters["user/getBaseUrl"]
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url.replace("admin", "available-to-promise") : `${url}/rest/s1/available-to-promise/` : `https://${url}.hotwax.io/rest/s1/available-to-promise/`;
   let token = ""
   try {
-    const resp = await api({
+    const resp = await client({
       url: "login", 
       method: "post",
+      baseURL,
       data: {
         username,
         password
@@ -27,7 +30,7 @@ const login = async (username: string, password: string): Promise <any> => {
 
 const getUserProfile = async (token: any): Promise<any> => {
   const url = store.getters["user/getBaseUrl"]
-  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/order-routing') ? url : `${url}/rest/s1/order-routing/` : `https://${url}.hotwax.io/rest/s1/order-routing/`;
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url.replace("admin", "available-to-promise") : `${url}/rest/s1/available-to-promise/` : `https://${url}.hotwax.io/rest/s1/available-to-promise/`;
   try {
     const resp = await client({
       url: "user/profile",

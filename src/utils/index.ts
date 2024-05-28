@@ -17,4 +17,8 @@ const showToast = async (message: string) => {
   return toast.present();
 }
 
-export { hasError, showToast }
+const generateInternalId = (name: string) => {
+  return name.trim().toUpperCase().split(' ').join('_');
+}
+
+export { generateInternalId, hasError, showToast }
