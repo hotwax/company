@@ -1,28 +1,24 @@
 {
   "projects": {
-    "default": "hotwax-digital-commerce",
+    "default": "hotwax-digital-commerce-uat",
     "uat": "hotwax-digital-commerce-uat",
     "production": "digital-commerce-71eb8"
   },
   "targets": {
-    "hotwax-digital-commerce": {
-      "hosting": {
-        "dev": [
-          "company-dev"
-        ]
-      }
-    },
     "hotwax-digital-commerce-uat": {
       "hosting": {
         "uat": [
-          "company-uat"
+          "hotwax-company-uat"
+        ],
+        "dev": [
+          "hotwax-company-dev"
         ]
       }
     },
     "digital-commerce-71eb8": {
       "hosting": {
         "prod": [
-          "company"
+          "hotwax-company"
         ]
       }
     }
