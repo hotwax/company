@@ -85,6 +85,7 @@
   "Product store created successfully.": "Product store created successfully.",
   "Product store configurations updated successfully.": "Product store configurations updated successfully.",
   "Product store ID cannot be more than 20 characters.": "Product store ID cannot be more than 20 characters.",
+  "Product store ID represents an unique ID for your product store": "Product store ID represents an unique ID for your product store",
   "Product store name": "Product store name",
   "Product store name can't be empty.": "Product store name can't be empty.",
   "Product store name updated successfully.": "Product store name updated successfully.",

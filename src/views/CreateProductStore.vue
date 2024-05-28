@@ -21,7 +21,7 @@
           </ion-input>
         </ion-item>
         <ion-item lines="none">
-          <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true" />
+          <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store ID represents an unique ID for your product store')" :clear-input="true" />
         </ion-item>
 
         <ion-item  v-if="!dbicCountriesCount">
