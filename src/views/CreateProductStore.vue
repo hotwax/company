@@ -126,7 +126,7 @@ async function manageConfigurations() {
       }
 
       showToast(translate("Product store created successfully."))
-      router.push(`add-configurations/${productStoreId}`);
+      router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }

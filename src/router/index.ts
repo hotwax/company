@@ -57,7 +57,11 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: "/add-configurations/:productStoreId",
     name: "AddConfigurations",
-    component: AddConfigurations
+    component: AddConfigurations,
+    beforeEnter: (to, from, next) => {
+      if(from.path === "/create-product-store") next()
+      else router.push(from.path)
+    }
   },
   {
     path: "/product-store-details/:productStoreId",

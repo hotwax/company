@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button default-href="/tabs/create-product-store" slot="start"></ion-back-button>
+        <ion-back-button default-href="/tabs/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Add configurations") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button slot="icon-only">
@@ -105,7 +105,7 @@ async function setupProductStore() {
     const resp = await ProductStoreService.updateProductStore(payload);
     if(!hasError(resp)) {
       showToast(translate("Product store configurations updated successfully."))
-      router.push(`/product-store-details/${productStore.value.productStoreId}`);
+      router.replace(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
       throw resp.data;
     }
@@ -113,7 +113,6 @@ async function setupProductStore() {
     logger.error(error)
     showToast(translate("Failed to add configurations to the product store."))
   }
-
 }
 </script>
 
