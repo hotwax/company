@@ -442,10 +442,10 @@ async function renameProductStore() {
           return false;
         }
 
-        if(data.storeName === productStore.value.storeName) return;
+        if(data.storeName.trim() === productStore.value.storeName) return;
 
         const updatedStore = JSON.parse(JSON.stringify(productStore.value));
-        updatedStore.storeName = data.storeName;
+        updatedStore.storeName = data.storeName.trim();
 
         try {
           const resp = await ProductStoreService.updateProductStore(updatedStore);
@@ -482,23 +482,23 @@ async function createUpdateTag(enumId: string) {
     {
       text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
       handler: async(data) => {
-        if(!data.tag) {
+        if(!data.tag.trim()) {
           showToast(translate("Tags can't be empty."));
           return false;
         }
 
-        if(data.tag === settingEnums[enumId]?.settingValue) return;
+        if(data.tag.trim() === settingEnums[enumId]?.settingValue) return;
 
         let payload;
         if(settingEnums[enumId]?.productStoreId) {
           payload = settingEnums[enumId];
-          payload.settingValue = data.tag;
+          payload.settingValue = data.tag.trim();
         } else {
           payload = {
             fromDate: DateTime.now().toMillis(),
             productStoreId: productStore.value.productStoreId,
             settingTypeEnumId: enumId,
-            settingValue: data.tag
+            settingValue: data.tag.trim()
           }
         }
 
