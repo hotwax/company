@@ -19,14 +19,14 @@
 
           <div class="tablet" @click.stop="">
             <ion-chip outline>
-              <ion-label>{{ translate("facilities", { count: store.facilityCount }) }}</ion-label>
+              <ion-label>{{ translate(store.facilityCount > 1 ? "facilities" : "facility", { count: store.facilityCount }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
           </div>
 
           <div class="tablet" @click.stop="">
             <ion-chip outline>
-              <ion-label>{{ translate("shipping methods", { count: store.shipmentMethodCount }) }}</ion-label>
+              <ion-label>{{ translate(store.shipmentMethodCount > 1 ? "shipping methods" : "shipping method", { count: store.shipmentMethodCount }) }}</ion-label>
             </ion-chip>
           </div>
         </div>
