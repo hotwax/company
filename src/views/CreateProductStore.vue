@@ -131,7 +131,7 @@ async function manageConfigurations() {
       throw resp.data;
     }
   } catch(error: any) {
-    showToast(translate("Failed to create product store."))
+    showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
 }
