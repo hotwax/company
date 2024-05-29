@@ -8,32 +8,37 @@ import { translate } from "@/i18n"
 import logger from "@/logger"
 import emitter from "@/event-bus"
 import { Settings } from "luxon"
+import { useAuthStore } from '@hotwax/dxp-components'
+import { resetConfig } from '@/adapter'
 
 const actions: ActionTree<UserState, RootState> = {
 
   /**
   * Login user and return token
   */
-  async login({ commit }, { username, password }) {
+  async login ({ commit, dispatch }, payload) {
     try {
-      if(!username.length || !password.length) {
-        return Promise.reject('')
-      }
+
+      // TODO: implement support for permission check
+
+      const { token, oms, omsRedirectionUrl } = payload;
+      dispatch("setUserInstanceUrl", oms);
 
       emitter.emit("presentLoader", { message: "Logging in...", backdropDismiss: false })
-      // TODO: implement support for permission check
-      const token = await UserService.login(username, password)
+      const api_key = await UserService.login(token)
 
-      const userProfile = await UserService.getUserProfile(token);
+      const userProfile = await UserService.getUserProfile(api_key);
 
       if (userProfile.timeZone) {
         Settings.defaultZone = userProfile.timeZone;
       }
 
-      commit(types.USER_TOKEN_CHANGED, { newToken: token })
+      if(omsRedirectionUrl && token) {
+        dispatch("setOmsRedirectionInfo", { url: omsRedirectionUrl, token })
+      }
+      commit(types.USER_TOKEN_CHANGED, { newToken: api_key })
       commit(types.USER_INFO_UPDATED, userProfile);
       emitter.emit("dismissLoader")
-      return Promise.resolve({ token })
     } catch (err: any) {
       emitter.emit("dismissLoader")
       showToast(translate(err));
@@ -46,11 +51,21 @@ const actions: ActionTree<UserState, RootState> = {
   * Logout user
   */
   async logout({ commit, dispatch }) {
+    emitter.emit('presentLoader', { message: 'Logging out', backdropDismiss: false })
+
+    const authStore = useAuthStore()
+
     // TODO add any other tasks if need
     commit(types.USER_END_SESSION)
     this.dispatch("productStore/clearProductStoreState");
-    dispatch("util/clearUtilState");
+    this.dispatch("util/clearUtilState");
+    dispatch("setOmsRedirectionInfo", { url: "", token: "" })
+    resetConfig();
 
+    // reset plugin state on logout
+    authStore.$reset()
+
+    emitter.emit('dismissLoader')
   },
 
   /**
@@ -65,6 +80,10 @@ const actions: ActionTree<UserState, RootState> = {
       Settings.defaultZone = current.timeZone;
       showToast(translate("Time zone updated successfully"));
     }
+  },
+
+  setOmsRedirectionInfo({ commit }, payload) {
+    commit(types.USER_OMS_REDIRECTION_INFO_UPDATED, payload)
   },
 
   /**
