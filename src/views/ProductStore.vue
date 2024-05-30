@@ -72,7 +72,7 @@ function createStore() {
 
 function viewFacilities(productStoreId: string) {
   const facilitiesListUrl = `${process.env.VUE_APP_FACILITIES_LOGIN_URL}?oms=${omsRedirectionInfo.value.url}&token=${authStore.token.value}&expirationTime=${authStore.token.expiration}&productStoreId=${productStoreId}`
-  window.location.href = facilitiesListUrl
+  window.open(facilitiesListUrl, "_blank")
 }
 </script>
 
