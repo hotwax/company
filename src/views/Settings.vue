@@ -85,7 +85,6 @@
 import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { computed, onMounted, ref } from "vue";
 import { useStore } from "vuex";
-import { useRouter } from "vue-router";
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import { DateTime } from "luxon";
@@ -94,7 +93,6 @@ import { openOutline } from "ionicons/icons"
 import { goToOms } from "@hotwax/dxp-components";
 
 const store = useStore()
-const router = useRouter()
 const appVersion = ref("")
 const appInfo = (process.env.VUE_APP_VERSION_INFO ? JSON.parse(process.env.VUE_APP_VERSION_INFO) : {}) as any
 
