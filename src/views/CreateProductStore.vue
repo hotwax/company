@@ -89,6 +89,11 @@ async function manageConfigurations() {
     formData.value.productStoreId = generateInternalId(formData.value.storeName)
   }
 
+  if (formData.value.productStoreId.length > 20) {
+    showToast(translate("Product store ID cannot be more than 20 characters."))
+    return
+  }
+
   let resp;
 
   try {
