@@ -560,6 +560,7 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
     event.stopImmediatePropagation();
     payload = {[fieldName]: productStore.value[fieldName] === 'Y' ? 'N' : 'Y' };
   } else {
+    if(event.target.value.trim() === productStore.value[fieldName]) return;
     payload = { [fieldName]: event.target.value };
   }
 
@@ -605,6 +606,8 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
       }
     }
   } else {
+    if((!settingEnums[enumId]?.settingValue && !event.target.value.trim()) || (settingEnums[enumId]?.settingValue && settingEnums[enumId].settingValue === event.target.value.trim())) return;
+
     if(settingEnums[enumId]) {
       payload =  {
         ...settingEnums[enumId],
