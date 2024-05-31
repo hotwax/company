@@ -606,8 +606,7 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
       }
     }
   } else {
-    if(!settingEnums[enumId]?.settingValue && !event.target.value.trim()) return;
-    if(settingEnums[enumId]?.settingValue && settingEnums[enumId].settingValue === event.target.value.trim()) return;
+    if((!settingEnums[enumId]?.settingValue && !event.target.value.trim()) || (settingEnums[enumId]?.settingValue && settingEnums[enumId].settingValue === event.target.value.trim())) return;
 
     if(settingEnums[enumId]) {
       payload =  {
