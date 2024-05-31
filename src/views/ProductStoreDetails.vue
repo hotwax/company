@@ -28,7 +28,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-icon :icon="thunderstormOutline" slot="start"/>
+                <ion-icon :icon="compassOutline" slot="start"/>
                 <ion-toggle :checked="getBooleanValue(productStore.enableBrokering)" @click.prevent="updateProductStoreDetail($event, 'enableBrokering', true)">{{ translate("Order brokering") }}</ion-toggle>
               </ion-item>
 
@@ -52,7 +52,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Id prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
+                <ion-input :label="translate('ID prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -245,7 +245,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Pre-order group')" interface="popover" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
+                <ion-select :label="translate('Pre-order group')" interface="popover" :placeholder="translate('Select')" :value="settings['PRE_ORDER_GROUP_ID']?.settingValue" @ionChange="updateProductStoreSettings($event, 'PRE_ORDER_GROUP_ID', false)">
                   <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">{{ group.facilityGroupName }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -268,7 +268,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Global identifier')" interface="popover" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
+                <ion-select :label="translate('Global identifier')" interface="popover" :placeholder="translate('Select')" :value="productStore.productIdentifierEnumId"  @ionChange="updateProductStoreDetail($event, 'productIdentifierEnumId', false)">
                   <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -283,13 +283,13 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-select :label="translate('Primary identifier')" interface="popover" :value="getPreferredIdentification('primaryId')" @ionChange="updatePreferredIdentification($event, 'primaryId')">
+                <ion-select :label="translate('Primary identifier')" interface="popover" :placeholder="translate('Select')" :value="getPreferredIdentification('primaryId')" @ionChange="updatePreferredIdentification($event, 'primaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Secondary identifier')" interface="popover" :value="getPreferredIdentification('secondaryId')" @ionChange="updatePreferredIdentification($event, 'secondaryId')">
+                <ion-select :label="translate('Secondary identifier')" interface="popover" :placeholder="translate('Select')" :value="getPreferredIdentification('secondaryId')" @ionChange="updatePreferredIdentification($event, 'secondaryId')">
                   <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -316,7 +316,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
+                <ion-select :label="translate('Shipment method')" interface="popover" :placeholder="translate('Select')" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
                   <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
@@ -347,7 +347,7 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
-import { addCircleOutline, closeCircleOutline, mapOutline, thunderstormOutline, wineOutline } from "ionicons/icons";
+import { addCircleOutline, closeCircleOutline, compassOutline, mapOutline, wineOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useStore } from "vuex";
 import { computed, defineProps, ref } from "vue";
@@ -437,15 +437,15 @@ async function renameProductStore() {
     {
       text: translate("Confirm"),
       handler: async(data) => {
-        if(!data.storeName) {
+        if(!data.storeName.trim()) {
           showToast(translate("Product store name can't be empty."));
           return false;
         }
 
-        if(data.storeName === productStore.value.storeName) return;
+        if(data.storeName.trim() === productStore.value.storeName) return;
 
         const updatedStore = JSON.parse(JSON.stringify(productStore.value));
-        updatedStore.storeName = data.storeName;
+        updatedStore.storeName = data.storeName.trim();
 
         try {
           const resp = await ProductStoreService.updateProductStore(updatedStore);
@@ -482,23 +482,23 @@ async function createUpdateTag(enumId: string) {
     {
       text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
       handler: async(data) => {
-        if(!data.tag) {
+        if(!data.tag.trim()) {
           showToast(translate("Tags can't be empty."));
           return false;
         }
 
-        if(data.tag === settingEnums[enumId]?.settingValue) return;
+        if(data.tag.trim() === settingEnums[enumId]?.settingValue) return;
 
         let payload;
         if(settingEnums[enumId]?.productStoreId) {
           payload = settingEnums[enumId];
-          payload.settingValue = data.tag;
+          payload.settingValue = data.tag.trim();
         } else {
           payload = {
             fromDate: DateTime.now().toMillis(),
             productStoreId: productStore.value.productStoreId,
             settingTypeEnumId: enumId,
-            settingValue: data.tag
+            settingValue: data.tag.trim()
           }
         }
 

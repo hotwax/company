@@ -49,9 +49,12 @@ const getUserProfile = async (token: any): Promise<any> => {
 }
 
 const getAvailableTimeZones = async (): Promise <any>  => {
-  return api({
+  const url = store.getters["user/getBaseUrl"]
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url.replace("admin", "available-to-promise") : `${url}/rest/s1/available-to-promise/` : `https://${url}.hotwax.io/rest/s1/available-to-promise/`;
+  return client({
     url: "user/getAvailableTimeZones",
     method: "get",
+    baseURL,
     cache: true
   });
 }
