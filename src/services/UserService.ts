@@ -2,30 +2,33 @@ import api, {client} from "@/api"
 import store from "@/store";
 import { hasError } from "@/utils";
 
-const login = async (username: string, password: string): Promise <any> => {
+const login = async (token: string): Promise <any> => {
   const url = store.getters["user/getBaseUrl"]
   const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url.replace("admin", "available-to-promise") : `${url}/rest/s1/available-to-promise/` : `https://${url}.hotwax.io/rest/s1/available-to-promise/`;
-  let token = ""
+  let api_key = ""
+
   try {
     const resp = await client({
       url: "login", 
       method: "post",
       baseURL,
-      data: {
-        username,
-        password
+      params: {
+        token
+      },
+      headers: {
+        "Content-Type": "application/json"
       }
     }) as any;
 
-    if(!hasError(resp) && resp.data.token) {
-      token = resp.data.token
+    if(!hasError(resp) && (resp.data.api_key || resp.data.token)) {
+      api_key = resp.data.api_key || resp.data.token
     } else {
       throw "Sorry, login failed. Please try again";
     }
   } catch(err) {
     return Promise.reject("Sorry, login failed. Please try again");
   }
-  return Promise.resolve(token)
+  return Promise.resolve(api_key)
 }
 
 const getUserProfile = async (token: any): Promise<any> => {

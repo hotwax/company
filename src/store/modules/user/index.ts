@@ -11,6 +11,10 @@ const userModule: Module<UserState, RootState> = {
     token: "",
     current: null,
     instanceUrl: "",
+    omsRedirectionInfo: {
+      url: "",
+      token: ""
+    }
   },
   getters,
   actions,
