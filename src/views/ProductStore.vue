@@ -18,7 +18,7 @@
           </ion-item>
 
           <div class="tablet" @click.stop="">
-            <ion-chip outline>
+            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="!store.facilityCount">
               <ion-label>{{ translate(store.facilityCount > 1 ? "facilities" : "facility", { count: store.facilityCount }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
@@ -49,11 +49,14 @@ import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { computed } from "vue";
 import { useStore } from "vuex";
+import { useAuthStore } from '@hotwax/dxp-components'
 
 const store = useStore();
 const router = useRouter();
+const authStore = useAuthStore();
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
+const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
 
 onIonViewWillEnter(async () => {
   await store.dispatch("productStore/fetchProductStores");
@@ -65,6 +68,11 @@ async function viewProductStoreDetails(productStoreId: string) {
 
 function createStore() {
   router.push("/create-product-store")
+}
+
+function viewFacilities(productStoreId: string) {
+  const facilitiesListUrl = `${process.env.VUE_APP_FACILITIES_LOGIN_URL}?oms=${omsRedirectionInfo.value.url}&token=${authStore.token.value}&expirationTime=${authStore.token.expiration}&productStoreId=${productStoreId}`
+  window.open(facilitiesListUrl, "_blank")
 }
 </script>
 
