@@ -57,6 +57,7 @@ import SelectOperatingCountriesModal from "@/components/SelectOperatingCountries
 import { generateInternalId, hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
+import emitter from "@/event-bus";
 
 const store = useStore();
 const router = useRouter();
@@ -96,6 +97,8 @@ async function manageConfigurations() {
 
   let resp;
 
+  emitter.emit("presentLoader");
+
   try {
     const payload = {
       storeName: formData.value.storeName,
@@ -131,6 +134,7 @@ async function manageConfigurations() {
       }
 
       showToast(translate("Product store created successfully."))
+      emitter.emit("dismissLoader");
       router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
@@ -139,6 +143,8 @@ async function manageConfigurations() {
     showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
+
+  emitter.emit("dismissLoader");
 }
 
 async function openSelectOperatingCountriesModal() {

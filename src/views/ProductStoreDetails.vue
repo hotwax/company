@@ -371,8 +371,10 @@ const productIdentifiers = computed(() => store.getters["util/getProductIdentifi
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 
 onIonViewWillEnter(async() => {
+  emitter.emit("presentLoader");
   await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes", { pageSize: 250 })])  
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
+  emitter.emit("dismissLoader");
 })
 
 function getPreferredIdentification(id: string) {

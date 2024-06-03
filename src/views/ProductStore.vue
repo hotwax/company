@@ -89,4 +89,8 @@ function viewFacilities(productStoreId: string) {
 main {
   margin: var(--spacer-lg);
 }
+
+ion-content {
+  --padding-bottom: 80px;
+}
 </style>
