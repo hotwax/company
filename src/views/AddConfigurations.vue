@@ -60,6 +60,7 @@ import { ProductStoreService } from "@/services/ProductStoreService";
 import { computed, defineProps, ref } from "vue";
 import { hasError, showToast } from "@/utils";
 import { useStore } from "vuex";
+import emitter from "@/event-bus";
 
 const store = useStore();
 const router = useRouter();
@@ -94,6 +95,8 @@ async function fetchProductStore() {
 }
 
 async function setupProductStore() {
+  emitter.emit("presentLoader");
+
   try {
     const payload = {
       ...productStore.value,
@@ -105,6 +108,7 @@ async function setupProductStore() {
     const resp = await ProductStoreService.updateProductStore(payload);
     if(!hasError(resp)) {
       showToast(translate("Product store configurations updated successfully."))
+      emitter.emit("dismissLoader");
       router.replace(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
       throw resp.data;
@@ -113,6 +117,8 @@ async function setupProductStore() {
     logger.error(error)
     showToast(translate("Failed to add configurations to the product store."))
   }
+
+  emitter.emit("dismissLoader");
 }
 </script>
 
