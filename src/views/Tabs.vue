@@ -7,6 +7,10 @@
           <ion-icon :icon="storefrontOutline" />
           <ion-label>{{ translate("Product store") }}</ion-label>
         </ion-tab-button>
+        <ion-tab-button tab="shopify" href="/tabs/shopify">
+          <ion-icon :icon="gitBranchOutline" />
+          <ion-label>{{ translate("Shopify") }}</ion-label>
+        </ion-tab-button>
         <ion-tab-button tab="more" href="/tabs/settings">
           <ion-icon :icon="settingsOutline" />
           <ion-label>{{ translate("Settings") }}</ion-label>
@@ -19,13 +23,13 @@
 <script setup lang="ts">
 import { translate } from "@/i18n";
 import { IonIcon, IonLabel, IonPage, IonRouterOutlet, IonTabBar, IonTabButton, IonTabs } from "@ionic/vue";
-import { settingsOutline, storefrontOutline } from "ionicons/icons";
+import { gitBranchOutline, settingsOutline, storefrontOutline } from "ionicons/icons";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
 
 function showFooter() {
-  if (['/tabs/product-store', '/tabs/settings'].includes(router.currentRoute.value.path)) return true
+  if (['/tabs/product-store', '/tabs/settings', "/tabs/shopify"].includes(router.currentRoute.value.path)) return true
   return false
 }
 </script>

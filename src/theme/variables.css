@@ -317,6 +317,10 @@ ion-input.name {
   .find > .filters{
     display: unset;
   }
+
+  .mobile-only {
+    display: none;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
