@@ -32,7 +32,7 @@
         </aside>
 
         <main>
-          <div class="list-item">
+          <div class="list-item" @click="openShopifyConnectionDetails()">
             <ion-item lines="none">
               <ion-icon slot="start" :icon="storefrontOutline" />
               <ion-label class="ion-text-wrap">
@@ -97,6 +97,7 @@ import { IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHe
 import { ellipsisVerticalOutline, filterOutline, flashOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import ShopifyShopActionsPopover from "@/components/ShopifyShopActionsPopover.vue";
+import router from "@/router";
 
 async function openShopifyShopActionsPopover(event: Event) {
   const popover = await popoverController.create({
@@ -106,6 +107,12 @@ async function openShopifyShopActionsPopover(event: Event) {
   });
 
   popover.present()
+}
+
+function openShopifyConnectionDetails() {
+  console.log('enter');
+  
+  router.push({ path: "/shopify-connection-details" })
 }
 </script>
 
