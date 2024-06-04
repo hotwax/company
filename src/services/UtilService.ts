@@ -1,4 +1,5 @@
-import api from "@/api"
+import api, {client} from "@/api"
+import { hasError } from "@/utils";
 
 const fetchDBICCountries = async (payload: any): Promise <any> => {
   return api({
@@ -40,10 +41,30 @@ const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   });
 }
 
+const searchAi = async (payload: any): Promise <any> => {
+  const token = process.env.VUE_APP_GITBOOK_API_KEY;
+  const baseURL = `https://api.gitbook.com/v1/spaces/${process.env.VUE_APP_SPACE_ID}/search/`
+
+  return await client({
+    url: `ask`, 
+    method: "post",
+    baseURL,
+    data: {
+      "query": payload.queryString
+    },
+    headers: {
+      Authorization:  'Bearer ' + token,
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin":   "*"
+    }
+  }) as any;
+}
+
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
   fetchFacilityGroups,
   fetchOperatingCountries,
-  fetchShipmentMethodTypes
+  fetchShipmentMethodTypes,
+  searchAi
 }

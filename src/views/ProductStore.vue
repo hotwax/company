@@ -3,6 +3,11 @@
     <ion-header :translucent="true">
       <ion-toolbar>
         <ion-title>{{ translate("Product store") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button slot="icon-only" @click="openGitbookSearch()">
+            <ion-icon :icon="informationCircleOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -43,13 +48,14 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
+import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { computed } from "vue";
 import { useStore } from "vuex";
 import { useAuthStore } from '@hotwax/dxp-components'
+import GitBookSearch from "@/components/GitBookSearch.vue";
 
 const store = useStore();
 const router = useRouter();
@@ -74,6 +80,15 @@ function viewFacilities(productStoreId: string) {
   const facilitiesListUrl = `${process.env.VUE_APP_FACILITIES_LOGIN_URL}?oms=${omsRedirectionInfo.value.url}&token=${authStore.token.value}&expirationTime=${authStore.token.expiration}&productStoreId=${productStoreId}`
   window.open(facilitiesListUrl, "_blank")
 }
+
+async function openGitbookSearch() {
+  const modal = await modalController.create({
+    component: GitBookSearch
+  })
+
+  modal.present()
+}
+
 </script>
 
 <style scoped>
