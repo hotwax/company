@@ -29,7 +29,7 @@
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
                 <ion-select :label="translate('Product store')" interface="popover" value="">
-                  <ion-select-option value="">{{ "<storeName></storeName>" }}</ion-select-option>
+                  <ion-select-option value="">{{ "<storeName>" }}</ion-select-option>
                 </ion-select>
               </ion-item>
               <ion-item>
@@ -45,62 +45,27 @@
         </div>
 
         <section>
-          <ion-card>
+          <ion-card v-if="firstSelected">
             <ion-card-header>
               <div>
                 <ion-card-subtitle class="overline">{{ "Products downloaded in last 24 hours" }}</ion-card-subtitle>
                 <ion-card-title>{{ "<count>" }}</ion-card-title>
-                  <ion-card-subtitle>{{ "<percent> complete" }}</ion-card-subtitle>
               </div>
               <ion-badge>{{ "<status>" }}</ion-badge>
-            </ion-card-header>
-
-            <ion-button fill="outline" expand="block">
-              {{ translate("Download products") }}
-            </ion-button>
-          </ion-card>
-
-          <ion-card>
-            <ion-card-header class="ion-margin-bottom">
-              <div>
-                <ion-card-subtitle class="overline">{{ "Orders downloaded in last 24 hours" }}</ion-card-subtitle>
-                <ion-card-title>{{ "<count>" }}</ion-card-title>
-                <ion-card-subtitle>{{ "Only open and unfulfilled orders will be downloaded" }}</ion-card-subtitle>
-              </div>
-              <ion-badge>{{ "<status>" }}</ion-badge>
-            </ion-card-header>
-
-            <ion-item>
-              <ion-input :label="translate('Last Shopify Order')" :placeholder="translate('Internal Shopify ID')" />
-            </ion-item>
-            <ion-button fill="outline" expand="block">
-              {{ translate("Download products") }}
-            </ion-button>
-          </ion-card>
-
-          <ion-card>
-            <ion-card-header>
-              <div>
-                <ion-card-subtitle class="overline">{{ "Location ID" }}</ion-card-subtitle>
-                <ion-card-title>{{ "<Inventory location>" }}</ion-card-title>
-              </div>
-              <ion-badge color="success">{{ "Default location" }}</ion-badge>
             </ion-card-header>
 
             <ion-item lines="none">
               <ion-label>
-                <p>{{ translate("Map the default Shopify location as the inventory location in OMS, ensures that unified inventory across facilities is updated to a single location in Shopify.") }}</p>
+                <p>{{ "<percent> complete" }}</p>
               </ion-label>
             </ion-item>
 
             <ion-button fill="outline" expand="block">
-              {{ translate("Map location") }}
+              {{ translate("Download products") }}
             </ion-button>
           </ion-card>
-        </section>
 
-        <section>
-          <ion-card>
+          <ion-card v-else>
             <ion-card-header>
               <ion-card-title>{{ translate("Product downloads") }}</ion-card-title>
             </ion-card-header>
@@ -119,7 +84,30 @@
             </div>
           </ion-card>
 
-          <ion-card>
+          <ion-card v-if="firstSelected">
+            <ion-card-header>
+              <div>
+                <ion-card-subtitle class="overline">{{ "Orders downloaded in last 24 hours" }}</ion-card-subtitle>
+                <ion-card-title>{{ "<count>" }}</ion-card-title>
+              </div>
+              <ion-badge>{{ "<status>" }}</ion-badge>
+            </ion-card-header>
+
+            <ion-item lines="none">
+              <ion-label>
+                <p>{{ "Only open and unfulfilled orders will be downloaded" }}</p>
+              </ion-label>
+            </ion-item>
+
+            <ion-item>
+              <ion-input :label="translate('Last Shopify Order')" :placeholder="translate('Internal Shopify ID')" />
+            </ion-item>
+            <ion-button fill="outline" expand="block">
+              {{ translate("Download products") }}
+            </ion-button>
+          </ion-card>
+
+          <ion-card v-else>
             <ion-card-header>
               <ion-card-title>{{ translate("Order downloads") }}</ion-card-title>
             </ion-card-header>
@@ -139,7 +127,27 @@
             </div>
           </ion-card>
 
-          <ion-card>
+          <ion-card v-if="firstSelected">
+            <ion-card-header>
+              <div>
+                <ion-card-subtitle class="overline">{{ "Location ID" }}</ion-card-subtitle>
+                <ion-card-title>{{ "<Inventory location>" }}</ion-card-title>
+              </div>
+              <ion-badge color="success">{{ "Default location" }}</ion-badge>
+            </ion-card-header>
+
+            <ion-item lines="none">
+              <ion-label>
+                <p>{{ translate("Map the default Shopify location as the inventory location in OMS, ensures that unified inventory across facilities is updated to a single location in Shopify.") }}</p>
+              </ion-label>
+            </ion-item>
+
+            <ion-button fill="outline" expand="block">
+              {{ translate("Map location") }}
+            </ion-button>
+          </ion-card>
+
+          <ion-card v-else>
             <ion-card-header>
               <div>
                 <ion-card-subtitle class="overline">{{ "<LOCATION ID>" }}</ion-card-subtitle>
@@ -176,12 +184,44 @@
         </ion-segment>
 
         <template v-if="selectedSegment === 'facilities'">
-          <div class="ion-text-center">
-            <ion-button fill="outline">
+          <div v-if="firstSelected" class="ion-text-center">
+            <ion-button fill="outline" @click="openImportShopifyLocationsModal()">
               <ion-icon :icon="downloadOutline" slot="start" />
               {{ translate("Import shopify locations in hotwax") }}
             </ion-button>
           </div>
+          <template v-else>
+            <ion-button fill="outline">
+              <ion-icon :icon="syncOutline" slot="start" />
+              {{ translate("Sync new locations from shopify") }}
+            </ion-button>
+
+            <div class="list-item staff">
+              <ion-item lines="none">
+                <ion-icon :icon="storefrontOutline" slot="start" />
+                <ion-label>
+                  {{ "<storeName>" }}
+                  <p>{{ "<city>" }}</p>
+                </ion-label>
+              </ion-item>
+
+              <div class="tablet">
+                <ion-chip outline>{{ "<status>" }}</ion-chip>
+              </div>
+
+              <div class="tablet">
+                <ion-chip outline>
+                  <ion-icon :icon="addCircleOutline" />
+                  <ion-label>{{ "map location with Hotwax facility" }}</ion-label>
+                </ion-chip>
+              </div>
+
+              <ion-chip outline>
+                <ion-icon :icon="openOutline" />
+                <ion-label>{{ "Shopify location ID" }}</ion-label>
+              </ion-chip>
+            </div>
+          </template>
         </template>
         <template v-else-if="selectedSegment === 'data-mappings'">
           <div class="data-mappings">
@@ -190,22 +230,102 @@
                 <ion-card-title>{{ translate("Payment method") }}</ion-card-title>
               </ion-card-header>
 
-              <ion-item>
-                <ion-label>{{ translate("Map the payment method from Shopify with OMS to make sure the orders in OMS reflects actual payment method.") }}</ion-label>
+              <ion-item lines="full">
+                <ion-label>
+                  <p>{{ translate("Map the payment method from Shopify with OMS to make sure the orders in OMS reflects actual payment method.") }}</p>
+                </ion-label>
               </ion-item>
-              <ion-item v-if="group.description" lines="none">
-                <ion-label class="ion-text-wrap">{{ group.description }}</ion-label>
+              
+              <ion-item>
+                <ion-button size="default" fill="clear">
+                  <ion-icon :icon="downloadOutline" slot="start" />
+                  <ion-label>{{ translate("Import payments") }}</ion-label>
+                </ion-button>
+              </ion-item>
+            </ion-card>
+
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Sales channel") }}</ion-card-title>
+              </ion-card-header>
+
+              <ion-item lines="full">
+                <ion-label>
+                  <p>{{ translate("Map the sales channel from Shopify with OMS to make sure the orders in OMS reflects actual sales channel.") }}</p>
+                </ion-label>
+              </ion-item>
+              
+              <ion-item>
+                <ion-button size="default" fill="clear">
+                  <ion-icon :icon="downloadOutline" slot="start" />
+                  <ion-label>{{ translate("Import sales channel") }}</ion-label>
+                </ion-button>
+              </ion-item>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Product types") }}</ion-card-title>
+              </ion-card-header>
+
+              <ion-item lines="full">
+                <ion-label>
+                  <p>{{ translate("Map the product types from Shopify with OMS to make sure the orders in OMS reflects actual product types.") }}</p>
+                </ion-label>
+              </ion-item>
+              
+              <ion-item>
+                <ion-button size="default" fill="clear">
+                  <ion-icon :icon="downloadOutline" slot="start" />
+                  <ion-label>{{ translate("Import product types") }}</ion-label>
+                </ion-button>
               </ion-item>
             </ion-card>
           </div>
         </template>
         <template v-else>
-          <div class="ion-text-center">
-            <ion-button fill="outline">
+          <div v-if="!firstSelected" class="ion-text-center">
+            <ion-button fill="outline" @click="openImportShippingMethodsModal()">
               <ion-icon :icon="downloadOutline" slot="start" />
               {{ translate("Import shopify shipping methods in hotwax") }}
             </ion-button>
           </div>
+          <template v-else>
+            <ion-button fill="outline" @click="openImportShippingMethodsModal()">
+              <ion-icon :icon="downloadOutline" slot="start" />
+              {{ translate("Import new shipping methods") }}
+            </ion-button>
+
+            <div class="list-item shipping-method">
+              <ion-item lines="none">
+                <ion-icon :icon="boatOutline" slot="start" />
+                <ion-label>{{ "Shopify shipping method" }}</ion-label>
+              </ion-item>
+
+              <div class="tablet">
+                <ion-chip outline>
+                  <ion-label>{{ "<Carrier>" }}</ion-label>
+                  <ion-icon :icon="shareOutline" color="primary" />
+                </ion-chip>
+              </div>
+
+              <div class="tablet">
+                <ion-chip outline @click="openAddShippingMethodModal()">
+                  <ion-icon :icon="addCircleOutline" />
+                  <ion-label>{{ "Map with Hotwax" }}</ion-label>
+                </ion-chip>
+              </div>
+
+              <div class="tablet">
+                <ion-chip outline>
+                  <ion-label>{{ "Tracking required" }}</ion-label>
+                </ion-chip>
+              </div>
+
+              <ion-button fill="clear" color="medium" @click="openShippingMethodActionsPopover($event)">
+                <ion-icon slot="icon-only" :icon="ellipsisVerticalOutline" />
+              </ion-button>
+            </div>
+          </template>
         </template>
       </main>
     </ion-content>
@@ -214,12 +334,53 @@
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar } from "@ionic/vue";
-import { cashOutline, cloudUploadOutline, downloadOutline, mapOutline, shapesOutline } from "ionicons/icons";
+import { IonBackButton, IonBadge, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, modalController, popoverController } from "@ionic/vue";
+import { addCircleOutline, boatOutline, cashOutline, cloudUploadOutline, downloadOutline, ellipsisVerticalOutline, mapOutline, openOutline, shapesOutline, shareOutline, storefrontOutline, syncOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { ref } from "vue";
+import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue";
+import ImportShippingMethodsModal from "@/components/ImportShippingMethodsModal.vue";
+import ShippingMethodActionsPopover from "@/components/ShippingMethodActionsPopover.vue";
+import AddShippingMethodModal from "@/components/AddShippingMethodModal.vue";
 
 const selectedSegment = ref("facilities")
+
+// Added this for UI implementation to show both screen, will remove on implementation.
+const firstSelected = ref(true);
+
+async function openImportShopifyLocationsModal() {
+  const importShopifyLocationsModal = await modalController.create({
+    component: ImportShopifyLocationsModal
+  })
+
+  importShopifyLocationsModal.present();
+}
+
+async function openImportShippingMethodsModal() {
+  const importShippingMethods = await modalController.create({
+    component: ImportShippingMethodsModal
+  })
+
+  importShippingMethods.present();
+}
+
+async function openAddShippingMethodModal() {
+  const addShippingMethodModal = await modalController.create({
+    component: AddShippingMethodModal
+  })
+
+  addShippingMethodModal.present();
+}
+
+async function openShippingMethodActionsPopover(event: any) {
+  const shippingMethodActionsPopover = await popoverController.create({
+    component: ShippingMethodActionsPopover,
+    event,
+    showBackdrop: false
+  });
+
+  shippingMethodActionsPopover.present()
+}
 
 </script>
 
@@ -253,6 +414,10 @@ ion-segment {
   padding-block: var(--spacer-xs);
 }
 
+.shipping-method {
+  --columns-desktop: 6;
+}
+
 .data-mappings, .facility-info {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
@@ -273,6 +438,14 @@ ion-card {
 
 .actions {
   display: flex;
+}
+
+ion-card {
+  height: fill;
+}
+
+.list-item > ion-item {
+  width: 100%;
 }
 
 @media screen and (min-width: 700px) {
