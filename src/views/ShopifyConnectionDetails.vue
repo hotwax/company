@@ -466,7 +466,7 @@ import DataMappingsLinkActionPopover from "@/components/DataMappingsLinkActionPo
 const selectedSegment = ref("facilities")
 
 // Added this for UI implementation to show both screen, will remove on implementation.
-const firstSelected = ref(false);
+const firstSelected = ref(true);
 
 async function openImportShopifyLocationsModal() {
   const importShopifyLocationsModal = await modalController.create({
@@ -511,7 +511,6 @@ async function openDataMappingsLinkActionPopover(event: any) {
 
   dataMappingsLinkActionPopover.present()
 }
-
 </script>
 
 <style scoped>
@@ -559,7 +558,6 @@ ion-card > ion-button[expand="block"] {
 }
 
 ion-card {
-  /* height: 100%; */
   display: flex;
   flex-direction: column;
   justify-content: space-between;
