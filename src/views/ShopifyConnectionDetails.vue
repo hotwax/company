@@ -225,9 +225,9 @@
         </template>
         <template v-else-if="selectedSegment === 'data-mappings'">
           <div class="data-mappings">
-            <ion-card>
+            <ion-card v-if="firstSelected">
               <ion-card-header>
-                <ion-card-title>{{ translate("Payment method") }}</ion-card-title>
+                <ion-card-title>{{ translate("Payment methods") }}</ion-card-title>
               </ion-card-header>
 
               <ion-item lines="full">
@@ -235,16 +235,47 @@
                   <p>{{ translate("Map the payment method from Shopify with OMS to make sure the orders in OMS reflects actual payment method.") }}</p>
                 </ion-label>
               </ion-item>
-              
-              <ion-item>
-                <ion-button size="default" fill="clear">
+
+              <div class="actions">
+                <ion-button fill="clear">
                   <ion-icon :icon="downloadOutline" slot="start" />
                   <ion-label>{{ translate("Import payments") }}</ion-label>
                 </ion-button>
+              </div>
+            </ion-card>
+            <ion-card v-else>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Payment methods") }}</ion-card-title>
+              </ion-card-header>
+
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("Map the payment method from Shopify with OMS to make sure the orders in OMS reflects actual payment method.") }}</p>
+                </ion-label>
               </ion-item>
+              
+              <ion-item>
+                <ion-label>{{ "<paymentMethodName>" }}</ion-label>
+                <ion-note slot="end">{{ "<hotWaxMeth>" }}</ion-note>
+                <ion-button slot="end" fill="clear" color="medium">
+                  <ion-icon :icon="ellipsisVerticalOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <ion-item lines="full">
+                <ion-label>{{ "<paymentMethodName>" }}</ion-label>
+                <ion-note slot="end">{{ "<hotWaxMeth>" }}</ion-note>
+                <ion-button slot="end" fill="clear" color="medium">
+                  <ion-icon :icon="ellipsisVerticalOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <div class="actions">
+                <ion-button fill="clear">{{ translate("Sync again") }}</ion-button>
+              </div>
             </ion-card>
 
-            <ion-card>
+            <ion-card v-if="firstSelected">
               <ion-card-header>
                 <ion-card-title>{{ translate("Sales channel") }}</ion-card-title>
               </ion-card-header>
@@ -254,15 +285,46 @@
                   <p>{{ translate("Map the sales channel from Shopify with OMS to make sure the orders in OMS reflects actual sales channel.") }}</p>
                 </ion-label>
               </ion-item>
-              
-              <ion-item>
-                <ion-button size="default" fill="clear">
+
+              <div class="actions">
+                <ion-button fill="clear">
                   <ion-icon :icon="downloadOutline" slot="start" />
                   <ion-label>{{ translate("Import sales channel") }}</ion-label>
                 </ion-button>
-              </ion-item>
+              </div>
             </ion-card>
-            <ion-card>
+
+            <ion-card v-else>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Sales channel") }}</ion-card-title>
+              </ion-card-header>
+
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("Map the sales channel from Shopify with OMS to make sure the orders in OMS reflects actual sales channel.") }}</p>
+                </ion-label>
+              </ion-item>
+              
+              <ion-item>
+                <ion-label>{{ "<salesChannel>" }}</ion-label>
+                <ion-button slot="end" fill="clear">
+                  <ion-icon :icon="linkOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <ion-item lines="full">
+                <ion-label>{{ "<salesChannel>" }}</ion-label>
+                <ion-button slot="end" fill="clear">
+                  <ion-icon :icon="linkOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <div class="actions">
+                <ion-button fill="clear">{{ translate("Sync again") }}</ion-button>
+              </div>
+            </ion-card>
+
+            <ion-card v-if="firstSelected">
               <ion-card-header>
                 <ion-card-title>{{ translate("Product types") }}</ion-card-title>
               </ion-card-header>
@@ -280,10 +342,56 @@
                 </ion-button>
               </ion-item>
             </ion-card>
+
+            <ion-card v-else>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Product types") }}</ion-card-title>
+              </ion-card-header>
+
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("Map the product types from Shopify with OMS to make sure the orders in OMS reflects actual product types.") }}</p>
+                </ion-label>
+              </ion-item>
+              
+              <ion-item>
+                <ion-label>{{ "<paymentMethodName>" }}</ion-label>
+                <ion-note slot="end">{{ "<hotWaxMeth>" }}</ion-note>
+                <ion-button slot="end" fill="clear" color="medium">
+                  <ion-icon :icon="ellipsisVerticalOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <ion-item>
+                <ion-label>{{ "<paymentMethodName>" }}</ion-label>
+                <ion-note slot="end">{{ "<hotWaxMeth>" }}</ion-note>
+                <ion-button slot="end" fill="clear" color="medium">
+                  <ion-icon :icon="ellipsisVerticalOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+              
+              <ion-item>
+                <ion-label>{{ "<productType>" }}</ion-label>
+                <ion-button slot="end" fill="clear">
+                  <ion-icon :icon="linkOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <ion-item lines="full">
+                <ion-label>{{ "<productType>" }}</ion-label>
+                <ion-button slot="end" fill="clear" @Click="openDataMappingsLinkActionPopover($event)">
+                  <ion-icon :icon="linkOutline" slot="icon-only" />
+                </ion-button>
+              </ion-item>
+
+              <div class="actions">
+                <ion-button fill="clear">{{ translate("Sync again") }}</ion-button>
+              </div>
+            </ion-card>
           </div>
         </template>
         <template v-else>
-          <div v-if="!firstSelected" class="ion-text-center">
+          <div v-if="firstSelected" class="ion-text-center">
             <ion-button fill="outline" @click="openImportShippingMethodsModal()">
               <ion-icon :icon="downloadOutline" slot="start" />
               {{ translate("Import shopify shipping methods in hotwax") }}
@@ -335,18 +443,19 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, modalController, popoverController } from "@ionic/vue";
-import { addCircleOutline, boatOutline, cashOutline, cloudUploadOutline, downloadOutline, ellipsisVerticalOutline, mapOutline, openOutline, shapesOutline, shareOutline, storefrontOutline, syncOutline } from "ionicons/icons";
+import { addCircleOutline, boatOutline, cashOutline, cloudUploadOutline, downloadOutline, ellipsisVerticalOutline, linkOutline, mapOutline, openOutline, shapesOutline, shareOutline, storefrontOutline, syncOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { ref } from "vue";
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue";
 import ImportShippingMethodsModal from "@/components/ImportShippingMethodsModal.vue";
 import ShippingMethodActionsPopover from "@/components/ShippingMethodActionsPopover.vue";
 import AddShippingMethodModal from "@/components/AddShippingMethodModal.vue";
+import DataMappingsLinkActionPopover from "@/components/DataMappingsLinkActionPopover.vue";
 
 const selectedSegment = ref("facilities")
 
 // Added this for UI implementation to show both screen, will remove on implementation.
-const firstSelected = ref(true);
+const firstSelected = ref(false);
 
 async function openImportShopifyLocationsModal() {
   const importShopifyLocationsModal = await modalController.create({
@@ -380,6 +489,16 @@ async function openShippingMethodActionsPopover(event: any) {
   });
 
   shippingMethodActionsPopover.present()
+}
+
+async function openDataMappingsLinkActionPopover(event: any) {
+  const dataMappingsLinkActionPopover = await popoverController.create({
+    component: DataMappingsLinkActionPopover,
+    event,
+    showBackdrop: false
+  });
+
+  dataMappingsLinkActionPopover.present()
 }
 
 </script>
@@ -438,10 +557,6 @@ ion-card {
 
 .actions {
   display: flex;
-}
-
-ion-card {
-  height: fill;
 }
 
 .list-item > ion-item {
