@@ -31,20 +31,42 @@
         <ion-label><p>{{ answer.text }}</p></ion-label>
       </ion-item>
 
+      <ion-item v-if="answer.sources.length" button @click="fetchSources()">
+        <ion-label>
+          <p>{{ `Answer based on ${answer.sources.length} resources` }}</p>
+        </ion-label>
+        <ion-icon :icon="closeOutline" />
+      </ion-item>
+
+      <div class="empty-state" v-if="isResourceLoading">
+        <ion-item lines="none">
+          <ion-spinner name="crescent" slot="start" />
+          {{ translate("Analyzing the question to answer your question.") }}
+        </ion-item>
+      </div>
+
+      <ion-list v-if="sources.length">
+        <ion-item v-for="source in sources" :key="source.title" @click="redirectToGitbook(source)">
+          <ion-label>
+            {{ source.title }}
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <template v-if="answer.followupQuestions.length">
         <ion-item lines="none">
           <ion-label>
             <p>{{ translate("Related Queries") }}</p>
           </ion-label>
         </ion-item>
-  
+
         <ion-item lines="none" v-for="(question, index) in answer.followupQuestions" :key="index"  @click="searchRelatedQuestion(question)">
           <ion-chip>
             <ion-icon :icon="searchOutline" />
             <ion-label>{{ question }}</ion-label>
           </ion-chip>
         </ion-item>
-    </template>
+      </template>
     </template>
   </ion-content>
 </template>
@@ -53,9 +75,12 @@
 import { 
   IonButtons,
   IonButton,
+  IonChip,
   IonContent,
   IonHeader,
   IonIcon,
+  IonItem,
+  IonLabel,
   IonSearchbar,
   IonSpinner,
   IonTitle,
@@ -73,6 +98,8 @@ const store = useStore();
 let queryString = ref("")
 const answer = ref({}) as any;
 const isLoading = ref(false);
+const isResourceLoading = ref(false);
+const sources = ref([]) as any;
 
 function closeModal() {
   modalController.dismiss({ dismissed: true });
@@ -85,6 +112,8 @@ async function searchAi() {
 
     if(!hasError(resp)) {
       answer.value = resp.data.answer;
+      console.log(resp.data.answer);
+      
     } else {
       throw resp.data;
     }
@@ -92,6 +121,31 @@ async function searchAi() {
     console.error(error);
   }
   isLoading.value = false;
+}
+
+async function fetchSources() {
+  isResourceLoading.value = true;
+  const list = [] as any;
+
+  const responses = await Promise.allSettled(answer.value.sources.map((source: any) => {
+    if(source.type === "page") {
+      return UtilService.getGitboookPage(source.page);
+    }
+  }))
+
+  console.log(responses);
+
+  responses.map((response: any) => {
+    if(response.status === "fulfilled") {
+      list.push(response.value.data)
+    }
+  })
+  sources.value = list
+  isResourceLoading.value = false
+}
+
+function redirectToGitbook(source: any) {
+  window.open(source.urls.app, "_blank")
 }
 
 function searchRelatedQuestion(question: string) {
