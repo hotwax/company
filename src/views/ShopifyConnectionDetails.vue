@@ -6,6 +6,7 @@
         <ion-title>{{ "<shopifyShopName>" }}</ion-title>
       </ion-toolbar>
     </ion-header>
+
     <ion-content>
       <main>
         <div class="connection-info">
@@ -389,7 +390,7 @@
 
               <ion-item lines="full">
                 <ion-label>{{ "<productType>" }}</ion-label>
-                <ion-button slot="end" fill="clear" @Click="openDataMappingsLinkActionPopover($event)">
+                <ion-button slot="end" fill="clear" @Click="openDataMappingLinkActionsPopover($event)">
                   <ion-icon :icon="linkOutline" slot="icon-only" />
                 </ion-button>
               </ion-item>
@@ -428,7 +429,7 @@
               </div>
 
               <div class="tablet">
-                <ion-chip outline @click="openAddShippingMethodModal()">
+                <ion-chip outline @click="openAddShippingMethodsModal()">
                   <ion-icon :icon="addCircleOutline" />
                   <ion-label>{{ translate("Map with Hotwax") }}</ion-label>
                 </ion-chip>
@@ -460,8 +461,8 @@ import { ref } from "vue";
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue";
 import ImportShippingMethodsModal from "@/components/ImportShippingMethodsModal.vue";
 import ShippingMethodActionsPopover from "@/components/ShippingMethodActionsPopover.vue";
-import AddShippingMethodModal from "@/components/AddShippingMethodModal.vue";
-import DataMappingsLinkActionPopover from "@/components/DataMappingsLinkActionPopover.vue";
+import AddShippingMethodsModal from "@/components/AddShippingMethodsModal.vue";
+import DataMappingLinkActionsPopover from "@/components/DataMappingLinkActionsPopover.vue";
 
 const selectedSegment = ref("facilities")
 
@@ -477,19 +478,19 @@ async function openImportShopifyLocationsModal() {
 }
 
 async function openImportShippingMethodsModal() {
-  const importShippingMethods = await modalController.create({
+  const importShippingMethodsModal = await modalController.create({
     component: ImportShippingMethodsModal
   })
 
-  importShippingMethods.present();
+  importShippingMethodsModal.present();
 }
 
-async function openAddShippingMethodModal() {
-  const addShippingMethodModal = await modalController.create({
-    component: AddShippingMethodModal
+async function openAddShippingMethodsModal() {
+  const addShippingMethodsModal = await modalController.create({
+    component: AddShippingMethodsModal
   })
 
-  addShippingMethodModal.present();
+  addShippingMethodsModal.present();
 }
 
 async function openShippingMethodActionsPopover(event: any) {
@@ -502,14 +503,14 @@ async function openShippingMethodActionsPopover(event: any) {
   shippingMethodActionsPopover.present()
 }
 
-async function openDataMappingsLinkActionPopover(event: any) {
-  const dataMappingsLinkActionPopover = await popoverController.create({
-    component: DataMappingsLinkActionPopover,
+async function openDataMappingLinkActionsPopover(event: any) {
+  const dataMappingLinkActionsPopover = await popoverController.create({
+    component: DataMappingLinkActionsPopover,
     event,
     showBackdrop: false
   });
 
-  dataMappingsLinkActionPopover.present()
+  dataMappingLinkActionsPopover.present()
 }
 </script>
 
