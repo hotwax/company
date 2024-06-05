@@ -43,7 +43,6 @@ import { translate } from "@/i18n";
 function closeModal() {
   modalController.dismiss();
 }
-
 </script>
 
 <style scoped>

@@ -48,9 +48,9 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import("@/views/ProductStore.vue")
       },
       {
-        path: "shopify",
-        name: "Shopify",
-        component: () => import("@/views/Shopify.vue")
+        path: "shopify-connections",
+        name: "ShopifyConnections",
+        component: () => import("@/views/ShopifyConnections.vue")
       },
       {
         path: "settings",

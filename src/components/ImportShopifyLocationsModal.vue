@@ -27,6 +27,7 @@
           </ion-label>
         </ion-checkbox>
       </ion-item>
+
       <ion-item>
         <ion-checkbox>
           <ion-label>
@@ -54,7 +55,6 @@ import { translate } from "@/i18n";
 function closeModal() {
   modalController.dismiss();
 }
-
 </script>
 
 <style scoped>

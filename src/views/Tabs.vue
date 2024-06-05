@@ -7,7 +7,7 @@
           <ion-icon :icon="storefrontOutline" />
           <ion-label>{{ translate("Product store") }}</ion-label>
         </ion-tab-button>
-        <ion-tab-button tab="shopify" href="/tabs/shopify">
+        <ion-tab-button tab="shopify" href="/tabs/shopify-connections">
           <ion-icon :icon="gitBranchOutline" />
           <ion-label>{{ translate("Shopify") }}</ion-label>
         </ion-tab-button>
@@ -29,7 +29,7 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 
 function showFooter() {
-  if (['/tabs/product-store', '/tabs/settings', "/tabs/shopify"].includes(router.currentRoute.value.path)) return true
+  if (['/tabs/product-store', '/tabs/settings', "/tabs/shopify-connections"].includes(router.currentRoute.value.path)) return true
   return false
 }
 </script>

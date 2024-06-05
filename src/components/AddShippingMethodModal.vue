@@ -12,12 +12,11 @@
 
   <ion-content>
     <ion-list>
-
       <ion-item lines="none">
         <ion-label>{{ translate("Shopify Shipping method") }}</ion-label>
         <ion-label slot="end">{{ "<shippingMethodName>" }}</ion-label>
       </ion-item>
-      
+
       <ion-item-divider color="light">
         <ion-label>{{ translate("OMS Carrier and Shipping methods") }}</ion-label>
       </ion-item-divider>
@@ -48,14 +47,13 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, modalController } from "@ionic/vue";
 import { close, saveOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 
 function closeModal() {
   modalController.dismiss();
 }
-
 </script>
 
 <style scoped>

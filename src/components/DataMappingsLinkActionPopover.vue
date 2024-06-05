@@ -9,8 +9,9 @@
         <ion-item>
           <ion-radio>{{ "<hotwaxPaymentMethod>" }}</ion-radio>
         </ion-item>
-        <ion-item lines="none">
-          <ion-radio label-placement="start">{{ "<hotwaxPaymentMethod>" }}</ion-radio>
+
+        <ion-item>
+          <ion-radio>{{ "<hotwaxPaymentMethod>" }}</ion-radio>
         </ion-item>
       </ion-radio-group>
 
