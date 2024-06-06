@@ -125,6 +125,8 @@ async function searchAi() {
 
     if(!hasError(resp)) {
       answer.value = resp.data.answer;
+      sources.value = []
+      isResourceFetched.value = false
     } else {
       throw resp.data;
     }
