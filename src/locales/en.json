@@ -1,7 +1,8 @@
 {
   "Add": "Add",
   "Add a custom prefix to HotWax order IDs: <inputValue>10001": "Add a custom prefix to HotWax order IDs: <inputValue>10001",
-  "Add configurations": "Add configurations",
+  "Add configurations": "Add config:urations",
+  "Answer based on resources": "Answer based on {count} resources",
   "App": "App",
   "Approval": "Approval",
   "Approve on import": "Approve on import",
@@ -60,6 +61,7 @@
   "Manage configurations": "Manage configurations",
   "Minimum shipment threshold": "Minimum shipment threshold",
   "Name": "Name",
+  "No page found.": "No page found.",
   "No product store found.": "No product store found.",
   "No time zone found": "No time zone found",
   "Notifications": "Nofifications",
