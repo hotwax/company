@@ -41,7 +41,7 @@ const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   });
 }
 
-const searchAi = async (payload: any): Promise <any> => {
+const askQuery = async (payload: any): Promise <any> => {
   const token = process.env.VUE_APP_GITBOOK_API_KEY;
   const baseURL = `https://api.gitbook.com/v1/spaces/${process.env.VUE_APP_SPACE_ID}/search/`
 
@@ -76,12 +76,32 @@ const getGitboookPage = async (pageId: any): Promise <any> => {
   }) as any;
 }
 
+const searchQuery = async (payload: any): Promise <any> => {
+  const token = process.env.VUE_APP_GITBOOK_API_KEY;
+  const baseURL = `https://api.gitbook.com/v1/spaces/`
+
+  return await client({
+    url: `${process.env.VUE_APP_SPACE_ID}/search`, 
+    method: "get",
+    baseURL,
+    params: {
+      "query": payload.queryString
+    },
+    headers: {
+      Authorization:  'Bearer ' + token,
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin":   "*"
+    }
+  }) as any;
+}
+
 export const UtilService = {
+  askQuery,
   fetchDBICCountries,
   fetchEnums,
   fetchFacilityGroups,
   fetchOperatingCountries,
   fetchShipmentMethodTypes,
-  searchAi,
-  getGitboookPage
+  getGitboookPage,
+  searchQuery
 }
