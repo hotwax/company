@@ -26,7 +26,11 @@
         <ion-label>{{ queryString }}</ion-label>
       </ion-item>
       <ion-item>
-        <ion-label><p>{{ answer.text }}</p></ion-label>
+        <ion-label>
+          <p>
+            <vue-markdown :source="answer.text" />
+          </p>
+        </ion-label>
       </ion-item>
 
       <ion-item v-if="answer.sources.length" button @click="!isResourceFetched ? fetchSources() : ''">
@@ -104,6 +108,7 @@ import { useStore } from "@/store";
 import { translate } from "@/i18n"
 import { UtilService } from "@/services/UtilService";
 import { hasError } from "@/utils";
+import VueMarkdown from 'vue-markdown-render'
 
 const store = useStore();
 let queryString = ref("")
