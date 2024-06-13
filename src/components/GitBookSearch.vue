@@ -11,6 +11,8 @@
   </ion-header>
 
   <ion-content>
+    <ion-searchbar :placeholder="translate(selectedSegment === 'search' ? 'Search...': 'Ask...')" :value="queryString" @keyup.enter="queryString = $event.target.value; selectedSegment === 'search' ? searchQuery() : askQuery()" />
+
     <ion-segment v-model="selectedSegment" @ionChange="updateSegment()">
       <ion-segment-button value="search">
         <ion-label>{{ translate("Search") }}</ion-label>
@@ -28,8 +30,6 @@
     </div>
 
     <template v-else>
-      <ion-searchbar :placeholder="translate(selectedSegment === 'search' ? 'Search...': 'Ask...')" :value="queryString" @keyup.enter="queryString = $event.target.value; selectedSegment === 'search' ? searchQuery() : askQuery()" />
-
       <template v-if="selectedSegment === 'search'">
         <template v-if="searchedItems.length">
           <div v-for="(item, index) in searchedItems" :key="index">
