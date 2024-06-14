@@ -4,8 +4,8 @@
       <ion-toolbar>
         <ion-title>{{ translate("Product store") }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button slot="icon-only" @click="openGitbookSearch()">
-            <ion-icon :icon="informationCircleOutline" />
+          <ion-button @click="openGitbookSearch()">
+            <ion-icon :icon="informationCircleOutline" slot="icon-only" />
           </ion-button>
         </ion-buttons>
       </ion-toolbar>

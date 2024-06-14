@@ -3,7 +3,7 @@
     <ion-toolbar>
       <ion-buttons slot="start">
         <ion-button @click="closeModal"> 
-          <ion-icon :icon="close" />
+          <ion-icon :icon="close" slot="icon-only" />
         </ion-button>
       </ion-buttons>
       <ion-title>{{ translate("Ask me anything?") }}</ion-title>
@@ -22,7 +22,7 @@
       </ion-segment-button>
     </ion-segment>
 
-    <div class="empty-state" v-if="isQueryFetching">
+    <div class="empty-state" v-if="isLoading">
       <ion-item lines="none">
         <ion-spinner name="crescent" slot="start" />
          {{ translate(selectedSegment === 'search' ? "Searching your query." : "Analyzing the question to answer your question.") }}
@@ -149,7 +149,7 @@ let queryString = ref("")
 let searchedItems = ref([]) as any;
 const answer = ref({}) as any;
 
-const isQueryFetching = ref(false);
+const isLoading = ref(false);
 
 const isResourceLoading = ref(false);
 const sources = ref([]) as any;
@@ -166,7 +166,7 @@ function updateSegment() {
 }
 
 async function askQuery() {
-  isQueryFetching.value = true;
+  isLoading.value = true;
   let response = {} as any;
 
   try {
@@ -184,11 +184,11 @@ async function askQuery() {
   }
 
   answer.value = response;
-  isQueryFetching.value = false;
+  isLoading.value = false;
 }
 
 async function searchQuery() {
-  isQueryFetching.value = true;
+  isLoading.value = true;
   let items = [] as any;
 
   try {
@@ -203,7 +203,7 @@ async function searchQuery() {
   }
 
   searchedItems.value = items
-  isQueryFetching.value = false;
+  isLoading.value = false;
 }
 
 async function fetchSources() {
