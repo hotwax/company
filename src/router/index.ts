@@ -7,6 +7,7 @@ import AddConfigurations from "@/views/AddConfigurations.vue";
 import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
+import ShopifyConnectionDetails from "@/views/ShopifyConnectionDetails.vue";
 
 const authGuard = async (to: any, from: any, next: any) => {
   const authStore = useAuthStore()
@@ -47,6 +48,11 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import("@/views/ProductStore.vue")
       },
       {
+        path: "shopify-connections",
+        name: "ShopifyConnections",
+        component: () => import("@/views/ShopifyConnections.vue")
+      },
+      {
         path: "settings",
         name: "Settings",
         component: () => import("@/views/Settings.vue")
@@ -74,6 +80,11 @@ const routes: Array<RouteRecordRaw> = [
     name: "ProductStoreDetails",
     component: ProductStoreDetails,
     props: true
+  },
+  {
+    path: "/shopify-connection-details",
+    name: "ShopifyConnectionDetails",
+    component: ShopifyConnectionDetails
   },
   {
     path: "/login",
