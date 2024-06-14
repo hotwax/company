@@ -1,5 +1,4 @@
-import api, {client} from "@/api"
-import { hasError } from "@/utils";
+import api, {client} from "@/api";
 
 const fetchDBICCountries = async (payload: any): Promise <any> => {
   return api({
@@ -43,54 +42,48 @@ const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
 
 const askQuery = async (payload: any): Promise <any> => {
   const token = process.env.VUE_APP_GITBOOK_API_KEY;
-  const baseURL = `https://api.gitbook.com/v1/spaces/${process.env.VUE_APP_SPACE_ID}/search/`
 
   return await client({
-    url: `ask`, 
+    url: `${process.env.VUE_APP_SPACE_ID}/search/ask`, 
     method: "post",
-    baseURL,
+    baseURL: process.env.VUE_APP_GITBOOK_BASE_URL,
     data: {
       "query": payload.queryString
     },
     headers: {
       Authorization:  'Bearer ' + token,
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin":   "*"
+      "Content-Type": "application/json"
     }
   }) as any;
 }
 
-const getGitboookPage = async (pageId: any): Promise <any> => {
+const getGitBookPage = async (pageId: any): Promise <any> => {
   const token = process.env.VUE_APP_GITBOOK_API_KEY;
-  const baseURL = `https://api.gitbook.com/v1/spaces/${process.env.VUE_APP_SPACE_ID}/`
 
   return await client({
-    url: `content/page/${pageId}`, 
+    url: `${process.env.VUE_APP_SPACE_ID}/content/page/${pageId}`, 
     method: "get",
-    baseURL,
+    baseURL: process.env.VUE_APP_GITBOOK_BASE_URL,
     headers: {
       Authorization:  'Bearer ' + token,
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin":   "*"
+      "Content-Type": "application/json"
     }
   }) as any;
 }
 
 const searchQuery = async (payload: any): Promise <any> => {
   const token = process.env.VUE_APP_GITBOOK_API_KEY;
-  const baseURL = `https://api.gitbook.com/v1/spaces/`
 
   return await client({
     url: `${process.env.VUE_APP_SPACE_ID}/search`, 
     method: "get",
-    baseURL,
+    baseURL: process.env.VUE_APP_GITBOOK_BASE_URL,
     params: {
       "query": payload.queryString
     },
     headers: {
       Authorization:  'Bearer ' + token,
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin":   "*"
+      "Content-Type": "application/json"
     }
   }) as any;
 }
@@ -102,6 +95,6 @@ export const UtilService = {
   fetchFacilityGroups,
   fetchOperatingCountries,
   fetchShipmentMethodTypes,
-  getGitboookPage,
+  getGitBookPage,
   searchQuery
 }

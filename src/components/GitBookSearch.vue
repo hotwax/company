@@ -212,7 +212,7 @@ async function fetchSources() {
 
   const responses = await Promise.allSettled(answer.value.sources.map((source: any) => {
     if(source.type === "page") {
-      return UtilService.getGitboookPage(source.page);
+      return UtilService.getGitBookPage(source.page);
     }
   }))
 
