@@ -7,10 +7,9 @@
           <ion-icon :icon="storefrontOutline" />
           <ion-label>{{ translate("Product store") }}</ion-label>
         </ion-tab-button>
-        <ion-tab-button tab="help" @click="update()">
-          <ion-icon :icon="helpOutline" />
-          <ion-label>{{ translate("Help") }}</ion-label>
-        </ion-tab-button>
+
+        <DxpGitBookSearch />
+
         <ion-tab-button tab="more" href="/tabs/settings">
           <ion-icon :icon="settingsOutline" />
           <ion-label>{{ translate("Settings") }}</ion-label>
@@ -23,22 +22,14 @@
 <script setup lang="ts">
 import { translate } from "@/i18n";
 import { IonIcon, IonLabel, IonPage, IonRouterOutlet, IonTabBar, IonTabButton, IonTabs } from "@ionic/vue";
-import { helpOutline, settingsOutline, storefrontOutline } from "ionicons/icons";
+import { settingsOutline, storefrontOutline } from "ionicons/icons";
 import { useRouter } from "vue-router";
-import { openGitBookSearchModal } from "@hotwax/dxp-components";
-
 
 const router = useRouter();
 
 function showFooter() {
   if (['/tabs/product-store', '/tabs/settings'].includes(router.currentRoute.value.path)) return true
   return false
-}
-
-function update() {
-  console.log('udpate');
-  
-  openGitBookSearchModal();
 }
 </script>
 
