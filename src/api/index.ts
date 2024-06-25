@@ -8,7 +8,9 @@ import { StatusCodes } from "http-status-codes";
 axios.interceptors.request.use((config: any) => {
   // TODO: pass csrf token
   const token = store.getters["user/getUserToken"];
-  if (token) {
+
+  // TODO: think of better solution to avoid sending api_key for external apis.
+  if (token && !config.baseURL.includes("gitbook")) {
     config.headers["api_key"] =  token;
     config.headers["Content-Type"] = "application/json";
   }
