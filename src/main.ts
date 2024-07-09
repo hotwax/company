@@ -32,6 +32,7 @@ import logger from './logger';
 import { dxpComponents } from "@hotwax/dxp-components"
 import { login, logout, loader } from "@/user-utils";
 import { askQuery, getConfig, getGitBookPage, initialise, searchQuery } from '@/adapter';
+import localeMessages from '@/locales';
 
 const app = createApp(App)
   .use(IonicVue, {
@@ -52,6 +53,7 @@ const app = createApp(App)
     askQuery,
     getConfig,
     getGitBookPage,
+    localeMessages,
     initialise,
     searchQuery
   });
