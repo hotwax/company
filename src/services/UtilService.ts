@@ -40,10 +40,19 @@ const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   });
 }
 
+const fetchOrganization = async (payload: any): Promise<any> => {
+  return api({
+    url: "organizations",
+    method: "get",
+    params: payload
+  })
+}
+
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
   fetchFacilityGroups,
   fetchOperatingCountries,
+  fetchOrganization,
   fetchShipmentMethodTypes
 }

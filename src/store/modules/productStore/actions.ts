@@ -5,6 +5,7 @@ import * as types from "./mutation-types"
 import { hasError } from "@/utils"
 import logger from "@/logger"
 import { ProductStoreService } from "@/services/ProductStoreService"
+import store from "@/store"
 
 const actions: ActionTree<ProductStoreState, RootState> = {
 
@@ -91,7 +92,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     let company = {};
 
     try {
-      const resp = await ProductStoreService.fetchCompany({ partyId: process.env.VUE_APP_COMPANY_PARTY_ID });
+      const resp = await ProductStoreService.fetchCompany({ partyId: store.state.util.organizationPartyId });
 
       if(!hasError(resp)) {
         company = resp.data;

@@ -12,7 +12,8 @@ const utilModule: Module<UtilState, RootState> = {
     operatingCountries: [],
     dbicCountries: {},
     productIdentifiers: [],
-    shipmentMethodTypes: []
+    shipmentMethodTypes: [],
+    organizationPartyId: ""
   },
   getters,
   actions,

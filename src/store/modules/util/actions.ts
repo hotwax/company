@@ -95,8 +95,29 @@ const actions: ActionTree<UtilState, RootState> = {
     commit(types.UTIL_SHIPMENT_METHOD_TYPES_UPDATED, shipmentMethodTypes)
   },
 
+  async fetchOrganizationPartyId({ commit }) {
+    let partyId = ""
+
+    try {
+      const resp = await UtilService.fetchOrganization({
+        roleTypeId: 'INTERNAL_ORGANIZATIO',
+        pageSize: 1
+      })
+
+      if(!hasError(resp)) {
+        partyId = resp.data[0]?.partyId
+      } else {
+        throw resp.data
+      }
+    } catch (error) {
+      logger.error(error)
+    }
+    commit(types.UTIL_ORGANIZATION_PARTY_ID_UPDATED, partyId)
+  },
+
   async clearUtilState({ commit }) {
     commit(types.UTIL_CLEARED)
+    commit(types.UTIL_ORGANIZATION_PARTY_ID_UPDATED, "")
   }
 }
 
