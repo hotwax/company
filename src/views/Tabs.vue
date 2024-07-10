@@ -7,6 +7,9 @@
           <ion-icon :icon="storefrontOutline" />
           <ion-label>{{ translate("Product store") }}</ion-label>
         </ion-tab-button>
+
+        <DxpGitBookSearch />
+
         <ion-tab-button tab="more" href="/tabs/settings">
           <ion-icon :icon="settingsOutline" />
           <ion-label>{{ translate("Settings") }}</ion-label>

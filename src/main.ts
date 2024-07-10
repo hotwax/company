@@ -31,7 +31,8 @@ import { DateTime } from "luxon";
 import logger from './logger';
 import { dxpComponents } from "@hotwax/dxp-components"
 import { login, logout, loader } from "@/user-utils";
-import { getConfig, initialise } from '@/adapter';
+import { askQuery, getConfig, getGitBookPage, initialise, searchQuery } from '@/adapter';
+import localeMessages from '@/locales';
 
 const app = createApp(App)
   .use(IonicVue, {
@@ -49,8 +50,12 @@ const app = createApp(App)
     logout,
     loader,
     appLoginUrl: process.env.VUE_APP_LOGIN_URL as string,
+    askQuery,
     getConfig,
-    initialise
+    getGitBookPage,
+    localeMessages,
+    initialise,
+    searchQuery
   });
 
 // Filters are removed in Vue 3 and global filter introduced https://v3.vuejs.org/guide/migration/filters.html#global-filters
