@@ -38,6 +38,7 @@ const actions: ActionTree<UserState, RootState> = {
       }
       commit(types.USER_TOKEN_CHANGED, { newToken: api_key })
       commit(types.USER_INFO_UPDATED, userProfile);
+      this.dispatch('util/fetchOrganizationPartyId');
       emitter.emit("dismissLoader")
     } catch (err: any) {
       emitter.emit("dismissLoader")

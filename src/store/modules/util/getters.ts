@@ -17,6 +17,9 @@ const getters: GetterTree <UtilState, RootState> = {
   },
   getShipmentMethodTypes(state) {
     return state.shipmentMethodTypes;
+  },
+  getOrganizationPartyId(state) {
+    return state.organizationPartyId;
   }
 }
 export default getters;

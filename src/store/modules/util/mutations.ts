@@ -25,6 +25,9 @@ const mutations: MutationTree <UtilState> = {
     state.dbicCountries = {}
     state.productIdentifiers = []
     state.shipmentMethodTypes = []
+  },
+  [types.UTIL_ORGANIZATION_PARTY_ID_UPDATED](state, payload) {
+    state.organizationPartyId = payload
   }
 }
 export default mutations;
