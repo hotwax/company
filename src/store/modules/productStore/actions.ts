@@ -13,7 +13,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     let productStores = [];
 
     try {
-      const resp = await ProductStoreService.fetchProductStores();
+      const resp = await ProductStoreService.fetchProductStores({ pageSize: 100 });
 
       if(!hasError(resp)) {
         productStores = resp.data;
@@ -52,7 +52,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     const productStoresFacilityCount = {} as any;
 
     try {
-      const resp = await ProductStoreService.fetchProductStoresFacilityCount();
+      const resp = await ProductStoreService.fetchProductStoresFacilityCount({ pageSize: 100 });
 
       if(!hasError(resp)) {
         resp.data.map((response: any) => productStoresFacilityCount[response.productStoreId] = response.facilityCount)
