@@ -271,6 +271,11 @@ ion-input.name {
   --background: var(--ion-color-light)
 }
 
+ion-text {
+  font-size: 22px;
+  padding: var(--spacer-xs) 0px 0px 10px;
+}
+
 .pointer {
   cursor: pointer;
 }
