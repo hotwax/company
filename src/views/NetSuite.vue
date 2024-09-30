@@ -11,41 +11,36 @@
     </ion-header>
     <ion-content>
       <main>
-        <div class="cards number-card">
+        <section class="analytics-header">
           <ion-card>
-            <ion-item lines="none" class="count">
-              4
+            <ion-item lines="none">
+              <ion-label class="count-size">4</ion-label>
             </ion-item>
-            <ion-item class="ion-text-center">
-              <ion-label>
-                <p>Orders pending sync</p>
-              </ion-label>
+            <ion-item>
+              <ion-label>Orders pending sync</ion-label>
             </ion-item>
           </ion-card>
           <ion-card>
-            <ion-item lines="none" class="count">
-              15
+            <ion-item lines="none">
+              <ion-label class="count-size">15</ion-label>
             </ion-item>
-            <ion-item class="ion-text-center">
-              <ion-label>
-                <p>Customers pending sync</p>
-              </ion-label>
+            <ion-item>
+              <ion-label>Customers pending sync</ion-label>
             </ion-item>
           </ion-card>
           <ion-card>
-            <ion-item lines="none" class="count">
-              2
+            <ion-item lines="none">
+              <ion-label class="count-size">2</ion-label>
             </ion-item>
-            <ion-item class="ion-text-center">
-              <ion-label>
-                <p>Products pending sync</p>
-              </ion-label>
+            <ion-item>
+              <ion-label>Products pending sync</ion-label>
             </ion-item>
           </ion-card>
-        </div>
+        </section>
+
         <div class="ion-margin-top">
           <ion-text>Configuration</ion-text>
-          <div class="cards config">
+          <section>
             <ion-card>
               <ion-item button @click="openSftpModal()">
                 <ion-label>SFTP</ion-label>
@@ -59,35 +54,37 @@
               </ion-item>
             </ion-card>
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openShipmentMethod()">
                 <ion-label>Shipping methods</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openFacilities()">
                 <ion-label>Facilities</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
-          </div>
+          </section>
         </div>
+
         <div class="ion-margin-top">
           <ion-text>Products and Inventory</ion-text>
-          <div class="cards config">
+          <section class="netsuite-action-items">
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openInventoryVariances()">
                 <ion-label>Inventory variances</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
-          </div>
+          </section>
         </div>
+
         <div class="ion-margin-top">
           <ion-text>Orders and fulfillment</ion-text>
-          <div class="cards config">
+          <section>
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openPaymentMethods()">
                 <ion-label>Payment method</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
@@ -105,22 +102,23 @@
               </ion-item>
             </ion-card>
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openDepartments()">
                 <ion-label>Departments</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
             <ion-card>
-              <ion-item button>
+              <ion-item button @click="openSalesChannel()">
                 <ion-label>Sales Channel</ion-label>
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
-          </div>
+          </section>
         </div>
+
         <div class="ion-margin-top">
           <ion-text>Transfer orders</ion-text>
-          <div class="cards config">
+          <section>
             <ion-card>
               <ion-item button>
                 <ion-label>Transfer order fulfillment</ion-label>
@@ -133,23 +131,50 @@
                 <ion-icon slot="end" :icon="chevronForwardOutline"/>
               </ion-item>
             </ion-card>
-          </div>
+          </section>
         </div>
-
       </main>
-
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonButton, IonCard, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { search, chevronForwardOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
+import { useRouter } from "vue-router";
 import SftpModal from "@/components/SftpModal.vue";
 import ProductStoreModal from "@/components/ProductStoreModal.vue";
 import PriceLevelModal from "@/components/PriceLevelModal.vue";
 import DiscountsModal from "@/components/DiscountsModal.vue";
+import SalesChannel from "@/components/SalesChannel.vue";
+
+const router = useRouter();
+
+
+function openShipmentMethod() {
+  router.push("/netsuite/shipment-methods")
+}
+
+function openPaymentMethods() {
+  router.push("/netsuite/payment-methods")
+}
+
+function openFacilities() {
+  router.push("/netsuite/facilities")
+}
+
+function openInventoryVariances() {
+  router.push("/netsuite/inventory-variances")
+}
+
+function openSalesChannel() {
+  router.push("/netsuite/sales-channel")
+}
+
+function openDepartments() {
+  router.push("/netsuite/departments")
+}
 
 async function openSftpModal() {
   const modal = await modalController.create({
@@ -181,22 +206,22 @@ async function openDiscountsModal() {
 </script>
 
 <style scoped>
-.cards {
+main {
+  margin: 10px 0 10px 10px;
+}
+
+section {
   display: grid;
   align-items: center; 
-}
-
-.number-card {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-}
-
-.config {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
-.count {
+.analytics-header {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.count-size {
   height: 100%;
-  font-size: 8em;
-  align-self: center;
+  font-size: 128px;
 }
 </style>

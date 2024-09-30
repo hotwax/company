@@ -12,15 +12,15 @@
 
   <ion-content>
     <ion-item class="ion-margin-top">
-      <ion-icon slot="start" :icon="informationCircleOutline"></ion-icon>
+      <ion-icon slot="start" :icon="informationCircleOutline" />
       <ion-label>
         Learn more about price levels in NetSuite
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end"></ion-icon>
+      <ion-icon :icon="openOutline" slot="end" />
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input label="Price level" placeholder="Base Price"></ion-input>
+      <ion-input label="Price level" placeholder="Base Price" />
     </ion-item>
 
     <ion-list>

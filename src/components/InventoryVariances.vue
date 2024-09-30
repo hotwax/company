@@ -10,7 +10,7 @@
     <ion-content>
       <div class="ion-margin-top">
         <ion-item lines="none">
-          <ion-icon slot="start" :icon="shieldCheckmarkOutline"></ion-icon>
+          <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
           <ion-label>
             Inventory variances synced to NetSuite
             <p>Select exactly which inventory variances should be synced to NetSuite</p>
@@ -18,6 +18,7 @@
           <ion-badge slot="end" color="dark">next sync in 15 minutes</ion-badge>
         </ion-item>
       </div>
+
       <div class="list-item ion-margin-top">
         <ion-item lines="none">
           <ion-label>
@@ -31,7 +32,7 @@
           <p>variances in 7 days</p>
         </ion-label>
         
-        <div class="align ion-text-center">
+        <div class="ion-text-center">
           <ion-chip :outline="true">
             <ion-label>15</ion-label>
             <ion-icon fill="" :icon="closeCircleOutline" />
@@ -45,7 +46,8 @@
           <ion-checkbox></ion-checkbox>
         </ion-item>
       </div>
-      <div class="list-item ion-margin-top">
+
+      <div class="list-item">
         <ion-item lines="none">
           <ion-label>
             Variance Enum Name
@@ -58,8 +60,8 @@
           <p>variances in 7 days</p>
         </ion-label>
         
-        <ion-button size="small" fill="outline">
-          <ion-label>NetSuite id</ion-label>
+        <ion-button size="small" fill="outline" @click="openTransferInventoryModal()">
+          <ion-label>Transfer inventory</ion-label>
           <ion-icon :icon="swapHorizontalOutline" slot="end"/>
         </ion-button>
 
@@ -72,18 +74,19 @@
 </template>
 <script setup lang="ts">
 import { translate } from '@hotwax/dxp-components';
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar } from "@ionic/vue";
+import { IonBackButton, IonBadge, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons'
+import TransferInventoryModal from './TransferInventoryModal.vue';
 
+async function openTransferInventoryModal() {
+  const modal = await modalController.create({
+    component: TransferInventoryModal,
+  })
+  modal.present()
+}
 </script>
 <style scoped>
 .list-item {
   --columns-desktop: 4;
-  /* border-bottom : 1px solid var(--ion-color-medium); */
 }
-
-.list-item > ion-item {
-  width: 100%;
-}
-
 </style>

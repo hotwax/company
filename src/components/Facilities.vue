@@ -10,14 +10,14 @@
     <ion-content>
       <div class="header ion-margin-top">
         <ion-item lines="none">
-          <ion-icon slot="start" :icon="shieldCheckmarkOutline"></ion-icon>
+          <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
           <ion-label>
             Map facilities to NetSuite
             <p>For orders and inventory to sync with NetSuite, the facilities in NetSuite must be mapped to facilities in HotWax Commerce</p>
           </ion-label>
         </ion-item>
       </div>
-      <div class="list-item ion-margin-top">
+      <div class="list-item">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
@@ -32,10 +32,10 @@
           <p>Shopify location</p>
         </ion-label>
         
-        <div class="align">
+        <div>
           <ion-chip :outline="true">
             <ion-label>15</ion-label>
-            <ion-icon fill="" :icon="closeCircleOutline" />
+            <ion-icon :icon="closeCircleOutline" />
           </ion-chip>
           <ion-label>
             <p>NetSuite ID</p>
@@ -46,7 +46,7 @@
           <ion-icon slot="icon-only" :icon="ellipsisVerticalOutline" />
         </ion-button>
       </div>
-      <div class="list-item ion-margin-top">
+      <div class="list-item">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
@@ -61,10 +61,10 @@
           <p>Shopify location</p>
         </ion-label>
         
-        <div class="align">
+        <div>
           <ion-chip :outline="true">
             <ion-label>15</ion-label>
-            <ion-icon fill="" :icon="closeCircleOutline" />
+            <ion-icon :icon="closeCircleOutline" />
           </ion-chip>
           <ion-label>
             <p>NetSuite ID</p>
@@ -85,18 +85,7 @@ import { closeCircleOutline, ellipsisVerticalOutline, shieldCheckmarkOutline, st
 
 </script>
 <style scoped>
-.header {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-}
-
 .list-item {
   --columns-desktop: 4;
-  /* border-bottom : 1px solid var(--ion-color-medium); */
 }
-
-.list-item > ion-item {
-  width: 100%;
-}
-
 </style>

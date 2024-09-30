@@ -11,16 +11,16 @@
   <ion-content>
     <div class="header ion-margin-top">
       <ion-item lines="none">
-        <ion-icon slot="start" :icon="shieldCheckmarkOutline"></ion-icon>
+        <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
         <ion-label>
           Map departments with NetSuite
           <p>Learn more about mapping departments with NetSuite to make sure orders are attributed correctly.</p>
         </ion-label>
-        <ion-icon :icon="openOutline" slot="end"></ion-icon>
+        <ion-icon :icon="openOutline" slot="end" />
       </ion-item>
     </div>
 
-    <div class="list-item ion-margin-top">
+    <div class="list-item">
       <ion-item lines="none">
         <ion-icon slot="start" :icon="storefrontOutline" />
         <ion-label>
@@ -35,7 +35,7 @@
         <p>Shopify</p>
       </ion-label>
       
-      <div class="align ion-text-center">
+      <div class="ion-text-center">
         <ion-chip :outline="true">
           <ion-label>2</ion-label>
           <ion-icon fill="" :icon="closeCircleOutline" />
@@ -45,13 +45,13 @@
         </ion-label>
       </div>
         
-      <ion-label class="ion-margin">
+      <ion-label class="ion-margin-end">
         150
         <p>orders</p>
       </ion-label>
     </div>
 
-    <div class="list-item ion-margin-top">
+    <div class="list-item">
       <ion-item lines="none">
         <ion-icon slot="start" :icon="storefrontOutline" />
         <ion-label>
@@ -71,7 +71,7 @@
         <ion-label>NetSuite id</ion-label>
       </ion-button>
         
-      <ion-label class="ion-margin">
+      <ion-label class="ion-margin-end">
         150
         <p>orders</p>
       </ion-label>
@@ -87,16 +87,7 @@ import { translate } from '@hotwax/dxp-components';
 
 </script>
 <style scoped>
-.header {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-}
-
 .list-item {
-  --columns-desktop: 5;
-}
-
-.list-item > ion-item {
-  width: 100%;
+  --columns-desktop: 4;
 }
 </style>

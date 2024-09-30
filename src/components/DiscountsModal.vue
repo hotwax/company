@@ -11,21 +11,20 @@
   </ion-header>
 
   <ion-content>
-
     <ion-item class="ion-margin-top">
-      <ion-icon slot="start" :icon="informationCircleOutline"></ion-icon>
+      <ion-icon slot="start" :icon="informationCircleOutline" />
       <ion-label>
         Learn more about discounts in NetSuite
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end"></ion-icon>
+      <ion-icon :icon="openOutline" slot="end" />
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input label="Order level discount" placeholder="NetSuite discount item ID"></ion-input>
+      <ion-input label="Order level discount" placeholder="NetSuite discount item ID" />
     </ion-item>
 
     <ion-item lines="full">
-      <ion-input label="Item level discounts" placeholder="NetSuite discount item ID"></ion-input>
+      <ion-input label="Item level discounts" placeholder="NetSuite discount item ID" />
     </ion-item>
 
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
@@ -33,7 +32,6 @@
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
-
   </ion-content>
 </template>
 <script setup lang="ts">

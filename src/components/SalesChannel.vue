@@ -11,12 +11,12 @@
   <ion-content>
     <div class="header ion-margin-top">
       <ion-item lines="none">
-        <ion-icon slot="start" :icon="shieldCheckmarkOutline"></ion-icon>
+        <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
         <ion-label>
           Map sales channel with NetSuite
           <p>Learn more about mapping sales channels with NetSuite to make sure orders are attributed correctly.</p>
         </ion-label>
-        <ion-icon :icon="openOutline" slot="end"></ion-icon>
+        <ion-icon :icon="openOutline" slot="end" />
       </ion-item>
     </div>
 
@@ -33,7 +33,7 @@
         <p>Shopify</p>
       </ion-label>
       
-      <div class="align ion-text-center">
+      <div class="ion-text-center">
         <ion-chip :outline="true">
           <ion-label>2</ion-label>
           <ion-icon fill="" :icon="closeCircleOutline" />
@@ -49,7 +49,7 @@
       </ion-label>
     </div>
 
-    <div class="list-item ion-margin-top">
+    <div class="list-item">
       <ion-item lines="none">
         <ion-label>
           Sales Channel Name
@@ -83,16 +83,7 @@ import { translate } from '@hotwax/dxp-components';
 
 </script>
 <style scoped>
-.header {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-}
-
 .list-item {
-  --columns-desktop: 5;
-}
-
-.list-item > ion-item {
-  width: 100%;
+  --columns-desktop: 4;
 }
 </style>
