@@ -65,7 +65,7 @@ const actions: ActionTree<UtilState, RootState> = {
     let productIdentifiers = [] as any;
 
     try {
-      const resp = await UtilService.fetchEnums({ enumTypeId: "SHOP_PROD_IDENTITY" })
+      const resp = await UtilService.fetchEnums({ enumTypeId: "SHOP_PROD_IDENTITY", pageSize: 100 })
       if(!hasError(resp)) {
         productIdentifiers = resp.data;
       } else {
