@@ -24,10 +24,11 @@ const fetchProductStoreDetails = async (productStoreId: any): Promise <any> => {
   });
 }
 
-const fetchProductStores = async (): Promise <any> => {
+const fetchProductStores = async (payload: any): Promise <any> => {
   return api({
     url: "productStores",
-    method: "get"
+    method: "get",
+    params: payload
   });
 }
 

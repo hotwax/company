@@ -13,7 +13,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     let productStores = [];
 
     try {
-      const resp = await ProductStoreService.fetchProductStores();
+      const resp = await ProductStoreService.fetchProductStores({ pageSize: 20 });
 
       if(!hasError(resp)) {
         productStores = resp.data;
