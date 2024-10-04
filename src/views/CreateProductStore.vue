@@ -73,6 +73,7 @@ const storeId = ref({}) as any;
 const productStores = computed(() => store.getters["productStore/getProductStores"])
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
 const company = computed(() => store.getters["productStore/getCompany"])
+const organizationPartyId = computed(() => store.getters["util/getOrganizationPartyId"])
 
 onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchDBICCountries");
@@ -103,7 +104,8 @@ async function manageConfigurations() {
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
-      companyName: company.value.companyName
+      companyName: company.value.companyName,
+      payToPartyId: organizationPartyId.value
     } as any;
 
     if(!productStores.value.length) {
