@@ -275,11 +275,6 @@ ion-input.name {
   width: 100%;
 }
 
-ion-text {
-  font-size: 22px;
-  padding: var(--spacer-xs) 0px 0px 10px;
-}
-
 .header {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

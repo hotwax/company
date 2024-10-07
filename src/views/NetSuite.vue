@@ -9,131 +9,105 @@
         </ion-button>
       </ion-toolbar>
     </ion-header>
-    <ion-content>
-      <main>
-        <section class="analytics-header">
-          <ion-card>
-            <ion-item lines="none">
-              <ion-label class="count-size">4</ion-label>
-            </ion-item>
-            <ion-item>
-              <ion-label>Orders pending sync</ion-label>
-            </ion-item>
-          </ion-card>
-          <ion-card>
-            <ion-item lines="none">
-              <ion-label class="count-size">15</ion-label>
-            </ion-item>
-            <ion-item>
-              <ion-label>Customers pending sync</ion-label>
-            </ion-item>
-          </ion-card>
-          <ion-card>
-            <ion-item lines="none">
-              <ion-label class="count-size">2</ion-label>
-            </ion-item>
-            <ion-item>
-              <ion-label>Products pending sync</ion-label>
-            </ion-item>
-          </ion-card>
+    <ion-content class="ion-padding">
+      <section class="analytics-header">
+        <ion-card>
+          <ion-item lines="none">
+            <ion-label class="count-size">4</ion-label>
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label>Orders pending sync</ion-label>
+          </ion-item>
+        </ion-card>
+        <ion-card>
+          <ion-item lines="none">
+            <ion-label class="count-size">15</ion-label>
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label>Customers pending sync</ion-label>
+          </ion-item>
+        </ion-card>
+        <ion-card>
+          <ion-item lines="none">
+            <ion-label class="count-size">2</ion-label>
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label>Products pending sync</ion-label>
+          </ion-item>
+        </ion-card>
+      </section>
+
+      <div class="ion-margin-top">
+        <h1>Configuration</h1>
+        <section>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openSftpModal()">
+            <ion-label>SFTP</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openProductStoreModal()">
+            <ion-label>Product Store</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openShipmentMethod()">
+            <ion-label>Shipping methods</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openFacilities()">
+            <ion-label>Facilities</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
         </section>
+      </div>
 
-        <div class="ion-margin-top">
-          <ion-text>Configuration</ion-text>
-          <section>
-            <ion-card>
-              <ion-item button @click="openSftpModal()">
-                <ion-label>SFTP</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openProductStoreModal()">
-                <ion-label>Product Store</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openShipmentMethod()">
-                <ion-label>Shipping methods</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openFacilities()">
-                <ion-label>Facilities</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-          </section>
-        </div>
+      <div class="ion-margin-top">
+        <h1>Products and Inventory</h1>
+        <section>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openInventoryVariances()">
+            <ion-label>Inventory variances</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+        </section>
+      </div>
 
-        <div class="ion-margin-top">
-          <ion-text>Products and Inventory</ion-text>
-          <section class="netsuite-action-items">
-            <ion-card>
-              <ion-item button @click="openInventoryVariances()">
-                <ion-label>Inventory variances</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-          </section>
-        </div>
+      <div class="ion-margin-top">
+        <h1>Orders and fulfillment</h1>
+        <section>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openPaymentMethods()">
+            <ion-label>Payment method</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openPriceLevelModal()">
+            <ion-label>Price level</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openDiscountsModal()">
+            <ion-label>Discounts</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openDepartments()">
+            <ion-label>Departments</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button @click="openSalesChannel()">
+            <ion-label>Sales Channel</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+        </section>
+      </div>
 
-        <div class="ion-margin-top">
-          <ion-text>Orders and fulfillment</ion-text>
-          <section>
-            <ion-card>
-              <ion-item button @click="openPaymentMethods()">
-                <ion-label>Payment method</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openPriceLevelModal()">
-                <ion-label>Price level</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openDiscountsModal()">
-                <ion-label>Discounts</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openDepartments()">
-                <ion-label>Departments</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button @click="openSalesChannel()">
-                <ion-label>Sales Channel</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-          </section>
-        </div>
-
-        <div class="ion-margin-top">
-          <ion-text>Transfer orders</ion-text>
-          <section>
-            <ion-card>
-              <ion-item button>
-                <ion-label>Transfer order fulfillment</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-            <ion-card>
-              <ion-item button>
-                <ion-label>Transfer order receipt</ion-label>
-                <ion-icon slot="end" :icon="chevronForwardOutline"/>
-              </ion-item>
-            </ion-card>
-          </section>
-        </div>
-      </main>
+      <div class="ion-margin-top">
+        <h1>Transfer orders</h1>
+        <section>
+          <ion-item fill="outline" class="item-box" lines="none" button>
+            <ion-label>Transfer order fulfillment</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+          <ion-item fill="outline" class="item-box" lines="none" button>
+            <ion-label>Transfer order receipt</ion-label>
+            <ion-icon slot="end" :icon="chevronForwardOutline"/>
+          </ion-item>
+        </section>
+      </div>
     </ion-content>
   </ion-page>
 </template>
@@ -206,22 +180,25 @@ async function openDiscountsModal() {
 </script>
 
 <style scoped>
-main {
-  margin: 10px 0 10px 10px;
+ion-card {
+  margin-inline: 0px;
+}
+
+.item-box::part(native) {
+  border-radius: 8px;
 }
 
 section {
   display: grid;
-  align-items: center; 
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
 }
 
 .analytics-header {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));  
 }
 
 .count-size {
-  height: 100%;
   font-size: 128px;
 }
 </style>
