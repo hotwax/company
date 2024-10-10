@@ -10,6 +10,7 @@ import emitter from "@/event-bus"
 import { Settings } from "luxon"
 import { useAuthStore } from '@hotwax/dxp-components'
 import { resetConfig } from '@/adapter'
+import router from '@/router'
 
 const actions: ActionTree<UserState, RootState> = {
 
@@ -40,6 +41,11 @@ const actions: ActionTree<UserState, RootState> = {
       commit(types.USER_INFO_UPDATED, userProfile);
       this.dispatch('util/fetchOrganizationPartyId');
       emitter.emit("dismissLoader")
+
+      const productStoreId = router.currentRoute.value.query.productStoreId
+      if(productStoreId) {
+        return `/product-store-details/${productStoreId}`;
+      }
     } catch (err: any) {
       emitter.emit("dismissLoader")
       showToast(translate(err));
