@@ -30,9 +30,6 @@ const actions: ActionTree<UserState, RootState> = {
       // Prepare permissions list
       const serverPermissionsFromRules = getServerPermissionsFromRules();
       if (permissionId) serverPermissionsFromRules.push(permissionId);
-      if(omsRedirectionUrl && token) {
-        dispatch("setOmsRedirectionInfo", { url: omsRedirectionUrl, token })
-      }
 
       const serverPermissions: Array<string> = await UserService.getUserPermissions({
         permissionIds: [...new Set(serverPermissionsFromRules)]
@@ -65,6 +62,9 @@ const actions: ActionTree<UserState, RootState> = {
       }
       
       setPermissions(appPermissions);
+      if(omsRedirectionUrl && token) {
+        dispatch("setOmsRedirectionInfo", { url: omsRedirectionUrl, token })
+      }
       commit(types.USER_TOKEN_CHANGED, { newToken: api_key })
       commit(types.USER_INFO_UPDATED, userProfile);
       commit(types.USER_PERMISSIONS_UPDATED, appPermissions);
