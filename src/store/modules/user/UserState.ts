@@ -5,5 +5,6 @@ export default interface UserState {
   omsRedirectionInfo: {
     url: string;
     token: string;
-  }
+  },
+  permissions: any;
 }
