@@ -7,6 +7,7 @@ import createPersistedState from "vuex-persistedstate";
 import userModule from "./modules/user";
 import productStoreModule from "./modules/productStore";
 import utilModule from "./modules/util"
+import netSuiteModule from "./modules/netSuite"
 
 // TODO check how to register it from the components only
 // Handle same module registering multiple time on page refresh
@@ -15,7 +16,7 @@ import utilModule from "./modules/util"
 const state: any = {}
 
 const persistState = createPersistedState({
-  paths: ["user", "util", "productStore"],
+  paths: ["user", "util", "productStore", "netSuite"],
   fetchBeforeUse: true
 })
 
@@ -29,7 +30,8 @@ const store = createStore<RootState>({
   modules: {
     "user": userModule,
     "productStore": productStoreModule,
-    "util": utilModule
+    "util": utilModule,
+    "netSuite": netSuiteModule
   },
 })
 
