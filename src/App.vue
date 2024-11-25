@@ -1,12 +1,16 @@
 <template>
   <ion-app>
-    <ion-router-outlet />
+    <IonSplitPane content-id="main-content" when="lg">
+      <Menu />
+      <ion-router-outlet id="main-content"></ion-router-outlet>
+    </IonSplitPane>
   </ion-app>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { IonApp, IonRouterOutlet, loadingController } from "@ionic/vue";
+import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from "@ionic/vue";
+import Menu from '@/components/Menu.vue';
 import emitter from "@/event-bus"
 import { Settings } from 'luxon'
 import store from "./store";
@@ -79,3 +83,9 @@ onUnmounted(() => {
   resetConfig()
 })
 </script>
+
+<style scoped>
+ion-split-pane {
+  --side-width: 304px;
+}
+</style>
