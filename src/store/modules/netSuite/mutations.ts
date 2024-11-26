@@ -11,6 +11,15 @@ const mutations: MutationTree <NetSuiteState> = {
   },
   [types.NET_SUITE_PAYMENT_METHODS_UPDATED] (state, payload) {
     state.paymentMethods = payload
+  },
+  [types.NET_SUITE_SALES_CHANNEL_UPDATED] (state, payload) {
+    state.salesChannel = payload
+  },
+  [types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED] (state, payload) {
+    state.integrationTypeMappings = payload
+  },
+  [types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED] (state, payload) {
+    state.shopifyTypeMappings = payload
   }
 }
 export default mutations;

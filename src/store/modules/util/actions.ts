@@ -25,6 +25,22 @@ const actions: ActionTree<UtilState, RootState> = {
     commit(types.UTIL_FACILITY_GROUPS_UPDATED, facilityGroups);
   },
   
+  async fetchFacilities({ state, commit }) {
+    let facilities = [] as any, resp;
+
+    try {
+      resp = await UtilService.fetchFacilities({ pageSize: 100 })
+      if(!hasError(resp) && resp.data) {
+        facilities = resp.data
+      } else {
+        throw resp.data
+      }
+    } catch(error) {
+      logger.error(error);
+    }
+    commit(types.UTIL_FACILITIES_UPDATED, facilities)
+  },
+  
   async fetchDBICCountries({ commit }) {
     let countries = [] as any;
 

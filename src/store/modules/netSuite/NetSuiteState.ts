@@ -1,5 +1,8 @@
 export default interface NetSuiteState {
-  inventoryVariances: [];
-  productStoreShipmentMethods: {}
-  paymentMethods: {}
+  inventoryVariances: any;
+  productStoreShipmentMethods: any
+  paymentMethods: any
+  salesChannel: any
+  integrationTypeMappings: any
+  shopifyTypeMappings: any
 }

@@ -6,7 +6,7 @@
           <ion-icon slot="icon-only" :icon="closeOutline" />
         </ion-button>
       </ion-buttons>
-      <ion-title>{{ translate('Price level') }}</ion-title>
+      <ion-title>{{ translate("Price level") }}</ion-title>
     </ion-toolbar>
   </ion-header>
 
@@ -14,31 +14,31 @@
     <ion-item class="ion-margin-top">
       <ion-icon slot="start" :icon="informationCircleOutline" />
       <ion-label>
-        Learn more about price levels in NetSuite
+        {{ translate("Learn more about price levels in NetSuite") }}
       </ion-label>
       <ion-icon :icon="openOutline" slot="end" />
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input label="Price level" placeholder="Base Price" />
+      <ion-input v-model="customPrice" :disabled="isBasePriceSelected" label="Price level" placeholder="Base Price" />
     </ion-item>
 
     <ion-list>
-      <ion-list-header>Frequently used</ion-list-header>
-      <ion-radio-group>
+      <ion-list-header>{{ translate("Frequently used") }}</ion-list-header>
+      <ion-radio-group v-model="selectedPriceType">
         <ion-item>
-          <ion-radio label-placement="end" justify="start">
+          <ion-radio value="base" label-placement="end" justify="start" @click="selectBasePrice">
             <ion-label>
-              Base leave
-              <p>Defaults to product price set in NetSuite</p>
+              {{ translate("Base leave") }}
+              <p>{{ translate("Defaults to product price set in NetSuite") }}</p>
             </ion-label>  
           </ion-radio>
         </ion-item>
         <ion-item>
-          <ion-radio label-placement="end" justify="start">
+          <ion-radio value="custom" label-placement="end" justify="start" @click="selectCustomPrice">
             <ion-label>
-              Custom
-              <p>Use the price a product was sold at in the order.</p>
+              {{ translate("Custom") }}
+              <p>{{ translate("Use the price a product was sold at in the order.") }}</p>
             </ion-label>  
           </ion-radio>
         </ion-item>
@@ -46,18 +46,42 @@
     </ion-list>
    
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button>
+      <ion-fab-button @click="savePrice">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
   </ion-content>
 </template>
+
 <script setup lang="ts">
-import { IonButton, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonListHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
 import { translate } from '@hotwax/dxp-components';
+import { computed, ref } from "vue";
  
+const selectedPriceType = ref('');
+const customPrice = ref('');
+
 function closeModal() {
   modalController.dismiss({ dismissed: true });
+}
+
+const isBasePriceSelected = computed(() => selectedPriceType.value === "base");
+
+function selectBasePrice() {
+  selectedPriceType.value = "base";
+}
+
+function selectCustomPrice() {
+  selectedPriceType.value = "custom";
+}
+
+function savePrice() {
+  const payload = {
+    priceType: selectedPriceType.value,
+    customPrice: selectedPriceType.value === "custom" ? customPrice.value : '',
+  };
+
+  closeModal();
 }
 </script>

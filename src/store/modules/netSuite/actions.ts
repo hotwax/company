@@ -19,7 +19,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       }
 
       const resp = await UtilService.fetchEnums(payload)
-
       if(!hasError(resp)) {
         inventoryVariances = resp.data
       } else {
@@ -31,6 +30,29 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
     commit(types.NET_SUITE_INVENTORY_VARIANCES_UPDATED, inventoryVariances)
   },
+
+  async fetchSalesChannel({ commit }) {
+    let salesChannel  = [] as any;
+    try {
+      const payload = {
+        enumTypeId:  ["ORDER_SALES_CHANNEL"],
+        enumTypeId_op: "in",
+        pageSize: 10,
+      }
+
+      const resp = await UtilService.fetchEnums(payload)
+      if(!hasError(resp)) {
+        salesChannel = resp.data
+      } else {
+        throw resp.data
+      }
+    } catch (err) {
+      logger.error(err)
+    }
+
+    commit(types.NET_SUITE_SALES_CHANNEL_UPDATED, salesChannel)
+  },
+
   async fetchPaymentMethods({ commit }) {
     let paymentMethods = [] as any;
 
@@ -47,14 +69,14 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     }
     commit(types.NET_SUITE_PAYMENT_METHODS_UPDATED, paymentMethods);
   },
+
   async fetchProductStoreShipmentMethods({ state, commit }, payload) {
-    // let currentCarrier = JSON.parse(JSON.stringify(state.current))
-    let productStoreShipmentMethods  = [] as any;
-    // let pageIndex = 0
+    let productStoreShipmentMethods = [] as any;
     let resp;
     
     try {
       resp = await NetSuiteService.fetchProductStoreShipmentMethods("STORE")
+
       if (!hasError(resp) && resp.data) {
         productStoreShipmentMethods = resp.data
       } else {
@@ -65,7 +87,66 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     }
     commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethods)
   },
+  async fetchIntegrationTypeMappings({ commit }, integrationTypeId) {
+    let integrationTypeMappings = [] as any
+    let resp;
 
-}
+    try {
+      const payload = {
+        integrationTypeId: integrationTypeId,
+        pageSize: 100
+      }
+
+      resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
+      if (!hasError(resp) && resp.data) {
+        const responseData = resp.data
+        integrationTypeMappings = responseData.reduce((integrationTypeId: any, integrationTypeMappings: any) => {
+          const typeId = integrationTypeMappings.integrationTypeId;
+
+          if (!integrationTypeId[typeId]) {
+            integrationTypeId[typeId] = [];
+          }
+          integrationTypeId[typeId].push(integrationTypeMappings);
+          return integrationTypeId;
+        }, {});   
+      } else {
+        throw resp.data
+      }
+    } catch(error) {
+      logger.error(error);
+    }
+    commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
+  },
+  async fetchShopifyTypeMappings({commit}, mappedTypeId) {
+    let shopifyTypeMappings = [] as any
+    let resp;
+
+    try {
+      const payload = {
+        mappedTypeId: mappedTypeId,
+        pageSize: 100
+      }
+
+      resp = await NetSuiteService.fetchShopifyTypeMappings(payload)
+      if (!hasError(resp) && resp.data) {
+        const responseData = resp.data
+        shopifyTypeMappings = responseData.reduce((mappedTypeId: any, shopifyTypeMappings: any) => {
+          const typeId = shopifyTypeMappings.mappedTypeId;
+          
+          if (!mappedTypeId[typeId]) {
+            mappedTypeId[typeId] = [];
+          }
+          mappedTypeId[typeId].push(shopifyTypeMappings);
+          return mappedTypeId;
+        }, {});   
+      } else {
+        throw resp.data
+      }
+    } catch(error) {
+      logger.error(error);
+    }
+    commit(types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED, shopifyTypeMappings)
+  }
+} 
 
 export default actions;

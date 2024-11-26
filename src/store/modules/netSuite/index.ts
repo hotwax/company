@@ -9,8 +9,11 @@ const netSuiteModule: Module<NetSuiteState, RootState> = {
   namespaced: true,
   state: {
     inventoryVariances: [],
-    productStoreShipmentMethods: {},
-    paymentMethods: {}
+    productStoreShipmentMethods: [],
+    paymentMethods: [],
+    salesChannel: [],
+    integrationTypeMappings: [],
+    shopifyTypeMappings: []
   },
   getters,
   actions,

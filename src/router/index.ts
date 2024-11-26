@@ -7,12 +7,12 @@ import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
 import ProductStore from "@/views/ProductStore.vue";
 import NetSuite from "@/views/NetSuite.vue";
 import Settings from "@/views/Settings.vue"
-import ShipmentMethods from "@/components/ShipmentMethods.vue"
 import Facilities from "@/components/Facilities.vue";
-import InventoryVariances from "@/components/InventoryVariances.vue";
-import PaymentMethods from "@/components/PaymentMethods.vue";
-import SalesChannel from "@/components/SalesChannel.vue";
-import Departments from "@/components/Departments.vue";
+import ShipmentMethods from "@/views/ShipmentMethods.vue"
+import InventoryVariances from "@/views/InventoryVariances.vue";
+import PaymentMethods from "@/views/PaymentMethods.vue";
+import SalesChannel from "@/views/SalesChannel.vue";
+import Departments from "@/views/Departments.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
 

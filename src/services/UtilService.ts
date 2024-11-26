@@ -16,6 +16,14 @@ const fetchFacilityGroups = async (payload: any): Promise <any> => {
   });
 }
 
+const fetchFacilities = async (payload: any): Promise <any> => {
+  return api({
+    url: "facilities",
+    method: "get",
+    params: payload
+  })
+}
+
 const fetchOperatingCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries",
@@ -52,6 +60,7 @@ export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
   fetchFacilityGroups,
+  fetchFacilities,
   fetchOperatingCountries,
   fetchOrganization,
   fetchShipmentMethodTypes
