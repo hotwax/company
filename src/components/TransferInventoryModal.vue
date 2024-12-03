@@ -28,11 +28,11 @@
     </ion-item>
 
     <ion-item lines="none" class="ion-margin-top">
-      <ion-input v-model="transferLocationId" label="Transfer location" placeholder="NetSuite facility ID" :helperText="props.varianceEnumId"/>
+      <ion-input v-model="transferLocationId" :label="translate('Transfer location')" :placeholder="translate('NetSuite facility ID')" :helperText="props.varianceEnumId"/>
     </ion-item>
      
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="saveTransferInventory">
+      <ion-fab-button @click="saveTransferInventoryNetSuiteId">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -44,17 +44,50 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { businessOutline, closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from '@hotwax/dxp-components';
-import { defineProps, ref } from 'vue';
+import { defineProps, onMounted, ref } from 'vue';
+import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { showToast } from "@/utils";
 
-const props = defineProps(["varianceEnumId"]);
 
-const transferLocationId = ref('');
+const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables("NETSUITE_VAR_TRAN");
 
-function saveTransferInventory() {
+const props = defineProps(["varianceEnumId", "integrationMapping"]);
+
+const transferLocationId = ref("");
+
+onMounted(async() => {
+  if (props.integrationMapping?.mappingValue) {
+    transferLocationId.value = props.integrationMapping?.mappingValue;
+  }
+})
+
+// Validates the input data, saves or updates NetSuite facility ID for inventory transfers associated with the integration type ID: NETSUITE_VAR_TRAN.
+async function saveTransferInventoryNetSuiteId() {
+  if(!transferLocationId.value) {
+    showToast("Please enter a valid NetSuite ID");
+    return false;
+  }
+
+  if(props.integrationMapping?.mappingValue === transferLocationId.value) {
+    showToast("Please update the NetSuite ID");
+    return false;
+  }
+
+  const payload = {
+    integrationTypeId: "NETSUITE_VAR_TRAN",
+    mappingKey: props.varianceEnumId,
+    mappingValue: transferLocationId.value
+  };
+
+  if(props.integrationMapping.integrationMappingId) {
+    await updateNetSuiteId(payload, props.integrationMapping.integrationMappingId)
+  } else {
+    await addNetSuiteId(payload)
+  }
   closeModal();
 }
 
 function closeModal() {
-  modalController.dismiss({ dismissed: true, transferLocationId: transferLocationId.value });
+  modalController.dismiss({ dismissed: true });
 }
 </script>

@@ -35,12 +35,12 @@
         Shopify Mapping ID
         <p>Shopify</p>
       </ion-label>
-      
-      <template v-if="facility.netSuiteDepartmentId">
+
+      <template v-if="getFacilityInFacilityIdentification(facility)">
         <div class="ion-text-center">
-          <ion-chip :outline="true" @click="editNetSuiteDeparmentId(facility)">
-            <ion-label>{{ facility.netSuiteDepartmentId }}</ion-label>
-            <ion-icon fill="" :icon="closeCircleOutline" />
+          <ion-chip :outline="true" @click="editNetSuiteId(facility)">
+            <ion-label>{{ getFacilityInFacilityIdentification(facility)?.idValue }}</ion-label>
+            <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
           </ion-chip>
           <ion-label>
             <p>{{ translate("NetSuite department ID") }}</p>
@@ -48,12 +48,13 @@
         </div>
       </template>
       <template v-else>
-        <ion-button size="small" fill="outline" @click="editNetSuiteDeparmentId(facility)">
+        <ion-button size="small" fill="outline" @click="editNetSuiteId(facility)">
           <ion-icon :icon="addOutline"/>
           <ion-label>{{ translate("NetSuite id") }}</ion-label>
         </ion-button>
       </template>
-        
+      
+      <!-- TODO: need to make this order analytics dynamic -->
       <ion-label class="ion-margin-end">
         150
         <p>orders</p>
@@ -69,24 +70,36 @@ import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, st
 import { translate } from '@hotwax/dxp-components';
 import { useStore } from "vuex";
 import { computed } from "vue";
-import { showToast } from '@/utils';
+import { showToast, hasError } from '@/utils';
+import { DateTime } from "luxon";
+import emitter from "@/event-bus";
+import logger from '@/logger';
+import { NetSuiteService } from '@/services/NetSuiteService';
 
 
 const store = useStore();
 
 const facilities = computed(() => store.getters["util/getFacilities"])
+const facilitiesIdentifications = computed(() => store.getters["netSuite/getFacilitiesIdentifications"])
 
 
 onIonViewDidEnter(async () => {
   await store.dispatch("util/fetchFacilities")
+  await store.dispatch("netSuite/fetchFacilitiesIdentifications")
 })
 
-const editNetSuiteDeparmentId = async (facility: any) => {
+function getFacilityInFacilityIdentification(facility: any) {
+  return facilitiesIdentifications.value.find((identification: any) => identification.facilityId === facility.facilityId);
+}
+
+async function editNetSuiteId(facility: any) {
+  const facilityIdentification = getFacilityInFacilityIdentification(facility);
+
   const alert = await alertController.create({
     header: translate("Add Netsuite department Id"),
     inputs: [{
-      name: "netSuiteDepartmentId",
-      value: facility.netSuiteDepartmentId || '',
+      name: "netSuiteId",
+      value: facilityIdentification ? facilityIdentification.idValue : ""
     }],
     buttons: [
       {
@@ -96,15 +109,40 @@ const editNetSuiteDeparmentId = async (facility: any) => {
       {
         text: translate("Apply"),
         handler: async (data) => {
-          const currentNetsuiteId = facility.netSuiteDepartmentId || "";
-          if (data.netSuiteDepartmentId.trim() !== currentNetsuiteId) {
-            const updatedData = {
-              "fieldName": "netSuiteDepartmentId",
-              "fieldValue": data.netSuiteDepartmentId.trim()
-            };
-            showToast(translate("NetSuite department Id updated successfully."))
-            facility.netSuiteDepartmentId = data.netSuiteDepartmentId.trim();
+          let resp;
+          const netSuiteId = data.netSuiteId.trim();
+          
+          if (!netSuiteId) {
+            showToast(translate("Please enter a valid NetSuite ID"));
+            return false;
           }
+          
+          if (facilityIdentification?.idValue === netSuiteId) {
+            showToast(translate("Please update the NetSuite ID"));
+            return false;
+          }
+          
+          emitter.emit("presentLoader");
+          try {
+
+            const payload = {
+              facilityIdenTypeId: "ORDR_ORGN_DPT",
+              facilityId: facility.facilityId,
+              idValue: netSuiteId,
+              fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
+            };
+            
+            resp = await NetSuiteService.updateFacilityIdentification(payload);
+            if (!hasError(resp)) {
+              showToast(translate("NetSuite department Id updated successfully"))
+              await store.dispatch("netSuite/fetchFacilitiesIdentifications")
+            } else {
+              throw resp.data;
+            }
+          } catch(err) {
+            logger.error(err)
+          }
+          emitter.emit('dismissLoader')
         }
       }
     ]
@@ -112,7 +150,32 @@ const editNetSuiteDeparmentId = async (facility: any) => {
   await alert.present();
 }
 
+async function removeNetSuiteId(facility: any) {
+  const facilityIdentification = getFacilityInFacilityIdentification(facility);
+
+  emitter.emit("presentLoader");
+
+  try {
+    const payload = {
+      ...facilityIdentification,
+      thruDate: DateTime.now().toMillis()
+    };
+
+    const resp = await NetSuiteService.updateFacilityIdentification(payload);
+    if (!hasError(resp)) {
+      showToast(translate("NetSuite department Id removed successfully"));
+      await store.dispatch("netSuite/fetchFacilitiesIdentifications");
+    } else {
+      throw resp.data;
+    }
+  } catch (err) {
+    logger.error(err);
+  }
+  emitter.emit('dismissLoader');
+}
+
 </script>
+
 <style scoped>
 .list-item {
   --columns-desktop: 4;

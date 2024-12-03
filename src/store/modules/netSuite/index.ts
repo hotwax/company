@@ -12,8 +12,10 @@ const netSuiteModule: Module<NetSuiteState, RootState> = {
     productStoreShipmentMethods: [],
     paymentMethods: [],
     salesChannel: [],
-    integrationTypeMappings: [],
-    shopifyTypeMappings: []
+    facilitiesIdentifications: [],
+    enumsInEnumGroup: [],
+    shopifyTypeMappings: [],
+    integrationTypeMappings: []
   },
   getters,
   actions,

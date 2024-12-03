@@ -15,6 +15,12 @@ const getters: GetterTree <NetSuiteState, RootState> = {
   getSalesChannel(state) {
     return state.salesChannel
   },
+  getFacilitiesIdentifications: (state) => {
+    return state.facilitiesIdentifications
+  },
+  getEnumGroups: (state) => (enumId: any) => {
+    return state.enumsInEnumGroup[enumId]
+  },
   getIntegrationTypeMappings: (state) => (typeId: any) => {
     return state.integrationTypeMappings[typeId] ? state.integrationTypeMappings[typeId] : []
   },

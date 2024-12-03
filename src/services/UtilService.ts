@@ -40,6 +40,22 @@ const fetchEnums = async (payload: any): Promise <any> => {
   });
 }
 
+const fetchEnumGroups = async (payload: any): Promise <any> => {
+  return api({
+    url: `enumGroups/${payload.enumerationGroupId}/members`,
+    method: "get",
+    params: payload
+  });
+}
+
+const addEnumToEnumGroup = async (payload: any): Promise <any> => {
+  return api({
+    url: `enumGroups/${payload.enumerationGroupId}/members`,
+    method: "post",
+    data: payload
+  })
+}
+
 const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   return api({
     url: "shipmentMethodTypes",
@@ -59,6 +75,8 @@ const fetchOrganization = async (payload: any): Promise<any> => {
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
+  fetchEnumGroups,
+  addEnumToEnumGroup,
   fetchFacilityGroups,
   fetchFacilities,
   fetchOperatingCountries,

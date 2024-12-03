@@ -31,7 +31,8 @@ const actions: ActionTree<UtilState, RootState> = {
     try {
       resp = await UtilService.fetchFacilities({ pageSize: 100 })
       if(!hasError(resp) && resp.data) {
-        facilities = resp.data
+        // need to change this check later.
+        facilities = resp.data.filter((facility: any) => facility.externalId)
       } else {
         throw resp.data
       }

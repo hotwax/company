@@ -23,22 +23,22 @@
     <div class="list-item ion-margin-top" v-for="channel in salesChannel" :key="channel.enumId">
       <ion-item lines="none">
         <ion-label>
-          {{ channel.enumName ? channel.enumName : channel.enumId }}
+          {{ channel.description ? channel.description : channel.enumId }}
           <p>{{ channel.enumId }}</p>
         </ion-label>
       </ion-item>
       
       <!-- TODO: need to make this shopify mapping dynamic -->
       <ion-label>
-        Shopify Mapping ID
+        {{ getShopifyMappingId(channel.enumId) ? getShopifyMappingId(channel.enumId) : '-' }}
         <p>Shopify</p>
       </ion-label>
       
-      <template v-if="channel.netSuiteSalesChannelId">
+      <template v-if="channel.enumCode">
         <div class="ion-text-center">
           <ion-chip :outline="true" @click="editNetSuiteSalesChannelId(channel)">
-            <ion-label>{{ channel.netSuiteSalesChannelId }}</ion-label>
-            <ion-icon fill="" :icon="closeCircleOutline" />
+            <ion-label>{{ channel.enumCode }}</ion-label>
+            <ion-icon fill="" :icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
           </ion-chip>
           <ion-label>
             <p>{{ translate("NetSuite sales channel") }}</p>
@@ -51,7 +51,8 @@
           <ion-label>{{ translate("NetSuite id") }}</ion-label>
         </ion-button>
       </template>
-        
+
+      <!-- TODO: need to make this order analytics dynamic -->
       <ion-label class="ion-margin">
         150
         <p>orders</p>
@@ -61,31 +62,41 @@
   </ion-content>
 </ion-page>
 </template>
+
 <script setup lang="ts">
 import { IonBackButton, onIonViewDidEnter } from '@ionic/vue'
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@hotwax/dxp-components';
+import { NetSuiteService } from '@/services/NetSuiteService';
 import { useStore } from "vuex";
 import { computed } from "vue";
-import { showToast } from '@/utils';
+import { showToast, hasError } from '@/utils';
+import emitter from "@/event-bus";
+import logger from '@/logger';
 
 
 const store = useStore();
 
-
 const salesChannel = computed(() => store.getters["netSuite/getSalesChannel"])
+const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_ORDER_SOURCE"))
 
 onIonViewDidEnter(async () => {
   await store.dispatch("netSuite/fetchSalesChannel")
+  await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_ORDER_SOURCE")
 })
 
-const editNetSuiteSalesChannelId = async (channel: any) => {
+function getShopifyMappingId(salesChannelEnumId: any) {
+  const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === salesChannelEnumId);
+  return shopifyMappingId ? shopifyMappingId.mappedKey : "";
+}
+
+async function editNetSuiteSalesChannelId(channel: any) {
   const alert = await alertController.create({
     header: translate("Add Netsuite sales channel Id"),
     inputs: [{
       name: "netSuiteSalesChannelId",
-      value: channel.netSuiteSalesChannelId || '',
+      value: channel.enumCode ? channel.enumCode : "",
     }],
     buttons: [
       {
@@ -95,23 +106,51 @@ const editNetSuiteSalesChannelId = async (channel: any) => {
       {
         text: translate("Apply"),
         handler: async (data) => {
-          const currentNetsuiteId = channel.netSuiteSalesChannelId || "";
-          if (data.netSuiteSalesChannelId.trim() !== currentNetsuiteId) {
-            const updatedData = {
-              "fieldName": "netSuiteSalesChannelId",
-              "fieldValue": data.netSuiteSalesChannelId.trim()
-            };
-            showToast(translate("NetSuite sales channel Id updated successfully."))
-            // await store.dispatch('util/updateSalesChannel', { channel, updatedData });
-            channel.netSuiteSalesChannelId = data.netSuiteSalesChannelId.trim();
+          const netSuiteId = data.netSuiteSalesChannelId.trim();
+          
+          if (!netSuiteId) {
+            showToast("Please enter a valid NetSuite ID.");
+            return false;
           }
+
+          if (channel.enumCode === netSuiteId) {
+            showToast("Please update the NetSuite ID.");
+            return false;
+          }
+          await updateSalesChannelNetSuiteId(channel, netSuiteId);
         }
       }
     ]
   });
   await alert.present();
 }
+
+async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
+  emitter.emit("presentLoader");
+  let resp;
+
+  if(netSuiteId) {
+    channel.enumCode = netSuiteId;
+  } else {
+    channel.enumCode = ""
+  }
+
+  try {
+    resp = await NetSuiteService.addEnumCode(channel);
+    if (!hasError(resp)) {
+      showToast("NetSuite Id updated successfully.");
+      await store.dispatch("netSuite/fetchSalesChannel");
+    } else {
+      throw resp.data;
+    }
+  } catch (err) {
+    logger.error(err);
+  }
+  emitter.emit('dismissLoader');
+}
+
 </script>
+
 <style scoped>
 .list-item {
   --columns-desktop: 4;

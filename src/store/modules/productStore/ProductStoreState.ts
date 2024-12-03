@@ -3,4 +3,5 @@ export default interface ProductStoreState {
   currentStoreSettings: any;
   productStores: any;
   company: any;
+  selectedProductStore: any
 }

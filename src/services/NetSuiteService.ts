@@ -1,6 +1,4 @@
 import api from "@/api"
-import logger from "@/logger";
-import { hasError } from "@/utils";
 
 
 const fetchProductStoreShipmentMethods = async (productStoreId: any): Promise<any> => {
@@ -18,17 +16,25 @@ const fetchPaymentMethods = async (payload: any): Promise <any> => {
   });
 }
 
-const fetchIntegrationTypeMappings = async (payload: any): Promise <any> => {
+const fetchfacilitiesIdentifications = async (payload: any): Promise <any> => {
   return api({
-    url: "integrationTypeMappings",
+    url: "facilities/identifications",
     method: "get",
     params: payload
   })
 }
 
-const fetchShopifyTypeMappings = async (payload: any): Promise <any> => {
+const updateFacilityIdentification = async (payload: any): Promise <any> => {
   return api({
-    url: "shopifyShops/typeMappings",
+    url: "facilities/identifications",
+    method: "post",
+    data: payload
+  })
+}
+
+const fetchIntegrationTypeMappings = async (payload: any): Promise <any> => {
+  return api({
+    url: "integrationTypeMappings",
     method: "get",
     params: payload
   })
@@ -50,19 +56,49 @@ const updateIntegrationTypeMappings = async (payload: any, integrationMappingId:
   })
 }
 
-const deleteNetsuiteId = async (payload: any): Promise <any> => {
+const fetchShopifyTypeMappings = async (payload: any): Promise <any> => {
+  return api({
+    url: "shopifyShops/typeMappings",
+    method: "get",
+    params: payload
+  })
+}
+
+const removeIntegrationMappingValue = async (payload: any): Promise <any> => {
   return api({
     url: `integrationTypeMappings/${payload}`,
     method: "delete"
   })
 }
 
+// TODO: need to add dynamic api to update the sftp configs.
+const updateSftpConfig = async (payload: any): Promise <any> => {
+  return api({
+    url: "updateSftp",
+    method: "post",
+    data: payload
+  })
+}
+
+const addEnumCode = async (payload: any): Promise <any> => {
+  return api({
+    url: "enums",
+    method: "post",
+    data: payload
+  })
+}
+
+
 export const NetSuiteService = {
   fetchProductStoreShipmentMethods,
   fetchPaymentMethods,
+  fetchfacilitiesIdentifications,
+  updateFacilityIdentification,
   fetchIntegrationTypeMappings,
   fetchShopifyTypeMappings,
   addIntegrationTypeMappings,
   updateIntegrationTypeMappings,
-  deleteNetsuiteId
+  removeIntegrationMappingValue,
+  updateSftpConfig,
+  addEnumCode
 }

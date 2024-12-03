@@ -58,10 +58,11 @@
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openFacilities()">
+          <!-- TODO: Need to make these page dynamic -->
+          <!-- <ion-item class="item-box" lines="none" button @click="openFacilities()">
             <ion-label>{{ translate("Facilities") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
-          </ion-item>
+          </ion-item> -->
         </section>
       </div>
       
@@ -132,9 +133,9 @@ function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
 }
 
-function openFacilities() {
-  router.push("/netsuite/facilities")
-}
+// function openFacilities() {
+//   router.push("/netsuite/facilities")
+// }
 
 function openInventoryVariances() {
   router.push("/netsuite/inventory-variances")
@@ -149,31 +150,31 @@ function openDepartments() {
 }
 
 async function openSftpModal() {
-  const modal = await modalController.create({
+  const sftpModal = await modalController.create({
     component: SftpModal,
   })
-  modal.present()
+  sftpModal.present()
 }
 
 async function openProductStoreModal() {
-  const modal = await modalController.create({
+  const productStoreModal = await modalController.create({
     component: ProductStoreModal,
   })
-  modal.present()
+  productStoreModal.present()
 }
 
 async function openPriceLevelModal() {
-  const modal = await modalController.create({
+  const priceLevelModal = await modalController.create({
     component: PriceLevelModal,
   })
-  modal.present()
+  priceLevelModal.present()
 }
 
 async function openDiscountsModal() {
-  const modal = await modalController.create({
+  const discountModal = await modalController.create({
     component: DiscountsModal,
   })
-  modal.present()
+  discountModal.present()
 }
 </script>
 

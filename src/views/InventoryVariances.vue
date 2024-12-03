@@ -27,15 +27,16 @@
           </ion-label>
         </ion-item>
         
+        <!-- TODO: need to make this order analytics dynamic -->
         <ion-label>
           200
           <p>{{ translate("variances in 7 days") }}</p>
         </ion-label>
 
-        <template v-if="variance.transferLocationId">
+        <template v-if="updatedNetSuiteIds[variance.enumId]">
           <div class="ion-text-center">
-            <ion-chip :outline="true">
-              <ion-label>{{ variance.transferLocationId }}</ion-label>
+            <ion-chip :outline="true" @click="openTransferInventoryModal(variance)">
+              <ion-label>{{ updatedNetSuiteIds[variance.enumId].mappingValue }}</ion-label>
               <ion-icon fill="" :icon="closeCircleOutline" />
             </ion-chip>
             <ion-label>
@@ -49,10 +50,11 @@
             <ion-icon :icon="swapHorizontalOutline" slot="end"/>
           </ion-button>
         </template>
-        
-        <ion-item lines="none">
-          <ion-checkbox></ion-checkbox>
+
+        <ion-item lines="none" @click="addVarianceToGroup(variance.enumId)">
+          <ion-checkbox :checked="enumsInEnumGroup(variance.enumId)"></ion-checkbox>
         </ion-item>
+        
       </div>
     </ion-content>
   </ion-page>
@@ -63,15 +65,38 @@ import { translate } from '@hotwax/dxp-components';
 import { IonBackButton, IonBadge, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
 import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import TransferInventoryModal from '@/components/TransferInventoryModal.vue';
+import { showToast, hasError } from '@/utils';
+import emitter from "@/event-bus";
+import logger from '@/logger';
 import { useStore } from "vuex";
 import { computed } from 'vue';
+import { UtilService } from '@/services/UtilService';
+import { DateTime } from 'luxon';
 
 const store = useStore();
 
 const inventoryVariances = computed(() => store.getters["netSuite/getInventoryVariances"]);
+const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_VAR_TRAN"))
+const enumsInEnumGroup = computed(() => store.getters["netSuite/getEnumGroups"])
+
+
+// The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
+// to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
+const updatedNetSuiteIds = computed(() => {
+  return integrationTypeMappings.value.reduce((inventoryVariancesEnumId: any, mappingItem: any) => {
+    inventoryVariancesEnumId[mappingItem.mappingKey] = {
+      mappingValue: mappingItem.mappingValue,
+      integrationMappingId: mappingItem.integrationMappingId
+    };
+    return inventoryVariancesEnumId;
+  }, {} as any);
+});
+
 
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchInventoryVariances");
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_VAR_TRAN")
+  await store.dispatch("netSuite/fetchEnumGroups")
 });
 
 async function openTransferInventoryModal(variance: any) {
@@ -79,17 +104,44 @@ async function openTransferInventoryModal(variance: any) {
     component: TransferInventoryModal,
     componentProps: { 
       varianceEnumId: variance.enumId,
-      // currentTransferLocationId: variance.transferLocationId || ''
+      integrationMapping: updatedNetSuiteIds.value[variance.enumId] ? updatedNetSuiteIds.value[variance.enumId] : ""
     }
   });
 
-  transferInventoryModal.onDidDismiss().then((result) => {
-    if (result?.data?.transferLocationId) {
-      variance.transferLocationId = result.data.transferLocationId;
-    }
-  });
   transferInventoryModal.present();
 }
+
+// adding & updating the enum with enumGroup
+async function addVarianceToGroup(enumerationId: any) { 
+  emitter.emit("presentLoader");
+  let resp;
+
+  try {
+    let payload: any = {
+      enumerationGroupId: "NETSUITE_IIV_REASON",
+      enumerationId: enumerationId
+    }
+
+    if(enumsInEnumGroup.value(enumerationId)) {
+      payload = {
+        ...payload,
+        fromDate: enumsInEnumGroup.value(enumerationId)?.fromDate,
+        thruDate: DateTime.now().toMillis()
+      }
+    }
+    
+    resp = await UtilService.addEnumToEnumGroup(payload);
+    if (!hasError(resp)) {
+      await store.dispatch("netSuite/fetchEnumGroups");
+    } else {
+      throw resp.data;
+    }
+  } catch (err) {
+    logger.error(err);
+  }
+  emitter.emit('dismissLoader');
+}
+
 </script>
 
 <style scoped>
@@ -97,3 +149,7 @@ async function openTransferInventoryModal(variance: any) {
   --columns-desktop: 4;
 }
 </style>
+
+
+
+

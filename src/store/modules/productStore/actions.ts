@@ -116,6 +116,10 @@ const actions: ActionTree<ProductStoreState, RootState> = {
   async clearProductStoreState({ commit }) {
     commit(types.PRODUCT_STORE_CLEARED);
   },
+
+  async updateSelectedProductStore({ commit }, selectedProductStore) {
+    commit(types.PRODUCT_STORE_SELECTED_PRODUCT_STORE_UPDATED, selectedProductStore);
+  }
 }
 
 export default actions;

@@ -20,23 +20,24 @@
     </ion-item>
     
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input v-model="sftpFormData.guid" label="GUID" placeholder="Unique SFTP identifier" />
+      <ion-input v-model="sftpFormData.guid" :label="translate('GUID')" :placeholder="translate('Unique SFTP identifier')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.server" label="SERVER" placeholder="Address or domain of the SFTP server" />
+      <ion-input v-model="sftpFormData.server" :label="translate('SERVER')" :placeholder="translate('Address or domain of the SFTP server')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.userId" label="USER ID" placeholder="SFTP username" />
+      <ion-input v-model="sftpFormData.userId" :label="translate('USER ID')" :placeholder="translate('SFTP username')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.port" label="PORT" placeholder="Default is 22" />
+      <ion-input v-model="sftpFormData.port" :label="translate('PORT')" :placeholder="translate('Default is 22')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.hostKey" label="HOST KEY" placeholder="Authentication key" />
+      <ion-input v-model="sftpFormData.hostKey" :label="translate('HOST KEY')" :placeholder="translate('Authentication key')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.defaultDirectory" label="DEFAULT DIRECTORY" placeholder="/home/-sftp/netsuite/" />
+      <ion-input v-model="sftpFormData.defaultDirectory" :label="translate('DEFAULT DIRECTORY')" :placeholder="translate('/home/-sftp/netsuite/')" />
     </ion-item>
+
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
       <ion-fab-button @click="saveSftpConfig">
         <ion-icon :icon="saveOutline" />
@@ -50,32 +51,48 @@ import { ref } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from '@hotwax/dxp-components';
+import { NetSuiteService } from '@/services/NetSuiteService';
+import { hasError, showToast } from '@/utils';
+import emitter from "@/event-bus";
+import logger from "@/logger";
 
 const sftpFormData = ref({
-  guid: '',
-  server: '',
-  userId: '',
-  port: '',
-  hostKey: '',
-  defaultDirectory: ''
+  guid: "",
+  server: "",
+  userId: "",
+  port: "",
+  hostKey: "",
+  defaultDirectory: ""
 });
 
 function closeModal() {
   modalController.dismiss({ dismissed: true });
 }
 
-function saveSftpConfig() {
-  const payload = {
-    guid: sftpFormData.value.guid,
-    server: sftpFormData.value.server,
-    userId: sftpFormData.value.userId,
-    port: sftpFormData.value.port,
-    hostKey: sftpFormData.value.hostKey,
-    defaultDirectory: sftpFormData.value.defaultDirectory
-  };
+async function saveSftpConfig() {
+  try {
+    const payload = {
+      guid: sftpFormData.value.guid,
+      server: sftpFormData.value.server,
+      userId: sftpFormData.value.userId,
+      port: sftpFormData.value.port,
+      hostKey: sftpFormData.value.hostKey,
+      defaultDirectory: sftpFormData.value.defaultDirectory
+    };
 
+    const resp = await NetSuiteService.updateSftpConfig(payload);
+
+    if(!hasError(resp)) {
+      showToast("SFTP configurations updated successfully")
+    } else {
+      throw resp.data;
+    }
+  } catch(error: any) {
+    logger.error(error);
+    showToast(translate("Failed to update SFTP configurations"))
+  }
+
+  emitter.emit("dismissLoader")
   closeModal();
-  // Here you would typically call the API to save the data
-  // For now, we just log the payload
 }
 </script>

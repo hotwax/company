@@ -5,4 +5,6 @@ export default interface NetSuiteState {
   salesChannel: any
   integrationTypeMappings: any
   shopifyTypeMappings: any
+  facilitiesIdentifications: any
+  enumsInEnumGroup: any
 }

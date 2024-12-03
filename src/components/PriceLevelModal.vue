@@ -20,14 +20,14 @@
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input v-model="customPrice" :disabled="isBasePriceSelected" label="Price level" placeholder="Base Price" />
+      <ion-input v-model="inputPrice" :label="translate('Price level')" :placeholder="translate('Base Price')" @click="clearSelection" />
     </ion-item>
 
     <ion-list>
       <ion-list-header>{{ translate("Frequently used") }}</ion-list-header>
-      <ion-radio-group v-model="selectedPriceType">
+      <ion-radio-group v-model="selectedPriceType" @ionChange="onPriceTypeChange">
         <ion-item>
-          <ion-radio value="base" label-placement="end" justify="start" @click="selectBasePrice">
+          <ion-radio value="base" label-placement="end" justify="start">
             <ion-label>
               {{ translate("Base leave") }}
               <p>{{ translate("Defaults to product price set in NetSuite") }}</p>
@@ -35,7 +35,7 @@
           </ion-radio>
         </ion-item>
         <ion-item>
-          <ion-radio value="custom" label-placement="end" justify="start" @click="selectCustomPrice">
+          <ion-radio value="custom" label-placement="end" justify="start">
             <ion-label>
               {{ translate("Custom") }}
               <p>{{ translate("Use the price a product was sold at in the order.") }}</p>
@@ -54,34 +54,41 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonListHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from '@hotwax/dxp-components';
-import { computed, ref } from "vue";
- 
-const selectedPriceType = ref('');
-const customPrice = ref('');
+import { ref, computed } from "vue";
+import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+
+const { addNetSuiteId } = useNetSuiteComposables("NETSUITE_PRICE_LEVEL");
+
+const selectedPriceType = ref("");
+const inputPrice = ref("");
+const mappingValue = computed(() => {
+  return inputPrice.value || selectedPriceType.value;
+});
+
+// Clear the selection when the input is clicked
+function clearSelection() {
+  selectedPriceType.value = "";
+}
+
+function onPriceTypeChange(event: any) {
+  selectedPriceType.value = event.detail.value;
+}
+
+// saves the selected price level to Netsuite for integration type id: 'NETSUITE_PRICE_LEVEL' & mappingKey: 'PRICE_LEVEL'.
+async function savePrice() {
+  const payload = {
+    integrationTypeId: "NETSUITE_PRICE_LEVEL",
+    mappingKey: "PRICE_LEVEL",
+    mappingValue: mappingValue.value
+  };
+  await addNetSuiteId(payload);
+  closeModal();
+}
 
 function closeModal() {
   modalController.dismiss({ dismissed: true });
-}
-
-const isBasePriceSelected = computed(() => selectedPriceType.value === "base");
-
-function selectBasePrice() {
-  selectedPriceType.value = "base";
-}
-
-function selectCustomPrice() {
-  selectedPriceType.value = "custom";
-}
-
-function savePrice() {
-  const payload = {
-    priceType: selectedPriceType.value,
-    customPrice: selectedPriceType.value === "custom" ? customPrice.value : '',
-  };
-
-  closeModal();
 }
 </script>
