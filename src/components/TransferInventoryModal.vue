@@ -36,27 +36,24 @@
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
-
   </ion-content>
 </template>
 
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { businessOutline, closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
+import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 import { translate } from "@/i18n"
 import { defineProps, onMounted, ref } from 'vue';
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 import { showToast } from "@/utils";
-
 
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables("NETSUITE_VAR_TRAN");
 
 const props = defineProps(["varianceEnumId", "integrationMapping"]);
-
 const transferLocationId = ref("");
 
 onMounted(async() => {
-  if (props.integrationMapping?.mappingValue) {
+  if(props.integrationMapping?.mappingValue) {
     transferLocationId.value = props.integrationMapping?.mappingValue;
   }
 })

@@ -28,7 +28,7 @@
     </ion-item>
 
     <ion-item lines="full">
-      <ion-input  v-model="subsidiaryId" :label="translate('Subsidiary')" :placeholder="translate('Usually 1')" />
+      <ion-input v-model="subsidiaryId" :label="translate('Subsidiary')" :placeholder="translate('Usually 1')" />
     </ion-item>
     
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
@@ -50,7 +50,6 @@ import { ProductStoreService } from "@/services/ProductStoreService";
 import emitter from "@/event-bus";
 import logger from "@/logger";
 
- 
 const store = useStore();
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
@@ -77,6 +76,8 @@ async function updateSubsidiaryId() {
     if(!hasError(resp)) {
       showToast("Product store setting updated successfully.")
       await store.dispatch("productStore/fetchProductStores");
+      // We are updating the selected product store in the state to retrieve the 
+      // appropriate shipment methods based on the user's selection on Shipment methods page
       await store.dispatch("productStore/updateSelectedProductStore", selectedProductStore.value);
     } else {
       throw resp.data;

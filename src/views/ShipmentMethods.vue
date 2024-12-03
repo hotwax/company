@@ -7,6 +7,7 @@
         <ion-title>{{ translate("Shipment methods") }}</ion-title>
       </ion-toolbar>
     </ion-header>
+
     <ion-content>
       <div class="header ion-margin-top">
         <ion-item lines="none">
@@ -77,20 +78,18 @@
           <p>{{ translate("orders") }}</p>
         </ion-label>
       </div>
-
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { IonBackButton } from '@ionic/vue'
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonText, IonTitle, IonToolbar, onIonViewWillEnter, alertController } from "@ionic/vue";
+import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
-
 
 const store = useStore();
 
@@ -99,7 +98,6 @@ const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables("NETSUITE_SH
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_SHP_MTHD"))
-
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)
@@ -123,7 +121,6 @@ function getShipmentMethodDesc(shipmentMethodTypeId: string) {
   const shipmentMethodType = shipmentMethodTypes.value.find((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
   return shipmentMethodType ? shipmentMethodType.description : ""
 }
-
 </script>
 
 <style scoped>

@@ -2,7 +2,7 @@
   <ion-menu content-id="main-content" type="overlay" :disabled="!isUserAuthenticated">
     <ion-header>
       <ion-toolbar>
-        <ion-title>{{ translate("Company")}}</ion-title>
+        <ion-title>{{ translate("Company") }}</ion-title>
       </ion-toolbar>
     </ion-header>
 

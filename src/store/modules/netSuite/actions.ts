@@ -32,7 +32,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_INVENTORY_VARIANCES_UPDATED, inventoryVariances)
   },
 
-  async fetchEnumGroups({commit}) {
+  async fetchEnumGroupMember({commit}) {
     let enumsInEnumGroup  = [] as any;
     try {
       const payload = {
@@ -41,7 +41,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         pageSize: 20,
       }
 
-      const resp = await UtilService.fetchEnumGroups(payload)
+      const resp = await UtilService.fetchEnumGroupMember(payload)
 
       if(!hasError(resp) && resp.data) {
         // TODO: need to remove this filter check , after api change of not giving expired results.
@@ -132,7 +132,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       const productStoreId = store.getters["productStore/getSelectedProductStore"]
       resp = await NetSuiteService.fetchProductStoreShipmentMethods(productStoreId)
 
-      if (!hasError(resp) && resp.data) {
+      if(!hasError(resp) && resp.data) {
         productStoreShipmentMethods = resp.data
       } else {
         throw resp.data
@@ -154,12 +154,12 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       }
 
       resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
-      if (!hasError(resp) && resp.data) {
+      if(!hasError(resp) && resp.data) {
         const responseData = resp.data
         integrationTypeMappings = responseData.reduce((integrationTypeId: any, integrationTypeMappings: any) => {
           const typeId = integrationTypeMappings.integrationTypeId;
 
-          if (!integrationTypeId[typeId]) {
+          if(!integrationTypeId[typeId]) {
             integrationTypeId[typeId] = [];
           }
 
@@ -186,12 +186,12 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       }
 
       resp = await NetSuiteService.fetchShopifyTypeMappings(payload)
-      if (!hasError(resp) && resp.data) {
+      if(!hasError(resp) && resp.data) {
         const responseData = resp.data
         shopifyTypeMappings = responseData.reduce((mappedTypeId: any, shopifyTypeMappings: any) => {
           const typeId = shopifyTypeMappings.mappedTypeId;
           
-          if (!mappedTypeId[typeId]) {
+          if(!mappedTypeId[typeId]) {
             mappedTypeId[typeId] = [];
           }
 

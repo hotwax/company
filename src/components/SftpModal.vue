@@ -83,7 +83,7 @@ async function saveSftpConfig() {
     const resp = await NetSuiteService.updateSftpConfig(payload);
 
     if(!hasError(resp)) {
-      showToast("SFTP configurations updated successfully")
+      showToast(translate("SFTP configurations updated successfully"))
     } else {
       throw resp.data;
     }

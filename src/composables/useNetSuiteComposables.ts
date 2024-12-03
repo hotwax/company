@@ -28,12 +28,12 @@ export function useNetSuiteComposables(integrationTypeId: any) {
           handler: async (data) => {
             const netSuiteId = data.netSuiteId.trim();
         
-            if (!netSuiteId) {
+            if(!netSuiteId) {
               showToast(translate("Please enter a valid NetSuite ID"));
               return false;
             }
 
-            if (integrationMapping?.mappingValue === netSuiteId) {
+            if(integrationMapping?.mappingValue === netSuiteId) {
               showToast(translate("Please update the NetSuite ID"));
               return false;
             }
@@ -44,7 +44,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
               mappingValue: netSuiteId
             };
 
-            if (integrationMapping?.integrationMappingId) {
+            if(integrationMapping?.integrationMappingId) {
               await updateNetSuiteId(payload, integrationMapping.integrationMappingId);
             } else {
               await addNetSuiteId(payload);
@@ -63,7 +63,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.addIntegrationTypeMappings(payload);
-      if (!hasError(resp)) {
+      if(!hasError(resp)) {
         showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
           await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
@@ -84,7 +84,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.updateIntegrationTypeMappings(payload, integrationMappingId);
-      if (!hasError(resp)) {
+      if(!hasError(resp)) {
         showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
           await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
@@ -105,8 +105,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.removeIntegrationMappingValue(integrationMappingId);
-      console.log(resp, integrationMappingId);
-      if (!hasError(resp)) {
+      if(!hasError(resp)) {
         showToast(translate("NetSuite Id removed successfully"));
         await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
       } else {

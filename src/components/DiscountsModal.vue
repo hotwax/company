@@ -36,16 +36,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { showToast } from '@/utils';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
-
-
 
 const store = useStore();
 
@@ -55,7 +52,6 @@ const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegr
 
 const orderLevelDiscount = ref("");
 const itemLevelDiscount = ref("");
-
 const mappingKeys = {
   order: "SHOPIFY_DISC",
   item: "SHOPIFY_ITEM_DISC"
@@ -66,9 +62,9 @@ onMounted(async () => {
   
   // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
   integrationTypeMappings.value.forEach((mapping: any) => {
-    if (mapping.mappingKey === mappingKeys.order) {
+    if(mapping.mappingKey === mappingKeys.order) {
       orderLevelDiscount.value = mapping.mappingValue;
-    } else if (mapping.mappingKey === mappingKeys.item) {
+    } else if(mapping.mappingKey === mappingKeys.item) {
       itemLevelDiscount.value = mapping.mappingValue;
     }
   });
@@ -79,7 +75,7 @@ function closeModal() {
 }
 
 async function editNetSuiteDiscountItemIds() {
-  if (!orderLevelDiscount.value && !itemLevelDiscount.value) {
+  if(!orderLevelDiscount.value && !itemLevelDiscount.value) {
     showToast(translate("Please enter a valid NetSuite ID"));
     return;
   }
@@ -94,24 +90,23 @@ async function updateMapping(mappingKey: any, mappingValue: any) {
   const integrationMappings = integrationTypeMappings.value;
   const currentMapping = integrationMappings.find((mapping: any) => mapping.mappingKey === mappingKey);
 
-  if (currentMapping?.mappingValue === mappingValue) {
+  if(currentMapping?.mappingValue === mappingValue) {
     showToast(translate("Please update the NetSuite ID"));
     return;
   }
 
-  if (mappingValue) {
+  if(mappingValue) {
     const payload = {
       integrationTypeId: "NETSUITE_DISC_MTHD",
       mappingKey,
       mappingValue,
     };
 
-    if (currentMapping?.integrationMappingId) {
+    if(currentMapping?.integrationMappingId) {
       await updateNetSuiteId(payload, currentMapping.integrationMappingId);
     } else {
       await addNetSuiteId(payload);
     }
   }
 }
-
 </script>

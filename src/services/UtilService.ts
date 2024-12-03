@@ -40,7 +40,7 @@ const fetchEnums = async (payload: any): Promise <any> => {
   });
 }
 
-const fetchEnumGroups = async (payload: any): Promise <any> => {
+const fetchEnumGroupMember = async (payload: any): Promise <any> => {
   return api({
     url: `enumGroups/${payload.enumerationGroupId}/members`,
     method: "get",
@@ -75,7 +75,7 @@ const fetchOrganization = async (payload: any): Promise<any> => {
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
-  fetchEnumGroups,
+  fetchEnumGroupMember,
   addEnumToEnumGroup,
   fetchFacilityGroups,
   fetchFacilities,

@@ -57,10 +57,10 @@
           <p>orders</p>
         </ion-label>
       </div>
-    
     </ion-content>
   </ion-page>
 </template>
+
 <script setup lang="ts">
 import { IonBackButton } from '@ionic/vue'
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter, alertController } from "@ionic/vue";
@@ -70,7 +70,6 @@ import { useStore } from "vuex";
 import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-
 const store = useStore();
 
 const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables("NETSUITE_PMT_MTHD");
@@ -78,7 +77,6 @@ const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables("NETSUITE_PM
 const paymentMethods = computed(() => store.getters["netSuite/getPaymentMehtods"])
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_PMT_MTHD"))
 const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_PAYMENT_TYPE"))
-
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_PMT_MTHD)
@@ -92,7 +90,6 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchPaymentMethods")
   await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_PMT_MTHD")
@@ -103,9 +100,8 @@ function getShopifyMappingId(paymentMethodTypeId: any) {
   const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === paymentMethodTypeId);
   return shopifyMappingId ? shopifyMappingId.mappedKey : "";
 }
-
-
 </script>
+
 <style scoped>
 .list-item {
   --columns-desktop: 4;

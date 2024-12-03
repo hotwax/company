@@ -8,61 +8,62 @@
       </ion-toolbar>
     </ion-header>
 
-  <ion-content>
-    <div class="header ion-margin-top">
-      <ion-item lines="none">
-        <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
-        <ion-label>
-          {{ translate("Map departments with NetSuite") }}
-          <p>{{ translate("Learn more about mapping departments with NetSuite to make sure orders are attributed correctly.") }}</p>
-        </ion-label>
-        <ion-icon :icon="openOutline" slot="end" />
-      </ion-item>
-    </div>
-
-    <div class="list-item" v-for="facility in facilities" :key="facility.facilityId">
-      <ion-item lines="none">
-        <ion-icon slot="start" :icon="storefrontOutline" />
-        <ion-label>
-          <p class="overline">{{ facility.facilityTypeId }}</p>
-          {{ facility.facilityName }}
-          <p>{{ facility.facilityId }}</p>
-        </ion-label>
-      </ion-item>
-      
-      <!-- TODO: need to make this shopify mapping dynamic -->
-      <ion-label>
-        Shopify Mapping ID
-        <p>Shopify</p>
-      </ion-label>
-
-      <template v-if="getFacilityInFacilityIdentification(facility)">
-        <div class="ion-text-center">
-          <ion-chip :outline="true" @click="editNetSuiteId(facility)">
-            <ion-label>{{ getFacilityInFacilityIdentification(facility)?.idValue }}</ion-label>
-            <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
-          </ion-chip>
+    <ion-content>
+      <div class="header ion-margin-top">
+        <ion-item lines="none">
+          <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
           <ion-label>
-            <p>{{ translate("NetSuite department ID") }}</p>
+            {{ translate("Map departments with NetSuite") }}
+            <p>{{ translate("Learn more about mapping departments with NetSuite to make sure orders are attributed correctly.") }}</p>
           </ion-label>
-        </div>
-      </template>
-      <template v-else>
-        <ion-button size="small" fill="outline" @click="editNetSuiteId(facility)">
-          <ion-icon :icon="addOutline"/>
-          <ion-label>{{ translate("NetSuite id") }}</ion-label>
-        </ion-button>
-      </template>
-      
-      <!-- TODO: need to make this order analytics dynamic -->
-      <ion-label class="ion-margin-end">
-        150
-        <p>orders</p>
-      </ion-label>
-    </div>
-  </ion-content>
-</ion-page>
+          <ion-icon :icon="openOutline" slot="end" />
+        </ion-item>
+      </div>
+
+      <div class="list-item" v-for="facility in facilities" :key="facility.facilityId">
+        <ion-item lines="none">
+          <ion-icon slot="start" :icon="storefrontOutline" />
+          <ion-label>
+            <p class="overline">{{ facility.facilityTypeId }}</p>
+            {{ facility.facilityName }}
+            <p>{{ facility.facilityId }}</p>
+          </ion-label>
+        </ion-item>
+        
+        <!-- TODO: need to make this shopify mapping dynamic -->
+        <ion-label>
+          Shopify Mapping ID
+          <p>Shopify</p>
+        </ion-label>
+
+        <template v-if="getFacilityInFacilityIdentification(facility)">
+          <div class="ion-text-center">
+            <ion-chip :outline="true" @click="editNetSuiteId(facility)">
+              <ion-label>{{ getFacilityInFacilityIdentification(facility)?.idValue }}</ion-label>
+              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
+            </ion-chip>
+            <ion-label>
+              <p>{{ translate("NetSuite department ID") }}</p>
+            </ion-label>
+          </div>
+        </template>
+        <template v-else>
+          <ion-button size="small" fill="outline" @click="editNetSuiteId(facility)">
+            <ion-icon :icon="addOutline"/>
+            <ion-label>{{ translate("NetSuite id") }}</ion-label>
+          </ion-button>
+        </template>
+        
+        <!-- TODO: need to make this order analytics dynamic -->
+        <ion-label class="ion-margin-end">
+          150
+          <p>orders</p>
+        </ion-label>
+      </div>
+    </ion-content>
+  </ion-page>
 </template>
+
 <script setup lang="ts">
 import { IonBackButton, onIonViewDidEnter } from '@ionic/vue'
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController } from "@ionic/vue";
@@ -76,12 +77,10 @@ import emitter from "@/event-bus";
 import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';
 
-
 const store = useStore();
 
 const facilities = computed(() => store.getters["util/getFacilities"])
 const facilitiesIdentifications = computed(() => store.getters["netSuite/getFacilitiesIdentifications"])
-
 
 onIonViewDidEnter(async () => {
   await store.dispatch("util/fetchFacilities")
@@ -112,12 +111,12 @@ async function editNetSuiteId(facility: any) {
           let resp;
           const netSuiteId = data.netSuiteId.trim();
           
-          if (!netSuiteId) {
+          if(!netSuiteId) {
             showToast(translate("Please enter a valid NetSuite ID"));
             return false;
           }
           
-          if (facilityIdentification?.idValue === netSuiteId) {
+          if(facilityIdentification?.idValue === netSuiteId) {
             showToast(translate("Please update the NetSuite ID"));
             return false;
           }
@@ -133,7 +132,7 @@ async function editNetSuiteId(facility: any) {
             };
             
             resp = await NetSuiteService.updateFacilityIdentification(payload);
-            if (!hasError(resp)) {
+            if(!hasError(resp)) {
               showToast(translate("NetSuite department Id updated successfully"))
               await store.dispatch("netSuite/fetchFacilitiesIdentifications")
             } else {
@@ -162,7 +161,7 @@ async function removeNetSuiteId(facility: any) {
     };
 
     const resp = await NetSuiteService.updateFacilityIdentification(payload);
-    if (!hasError(resp)) {
+    if(!hasError(resp)) {
       showToast(translate("NetSuite department Id removed successfully"));
       await store.dispatch("netSuite/fetchFacilitiesIdentifications");
     } else {
@@ -173,7 +172,6 @@ async function removeNetSuiteId(facility: any) {
   }
   emitter.emit('dismissLoader');
 }
-
 </script>
 
 <style scoped>

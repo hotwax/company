@@ -79,7 +79,6 @@ const inventoryVariances = computed(() => store.getters["netSuite/getInventoryVa
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_VAR_TRAN"))
 const enumsInEnumGroup = computed(() => store.getters["netSuite/getEnumGroups"])
 
-
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
 const updatedNetSuiteIds = computed(() => {
@@ -92,11 +91,10 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchInventoryVariances");
   await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_VAR_TRAN")
-  await store.dispatch("netSuite/fetchEnumGroups")
+  await store.dispatch("netSuite/fetchEnumGroupMember")
 });
 
 async function openTransferInventoryModal(variance: any) {
@@ -131,8 +129,8 @@ async function addVarianceToGroup(enumerationId: any) {
     }
     
     resp = await UtilService.addEnumToEnumGroup(payload);
-    if (!hasError(resp)) {
-      await store.dispatch("netSuite/fetchEnumGroups");
+    if(!hasError(resp)) {
+      await store.dispatch("netSuite/fetchEnumGroupMember");
     } else {
       throw resp.data;
     }
@@ -141,7 +139,6 @@ async function addVarianceToGroup(enumerationId: any) {
   }
   emitter.emit('dismissLoader');
 }
-
 </script>
 
 <style scoped>

@@ -90,15 +90,15 @@ const addEnumCode = async (payload: any): Promise <any> => {
 
 
 export const NetSuiteService = {
-  fetchProductStoreShipmentMethods,
-  fetchPaymentMethods,
-  fetchfacilitiesIdentifications,
-  updateFacilityIdentification,
-  fetchIntegrationTypeMappings,
-  fetchShopifyTypeMappings,
+  addEnumCode,
   addIntegrationTypeMappings,
-  updateIntegrationTypeMappings,
+  fetchIntegrationTypeMappings,
+  fetchPaymentMethods,
+  fetchProductStoreShipmentMethods,
+  fetchShopifyTypeMappings,
+  fetchfacilitiesIdentifications,
   removeIntegrationMappingValue,
-  updateSftpConfig,
-  addEnumCode
+  updateFacilityIdentification,
+  updateIntegrationTypeMappings,
+  updateSftpConfig
 }
