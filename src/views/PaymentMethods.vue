@@ -65,7 +65,7 @@
 import { IonBackButton } from '@ionic/vue'
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter, alertController } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";

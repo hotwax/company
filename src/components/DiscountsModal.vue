@@ -39,7 +39,7 @@
 import { ref } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed, onMounted } from "vue";
 import { showToast } from '@/utils';

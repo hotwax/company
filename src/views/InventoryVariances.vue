@@ -61,15 +61,15 @@
 </template>
 
 <script setup lang="ts">
-import { translate } from '@hotwax/dxp-components';
 import { IonBackButton, IonBadge, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
 import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import TransferInventoryModal from '@/components/TransferInventoryModal.vue';
-import { showToast, hasError } from '@/utils';
 import emitter from "@/event-bus";
 import logger from '@/logger';
+import { hasError } from '@/utils';
 import { useStore } from "vuex";
 import { computed } from 'vue';
+import { translate } from "@/i18n"
 import { UtilService } from '@/services/UtilService';
 import { DateTime } from 'luxon';
 

@@ -56,7 +56,7 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 import { ref, computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 

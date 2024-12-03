@@ -2,7 +2,7 @@
   <ion-menu content-id="main-content" type="overlay" :disabled="!isUserAuthenticated">
     <ion-header>
       <ion-toolbar>
-        <ion-title>Company</ion-title>
+        <ion-title>{{ translate("Company")}}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -37,6 +37,7 @@ import { mapGetters } from "vuex";
 import { businessOutline, cartOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useStore } from "@/store";
 import { useRouter } from "vue-router";
+import { translate } from "@/i18n";
 
 export default defineComponent({
   name: "Menu",
@@ -68,13 +69,13 @@ export default defineComponent({
         iosIcon: businessOutline,
         mdIcon: businessOutline,
       },
-      {
-        title: "Shopify",
-        url: "/shopify",
-        childRoutes: ["/shopify/"],
-        iosIcon: cartOutline,
-        mdIcon: cartOutline,
-      },
+      // {
+      //   title: "Shopify",
+      //   url: "/shopify",
+      //   childRoutes: ["/shopify/"],
+      //   iosIcon: cartOutline,
+      //   mdIcon: cartOutline,
+      // },
       {
         title: "NetSuite",
         url: "/netsuite",
@@ -99,6 +100,7 @@ export default defineComponent({
       selectedIndex,
       appPages,
       store,
+      translate
     };
   }
 });

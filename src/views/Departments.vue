@@ -67,7 +67,7 @@
 import { IonBackButton, onIonViewDidEnter } from '@ionic/vue'
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed } from "vue";
 import { showToast, hasError } from '@/utils';

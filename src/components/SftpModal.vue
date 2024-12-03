@@ -6,7 +6,7 @@
           <ion-icon slot="icon-only" :icon="closeOutline" />
         </ion-button>
       </ion-buttons>
-      <ion-title>{{ translate('SFTP') }}</ion-title>
+      <ion-title>{{ translate("SFTP") }}</ion-title>
     </ion-toolbar>
   </ion-header>
 
@@ -50,7 +50,7 @@
 import { ref } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { hasError, showToast } from '@/utils';
 import emitter from "@/event-bus";

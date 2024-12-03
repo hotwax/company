@@ -4,7 +4,7 @@ import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { useStore } from "vuex";
 import { alertController } from '@ionic/vue';
-import { translate } from '@hotwax/dxp-components';
+import { translate } from "@/i18n"
 
 export function useNetSuiteComposables(integrationTypeId: any) {
 
