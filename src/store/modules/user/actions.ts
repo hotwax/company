@@ -59,6 +59,7 @@ const actions: ActionTree<UserState, RootState> = {
     // TODO add any other tasks if need
     commit(types.USER_END_SESSION)
     this.dispatch("productStore/clearProductStoreState");
+    this.dispatch("productStore/clearNetSuiteProductStore")
     this.dispatch("util/clearUtilState");
     dispatch("setOmsRedirectionInfo", { url: "", token: "" })
     resetConfig();

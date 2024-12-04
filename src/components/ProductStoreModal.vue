@@ -20,7 +20,7 @@
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-select v-model="selectedProductStore" interface="popover" :label="translate('Product Store')" :placeholder="translate('Select')" @ionChange="updatedStoreSubsidiaryId">
+      <ion-select v-model="selectedProductStoreId" interface="popover" :label="translate('Product Store')" :placeholder="translate('Select')" @ionChange="updatedStoreSubsidiaryId">
         <ion-select-option v-for="store in productStores" :key="store" :value="store.productStoreId">
           {{ store.storeName ? store.storeName : store.productStoreId }}
         </ion-select-option>
@@ -53,7 +53,7 @@ import logger from "@/logger";
 const store = useStore();
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
-const selectedProductStore = ref("");
+const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
 onIonViewWillEnter(async () => {
@@ -69,7 +69,7 @@ async function updateSubsidiaryId() {
   try {
     const updatedStore = {
       externalId: subsidiaryId.value,
-      productStoreId: selectedProductStore.value
+      productStoreId: selectedProductStoreId.value
     };
 
     const resp = await ProductStoreService.updateProductStore(updatedStore);
@@ -78,7 +78,7 @@ async function updateSubsidiaryId() {
       await store.dispatch("productStore/fetchProductStores");
       // We are updating the selected product store in the state to retrieve the 
       // appropriate shipment methods based on the user's selection on Shipment methods page
-      await store.dispatch("productStore/updateSelectedProductStore", selectedProductStore.value);
+      await store.dispatch("productStore/updateSelectedProductStore", selectedProductStoreId.value);
     } else {
       throw resp.data;
     }
@@ -91,7 +91,7 @@ async function updateSubsidiaryId() {
 }
 
 function updatedStoreSubsidiaryId() {
-  const updatedProductStore = productStores.value.find((store: any) => store.productStoreId === selectedProductStore.value);
+  const updatedProductStore = productStores.value.find((store: any) => store.productStoreId === selectedProductStoreId.value);
   subsidiaryId.value = updatedProductStore.externalId ? updatedProductStore.externalId : "";
 }
 </script>

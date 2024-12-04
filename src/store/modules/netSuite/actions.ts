@@ -124,12 +124,12 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_PAYMENT_METHODS_UPDATED, paymentMethods);
   },
 
-  async fetchProductStoreShipmentMethods({ state, commit }, payload) {
+  async fetchProductStoreShipmentMethods({ commit }) {
     let productStoreShipmentMethods = [] as any;
     let resp;
     
     try {
-      const productStoreId = store.getters["productStore/getSelectedProductStore"]
+      const productStoreId = store.getters["productStore/getNetSuiteProductStore"]
       resp = await NetSuiteService.fetchProductStoreShipmentMethods(productStoreId)
 
       if(!hasError(resp) && resp.data) {

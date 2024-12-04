@@ -117,8 +117,12 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     commit(types.PRODUCT_STORE_CLEARED);
   },
 
-  async updateSelectedProductStore({ commit }, selectedProductStore) {
-    commit(types.PRODUCT_STORE_SELECTED_PRODUCT_STORE_UPDATED, selectedProductStore);
+  async updateSelectedProductStore({ commit }, netSuiteProductStore) {
+    commit(types.PRODUCT_STORE_NETSUITE_UPDATED, netSuiteProductStore);
+  },
+
+  async clearNetSuiteProductStore({ commit }) {
+    commit(types.PRODUCT_STORE_NETSUITE_CLEARED);
   }
 }
 

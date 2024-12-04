@@ -54,7 +54,7 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Products and Inventory") }}</h1>
         <section>
-          <ion-item class="item-box" lines="none" button @click="openInventoryVariances()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
@@ -69,34 +69,35 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Orders and fulfillment") }}</h1>
         <section>
-          <ion-item class="item-box" lines="none" button @click="openShipmentMethod()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openShipmentMethod()">
             <ion-label>{{ translate("Shipping methods") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openPaymentMethods()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openPaymentMethods()">
             <ion-label>{{ translate("Payment method") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openPriceLevelModal()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openPriceLevelModal()">
             <ion-label>{{ translate("Price level") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openDiscountsModal()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openDiscountsModal()">
             <ion-label>{{ translate("Discounts") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openDepartments()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openSalesChannel()">
+          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openSalesChannel()">
             <ion-label>{{ translate("Sales Channel") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
       </div>
-
-      <div class="ion-margin-top">
+      
+      <!-- TODO: Currently, we don't have any content for this section, which is why it's commented out. -->
+      <!-- <div class="ion-margin-top">
         <h1>{{ translate("Transfer orders") }}</h1>
         <section>
           <ion-item class="item-box" lines="none" button>
@@ -108,7 +109,7 @@
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
-      </div>
+      </div> -->
     </ion-content>
   </ion-page>
 </template>
@@ -118,12 +119,17 @@ import { IonButton, IonCard, IonContent, IonHeader, IonIcon, IonItem, IonLabel, 
 import { search, chevronForwardOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
+import { useStore } from "vuex";
+import { computed } from "vue";
 import SftpModal from "@/components/SftpModal.vue";
 import ProductStoreModal from "@/components/ProductStoreModal.vue";
 import PriceLevelModal from "@/components/PriceLevelModal.vue";
 import DiscountsModal from "@/components/DiscountsModal.vue";
 
+const store = useStore();
 const router = useRouter();
+
+const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"])
 
 function openShipmentMethod() {
   router.push("/netsuite/shipment-methods")

@@ -15,8 +15,8 @@ const getters: GetterTree <ProductStoreState, RootState> = {
   getCompany(state) {
     return state.company
   },
-  getSelectedProductStore(state) {
-    return state.selectedProductStore
+  getNetSuiteProductStore(state) {
+    return state.netSuiteProductStore
   }
 }
 export default getters;
