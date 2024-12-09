@@ -29,7 +29,14 @@ const actions: ActionTree<UtilState, RootState> = {
     let facilities = [] as any, resp;
 
     try {
-      resp = await UtilService.fetchFacilities({ pageSize: 100 })
+      resp = await UtilService.fetchFacilities({
+        facilityTypeId: "VIRTUAL_FACILITY",
+        facilityTypeId_op: "notEqual",
+        parentTypeId: "VIRTUAL_FACILITY",
+        parentTypeId_op: "notEqual",
+        pageSize: 100 
+      })
+
       if(!hasError(resp) && resp.data) {
         // need to change this check later.
         facilities = resp.data.filter((facility: any) => facility.externalId)

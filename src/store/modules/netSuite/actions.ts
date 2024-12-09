@@ -129,8 +129,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     let resp;
     
     try {
-      const productStoreId = store.getters["productStore/getNetSuiteProductStore"]
-      resp = await NetSuiteService.fetchProductStoreShipmentMethods(productStoreId)
+      const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
+      resp = await NetSuiteService.fetchProductStoreShipmentMethods(netSuiteProductStoreId?.productStoreId)
 
       if(!hasError(resp) && resp.data) {
         productStoreShipmentMethods = resp.data

@@ -32,7 +32,7 @@
     </ion-item>
     
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="updateSubsidiaryId"> 
+      <ion-fab-button @click="updateSubsidiaryId" :disabled="isSaveButtonDisabled()"> 
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -40,12 +40,12 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { hasError, showToast } from "@/utils";
 import { useStore } from "vuex";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import emitter from "@/event-bus";
 import logger from "@/logger";
@@ -53,18 +53,39 @@ import logger from "@/logger";
 const store = useStore();
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
+const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"]);
 const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
-onIonViewWillEnter(async () => {
+onMounted(async () => {
   await store.dispatch("productStore/fetchProductStores");
+  if (netSuiteProductStore.value) {
+    selectedProductStoreId.value = netSuiteProductStore.value.productStoreId;
+    subsidiaryId.value = netSuiteProductStore.value.subsidiaryId;
+  }
 })
 
 function closeModal() {
   modalController.dismiss({ dismissed: true });
 }
 
+function isSaveButtonDisabled() {
+  const initialProductStoreId = netSuiteProductStore.value?.productStoreId;
+  const initialSubsidiaryId = netSuiteProductStore.value?.subsidiaryId;
+  return selectedProductStoreId.value === initialProductStoreId && subsidiaryId.value === initialSubsidiaryId;
+}
+
 async function updateSubsidiaryId() {
+
+  if (!selectedProductStoreId.value) {
+    showToast(translate("Please select a product store"))
+    return
+  }
+
+  if (!subsidiaryId.value) {
+    showToast(translate("Please enter a valid subsidiary ID"))
+    return
+  }
 
   try {
     const updatedStore = {
@@ -78,7 +99,10 @@ async function updateSubsidiaryId() {
       await store.dispatch("productStore/fetchProductStores");
       // We are updating the selected product store in the state to retrieve the 
       // appropriate shipment methods based on the user's selection on Shipment methods page
-      await store.dispatch("productStore/updateSelectedProductStore", selectedProductStoreId.value);
+      await store.dispatch("productStore/updateSelectedProductStore", {
+        productStoreId: selectedProductStoreId.value,
+        subsidiaryId: subsidiaryId.value
+      });
     } else {
       throw resp.data;
     }

@@ -54,7 +54,7 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Products and Inventory") }}</h1>
         <section>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openInventoryVariances()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
@@ -69,27 +69,27 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Orders and fulfillment") }}</h1>
         <section>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openShipmentMethod()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
             <ion-label>{{ translate("Shipping methods") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openPaymentMethods()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
             <ion-label>{{ translate("Payment method") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openPriceLevelModal()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
             <ion-label>{{ translate("Price level") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openDiscountsModal()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
             <ion-label>{{ translate("Discounts") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openDepartments()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.length" class="item-box" lines="none" button @click="openSalesChannel()">
+          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
             <ion-label>{{ translate("Sales Channel") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>

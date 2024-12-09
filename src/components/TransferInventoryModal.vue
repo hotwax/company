@@ -32,7 +32,7 @@
     </ion-item>
      
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="saveTransferInventoryNetSuiteId">
+      <ion-fab-button @click="saveTransferInventoryNetSuiteId" :disabled="!transferLocationId || transferLocationId === (integrationMapping?.mappingValue)">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>

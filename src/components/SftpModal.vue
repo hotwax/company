@@ -39,7 +39,7 @@
     </ion-item>
 
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="saveSftpConfig">
+      <ion-fab-button @click="saveSftpConfig" :disabled="isFormInvalid">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from "@/i18n"
@@ -63,6 +63,10 @@ const sftpFormData = ref({
   port: "",
   hostKey: "",
   defaultDirectory: ""
+});
+
+const isFormInvalid = computed(() => {
+  return Object.values(sftpFormData.value).some(value => !value);
 });
 
 function closeModal() {

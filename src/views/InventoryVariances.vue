@@ -37,7 +37,7 @@
           <div class="ion-text-center">
             <ion-chip :outline="true" @click="openTransferInventoryModal(variance)">
               <ion-label>{{ updatedNetSuiteIds[variance.enumId].mappingValue }}</ion-label>
-              <ion-icon fill="" :icon="closeCircleOutline" />
+              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[variance.enumId].integrationMappingId)"/>
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite transfer location") }}</p>
@@ -72,12 +72,15 @@ import { computed } from 'vue';
 import { translate } from "@/i18n"
 import { UtilService } from '@/services/UtilService';
 import { DateTime } from 'luxon';
+import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
 
+const { removeNetSuiteId } = useNetSuiteComposables("NETSUITE_VAR_TRAN");
+
 const inventoryVariances = computed(() => store.getters["netSuite/getInventoryVariances"]);
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_VAR_TRAN"))
 const enumsInEnumGroup = computed(() => store.getters["netSuite/getEnumGroups"])
+const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_VAR_TRAN"))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)

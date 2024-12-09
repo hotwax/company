@@ -30,7 +30,7 @@
 
         <ion-label>
           {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) ? getShopifyMappingId(paymentMethod.paymentMethodTypeId) : '-' }}
-          <p>variances in 7 days</p>
+          <p>{{ translate("Shopify") }}</p>
         </ion-label>
 
         <template v-if="updatedNetSuiteIds[paymentMethod.paymentMethodTypeId]">
