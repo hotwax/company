@@ -66,7 +66,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       if(!hasError(resp)) {
         showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
-          await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
+          await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
         }
       } else {
         throw resp.data;
@@ -86,8 +86,8 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       resp = await NetSuiteService.updateIntegrationTypeMappings(payload, integrationMappingId);
       if(!hasError(resp)) {
         showToast(translate("NetSuite Id updated successfully"));
-        if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
-          await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
+        if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD" && payload.integrationTypeId !== "NETSUITE_PRICE_LEVEL") {
+          await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
         }
       } else {
         throw resp.data;
@@ -107,7 +107,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       resp = await NetSuiteService.removeIntegrationMappingValue(integrationMappingId);
       if(!hasError(resp)) {
         showToast(translate("NetSuite Id removed successfully"));
-        await store.dispatch("netSuite/fetchIntegrationTypeMappings", integrationTypeId);
+        await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
       } else {
         throw resp.data;
       }

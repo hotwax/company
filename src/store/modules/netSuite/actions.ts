@@ -16,7 +16,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       const payload = {
         enumTypeId:  "IID_REASON",
         enumTypeId_op: "in",
-        pageSize: 20,
+        pageSize: 100,
       }
 
       const resp = await UtilService.fetchEnums(payload)
@@ -38,7 +38,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       const payload = {
         enumerationGroupId:  "NETSUITE_IIV_REASON",
         enumerationGroupId_op: "in",
-        pageSize: 20,
+        pageSize: 100,
       }
 
       const resp = await UtilService.fetchEnumGroupMember(payload)
@@ -68,7 +68,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       const payload = {
         facilityIdenTypeId:  "ORDR_ORGN_DPT",
         facilityIdenTypeId_op: "in",
-        pageSize: 20,
+        pageSize: 100,
       }
 
       const resp = await NetSuiteService.fetchfacilitiesIdentifications(payload)
@@ -143,14 +143,18 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethods)
   },
 
-  async fetchIntegrationTypeMappings({ commit }, integrationTypeId) {
+  async fetchIntegrationTypeMappings({ commit }, params: any) {
     let integrationTypeMappings = [] as any
     let resp;
 
     try {
-      const payload = {
-        integrationTypeId: integrationTypeId,
+      let payload = {
+        integrationTypeId: params.integrationTypeId,
         pageSize: 100
+      } as any
+
+      if(params.mappingKey) {
+        payload = {...payload, mappingKey: params.mappingKey }
       }
 
       resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)

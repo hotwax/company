@@ -20,22 +20,22 @@
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
-      <ion-input v-model="inputPrice" :label="translate('Price level')" :placeholder="translate('Base Price')" @click="clearSelection" />
+      <ion-input v-model="selectedPriceLevel" :label="translate('Price level')" :placeholder="translate('Base Price')"/>
     </ion-item>
 
     <ion-list>
       <ion-list-header>{{ translate("Frequently used") }}</ion-list-header>
-      <ion-radio-group v-model="selectedPriceType" @ionChange="onPriceTypeChange">
+      <ion-radio-group v-model="selectedPriceLevel">
         <ion-item>
-          <ion-radio value="base" label-placement="end" justify="start">
+          <ion-radio value="Base" label-placement="end" justify="start">
             <ion-label>
-              {{ translate("Base leave") }}
+              {{ translate("Base Price") }}
               <p>{{ translate("Defaults to product price set in NetSuite") }}</p>
             </ion-label>  
           </ion-radio>
         </ion-item>
         <ion-item>
-          <ion-radio value="custom" label-placement="end" justify="start">
+          <ion-radio value="Custom" label-placement="end" justify="start">
             <ion-label>
               {{ translate("Custom") }}
               <p>{{ translate("Use the price a product was sold at in the order.") }}</p>
@@ -46,7 +46,7 @@
     </ion-list>
    
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="savePrice">
+      <ion-fab-button :disabled="isPriceLevelChanged()" @click="savePrice">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -57,34 +57,38 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from "@/i18n"
-import { ref, computed } from "vue";
+import { useStore } from "vuex"
+import { ref, onMounted } from "vue"
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-const { addNetSuiteId } = useNetSuiteComposables("NETSUITE_PRICE_LEVEL");
+const store = useStore();
 
-const selectedPriceType = ref("");
-const inputPrice = ref("");
-const mappingValue = computed(() => {
-  return inputPrice.value || selectedPriceType.value;
-});
+const { updateNetSuiteId } = useNetSuiteComposables("NETSUITE_PRICE_LEVEL");
 
-// Clear the selection when the input is clicked
-function clearSelection() {
-  selectedPriceType.value = "";
+const integrationMapping = ref("") as any;
+const selectedPriceLevel = ref("")
+
+onMounted(async () => {
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { 
+    integrationTypeId: "NETSUITE_PRICE_LEVEL",
+    mappingKey: "PRICE_LEVEL"
+  })
+  const integrationMappings = store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_PRICE_LEVEL");
+  selectedPriceLevel.value = (integrationMapping.value = integrationMappings[0]).mappingValue || "";
+})
+
+function isPriceLevelChanged() {
+  return (!selectedPriceLevel.value.trim() || selectedPriceLevel.value.trim() === integrationMapping.value.mappingValue)
 }
 
-function onPriceTypeChange(event: any) {
-  selectedPriceType.value = event.detail.value;
-}
-
-// saves the selected price level to Netsuite for integration type id: 'NETSUITE_PRICE_LEVEL' & mappingKey: 'PRICE_LEVEL'.
+// saves the selectedPriceLevel price level to Netsuite for integration type id: 'NETSUITE_PRICE_LEVEL' & mappingKey: 'PRICE_LEVEL'.
 async function savePrice() {
   const payload = {
     integrationTypeId: "NETSUITE_PRICE_LEVEL",
     mappingKey: "PRICE_LEVEL",
-    mappingValue: mappingValue.value
+    mappingValue: selectedPriceLevel.value
   };
-  await addNetSuiteId(payload);
+  await updateNetSuiteId(payload, integrationMapping.value.integrationMappingId);
   closeModal();
 }
 

@@ -28,7 +28,7 @@
     </ion-item>
 
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="editNetSuiteDiscountItemIds">
+      <ion-fab-button @click="editNetSuiteDiscountItemIds" :disabled="isDiscountValueChanged()">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -41,7 +41,6 @@ import { closeOutline, informationCircleOutline, openOutline, saveOutline } from
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed, onMounted, ref } from "vue";
-import { showToast } from '@/utils';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
@@ -52,20 +51,22 @@ const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegr
 
 const orderLevelDiscount = ref("");
 const itemLevelDiscount = ref("");
+const integrationMappingByKey = ref({}) as any
 const mappingKeys = {
   order: "SHOPIFY_DISC",
   item: "SHOPIFY_ITEM_DISC"
-};
+}
 
 onMounted(async () => {
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_DISC_MTHD")
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_DISC_MTHD" })
   
   // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
-  integrationTypeMappings.value.forEach((mapping: any) => {
+  integrationTypeMappings.value.map((mapping: any) => {
+    integrationMappingByKey[mapping.mappingKey] = mapping
     if(mapping.mappingKey === mappingKeys.order) {
-      orderLevelDiscount.value = mapping.mappingValue;
-    } else if(mapping.mappingKey === mappingKeys.item) {
-      itemLevelDiscount.value = mapping.mappingValue;
+      orderLevelDiscount.value = mapping.mappingValue
+    } else {
+      itemLevelDiscount.value = mapping.mappingValue
     }
   });
 })
@@ -74,39 +75,32 @@ function closeModal() {
   modalController.dismiss({ dismissed: true });
 }
 
+function isDiscountValueChanged() {
+  return !orderLevelDiscount.value?.trim() || !itemLevelDiscount.value?.trim() || (orderLevelDiscount.value === integrationMappingByKey[mappingKeys.order]?.mappingValue) && itemLevelDiscount.value === integrationMappingByKey[mappingKeys.item]?.mappingValue
+}
+
 async function editNetSuiteDiscountItemIds() {
-  if(!orderLevelDiscount.value && !itemLevelDiscount.value) {
-    showToast(translate("Please enter a valid NetSuite ID"));
-    return;
+  if(orderLevelDiscount.value !== integrationMappingByKey[mappingKeys.order].mappingValue) {
+    await updateMapping(mappingKeys.order, orderLevelDiscount.value)
   }
-
-  await updateMapping(mappingKeys.order, orderLevelDiscount.value);
-  await updateMapping(mappingKeys.item, itemLevelDiscount.value);
-
+  if(!itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item].mappingValue) {
+    await updateMapping(mappingKeys.item, itemLevelDiscount.value)
+  }
   closeModal();
 }
 
 async function updateMapping(mappingKey: any, mappingValue: any) {
-  const integrationMappings = integrationTypeMappings.value;
-  const currentMapping = integrationMappings.find((mapping: any) => mapping.mappingKey === mappingKey);
 
-  if(currentMapping?.mappingValue === mappingValue) {
-    showToast(translate("Please update the NetSuite ID"));
-    return;
+  const payload = {
+    integrationTypeId: "NETSUITE_DISC_MTHD",
+    mappingKey,
+    mappingValue
   }
 
-  if(mappingValue) {
-    const payload = {
-      integrationTypeId: "NETSUITE_DISC_MTHD",
-      mappingKey,
-      mappingValue,
-    };
-
-    if(currentMapping?.integrationMappingId) {
-      await updateNetSuiteId(payload, currentMapping.integrationMappingId);
-    } else {
-      await addNetSuiteId(payload);
-    }
+  if(integrationMappingByKey[mappingKey]?.integrationMappingId) {
+    await updateNetSuiteId(payload, integrationMappingByKey[mappingKey].integrationMappingId);
+  } else {
+    await addNetSuiteId(payload);
   }
 }
 </script>

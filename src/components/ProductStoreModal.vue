@@ -72,20 +72,10 @@ function closeModal() {
 function isSaveButtonDisabled() {
   const initialProductStoreId = netSuiteProductStore.value?.productStoreId;
   const initialSubsidiaryId = netSuiteProductStore.value?.subsidiaryId;
-  return selectedProductStoreId.value === initialProductStoreId && subsidiaryId.value === initialSubsidiaryId;
+  return !selectedProductStoreId.value || !subsidiaryId.value || (selectedProductStoreId.value === initialProductStoreId) && (subsidiaryId.value === initialSubsidiaryId);
 }
 
 async function updateSubsidiaryId() {
-
-  if (!selectedProductStoreId.value) {
-    showToast(translate("Please select a product store"))
-    return
-  }
-
-  if (!subsidiaryId.value) {
-    showToast(translate("Please enter a valid subsidiary ID"))
-    return
-  }
 
   try {
     const updatedStore = {

@@ -96,7 +96,7 @@ const updatedNetSuiteIds = computed(() => {
 
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchInventoryVariances");
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_VAR_TRAN")
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_VAR_TRAN" })
   await store.dispatch("netSuite/fetchEnumGroupMember")
 });
 

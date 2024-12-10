@@ -114,7 +114,7 @@ const updatedNetSuiteIds = computed(() => {
 onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchShipmentMethodTypes");
   await store.dispatch("netSuite/fetchProductStoreShipmentMethods")
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", "NETSUITE_SHP_MTHD")
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_SHP_MTHD" })
 })
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {
