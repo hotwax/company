@@ -43,12 +43,12 @@ const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
 const updateProductStore = async (payload: any): Promise <any> => {
   return api({
     url: `productStores/${payload.productStoreId}`,
-    method: "post",
+    method: "put",
     data: payload
   });
 }
 
-const updateDBICCountries = async (payload: any): Promise <any> => {
+const addDBICCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries/dbic",
     method: "post",
@@ -100,6 +100,6 @@ export const ProductStoreService = {
   fetchProductStoresFacilityCount,
   updateCompany,
   updateCurrentStoreSettings,
-  updateDBICCountries,
+  addDBICCountries,
   updateProductStore
 }
