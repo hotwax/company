@@ -86,7 +86,7 @@ const updateCompany = async (payload: any): Promise <any> => {
 const updateCurrentStoreSettings = async (payload: any): Promise <any> => {
   return api({
     url: `productStores/${payload.productStoreId}/settings`,
-    method: "put",
+    method: "post",
     data: payload
   });
 }
