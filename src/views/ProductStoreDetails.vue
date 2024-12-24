@@ -312,11 +312,11 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVR_MTHD_UPD', true)" >{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRMTHD_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVRMTHD_UPDATE', true)" >{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :placeholder="translate('Select')" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
+                <ion-select :label="translate('Shipment method')" interface="popover" :placeholder="translate('Select')" :value="settings['RF_SHIPPING_METHOD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIPPING_METHOD', false)" >
                   <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>

@@ -29,7 +29,7 @@ const actions: ActionTree<UtilState, RootState> = {
     let countries = [] as any;
 
     try {
-      const resp = await UtilService.fetchDBICCountries({ geoIdTo: "DBIC", pageSize: 200 })
+      const resp = await UtilService.fetchDBICCountries({toGeoId: "DBIC", pageSize: 200 })
       if(!hasError(resp)) {
         countries = resp.data;
       } else {
@@ -47,7 +47,7 @@ const actions: ActionTree<UtilState, RootState> = {
     let operatingCountries = [] as any;
 
     try {
-      const resp = await UtilService.fetchOperatingCountries({ pageSize: 200 })
+      const resp = await UtilService.fetchOperatingCountries({ pageSize: 300, geoTypeEnumId: 'GEOT_COUNTRY' })
       if(!hasError(resp)) {
         operatingCountries = resp.data;
       } else {
