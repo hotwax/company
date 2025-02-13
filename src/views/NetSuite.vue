@@ -190,13 +190,13 @@ ion-card {
 }
 
 .item-box::part(native) {
-  --border-radius: 8px;
+  --border-radius: var(--spacer-xs);
 }
 
 section {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 10px;
+  gap: var(--spacer-sm);
 }
 
 .analytics-header {
