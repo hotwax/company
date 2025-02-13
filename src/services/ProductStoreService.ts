@@ -24,29 +24,31 @@ const fetchProductStoreDetails = async (productStoreId: any): Promise <any> => {
   });
 }
 
-const fetchProductStores = async (): Promise <any> => {
+const fetchProductStores = async (payload: any): Promise <any> => {
   return api({
     url: "productStores",
-    method: "get"
+    method: "get",
+    params: payload
   });
 }
 
-const fetchProductStoresFacilityCount = async (): Promise <any> => {
+const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
   return api({
     url: "productStores/facilities/counts",
-    method: "get"
+    method: "get",
+    params: payload
   });
 }
 
 const updateProductStore = async (payload: any): Promise <any> => {
   return api({
     url: `productStores/${payload.productStoreId}`,
-    method: "post",
+    method: "put",
     data: payload
   });
 }
 
-const updateDBICCountries = async (payload: any): Promise <any> => {
+const addDBICCountries = async (payload: any): Promise <any> => {
   return api({
     url: "countries/dbic",
     method: "post",
@@ -98,6 +100,6 @@ export const ProductStoreService = {
   fetchProductStoresFacilityCount,
   updateCompany,
   updateCurrentStoreSettings,
-  updateDBICCountries,
+  addDBICCountries,
   updateProductStore
 }

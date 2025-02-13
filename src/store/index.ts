@@ -8,6 +8,7 @@ import userModule from "./modules/user";
 import productStoreModule from "./modules/productStore";
 import utilModule from "./modules/util"
 import netSuiteModule from "./modules/netSuite"
+import { setPermissions } from "@/authorization"
 
 // TODO check how to register it from the components only
 // Handle same module registering multiple time on page refresh
@@ -34,6 +35,8 @@ const store = createStore<RootState>({
     "netSuite": netSuiteModule
   },
 })
+
+setPermissions(store.getters['user/getUserPermissions']);
 
 export default store
 export function useStore(): typeof store {

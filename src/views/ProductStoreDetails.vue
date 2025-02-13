@@ -52,7 +52,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('ID prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
+                <ion-input :label="translate('ID prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" @ionBlur="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -87,7 +87,7 @@
               </ion-item-divider>
 
               <ion-item>
-                <ion-input :label="translate('Create deadline days')" :placeholder="translate('days count')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" @keydown="validateInput($event)" />
+                <ion-input :label="translate('Create deadline days')" :placeholder="translate('days count')" type="number" min="0" :value="settings['RETURN_DEADLINE_DAYS']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" @keydown="validateInput($event)" @ionBlur="updateProductStoreSettings($event, 'RETURN_DEADLINE_DAYS', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -148,7 +148,7 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" />
+                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" @ionBlur="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
@@ -187,7 +187,7 @@
                 </ion-item>
   
                 <ion-item>
-                  <ion-input :label="translate('Auto cancellations days')" :placeholder="translate('days count')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" @keydown="validateInput($event)" />
+                  <ion-input :label="translate('Auto cancellations days')" :placeholder="translate('days count')" type="number" min="0" :value="productStore.daysToCancelNonPay" @keydown.enter="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" :disabled="!autoCancellationActive" @keydown="validateInput($event)" @ionBlur="updateProductStoreDetail($event, 'daysToCancelNonPay', false)" />
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label>
@@ -312,11 +312,11 @@
 
             <ion-list>
               <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVR_MTHD_UPD']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVR_MTHD_UPD', true)" >{{ translate("Delivery method") }}</ion-toggle>
+                <ion-toggle :checked="getBooleanValue(settings['CUST_DLVRMTHD_UPDATE']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'CUST_DLVRMTHD_UPDATE', true)" >{{ translate("Delivery method") }}</ion-toggle>
               </ion-item>
 
               <ion-item>
-                <ion-select :label="translate('Shipment method')" interface="popover" :placeholder="translate('Select')" :value="settings['RF_SHIP_MTHD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIP_MTHD', false)" >
+                <ion-select :label="translate('Shipment method')" interface="popover" :placeholder="translate('Select')" :value="settings['RF_SHIPPING_METHOD']?.settingValue" @ionChange="updateProductStoreSettings($event, 'RF_SHIPPING_METHOD', false)" >
                   <ion-select-option v-for="shipmentMethod in shipmentMethodTypes" :key="shipmentMethod.shipmentMethodTypeId" :value="shipmentMethod.shipmentMethodTypeId">{{ shipmentMethod.description ? shipmentMethod.description : shipmentMethod.shipmentMethodTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
