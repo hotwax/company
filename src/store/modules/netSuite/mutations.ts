@@ -21,6 +21,9 @@ const mutations: MutationTree <NetSuiteState> = {
   [types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED] (state, payload) {
     state.shopifyTypeMappings = payload
   },
+  [types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED] (state, payload) {
+    state.shopifyShopsCarrierShipments = payload
+  },
   [types.NET_SUITE_FACILITIES_IDENTIFICATIONS_UPDATED] (state, payload) {
     state.facilitiesIdentifications = payload
   },

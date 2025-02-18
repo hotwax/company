@@ -179,6 +179,28 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
   },
 
+  async shopifyShopsCarrierShipments({commit}) {
+    let resp, shopifyShopsCarrierShipments;
+    try {
+      const resp = await NetSuiteService.fetchShopifyShopsCarrierShipments({ pageSize: 100 });
+
+      if (!hasError(resp)) {
+        shopifyShopsCarrierShipments = resp.data.reduce((shipmentMethods: any, shipmentMethod: any) => {
+          shipmentMethods[shipmentMethod.shipmentMethodTypeId] = {
+            carrierPartyId: shipmentMethod.carrierPartyId,
+            shopifyShippingMethod: shipmentMethod.shopifyShippingMethod,
+          };
+          return shipmentMethods;
+        }, {});
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED, shopifyShopsCarrierShipments);
+  },
+
   async fetchShopifyTypeMappings({commit}, mappedTypeId) {
     let shopifyTypeMappings = [] as any
     let resp;

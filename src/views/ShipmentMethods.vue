@@ -34,7 +34,7 @@
         <ion-label>{{ translate("Add more shipment methods") }}</ion-label>
       </ion-button> -->
       
-      <div class="list-item" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
+      <div class="list-item ion-margin-top" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="airplaneOutline" />
           <ion-label>
@@ -42,23 +42,21 @@
             <p>{{ shipmentMethod.shipmentMethodTypeId }}</p>
           </ion-label>
         </ion-item>
-
         <ion-label>
-          carrier party name
-          <p>{{ shipmentMethod.partyId }}</p>
+          {{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId)?.carrierPartyId ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).carrierPartyId : "-" }}
+          <p>{{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId) ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).carrierPartyId : "-" }}</p>
         </ion-label>
 
-        <!-- TODO: need to make this shopify mapping dynamic -->
         <ion-label>
-          shopify mapping name
-          <p>Shopify name</p>
+          {{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId)?.shopifyShippingMethod ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).shopifyShippingMethod : "-" }}
+          <p>{{ translate("Shopify name") }}</p>
         </ion-label>
         
         <template v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
           <div class="ion-text-center">
-            <ion-chip :outline="true" @click="editNetSuiteId(shipmentMethod.shipmentMethodTypeId, updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId])">
+            <ion-chip outline @click="editNetSuiteId(shipmentMethod.shipmentMethodTypeId, updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId])">
               <ion-label>{{ updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].mappingValue }}</ion-label>
-              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].integrationMappingId)" />
+              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].integrationMappingId)" />
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite ID") }}</p>
@@ -72,19 +70,18 @@
           </ion-button>
         </template>
 
-        <!-- TODO: need to make this order analytics dynamic -->
-        <ion-label class="ion-margin">
+        <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
+        <!-- <ion-label class="ion-margin">
           150
           <p>{{ translate("orders") }}</p>
-        </ion-label>
+        </ion-label> -->
       </div>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton } from '@ionic/vue'
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
@@ -92,12 +89,13 @@ import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-
-const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables("NETSUITE_SHP_MTHD");
+const shipmentMethodTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
+const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMethodTypeId);
 
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_SHP_MTHD"))
+const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](shipmentMethodTypeId))
+const shopifyShopsCarrierShipments = computed(() => store.getters["netSuite/getShopifyShopsCarrierShipments"])
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)
@@ -114,7 +112,8 @@ const updatedNetSuiteIds = computed(() => {
 onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchShipmentMethodTypes");
   await store.dispatch("netSuite/fetchProductStoreShipmentMethods")
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_SHP_MTHD" })
+  await store.dispatch("netSuite/shopifyShopsCarrierShipments")
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: shipmentMethodTypeId })
 })
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {
@@ -126,6 +125,6 @@ function getShipmentMethodDesc(shipmentMethodTypeId: string) {
 <style scoped>
 .list-item {
   --columns-desktop: 5;
-  border-bottom : 1px solid var(--ion-color-medium);
+  /* padding-right: var(--spacer-base); */
 }
 </style>
