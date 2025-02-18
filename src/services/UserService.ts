@@ -4,12 +4,12 @@ import { hasError } from "@/utils";
 
 const login = async (token: string): Promise <any> => {
   const url = store.getters["user/getBaseUrl"]
-  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url : `${url}/rest/s1/admin/` : `https://${url}.hotwax.io/rest/s1/admin/`;
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/') ? url : `${url}/rest/s1/` : `https://${url}.hotwax.io/rest/s1/`;
   let api_key = ""
 
   try {
     const resp = await client({
-      url: "login", 
+      url: "admin/login", 
       method: "post",
       baseURL,
       params: {
@@ -33,10 +33,10 @@ const login = async (token: string): Promise <any> => {
 
 const getUserProfile = async (token: any): Promise<any> => {
   const url = store.getters["user/getBaseUrl"]
-  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url : `${url}/rest/s1/admin/` : `https://${url}.hotwax.io/rest/s1/admin/`;
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/') ? url : `${url}/rest/s1/` : `https://${url}.hotwax.io/rest/s1/`;
   try {
     const resp = await client({
-      url: "user/profile",
+      url: "admin/user/profile",
       method: "GET",
       baseURL,
       headers: {
@@ -53,9 +53,9 @@ const getUserProfile = async (token: any): Promise<any> => {
 
 const getAvailableTimeZones = async (): Promise <any>  => {
   const url = store.getters["user/getBaseUrl"]
-  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/admin') ? url : `${url}/rest/s1/admin/` : `https://${url}.hotwax.io/rest/s1/admin/`;
+  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/') ? url : `${url}/rest/s1/` : `https://${url}.hotwax.io/rest/s1/`;
   return client({
-    url: "user/getAvailableTimeZones",
+    url: "admin/user/getAvailableTimeZones",
     method: "get",
     baseURL,
     cache: true

@@ -1,16 +1,15 @@
 import api from "@/api"
 
-
 const fetchProductStoreShipmentMethods = async (productStoreId: any): Promise<any> => {
   return api({
-    url: `productStores/${productStoreId}/shipmentMethods`,
+    url: `oms/productStores/${productStoreId}/shipmentMethods`,
     method: "get",
   })
 }
 
 const fetchPaymentMethods = async (payload: any): Promise <any> => {
   return api({
-    url: "paymentMethodTypes",
+    url: "admin/paymentMethodTypes",
     method: "get",
     params: payload
   });
@@ -34,7 +33,7 @@ const updateFacilityIdentification = async (payload: any): Promise <any> => {
 
 const fetchIntegrationTypeMappings = async (payload: any): Promise <any> => {
   return api({
-    url: "integrationTypeMappings",
+    url: "admin/integrationTypeMappings",
     method: "get",
     params: payload
   })
@@ -42,7 +41,7 @@ const fetchIntegrationTypeMappings = async (payload: any): Promise <any> => {
 
 const addIntegrationTypeMappings = async (payload: any): Promise <any> => {
   return api({
-    url: "integrationTypeMappings",
+    url: "admin/integrationTypeMappings",
     method: "post",
     data: payload
   })
@@ -50,27 +49,34 @@ const addIntegrationTypeMappings = async (payload: any): Promise <any> => {
 
 const updateIntegrationTypeMappings = async (payload: any, integrationMappingId: any): Promise <any> => {
   return api({
-    url: `integrationTypeMappings/${integrationMappingId}`,
+    url: `admin/integrationTypeMappings/${integrationMappingId}`,
     method: "post",
     data: payload
   })
 }
 
+const removeIntegrationMappingValue = async (payload: any): Promise <any> => {
+  return api({
+    url: `admin/integrationTypeMappings/${payload}`,
+    method: "delete"
+  })
+}
+
 const fetchShopifyTypeMappings = async (payload: any): Promise <any> => {
   return api({
-    url: "shopifyShops/typeMappings",
+    url: "oms/shopifyShops/typeMappings",
     method: "get",
     params: payload
   })
 }
 
-const removeIntegrationMappingValue = async (payload: any): Promise <any> => {
+const fetchShopifyShopsCarrierShipments = async (payload: any): Promise <any> => {
   return api({
-    url: `integrationTypeMappings/${payload}`,
-    method: "delete"
+    url: "oms/shopifyShops/carrierShipments",
+    method: "get",
+    params: payload
   })
 }
-
 // TODO: need to add dynamic api to update the sftp configs.
 const updateSftpConfig = async (payload: any): Promise <any> => {
   return api({
@@ -82,12 +88,11 @@ const updateSftpConfig = async (payload: any): Promise <any> => {
 
 const addEnumCode = async (payload: any): Promise <any> => {
   return api({
-    url: "enums",
+    url: "admin/enums",
     method: "post",
     data: payload
   })
 }
-
 
 export const NetSuiteService = {
   addEnumCode,
@@ -96,6 +101,7 @@ export const NetSuiteService = {
   fetchPaymentMethods,
   fetchProductStoreShipmentMethods,
   fetchShopifyTypeMappings,
+  fetchShopifyShopsCarrierShipments,
   fetchfacilitiesIdentifications,
   removeIntegrationMappingValue,
   updateFacilityIdentification,
