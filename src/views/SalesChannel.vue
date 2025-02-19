@@ -20,7 +20,7 @@
         </ion-item>
       </div>
 
-      <div class="list-item ion-margin-top" v-for="channel in salesChannel" :key="channel.enumId">
+      <div class="list-item ion-padding-end ion-margin-top" v-for="channel in salesChannel" :key="channel.enumId">
         <ion-item lines="none">
           <ion-label>
             {{ channel.description ? channel.description : channel.enumId }}
@@ -31,14 +31,14 @@
         <!-- TODO: need to make this shopify mapping dynamic -->
         <ion-label>
           {{ getShopifyMappingId(channel.enumId) ? getShopifyMappingId(channel.enumId) : '-' }}
-          <p>Shopify</p>
+          <p>{{ translate("Shopify") }}</p>
         </ion-label>
         
         <template v-if="channel.enumCode">
           <div class="ion-text-center">
-            <ion-chip :outline="true" @click="editNetSuiteSalesChannelId(channel)">
+            <ion-chip outline click="editNetSuiteSalesChannelId(channel)">
               <ion-label>{{ channel.enumCode }}</ion-label>
-              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
+              <ion-icon icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite sales channel") }}</p>
@@ -53,18 +53,17 @@
         </template>
 
         <!-- TODO: need to make this order analytics dynamic -->
-        <ion-label class="ion-margin">
+        <!-- <ion-label class="ion-margin">
           150
           <p>orders</p>
-        </ion-label>
+        </ion-label> -->
       </div>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, onIonViewDidEnter } from '@ionic/vue'
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { NetSuiteService } from '@/services/NetSuiteService';

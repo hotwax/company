@@ -9,8 +9,9 @@
         </ion-button>
       </ion-toolbar>
     </ion-header>
-    <ion-content class="ion-padding">
-      <section class="analytics-header">
+    <ion-content class="ion-padding-horizontal">
+      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
+      <!-- <section class="analytics-header">
         <ion-card>
           <ion-item lines="none">
             <ion-label class="count-size">4</ion-label>
@@ -35,18 +36,16 @@
             <ion-label>{{ ("Products pending sync") }}</ion-label>
           </ion-item>
         </ion-card>
-      </section>
+      </section> -->
 
-      <div class="ion-margin-top">
+      <div>
         <h1>{{ translate("Configuration") }}</h1>
         <section>
-          <ion-item class="item-box" lines="none" button @click="openSftpModal()">
+          <ion-item detail class="item-box" lines="none" button @click="openSftpModal()">
             <ion-label>{{ translate("SFTP") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button @click="openProductStoreModal()">
+          <ion-item detail class="item-box" lines="none" button @click="openProductStoreModal()">
             <ion-label>{{ translate("Product Store") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
       </div>
@@ -54,11 +53,10 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Products and Inventory") }}</h1>
         <section>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <!-- TODO: Need to make these page dynamic -->
+          <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
           <!-- <ion-item class="item-box" lines="none" button @click="openFacilities()">
             <ion-label>{{ translate("Facilities") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
@@ -69,44 +67,36 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Orders and fulfillment") }}</h1>
         <section>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
             <ion-label>{{ translate("Shipping methods") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
             <ion-label>{{ translate("Payment method") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
             <ion-label>{{ translate("Price level") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
             <ion-label>{{ translate("Discounts") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
             <ion-label>{{ translate("Sales Channel") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
       </div>
       
-      <!-- TODO: Currently, we don't have any content for this section, which is why it's commented out. -->
+      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
       <!-- <div class="ion-margin-top">
         <h1>{{ translate("Transfer orders") }}</h1>
         <section>
-          <ion-item class="item-box" lines="none" button>
+          <ion-item detail class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order fulfillment") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
-          <ion-item class="item-box" lines="none" button>
+          <ion-item detail class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order receipt") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
       </div> -->
@@ -115,8 +105,8 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonCard, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { search, chevronForwardOutline } from "ionicons/icons";
+import { IonButton, IonCard, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { search } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
@@ -185,12 +175,21 @@ async function openDiscountsModal() {
 </script>
 
 <style scoped>
-ion-card {
+/* ion-card {
   margin-inline: 0px;
+} */
+
+/* .analytics-header {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));  
 }
+
+.count-size {
+  font-size: 128px;
+} */
 
 .item-box::part(native) {
   --border-radius: var(--spacer-xs);
+  border: var(--border-medium);
 }
 
 section {
@@ -199,11 +198,4 @@ section {
   gap: var(--spacer-sm);
 }
 
-.analytics-header {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));  
-}
-
-.count-size {
-  font-size: 128px;
-}
 </style>

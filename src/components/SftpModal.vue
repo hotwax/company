@@ -16,7 +16,7 @@
       <ion-label>
         {{ translate("Learn more about NetSuite SFTP configuration.") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" />
+      <ion-icon :icon="openOutline" slot="end" @click="openSftpDoc" />
     </ion-item>
     
     <ion-item lines="full" class="ion-margin-top">
@@ -98,5 +98,9 @@ async function saveSftpConfig() {
 
   emitter.emit("dismissLoader")
   closeModal();
+}
+
+function openSftpDoc() {
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/sdfbundle/setupsftp', '_blank');
 }
 </script>

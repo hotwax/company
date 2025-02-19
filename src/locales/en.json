@@ -208,6 +208,8 @@
   "shipping methods": "{count} shipping methods",
   "Shipment method": "Shipment method",
   "Shipping facility tag": "Shipping facility tag",
+  "Shopify": "Shopify",
+  "Shopify name": "Shopify name",
   "Show systemic inventory": "Show systemic inventory",
   "Specify any preferred prefix to be added to internal order IDs.": "Specify any preferred prefix to be added to internal order IDs.",
   "Specify the number of days permitted for creating returns for in-store.": "Specify the number of days permitted for creating returns for in-store.",

@@ -20,7 +20,7 @@
         </ion-item>
       </div>
 
-      <div class="list-item" v-for="facility in facilities" :key="facility.facilityId">
+      <div class="list-item ion-padding-end" v-for="facility in facilities" :key="facility.facilityId">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
@@ -31,16 +31,16 @@
         </ion-item>
         
         <!-- TODO: need to make this shopify mapping dynamic -->
-        <ion-label>
+        <!-- <ion-label>
           Shopify Mapping ID
-          <p>Shopify</p>
-        </ion-label>
+          <p>{{ translate("Shopify") }}</p>
+        </ion-label> -->
 
         <template v-if="getFacilityInFacilityIdentification(facility)">
           <div class="ion-text-center">
-            <ion-chip :outline="true" @click="editNetSuiteId(facility)">
+            <ion-chip outline @click="editNetSuiteId(facility)">
               <ion-label>{{ getFacilityInFacilityIdentification(facility)?.idValue }}</ion-label>
-              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
+              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite department ID") }}</p>
@@ -55,18 +55,17 @@
         </template>
         
         <!-- TODO: need to make this order analytics dynamic -->
-        <ion-label class="ion-margin-end">
+        <!-- <ion-label class="ion-margin-end">
           150
           <p>orders</p>
-        </ion-label>
+        </ion-label> -->
       </div>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, onIonViewDidEnter } from '@ionic/vue'
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
@@ -176,6 +175,6 @@ async function removeNetSuiteId(facility: any) {
 
 <style scoped>
 .list-item {
-  --columns-desktop: 4;
+  --columns-desktop: 2;;
 }
 </style>

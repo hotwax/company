@@ -47,7 +47,8 @@ import { translate } from "@/i18n"
 import { defineProps, onMounted, ref } from 'vue';
 import { showToast } from "@/utils";
 
-const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables("NETSUITE_VAR_TRAN");
+const inventoryVarianceTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
+const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const props = defineProps(["varianceEnumId", "integrationMapping"]);
 const transferLocationId = ref("");
@@ -71,7 +72,7 @@ async function saveTransferInventoryNetSuiteId() {
   }
 
   const payload = {
-    integrationTypeId: "NETSUITE_VAR_TRAN",
+    integrationTypeId: inventoryVarianceTypeId,
     mappingKey: props.varianceEnumId,
     mappingValue: transferLocationId.value
   };

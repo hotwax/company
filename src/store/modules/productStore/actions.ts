@@ -9,7 +9,7 @@ import store from "@/store"
 
 const actions: ActionTree<ProductStoreState, RootState> = {
 
-  async fetchProductStores({ commit, dispatch }) {
+  async fetchProductStores({ commit, dispatch }, payload) {
     let productStores = [];
 
     try {
@@ -18,9 +18,11 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       if(!hasError(resp)) {
         productStores = resp.data;
 
-        const productStoresFacilityCount = await dispatch("fetchProductStoresFacilityCount")
-        if(Object.keys(productStoresFacilityCount).length) {
-          productStores.map((store: any) => store.facilityCount = productStoresFacilityCount[store.productStoreId] ? productStoresFacilityCount[store.productStoreId] : 0)
+        if(!payload) {
+          const productStoresFacilityCount = await dispatch("fetchProductStoresFacilityCount")
+          if(Object.keys(productStoresFacilityCount).length) {
+            productStores.map((store: any) => store.facilityCount = productStoresFacilityCount[store.productStoreId] ? productStoresFacilityCount[store.productStoreId] : 0)
+          }
         }
       } else {
         throw resp.data;

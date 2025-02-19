@@ -15,7 +15,8 @@
             {{ translate("Inventory variances synced to NetSuite") }}
             <p>{{ translate("Select exactly which inventory variances should be synced to NetSuite") }}</p>
           </ion-label>
-          <ion-badge slot="end" color="dark">next sync in 15 minutes</ion-badge>
+          <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
+          <!-- <ion-badge slot="end" color="dark">next sync in 15 minutes</ion-badge> -->
         </ion-item>
       </div>
 
@@ -27,17 +28,17 @@
           </ion-label>
         </ion-item>
         
-        <!-- TODO: need to make this order analytics dynamic -->
-        <ion-label>
+        <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
+        <!-- <ion-label>
           200
           <p>{{ translate("variances in 7 days") }}</p>
-        </ion-label>
+        </ion-label> -->
 
         <template v-if="updatedNetSuiteIds[variance.enumId]">
           <div class="ion-text-center">
-            <ion-chip :outline="true" @click="openTransferInventoryModal(variance)">
+            <ion-chip outline click="openTransferInventoryModal(variance)">
               <ion-label>{{ updatedNetSuiteIds[variance.enumId].mappingValue }}</ion-label>
-              <ion-icon fill="" :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[variance.enumId].integrationMappingId)"/>
+              <ion-icon icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[variance.enumId].integrationMappingId)"/>
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite transfer location") }}</p>
@@ -75,12 +76,12 @@ import { DateTime } from 'luxon';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-
-const { removeNetSuiteId } = useNetSuiteComposables("NETSUITE_VAR_TRAN");
+const inventoryVarianceTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
+const { removeNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const inventoryVariances = computed(() => store.getters["netSuite/getInventoryVariances"]);
 const enumsInEnumGroup = computed(() => store.getters["netSuite/getEnumGroups"])
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_VAR_TRAN"))
+const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](inventoryVarianceTypeId))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
@@ -96,7 +97,7 @@ const updatedNetSuiteIds = computed(() => {
 
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchInventoryVariances");
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_VAR_TRAN" })
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: inventoryVarianceTypeId })
   await store.dispatch("netSuite/fetchEnumGroupMember")
 });
 

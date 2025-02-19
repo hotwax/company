@@ -25,7 +25,7 @@ const fetchfacilitiesIdentifications = async (payload: any): Promise <any> => {
 
 const updateFacilityIdentification = async (payload: any): Promise <any> => {
   return api({
-    url: "facilities/identifications",
+    url: `oms/facilities/${payload.facilityId}/identifications`,
     method: "post",
     data: payload
   })

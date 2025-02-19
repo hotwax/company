@@ -33,7 +33,7 @@
         </ion-label>
         
         <div>
-          <ion-chip :outline="true">
+          <ion-chip outline>
             <ion-label>15</ion-label>
             <ion-icon :icon="closeCircleOutline" />
           </ion-chip>
@@ -62,7 +62,7 @@
         </ion-label>
         
         <div>
-          <ion-chip :outline="true">
+          <ion-chip outline>
             <ion-label>15</ion-label>
             <ion-icon :icon="closeCircleOutline" />
           </ion-chip>

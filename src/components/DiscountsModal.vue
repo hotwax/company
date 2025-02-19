@@ -44,10 +44,10 @@ import { computed, onMounted, ref } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
+const discountTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
+const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(discountTypeId)
 
-const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables("NETSUITE_DISC_MTHD")
-
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"]("NETSUITE_DISC_MTHD"))
+const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](discountTypeId))
 
 const orderLevelDiscount = ref("");
 const itemLevelDiscount = ref("");
@@ -58,7 +58,7 @@ const mappingKeys = {
 }
 
 onMounted(async () => {
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: "NETSUITE_DISC_MTHD" })
+  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: discountTypeId })
   
   // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
   integrationTypeMappings.value.map((mapping: any) => {
@@ -92,7 +92,7 @@ async function editNetSuiteDiscountItemIds() {
 async function updateMapping(mappingKey: any, mappingValue: any) {
 
   const payload = {
-    integrationTypeId: "NETSUITE_DISC_MTHD",
+    integrationTypeId: discountTypeId,
     mappingKey,
     mappingValue
   }

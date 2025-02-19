@@ -34,7 +34,7 @@
         <ion-label>{{ translate("Add more shipment methods") }}</ion-label>
       </ion-button> -->
       
-      <div class="list-item ion-margin-top" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
+      <div class="list-item ion-padding-end" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="airplaneOutline" />
           <ion-label>
@@ -125,6 +125,5 @@ function getShipmentMethodDesc(shipmentMethodTypeId: string) {
 <style scoped>
 .list-item {
   --columns-desktop: 5;
-  /* padding-right: var(--spacer-base); */
 }
 </style>

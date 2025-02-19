@@ -16,7 +16,7 @@
       <ion-label>
         {{ translate("Learn more about mapping product stores to subsidiaries") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" />
+      <ion-icon :icon="openOutline" slot="end" @click="openProductStoreDoc" />
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
@@ -58,8 +58,8 @@ const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
 onMounted(async () => {
-  await store.dispatch("productStore/fetchProductStores");
-  if (netSuiteProductStore.value) {
+  await store.dispatch("productStore/fetchProductStores", "productStoreModal");
+  if(netSuiteProductStore.value) {
     selectedProductStoreId.value = netSuiteProductStore.value.productStoreId;
     subsidiaryId.value = netSuiteProductStore.value.subsidiaryId;
   }
@@ -85,10 +85,7 @@ async function updateSubsidiaryId() {
 
     const resp = await ProductStoreService.updateProductStore(updatedStore);
     if(!hasError(resp)) {
-      showToast("Product store setting updated successfully.")
-      await store.dispatch("productStore/fetchProductStores");
-      // We are updating the selected product store in the state to retrieve the 
-      // appropriate shipment methods based on the user's selection on Shipment methods page
+      showToast("Product store setting updated successfully.")   // We are updating the selected product store in the state
       await store.dispatch("productStore/updateSelectedProductStore", {
         productStoreId: selectedProductStoreId.value,
         subsidiaryId: subsidiaryId.value
@@ -107,5 +104,9 @@ async function updateSubsidiaryId() {
 function updatedStoreSubsidiaryId() {
   const updatedProductStore = productStores.value.find((store: any) => store.productStoreId === selectedProductStoreId.value);
   subsidiaryId.value = updatedProductStore.externalId ? updatedProductStore.externalId : "";
+}
+
+function openProductStoreDoc() {
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/prerequisites/productstoresettings', '_blank');
 }
 </script>
