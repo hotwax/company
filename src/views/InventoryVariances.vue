@@ -36,9 +36,9 @@
 
         <template v-if="updatedNetSuiteIds[variance.enumId]">
           <div class="ion-text-center">
-            <ion-chip outline click="openTransferInventoryModal(variance)">
+            <ion-chip outline @click="openTransferInventoryModal(variance)">
               <ion-label>{{ updatedNetSuiteIds[variance.enumId].mappingValue }}</ion-label>
-              <ion-icon icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[variance.enumId].integrationMappingId)"/>
+              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[variance.enumId].integrationMappingId)"/>
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite transfer location") }}</p>
@@ -52,10 +52,9 @@
           </ion-button>
         </template>
 
-        <ion-item lines="none" @click="addVarianceToGroup(variance.enumId)">
-          <ion-checkbox :checked="enumsInEnumGroup(variance.enumId)"></ion-checkbox>
-        </ion-item>
-        
+        <div class="ion-padding-end">
+          <ion-checkbox :checked="enumsInEnumGroup(variance.enumId)" @click="addVarianceToGroup(variance.enumId, $event)"></ion-checkbox>
+        </div>
       </div>
     </ion-content>
   </ion-page>
@@ -114,20 +113,21 @@ async function openTransferInventoryModal(variance: any) {
 }
 
 // adding & updating the enum with enumGroup
-async function addVarianceToGroup(enumerationId: any) { 
+async function addVarianceToGroup(enumId: any, event: any) {
+  const checkbox = event.target;
   emitter.emit("presentLoader");
   let resp;
 
   try {
     let payload: any = {
       enumerationGroupId: "NETSUITE_IIV_REASON",
-      enumerationId: enumerationId
+      enumerationId: enumId
     }
 
-    if(enumsInEnumGroup.value(enumerationId)) {
+    if(enumsInEnumGroup.value(enumId)) {
       payload = {
         ...payload,
-        fromDate: enumsInEnumGroup.value(enumerationId)?.fromDate,
+        fromDate: enumsInEnumGroup.value(enumId)?.fromDate,
         thruDate: DateTime.now().toMillis()
       }
     }
@@ -140,6 +140,7 @@ async function addVarianceToGroup(enumerationId: any) {
     }
   } catch (err) {
     logger.error(err);
+    checkbox.checked = !checkbox.checked;
   }
   emitter.emit('dismissLoader');
 }
