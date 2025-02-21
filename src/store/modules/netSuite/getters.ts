@@ -29,6 +29,9 @@ const getters: GetterTree <NetSuiteState, RootState> = {
   },
   getShopifyShopsCarrierShipments: (state) => (shipmentMethodTypeId: any) => {
     return state.shopifyShopsCarrierShipments[shipmentMethodTypeId] ? state.shopifyShopsCarrierShipments[shipmentMethodTypeId] : []
+  },
+  getShopifyShopLocation: (state) => (facilityId: any) => {
+    return state.shopifyShopLocations[facilityId]
   }
 }
 export default getters;

@@ -30,11 +30,10 @@
           </ion-label>
         </ion-item>
         
-        <!-- TODO: need to make this shopify mapping dynamic -->
-        <!-- <ion-label>
-          Shopify Mapping ID
+        <ion-label>
+          {{ getShopifyShopLocation(facility.facilityId) ? getShopifyShopLocation(facility.facilityId) : "-" }}
           <p>{{ translate("Shopify") }}</p>
-        </ion-label> -->
+        </ion-label>
 
         <template v-if="getFacilityInFacilityIdentification(facility)">
           <div class="ion-text-center">
@@ -80,10 +79,12 @@ const store = useStore();
 
 const facilities = computed(() => store.getters["util/getFacilities"])
 const facilitiesIdentifications = computed(() => store.getters["netSuite/getFacilitiesIdentifications"])
+const getShopifyShopLocation = computed(() => store.getters["netSuite/getShopifyShopLocation"])
 
 onIonViewDidEnter(async () => {
   await store.dispatch("util/fetchFacilities")
   await store.dispatch("netSuite/fetchFacilitiesIdentifications")
+  await store.dispatch("netSuite/fetchShopifyShopLocation")
 })
 
 function getFacilityInFacilityIdentification(facility: any) {
@@ -175,6 +176,6 @@ async function removeNetSuiteId(facility: any) {
 
 <style scoped>
 .list-item {
-  --columns-desktop: 2;;
+  --columns-desktop: 4;
 }
 </style>

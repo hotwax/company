@@ -28,7 +28,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     } catch (err) {
       logger.error(err)
     }
-
     commit(types.NET_SUITE_INVENTORY_VARIANCES_UPDATED, inventoryVariances)
   },
 
@@ -46,7 +45,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       if(!hasError(resp) && resp.data) {
         // TODO: need to remove this filter check , after api change of not giving expired results.
         enumsInEnumGroup = resp.data.filter((item: any) => !item.thruDate).reduce((enumId: any, item: any) => {
-          enumId[item.enumerationId] = {
+          enumId[item.enumId] = {
             fromDate: item.fromDate,
             enumerationGroupId: item.enumerationGroupId,
           };
@@ -58,7 +57,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     } catch (err) {
       logger.error(err)
     }
-
     commit(types.NET_SUITE_ENUM_GROUPS_UPDATED, enumsInEnumGroup)
   },
 
@@ -81,7 +79,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     } catch (err) {
       logger.error(err)
     }
-
     commit(types.NET_SUITE_FACILITIES_IDENTIFICATIONS_UPDATED, facilitiesIdentifications)
   },
 
@@ -103,7 +100,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     } catch (err) {
       logger.error(err)
     }
-
     commit(types.NET_SUITE_SALES_CHANNEL_UPDATED, salesChannel)
   },
 
@@ -179,12 +175,12 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
   },
 
-  async shopifyShopsCarrierShipments({commit}) {
+  async fetchShopifyShopsCarrierShipments({commit}) {
     let resp, shopifyShopsCarrierShipments;
     try {
       const resp = await NetSuiteService.fetchShopifyShopsCarrierShipments({ pageSize: 100 });
 
-      if (!hasError(resp)) {
+      if(!hasError(resp)) {
         shopifyShopsCarrierShipments = resp.data.reduce((shipmentMethods: any, shipmentMethod: any) => {
           shipmentMethods[shipmentMethod.shipmentMethodTypeId] = {
             carrierPartyId: shipmentMethod.carrierPartyId,
@@ -199,6 +195,24 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       logger.error(error);
     }
     commit(types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED, shopifyShopsCarrierShipments);
+  },
+
+  async fetchShopifyShopLocation({commit}) {
+    let resp, shopifyShopLocations;
+    try {
+      resp = await NetSuiteService.fetchShopifyShopLocation({ pageSize: 100 });
+      if(!hasError(resp)) {
+        shopifyShopLocations = resp.data.reduce((shopifyShop: any, shopifyShopLocation: any) => {
+          shopifyShop[shopifyShopLocation.facilityId] = shopifyShopLocation.shopifyLocationId
+          return shopifyShop;
+        }, {});
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.NET_SUITE_SHOPIFY_SHOPS_LOCATIONS_UPDATED, shopifyShopLocations);
   },
 
   async fetchShopifyTypeMappings({commit}, mappedTypeId) {

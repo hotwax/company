@@ -36,9 +36,9 @@
         
         <template v-if="channel.enumCode">
           <div class="ion-text-center">
-            <ion-chip outline click="editNetSuiteSalesChannelId(channel)">
+            <ion-chip outline @click="editNetSuiteSalesChannelId(channel)">
               <ion-label>{{ channel.enumCode }}</ion-label>
-              <ion-icon icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
+              <ion-icon :icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite sales channel") }}</p>
@@ -127,14 +127,10 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
   emitter.emit("presentLoader");
   let resp;
 
-  if(netSuiteId) {
-    channel.enumCode = netSuiteId;
-  } else {
-    channel.enumCode = ""
-  }
-
   try {
-    resp = await NetSuiteService.addEnumCode(channel);
+    channel.enumCode = netSuiteId;
+    resp = await NetSuiteService.updateEnumCode(channel);
+
     if(!hasError(resp)) {
       showToast("NetSuite Id updated successfully.");
       await store.dispatch("netSuite/fetchSalesChannel");

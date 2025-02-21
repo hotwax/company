@@ -35,9 +35,9 @@
 
         <template v-if="updatedNetSuiteIds[paymentMethod.paymentMethodTypeId]">
           <div class="ion-text-center">
-            <ion-chip outline click="editNetSuiteId(paymentMethod.paymentMethodTypeId, updatedNetSuiteIds[paymentMethod.paymentMethodTypeId])">
+            <ion-chip outline @click="editNetSuiteId(paymentMethod.paymentMethodTypeId, updatedNetSuiteIds[paymentMethod.paymentMethodTypeId])">
               <ion-label>{{ updatedNetSuiteIds[paymentMethod.paymentMethodTypeId].mappingValue }}</ion-label>
-              <ion-icon icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[paymentMethod.paymentMethodTypeId].integrationMappingId)" />
+              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[paymentMethod.paymentMethodTypeId].integrationMappingId)" />
             </ion-chip>
             <ion-label>
               <p>{{ translate("NetSuite payment method ID") }}</p>

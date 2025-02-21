@@ -16,6 +16,7 @@ const netSuiteModule: Module<NetSuiteState, RootState> = {
     enumsInEnumGroup: [],
     shopifyTypeMappings: [],
     shopifyShopsCarrierShipments: [],
+    shopifyShopLocations:[],
     integrationTypeMappings: []
   },
   getters,

@@ -17,7 +17,7 @@ const fetchPaymentMethods = async (payload: any): Promise <any> => {
 
 const fetchfacilitiesIdentifications = async (payload: any): Promise <any> => {
   return api({
-    url: "facilities/identifications",
+    url: "oms/facilities/identifications",
     method: "get",
     params: payload
   })
@@ -77,6 +77,15 @@ const fetchShopifyShopsCarrierShipments = async (payload: any): Promise <any> =>
     params: payload
   })
 }
+
+const fetchShopifyShopLocation = async (payload: any): Promise <any> => {
+  return api({
+    url: "oms/shopifyShops/locations",
+    method: "get",
+    params: payload
+  })
+}
+
 // TODO: need to add dynamic api to update the sftp configs.
 const updateSftpConfig = async (payload: any): Promise <any> => {
   return api({
@@ -86,24 +95,25 @@ const updateSftpConfig = async (payload: any): Promise <any> => {
   })
 }
 
-const addEnumCode = async (payload: any): Promise <any> => {
+const updateEnumCode = async (payload: any): Promise <any> => {
   return api({
-    url: "admin/enums",
-    method: "post",
+    url: `admin/enums/${payload.enumId}`,
+    method: "put",
     data: payload
   })
 }
 
 export const NetSuiteService = {
-  addEnumCode,
   addIntegrationTypeMappings,
   fetchIntegrationTypeMappings,
   fetchPaymentMethods,
   fetchProductStoreShipmentMethods,
   fetchShopifyTypeMappings,
   fetchShopifyShopsCarrierShipments,
+  fetchShopifyShopLocation,
   fetchfacilitiesIdentifications,
   removeIntegrationMappingValue,
+  updateEnumCode,
   updateFacilityIdentification,
   updateIntegrationTypeMappings,
   updateSftpConfig

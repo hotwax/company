@@ -112,7 +112,7 @@ const updatedNetSuiteIds = computed(() => {
 onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchShipmentMethodTypes");
   await store.dispatch("netSuite/fetchProductStoreShipmentMethods")
-  await store.dispatch("netSuite/shopifyShopsCarrierShipments")
+  await store.dispatch("netSuite/fetchShopifyShopsCarrierShipments")
   await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: shipmentMethodTypeId })
 })
 
