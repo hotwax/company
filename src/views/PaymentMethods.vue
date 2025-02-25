@@ -91,7 +91,6 @@ const updatedNetSuiteIds = computed(() => {
 
 onIonViewWillEnter(async () => {
   await store.dispatch("netSuite/fetchPaymentMethods")
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: paymentMethodTypeId })
   await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE")
 })
 

@@ -3,12 +3,17 @@ import emitter from "@/event-bus";
 import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { useStore } from "vuex";
+import { onMounted } from "vue";
 import { alertController } from '@ionic/vue';
 import { translate } from "@/i18n"
 
 export function useNetSuiteComposables(integrationTypeId: any) {
 
   const store = useStore();
+  // Fetch integration type mappings
+  onMounted(async () => {    
+    await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId });
+  });  
   
   // This function opens an alert dialog to edit the NetSuite ID, taking a mapping key and the current integration mapping as parameters.
   const editNetSuiteId = async (mappingKey: any, integrationMapping: any) => {

@@ -58,8 +58,6 @@ const mappingKeys = {
 }
 
 onMounted(async () => {
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: discountTypeId })
-  
   // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
   integrationTypeMappings.value.map((mapping: any) => {
     integrationMappingByKey[mapping.mappingKey] = mapping
