@@ -176,7 +176,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchShopifyShopsCarrierShipments({commit}) {
-    let resp, shopifyShopsCarrierShipments;
+    let shopifyShopsCarrierShipments;
     try {
       const resp = await NetSuiteService.fetchShopifyShopsCarrierShipments({ pageSize: 100 });
 

@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonCard, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { search } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";

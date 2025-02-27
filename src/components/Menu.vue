@@ -34,7 +34,7 @@ import {
 } from "@ionic/vue";
 import { computed, defineComponent } from "vue";
 import { mapGetters } from "vuex";
-import { businessOutline, cartOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { businessOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useStore } from "@/store";
 import { useRouter } from "vue-router";
 import { translate } from "@/i18n";

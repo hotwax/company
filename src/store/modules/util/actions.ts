@@ -25,7 +25,7 @@ const actions: ActionTree<UtilState, RootState> = {
     commit(types.UTIL_FACILITY_GROUPS_UPDATED, facilityGroups);
   },
   
-  async fetchFacilities({ state, commit }) {
+  async fetchFacilities({ commit }) {
     let facilities = [] as any, resp;
 
     try {
