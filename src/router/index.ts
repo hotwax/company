@@ -7,7 +7,6 @@ import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
 import ProductStore from "@/views/ProductStore.vue";
 import NetSuite from "@/views/NetSuite.vue";
 import Settings from "@/views/Settings.vue"
-import Facilities from "@/components/Facilities.vue";
 import ShipmentMethods from "@/views/ShipmentMethods.vue"
 import InventoryVariances from "@/views/InventoryVariances.vue";
 import PaymentMethods from "@/views/PaymentMethods.vue";
@@ -66,12 +65,12 @@ const routes: Array<RouteRecordRaw> = [
     component: ShipmentMethods,
     beforeEnter: authGuard,
   },
-  {
-    path: "/netsuite/facilities",
-    name: "Facilities",
-    component: Facilities,
-    beforeEnter: authGuard,
-  },
+  // {
+  //   path: "/netsuite/facilities",
+  //   name: "Facilities",
+  //   component: Facilities,
+  //   beforeEnter: authGuard,
+  // },
   {
     path: "/netsuite/inventory-variances",
     name: "InventoryVariances",

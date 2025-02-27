@@ -12,8 +12,8 @@
         <ion-item lines="none">
           <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
           <ion-label>
-            Map facilities to NetSuite
-            <p>For orders and inventory to sync with NetSuite, the facilities in NetSuite must be mapped to facilities in HotWax Commerce</p>
+            {{ translate("Map facilities to NetSuite") }}
+            <p>{{ translate("For orders and inventory to sync with NetSuite, the facilities in NetSuite must be mapped to facilities in HotWax Commerce") }}</p>
           </ion-label>
         </ion-item>
       </div>
@@ -29,7 +29,7 @@
 
         <ion-label>
           shopify mapping
-          <p>Shopify location</p>
+          <p>{{ translate("Shopify location") }}</p>
         </ion-label>
         
         <div>
@@ -38,36 +38,7 @@
             <ion-icon :icon="closeCircleOutline" />
           </ion-chip>
           <ion-label>
-            <p>NetSuite ID</p>
-          </ion-label>
-        </div>
-        
-        <ion-button fill="clear" color="medium">
-          <ion-icon slot="icon-only" :icon="ellipsisVerticalOutline" />
-        </ion-button>
-      </div>
-      <div class="list-item">
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="storefrontOutline" />
-          <ion-label>
-            <p class="overline">Retail</p>
-            Store 1 name
-            <p>Facility Id</p>
-          </ion-label>
-        </ion-item>
-        
-        <ion-label>
-          shopify mapping
-          <p>Shopify location</p>
-        </ion-label>
-        
-        <div>
-          <ion-chip outline>
-            <ion-label>15</ion-label>
-            <ion-icon :icon="closeCircleOutline" />
-          </ion-chip>
-          <ion-label>
-            <p>NetSuite ID</p>
+            <p>{{ translate("NetSuite ID") }}</p>
           </ion-label>
         </div>
         
