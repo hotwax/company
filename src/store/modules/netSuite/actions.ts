@@ -14,8 +14,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     let inventoryVariances  = [] as any;
     try {
       const payload = {
-        enumTypeId:  "IID_REASON",
-        enumTypeId_op: "in",
+        enumTypeId: "IID_REASON",
         pageSize: 100,
       }
 
@@ -31,12 +30,11 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_INVENTORY_VARIANCES_UPDATED, inventoryVariances)
   },
 
-  async fetchEnumGroupMember({commit}) {
+  async fetchEnumGroupMember({ commit }) {
     let enumsInEnumGroup  = [] as any;
     try {
       const payload = {
-        enumerationGroupId:  "NETSUITE_IIV_REASON",
-        enumerationGroupId_op: "in",
+        enumerationGroupId: "NETSUITE_IIV_REASON",
         pageSize: 100,
       }
 
@@ -64,8 +62,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     let facilitiesIdentifications  = [] as any;
     try {
       const payload = {
-        facilityIdenTypeId:  "ORDR_ORGN_DPT",
-        facilityIdenTypeId_op: "in",
+        facilityIdenTypeId: "ORDR_ORGN_DPT",
         pageSize: 100,
       }
 
@@ -87,7 +84,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     try {
       const payload = {
         enumTypeId: "ORDER_SALES_CHANNEL",
-        enumTypeId_op: "in",
         pageSize: 100,
       }
 
@@ -175,7 +171,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
   },
 
-  async fetchShopifyShopsCarrierShipments({commit}) {
+  async fetchShopifyShopsCarrierShipments({ commit }) {
     let shopifyShopsCarrierShipments;
     try {
       const resp = await NetSuiteService.fetchShopifyShopsCarrierShipments({ pageSize: 100 });
@@ -197,7 +193,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED, shopifyShopsCarrierShipments);
   },
 
-  async fetchShopifyShopLocation({commit}) {
+  async fetchShopifyShopLocation({ commit }) {
     let resp, shopifyShopLocations;
     try {
       resp = await NetSuiteService.fetchShopifyShopLocation({ pageSize: 100 });
@@ -215,7 +211,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_SHOPIFY_SHOPS_LOCATIONS_UPDATED, shopifyShopLocations);
   },
 
-  async fetchShopifyTypeMappings({commit}, mappedTypeId) {
+  async fetchShopifyTypeMappings({ commit }, mappedTypeId) {
     let shopifyTypeMappings = [] as any
     let resp;
 

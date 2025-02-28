@@ -16,7 +16,9 @@
             {{ translate("Map payment methods with NetSuite") }}
             <p>{{ translate("For an order to sync with NetSuite, the payment method on that order must be mapped to a NetSuite shipment method ID.") }}</p>
           </ion-label>
-          <ion-icon :icon="openOutline" slot="end" @click="openPaymentMethodDoc" />
+          <ion-button fill="clear" size="small" color="medium">
+            <ion-icon :icon="openOutline" slot="icon-only" @click="openPaymentMethodDoc" />
+          </ion-button>
         </ion-item>
       </div>
 
@@ -100,7 +102,7 @@ function getShopifyMappingId(paymentMethodTypeId: any) {
 }
 
 function openPaymentMethodDoc() {
-  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/payment-methods', '_blank');
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/payment-methods', '_blank', 'noopener, noreferrer');
 }
 </script>
 

@@ -16,7 +16,9 @@
       <ion-label>
         {{ translate("Learn more about NetSuite SFTP configuration.") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" @click="openSftpDoc" />
+      <ion-button fill="clear" size="small" color="medium">
+        <ion-icon :icon="openOutline" slot="icon-only" @click="openSftpDoc" />
+      </ion-button>
     </ion-item>
     
     <ion-item lines="full" class="ion-margin-top">
@@ -35,7 +37,7 @@
       <ion-input v-model="sftpFormData.hostKey" :label="translate('HOST KEY')" :placeholder="translate('Authentication key')" />
     </ion-item>
     <ion-item lines="full">
-      <ion-input v-model="sftpFormData.defaultDirectory" :label="translate('DEFAULT DIRECTORY')" :placeholder="translate('/home/-sftp/netsuite/')" />
+      <ion-input v-model="sftpFormData.defaultDirectory" :label="translate('DEFAULT DIRECTORY')" placeholder="/home/-sftp/netsuite/" />
     </ion-item>
 
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
@@ -101,6 +103,6 @@ async function saveSftpConfig() {
 }
 
 function openSftpDoc() {
-  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/sdfbundle/setupsftp', '_blank');
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/sdfbundle/setupsftp', '_blank', 'noopener, noreferrer');
 }
 </script>

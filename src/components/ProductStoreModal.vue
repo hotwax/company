@@ -16,7 +16,9 @@
       <ion-label>
         {{ translate("Learn more about mapping product stores to subsidiaries") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" @click="openProductStoreDoc" />
+      <ion-button fill="clear" size="small" color="medium">
+        <ion-icon :icon="openOutline" slot="icon-only" @click="openProductStoreDoc" />
+      </ion-button>
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
@@ -107,6 +109,6 @@ function updatedStoreSubsidiaryId() {
 }
 
 function openProductStoreDoc() {
-  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/prerequisites/productstoresettings', '_blank');
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/netsuite-deployment/prerequisites/productstoresettings', '_blank', 'noopener, noreferrer');
 }
 </script>

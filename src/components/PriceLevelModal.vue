@@ -16,7 +16,9 @@
       <ion-label>
         {{ translate("Learn more about price levels in NetSuite") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" @click="openPriceLevelDoc"/>
+      <ion-button fill="clear" size="small" color="medium">
+        <ion-icon :icon="openOutline" slot="icon-only" @click="openPriceLevelDoc"/>
+      </ion-button>
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">
@@ -97,6 +99,6 @@ function closeModal() {
 }
 
 function openPriceLevelDoc() {
-  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/price-levels', '_blank');
+  window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/price-levels', '_blank', 'noopener, noreferrer');
 }
 </script>

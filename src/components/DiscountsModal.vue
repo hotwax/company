@@ -16,7 +16,9 @@
       <ion-label>
         {{ translate("Learn more about discounts in NetSuite") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" />
+      <ion-button fill="clear" size="small" color="medium">
+        <ion-icon :icon="openOutline" slot="icon-only" />
+      </ion-button>
     </ion-item>
 
     <ion-item lines="full" class="ion-margin-top">

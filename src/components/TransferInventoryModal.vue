@@ -16,7 +16,9 @@
       <ion-label>
         {{ translate("Learn more about creating inventory transfers from inventory variances") }}
       </ion-label>
-      <ion-icon :icon="openOutline" slot="end" />
+      <ion-button fill="clear" size="small" color="medium">
+        <ion-icon :icon="openOutline" slot="icon-only" />
+      </ion-button>
     </ion-item>
 
     <ion-item>
