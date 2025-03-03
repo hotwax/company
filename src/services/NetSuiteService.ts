@@ -1,9 +1,10 @@
 import api from "@/api"
 
-const fetchProductStoreShipmentMethods = async (productStoreId: any): Promise<any> => {
+const fetchProductStoreShipmentMethods = async (payload: any): Promise<any> => {
   return api({
-    url: `oms/productStores/${productStoreId}/shipmentMethods`,
+    url: `oms/productStores/${payload.productStoreId}/shipmentMethods`,
     method: "get",
+    params: payload
   })
 }
 

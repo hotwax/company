@@ -11,19 +11,23 @@ import { UtilService } from "@/services/UtilService"
 const actions: ActionTree<NetSuiteState, RootState> = {
   
   async fetchInventoryVariances({ commit }) {
-    let inventoryVariances  = [] as any;
+    let inventoryVariances = [] as any, pageIndex = 0, resp;
     try {
-      const payload = {
-        enumTypeId: "IID_REASON",
-        pageSize: 100,
-      }
+      do {
+        const payload = {
+          enumTypeId: "IID_REASON",
+          pageSize: 100,
+          pageIndex
+        }
 
-      const resp = await UtilService.fetchEnums(payload)
-      if(!hasError(resp)) {
-        inventoryVariances = resp.data
-      } else {
-        throw resp.data
-      }
+        resp = await UtilService.fetchEnums(payload)
+        if(!hasError(resp)) {
+          inventoryVariances = inventoryVariances.concat(resp.data)
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
     } catch (err) {
       logger.error(err)
     }
@@ -31,27 +35,34 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchEnumGroupMember({ commit }) {
-    let enumsInEnumGroup  = [] as any;
+    let enumsInEnumGroup = {} as any, pageIndex = 0, resp;
+
     try {
-      const payload = {
-        enumerationGroupId: "NETSUITE_IIV_REASON",
-        pageSize: 100,
-      }
+      do {
+        const payload = {
+          enumerationGroupId: "NETSUITE_IIV_REASON",
+          pageSize: 100,
+          pageIndex
+        }
 
-      const resp = await UtilService.fetchEnumGroupMember(payload)
+        resp = await UtilService.fetchEnumGroupMember(payload)
 
-      if(!hasError(resp) && resp.data) {
-        // TODO: need to remove this filter check , after api change of not giving expired results.
-        enumsInEnumGroup = resp.data.filter((item: any) => !item.thruDate).reduce((enumId: any, item: any) => {
-          enumId[item.enumId] = {
-            fromDate: item.fromDate,
-            enumerationGroupId: item.enumerationGroupId,
-          };
-          return enumId;
-        }, {});
-      } else {
-        throw resp.data
-      }
+        if(!hasError(resp) && resp.data) {
+          // TODO: need to remove this filter check , after api change of not giving expired results.
+          const newEnums = resp.data.filter((item: any) => !item.thruDate).reduce((enumId: any, item: any) => {
+            enumId[item.enumId] = {
+              fromDate: item.fromDate,
+              enumerationGroupId: item.enumerationGroupId,
+            };
+            return enumId;
+          }, {});
+          // Using object spread to merge new mappings into the existing object, preserving the nested structure created by reduce()j
+          enumsInEnumGroup = { ...enumsInEnumGroup, ...newEnums };
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
     } catch (err) {
       logger.error(err)
     }
@@ -59,20 +70,25 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchFacilitiesIdentifications({ commit }) {
-    let facilitiesIdentifications  = [] as any;
-    try {
-      const payload = {
-        facilityIdenTypeId: "ORDR_ORGN_DPT",
-        pageSize: 100,
-      }
+    let facilitiesIdentifications = [] as any, pageIndex = 0, resp;
 
-      const resp = await NetSuiteService.fetchfacilitiesIdentifications(payload)
-      if(!hasError(resp)) {
-        // TODO: need to handle the case of removing the facility from the faciliyIdentofication, need to add the thruDate in the payload
-        facilitiesIdentifications = resp.data.filter((item: any) => !item.thruDate)
-      } else {
-        throw resp.data
-      }
+    try {
+      do {
+        const payload = {
+          facilityIdenTypeId: "ORDR_ORGN_DPT",
+          pageSize: 100,
+          pageIndex
+        }
+
+        resp = await NetSuiteService.fetchfacilitiesIdentifications(payload)
+        if(!hasError(resp)) {
+          // TODO: need to handle the case of removing the facility from the faciliyIdentofication, need to add the thruDate in the payload
+          facilitiesIdentifications = facilitiesIdentifications.concat(resp.data.filter((item: any) => !item.thruDate));
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
     } catch (err) {
       logger.error(err)
     }
@@ -80,19 +96,24 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchSalesChannel({ commit }) {
-    let salesChannel  = [] as any;
-    try {
-      const payload = {
-        enumTypeId: "ORDER_SALES_CHANNEL",
-        pageSize: 100,
-      }
+    let salesChannel = [] as any, pageIndex = 0, resp;
 
-      const resp = await UtilService.fetchEnums(payload)
-      if(!hasError(resp)) {
-        salesChannel = resp.data
-      } else {
-        throw resp.data
-      }
+    try {
+      do {
+        const payload = {
+          enumTypeId: "ORDER_SALES_CHANNEL",
+          pageSize: 100,
+          pageIndex
+        }
+  
+        resp = await UtilService.fetchEnums(payload)
+        if(!hasError(resp)) {
+          salesChannel = salesChannel.concat(resp.data);
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
     } catch (err) {
       logger.error(err)
     }
@@ -100,144 +121,188 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchPaymentMethods({ commit }) {
-    let paymentMethods = [] as any;
+    let paymentMethods = [] as any, pageIndex = 0, resp;
 
     try {
-      const resp = await NetSuiteService.fetchPaymentMethods({ pageSize: 100 });
+      do {
+        const payload = {
+          pageSize: 100,
+          pageIndex
+        }
+        resp = await NetSuiteService.fetchPaymentMethods(payload);
 
-      if(!hasError(resp)) {
-        paymentMethods = resp.data;
-      } else {
-        throw resp.data;
-      }
-    } catch(error: any) {
+        if(!hasError(resp)) {
+          paymentMethods = paymentMethods.concat(resp.data);
+        } else {
+          throw resp.data;
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
       logger.error(error);
     }
     commit(types.NET_SUITE_PAYMENT_METHODS_UPDATED, paymentMethods);
   },
 
   async fetchProductStoreShipmentMethods({ commit }) {
-    let productStoreShipmentMethods = [] as any;
-    let resp;
+    let productStoreShipmentMethods = [] as any, pageIndex = 0, resp;
     
     try {
       const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
-      resp = await NetSuiteService.fetchProductStoreShipmentMethods(netSuiteProductStoreId?.productStoreId)
+      do {
+        const payload = {
+          productStoreId: netSuiteProductStoreId?.productStoreId,
+          pageSize: 100,
+          pageIndex
+        }
 
-      if(!hasError(resp) && resp.data) {
-        productStoreShipmentMethods = resp.data
-      } else {
-        throw resp.data
-      }
-    } catch(error) {
+        resp = await NetSuiteService.fetchProductStoreShipmentMethods(payload)
+
+        if(!hasError(resp) && resp.data) {
+          productStoreShipmentMethods = productStoreShipmentMethods.concat(resp.data)
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
       logger.error(error);
     }
     commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethods)
   },
 
   async fetchIntegrationTypeMappings({ commit }, params: any) {
-    let integrationTypeMappings = [] as any
-    let resp;
+    let integrationTypeMappings = {} as any, pageIndex = 0, resp;
 
     try {
-      let payload = {
-        integrationTypeId: params.integrationTypeId,
-        pageSize: 100
-      } as any
+      do {
+        let payload = {
+          integrationTypeId: params.integrationTypeId,
+          pageSize: 100,
+          pageIndex
+        } as any
 
-      if(params.mappingKey) {
-        payload = {...payload, mappingKey: params.mappingKey }
-      }
+        if(params.mappingKey) {
+          payload = {...payload, mappingKey: params.mappingKey }
+        }
 
-      resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
-      if(!hasError(resp) && resp.data) {
-        const responseData = resp.data
-        integrationTypeMappings = responseData.reduce((integrationTypeId: any, integrationTypeMappings: any) => {
-          const typeId = integrationTypeMappings.integrationTypeId;
+        resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
+        if(!hasError(resp) && resp.data) {
+          const responseData = resp.data
+          const newIntegrationTypeMappings = responseData.reduce((integrationTypeId: any, integrationTypeMappings: any) => {
+            const typeId = integrationTypeMappings.integrationTypeId;
 
-          if(!integrationTypeId[typeId]) {
-            integrationTypeId[typeId] = [];
-          }
+            if(!integrationTypeId[typeId]) {
+              integrationTypeId[typeId] = [];
+            }
 
-          integrationTypeId[typeId].push(integrationTypeMappings);
-          return integrationTypeId;
-        }, {});   
-      } else {
-        throw resp.data
-      }
-    } catch(error) {
+            integrationTypeId[typeId].push(integrationTypeMappings);
+            return integrationTypeId;
+          }, {});   
+          integrationTypeMappings = { ...integrationTypeMappings, ...newIntegrationTypeMappings };
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
       logger.error(error);
     }
     commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
   },
 
   async fetchShopifyShopsCarrierShipments({ commit }) {
-    let shopifyShopsCarrierShipments;
-    try {
-      const resp = await NetSuiteService.fetchShopifyShopsCarrierShipments({ pageSize: 100 });
+    let shopifyShopsCarrierShipments = {} as any, pageIndex = 0, resp;
 
-      if(!hasError(resp)) {
-        shopifyShopsCarrierShipments = resp.data.reduce((shipmentMethods: any, shipmentMethod: any) => {
-          shipmentMethods[shipmentMethod.shipmentMethodTypeId] = {
-            carrierPartyId: shipmentMethod.carrierPartyId,
-            shopifyShippingMethod: shipmentMethod.shopifyShippingMethod,
-          };
-          return shipmentMethods;
-        }, {});
-      } else {
-        throw resp.data;
-      }
-    } catch(error: any) {
+    try {
+      do {
+        const payload = {
+          pageSize: 100,
+          pageIndex
+        }
+
+        resp = await NetSuiteService.fetchShopifyShopsCarrierShipments(payload)
+
+        if(!hasError(resp)) {
+          const newShipments = resp.data.reduce((shipmentMethods: any, shipmentMethod: any) => {
+            shipmentMethods[shipmentMethod.shipmentMethodTypeId] = {
+              carrierPartyId: shipmentMethod.carrierPartyId,
+              shopifyShippingMethod: shipmentMethod.shopifyShippingMethod,
+            };
+            return shipmentMethods;
+          }, {});
+          shopifyShopsCarrierShipments = { ...shopifyShopsCarrierShipments, ...newShipments };
+        } else {
+          throw resp.data;
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
       logger.error(error);
     }
     commit(types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED, shopifyShopsCarrierShipments);
   },
 
   async fetchShopifyShopLocation({ commit }) {
-    let resp, shopifyShopLocations;
+    let shopifyShopLocations = {} as any, pageIndex = 0, resp;
+
     try {
-      resp = await NetSuiteService.fetchShopifyShopLocation({ pageSize: 100 });
-      if(!hasError(resp)) {
-        shopifyShopLocations = resp.data.reduce((shopifyShop: any, shopifyShopLocation: any) => {
-          shopifyShop[shopifyShopLocation.facilityId] = shopifyShopLocation.shopifyLocationId
-          return shopifyShop;
-        }, {});
-      } else {
-        throw resp.data;
-      }
-    } catch(error: any) {
+      do {
+        const payload = {
+          pageSize: 100,
+          pageIndex
+        }
+
+        resp = await NetSuiteService.fetchShopifyShopLocation(payload)
+
+        if(!hasError(resp)) {
+          const newshopifyShopLocations = resp.data.reduce((shopifyShop: any, shopifyShopLocation: any) => {
+            shopifyShop[shopifyShopLocation.facilityId] = shopifyShopLocation.shopifyLocationId
+            return shopifyShop;
+          }, {});
+          shopifyShopLocations = { ...shopifyShopLocations, ...newshopifyShopLocations };
+        } else {
+          throw resp.data;
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error: any) {
       logger.error(error);
     }
     commit(types.NET_SUITE_SHOPIFY_SHOPS_LOCATIONS_UPDATED, shopifyShopLocations);
   },
 
   async fetchShopifyTypeMappings({ commit }, mappedTypeId) {
-    let shopifyTypeMappings = [] as any
-    let resp;
+    let shopifyTypeMappings = {} as any, pageIndex = 0, resp;
 
     try {
-      const payload = {
-        mappedTypeId: mappedTypeId,
-        pageSize: 100
-      }
+      do {
+        const payload = {
+          mappedTypeId: mappedTypeId,
+          pageSize: 100,
+          pageIndex
+        }
 
-      resp = await NetSuiteService.fetchShopifyTypeMappings(payload)
-      if(!hasError(resp) && resp.data) {
-        const responseData = resp.data
-        shopifyTypeMappings = responseData.reduce((mappedTypeId: any, shopifyTypeMappings: any) => {
-          const typeId = shopifyTypeMappings.mappedTypeId;
+        resp = await NetSuiteService.fetchShopifyTypeMappings(payload)
+        if(!hasError(resp) && resp.data) {
+          const responseData = resp.data
+          const newShopifyTypeMappings = responseData.reduce((mappedTypeId: any, shopifyTypeMappings: any) => {
+            const typeId = shopifyTypeMappings.mappedTypeId;
           
-          if(!mappedTypeId[typeId]) {
-            mappedTypeId[typeId] = [];
-          }
+            if(!mappedTypeId[typeId]) {
+              mappedTypeId[typeId] = [];
+            }
 
-          mappedTypeId[typeId].push(shopifyTypeMappings);
-          return mappedTypeId;
-        }, {});   
-      } else {
-        throw resp.data
-      }
-    } catch(error) {
+            mappedTypeId[typeId].push(shopifyTypeMappings);
+            return mappedTypeId;
+          }, {});   
+          shopifyTypeMappings = { ...shopifyTypeMappings, ...newShopifyTypeMappings };
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
       logger.error(error);
     }
     commit(types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED, shopifyTypeMappings)
