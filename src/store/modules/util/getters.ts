@@ -6,6 +6,9 @@ const getters: GetterTree <UtilState, RootState> = {
   getFacilityGroups(state) {
     return state.facilityGroups
   },
+  getFacilities(state) {
+    return state.facilities
+  },
   getOperatingCountries(state) {
     return state.operatingCountries;
   },

@@ -1,10 +1,17 @@
 import { createRouter, createWebHistory } from "@ionic/vue-router";
 import { RouteRecordRaw } from "vue-router";
 import store from "@/store"
-import Tabs from "@/views/Tabs.vue"
 import CreateProductStore from "@/views/CreateProductStore.vue";
 import AddConfigurations from "@/views/AddConfigurations.vue";
 import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
+import ProductStore from "@/views/ProductStore.vue";
+import NetSuite from "@/views/NetSuite.vue";
+import Settings from "@/views/Settings.vue"
+import ShipmentMethods from "@/views/ShipmentMethods.vue"
+import InventoryVariances from "@/views/InventoryVariances.vue";
+import PaymentMethods from "@/views/PaymentMethods.vue";
+import SalesChannel from "@/views/SalesChannel.vue";
+import Departments from "@/views/Departments.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
 
@@ -31,28 +38,62 @@ const loginGuard = (to: any, from: any, next: any) => {
 const routes: Array<RouteRecordRaw> = [
   {
     path: "/",
-    redirect: "/tabs/product-store"
+    redirect: "/product-store"
   },
   {
-    path: "/tabs",
-    component: Tabs,
-    children: [
-      {
-        path: "",
-        redirect: "/tabs/product-store"
-      },
-      {
-        path: "product-store",
-        name: "ProductStore",
-        component: () => import("@/views/ProductStore.vue")
-      },
-      {
-        path: "settings",
-        name: "Settings",
-        component: () => import("@/views/Settings.vue")
-      }
-    ],
-    beforeEnter: authGuard
+    path: '/product-store',
+    name: 'ProductStore',
+    component: ProductStore,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/product-store-details/:productStoreId",
+    name: "ProductStoreDetails",
+    component: ProductStoreDetails,
+    props: true,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/netsuite",
+    name: "NetSuite",
+    component: NetSuite,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/netsuite/shipment-methods",
+    name: "ShipmentMethods",
+    component: ShipmentMethods,
+    beforeEnter: authGuard,
+  },
+  // {
+  //   path: "/netsuite/facilities",
+  //   name: "Facilities",
+  //   component: Facilities,
+  //   beforeEnter: authGuard,
+  // },
+  {
+    path: "/netsuite/inventory-variances",
+    name: "InventoryVariances",
+    component: InventoryVariances,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/netsuite/payment-methods",
+    name: "PaymentMethods",
+    component: PaymentMethods,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/netsuite/sales-channel",
+    name: "SalesChannel",
+    component: SalesChannel,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/netsuite/departments",
+    name: "Departments",
+    component: Departments,
+    beforeEnter: authGuard,
   },
   {
     path: "/create-product-store",
@@ -70,16 +111,16 @@ const routes: Array<RouteRecordRaw> = [
     }
   },
   {
-    path: "/product-store-details/:productStoreId",
-    name: "ProductStoreDetails",
-    component: ProductStoreDetails,
-    props: true
-  },
-  {
     path: "/login",
     name: "Login",
     component: DxpLogin,
     beforeEnter: loginGuard
+  },
+  {
+    path: "/settings",
+    name: "Settings",
+    component: Settings,
+    beforeEnter: authGuard
   },
 ]
 

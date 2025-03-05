@@ -6,6 +6,9 @@ const mutations: MutationTree <UtilState> = {
   [types.UTIL_FACILITY_GROUPS_UPDATED] (state, payload) {
     state.facilityGroups = payload
   },
+  [types.UTIL_FACILITIES_UPDATED] (state, payload) {
+    state.facilities = payload
+  },
   [types.UTIL_OPERATING_COUNTRIES_UPDATED] (state, payload) {
     state.operatingCountries = payload
   },

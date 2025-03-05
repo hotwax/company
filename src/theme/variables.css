@@ -271,6 +271,15 @@ ion-input.name {
   --background: var(--ion-color-light)
 }
 
+.list-item > ion-item:first-child {
+  width: 100%;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .pointer {
   cursor: pointer;
 }

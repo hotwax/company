@@ -96,6 +96,7 @@ const actions: ActionTree<UserState, RootState> = {
     commit(types.USER_END_SESSION)
     this.dispatch("productStore/clearProductStoreState");
     this.dispatch("util/clearUtilState");
+    this.dispatch("netSuite/clearNetSuiteState");
     dispatch("setOmsRedirectionInfo", { url: "", token: "" })
     resetConfig();
     resetPermissions();

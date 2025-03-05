@@ -9,6 +9,7 @@ const utilModule: Module<UtilState, RootState> = {
   namespaced: true,
   state: {
     facilityGroups: [],
+    facilities: [],
     operatingCountries: [],
     dbicCountries: {},
     productIdentifiers: [],

@@ -25,6 +25,33 @@ const actions: ActionTree<UtilState, RootState> = {
     commit(types.UTIL_FACILITY_GROUPS_UPDATED, facilityGroups);
   },
   
+  async fetchFacilities({ commit }) {
+    let facilities = [] as any, pageIndex = 0, resp;
+
+    try {
+      do {
+        resp = await UtilService.fetchFacilities({
+          facilityTypeId: "VIRTUAL_FACILITY",
+          facilityTypeId_not: "Y",
+          parentTypeId: "VIRTUAL_FACILITY",
+          parentTypeId_not: "Y",
+          pageSize: 100,
+          pageIndex
+        })
+
+        if(!hasError(resp) && resp.data) {
+          facilities = facilities.concat(resp.data.filter((facility: any) => facility.externalId));
+        } else {
+          throw resp.data
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error) {
+      logger.error(error);
+    }
+    commit(types.UTIL_FACILITIES_UPDATED, facilities)
+  },
+  
   async fetchDBICCountries({ commit }) {
     let countries = [] as any;
 
@@ -77,19 +104,23 @@ const actions: ActionTree<UtilState, RootState> = {
     commit(types.UTIL_PRODUCT_IDENTIFIERS_UPDATED, productIdentifiers)
   },
 
-  async fetchShipmentMethodTypes({ commit, state }, payload) {
+  async fetchShipmentMethodTypes({ commit, state }) {
     if(state.shipmentMethodTypes.length) return;
 
-    let shipmentMethodTypes = [] as any;
+    let shipmentMethodTypes = [] as any, pageIndex = 0, resp;
 
     try {
-      const resp = await UtilService.fetchShipmentMethodTypes(payload)
-      if(!hasError(resp)) {
-        shipmentMethodTypes = resp.data;
-      } else {
-        throw resp.data;
-      }
-    } catch(error: any) {
+      do {
+        resp = await UtilService.fetchShipmentMethodTypes({ pageSize: 100, pageIndex });
+
+        if(!hasError(resp)) {
+          shipmentMethodTypes = shipmentMethodTypes.concat(resp.data);
+        } else {
+          throw resp.data;
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
+    } catch (error: any) {
       logger.error(error);
     }
     commit(types.UTIL_SHIPMENT_METHOD_TYPES_UPDATED, shipmentMethodTypes)
