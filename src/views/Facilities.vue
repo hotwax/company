@@ -2,8 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-      <ion-back-button slot="start" default-href="/netsuite" />
-        <ion-menu-button slot="start" />
+        <ion-back-button slot="start" default-href="/netsuite" />
         <ion-title>{{ translate("Facilities") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -51,7 +50,7 @@
 </template>
 <script setup lang="ts">
 import { translate } from "@/i18n"
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar } from "@ionic/vue";
 import { closeCircleOutline, ellipsisVerticalOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 
 </script>
