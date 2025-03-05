@@ -16,8 +16,8 @@
       <ion-label>
         {{ translate("Learn more about price levels in NetSuite") }}
       </ion-label>
-      <ion-button fill="clear" size="small" color="medium">
-        <ion-icon :icon="openOutline" slot="icon-only" @click="openPriceLevelDoc"/>
+      <ion-button fill="clear" size="small" color="medium" @click="openPriceLevelDoc">
+        <ion-icon :icon="openOutline" slot="icon-only" />
       </ion-button>
     </ion-item>
 

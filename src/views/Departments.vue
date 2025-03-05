@@ -51,7 +51,7 @@
         <template v-else>
           <ion-button size="small" fill="outline" @click="editNetSuiteId(facility)">
             <ion-icon :icon="addOutline"/>
-            <ion-label>{{ translate("NetSuite id") }}</ion-label>
+            <ion-label>{{ translate("NetSuite ID") }}</ion-label>
           </ion-button>
         </template>
         

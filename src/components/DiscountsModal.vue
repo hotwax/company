@@ -76,7 +76,7 @@ function closeModal() {
 }
 
 function isDiscountValueChanged() {
-  return !orderLevelDiscount.value?.trim() || !itemLevelDiscount.value?.trim() || (orderLevelDiscount.value === integrationMappingByKey[mappingKeys.order]?.mappingValue) && itemLevelDiscount.value === integrationMappingByKey[mappingKeys.item]?.mappingValue
+  return !(orderLevelDiscount.value?.trim() && itemLevelDiscount.value?.trim() && (orderLevelDiscount.value !== integrationMappingByKey[mappingKeys.order]?.mappingValue || itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item]?.mappingValue));
 }
 
 async function editNetSuiteDiscountItemIds() {

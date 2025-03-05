@@ -16,8 +16,8 @@
       <ion-label>
         {{ translate("Learn more about NetSuite SFTP configuration.") }}
       </ion-label>
-      <ion-button fill="clear" size="small" color="medium">
-        <ion-icon :icon="openOutline" slot="icon-only" @click="openSftpDoc" />
+      <ion-button fill="clear" size="small" color="medium" @click="openSftpDoc">
+        <ion-icon :icon="openOutline" slot="icon-only" />
       </ion-button>
     </ion-item>
     
