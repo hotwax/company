@@ -109,12 +109,12 @@ async function editNetSuiteSalesChannelId(channel: any) {
           const netSuiteId = data.netSuiteSalesChannelId.trim();
           
           if(!netSuiteId) {
-            showToast("Please enter a valid NetSuite ID.");
+            showToast(translate("Please enter a valid NetSuite ID"));
             return false;
           }
 
           if(channel.enumCode === netSuiteId) {
-            showToast("Please update the NetSuite ID.");
+            showToast(translate("Please update the NetSuite ID"));
             return false;
           }
           await updateSalesChannelNetSuiteId(channel, netSuiteId);
@@ -134,7 +134,7 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
     resp = await NetSuiteService.updateEnumCode(channel);
 
     if(!hasError(resp)) {
-      showToast("NetSuite Id updated successfully.");
+      showToast(translate("NetSuite Id updated successfully"));
       await store.dispatch("netSuite/fetchSalesChannel");
     } else {
       throw resp.data;

@@ -78,6 +78,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       }
     } catch (err) {
       logger.error(err);
+      showToast(translate("Failed to add netSuite id"))
     }
     emitter.emit('dismissLoader');
   };
@@ -99,6 +100,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       }
     } catch (err) {
       logger.error(err);
+      showToast(translate("Failed to update netSuite id"))
     }
     emitter.emit('dismissLoader');
   };
@@ -118,6 +120,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
       }
     } catch (err) {
       logger.error(err);
+      showToast(translate("Failed to remove netSuite id"))
     }
     emitter.emit('dismissLoader');
   };

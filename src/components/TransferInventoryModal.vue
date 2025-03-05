@@ -64,12 +64,12 @@ onMounted(async() => {
 // Validates the input data, saves or updates NetSuite facility ID for inventory transfers associated with the integration type ID: NETSUITE_VAR_TRAN.
 async function saveTransferInventoryNetSuiteId() {
   if(!transferLocationId.value) {
-    showToast("Please enter a valid NetSuite ID");
+    showToast(translate("Please enter a valid NetSuite ID"));
     return false;
   }
 
   if(props.integrationMapping?.mappingValue === transferLocationId.value) {
-    showToast("Please update the NetSuite ID");
+    showToast(translate("Please update the NetSuite ID"));
     return false;
   }
 
