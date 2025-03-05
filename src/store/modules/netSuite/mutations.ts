@@ -32,6 +32,18 @@ const mutations: MutationTree <NetSuiteState> = {
   },
   [types.NET_SUITE_ENUM_GROUPS_UPDATED] (state, payload) {
     state.enumsInEnumGroup = payload
+  },
+  [types.NET_SUITE_CLEARED] (state) {
+    state.inventoryVariances = []
+    state.productStoreShipmentMethods = []
+    state.paymentMethods = []
+    state.salesChannel = []
+    state.facilitiesIdentifications = []
+    state.enumsInEnumGroup = []
+    state.shopifyTypeMappings = []
+    state.shopifyShopsCarrierShipments = []
+    state.shopifyShopLocations = []
+    state.integrationTypeMappings = []
   }
 }
 export default mutations;

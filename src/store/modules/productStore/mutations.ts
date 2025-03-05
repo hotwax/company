@@ -20,12 +20,10 @@ const mutations: MutationTree <ProductStoreState> = {
     state.currentStoreSettings = {}
     state.productStores = []
     state.company = {}
+    state.netSuiteProductStore = []
   },
   [types.PRODUCT_STORE_NETSUITE_UPDATED] (state, payload) {
     state.netSuiteProductStore = payload
-  },
-  [types.PRODUCT_STORE_NETSUITE_CLEARED] (state) {
-    state.netSuiteProductStore = []
   }
 }
 export default mutations;

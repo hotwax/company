@@ -306,6 +306,10 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       logger.error(error);
     }
     commit(types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED, shopifyTypeMappings)
+  },
+
+  async clearNetSuiteState({ commit }) {
+    commit(types.NET_SUITE_CLEARED);
   }
 } 
 
