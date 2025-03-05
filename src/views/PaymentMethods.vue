@@ -2,8 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-      <ion-back-button slot="start" default-href="/netsuite" />
-        <ion-menu-button slot="start" />
+        <ion-back-button slot="start" default-href="/netsuite" />
         <ion-title>{{ translate("Payment methods") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -64,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
@@ -109,5 +108,11 @@ function openPaymentMethodDoc() {
 <style scoped>
 .list-item {
   --columns-desktop: 4;
+}
+
+@media (max-width: 700px) {
+  .header {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
