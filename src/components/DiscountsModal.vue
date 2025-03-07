@@ -42,7 +42,7 @@ import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, Ion
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
@@ -59,13 +59,12 @@ const mappingKeys = {
   item: "SHOPIFY_ITEM_DISC"
 }
 
-onMounted(async () => {
-  // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
-  integrationTypeMappings.value.map((mapping: any) => {
-    integrationMappingByKey[mapping.mappingKey] = mapping
+watch(integrationTypeMappings, (newMappings) => {
+  newMappings.map((mapping: any) => {
+    integrationMappingByKey.value[mapping.mappingKey] = mapping;
     if(mapping.mappingKey === mappingKeys.order) {
       orderLevelDiscount.value = mapping.mappingValue
-    } else {
+    } else if (mapping.mappingKey === mappingKeys.item) {
       itemLevelDiscount.value = mapping.mappingValue
     }
   });
@@ -80,10 +79,13 @@ function isDiscountValueChanged() {
 }
 
 async function editNetSuiteDiscountItemIds() {
+  if(integrationMappingByKey.value[mappingKeys.order]) integrationMappingByKey.value[mappingKeys.order].mappingValue = orderLevelDiscount.value;
+  if(integrationMappingByKey.value[mappingKeys.item]) integrationMappingByKey.value[mappingKeys.item].mappingValue = itemLevelDiscount.value;
+
   if(orderLevelDiscount.value !== integrationMappingByKey[mappingKeys.order].mappingValue) {
     await updateMapping(mappingKeys.order, orderLevelDiscount.value)
   }
-  if(!itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item].mappingValue) {
+  if(itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item].mappingValue) {
     await updateMapping(mappingKeys.item, itemLevelDiscount.value)
   }
   closeModal();

@@ -12,7 +12,8 @@ const productStoreModule: Module<ProductStoreState, RootState> = {
     currentStoreSettings: {},
     productStores: [],
     company: {},
-    netSuiteProductStore: {}
+    netSuiteProductStore: {},
+    productStoreShopifyShopId: '',
   },
   getters,
   actions,

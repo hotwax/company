@@ -24,6 +24,9 @@ const mutations: MutationTree <ProductStoreState> = {
   },
   [types.PRODUCT_STORE_NETSUITE_UPDATED] (state, payload) {
     state.netSuiteProductStore = payload
+  },
+  [types.PRODUCT_STORE_SHOPIFY_SHOP_UPDATED] (state, payload) {
+    state.productStoreShopifyShopId = payload
   }
 }
 export default mutations;

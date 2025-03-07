@@ -78,6 +78,7 @@ function isSaveButtonDisabled() {
 }
 
 async function updateSubsidiaryId() {
+  const initialNetSuiteProductStore = netSuiteProductStore.value.productStoreId; // Store the initial value
 
   try {
     const updatedStore = {
@@ -92,6 +93,10 @@ async function updateSubsidiaryId() {
         productStoreId: selectedProductStoreId.value,
         subsidiaryId: subsidiaryId.value
       });
+      // fetching the shopify shop for the selected product store
+      if(!initialNetSuiteProductStore || netSuiteProductStore.value.productStoreId !== selectedProductStoreId.value) {
+        await store.dispatch("productStore/fetchProductStoreShopifyShops");
+      }
     } else {
       throw resp.data;
     }
