@@ -75,17 +75,14 @@ function closeModal() {
 }
 
 function isDiscountValueChanged() {
-  return !(orderLevelDiscount.value?.trim() && itemLevelDiscount.value?.trim() && (orderLevelDiscount.value !== integrationMappingByKey[mappingKeys.order]?.mappingValue || itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item]?.mappingValue));
+  return !(orderLevelDiscount.value?.trim() && itemLevelDiscount.value?.trim() && (orderLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.order]?.mappingValue || itemLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.item]?.mappingValue));
 }
 
 async function editNetSuiteDiscountItemIds() {
-  if(integrationMappingByKey.value[mappingKeys.order]) integrationMappingByKey.value[mappingKeys.order].mappingValue = orderLevelDiscount.value;
-  if(integrationMappingByKey.value[mappingKeys.item]) integrationMappingByKey.value[mappingKeys.item].mappingValue = itemLevelDiscount.value;
-
-  if(orderLevelDiscount.value !== integrationMappingByKey[mappingKeys.order].mappingValue) {
+  if(orderLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.order].mappingValue) {
     await updateMapping(mappingKeys.order, orderLevelDiscount.value)
   }
-  if(itemLevelDiscount.value !== integrationMappingByKey[mappingKeys.item].mappingValue) {
+  if(itemLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.item].mappingValue) {
     await updateMapping(mappingKeys.item, itemLevelDiscount.value)
   }
   closeModal();
@@ -99,8 +96,8 @@ async function updateMapping(mappingKey: any, mappingValue: any) {
     mappingValue
   }
 
-  if(integrationMappingByKey[mappingKey]?.integrationMappingId) {
-    await updateNetSuiteId(payload, integrationMappingByKey[mappingKey].integrationMappingId);
+  if(integrationMappingByKey.value[mappingKey]?.integrationMappingId) {
+    await updateNetSuiteId(payload, integrationMappingByKey.value[mappingKey].integrationMappingId);
   } else {
     await addNetSuiteId(payload);
   }
