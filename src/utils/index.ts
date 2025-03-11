@@ -25,8 +25,8 @@ const filterRecordsByDateField = (data: any[], fieldName: string) => {
   return data.filter((item: any) => !item[fieldName] || item[fieldName] > Date.now());
 }
 
-const sortByProperty = (array: any, property: any) => {
-  return array.sort((a: any, b: any) => a[property].toLowerCase().localeCompare(b[property].toLowerCase()));
+const sortByProperty = (data: any, property: string) => {
+  return data.sort((a: any, b: any) => a[property].toLowerCase().localeCompare(b[property].toLowerCase()));
 }
 
 export { filterRecordsByDateField, generateInternalId, hasError, showToast, sortByProperty }

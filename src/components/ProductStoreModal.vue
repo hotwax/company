@@ -94,7 +94,7 @@ async function updateSubsidiaryId() {
         subsidiaryId: subsidiaryId.value
       });
       // fetching the shopify shop for the selected product store
-      if(!initialNetSuiteProductStore || netSuiteProductStore.value.productStoreId !== selectedProductStoreId.value) {
+      if(!initialNetSuiteProductStore || initialNetSuiteProductStore !== selectedProductStoreId.value) {
         await store.dispatch("productStore/fetchProductStoreShopifyShops");
       }
     } else {
