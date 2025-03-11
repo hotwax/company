@@ -4,9 +4,6 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("NetSuite") }}</ion-title>
-        <ion-button slot="end" fill="clear">
-          <ion-icon slot="icon-only" :icon="search" color="medium"/>
-        </ion-button>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
@@ -105,8 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { search } from "ionicons/icons";
+import { IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";

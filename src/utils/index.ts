@@ -21,4 +21,12 @@ const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
 
-export { generateInternalId, hasError, showToast }
+const filterRecordsByDateField = (data: any[], fieldName: string) => {
+  return data.filter((item: any) => !item[fieldName] || item[fieldName] > Date.now());
+}
+
+const sortByProperty = (data: any, property: string) => {
+  return data.sort((a: any, b: any) => a[property].toLowerCase().localeCompare(b[property].toLowerCase()));
+}
+
+export { filterRecordsByDateField, generateInternalId, hasError, showToast, sortByProperty }
