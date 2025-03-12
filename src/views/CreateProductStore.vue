@@ -13,7 +13,7 @@
         <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
 
         <ion-item lines="none" v-if="!productStores.length">
-          <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
+          <ion-input v-model="formData.groupName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
           <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true">
@@ -63,7 +63,7 @@ const store = useStore();
 const router = useRouter();
 
 const formData = ref({
-  companyName: "",
+  groupName: "",
   storeName: "",
   productStoreId: ""
 }) as any;
@@ -104,12 +104,12 @@ async function manageConfigurations() {
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
-      companyName: company.value.companyName,
+      groupName: company.value.groupName,
       payToPartyId: organizationPartyId.value
     } as any;
 
     if(!productStores.value.length) {
-      payload["companyName"] = formData.value.companyName
+      payload["groupName"] = formData.value.groupName
     }
 
     resp = await ProductStoreService.createProductStore(payload);
@@ -121,7 +121,7 @@ async function manageConfigurations() {
         const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => ProductStoreService.addDBICCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
-            geoAssocTypeId: "GROUP_MEMBER"
+            geoAssocTypeEnumId: "GROUP_MEMBER"
           }))
         )
         
@@ -131,8 +131,8 @@ async function manageConfigurations() {
         }
       }
       
-      if(!productStores.value.length && formData.value.companyName) {
-        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+      if(!productStores.value.length && formData.value.groupName) {
+        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.groupName });
       }
 
       showToast(translate("Product store created successfully."))
