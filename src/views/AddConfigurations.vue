@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button default-href="/tabs/product-store" slot="start"></ion-back-button>
+        <ion-back-button default-href="/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Add configurations") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button slot="icon-only">

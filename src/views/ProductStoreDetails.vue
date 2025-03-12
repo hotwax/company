@@ -15,7 +15,7 @@
               <ion-label>
                 <p class="overline">{{ productStore.productStoreId }}</p>
                 <h1>{{ productStore.storeName ? productStore.storeName : productStore.productStoreId }}</h1>
-                <p>{{ productStore.companyName ? productStore.companyName : productStore.groupName }}</p>
+                <p>{{ productStore.companyName }}</p>
               </ion-label>
               <ion-button fill="outline" @click="renameProductStore()">{{ translate("Edit") }}</ion-button>
             </ion-item>

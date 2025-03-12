@@ -118,7 +118,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       const resp = await ProductStoreService.fetchCompany({ partyId: store.state.util.organizationPartyId });
 
       if(!hasError(resp)) {
-        company = resp.data;
+        company = { ...resp.data, companyName: resp.data.groupName };
       } else {
         throw resp.data;
       }

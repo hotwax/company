@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button default-href="/tabs/product-store" slot="start"></ion-back-button>
+        <ion-back-button default-href="/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Create product store") }}</ion-title>
         <ion-progress-bar value="0.25" />
       </ion-toolbar>
@@ -13,7 +13,7 @@
         <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
 
         <ion-item lines="none" v-if="!productStores.length">
-          <ion-input v-model="formData.groupName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
+          <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
           <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true">
@@ -63,7 +63,7 @@ const store = useStore();
 const router = useRouter();
 
 const formData = ref({
-  groupName: "",
+  companyName: "",
   storeName: "",
   productStoreId: ""
 }) as any;
@@ -104,12 +104,12 @@ async function manageConfigurations() {
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
-      groupName: company.value.groupName,
+      companyName: company.value.companyName,
       payToPartyId: organizationPartyId.value
     } as any;
 
     if(!productStores.value.length) {
-      payload["groupName"] = formData.value.groupName
+      payload["companyName"] = formData.value.companyName
     }
 
     resp = await ProductStoreService.createProductStore(payload);
@@ -131,7 +131,7 @@ async function manageConfigurations() {
         }
       }
       
-      if(!productStores.value.length && formData.value.groupName) {
+      if(!productStores.value.length && formData.value.companyName) {
         await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.groupName });
       }
 
