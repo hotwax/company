@@ -102,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonContent, IonHeader, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
