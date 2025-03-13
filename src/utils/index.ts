@@ -26,7 +26,12 @@ const filterRecordsByDateField = (data: any[], fieldName: string) => {
 }
 
 const sortByProperty = (data: any, property: string) => {
-  return data.sort((a: any, b: any) => a[property].toLowerCase().localeCompare(b[property].toLowerCase()));
+  return data.sort((a: any, b: any) => {
+    const aValue = a[property] ? a[property].toLowerCase() : '';
+    const bValue = b[property] ? b[property].toLowerCase() : '';
+    // Use localeCompare to sort the values
+    return aValue.localeCompare(bValue);
+  });
 }
 
 export { filterRecordsByDateField, generateInternalId, hasError, showToast, sortByProperty }
