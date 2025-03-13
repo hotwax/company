@@ -2,7 +2,7 @@ import api from "@/api"
 
 const fetchDBICCountries = async (payload: any): Promise <any> => {
   return api({
-    url: "countries/dbic",
+    url: "admin/geos/assocs",
     method: "get",
     params: payload
   });
@@ -10,7 +10,7 @@ const fetchDBICCountries = async (payload: any): Promise <any> => {
 
 const fetchFacilityGroups = async (payload: any): Promise <any> => {
   return api({
-    url: "facilityGroups",
+    url: "oms/facilityGroups",
     method: "get",
     params: payload
   });
@@ -26,7 +26,7 @@ const fetchFacilities = async (payload: any): Promise <any> => {
 
 const fetchOperatingCountries = async (payload: any): Promise <any> => {
   return api({
-    url: "countries",
+    url: "admin/geos",
     method: "get",
     params: payload
   });
@@ -58,7 +58,7 @@ const addEnumToEnumGroup = async (payload: any): Promise <any> => {
 
 const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
   return api({
-    url: "admin/shipmentMethodTypes",
+    url: "oms/shippingGateways/shipmentMethodTypes",
     method: "get",
     params: payload
   });
@@ -66,7 +66,7 @@ const fetchShipmentMethodTypes = async (payload: any): Promise <any> => {
 
 const fetchOrganization = async (payload: any): Promise<any> => {
   return api({
-    url: "organizations",
+    url: "admin/organizations",
     method: "get",
     params: payload
   })

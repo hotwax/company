@@ -20,8 +20,12 @@ const actions: ActionTree<ProductStoreState, RootState> = {
 
         if(!payload) {
           const productStoresFacilityCount = await dispatch("fetchProductStoresFacilityCount")
+          const productStoresShipmentMethodCount = await dispatch("fetchProductStoresShipmentMethodCount")
           if(Object.keys(productStoresFacilityCount).length) {
             productStores.map((store: any) => store.facilityCount = productStoresFacilityCount[store.productStoreId] ? productStoresFacilityCount[store.productStoreId] : 0)
+          }
+          if(Object.keys(productStoresShipmentMethodCount).length) {
+            productStores.map((store: any) => store.shipmentMethodCount = productStoresShipmentMethodCount[store.productStoreId] ? productStoresShipmentMethodCount[store.productStoreId] : 0)
           }
         }
       } else {
@@ -67,6 +71,23 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     return productStoresFacilityCount;
   },
 
+  async fetchProductStoresShipmentMethodCount() {
+    const productStoresShipmentMethodCount = {} as any;
+
+    try {
+      const resp = await ProductStoreService.fetchProductStoresShipmentMethodCount({ pageSize: 100 });
+
+      if(!hasError(resp)) {
+        resp.data.map((response: any) => productStoresShipmentMethodCount[response.productStoreId] = response.shipmentMethodCount)
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    return productStoresShipmentMethodCount;
+  },
+
   async fetchCurrentStoreSettings({ commit }, productStoreId) {
     const storeSettings = {} as any;
 
@@ -97,7 +118,7 @@ const actions: ActionTree<ProductStoreState, RootState> = {
       const resp = await ProductStoreService.fetchCompany({ partyId: store.state.util.organizationPartyId });
 
       if(!hasError(resp)) {
-        company = resp.data;
+        company = { ...resp.data, companyName: resp.data.groupName };
       } else {
         throw resp.data;
       }

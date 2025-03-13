@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button default-href="/tabs/product-store" slot="start"></ion-back-button>
+        <ion-back-button default-href="/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Create product store") }}</ion-title>
         <ion-progress-bar value="0.25" />
       </ion-toolbar>
@@ -121,7 +121,7 @@ async function manageConfigurations() {
         const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => ProductStoreService.addDBICCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
-            geoAssocTypeId: "GROUP_MEMBER"
+            geoAssocTypeEnumId: "GROUP_MEMBER"
           }))
         )
         
