@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button slot="start" default-href="/tabs/product-store"/>
+        <ion-back-button slot="start" default-href="/product-store"/>
         <ion-title>{{ productStore.storeName }}</ion-title>
       </ion-toolbar>
     </ion-header>

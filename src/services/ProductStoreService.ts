@@ -4,7 +4,7 @@ import { hasError } from "@/utils";
 
 const createProductStore = async (payload: any): Promise <any> => {
   return api({
-    url: "productStores",
+    url: "oms/productStores",
     method: "post",
     data: payload
   });
@@ -12,14 +12,14 @@ const createProductStore = async (payload: any): Promise <any> => {
 
 const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any> => {
   return api({
-    url: `productStores/${productStoreId}/settings`,
+    url: `oms/productStores/${productStoreId}/settings`,
     method: "get"
   });
 }
 
 const fetchProductStoreDetails = async (productStoreId: any): Promise <any> => {
   return api({
-    url: `productStores/${productStoreId}`,
+    url: `oms/productStores/${productStoreId}`,
     method: "get"
   });
 }
@@ -34,7 +34,15 @@ const fetchProductStores = async (payload: any): Promise <any> => {
 
 const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
   return api({
-    url: "productStores/facilities/counts",
+    url: "oms/productStores/facilities/counts",
+    method: "get",
+    params: payload
+  });
+}
+
+const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any> => {
+  return api({
+    url: "oms/productStores/shipmentMethods/counts",
     method: "get",
     params: payload
   });
@@ -58,7 +66,7 @@ const updateProductStore = async (payload: any): Promise <any> => {
 
 const addDBICCountries = async (payload: any): Promise <any> => {
   return api({
-    url: "countries/dbic",
+    url: "admin/geos/assocs",
     method: "post",
     data: payload
   });
@@ -66,7 +74,7 @@ const addDBICCountries = async (payload: any): Promise <any> => {
 
 const fetchCompany = async (payload: any): Promise <any> => {
   return api({
-    url: `organizations/${payload.partyId}`,
+    url: `admin/organizations/${payload.partyId}`,
     method: "get",
     params: payload
   });
@@ -75,7 +83,7 @@ const fetchCompany = async (payload: any): Promise <any> => {
 const updateCompany = async (payload: any): Promise <any> => {
   try {
     const resp = await api({
-      url: `organizations/${payload.partyId}`,
+      url: `admin/organizations/${payload.partyId}`,
       method: "post",
       data: payload
     }) as any;
@@ -93,7 +101,7 @@ const updateCompany = async (payload: any): Promise <any> => {
 
 const updateCurrentStoreSettings = async (payload: any): Promise <any> => {
   return api({
-    url: `productStores/${payload.productStoreId}/settings`,
+    url: `oms/productStores/${payload.productStoreId}/settings`,
     method: "post",
     data: payload
   });
@@ -107,6 +115,7 @@ export const ProductStoreService = {
   fetchProductStores,
   fetchProductStoresFacilityCount,
   fetchProductStoreShopifyShops,
+  fetchProductStoresShipmentMethodCount,
   updateCompany,
   updateCurrentStoreSettings,
   addDBICCountries,

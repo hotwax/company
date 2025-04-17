@@ -9,16 +9,19 @@ import { UtilService } from "@/services/UtilService"
 const actions: ActionTree<UtilState, RootState> = {
 
   async fetchFacilityGroups({ commit }) {
-    let facilityGroups = [] as any;
+    let facilityGroups = [] as any, pageIndex = 0, resp;
 
     try {
-      const resp = await UtilService.fetchFacilityGroups({ pageSize: 100 });
+      do {
+        resp = await UtilService.fetchFacilityGroups({ pageSize: 100, pageIndex });
 
-      if(!hasError(resp)) {
-        facilityGroups = resp.data;
-      } else {
-        throw resp.data;
-      }
+        if(!hasError(resp)) {
+          facilityGroups = facilityGroups.concat(resp.data);
+        } else {
+          throw resp.data;
+        }
+        pageIndex++;
+      } while (resp.data.length >= 100);
     } catch(error: any) {
       logger.error(error);
     }
