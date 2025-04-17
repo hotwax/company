@@ -356,11 +356,11 @@ import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import emitter from "@/event-bus";
 import { DateTime } from "luxon";
+import { useProductIdentificationStore } from "@hotwax/dxp-components";
 
 const props = defineProps(["productStoreId"]);
 const store = useStore();
 
-const productIdentificationOptions = ["productId", "groupId", "groupName", "internalName", "parentProductName", "primaryProductCategoryName", "sku", "title", "SHOPIFY_PROD_SKU"];
 const autoCancellationActive = ref(false);
 
 const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
@@ -369,10 +369,11 @@ const settings = computed(() => store.getters["productStore/getCurrentStoreSetti
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
 const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
+const productIdentificationOptions = computed(() => useProductIdentificationStore()?.getProductIdentificationOptions)
 
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes")])  
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes"), useProductIdentificationStore()?.prepareProductIdentifierOptions()])
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
   emitter.emit("dismissLoader");
 })
