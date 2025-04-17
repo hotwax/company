@@ -17,6 +17,9 @@ const getters: GetterTree <ProductStoreState, RootState> = {
   },
   getNetSuiteProductStore(state) {
     return state.netSuiteProductStore
+  },
+  getProductStoreShopifyShopId(state) {
+    return state.productStoreShopifyShopId
   }
 }
 export default getters;

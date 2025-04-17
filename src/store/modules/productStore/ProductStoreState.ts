@@ -4,4 +4,5 @@ export default interface ProductStoreState {
   productStores: any;
   company: any;
   netSuiteProductStore: any
+  productStoreShopifyShopId: any;
 }
