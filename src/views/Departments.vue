@@ -25,7 +25,7 @@
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
-            <p class="overline">{{ facility.facilityTypeId }}</p>
+            <p class="overline">{{ facility.typeDescription }}</p>
             {{ facility.facilityName }}
             <p>{{ facility.facilityId }}</p>
           </ion-label>
