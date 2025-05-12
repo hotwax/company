@@ -34,7 +34,7 @@ import permissionRules from '@/authorization/Rules';
 import permissionActions from '@/authorization/Actions';
 import { dxpComponents } from "@hotwax/dxp-components"
 import { login, logout, loader } from "@/user-utils";
-import { askQuery, getConfig, getGitBookPage, initialise, searchQuery } from '@/adapter';
+import { askQuery, fetchGoodIdentificationTypes, getConfig, getGitBookPage, initialise, searchQuery } from '@/adapter';
 import localeMessages from '@/locales';
 
 const app = createApp(App)
@@ -58,6 +58,7 @@ const app = createApp(App)
     loader,
     appLoginUrl: process.env.VUE_APP_LOGIN_URL as string,
     askQuery,
+    fetchGoodIdentificationTypes,
     getConfig,
     getGitBookPage,
     localeMessages,
