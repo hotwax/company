@@ -284,13 +284,13 @@
 
               <ion-item>
                 <ion-select :label="translate('Primary identifier')" interface="popover" :placeholder="translate('Select')" :value="getPreferredIdentification('primaryId')" @ionChange="updatePreferredIdentification($event, 'primaryId')">
-                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option.goodIdentificationTypeId">{{ option.description ? option.description : option.goodIdentificationTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
               <ion-item>
                 <ion-select :label="translate('Secondary identifier')" interface="popover" :placeholder="translate('Select')" :value="getPreferredIdentification('secondaryId')" @ionChange="updatePreferredIdentification($event, 'secondaryId')">
-                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option">{{ option }}</ion-select-option>
+                  <ion-select-option v-for="option in productIdentificationOptions" :key="option" :value="option.goodIdentificationTypeId">{{ option.description ? option.description : option.goodIdentificationTypeId }}</ion-select-option>
                 </ion-select>
               </ion-item>
 
