@@ -44,7 +44,7 @@ const appPages = [
   {
     title: "Product Store",
     url: "/product-store",
-    childRoutes: ["/product-store/"],
+    childRoutes: ["/product-store/", "/product-store-details/"],
     iosIcon: businessOutline,
     mdIcon: businessOutline,
   },
