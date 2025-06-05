@@ -169,6 +169,9 @@ const actions: ActionTree<NetSuiteState, RootState> = {
           // Filter out expired records
           const filteredData = filterRecordsByDateField(resp.data, 'thruDate');
           productStoreShipmentMethods = productStoreShipmentMethods.concat(filteredData);
+          // Deduplicates shipment methods by 'shipmentMethodTypeId', keeping the last entry for each type.
+          // Converts the deduplicated values from a Map into an array using Array.from().
+          productStoreShipmentMethods = Array.from(new Map(productStoreShipmentMethods.map((item: any) => [item.shipmentMethodTypeId, item])).values());
         } else {
           throw resp.data
         }

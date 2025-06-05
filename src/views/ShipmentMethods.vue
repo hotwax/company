@@ -51,9 +51,9 @@
           <p>{{ translate("Shopify name") }}</p>
         </ion-label>
         
-        <template v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
+        <template v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId] && editingNetSuiteId !== shipmentMethod.shipmentMethodTypeId">
           <div class="ion-text-center">
-            <ion-chip outline @click="editNetSuiteId(shipmentMethod.shipmentMethodTypeId, updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId])">
+            <ion-chip outline @click="startNetSuiteIdEdit(shipmentMethod.shipmentMethodTypeId)">
               <ion-label>{{ updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].mappingValue }}</ion-label>
               <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].integrationMappingId)" />
             </ion-chip>
@@ -62,11 +62,16 @@
             </ion-label>
           </div>
         </template>
-        <template v-else>
-          <ion-button size="small" fill="outline" @click="editNetSuiteId(shipmentMethod.shipmentMethodTypeId, '')">
+
+        <template v-else-if="editingNetSuiteId !== shipmentMethod.shipmentMethodTypeId">
+          <ion-button size="small" fill="outline" @click="startNetSuiteIdEdit(shipmentMethod.shipmentMethodTypeId)">
             <ion-icon :icon="addOutline"/>
             <ion-label>{{ translate("NetSuite ID") }}</ion-label>
           </ion-button>
+        </template>
+
+        <template>
+          <ion-input v-show="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId" :ref="(el => setNetSuiteInputRef(el, shipmentMethod.shipmentMethodTypeId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)" @ionBlur="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)"/>
         </template>
 
         <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
@@ -80,16 +85,20 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
 const shipmentMethodTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
 const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMethodTypeId);
+
+let editingNetSuiteId = ref("") as any;
+let netSuiteInputValue = ref("") as any;
+let netSuiteInputRefs = ref({}) as any;
 
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
@@ -117,6 +126,26 @@ onIonViewWillEnter(async () => {
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {
   const shipmentMethodType = shipmentMethodTypes.value.find((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
   return shipmentMethodType ? shipmentMethodType.description : ""
+}
+
+// Needed because we have multiple input fields in a loop, but only one is visible at a time
+function setNetSuiteInputRef(el: any, id: string) {
+  if(el) netSuiteInputRefs.value[id] = el;
+}
+
+async function startNetSuiteIdEdit(mappingKey: string) {
+  editingNetSuiteId.value = mappingKey;
+  netSuiteInputValue.value = updatedNetSuiteIds.value[mappingKey]?.mappingValue || "";
+  // Waiting for DOM updations before focus inside the text-area, as it is conditionally rendered in the DOM
+  await nextTick()
+  const inputElement = netSuiteInputRefs.value[mappingKey];
+  if(inputElement && inputElement.$el) inputElement.$el.setFocus();
+}
+
+async function saveNetSuiteId(mappingKey: string) {
+  const integrationMapping = updatedNetSuiteIds.value[mappingKey] || '';
+  await editNetSuiteId(mappingKey, integrationMapping, netSuiteInputValue.value.trim());
+  editingNetSuiteId.value = "";
 }
 </script>
 
