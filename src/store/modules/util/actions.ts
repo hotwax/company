@@ -1,7 +1,7 @@
 import { ActionTree } from "vuex"
 import RootState from "@/store/RootState"
 import * as types from "./mutation-types"
-import { hasError, sortByProperty } from "@/utils"
+import { deduplicateByField, hasError, sortByProperty } from "@/utils"
 import logger from "@/logger"
 import UtilState from "./UtilState"
 import { UtilService } from "@/services/UtilService"
@@ -44,7 +44,10 @@ const actions: ActionTree<UtilState, RootState> = {
 
         if(!hasError(resp) && resp.data) {
           facilities = facilities.concat(resp.data.filter((facility: any) => facility.externalId));
-          facilities = sortByProperty(facilities, 'facilityName'); // Sort by facilityName
+          // Remove duplicates based on facilityId using util function
+          facilities = deduplicateByField(facilities, 'facilityId')
+          // Sort by facilityName alphabetically
+          facilities = sortByProperty(facilities, 'facilityName');
         } else {
           throw resp.data
         }

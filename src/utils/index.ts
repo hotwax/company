@@ -34,4 +34,10 @@ const sortByProperty = (data: any, property: string) => {
   });
 }
 
-export { filterRecordsByDateField, generateInternalId, hasError, showToast, sortByProperty }
+// Deduplicates shipment methods by 'shipmentMethodTypeId', keeping the last entry for each type.
+// Converts the deduplicated values from a Map into an array using Array.from().
+const deduplicateByField = (data: any[], fieldName: string) => {
+  return Array.from(new Map(data.map(item => [item[fieldName], item])).values());
+};
+
+export { deduplicateByField, filterRecordsByDateField, generateInternalId, hasError, showToast, sortByProperty }

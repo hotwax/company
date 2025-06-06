@@ -7,6 +7,7 @@ import store from "@/store"
 import NetSuiteState from "./NetSuiteState"
 import { NetSuiteService } from "@/services/NetSuiteService"
 import { UtilService } from "@/services/UtilService"
+import { deduplicateByField } from "@/utils"
 
 const actions: ActionTree<NetSuiteState, RootState> = {
   
@@ -23,6 +24,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await UtilService.fetchEnums(payload)
         if(!hasError(resp)) {
           inventoryVariances = inventoryVariances.concat(resp.data)
+          // Remove duplicates based on enumId using util function
+          inventoryVariances = deduplicateByField(inventoryVariances, 'enumId');
           // sort by desciption
           inventoryVariances = sortByProperty(inventoryVariances, 'description');
         } else {
@@ -113,6 +116,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await UtilService.fetchEnums(payload)
         if(!hasError(resp)) {
           salesChannel = salesChannel.concat(resp.data);
+          // Remove duplicates based on enumId using util function
+          salesChannel = deduplicateByField(salesChannel, 'enumId');
           // Sort by description
           salesChannel = sortByProperty(salesChannel, 'description');
         } else {
@@ -139,6 +144,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
         if(!hasError(resp)) {
           paymentMethods = paymentMethods.concat(resp.data);
+          // Remove duplicates based on paymentMethodTypeId using util function
+          paymentMethods = deduplicateByField(paymentMethods, 'paymentMethodTypeId');
         } else {
           throw resp.data;
         }
@@ -169,9 +176,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
           // Filter out expired records
           const filteredData = filterRecordsByDateField(resp.data, 'thruDate');
           productStoreShipmentMethods = productStoreShipmentMethods.concat(filteredData);
-          // Deduplicates shipment methods by 'shipmentMethodTypeId', keeping the last entry for each type.
-          // Converts the deduplicated values from a Map into an array using Array.from().
-          productStoreShipmentMethods = Array.from(new Map(productStoreShipmentMethods.map((item: any) => [item.shipmentMethodTypeId, item])).values());
+          // Remove duplicates based on shipmentMethodTypeId using util function
+          productStoreShipmentMethods = deduplicateByField(productStoreShipmentMethods, 'shipmentMethodTypeId');
         } else {
           throw resp.data
         }
