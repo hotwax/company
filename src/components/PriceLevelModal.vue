@@ -29,7 +29,7 @@
       <ion-list-header>{{ translate("Frequently used") }}</ion-list-header>
       <ion-radio-group v-model="selectedPriceLevel">
         <ion-item>
-          <ion-radio value="Base" label-placement="end" justify="start">
+          <ion-radio :value="translate('Base Price (MSRP)')" label-placement="end" justify="start">
             <ion-label>
               {{ translate("Base Price") }}
               <p>{{ translate("Defaults to product price set in NetSuite") }}</p>
@@ -37,7 +37,7 @@
           </ion-radio>
         </ion-item>
         <ion-item>
-          <ion-radio value="Custom" label-placement="end" justify="start">
+          <ion-radio :value="translate('Custom')" label-placement="end" justify="start">
             <ion-label>
               {{ translate("Custom") }}
               <p>{{ translate("Use the price a product was sold at in the order.") }}</p>

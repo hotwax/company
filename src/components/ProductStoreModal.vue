@@ -91,6 +91,7 @@ async function updateSubsidiaryId() {
       showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
       await store.dispatch("productStore/updateSelectedProductStore", {
         productStoreId: selectedProductStoreId.value,
+        productStoreName: productStores.value.find((store: any) => store.productStoreId === selectedProductStoreId.value)?.storeName || "",
         subsidiaryId: subsidiaryId.value
       });
       // fetching the shopify shop for the selected product store
