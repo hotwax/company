@@ -36,24 +36,26 @@
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
 
-        <template v-if="getFacilityInFacilityIdentification(facility)">
-          <div class="ion-text-center">
-            <ion-chip outline @click="editNetSuiteId(facility)">
-              <ion-label>{{ getFacilityInFacilityIdentification(facility)?.idValue }}</ion-label>
-              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility)" />
-            </ion-chip>
-            <ion-label>
-              <p>{{ translate("NetSuite department ID") }}</p>
-            </ion-label>
-          </div>
-        </template>
-        <template v-else>
-          <ion-button size="small" fill="outline" @click="editNetSuiteId(facility)">
-            <ion-icon :icon="addOutline"/>
-            <ion-label>{{ translate("NetSuite ID") }}</ion-label>
-          </ion-button>
-        </template>
-        
+        <div class="netsuite-id ion-margin-end">
+          <template v-if="editingNetSuiteId === facility.facilityId">
+            <ion-input v-show="editingNetSuiteId === facility.facilityId" :ref="(el => setNetSuiteInputRef(el, facility.facilityId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(facility.facilityId)" @ionBlur="netSuiteInputValue ? saveNetSuiteId(facility.facilityId): ''"/>
+          </template>
+          <template v-else>
+            <div class="ion-text-center" v-if="getFacilityInFacilityIdentification(facility.facilityId)">
+              <ion-chip outline @click="updateNetSuiteId(facility.facilityId)">
+                <ion-label>{{ getFacilityInFacilityIdentification(facility.facilityId)?.idValue }}</ion-label>
+                <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(facility.facilityId)" />
+              </ion-chip>
+              <ion-label>
+                <p>{{ translate("NetSuite department ID") }}</p>
+              </ion-label>
+            </div>
+            <ion-button v-else size="small" fill="outline" @click="updateNetSuiteId(facility.facilityId)">
+              <ion-icon :icon="addOutline"/>
+              <ion-label>{{ translate("NetSuite ID") }}</ion-label>
+            </ion-button>
+          </template>
+        </div>
         <!-- TODO: need to make this order analytics dynamic -->
         <!-- <ion-label class="ion-margin-end">
           150
@@ -65,11 +67,11 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { showToast, hasError } from '@/utils';
 import { DateTime } from "luxon";
 import emitter from "@/event-bus";
@@ -77,6 +79,11 @@ import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';
 
 const store = useStore();
+
+let editingNetSuiteId = ref("") as any;
+let netSuiteInputValue = ref("") as any;
+let netSuiteInputRefs = ref({}) as any;
+let isSavingNetSuiteId = ref(false);
 
 const facilities = computed(() => store.getters["util/getFacilities"])
 const facilitiesIdentifications = computed(() => store.getters["netSuite/getFacilitiesIdentifications"])
@@ -88,70 +95,73 @@ onIonViewDidEnter(async () => {
   await store.dispatch("netSuite/fetchShopifyShopLocation")
 })
 
-function getFacilityInFacilityIdentification(facility: any) {
-  return facilitiesIdentifications.value.find((identification: any) => identification.facilityId === facility.facilityId);
+function getFacilityInFacilityIdentification(facilityId: any) {
+  return facilitiesIdentifications.value.find((identification: any) => identification.facilityId === facilityId);
 }
 
-async function editNetSuiteId(facility: any) {
-  const facilityIdentification = getFacilityInFacilityIdentification(facility);
-
-  const alert = await alertController.create({
-    header: translate("Add Netsuite department Id"),
-    inputs: [{
-      name: "netSuiteId",
-      value: facilityIdentification ? facilityIdentification.idValue : ""
-    }],
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel"
-      },
-      {
-        text: translate("Apply"),
-        handler: async (data) => {
-          let resp;
-          const netSuiteId = data.netSuiteId.trim();
-          
-          if(!netSuiteId) {
-            showToast(translate("Please enter a valid NetSuite ID"));
-            return false;
-          }
-          
-          if(facilityIdentification?.idValue === netSuiteId) {
-            showToast(translate("Please update the NetSuite ID"));
-            return false;
-          }
-          
-          emitter.emit("presentLoader");
-          try {
-
-            const payload = {
-              facilityIdenTypeId: "ORDR_ORGN_DPT",
-              facilityId: facility.facilityId,
-              idValue: netSuiteId,
-              fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
-            };
-            
-            resp = await NetSuiteService.updateFacilityIdentification(payload);
-            if(!hasError(resp)) {
-              showToast(translate("NetSuite department Id updated successfully"))
-              await store.dispatch("netSuite/fetchFacilitiesIdentifications")
-            } else {
-              throw resp.data;
-            }
-          } catch(err) {
-            logger.error(err)
-          }
-          emitter.emit('dismissLoader')
-        }
-      }
-    ]
-  });
-  await alert.present();
+function setNetSuiteInputRef(el: any, id: string) {
+  if(el) netSuiteInputRefs.value[id] = el;
 }
 
-async function removeNetSuiteId(facility: any) {
-  const facilityIdentification = getFacilityInFacilityIdentification(facility);
+async function updateNetSuiteId(facilityId: string) {
+  editingNetSuiteId.value = facilityId;
+  netSuiteInputValue.value = getFacilityInFacilityIdentification(facilityId)?.idValue || "";
+  // Waiting for DOM updations before focus inside the text-area, as it is conditionally rendered in the DOM
+  await nextTick()
+  setTimeout(async () => {
+    const inputElement = netSuiteInputRefs.value[facilityId];
+    if(inputElement && inputElement.$el) {
+      await inputElement.$el.setFocus();
+    }
+  }, 0);
+}
+
+async function saveNetSuiteId(facilityId: string) {
+  if(isSavingNetSuiteId.value) return;
+  isSavingNetSuiteId.value = true;
+
+  const facilityIdentification = getFacilityInFacilityIdentification(facilityId);
+  await editNetSuiteId(facilityId, facilityIdentification, netSuiteInputValue.value.trim());
+  editingNetSuiteId.value = "";
+
+  isSavingNetSuiteId.value = false;
+}
+
+async function editNetSuiteId(facilityId: string, facilityIdentification: any, netSuiteId: string) {
+  if(!netSuiteId) {
+    showToast(translate("Please enter a valid NetSuite ID"));
+    return false;
+  }
+  
+  if(facilityIdentification?.idValue === netSuiteId) {
+    showToast(translate("Please update the NetSuite ID"));
+    return false;
+  }
+  
+  emitter.emit("presentLoader");
+  try {
+    const payload = {
+      facilityIdenTypeId: "ORDR_ORGN_DPT",
+      facilityId: facilityId,
+      idValue: netSuiteId,
+      fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
+    };
+    
+    const resp = await NetSuiteService.updateFacilityIdentification(payload);
+    if(!hasError(resp)) {
+      showToast(translate("NetSuite department Id updated successfully"))
+      await store.dispatch("netSuite/fetchFacilitiesIdentifications")
+    } else {
+      throw resp.data;
+    }
+  } catch(err) {
+    logger.error(err)
+  }
+  emitter.emit('dismissLoader')
+}
+
+async function removeNetSuiteId(facilityId: any) {
+  const facilityIdentification = getFacilityInFacilityIdentification(facilityId);
 
   emitter.emit("presentLoader");
 

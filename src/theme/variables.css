@@ -314,6 +314,11 @@ ion-input.name {
   grid-area: search;
 }
 
+.netsuite-id {
+  width: 120px;
+  text-align: center;
+}
+
 @media (min-width: 991px) {
   .find {
     grid: "search  main" min-content

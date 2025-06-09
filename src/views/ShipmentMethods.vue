@@ -50,26 +50,27 @@
           {{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId)?.shopifyShippingMethod ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).shopifyShippingMethod : "-" }}
           <p>{{ translate("Shopify name") }}</p>
         </ion-label>
-        
-        <template v-if="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId">
-          <ion-input v-show="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId" :ref="(el => setNetSuiteInputRef(el, shipmentMethod.shipmentMethodTypeId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)" @ionBlur="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)"/>
-        </template>
-        <template v-else>
-          <div class="ion-text-center" v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
-            <ion-chip outline @click="startNetSuiteIdEdit(shipmentMethod.shipmentMethodTypeId)">
-              <ion-label>{{ updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].mappingValue }}</ion-label>
-              <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].integrationMappingId)" />
-            </ion-chip>
-            <ion-label>
-              <p>{{ translate("NetSuite ID") }}</p>
-            </ion-label>
-          </div>
-          <ion-button v-else size="small" fill="outline" @click="startNetSuiteIdEdit(shipmentMethod.shipmentMethodTypeId)">
-            <ion-icon :icon="addOutline"/>
-            <ion-label>{{ translate("NetSuite ID") }}</ion-label>
-          </ion-button>
-        </template>
 
+        <div class="netsuite-id ion-margin-end">
+          <template v-if="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId">
+            <ion-input v-show="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId" :ref="(el => setNetSuiteInputRef(el, shipmentMethod.shipmentMethodTypeId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)" @ionBlur="netSuiteInputValue ? saveNetSuiteId(shipmentMethod.shipmentMethodTypeId) : ''"/>
+          </template>
+          <template v-else>
+            <div v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
+              <ion-chip outline @click="updateNetSuiteId(shipmentMethod.shipmentMethodTypeId)">
+                <ion-label>{{ updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].mappingValue }}</ion-label>
+                <ion-icon :icon="closeCircleOutline" @click.stop="removeNetSuiteId(updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId].integrationMappingId)" />
+              </ion-chip>
+              <ion-label>
+                <p>{{ translate("NetSuite ID") }}</p>
+              </ion-label>
+            </div>
+            <ion-button v-else size="small" fill="outline" @click="updateNetSuiteId(shipmentMethod.shipmentMethodTypeId)">
+              <ion-icon :icon="addOutline"/>
+              <ion-label>{{ translate("NetSuite ID") }}</ion-label>
+            </ion-button>
+          </template>
+        </div>
         <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
         <!-- <ion-label class="ion-margin">
           150
@@ -95,6 +96,7 @@ const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMeth
 let editingNetSuiteId = ref("") as any;
 let netSuiteInputValue = ref("") as any;
 let netSuiteInputRefs = ref({}) as any;
+let isSavingNetSuiteId = ref(false);
 
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
@@ -130,7 +132,7 @@ function setNetSuiteInputRef(el: any, id: string) {
   if(el) netSuiteInputRefs.value[id] = el;
 }
 
-async function startNetSuiteIdEdit(mappingKey: string) {
+async function updateNetSuiteId(mappingKey: string) {
   editingNetSuiteId.value = mappingKey;
   netSuiteInputValue.value = updatedNetSuiteIds.value[mappingKey]?.mappingValue || "";
   // Waiting for DOM updations before focus inside the text-area, as it is conditionally rendered in the DOM
@@ -146,9 +148,15 @@ async function startNetSuiteIdEdit(mappingKey: string) {
 }
 
 async function saveNetSuiteId(mappingKey: string) {
+  // Prevent multiple save operations if the user clicks the save button multiple times or ion blur event is triggered
+  if(isSavingNetSuiteId.value) return;
+  isSavingNetSuiteId.value = true;
+
   const integrationMapping = updatedNetSuiteIds.value[mappingKey] || '';
   if(netSuiteInputValue.value) await editNetSuiteId(mappingKey, integrationMapping, netSuiteInputValue.value.trim());
   editingNetSuiteId.value = "";
+
+  isSavingNetSuiteId.value = false;
 }
 </script>
 
