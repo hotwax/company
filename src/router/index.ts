@@ -1,17 +1,18 @@
 import { createRouter, createWebHistory } from "@ionic/vue-router";
 import { RouteRecordRaw } from "vue-router";
 import store from "@/store"
-import CreateProductStore from "@/views/CreateProductStore.vue";
 import AddConfigurations from "@/views/AddConfigurations.vue";
-import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
-import ProductStore from "@/views/ProductStore.vue";
-import NetSuite from "@/views/NetSuite.vue";
-import Settings from "@/views/Settings.vue"
-import ShipmentMethods from "@/views/ShipmentMethods.vue"
-import InventoryVariances from "@/views/InventoryVariances.vue";
-import PaymentMethods from "@/views/PaymentMethods.vue";
-import SalesChannel from "@/views/SalesChannel.vue";
+import CreateProductStore from "@/views/CreateProductStore.vue";
 import Departments from "@/views/Departments.vue";
+import Facilities from "@/views/Facilities.vue";
+import InventoryVariances from "@/views/InventoryVariances.vue";
+import NetSuite from "@/views/NetSuite.vue";
+import PaymentMethods from "@/views/PaymentMethods.vue";
+import ProductStore from "@/views/ProductStore.vue";
+import ProductStoreDetails from "@/views/ProductStoreDetails.vue";
+import SalesChannel from "@/views/SalesChannel.vue";
+import Settings from "@/views/Settings.vue";
+import ShipmentMethods from "@/views/ShipmentMethods.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
 
@@ -65,12 +66,12 @@ const routes: Array<RouteRecordRaw> = [
     component: ShipmentMethods,
     beforeEnter: authGuard,
   },
-  // {
-  //   path: "/netsuite/facilities",
-  //   name: "Facilities",
-  //   component: Facilities,
-  //   beforeEnter: authGuard,
-  // },
+  {
+    path: "/netsuite/facilities",
+    name: "Facilities",
+    component: Facilities,
+    beforeEnter: authGuard,
+  },
   {
     path: "/netsuite/inventory-variances",
     name: "InventoryVariances",

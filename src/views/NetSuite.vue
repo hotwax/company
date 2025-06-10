@@ -53,11 +53,9 @@
           <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
-          <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-          <!-- <ion-item class="item-box" lines="none" button @click="openFacilities()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openFacilities()">
             <ion-label>{{ translate("Facilities") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
-          </ion-item> -->
+          </ion-item>
         </section>
       </div>
       
@@ -125,9 +123,9 @@ function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
 }
 
-// function openFacilities() {
-//   router.push("/netsuite/facilities")
-// }
+function openFacilities() {
+  router.push("/netsuite/facilities")
+}
 
 function openInventoryVariances() {
   router.push("/netsuite/inventory-variances")
