@@ -53,7 +53,7 @@
 
         <div class="netsuite-id ion-margin-end">
           <template v-if="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId">
-            <ion-input v-show="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId" :ref="(el => setNetSuiteInputRef(el, shipmentMethod.shipmentMethodTypeId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)" @ionBlur="netSuiteInputValue ? saveNetSuiteId(shipmentMethod.shipmentMethodTypeId) : ''"/>
+            <ion-input v-show="editingNetSuiteId === shipmentMethod.shipmentMethodTypeId" :ref="(el => setNetSuiteInputRef(el, shipmentMethod.shipmentMethodTypeId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)" @ionBlur="saveNetSuiteId(shipmentMethod.shipmentMethodTypeId)"/>
           </template>
           <template v-else>
             <div v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
