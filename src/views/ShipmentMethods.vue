@@ -35,7 +35,7 @@
       
       <div class="list-item ion-padding-end" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
         <ion-item lines="none">
-          <ion-icon slot="start" :icon="airplaneOutline" />
+          <ion-icon slot="start" :icon="getShipmentIcon(shipmentMethod.shipmentMethodTypeId)" />
           <ion-label>
             {{ getShipmentMethodDesc(shipmentMethod.shipmentMethodTypeId) }}
             <p>{{ shipmentMethod.shipmentMethodTypeId }}</p>
@@ -83,7 +83,7 @@
 
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
+import { addOutline, airplaneOutline, boatOutline, busOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { useStore } from "vuex";
 import { computed, nextTick, ref } from "vue";
@@ -103,6 +103,29 @@ const productStoreShipmentMethods = computed(() => store.getters["netSuite/getPr
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](shipmentMethodTypeId))
 const shopifyShopsCarrierShipments = computed(() => store.getters["netSuite/getShopifyShopsCarrierShipments"])
 const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"])
+
+const methodDeliveryMap: Record<string, number> = {
+  "SAME_DAY_BLINKIT": 0,
+  "SAME_DAY": 0,
+  "NEXT_DAY": 1,
+  "2DAY_FDX_SHP": 2,
+  "SECOND_DAY": 2,
+  "THIRD_DAY": 3,
+  "STANDARD": 5,
+  "SHIP_TO_STORE": 5,
+  "STOREPICKUP": 0,
+  "NO_SHIPPING": 7,
+  "POS_COMPLETED": 0,
+  "ZEP20": 0,
+  "POS_COMPLETED_NEW":5,
+};
+
+function getShipmentIcon(methodId: string) {
+  const days = methodDeliveryMap[methodId] ?? 7;
+  if (days <= 2) return airplaneOutline;
+  if (days <= 5) return busOutline;
+  return boatOutline;
+}
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)
