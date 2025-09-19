@@ -111,6 +111,24 @@ const actions: ActionTree<ProductStoreState, RootState> = {
     commit(types.PRODUCT_STORE_CURRENT_SETTINGS_UPDATED, storeSettings);
   },
 
+  async fetchProductStoreShopifyShops({ commit }) {
+    let shopifyShopId = '' as any;
+    const netSuiteProductStoreId = store.getters["productStore/getProductStoreShopifyShopId"]
+
+    try {
+      const resp = await ProductStoreService.fetchProductStoreShopifyShops({ productStoreId: netSuiteProductStoreId?.productStoreId })
+      
+      if(!hasError(resp)) {
+        shopifyShopId = resp.data[0].shopId;
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
+      logger.error(error);
+    }
+    commit(types.PRODUCT_STORE_SHOPIFY_SHOP_UPDATED, shopifyShopId);
+  },
+
   async fetchCompany({ commit }) {
     let company = {};
 

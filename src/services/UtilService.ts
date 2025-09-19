@@ -16,11 +16,27 @@ const fetchFacilityGroups = async (payload: any): Promise <any> => {
   });
 }
 
+const fetchFacility = async (payload: any): Promise <any> => {
+  return api({
+    url: `oms/facilities/${payload.facilityId}`,
+    method: "get",
+    params: payload
+  })
+}
+
 const fetchFacilities = async (payload: any): Promise <any> => {
   return api({
     url: "oms/facilities",
     method: "get",
     params: payload
+  })
+}
+
+const updateFacility = async (payload: any): Promise <any> => {
+  return api({
+    url: `oms/facilities/${payload.facilityId}`,
+    method: "PUT",
+    data: payload
   })
 }
 
@@ -78,8 +94,10 @@ export const UtilService = {
   fetchEnumGroupMember,
   addEnumToEnumGroup,
   fetchFacilityGroups,
+  fetchFacility,
   fetchFacilities,
   fetchOperatingCountries,
   fetchOrganization,
-  fetchShipmentMethodTypes
+  fetchShipmentMethodTypes,
+  updateFacility
 }

@@ -48,6 +48,14 @@ const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any
   });
 }
 
+const fetchProductStoreShopifyShops = async (payload: any): Promise <any> => {
+  return api({
+    url: "oms/shopifyShops/shops",
+    method: "get",
+    params: payload
+  })
+}
+
 const updateProductStore = async (payload: any): Promise <any> => {
   return api({
     url: `oms/productStores/${payload.productStoreId}`,
@@ -106,6 +114,7 @@ export const ProductStoreService = {
   fetchProductStoreDetails,
   fetchProductStores,
   fetchProductStoresFacilityCount,
+  fetchProductStoreShopifyShops,
   fetchProductStoresShipmentMethodCount,
   updateCompany,
   updateCurrentStoreSettings,

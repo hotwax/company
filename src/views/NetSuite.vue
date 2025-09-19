@@ -4,9 +4,6 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("NetSuite") }}</ion-title>
-        <ion-button slot="end" fill="clear">
-          <ion-icon slot="icon-only" :icon="search" color="medium"/>
-        </ion-button>
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
@@ -56,11 +53,9 @@
           <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
-          <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-          <!-- <ion-item class="item-box" lines="none" button @click="openFacilities()">
+          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openFacilities()">
             <ion-label>{{ translate("Facilities") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
-          </ion-item> -->
+          </ion-item>
         </section>
       </div>
       
@@ -105,8 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { search } from "ionicons/icons";
+import { IonContent, IonHeader, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
@@ -129,9 +123,9 @@ function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
 }
 
-// function openFacilities() {
-//   router.push("/netsuite/facilities")
-// }
+function openFacilities() {
+  router.push("/netsuite/facilities")
+}
 
 function openInventoryVariances() {
   router.push("/netsuite/inventory-variances")

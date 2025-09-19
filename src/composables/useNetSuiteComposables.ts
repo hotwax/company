@@ -16,49 +16,28 @@ export function useNetSuiteComposables(integrationTypeId: any) {
   });  
   
   // This function opens an alert dialog to edit the NetSuite ID, taking a mapping key and the current integration mapping as parameters.
-  const editNetSuiteId = async (mappingKey: any, integrationMapping: any) => {
-    const alert = await alertController.create({
-      header: translate("Add NetSuite ID"),
-      inputs: [{
-        name: "netSuiteId",
-        value: integrationMapping?.integrationMappingId ? integrationMapping.mappingValue : ""
-      }],
-      buttons: [
-        {
-          text: translate("Cancel"),
-          role: "cancel"
-        },
-        {
-          text: translate("Apply"),
-          handler: async (data) => {
-            const netSuiteId = data.netSuiteId.trim();
-        
-            if(!netSuiteId) {
-              showToast(translate("Please enter a valid NetSuite ID"));
-              return false;
-            }
+  const editNetSuiteId = async (mappingKey: any, integrationMapping: any, netSuiteId: string) => {
+    if(!netSuiteId) {
+      showToast(translate("Please enter a valid NetSuite ID"));
+      return false;
+    }
 
-            if(integrationMapping?.mappingValue === netSuiteId) {
-              showToast(translate("Please update the NetSuite ID"));
-              return false;
-            }
+    if(integrationMapping?.mappingValue === netSuiteId) {
+      showToast(translate("Please update the NetSuite ID"));
+      return false;
+    }
 
-            const payload = {
-              integrationTypeId: integrationTypeId,
-              mappingKey: mappingKey,
-              mappingValue: netSuiteId
-            };
+    const payload = {
+      integrationTypeId: integrationTypeId,
+      mappingKey: mappingKey,
+      mappingValue: netSuiteId
+    };
 
-            if(integrationMapping?.integrationMappingId) {
-              await updateNetSuiteId(payload, integrationMapping.integrationMappingId);
-            } else {
-              await addNetSuiteId(payload);
-            }
-          }
-        }
-      ]
-    });
-    await alert.present();
+    if(integrationMapping?.integrationMappingId) {
+      await updateNetSuiteId(payload, integrationMapping.integrationMappingId);
+    } else {
+      await addNetSuiteId(payload);
+    }
   };
 
   // This function adds a new NetSuite ID mapping, using a payload that contains the integration type ID, mapping key, and mapping value.

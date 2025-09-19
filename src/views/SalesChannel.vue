@@ -34,25 +34,27 @@
           {{ getShopifyMappingId(channel.enumId) ? getShopifyMappingId(channel.enumId) : '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
-        
-        <template v-if="channel.enumCode">
-          <div class="ion-text-center">
-            <ion-chip outline @click="editNetSuiteSalesChannelId(channel)">
-              <ion-label>{{ channel.enumCode }}</ion-label>
-              <ion-icon :icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
-            </ion-chip>
-            <ion-label>
-              <p>{{ translate("NetSuite sales channel") }}</p>
-            </ion-label>
-          </div>
-        </template>
-        <template v-else>
-          <ion-button size="small" fill="outline" @click="editNetSuiteSalesChannelId(channel)">
-            <ion-icon :icon="addOutline"/>
-            <ion-label>{{ translate("NetSuite ID") }}</ion-label>
-          </ion-button>
-        </template>
 
+        <div class="netsuite-id ion-margin-end">
+          <template v-if="editingNetSuiteId === channel.enumId">
+            <ion-input v-show="editingNetSuiteId === channel.enumId" :ref="(el => setNetSuiteInputRef(el, channel.enumId))" :clear-input="true" v-model="netSuiteInputValue" @keyup.enter="saveNetSuiteId(channel)" @ionBlur="netSuiteInputValue ? saveNetSuiteId(channel) : ''"/>
+          </template>
+          <template v-else>
+            <div class="ion-text-center" v-if="channel.enumCode">
+              <ion-chip outline @click="updateNetSuiteId(channel)">
+                <ion-label>{{ channel.enumCode }}</ion-label>
+                <ion-icon :icon="closeCircleOutline" @click.stop="updateSalesChannelNetSuiteId(channel, '')"/>
+              </ion-chip>
+              <ion-label>
+                <p>{{ translate("NetSuite sales channel") }}</p>
+              </ion-label>
+            </div>
+            <ion-button v-else size="small" fill="outline" @click="updateNetSuiteId(channel)">
+              <ion-icon :icon="addOutline"/>
+              <ion-label>{{ translate("NetSuite ID") }}</ion-label>
+            </ion-button>
+          </template>
+        </div>
         <!-- TODO: need to make this order analytics dynamic -->
         <!-- <ion-label class="ion-margin">
           150
@@ -64,18 +66,21 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { useStore } from "vuex";
-import { computed } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { showToast, hasError } from '@/utils';
 import emitter from "@/event-bus";
 import logger from '@/logger';
 
-
 const store = useStore();
+
+let editingNetSuiteId = ref("") as any;
+let netSuiteInputValue = ref("") as any;
+let netSuiteInputRefs = ref({}) as any;
 
 const salesChannel = computed(() => store.getters["netSuite/getSalesChannel"])
 const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_ORDER_SOURCE"))
@@ -90,38 +95,39 @@ function getShopifyMappingId(salesChannelEnumId: any) {
   return shopifyMappingId ? shopifyMappingId.mappedKey : "";
 }
 
-async function editNetSuiteSalesChannelId(channel: any) {
-  const alert = await alertController.create({
-    header: translate("Add Netsuite sales channel Id"),
-    inputs: [{
-      name: "netSuiteSalesChannelId",
-      value: channel.enumCode ? channel.enumCode : "",
-    }],
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel"
-      },
-      {
-        text: translate("Apply"),
-        handler: async (data) => {
-          const netSuiteId = data.netSuiteSalesChannelId.trim();
-          
-          if(!netSuiteId) {
-            showToast(translate("Please enter a valid NetSuite ID"));
-            return false;
-          }
+function setNetSuiteInputRef(el: any, id: string) {
+  if(el) netSuiteInputRefs.value[id] = el;
+}
 
-          if(channel.enumCode === netSuiteId) {
-            showToast(translate("Please update the NetSuite ID"));
-            return false;
-          }
-          await updateSalesChannelNetSuiteId(channel, netSuiteId);
-        }
-      }
-    ]
-  });
-  await alert.present();
+async function updateNetSuiteId(channel: any) {
+  editingNetSuiteId.value = channel.enumId;
+  netSuiteInputValue.value = channel.enumCode || "";
+  // Waiting for DOM updations before focus inside the text-area, as it is conditionally rendered in the DOM
+  await nextTick()
+  setTimeout(async () => {
+    const inputElement = netSuiteInputRefs.value[channel.enumId];
+    if(inputElement && inputElement.$el) {
+      await inputElement.$el.setFocus();
+    }
+  }, 0);
+}
+
+async function saveNetSuiteId(channel: any) {
+  await editNetSuiteSalesChannelId(channel, netSuiteInputValue.value.trim());
+  editingNetSuiteId.value = "";
+}
+
+async function editNetSuiteSalesChannelId(channel: any, netSuiteId: any) {   
+  if(!netSuiteId) {
+    showToast(translate("Please enter a valid NetSuite ID"));
+    return false;
+  }
+
+  if(channel.enumCode === netSuiteId) {
+    showToast(translate("Please update the NetSuite ID"));
+    return false;
+  }
+  await updateSalesChannelNetSuiteId(channel, netSuiteId);
 }
 
 async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
@@ -149,6 +155,10 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
 <style scoped>
 .list-item {
   --columns-desktop: 4;
+}
+
+.netsuite-id {
+  width: 220px;
 }
 
 @media (max-width: 700px) {

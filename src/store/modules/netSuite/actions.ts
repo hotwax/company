@@ -1,12 +1,13 @@
 import { ActionTree } from "vuex"
 import RootState from "@/store/RootState"
 import * as types from "./mutation-types"
-import { hasError } from "@/utils"
+import { filterRecordsByDateField, hasError, sortByProperty } from "@/utils"
 import logger from "@/logger"
 import store from "@/store"
 import NetSuiteState from "./NetSuiteState"
 import { NetSuiteService } from "@/services/NetSuiteService"
 import { UtilService } from "@/services/UtilService"
+import { deduplicateByField } from "@/utils"
 
 const actions: ActionTree<NetSuiteState, RootState> = {
   
@@ -23,6 +24,10 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await UtilService.fetchEnums(payload)
         if(!hasError(resp)) {
           inventoryVariances = inventoryVariances.concat(resp.data)
+          // Remove duplicates based on enumId using util function
+          inventoryVariances = deduplicateByField(inventoryVariances, 'enumId');
+          // sort by desciption
+          inventoryVariances = sortByProperty(inventoryVariances, 'description');
         } else {
           throw resp.data
         }
@@ -48,8 +53,9 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await UtilService.fetchEnumGroupMember(payload)
 
         if(!hasError(resp) && resp.data) {
-          // TODO: need to remove this filter check , after api change of not giving expired results.
-          const newEnums = resp.data.filter((item: any) => !item.thruDate).reduce((enumId: any, item: any) => {
+          // Filter out expired records
+          const filteredData = filterRecordsByDateField(resp.data, 'thruDate');
+          const newEnums = filteredData.reduce((enumId: any, item: any) => {
             enumId[item.enumId] = {
               fromDate: item.fromDate,
               enumerationGroupId: item.enumerationGroupId,
@@ -82,8 +88,9 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
         resp = await NetSuiteService.fetchfacilitiesIdentifications(payload)
         if(!hasError(resp)) {
-          // TODO: need to handle the case of removing the facility from the faciliyIdentofication, need to add the thruDate in the payload
-          facilitiesIdentifications = facilitiesIdentifications.concat(resp.data.filter((item: any) => !item.thruDate));
+          // Filter out expired records
+          const filteredData = filterRecordsByDateField(resp.data, 'thruDate');
+          facilitiesIdentifications = facilitiesIdentifications.concat(filteredData);
         } else {
           throw resp.data
         }
@@ -109,6 +116,10 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await UtilService.fetchEnums(payload)
         if(!hasError(resp)) {
           salesChannel = salesChannel.concat(resp.data);
+          // Remove duplicates based on enumId using util function
+          salesChannel = deduplicateByField(salesChannel, 'enumId');
+          // Sort by description
+          salesChannel = sortByProperty(salesChannel, 'description');
         } else {
           throw resp.data
         }
@@ -133,6 +144,8 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
         if(!hasError(resp)) {
           paymentMethods = paymentMethods.concat(resp.data);
+          // Remove duplicates based on paymentMethodTypeId using util function
+          paymentMethods = deduplicateByField(paymentMethods, 'paymentMethodTypeId');
         } else {
           throw resp.data;
         }
@@ -145,13 +158,14 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchProductStoreShipmentMethods({ commit }) {
-    let productStoreShipmentMethods = [] as any, pageIndex = 0, resp;
+    let productStoreShipmentMethods = [] as any, productStoreShipmentMethodsWithDeliveryDays = [] as any, pageIndex = 0, resp;
     
     try {
       const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
       do {
         const payload = {
           productStoreId: netSuiteProductStoreId?.productStoreId,
+          orderByField: "shipmentMethodTypeId",
           pageSize: 100,
           pageIndex
         }
@@ -159,16 +173,41 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         resp = await NetSuiteService.fetchProductStoreShipmentMethods(payload)
 
         if(!hasError(resp) && resp.data) {
-          productStoreShipmentMethods = productStoreShipmentMethods.concat(resp.data)
+          // Filter out expired records
+          const filteredData = filterRecordsByDateField(resp.data, 'thruDate');
+          productStoreShipmentMethods = productStoreShipmentMethods.concat(filteredData);
+          // Remove duplicates based on shipmentMethodTypeId using util function
+          productStoreShipmentMethods = deduplicateByField(productStoreShipmentMethods, 'shipmentMethodTypeId');
         } else {
           throw resp.data
         }
         pageIndex++;
       } while (resp.data.length >= 100);
+      // To fetch day to deliver for each shipmentMethod.
+        productStoreShipmentMethodsWithDeliveryDays = await Promise.all(
+          productStoreShipmentMethods.map(async (method: any) => {
+            try {
+              const params = {
+                partyId : method.partyId,
+                shipmentMethodTypeId: method.shipmentMethodTypeId,
+                pageSize:1
+              }
+              const daysResp = await NetSuiteService.fetchDaysToDeliver(params);
+              if (!hasError(daysResp)) {
+                return { ...method, daysToDeliver: daysResp.data[0].deliveryDays ?? 5 };
+              } else {
+                return { ...method, daysToDeliver: null };
+              }
+            } catch (err) {
+              logger.error(`Failed fetching days for`, err);
+            }
+          }) 
+        )
+      
     } catch (error) {
       logger.error(error);
     }
-    commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethods)
+    commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethodsWithDeliveryDays)
   },
 
   async fetchIntegrationTypeMappings({ commit }, params: any) {
@@ -213,11 +252,13 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
   async fetchShopifyShopsCarrierShipments({ commit }) {
     let shopifyShopsCarrierShipments = {} as any, pageIndex = 0, resp;
+    const shopifyShopId = store.getters["productStore/getProductStoreShopifyShopId"]
 
     try {
       do {
         const payload = {
           pageSize: 100,
+          shopId: shopifyShopId,
           pageIndex
         }
 
@@ -245,11 +286,13 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
   async fetchShopifyShopLocation({ commit }) {
     let shopifyShopLocations = {} as any, pageIndex = 0, resp;
+    const shopifyShopId = store.getters["productStore/getProductStoreShopifyShopId"]
 
     try {
       do {
         const payload = {
           pageSize: 100,
+          shopId: shopifyShopId,
           pageIndex
         }
 
@@ -274,12 +317,14 @@ const actions: ActionTree<NetSuiteState, RootState> = {
 
   async fetchShopifyTypeMappings({ commit }, mappedTypeId) {
     let shopifyTypeMappings = {} as any, pageIndex = 0, resp;
+    const shopifyShopId = store.getters["productStore/getProductStoreShopifyShopId"]
 
     try {
       do {
         const payload = {
           mappedTypeId: mappedTypeId,
           pageSize: 100,
+          shopId: shopifyShopId,
           pageIndex
         }
 

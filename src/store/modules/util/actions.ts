@@ -1,10 +1,11 @@
 import { ActionTree } from "vuex"
 import RootState from "@/store/RootState"
 import * as types from "./mutation-types"
-import { hasError } from "@/utils"
+import { deduplicateByField, hasError, sortByProperty } from "@/utils"
 import logger from "@/logger"
 import UtilState from "./UtilState"
 import { UtilService } from "@/services/UtilService"
+import store from "@/store";
 
 const actions: ActionTree<UtilState, RootState> = {
 
@@ -43,13 +44,36 @@ const actions: ActionTree<UtilState, RootState> = {
         })
 
         if(!hasError(resp) && resp.data) {
-          facilities = facilities.concat(resp.data.filter((facility: any) => facility.externalId));
+          facilities = facilities.concat(resp.data);
+          // Remove duplicates based on facilityId using util function
+          facilities = deduplicateByField(facilities, 'facilityId')
+          // Sort by facilityName alphabetically
+          facilities = sortByProperty(facilities, 'facilityName');
         } else {
           throw resp.data
         }
         pageIndex++;
       } while (resp.data.length >= 100);
     } catch (error) {
+      logger.error(error);
+    }
+    commit(types.UTIL_FACILITIES_UPDATED, facilities)
+  },
+
+  async fetchFacility({ commit }, facilityId: string) {
+    const facilities = store.getters['util/getFacilities'];
+
+    try {
+      const resp = await UtilService.fetchFacility({ facilityId });
+      if(!hasError(resp)) {
+        // Update the facility's externalId in the existing facilities list
+        facilities.map((facility: any) => {
+          if(facility.facilityId === resp.data.facilityId) facility.externalId = resp.data.externalId;
+        })
+      } else {
+        throw resp.data;
+      }
+    } catch(error: any) {
       logger.error(error);
     }
     commit(types.UTIL_FACILITIES_UPDATED, facilities)
