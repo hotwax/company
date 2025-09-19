@@ -26,7 +26,7 @@ const maxAge = process.env.VUE_APP_CACHE_MAX_AGE ? parseInt(process.env.VUE_APP_
 
 initialise({
   token: userToken.value,
-  instanceUrl: instanceUrl.value,
+  instanceUrl: instanceUrl.value.replace("admin/", ""), // TODO: remove component replace logic once we start storing the oms url in state without component name
   cacheMaxAge: maxAge,
   events: {
     responseError: () => {
@@ -35,19 +35,20 @@ initialise({
     queueTask: (payload: any) => {
       emitter.emit("queueTask", payload);
     }
-  }
+  },
+  systemType: "MOQUI"
 })
 
-async function presentLoader(options = { message: "Click the backdrop to dismiss.", backdropDismiss: true }) {
+async function presentLoader(options = { message: '', backdropDismiss: false }) {
   // When having a custom message remove already existing loader, if not removed it takes into account the already existing loader
   if(options.message && loader.value) dismissLoader();
 
   if (!loader.value) {
     loader.value = await loadingController
       .create({
-        message: translate(options.message),
+        message: options.message ? translate(options.message) : (options.backdropDismiss ? translate("Click the backdrop to dismiss.") : translate("Loading...")),
         translucent: true,
-        backdropDismiss: options.backdropDismiss
+        backdropDismiss: options.backdropDismiss || false
       });
   }
   loader.value.present();
@@ -63,9 +64,9 @@ function dismissLoader() {
 onMounted(async () => {
   loader.value = await loadingController
     .create({
-      message: translate("Click the backdrop to dismiss."),
+      message: translate("Loading..."),
       translucent: true,
-      backdropDismiss: true
+      backdropDismiss: false
     });
   emitter.on("presentLoader", presentLoader);
   emitter.on("dismissLoader", dismissLoader);

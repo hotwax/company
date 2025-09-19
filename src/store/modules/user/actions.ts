@@ -9,7 +9,7 @@ import logger from "@/logger"
 import emitter from "@/event-bus"
 import { Settings } from "luxon"
 import { useAuthStore } from '@hotwax/dxp-components'
-import { resetConfig } from '@/adapter'
+import { resetConfig, updateToken, updateInstanceUrl } from '@/adapter'
 import router from '@/router'
 import { getServerPermissionsFromRules, prepareAppPermissions, resetPermissions, setPermissions } from "@/authorization"
 
@@ -53,7 +53,7 @@ const actions: ActionTree<UserState, RootState> = {
         }
       }
 
-      emitter.emit("presentLoader", { message: "Logging in...", backdropDismiss: false })
+      emitter.emit("presentLoader", { message: "Logging in..." })
       const api_key = await UserService.login(token)
 
       const userProfile = await UserService.getUserProfile(api_key);
@@ -66,6 +66,9 @@ const actions: ActionTree<UserState, RootState> = {
       if(omsRedirectionUrl && token) {
         dispatch("setOmsRedirectionInfo", { url: omsRedirectionUrl, token })
       }
+
+      updateToken(api_key);
+
       commit(types.USER_TOKEN_CHANGED, { newToken: api_key })
       commit(types.USER_INFO_UPDATED, userProfile);
       commit(types.USER_PERMISSIONS_UPDATED, appPermissions);
@@ -88,7 +91,7 @@ const actions: ActionTree<UserState, RootState> = {
   * Logout user
   */
   async logout({ commit, dispatch }) {
-    emitter.emit('presentLoader', { message: 'Logging out', backdropDismiss: false })
+    emitter.emit('presentLoader', { message: 'Logging out' })
 
     const authStore = useAuthStore()
 
@@ -129,6 +132,7 @@ const actions: ActionTree<UserState, RootState> = {
   */
   setUserInstanceUrl({ commit }, payload) {
     commit(types.USER_INSTANCE_URL_UPDATED, payload)
+    updateInstanceUrl(payload)
   },
 }
 
