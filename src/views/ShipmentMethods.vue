@@ -35,7 +35,7 @@
       
       <div class="list-item ion-padding-end" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
         <ion-item lines="none">
-          <ion-icon slot="start" :icon="getShipmentIcon(shipmentMethod.shipmentMethodTypeId)" />
+          <ion-icon slot="start" :icon="getShipmentIconByDays(shipmentMethod.daysToDeliver)" />
           <ion-label>
             {{ getShipmentMethodDesc(shipmentMethod.shipmentMethodTypeId) }}
             <p>{{ shipmentMethod.shipmentMethodTypeId }}</p>
@@ -104,24 +104,7 @@ const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegr
 const shopifyShopsCarrierShipments = computed(() => store.getters["netSuite/getShopifyShopsCarrierShipments"])
 const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"])
 
-const methodDeliveryMap: Record<string, number> = {
-  "SAME_DAY_BLINKIT": 0,
-  "SAME_DAY": 0,
-  "NEXT_DAY": 1,
-  "2DAY_FDX_SHP": 2,
-  "SECOND_DAY": 2,
-  "THIRD_DAY": 3,
-  "STANDARD": 5,
-  "SHIP_TO_STORE": 5,
-  "STOREPICKUP": 0,
-  "NO_SHIPPING": 7,
-  "POS_COMPLETED": 0,
-  "ZEP20": 0,
-  "POS_COMPLETED_NEW":5,
-};
-
-function getShipmentIcon(methodId: string) {
-  const days = methodDeliveryMap[methodId] ?? 7;
+function getShipmentIconByDays(days: number) {
   if (days <= 2) return airplaneOutline;
   if (days <= 5) return busOutline;
   return boatOutline;

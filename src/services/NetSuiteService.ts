@@ -104,6 +104,14 @@ const updateEnumCode = async (payload: any): Promise <any> => {
   })
 }
 
+const fetchDaysToDeliver = async (payload: any): Promise <any> => {
+  return api({
+    url: "oms/shippingGateways/carrierShipmentMethods",
+    method: "get",
+    params: payload
+  })
+}
+
 export const NetSuiteService = {
   addIntegrationTypeMappings,
   fetchIntegrationTypeMappings,
@@ -117,5 +125,6 @@ export const NetSuiteService = {
   updateEnumCode,
   updateFacilityIdentification,
   updateIntegrationTypeMappings,
-  updateSftpConfig
+  updateSftpConfig,
+  fetchDaysToDeliver
 }

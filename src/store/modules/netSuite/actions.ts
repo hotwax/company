@@ -158,7 +158,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
   },
 
   async fetchProductStoreShipmentMethods({ commit }) {
-    let productStoreShipmentMethods = [] as any, pageIndex = 0, resp;
+    let productStoreShipmentMethods = [] as any, productStoreShipmentMethodsWithDeliveryDays = [] as any, pageIndex = 0, resp;
     
     try {
       const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
@@ -183,10 +183,31 @@ const actions: ActionTree<NetSuiteState, RootState> = {
         }
         pageIndex++;
       } while (resp.data.length >= 100);
+      // To fetch day to deliver for each shipmentMethod.
+        productStoreShipmentMethodsWithDeliveryDays = await Promise.all(
+          productStoreShipmentMethods.map(async (method: any) => {
+            try {
+              const params = {
+                partyId : method.partyId,
+                shipmentMethodTypeId: method.shipmentMethodTypeId,
+                pageSize:1
+              }
+              const daysResp = await NetSuiteService.fetchDaysToDeliver(params);
+              if (!hasError(daysResp)) {
+                return { ...method, daysToDeliver: daysResp.data[0].deliveryDays ?? 5 };
+              } else {
+                return { ...method, daysToDeliver: null };
+              }
+            } catch (err) {
+              logger.error(`Failed fetching days for`, err);
+            }
+          }) 
+        )
+      
     } catch (error) {
       logger.error(error);
     }
-    commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethods)
+    commit(types.NET_SUITE_PRODUCT_STORE_SHIPMENT_METHODS_UPDATED, productStoreShipmentMethodsWithDeliveryDays)
   },
 
   async fetchIntegrationTypeMappings({ commit }, params: any) {
