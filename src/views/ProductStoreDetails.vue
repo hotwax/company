@@ -113,7 +113,7 @@
                   {{ settings['PRE_SLCTD_FAC_TAG'].settingValue }}
                   <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('PRE_SLCTD_FAC_TAG')" />
                 </ion-chip>
-                <ion-button fill="clear" @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-else>
+                <ion-button fill="clear" size="default" @click="createUpdateTag('PRE_SLCTD_FAC_TAG')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>
@@ -129,7 +129,7 @@
                   {{ settings['ORD_ITM_SHIP_FAC'].settingValue }}
                   <ion-icon :icon="closeCircleOutline" @click.stop="removeTag('ORD_ITM_SHIP_FAC')" />
                 </ion-chip>
-                <ion-button fill="clear" @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-else>
+                <ion-button fill="clear" size="default" @click="createUpdateTag('ORD_ITM_SHIP_FAC')" v-else>
                   <ion-icon slot="icon-only" :icon="addCircleOutline" />
                 </ion-button>
               </ion-item>

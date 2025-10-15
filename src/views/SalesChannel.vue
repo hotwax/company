@@ -15,7 +15,7 @@
             {{ translate("Map sales channel with NetSuite") }}
             <p>{{ translate("Learn more about mapping sales channels with NetSuite to make sure orders are attributed correctly.") }}</p>
           </ion-label>
-          <ion-button fill="clear" size="small" color="medium">
+          <ion-button fill="clear" size="default" color="medium">
             <ion-icon :icon="openOutline" slot="icon-only" />
           </ion-button>
         </ion-item>

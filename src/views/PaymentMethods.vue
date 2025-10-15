@@ -15,7 +15,7 @@
             {{ translate("Map payment methods with NetSuite") }}
             <p>{{ translate("For an order to sync with NetSuite, the payment method on that order must be mapped to a NetSuite shipment method ID.") }}</p>
           </ion-label>
-          <ion-button fill="clear" size="small" color="medium" @click="openPaymentMethodDoc">
+          <ion-button fill="clear" size="default" color="medium" @click="openPaymentMethodDoc">
             <ion-icon :icon="openOutline" slot="icon-only" />
           </ion-button>
         </ion-item>
