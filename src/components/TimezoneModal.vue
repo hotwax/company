@@ -39,16 +39,14 @@
         </div>
         <!-- Timezones -->
         <div v-else>
-          <ion-list>
-              <ion-item :key="timeZone.id" v-for="timeZone in filteredTimeZones">
-                <ion-radio label-placement="end" justify="start" :value="timeZone.id">  
-                  <ion-label>
-                    {{ timeZone.label }} ({{ timeZone.id }})
-                    <p v-if="showDateTime">{{ getCurrentTime(timeZone.id, dateTimeFormat) }}</p>
-                  </ion-label>
-                </ion-radio>
-              </ion-item>
-          </ion-list>
+          <ion-item :key="timeZone.id" v-for="timeZone in filteredTimeZones">
+            <ion-radio label-placement="end" justify="start" :value="timeZone.id">  
+              <ion-label>
+                {{ timeZone.label }} ({{ timeZone.id }})
+                <p v-if="showDateTime">{{ getCurrentTime(timeZone.id, dateTimeFormat) }}</p>
+              </ion-label>
+            </ion-radio>
+          </ion-item>
         </div>
       </ion-list>
     </ion-radio-group>
