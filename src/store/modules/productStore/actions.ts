@@ -113,10 +113,10 @@ const actions: ActionTree<ProductStoreState, RootState> = {
 
   async fetchProductStoreShopifyShops({ commit }) {
     let shopifyShopId = '' as any;
-    const netSuiteProductStoreId = store.getters["productStore/getProductStoreShopifyShopId"]
+    const netSuiteProductStore = store.getters["productStore/getNetSuiteProductStore"]
 
     try {
-      const resp = await ProductStoreService.fetchProductStoreShopifyShops({ productStoreId: netSuiteProductStoreId?.productStoreId })
+      const resp = await ProductStoreService.fetchProductStoreShopifyShops({ productStoreId: netSuiteProductStore?.productStoreId })
       
       if(!hasError(resp)) {
         shopifyShopId = resp.data[0].shopId;

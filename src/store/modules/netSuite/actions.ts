@@ -161,10 +161,10 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     let productStoreShipmentMethods = [] as any, productStoreShipmentMethodsWithDeliveryDays = [] as any, pageIndex = 0, resp;
     
     try {
-      const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
+      const netSuiteProductStore = store.getters["productStore/getNetSuiteProductStore"]
       do {
         const payload = {
-          productStoreId: netSuiteProductStoreId?.productStoreId,
+          productStoreId: netSuiteProductStore?.productStoreId,
           orderByField: "shipmentMethodTypeId",
           pageSize: 100,
           pageIndex
@@ -200,6 +200,7 @@ const actions: ActionTree<NetSuiteState, RootState> = {
               }
             } catch (err) {
               logger.error(`Failed fetching days for`, err);
+              return { ...method, daysToDeliver: null };
             }
           }) 
         )

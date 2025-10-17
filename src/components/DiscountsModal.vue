@@ -30,7 +30,7 @@
     </ion-item>
 
     <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-      <ion-fab-button @click="editNetSuiteDiscountItemIds" :disabled="isDiscountValueChanged()">
+      <ion-fab-button @click="editNetSuiteDiscountItemIds" :disabled="isSaveDisabled()">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -60,7 +60,7 @@ const mappingKeys = {
 }
 
 watch(integrationTypeMappings, (newMappings) => {
-  newMappings.map((mapping: any) => {
+  newMappings.forEach((mapping: any) => {
     integrationMappingByKey.value[mapping.mappingKey] = mapping;
     if(mapping.mappingKey === mappingKeys.order) {
       orderLevelDiscount.value = mapping.mappingValue
@@ -74,16 +74,26 @@ function closeModal() {
   modalController.dismiss({ dismissed: true });
 }
 
-function isDiscountValueChanged() {
-  return !(orderLevelDiscount.value?.trim() && itemLevelDiscount.value?.trim() && (orderLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.order]?.mappingValue || itemLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.item]?.mappingValue));
+function isSaveDisabled() {
+  const orderDiscount = orderLevelDiscount.value?.trim();
+  const itemDiscount = itemLevelDiscount.value?.trim();
+
+  if(!orderDiscount || !itemDiscount) {
+    return true;
+  }
+
+  const isOrderDiscountChanged = orderDiscount !== integrationMappingByKey.value[mappingKeys.order]?.mappingValue;
+  const isItemDiscountChanged = itemDiscount !== integrationMappingByKey.value[mappingKeys.item]?.mappingValue;
+
+  return !(isOrderDiscountChanged || isItemDiscountChanged);
 }
 
 async function editNetSuiteDiscountItemIds() {
-  if(orderLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.order].mappingValue) {
-    await updateMapping(mappingKeys.order, orderLevelDiscount.value)
+  if(orderLevelDiscount.value.trim() !== integrationMappingByKey.value[mappingKeys.order].mappingValue) {
+    await updateMapping(mappingKeys.order, orderLevelDiscount.value.trim())
   }
-  if(itemLevelDiscount.value !== integrationMappingByKey.value[mappingKeys.item].mappingValue) {
-    await updateMapping(mappingKeys.item, itemLevelDiscount.value)
+  if(itemLevelDiscount.value.trim() !== integrationMappingByKey.value[mappingKeys.item].mappingValue) {
+    await updateMapping(mappingKeys.item, itemLevelDiscount.value.trim())
   }
   closeModal();
 }

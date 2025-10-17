@@ -67,7 +67,6 @@ import { addOutline, closeCircleOutline, shieldCheckmarkOutline, storefrontOutli
 import { useStore } from "vuex";
 import { computed, nextTick, ref } from "vue";
 import { showToast, hasError } from '@/utils';
-import { DateTime } from "luxon";
 import emitter from "@/event-bus";
 import logger from '@/logger';
 import { UtilService } from '@/services/UtilService';
