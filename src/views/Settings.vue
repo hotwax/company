@@ -25,7 +25,7 @@
           <ion-button color="danger" @click="logout()">{{ translate("Logout") }}</ion-button>
           <!-- Commenting this code as we currently do not have reset password functionality -->
           <!-- <ion-button fill="outline" color="medium">{{ "Reset password") }}</ion-button> -->
-          <ion-button fill="outline" @click="goToLaunchpad()">
+          <ion-button :standalone-hidden="!hasPermission(Actions.APP_PWA_STANDALONE_ACCESS)" fill="outline" @click="goToLaunchpad()">
             {{ translate("Go to Launchpad") }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -94,6 +94,7 @@
 
 <script setup lang="ts">
 import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { Actions, hasPermission } from '@/authorization'
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useStore } from "vuex";
 import TimeZoneModal from "@/components/TimezoneModal.vue";
@@ -179,5 +180,11 @@ function goToLaunchpad() {
     justify-content: space-between;
     align-items: center;
     padding: var(--spacer-xs) 10px 0px;
+  }
+  /* Added conditional hiding in standalone mode that respects user permissions */
+  @media (display-mode: standalone) {
+    [standalone-hidden] {
+      display: none;
+    }
   }
 </style>

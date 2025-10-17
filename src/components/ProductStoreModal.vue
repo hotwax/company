@@ -16,7 +16,7 @@
       <ion-label>
         {{ translate("Learn more about mapping product stores to subsidiaries") }}
       </ion-label>
-      <ion-button fill="clear" size="small" color="medium" @click="openProductStoreDoc">
+      <ion-button fill="clear" size="default" color="medium" @click="openProductStoreDoc">
         <ion-icon :icon="openOutline" slot="icon-only" />
       </ion-button>
     </ion-item>
