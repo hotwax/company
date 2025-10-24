@@ -1,9 +1,9 @@
 <template>
   <ion-app>
-    <IonSplitPane content-id="main-content" when="lg">
+    <ion-split-pane content-id="main-content" when="lg">
       <Menu />
       <ion-router-outlet id="main-content"></ion-router-outlet>
-    </IonSplitPane>
+    </ion-split-pane>
   </ion-app>
 </template>
 
@@ -85,8 +85,3 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-ion-split-pane {
-  --side-width: 304px;
-}
-</style>
