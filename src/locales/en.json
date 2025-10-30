@@ -251,5 +251,6 @@
   "Usually 1": "Usually 1",
   "Use the price a product was sold at in the order.": "Use the price a product was sold at in the order.",
   "variances in 7 days": "variances in 7 days",
-  "Version:": "Version: {appVersion}"
+  "Version:": "Version: {appVersion}",
+  "Browser TimeZone" : "Browser TimeZone"
 }
