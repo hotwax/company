@@ -148,7 +148,9 @@
               </ion-item>
 
               <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" @ionBlur="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
+                <ion-input :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" @ionBlur="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)">
+                  <ion-label slot="start" class="ion-text-wrap">{{ translate('Minimum shipment threshold') }}</ion-label>
+                </ion-input>
               </ion-item>
               <ion-item lines="none">
                 <ion-label>
