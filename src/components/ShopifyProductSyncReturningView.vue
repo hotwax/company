@@ -110,21 +110,21 @@
         <ion-card-subtitle>{{ translate("Explain product sync jobs verification") }}</ion-card-subtitle>
       </ion-card-header>
       <ion-list>
-        <ion-item button detail :disabled="!syncJobObj" @click="emit('open-sync-job-details')">
+        <ion-item button detail :disabled="!syncJobObj" @click="emit('open-sync-job-details', syncJobObj)">
           <ion-label>
             {{ translate("Queue update requests") }}
             <p>{{ queueUpdateRequestsLastRunLabel }}</p>
           </ion-label>
           <ion-icon slot="end" :icon="isSyncPaused ? pauseCircleOutline : checkmarkCircleOutline"></ion-icon>
         </ion-item>
-        <ion-item detail :disabled="!sendUpdateRequestJobAvailable">
+        <ion-item button detail :disabled="!sendUpdateRequestJobObj?.jobName" @click="emit('open-sync-job-details', sendUpdateRequestJobObj)">
           <ion-label>
             {{ translate("Send update request") }}
             <p>{{ sendUpdateRequestLastRunLabel }}</p>
           </ion-label>
           <ion-icon slot="end" :icon="sendUpdateRequestPaused ? pauseCircleOutline : checkmarkCircleOutline"></ion-icon>
         </ion-item>
-        <ion-item detail>
+        <ion-item button detail :disabled="!importCompletedRequestsJobObj?.jobName" @click="emit('open-sync-job-details', importCompletedRequestsJobObj)">
           <ion-label>
             {{ translate("Import completed requests") }}
             <p>{{ importCompletedRequestsLastRunLabel }}</p>
@@ -368,9 +368,10 @@ const props = defineProps<{
   queueUpdateRequestsLastRunLabel: string
   sendUpdateRequestLastRunLabel: string
   sendUpdateRequestPaused?: boolean
-  sendUpdateRequestJobAvailable?: boolean
+  sendUpdateRequestJobObj?: any
   importCompletedRequestsLastRunLabel: string
   importCompletedRequestsPaused?: boolean
+  importCompletedRequestsJobObj?: any
   currentShopifyRequestSubtitle: string
   currentShopifyRequestStatusLabel: string
   currentShopifyRequestStatusColor: string
