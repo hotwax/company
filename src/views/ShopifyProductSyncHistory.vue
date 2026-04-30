@@ -28,6 +28,18 @@
           </ion-select>
         </ion-item>
         <ion-item>
+          <ion-select
+            :label="translate('Sort')"
+            :value="filters.sortOrder"
+            interface="popover"
+            @ionChange="handleSortOrderChange($event.detail.value)"
+          >
+            <ion-select-option v-for="sortOption in sortOptions" :key="sortOption.value" :value="sortOption.value">
+              {{ sortOption.label }}
+            </ion-select-option>
+          </ion-select>
+        </ion-item>
+        <ion-item>
           <ion-input
             :label="translate('Created after')"
             type="datetime-local"
@@ -115,7 +127,6 @@ import logger from "@/logger";
 import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistoryView.vue";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { useSystemMessage } from "@/composables/useSystemMessage";
-import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { showToast } from "@/utils";
 import {
@@ -124,15 +135,15 @@ import {
   shouldReadSystemMessagePagesBackwards,
   sortSystemMessagesNewestFirst
 } from "@/utils/systemMessageHistory";
+import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 
 const props = defineProps(["id"]);
 const store = useStore();
-const { fetchSystemMessagesPage } = useSystemMessage();
-
-const { fetchSyncRun } = useShopifyProductSyncRun();
-const { downloadDataManagerFile } = useDataManagerLog();
+const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
+const { downloadDataManagerFile, fetchLogDetails } = useDataManagerLog();
 
 const PAGE_SIZE = 25;
+const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
 
 const isLoading = ref(true);
 const isLoadingMore = ref(false);
@@ -143,7 +154,7 @@ const backendHistoryCount = ref(0);
 const hasMoreBackendHistory = ref(false);
 const historyPageMode = ref<"unknown" | "forward" | "reverse">("unknown");
 const bufferedSystemMessages = ref<any[]>([]);
-const systemMessageRemoteId = ref("");
+const systemMessageRemoteIds = ref<string[]>([]);
 let historyLoadToken = 0;
 
 interface ShopifyProductSyncHistoryRun {
@@ -157,6 +168,7 @@ interface ShopifyProductSyncHistoryRun {
   bulkOperationStatusColor: string;
   queryContent: string;
   objectCount: number;
+  rootObjectCount: number;
   mdmImportId: string;
   mdmStatus: string;
   mdmStatusLabel: string;
@@ -173,7 +185,8 @@ const historyRuns = ref<ShopifyProductSyncHistoryRun[]>([]);
 const filters = reactive({
   statusId: "",
   createdAfter: "",
-  createdBefore: ""
+  createdBefore: "",
+  sortOrder: "newest"
 });
 const statusFilterOptions = [
   { value: "SmsgProduced", label: translate("Produced") },
@@ -183,8 +196,13 @@ const statusFilterOptions = [
   { value: "SmsgConfirmed", label: translate("Confirmed") },
   { value: "SmsgError", label: translate("Error") }
 ];
+const sortOptions = [
+  { value: "newest", label: translate("Newest first") },
+  { value: "oldest", label: translate("Oldest first") }
+];
 
 const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const statusItems = computed(() => store.getters["util/getStatusItems"] || store.state.util.statusItems || {});
 const hasMoreHistory = computed(() => bufferedSystemMessages.value.length > 0 || hasMoreBackendHistory.value);
 
 onIonViewWillEnter(async () => {
@@ -202,17 +220,18 @@ async function loadHistory() {
 
     if (isStaleHistoryLoad(loadToken)) return;
 
-    const resolvedSystemMessageRemoteId = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+    const resolvedSystemMessageRemoteIds = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
       shopId: props.id,
       shopifyShopId: shop.value.shopifyShopId,
-      shop: shop.value
+      shop: shop.value,
+      returnAllSystemMessageRemoteIds: true
     });
 
     if (isStaleHistoryLoad(loadToken)) return;
 
-    systemMessageRemoteId.value = resolvedSystemMessageRemoteId;
-    if (!systemMessageRemoteId.value) {
-      throw new Error("Could not resolve systemMessageRemoteId");
+    systemMessageRemoteIds.value = resolvedSystemMessageRemoteIds;
+    if (!systemMessageRemoteIds.value.length) {
+      throw new Error("Could not resolve systemMessageRemoteIds");
     }
 
     historyRuns.value = [];
@@ -257,7 +276,7 @@ async function fetchHistoryPage(loadToken = historyLoadToken) {
 
   const nextRuns = systemMessages.map(getInitialHistoryRun);
   historyRuns.value = historyRuns.value.concat(nextRuns);
-  await loadRunDetails(nextRuns, systemMessages, loadToken);
+  loadRunDetails(nextRuns, systemMessages, loadToken);
 }
 
 async function fetchNextSystemMessagesResponse(loadToken = historyLoadToken) {
@@ -282,7 +301,7 @@ async function fetchNextSystemMessagesResponse(loadToken = historyLoadToken) {
 
   return {
     ...response,
-    systemMessages: sortSystemMessagesNewestFirst(page)
+    systemMessageLogDetails: sortSystemMessagesBySelectedOrder(page)
   };
 }
 
@@ -297,12 +316,12 @@ async function fetchReverseSystemMessagesResponse(loadToken = historyLoadToken) 
 
   return {
     ...response,
-    systemMessages: sortSystemMessagesNewestFirst(page)
+    systemMessageLogDetails: sortSystemMessagesBySelectedOrder(page)
   };
 }
 
 async function fetchSystemMessagesResponse(index: number) {
-  return fetchSystemMessagesPage({
+  return fetchSystemMessageLogDetailsPage({
     ...getSystemMessageParams(),
     pageSize: PAGE_SIZE,
     pageIndex: Math.max(index, 0)
@@ -310,23 +329,33 @@ async function fetchSystemMessagesResponse(index: number) {
 }
 
 function getSystemMessagesPage(response: any) {
-  return response?.systemMessages || [];
+  return response?.systemMessageLogDetails || [];
 }
 
 function getSystemMessagesCount(response: any, page: any[]) {
-  return Number(response?.systemMessagesCount || historyRuns.value.length + page.length);
+  return Number(response?.systemMessageLogDetailsCount || historyRuns.value.length + page.length);
 }
 
 function getSystemMessageParams() {
   const params: any = {
     systemMessageTypeId: 'BulkQueryShopifyProductUpdates',
-    systemMessageRemoteId: systemMessageRemoteId.value,
-    orderBy: '-initDate'
+    systemMessageRemoteId: systemMessageRemoteIds.value.join(","),
+    systemMessageRemoteId_op: "in",
+    orderByField: getSystemMessageOrderByField()
   };
 
   if (filters.statusId) params.statusId = filters.statusId;
 
   return params;
+}
+
+function getSystemMessageOrderByField() {
+  return filters.sortOrder === "oldest" ? "initDate" : "-initDate";
+}
+
+function sortSystemMessagesBySelectedOrder(systemMessages: any[]) {
+  const sortedMessages = sortSystemMessagesNewestFirst(systemMessages);
+  return filters.sortOrder === "oldest" ? sortedMessages.reverse() : sortedMessages;
 }
 
 function appendSystemMessagesToHistoryPage(target: any[], source: any[]) {
@@ -355,7 +384,11 @@ function isStaleHistoryLoad(loadToken: number) {
 }
 
 function shouldReadPagesBackwards(page: any[], totalCount: number) {
-  return shouldReadSystemMessagePagesBackwards(page, totalCount, PAGE_SIZE);
+  if (filters.sortOrder === "newest") {
+    return shouldReadSystemMessagePagesBackwards(page, totalCount, PAGE_SIZE);
+  }
+  if (totalCount <= PAGE_SIZE || page.length < 2) return false;
+  return getSystemMessageTime(page[0]) >= getSystemMessageTime(page[page.length - 1]);
 }
 
 function matchesCreatedDateFilters(systemMessage: any) {
@@ -375,27 +408,29 @@ function getFilterTimestamp(value: string) {
 }
 
 function getInitialHistoryRun(msg: any) {
+  const bulkOperationId = getSystemMessageBulkOperationId(msg);
   return {
     id: msg.systemMessageId,
     createdTime: msg.initDate,
-    systemMessageStatus: msg.statusId,
-    systemMessageStatusColor: "primary",
-    bulkOperationId: '',
-    bulkOperationStatus: "pending",
-    bulkOperationStatusLabel: translate("Pending"),
+    systemMessageStatus: getStatusLabel(msg.statusId),
+    systemMessageStatusColor: getStatusColor(msg.statusId),
+    bulkOperationId,
+    bulkOperationStatus: bulkOperationId ? "pending" : "",
+    bulkOperationStatusLabel: bulkOperationId ? translate("Pending") : translate("Not started"),
     bulkOperationStatusColor: "medium",
-    queryContent: "",
+    queryContent: getRunQueryContent(msg),
     objectCount: 0,
-    mdmImportId: '',
-    mdmStatus: "pending",
-    mdmStatusLabel: translate("Pending"),
-    mdmStatusColor: "medium",
-    totalRecordCount: 0,
-    failedRecordCount: 0,
-    mdmLogContentId: "",
-    mdmLogConfigId: "",
-    mdmLogFileName: "",
-    loading: true
+    rootObjectCount: 0,
+    mdmImportId: msg.logId || '',
+    mdmStatus: msg.logStatusId || "pending",
+    mdmStatusLabel: getStatusLabel(msg.logStatusId),
+    mdmStatusColor: getStatusColor(msg.logStatusId),
+    totalRecordCount: Number(msg.totalRecordCount || 0),
+    failedRecordCount: Number(msg.failedRecordCount || 0),
+    mdmLogContentId: msg.logContentId || msg.logFileContentId || msg.uploadFileContentId || msg.exportFileContentId || "",
+    mdmLogConfigId: msg.configId || PRODUCT_SYNC_MDM_CONFIG_ID,
+    mdmLogFileName: msg.fileName || msg.logFileName || msg.configDescription || "",
+    loading: !!bulkOperationId
   };
 }
 
@@ -408,32 +443,85 @@ async function loadRunDetails(runs: ShopifyProductSyncHistoryRun[], systemMessag
 
     const chunk = runs.slice(i, i + chunkSize);
 
-    await Promise.all(chunk.map(async (run) => {
-      const msg = currentMessages.find((message: any) => message.systemMessageId === run.id);
-      const syncRun = await fetchSyncRun(run.id, msg);
-
-      if (syncRun && !isStaleHistoryLoad(loadToken)) updateHistoryRun(run.id, {
-        systemMessageStatus: syncRun.systemMessage.statusLabel,
-        systemMessageStatusColor: syncRun.systemMessage.statusColor,
-        bulkOperationId: syncRun.bulkOperation?.id || '',
-        bulkOperationStatus: syncRun.bulkOperation?.status || '',
-        bulkOperationStatusLabel: syncRun.bulkOperation?.statusLabel || translate("Pending"),
-        bulkOperationStatusColor: syncRun.bulkOperation?.statusColor || "medium",
-        queryContent: syncRun.bulkOperation?.query || "",
-        objectCount: syncRun.bulkOperation?.objectCount || 0,
-        mdmImportId: syncRun.mdmLog?.id || '',
-        mdmStatus: syncRun.mdmLog?.statusId || '',
-        mdmStatusLabel: syncRun.mdmLog?.statusLabel || translate("Pending"),
-        mdmStatusColor: syncRun.mdmLog?.statusColor || "medium",
-        totalRecordCount: syncRun.mdmLog?.totalRecordCount || 0,
-        failedRecordCount: syncRun.mdmLog?.failedRecordCount || 0,
-        mdmLogContentId: syncRun.mdmLog?.logContentId || "",
-        mdmLogConfigId: syncRun.mdmLog?.configId || "",
-        mdmLogFileName: syncRun.mdmLog?.fileName || "",
-        loading: false
-      });
-    }));
+    await Promise.all(chunk.map((run) => hydrateRunDetails(run, currentMessages, loadToken)));
   }
+}
+
+async function hydrateRunDetails(run: ShopifyProductSyncHistoryRun, systemMessages: any[], loadToken = historyLoadToken) {
+  const msg = systemMessages.find((message: any) => message.systemMessageId === run.id);
+
+  if (!getSystemMessageBulkOperationId(msg)) {
+    updateHistoryRun(run.id, { loading: false });
+    return;
+  }
+
+  try {
+    const {
+      systemMessage,
+      shopifyBulkOperation,
+      bulkOperationId
+    } = await fetchShopifyBulkOperationBySystemMessageId(run.id, msg);
+
+    if (isStaleHistoryLoad(loadToken)) return;
+
+    updateHistoryRun(run.id, {
+      systemMessageStatus: getStatusLabel(systemMessage?.statusId),
+      systemMessageStatusColor: getStatusColor(systemMessage?.statusId),
+      bulkOperationId: shopifyBulkOperation?.id || bulkOperationId || run.bulkOperationId,
+      bulkOperationStatus: shopifyBulkOperation?.status || run.bulkOperationStatus,
+      bulkOperationStatusLabel: shopifyBulkOperation?.status ? getStatusLabel(shopifyBulkOperation.status) : run.bulkOperationStatusLabel,
+      bulkOperationStatusColor: shopifyBulkOperation?.status ? getStatusColor(shopifyBulkOperation.status) : run.bulkOperationStatusColor,
+      queryContent: shopifyBulkOperation?.query || run.queryContent,
+      objectCount: shopifyBulkOperation?.objectCount || 0,
+      rootObjectCount: shopifyBulkOperation?.rootObjectCount || 0,
+      loading: false
+    });
+  } catch (error) {
+    logger.error(`Failed to hydrate product sync history run ${run.id}`, error);
+    if (!isStaleHistoryLoad(loadToken)) updateHistoryRun(run.id, { loading: false });
+  }
+}
+
+function getStatusColor(status: string) {
+  if (!status) return "medium";
+  const normalizedStatus = String(status).toLowerCase();
+  if (normalizedStatus.includes("success") ||
+    normalizedStatus.includes("complete") ||
+    normalizedStatus.includes("finished") ||
+    normalizedStatus.includes("confirmed") ||
+    normalizedStatus.includes("consumed") ||
+    normalizedStatus === "dmlsfinished") return "success";
+  if (normalizedStatus.includes("error") ||
+    normalizedStatus.includes("failed") ||
+    normalizedStatus.includes("crashed") ||
+    normalizedStatus.includes("cancel")) return "danger";
+  if (normalizedStatus.includes("running") ||
+    normalizedStatus.includes("sent") ||
+    normalizedStatus.includes("produced") ||
+    normalizedStatus.includes("queued") ||
+    normalizedStatus.includes("smsg") ||
+    normalizedStatus.includes("dmls")) return "primary";
+  return "medium";
+}
+
+function getRunQueryContent(systemMessage: any) {
+  return systemMessage?.messageText ||
+    systemMessage?.messageJson ||
+    systemMessage?.messageData ||
+    systemMessage?.payload ||
+    "";
+}
+
+function getStatusLabel(status: string) {
+  if (!status) return translate("Pending");
+  const statusItem = statusItems.value[status];
+  if (statusItem) return statusItem.description || statusItem.statusId;
+
+  const normalizedStatus = String(status).toLowerCase();
+  if (normalizedStatus === "completed") return translate("Complete");
+  if (normalizedStatus === "failed") return translate("Failed");
+  if (normalizedStatus === "canceled" || normalizedStatus === "cancelled") return translate("Cancelled");
+  return status;
 }
 
 function updateHistoryRun(runId: string, updates: Partial<ShopifyProductSyncHistoryRun>) {
@@ -474,25 +562,45 @@ async function completeInfiniteScroll(event: CustomEvent) {
 }
 
 async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
-  if (!run?.mdmLogConfigId || !run?.mdmLogContentId) {
-    showToast(translate("Raw Shopify file is not available"));
-    return;
-  }
-
   try {
-    const response = await downloadDataManagerFile(run.mdmLogConfigId, run.mdmLogContentId);
+    const downloadableRun = await getDownloadableHistoryRun(run);
+    if (!downloadableRun?.mdmLogConfigId || !downloadableRun?.mdmLogContentId) {
+      showToast(translate("Raw Shopify file is not available"));
+      return;
+    }
+
+    const response = await downloadDataManagerFile(downloadableRun.mdmLogConfigId, downloadableRun.mdmLogContentId);
     const fileContent = getDownloadFileContent(response?.data);
 
     if (!fileContent) {
       throw new Error("No Data Manager file content returned");
     }
 
-    downloadTextFile(fileContent, getRawShopifyFileName(run));
+    downloadTextFile(fileContent, getRawShopifyFileName(downloadableRun));
     showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download raw Shopify file for message ${run.id}`, error);
     showToast(translate("Failed to download raw Shopify file"));
   }
+}
+
+async function getDownloadableHistoryRun(run: ShopifyProductSyncHistoryRun) {
+  if (run?.mdmLogConfigId && run?.mdmLogContentId) return run;
+  if (!run?.mdmImportId) return run;
+
+  const logDetails = await fetchLogDetails(run.mdmImportId);
+  const updatedRun = {
+    ...run,
+    mdmLogConfigId: logDetails?.configId || run.mdmLogConfigId,
+    mdmLogContentId: logDetails?.logContentId ||
+      logDetails?.logFileContentId ||
+      logDetails?.uploadFileContentId ||
+      logDetails?.exportFileContentId ||
+      run.mdmLogContentId,
+    mdmLogFileName: logDetails?.fileName || logDetails?.logFileName || run.mdmLogFileName
+  };
+  updateHistoryRun(run.id, updatedRun);
+  return updatedRun;
 }
 
 function getDownloadFileContent(data: any) {
@@ -540,6 +648,11 @@ async function handleCreatedAfterFilterChange(value: any) {
 
 async function handleCreatedBeforeFilterChange(value: any) {
   filters.createdBefore = String(value || "");
+  await loadHistory();
+}
+
+async function handleSortOrderChange(value: string) {
+  filters.sortOrder = value === "oldest" ? "oldest" : "newest";
   await loadHistory();
 }
 </script>

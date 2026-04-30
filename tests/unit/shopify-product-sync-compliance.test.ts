@@ -105,17 +105,21 @@ describe("shopify product sync implementation compliance", () => {
     assert.equal(routerSource.includes("name: 'ShopifyProductSyncHistory'"), true);
   });
 
-  test("product sync history fetches newest system messages first", () => {
+  test("product sync history sorts system message runs", () => {
     const historySource = readProjectFile("src/views/ShopifyProductSyncHistory.vue");
 
-    assert.equal(historySource.includes("orderBy: '-initDate'"), true);
+    assert.equal(historySource.includes('sortOrder: "newest"'), true);
+    assert.equal(historySource.includes('return filters.sortOrder === "oldest" ? "initDate" : "-initDate"'), true);
+    assert.equal(historySource.includes('translate("Newest first")'), true);
+    assert.equal(historySource.includes('translate("Oldest first")'), true);
+    assert.equal(historySource.includes("sortSystemMessagesBySelectedOrder"), true);
     assert.equal(historySource.includes("orderByField: '-initDate'"), false);
     assert.equal(historySource.includes("orderByField: 'initDate DESC'"), false);
     assert.equal(historySource.includes('translate("Product sync history")'), true);
     assert.equal(historySource.includes("remoteMessageId?.startsWith"), false);
     assert.equal(historySource.includes("const PAGE_SIZE = 25"), true);
     assert.equal(historySource.includes("ion-infinite-scroll"), true);
-    assert.equal(historySource.includes("fetchSystemMessagesPage"), true);
+    assert.equal(historySource.includes("fetchSystemMessageLogDetailsPage"), true);
     assert.equal(historySource.includes("initDate_from"), false);
     assert.equal(historySource.includes("initDate_thru"), false);
   });
@@ -131,6 +135,7 @@ describe("shopify product sync implementation compliance", () => {
 
     assert.equal(historySource.includes("systemMessageTypeId"), true);
     assert.equal(historySource.includes("systemMessageRemoteId"), true);
+    assert.equal(historySource.includes("fetchSystemMessageLogDetailsPage"), true);
     assert.equal(historySource.includes("if (!hasDateFilters.value) break"), false);
     assert.equal(historySource.includes("bufferedSystemMessages"), true);
     assert.equal(historySource.includes("appendSystemMessagesToHistoryPage"), true);
@@ -142,7 +147,7 @@ describe("shopify product sync implementation compliance", () => {
 
     assert.equal(syncRunSource.includes("shopifyBulkOperation?.query"), true);
     assert.equal(historySource.includes("queryContent"), true);
-    assert.equal(historySource.includes("queryContent: syncRun.bulkOperation?.query"), true);
+    assert.equal(historySource.includes("queryContent: shopifyBulkOperation?.query"), true);
   });
 
   test("product sync history time formatting accepts string and numeric dates", () => {
@@ -228,7 +233,8 @@ describe("shopify product sync implementation compliance", () => {
 
     assert.equal(historyViewSource.includes("downloadOutline"), true);
     assert.equal(historyViewSource.includes("downloadRawFile"), true);
-    assert.equal(historyViewSource.includes("Download raw file"), true);
+    assert.equal(historyViewSource.includes("@click.stop=\"emitDownloadRawFile(run)\""), true);
+    assert.equal(historyViewSource.includes("IonAlert"), false);
     assert.equal(historySource.includes("downloadRawShopifyFile"), true);
     assert.equal(historySource.includes("mdmLogContentId"), true);
     assert.equal(historySource.includes("mdmLogConfigId"), true);

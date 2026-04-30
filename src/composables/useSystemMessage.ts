@@ -17,6 +17,7 @@ const BULK_OPERATION_QUERY = `
         createdAt
         completedAt
         objectCount
+        rootObjectCount
         fileSize
         url
         query
@@ -97,6 +98,42 @@ export function useSystemMessage() {
       state.loading = false;
     }
     return { systemMessages: [], systemMessagesCount: 0 };
+  };
+
+  const fetchSystemMessageLogDetailsPage = async (params: any) => {
+    state.loading = true;
+    try {
+      const response = await api({
+        url: "admin/systemMessages/logDetails",
+        method: "GET",
+        params
+      }) as any;
+
+      const data = response?.data;
+      if (Array.isArray(data)) {
+        return {
+          systemMessageLogDetails: data,
+          systemMessageLogDetailsCount: data.length
+        };
+      }
+
+      return {
+        systemMessageLogDetails: data?.systemMessageLogDetails ||
+          data?.systemMessageAndDataManagerLogDetails ||
+          data?.systemMessages ||
+          [],
+        systemMessageLogDetailsCount: Number(data?.systemMessageLogDetailsCount ||
+          data?.systemMessageAndDataManagerLogDetailsCount ||
+          data?.systemMessagesCount ||
+          0)
+      };
+    } catch (err) {
+      logger.error(`Failed to fetch system message log details`, err);
+      throw err;
+    } finally {
+      state.loading = false;
+    }
+    return { systemMessageLogDetails: [], systemMessageLogDetailsCount: 0 };
   };
 
   const getGraphqlPayload = (response: any) => {
@@ -218,6 +255,7 @@ export function useSystemMessage() {
     fetchSystemMessageById,
     fetchShopifyBulkOperation,
     fetchShopifyBulkOperationBySystemMessageId,
+    fetchSystemMessageLogDetailsPage,
     fetchSystemMessages,
     fetchSystemMessagesPage
   };

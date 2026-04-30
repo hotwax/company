@@ -216,6 +216,7 @@ export interface ShopifyProductSyncRun {
     statusLabel?: string;
     statusColor?: string;
     objectCount?: number;
+    rootObjectCount?: number;
     query?: string;
   };
   mdmLog: {
@@ -441,7 +442,7 @@ function sortShopRemoteCandidates(candidates: any[]) {
   });
 }
 
-const fetchShopSystemMessageRemoteId = async (payload: any): Promise<string> => {
+const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
   if (!shopifyShopId) {
     throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
@@ -455,6 +456,14 @@ const fetchShopSystemMessageRemoteId = async (payload: any): Promise<string> => 
   const candidates = sortShopRemoteCandidates(getShopRemoteCandidates(response?.systemMessageRemoteList || [], payload));
   if (!candidates.length) {
     throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
+  }
+
+  if (payload.returnAllSystemMessageRemoteIds) {
+    return candidates
+      .map((candidate: any) => String(candidate.systemMessageRemoteId || "").trim())
+      .filter((systemMessageRemoteId: string, index: number, list: string[]) => {
+        return systemMessageRemoteId && list.indexOf(systemMessageRemoteId) === index;
+      });
   }
 
   for (const candidate of candidates) {
@@ -747,6 +756,8 @@ const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewS
         fieldsToSelect: "productCount,productStoreId"
       }
     });
+
+    logger.info("Oms product and variant counts", { omsProductResp, omsVariantResp });
 
     stats.omsProductCount = omsProductResp?.entityValueList?.[0]?.productCount || 0;
     stats.omsVariantCount = omsVariantResp?.entityValueList?.[0]?.productCount || 0;

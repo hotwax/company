@@ -50,11 +50,11 @@
               </ion-label>
             </ion-item>
             <ion-label class="stat">
-              {{ run.objectCount }}
-              <p>{{ translate("object count") }}</p>
+              <p>{{ translate("object count") }}: {{ run.objectCount }}</p>
+              <p>{{ translate("root object count") }}: {{ run.rootObjectCount }}</p>
             </ion-label>
             <div>
-              <ion-chip v-if="run.bulkOperationId" outline :color="getQueryChipColor(run)" :disabled="!run.queryContent" @click.stop="openQueryModal(run)">
+              <ion-chip v-if="canViewQuery(run)" outline :color="getQueryChipColor(run)" :disabled="!run.queryContent" @click.stop="openQueryModal(run)">
                 <ion-icon :icon="codeSlashOutline" />
                 <ion-label>{{ getQueryChipLabel(run) }}</ion-label>
               </ion-chip>
@@ -69,7 +69,7 @@
               </ion-label>
             </ion-item>
             <ion-label class="stat">
-              <ion-chip outline :color="getDownloadChipColor(run)" :disabled="!canDownloadRawFile(run)" @click.stop="openDownloadPrompt(run)">
+              <ion-chip outline :color="getDownloadChipColor(run)" :disabled="!canDownloadRawFile(run)" @click.stop="emitDownloadRawFile(run)">
                 <ion-icon :icon="downloadOutline" />
                 <ion-label>{{ run.totalRecordCount }}</ion-label>
               </ion-chip>
@@ -128,21 +128,12 @@
       </ion-list>
     </ion-content>
   </ion-modal>
-
-  <ion-alert
-    :is-open="isDownloadPromptOpen"
-    :header="translate('Download raw file')"
-    :message="getDownloadPromptMessage(selectedDownloadRun)"
-    :buttons="downloadPromptButtons"
-    @didDismiss="closeDownloadPrompt"
-  />
 </template>
 
 <script setup lang="ts">
 import {
   IonAccordion,
   IonAccordionGroup,
-  IonAlert,
   IonButtons,
   IonButton,
   IonCard,
@@ -184,22 +175,10 @@ const emit = defineEmits<{
 
 const isQueryModalOpen = ref(false);
 const selectedQueryRun = ref<any>(null);
-const isDownloadPromptOpen = ref(false);
-const selectedDownloadRun = ref<any>(null);
 
 const selectedQueryContent = computed(() => {
   return formatQueryContent(selectedQueryRun.value);
 });
-const downloadPromptButtons = computed(() => [
-  {
-    text: translate("Cancel"),
-    role: "cancel"
-  },
-  {
-    text: translate("Download raw file"),
-    handler: () => emitDownloadRawFile()
-  }
-]);
 
 function formatTime(time: any) {
   const dateTime = parseSystemMessageDateTime(time);
@@ -217,34 +196,17 @@ function closeQueryModal() {
   selectedQueryRun.value = null;
 }
 
-function openDownloadPrompt(run: any) {
+function emitDownloadRawFile(run: any) {
   if (!canDownloadRawFile(run)) return;
-  selectedDownloadRun.value = run;
-  isDownloadPromptOpen.value = true;
-}
-
-function closeDownloadPrompt() {
-  isDownloadPromptOpen.value = false;
-  selectedDownloadRun.value = null;
-}
-
-function emitDownloadRawFile() {
-  if (!selectedDownloadRun.value) return;
-  emit("downloadRawFile", selectedDownloadRun.value);
+  emit("downloadRawFile", run);
 }
 
 function canDownloadRawFile(run: any) {
-  return !!run?.mdmLogConfigId && !!run?.mdmLogContentId;
+  return !!run?.mdmLogConfigId && (!!run?.mdmLogContentId || !!run?.mdmImportId);
 }
 
 function getDownloadChipColor(run: any) {
   return canDownloadRawFile(run) ? "primary" : "medium";
-}
-
-function getDownloadPromptMessage(run: any) {
-  return translate("Download the Shopify file from Data Manager log {id}.", {
-    id: run?.mdmImportId || translate("Unavailable")
-  });
 }
 
 function formatQueryContent(run: any) {
@@ -265,11 +227,15 @@ function getQueryChipLabel(run: any) {
   return run?.queryContent ? translate("View query") : translate("No query found");
 }
 
+function canViewQuery(run: any) {
+  return !!run?.bulkOperationId || !!run?.queryContent;
+}
+
 function getStatusIcon(status: string) {
   const normalizedStatus = normalizeStatus(status);
-  if (["completed", "finished", "success", "dml-success", "dmlsuccess"].includes(normalizedStatus)) return checkmarkCircleOutline;
-  if (["completed-with-errors", "error", "failed", "cancelled", "canceled", "dml-error", "dmlerror"].includes(normalizedStatus)) return alertCircleOutline;
-  if (["running", "sent", "pending"].includes(normalizedStatus)) return syncCircleOutline;
+  if (["completed", "finished", "success", "confirmed", "consumed", "smsgconfirmed", "smsgconsumed", "dmlsuccess", "dmlsfinished"].includes(normalizedStatus)) return checkmarkCircleOutline;
+  if (["completedwitherrors", "error", "failed", "cancelled", "canceled", "crashed", "smsgerror", "dmlerror", "dmlsfailed", "dmlscrashed", "dmlscancelled"].includes(normalizedStatus)) return alertCircleOutline;
+  if (["running", "sent", "pending", "produced", "queued", "smsgsent", "smsgproduced", "dmlsrunning", "dmlspending", "dmlsqueued"].includes(normalizedStatus)) return syncCircleOutline;
   return helpCircleOutline;
 }
 
@@ -310,11 +276,11 @@ function hasRunError(run: any) {
 }
 
 function isCompleteStatus(status: string) {
-  return ["completed", "finished", "success", "dml-success", "dmlsuccess"].includes(normalizeStatus(status));
+  return ["completed", "finished", "success", "confirmed", "consumed", "smsgconfirmed", "smsgconsumed", "dmlsuccess", "dmlsfinished"].includes(normalizeStatus(status));
 }
 
 function normalizeStatus(status: string) {
-  return String(status || "").toLowerCase().replace(/_/g, "-");
+  return String(status || "").toLowerCase().replace(/[_\-\s]/g, "");
 }
 </script>
 

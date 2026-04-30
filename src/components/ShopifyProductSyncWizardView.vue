@@ -37,10 +37,11 @@
         </ion-list>
       </ion-card>
 
-      <ion-button v-if="currentStep === 'home'" expand="block" @click="emit('go-next')"
+      <ion-button v-if="currentStep === 'home'" expand="block" @click="$emit('go-next')"
         data-testid="review-configurations">
         {{ translate("Review configurations") }}
       </ion-button>
+
     </div>
     <ion-card class="step" v-if="currentStep === 'product-store'">
       <ion-card-header>
@@ -66,7 +67,7 @@
       </ion-list>
       <ion-list v-else lines="full">
         <ion-radio-group :value="draft.selectedProductStoreId"
-          @ionChange="emit('product-store-change', $event.detail.value)">
+          @ionChange="$emit('product-store-change', $event.detail.value)">
           <ion-item v-for="productStore in productStores" :key="productStore.productStoreId">
             <ion-radio slot="start" :value="productStore.productStoreId" />
             <ion-label>
@@ -93,15 +94,15 @@
         </ion-item>
       </ion-list>
       <ion-item v-if="!productStoreLocked" lines="full" button :disabled="!draft.selectedProductStoreId"
-        @click="emit('toggle-product-store-verification')">
+        @click="$emit('toggle-product-store-verification')">
         <ion-checkbox :checked="draft.productStoreVerified"
           :disabled="!draft.selectedProductStoreId" data-testid="product-store-verification">
           {{ translate("I have verified that these Shopify stores are part of the selected Product Store.") }}
         </ion-checkbox>
       </ion-item>
       <ion-card-content>
-        <ion-button expand="block" fill="clear" @click="emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="emit('go-next')"
+        <ion-button expand="block" fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
+        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="$emit('go-next')"
           data-testid="product-store-next">
           {{ translate("Next") }}
         </ion-button>
@@ -132,7 +133,7 @@
       </ion-list>
       <ion-list v-else lines="full">
         <ion-radio-group :value="draft.selectedIdentifierEnumId"
-          @ionChange="emit('identifier-change', $event.detail.value)">
+          @ionChange="$emit('identifier-change', $event.detail.value)">
           <ion-item v-for="identifier in identifierOptions" :key="identifier.enumId">
             <ion-radio slot="start" :value="identifier.enumId" />
             <ion-label>
@@ -151,8 +152,8 @@
         </ion-item>
       </ion-list>
       <ion-card-content>
-        <ion-button fill="clear" @click="emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="emit('go-next')"
+        <ion-button fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
+        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="$emit('go-next')"
           data-testid="identifier-next">
           {{ translate("Next") }}
         </ion-button>
@@ -180,8 +181,8 @@
         </ion-item>
       </ion-list>
       <ion-card-content>
-        <ion-button fill="clear" @click="emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" :disabled="nextDisabled" @click="emit('go-next')" data-testid="finish-configuration">
+        <ion-button fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
+        <ion-button expand="block" :disabled="nextDisabled" @click="$emit('go-next')" data-testid="finish-configuration">
           {{ translate("Finish configuration") }}
         </ion-button>
       </ion-card-content>
@@ -219,12 +220,12 @@
         </ion-item>
       </ion-list>
       <ion-card-content>
-        <ion-button fill="clear" @click="emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" fill="outline" :disabled="!reviewReady" @click="emit('open-mistake-modal')"
+        <ion-button fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
+        <ion-button expand="block" fill="outline" :disabled="!reviewReady" @click="$emit('open-mistake-modal')"
           data-testid="mistake-check">
           {{ translate("Am I making a mistake?") }}
         </ion-button>
-        <ion-button expand="block" :disabled="!reviewReady" @click="emit('open-start-sync-modal')"
+        <ion-button expand="block" :disabled="!reviewReady" @click="$emit('open-start-sync-modal')"
           data-testid="run-product-import">
           {{ translate("Run product import") }}
         </ion-button>
@@ -241,7 +242,7 @@
         <ion-list lines="full">
           <template v-if="currentSyncRun && currentSyncRun.systemMessageId">
             <ion-item button detail
-              @click="emit('open-step-details', { type: 'systemMessage', id: currentSyncRun.systemMessageId })">
+              @click="$emit('open-step-details', { type: 'systemMessage', id: currentSyncRun.systemMessageId })">
               <ion-label>
                 {{ translate("System message") }}
                 <p>{{ currentSyncRun.systemMessageId }}</p>
@@ -250,7 +251,7 @@
               <ion-badge slot="end" :color="currentSyncRun.statusColor">{{ currentSyncRun.status }}</ion-badge>
             </ion-item>
             <ion-item button detail
-              @click="emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation.id })"
+              @click="$emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation.id })"
               :disabled="!currentSyncRun.bulkOperation?.id">
               <ion-label>
                 {{ translate("Shopify bulk operation") }}
@@ -263,7 +264,7 @@
               <ion-badge slot="end" :color="currentSyncRun.bulkOperation?.statusColor || 'medium'">{{
                 currentSyncRun.bulkOperation?.statusLabel || translate("Pending") }}</ion-badge>
             </ion-item>
-            <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog.id })"
+            <ion-item button detail @click="$emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog.id })"
               :disabled="!currentSyncRun.mdmLog?.id">
               <ion-label>
                 {{ translate("HotWax bulk import") }}
@@ -359,9 +360,9 @@
           </ion-item>
         </ion-list>
         <ion-card-content>
-          <ion-button expand="block" fill="outline" @click="emit('load-progress')">{{ translate("Refresh status")
+          <ion-button expand="block" fill="outline" @click="$emit('load-progress')">{{ translate("Refresh status")
             }}</ion-button>
-          <ion-button expand="block" :disabled="!reconcileAvailable" @click="emit('go-next')"
+          <ion-button expand="block" :disabled="!reconcileAvailable" @click="$emit('go-next')"
             data-testid="reconcile-sync">
             {{ translate("Reconcile product sync") }}
           </ion-button>
@@ -395,7 +396,7 @@
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button @click="emit('close-mistake-modal')" :aria-label="translate('Close')">
+            <ion-button @click="$emit('close-mistake-modal')" :aria-label="translate('Close')">
               <ion-icon slot="icon-only" :icon="closeOutline" />
             </ion-button>
           </ion-buttons>
@@ -418,7 +419,7 @@
             </ion-item>
           </ion-list>
           <ion-item v-if="preflightRequiresConfirmation" lines="full" button
-            @click="emit('toggle-preflight-warning-confirmation')">
+            @click="$emit('toggle-preflight-warning-confirmation')">
             <ion-checkbox :checked="preflightWarningConfirmed" label-placement="end"
               data-testid="preflight-warning-confirmation">
               {{ translate("I reviewed the warning and want to continue.") }}
@@ -426,7 +427,7 @@
           </ion-item>
           <ion-card-content v-if="preflightRequiresConfirmation">
             <ion-button expand="block" :disabled="!preflightWarningConfirmed"
-              @click="emit('accept-preflight-and-open-start-sync')" data-testid="accept-preflight-warning">
+              @click="$emit('accept-preflight-and-open-start-sync')" data-testid="accept-preflight-warning">
               {{ translate("Continue to import") }}
             </ion-button>
           </ion-card-content>
@@ -438,7 +439,7 @@
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button @click="emit('close-start-sync-modal')" :aria-label="translate('Close')">
+            <ion-button @click="$emit('close-start-sync-modal')" :aria-label="translate('Close')">
               <ion-icon slot="icon-only" :icon="closeOutline" />
             </ion-button>
           </ion-buttons>
@@ -481,13 +482,13 @@
             <ion-card-title>{{ translate("First product sync cannot be cancelled") }}</ion-card-title>
             <ion-card-subtitle>{{ translate("Incorrect Shopify store to Product Store mapping can corrupt catalog state.") }}</ion-card-subtitle>
           </ion-card-header>
-          <ion-item lines="full" button @click="emit('toggle-start-confirmation')">
+          <ion-item lines="full" button @click="$emit('toggle-start-confirmation')">
             <ion-checkbox :checked="draft.startConfirmed" label-placement="end" data-testid="start-sync-confirmation">
               {{ translate("I understand and want to start the first product sync.") }}
             </ion-checkbox>
           </ion-item>
           <ion-card-content>
-            <ion-button expand="block" :disabled="startSyncDisabled || isSaving" @click="emit('start-product-sync')"
+            <ion-button expand="block" :disabled="startSyncDisabled || isSaving" @click="$emit('start-product-sync')"
               data-testid="start-product-sync">
               {{ translate("Start product sync") }}
             </ion-button>

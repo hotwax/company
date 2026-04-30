@@ -72,6 +72,7 @@ export function useShopifyProductSyncRun() {
           statusLabel: getStatusLabel(shopifyBulkOperation?.status),
           statusColor: getStatusColor(shopifyBulkOperation?.status),
           objectCount: shopifyBulkOperation?.objectCount,
+          rootObjectCount: shopifyBulkOperation?.rootObjectCount,
           query: shopifyBulkOperation?.query
         },
         mdmLog: {
