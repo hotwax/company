@@ -1,6 +1,6 @@
 <template>
   <section class="sync-summary">
-    <ion-card>
+    <ion-card class="summary">
       <ion-card-header>
         <ion-card-title>{{ translate("Summary") }}</ion-card-title>
         <ion-card-subtitle>{{ summarySubtitle }}</ion-card-subtitle>
@@ -23,28 +23,32 @@
             {{ translate("Last sync") }}
             <p>{{ lastSyncLabel }}</p>
           </ion-label>
-          <ion-note slot="end">{{ lastSyncRelativeLabel }}</ion-note>
+          <ion-label slot="end">{{ lastSyncRelativeLabel }}</ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label>{{ translate("Updates synced") }}</ion-label>
+          <ion-label slot="end">{{ 40 }}</ion-label>
         </ion-item>
         <ion-item button :detail="isSyncScheduled" @click="isSyncScheduled ? emit('open-sync-job-details') : undefined">
           <ion-label>{{ translate("Next sync time") }}
             <p v-if="isSyncScheduled">{{ nextSyncLabel }}</p>
           </ion-label>
           <ion-badge slot="end" color="warning" v-if="isSyncPaused">{{ translate("Paused") }}</ion-badge>
-          <ion-note slot="end" v-else-if="isSyncScheduled">{{ nextSyncRelativeLabel }}</ion-note>
+          <ion-label slot="end" v-else-if="isSyncScheduled">{{ nextSyncRelativeLabel }}</ion-label>
           <ion-button slot="end" fill="outline" color="primary" v-else @click.stop="openScheduleModal()">{{ translate("Schedule") }}</ion-button>
-        </ion-item>
-        <ion-item>
-          <ion-label>{{ translate("Product store") }}</ion-label>
-          <ion-note slot="end">{{ selectedProductStoreName }}</ion-note>
         </ion-item>
         <ion-item button detail @click="emit('open-unsynced-updates')">
           <ion-label>{{ translate("Un-synced updates") }}</ion-label>
           <ion-badge slot="end" color="medium">{{ unsyncedUpdatesCount }}</ion-badge>
         </ion-item>
+        <ion-item>
+          <ion-label>{{ translate("Product store") }}</ion-label>
+          <ion-note slot="end">{{ selectedProductStoreName }}</ion-note>
+        </ion-item>
       </ion-list>
     </ion-card>
 
-    <ion-card>
+    <ion-card class="progress">
       <ion-card-header>
         <ion-card-title>{{ translate("Track sync progress") }}</ion-card-title>
         <ion-card-subtitle>{{ translate("Monitor each step as products get imported from Shopify") }}</ion-card-subtitle>
@@ -91,7 +95,106 @@
         </ion-item>
       </ion-list>
     </ion-card>
+  </section>
 
+  <section class="sync-monitor">
+    <ion-item lines="none">
+      <ion-label>
+        {{ translate("Sync monitor") }}
+        <p>{{ translate("Review sync jobs that make the sync operations work") }}</p>
+      </ion-label>
+    </ion-item>
+    <ion-card>
+      <ion-card-header>
+        <ion-card-title>{{ translate("Product sync jobs") }}</ion-card-title>
+        <ion-card-subtitle>{{ translate("Explain product sync jobs verification") }}</ion-card-subtitle>
+      </ion-card-header>
+      <ion-list>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Queue update requests") }}
+            <p>{{ translate("Last job run message") }}</p>
+          </ion-label>
+          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+        </ion-item>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Send update request") }}
+            <p>{{ translate("Last job run message") }}</p>
+          </ion-label>
+          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+        </ion-item>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Import completed requests") }}
+            <p>{{ translate("Last job run message") }}</p>
+          </ion-label> 
+          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+        </ion-item>
+      </ion-list>
+    </ion-card>
+    <ion-card>
+      <ion-card-header>
+        <ion-card-title>{{ translate("Pipeline") }}</ion-card-title>
+        <ion-card-subtitle>{{ translate("Monitor how the sync pipeline is performing") }}</ion-card-subtitle>
+      </ion-card-header>
+      <ion-list>
+        <ion-item>
+          <ion-label>
+            {{ translate("Pending update requests")}} 
+            <p>Last request created 2 days ago</p>
+          </ion-label>
+          <ion-label slot="end">10</ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label>
+            {{ translate("Current Shopify request status")}} 
+            <p>Created 2 days ago</p>
+          </ion-label>
+          <ion-badge slot="end">Processing</ion-badge>
+        </ion-item>
+        <ion-item>
+          <ion-label>
+            {{ translate("Update files to process")}}
+          </ion-label>
+          <ion-label slot="end">1</ion-label>
+        </ion-item>
+        <ion-item>
+          <ion-label>
+            {{ translate("Error records")}}
+            <p>In the last 24 hours</p>
+          </ion-label>
+          <ion-label slot="end">0</ion-label>
+        </ion-item>
+      </ion-list>
+    </ion-card>
+
+    <ion-card>
+      <ion-card-header>
+        <ion-card-title>{{ translate("Custom request") }}</ion-card-title>
+        <ion-card-subtitle>{{ translate("Override the scheduled sync with a custom request") }}</ion-card-subtitle>
+      </ion-card-header>
+      <ion-list>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Sync specific products") }}
+            <p>{{ translate("Select products to run the product sync for on demand") }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Replay sync from a certain time") }}
+            <p>{{ translate("Rewind the last sync time to reimport updates") }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-item detail>
+          <ion-label>
+            {{ translate("Re-sync entire catalog") }}
+            <p>{{ translate("Download the entire product catalog from Shopify again. Use with caution") }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+    </ion-card>
   </section>
 
   <section class="sync-stat">
@@ -231,7 +334,7 @@ import {
 } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { computed, defineEmits, defineProps, ref } from "vue";
-import { ellipsisVerticalOutline, flashOutline, timeOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, timeOutline } from "ionicons/icons";
 import { modalController, popoverController } from "@ionic/vue";
 import ScheduleModal from "./ScheduleModal.vue";
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
@@ -360,14 +463,31 @@ ion-buttons {
 }
 
 .sync-summary {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   align-items: start;
 }
 
-.sync-summary ion-card {
-  flex: 0 1 375px;
+.summary{
+  grid-column: 1 / 2;
+}
+
+.progress{
+  grid-column: -1 / -2;
+}
+
+.sync-monitor {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  align-items: start;
+}
+
+.sync-monitor ion-item {
+  grid-column: 1 / -1;
+}
+
+.sync-monitor ion-card {
+  flex: 1 0 375px;
 }
 
 .stat-header{
