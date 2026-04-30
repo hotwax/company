@@ -127,9 +127,9 @@
         <ion-item detail>
           <ion-label>
             {{ translate("Import completed requests") }}
-            <p>{{ translate("Last job run message") }}</p>
+            <p>{{ importCompletedRequestsLastRunLabel }}</p>
           </ion-label> 
-          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+          <ion-icon slot="end" :icon="importCompletedRequestsPaused ? pauseCircleOutline : checkmarkCircleOutline"></ion-icon>
         </ion-item>
       </ion-list>
     </ion-card>
@@ -149,9 +149,9 @@
         <ion-item>
           <ion-label>
             {{ translate("Current Shopify request status")}} 
-            <p>Created 2 days ago</p>
+            <p>{{ currentShopifyRequestSubtitle }}</p>
           </ion-label>
-          <ion-badge slot="end">Processing</ion-badge>
+          <ion-badge v-if="hasCurrentShopifyRequest" slot="end" :color="currentShopifyRequestStatusColor">{{ currentShopifyRequestStatusLabel }}</ion-badge>
         </ion-item>
         <ion-item>
           <ion-label>
@@ -369,6 +369,12 @@ const props = defineProps<{
   sendUpdateRequestLastRunLabel: string
   sendUpdateRequestPaused?: boolean
   sendUpdateRequestJobAvailable?: boolean
+  importCompletedRequestsLastRunLabel: string
+  importCompletedRequestsPaused?: boolean
+  currentShopifyRequestSubtitle: string
+  currentShopifyRequestStatusLabel: string
+  currentShopifyRequestStatusColor: string
+  hasCurrentShopifyRequest?: boolean
   syncJobObj?: any
 }>();
 const emit = defineEmits(["open-history", "schedule-sync", "run-job", "open-unsynced-updates", "open-sync-job-details", "open-step-details", "toggle-pause-sync-job"]);

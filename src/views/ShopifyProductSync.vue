@@ -56,6 +56,12 @@
           :send-update-request-last-run-label="bulkOperationSendJobLastRunLabel"
           :send-update-request-paused="isBulkOperationSendJobPaused"
           :send-update-request-job-available="!!bulkOperationSendJob?.jobName"
+          :import-completed-requests-last-run-label="bulkOperationPollJobLastRunLabel"
+          :import-completed-requests-paused="isBulkOperationPollJobPaused"
+          :current-shopify-request-subtitle="currentShopifyRequestSubtitle"
+          :current-shopify-request-status-label="currentShopifyRequestStatusLabel"
+          :current-shopify-request-status-color="currentShopifyRequestStatusColor"
+          :has-current-shopify-request="hasRunningShopifyBulkOperation"
           :sync-job-obj="syncJobObj"
           @open-history="openHistory"
           @open-sync-job-details="openSyncJobDetailsModal"
@@ -596,6 +602,9 @@ const currentStepDetail = ref<any>(null);
 const bulkOperationSendJob = ref<any>({});
 const bulkOperationPollJob = ref<any>({});
 const bulkOperationSendJobRecentRuns = ref<any[]>([]);
+const bulkOperationPollJobRecentRuns = ref<any[]>([]);
+const runningShopifyBulkOperation = ref<any>(null);
+const runningShopifyBulkOperationError = ref("");
 const preflightLoaded = ref(false);
 const preflightAccepted = ref(false);
 const preflightWarningConfirmed = ref(false);
@@ -785,12 +794,39 @@ const syncJobLastRunLabel = computed(() => {
 const isBulkOperationSendJobPaused = computed(() => {
   return isJobPaused(bulkOperationSendJob.value);
 });
+const isBulkOperationPollJobPaused = computed(() => {
+  return isJobPaused(bulkOperationPollJob.value);
+});
 const bulkOperationSendJobLastRunLabel = computed(() => {
   if (bulkOperationSendJobRecentRuns.value.length) {
     const latestRun = bulkOperationSendJobRecentRuns.value[0];
     return `${translate("Last run")}: ${formatDateTime(getSyncJobRunStartedAt(latestRun))} · ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
+});
+const bulkOperationPollJobLastRunLabel = computed(() => {
+  if (bulkOperationPollJobRecentRuns.value.length) {
+    const latestRun = bulkOperationPollJobRecentRuns.value[0];
+    return `${translate("Last run")}: ${formatDateTime(getSyncJobRunStartedAt(latestRun))} · ${getSyncJobRunStatus(latestRun)}`;
+  }
+  return translate("No recent runs");
+});
+const hasRunningShopifyBulkOperation = computed(() => {
+  return !!runningShopifyBulkOperation.value?.id;
+});
+const currentShopifyRequestSubtitle = computed(() => {
+  if (runningShopifyBulkOperationError.value) return runningShopifyBulkOperationError.value;
+  if (!hasRunningShopifyBulkOperation.value) return translate("No running Shopify bulk operation");
+
+  const createdAt = runningShopifyBulkOperation.value.createdAt;
+  const createdAtLabel = createdAt ? formatDateTime(createdAt) : translate("Unavailable");
+  return translate("Created {time}", { time: createdAtLabel });
+});
+const currentShopifyRequestStatusLabel = computed(() => {
+  return getShopifyBulkOperationStatusLabel(runningShopifyBulkOperation.value?.status);
+});
+const currentShopifyRequestStatusColor = computed(() => {
+  return getShopifyBulkOperationStatusColor(runningShopifyBulkOperation.value?.status);
 });
 const syncJobParameters = computed(() => {
   const jobParameters = (syncJobDetails.value?.serviceJobParameters || []).map((parameter: any, index: number) => ({
@@ -867,6 +903,25 @@ function formatShopifyReference(reference: string) {
   if (resource === "Product" && id) return `${translate("Shopify ID")}: ${id}`;
   if (resource && id) return `${resource} ${id}`;
   return reference;
+}
+
+function getShopifyBulkOperationStatusLabel(status: string) {
+  const normalizedStatus = String(status || "").toLowerCase();
+  if (normalizedStatus === "running") return translate("Running");
+  if (normalizedStatus === "created") return translate("Created");
+  if (normalizedStatus === "completed") return translate("Complete");
+  if (normalizedStatus === "failed") return translate("Error");
+  if (normalizedStatus === "canceled") return translate("Canceled");
+  if (normalizedStatus === "canceling") return translate("Canceling");
+  return status || translate("Unavailable");
+}
+
+function getShopifyBulkOperationStatusColor(status: string) {
+  const normalizedStatus = String(status || "").toLowerCase();
+  if (normalizedStatus === "completed") return "success";
+  if (normalizedStatus === "failed" || normalizedStatus === "canceled") return "danger";
+  if (normalizedStatus === "running" || normalizedStatus === "created" || normalizedStatus === "canceling") return "primary";
+  return "medium";
 }
 
 function isProductUpdateSyncServiceJob(job: any = {}) {
@@ -992,6 +1047,8 @@ async function loadWizard() {
     await loadShopifyShopProductCount();
     await loadSyncJobLatestRun();
     await loadBulkOperationSendJobLatestRun();
+    await loadBulkOperationPollJobLatestRun();
+    await loadRunningShopifyBulkOperation();
 
     setupState.value = await ShopifyProductSyncService.fetchSetupState({
       shopId: props.id,
@@ -1052,6 +1109,36 @@ async function loadBulkOperationSendJobLatestRun() {
   } catch (error: any) {
     logger.error(error);
     bulkOperationSendJobRecentRuns.value = [];
+  }
+}
+
+async function loadBulkOperationPollJobLatestRun() {
+  if (!bulkOperationPollJob.value?.jobName) {
+    bulkOperationPollJobRecentRuns.value = [];
+    return;
+  }
+
+  try {
+    const jobRuns = await fetchJobRuns(bulkOperationPollJob.value.jobName, { pageSize: 1, pageIndex: 0 });
+    bulkOperationPollJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
+  } catch (error: any) {
+    logger.error(error);
+    bulkOperationPollJobRecentRuns.value = [];
+  }
+}
+
+async function loadRunningShopifyBulkOperation() {
+  try {
+    runningShopifyBulkOperation.value = await ShopifyProductSyncService.fetchRunningBulkOperation({
+      shopId: props.id,
+      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
+      shop: shop.value
+    });
+    runningShopifyBulkOperationError.value = "";
+  } catch (error: any) {
+    logger.error(error);
+    runningShopifyBulkOperation.value = null;
+    runningShopifyBulkOperationError.value = translate("Shopify request status unavailable");
   }
 }
 

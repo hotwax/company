@@ -58,6 +58,14 @@ export interface ShopifyPendingProductUpdateRequestsState {
   latestSystemMessage?: any;
 }
 
+export interface ShopifyRunningBulkOperation {
+  id: string;
+  status: string;
+  type: string;
+  createdAt: string;
+  objectCount: number;
+}
+
 export interface ShopifyUnsyncedProductUpdate {
   id: string;
   title: string;
@@ -104,6 +112,20 @@ query WizardLiveCatalogCounts {
   productVariantsCount {
     count
     precision
+  }
+}
+`;
+
+const RUNNING_BULK_OPERATIONS_QUERY = `
+query RunningBulkOperations {
+  bulkOperations(first: 1, query: "status:running operation_type:query", sortKey: CREATED_AT, reverse: true) {
+    nodes {
+      id
+      status
+      type
+      createdAt
+      objectCount
+    }
   }
 }
 `;
@@ -569,6 +591,38 @@ const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncR
   };
 };
 
+const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRunningBulkOperation | null> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch running bulk operations.");
+  }
+
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: RUNNING_BULK_OPERATIONS_QUERY
+    }
+  });
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify running bulk operation query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+
+  const runningOperation = graphQlPayload?.bulkOperations?.nodes?.[0];
+  if (!runningOperation) return null;
+
+  return {
+    id: runningOperation.id,
+    status: runningOperation.status,
+    type: runningOperation.type,
+    createdAt: runningOperation.createdAt,
+    objectCount: Number(runningOperation.objectCount || 0)
+  };
+};
+
 const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncSetupState> => {
   const productUpdateHistory = getProductUpdateHistoryRecords(await requestBackend<ProductUpdateHistoryResponse | any[]>({
     url: "oms/productUpdateHistory",
@@ -775,20 +829,26 @@ const fetchPreflight = async (payload: any): Promise<any[]> => {
     });
   } catch (error) {
     logger.error("Failed to fetch preflight data", error);
-    return [];
+    throw error;
   }
 };
 
 const startInitialImport = async (payload: any): Promise<any> => {
+  const { shopId, productStoreId, productIdentifierEnumId, systemMessageRemoteId } = payload;
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify product sync import requires systemMessageRemoteId.");
+  }
+
   const response = await requestBackend<any>({
-    url: "shopify/products/sync",
+    url: `oms/shopifyShops/${shopId}/productSync/imports`,
     method: "post",
     data: {
-      shopifyShopId: payload.shopId,
-      includeAll: true
+      productStoreId,
+      productIdentifierEnumId,
+      systemMessageRemoteId
     }
   }, "Shopify product sync import endpoint");
-  return validateReconcile(response);
+  return validateInitialImport(response);
 };
 
 const fetchProgress = async (payload: any): Promise<ShopifyProductSyncProgressState> => {
@@ -888,6 +948,7 @@ export const ShopifyProductSyncService = {
   fetchShopSystemMessageRemoteId,
   fetchProductUpdateSyncRunState,
   fetchPendingProductUpdateRequests,
+  fetchRunningBulkOperation,
   fetchShopifyShopProductCount,
   fetchUnsyncedProductUpdates,
   fetchSetupState,
