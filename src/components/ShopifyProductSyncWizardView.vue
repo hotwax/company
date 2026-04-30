@@ -391,7 +391,7 @@
       </ion-list>
     </ion-card>
 
-    <ion-modal :is-open="showMistakeModal" @didDismiss="emit('close-mistake-modal')">
+    <ion-modal :is-open="showMistakeModal" :backdrop-dismiss="false" @didDismiss="emit('close-mistake-modal')">
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
@@ -434,7 +434,7 @@
       </ion-content>
     </ion-modal>
 
-    <ion-modal :is-open="showStartSyncModal" @didDismiss="emit('close-start-sync-modal')">
+    <ion-modal :is-open="showStartSyncModal" :backdrop-dismiss="false" @didDismiss="emit('close-start-sync-modal')">
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">

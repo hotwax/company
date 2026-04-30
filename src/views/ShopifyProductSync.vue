@@ -134,7 +134,7 @@
           @open-step-details="openStepDetails"
         />
 
-        <ion-modal :is-open="showModeModal" @didDismiss="showModeModal = false">
+        <ion-modal :is-open="showModeModal" :backdrop-dismiss="false" @didDismiss="showModeModal = false">
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -177,7 +177,7 @@
           </ion-content>
         </ion-modal>
 
-        <ion-modal :is-open="showUnsyncedUpdatesModal" @didDismiss="showUnsyncedUpdatesModal = false">
+        <ion-modal :is-open="showUnsyncedUpdatesModal" :backdrop-dismiss="false" @didDismiss="showUnsyncedUpdatesModal = false">
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -227,7 +227,7 @@
           </ion-content>
         </ion-modal>
 
-        <ion-modal :is-open="showSyncJobDetailsModal" :can-dismiss="canDismissSyncJobDetailsModal" @didDismiss="handleSyncJobDetailsDidDismiss">
+        <ion-modal :is-open="showSyncJobDetailsModal" :backdrop-dismiss="false" :can-dismiss="canDismissSyncJobDetailsModal" @didDismiss="handleSyncJobDetailsDidDismiss">
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -380,7 +380,7 @@
             </ion-fab>
           </ion-content>
         </ion-modal>
-        <ion-modal :is-open="showStepDetailsModal" @didDismiss="showStepDetailsModal = false">
+        <ion-modal :is-open="showStepDetailsModal" :backdrop-dismiss="false" @didDismiss="showStepDetailsModal = false">
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
