@@ -50,6 +50,8 @@
           :summary-subtitle="syncSummarySubtitle"
           :error-lookback-count="PRODUCT_SYNC_ERROR_LOG_LIMIT"
           :unsynced-updates-count="unsyncedUpdatesCountLabel"
+          :pending-update-requests-count="pendingUpdateRequestsCount"
+          :pending-update-requests-subtitle="pendingUpdateRequestsSubtitle"
           :sync-job-obj="syncJobObj"
           @open-history="openHistory"
           @open-sync-job-details="openSyncJobDetailsModal"
@@ -597,6 +599,8 @@ const currentStep = ref<ProductSyncWizardStep>("home");
 const draft = ref(createProductSyncWizardDraft());
 const relatedShops = ref<any[]>([]);
 const shopifyShopProductCount = ref(0);
+const pendingUpdateRequestsCount = ref(0);
+const pendingUpdateRequestsLastCreatedAt = ref("");
 const unsyncedProductUpdates = ref<any[]>([]);
 const syncJobDetails = ref<any>({});
 const syncJobRecentRuns = ref<any[]>([]);
@@ -654,6 +658,20 @@ const selectedProductStoreName = computed(() => {
 });
 const unsyncedUpdatesCountLabel = computed(() => {
   return shopifyShopProductCount.value > 100 ? "100+" : shopifyShopProductCount.value;
+});
+const pendingUpdateRequestsSubtitle = computed(() => {
+  if (!pendingUpdateRequestsCount.value) {
+    return translate("No pending update requests");
+  }
+
+  const dateTime = parseDateTimeValue(pendingUpdateRequestsLastCreatedAt.value);
+  if (!dateTime || !dateTime.isValid) {
+    return translate("Pending requests are waiting to be sent");
+  }
+
+  return translate("Last request created {time}", {
+    time: dateTime.toRelative({ base: DateTime.fromMillis(currentTimeMs.value) }) || formatDateTime(pendingUpdateRequestsLastCreatedAt.value)
+  });
 });
 const identifierOptions = ref([
   { enumId: "SHOPIFY_PRODUCT_SKU", description: "SKU" },
@@ -935,6 +953,7 @@ async function loadWizard() {
 
     await loadSelectedShopSystemMessageRemoteId();
     await loadLatestSystemMessage();
+    await loadPendingUpdateRequests();
     await loadShopifyShopProductCount();
 
     setupState.value = await ShopifyProductSyncService.fetchSetupState({
@@ -1025,6 +1044,25 @@ async function loadShopifyShopProductCount() {
   } catch (error: any) {
     logger.error(error);
     throw error;
+  }
+}
+
+async function loadPendingUpdateRequests() {
+  try {
+    const pendingState = await ShopifyProductSyncService.fetchPendingProductUpdateRequests({
+      shopId: props.id,
+      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
+      shop: shop.value
+    });
+    pendingUpdateRequestsCount.value = Number(pendingState.count || 0);
+    pendingUpdateRequestsLastCreatedAt.value = pendingState.latestSystemMessage?.initDate ||
+      pendingState.latestSystemMessage?.createdDate ||
+      pendingState.latestSystemMessage?.lastUpdatedStamp ||
+      "";
+  } catch (error: any) {
+    logger.error(error);
+    pendingUpdateRequestsCount.value = 0;
+    pendingUpdateRequestsLastCreatedAt.value = "";
   }
 }
 

@@ -52,6 +52,11 @@ export interface ShopifyProductUpdateSyncRunState {
   systemMessages?: any[];
 }
 
+export interface ShopifyPendingProductUpdateRequestsState {
+  count: number;
+  latestSystemMessage?: any;
+}
+
 export interface ShopifyUnsyncedProductUpdate {
   id: string;
   title: string;
@@ -504,6 +509,31 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
   };
 };
 
+const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
+  const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to count pending product update requests.");
+  }
+
+  const response = await requestBackend<SystemMessagesResponse>({
+    url: "admin/systemMessages",
+    method: "get",
+    params: {
+      systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+      systemMessageRemoteId,
+      statusId: "SmsgProduced",
+      pageSize: 1,
+      pageIndex: 0,
+      orderBy: "-initDate"
+    }
+  }, "Pending product update requests");
+
+  return {
+    count: Number(response?.systemMessagesCount || 0),
+    latestSystemMessage: response?.systemMessages?.[0]
+  };
+};
+
 const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
   if (!systemMessageRemoteId) {
@@ -850,6 +880,7 @@ const configureSyncJob = async (payload: any): Promise<any> => {
 export const ShopifyProductSyncService = {
   fetchShopSystemMessageRemoteId,
   fetchProductUpdateSyncRunState,
+  fetchPendingProductUpdateRequests,
   fetchShopifyShopProductCount,
   fetchUnsyncedProductUpdates,
   fetchSetupState,

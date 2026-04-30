@@ -142,9 +142,9 @@
         <ion-item>
           <ion-label>
             {{ translate("Pending update requests")}} 
-            <p>Last request created 2 days ago</p>
+            <p>{{ pendingUpdateRequestsSubtitle }}</p>
           </ion-label>
-          <ion-label slot="end">10</ion-label>
+          <ion-label slot="end">{{ pendingUpdateRequestsCount }}</ion-label>
         </ion-item>
         <ion-item>
           <ion-label>
@@ -363,6 +363,8 @@ const props = defineProps<{
   }>
   selectedProductStoreName: string
   unsyncedUpdatesCount: number | string
+  pendingUpdateRequestsCount: number | string
+  pendingUpdateRequestsSubtitle: string
   syncJobObj?: any
 }>();
 const emit = defineEmits(["open-history", "schedule-sync", "run-job", "open-unsynced-updates", "open-sync-job-details", "open-step-details", "toggle-pause-sync-job"]);
