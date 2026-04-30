@@ -110,19 +110,19 @@
         <ion-card-subtitle>{{ translate("Explain product sync jobs verification") }}</ion-card-subtitle>
       </ion-card-header>
       <ion-list>
-        <ion-item detail>
+        <ion-item button detail :disabled="!syncJobObj" @click="emit('open-sync-job-details')">
           <ion-label>
             {{ translate("Queue update requests") }}
-            <p>{{ translate("Last job run message") }}</p>
+            <p>{{ queueUpdateRequestsLastRunLabel }}</p>
           </ion-label>
-          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+          <ion-icon slot="end" :icon="isSyncPaused ? pauseCircleOutline : checkmarkCircleOutline"></ion-icon>
         </ion-item>
-        <ion-item detail>
+        <ion-item detail :disabled="!sendUpdateRequestJobAvailable">
           <ion-label>
             {{ translate("Send update request") }}
-            <p>{{ translate("Last job run message") }}</p>
+            <p>{{ sendUpdateRequestLastRunLabel }}</p>
           </ion-label>
-          <ion-icon slot="end" :icon="checkmarkCircleOutline"></ion-icon>
+          <ion-icon slot="end" :icon="sendUpdateRequestPaused ? pauseCircleOutline : checkmarkCircleOutline"></ion-icon>
         </ion-item>
         <ion-item detail>
           <ion-label>
@@ -334,7 +334,7 @@ import {
 } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { computed, defineEmits, defineProps, ref } from "vue";
-import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, timeOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, pauseCircleOutline, timeOutline } from "ionicons/icons";
 import { modalController, popoverController } from "@ionic/vue";
 import ScheduleModal from "./ScheduleModal.vue";
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
@@ -365,6 +365,10 @@ const props = defineProps<{
   unsyncedUpdatesCount: number | string
   pendingUpdateRequestsCount: number | string
   pendingUpdateRequestsSubtitle: string
+  queueUpdateRequestsLastRunLabel: string
+  sendUpdateRequestLastRunLabel: string
+  sendUpdateRequestPaused?: boolean
+  sendUpdateRequestJobAvailable?: boolean
   syncJobObj?: any
 }>();
 const emit = defineEmits(["open-history", "schedule-sync", "run-job", "open-unsynced-updates", "open-sync-job-details", "open-step-details", "toggle-pause-sync-job"]);

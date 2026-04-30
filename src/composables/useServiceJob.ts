@@ -8,7 +8,7 @@ const getCronString = (cronExpression: any) => {
   try {
     return cronstrue.toString(cronExpression);
   } catch(e) {
-    logger.error(e);
+    logger.warn(e);
     return "";
   }
 }
@@ -29,9 +29,14 @@ const state = reactive({
   loading: false
 });
 
+const defaultJobFetchParams = {
+  instanceOfProductId_op: "empty",
+  instanceOfProductId_not: "Y"
+};
+
 export default function useServiceJob() {
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (params: Record<string, any> = defaultJobFetchParams) => {
     state.loading = true;
     try {
       let total = 0;
@@ -44,8 +49,7 @@ export default function useServiceJob() {
           params: {
             pageSize: 250,
             pageIndex,
-            instanceOfProductId_op: "empty",
-            instanceOfProductId_not: "Y"
+            ...params
           }
         }) as any;
 

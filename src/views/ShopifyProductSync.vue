@@ -52,6 +52,10 @@
           :unsynced-updates-count="unsyncedUpdatesCountLabel"
           :pending-update-requests-count="pendingUpdateRequestsCount"
           :pending-update-requests-subtitle="pendingUpdateRequestsSubtitle"
+          :queue-update-requests-last-run-label="syncJobLastRunLabel"
+          :send-update-request-last-run-label="bulkOperationSendJobLastRunLabel"
+          :send-update-request-paused="isBulkOperationSendJobPaused"
+          :send-update-request-job-available="!!bulkOperationSendJob?.jobName"
           :sync-job-obj="syncJobObj"
           @open-history="openHistory"
           @open-sync-job-details="openSyncJobDetailsModal"
@@ -542,7 +546,7 @@ const {
 const { fetchLogDetails, fetchMdmLogBySystemMessageId, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs } = useDataManagerLog();
 const { productUpdateHistories, fetchProductUpdateHistory } = useProductUpdateHistory();
 const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
-const PRODUCT_UPDATE_SYNC_JOB_PRODUCT_ID = "SYNC_SHPY_PRD_UPDS";
+const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
 const BULK_OPERATION_SEND_JOB_NAME = "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery";
 const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
@@ -568,6 +572,7 @@ const TERMINAL_MDM_LOG_STATUSES = [
 
 const latestSystemMessage = ref<any>(null);
 const latestConfirmedSystemMessage = ref<any>(null);
+const latestConsumedSystemMessage = ref<any>(null);
 const lastProductUpdateSyncedAt = ref("");
 const currentTimeMs = ref(Date.now());
 const isLoading = ref(true);
@@ -590,6 +595,7 @@ const scheduledJobName = ref("");
 const currentStepDetail = ref<any>(null);
 const bulkOperationSendJob = ref<any>({});
 const bulkOperationPollJob = ref<any>({});
+const bulkOperationSendJobRecentRuns = ref<any[]>([]);
 const preflightLoaded = ref(false);
 const preflightAccepted = ref(false);
 const preflightWarningConfirmed = ref(false);
@@ -707,13 +713,13 @@ const activeExperienceModeLabel = computed(() => {
   return activeExperienceMode.value === "returning" ? translate("Returning user") : translate("First-time setup");
 });
 const lastSyncLabel = computed(() => {
-  const lastSyncedAt = lastProductUpdateSyncedAt.value || latestConfirmedSystemMessage.value?.processedDate;
+  const lastSyncedAt = lastProductUpdateSyncedAt.value || latestConsumedSystemMessage.value?.initDate;
   return lastSyncedAt
     ? new Date(lastSyncedAt).toLocaleString()
     : translate("Sync time");
 });
 const lastSyncRelativeLabel = computed(() => {
-  const lastSyncedAt = lastProductUpdateSyncedAt.value || latestConfirmedSystemMessage.value?.processedDate;
+  const lastSyncedAt = lastProductUpdateSyncedAt.value || latestConsumedSystemMessage.value?.initDate;
   if (!lastSyncedAt) return translate("Sync time");
 
   const dateTime = parseDateTimeValue(lastSyncedAt);
@@ -724,22 +730,10 @@ const lastSyncRelativeLabel = computed(() => {
 const syncJobObj = computed(() => {
   if (syncJobId.value) {
     const job = jobs.value.find((j: any) => j.jobName === syncJobId.value);
-    if (job) return job;
+    if (job && isSelectedShopProductSyncJob(job)) return job;
   }
 
-  const selectedShopIdentifiers = [
-    props.id,
-    shop.value.shopId,
-    shop.value.shopifyShopId
-  ].filter(Boolean);
-
-  return jobs.value.find((job: any) => {
-    return job.instanceOfProductId === PRODUCT_UPDATE_SYNC_JOB_PRODUCT_ID &&
-      (job.serviceJobParameters || []).some((param: any) => {
-        return ["shopId", "shopifyShopId"].includes(param.parameterName) &&
-          selectedShopIdentifiers.includes(param.parameterValue);
-      });
-  });
+  return jobs.value.find(isSelectedShopProductSyncJob);
 });
 const isSyncScheduled = computed(() => {
   return !!(syncJobObj.value?.cronExpression || syncJobObj.value?.cronString);
@@ -754,6 +748,7 @@ const nextSyncRelativeLabel = computed(() => {
   return getRelativeNextRunLabel(syncJobObj.value);
 });
 const systemMessageSendJobNextRunLabel = computed(() => {
+  if (!pendingUpdateRequestsCount.value) return translate("No requests queued to send");
   return getJobNextRunLabel(bulkOperationSendJob.value);
 });
 const bulkOperationPollJobNextRunLabel = computed(() => {
@@ -782,7 +777,18 @@ const syncJobProductLabel = computed(() => {
 });
 const syncJobLastRunLabel = computed(() => {
   if (syncJobRecentRuns.value.length) {
-    return formatDateTime(getSyncJobRunStartedAt(syncJobRecentRuns.value[0]));
+    const latestRun = syncJobRecentRuns.value[0];
+    return `${translate("Last run")}: ${formatDateTime(getSyncJobRunStartedAt(latestRun))} · ${getSyncJobRunStatus(latestRun)}`;
+  }
+  return translate("No recent runs");
+});
+const isBulkOperationSendJobPaused = computed(() => {
+  return isJobPaused(bulkOperationSendJob.value);
+});
+const bulkOperationSendJobLastRunLabel = computed(() => {
+  if (bulkOperationSendJobRecentRuns.value.length) {
+    const latestRun = bulkOperationSendJobRecentRuns.value[0];
+    return `${translate("Last run")}: ${formatDateTime(getSyncJobRunStartedAt(latestRun))} · ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
 });
@@ -863,6 +869,35 @@ function formatShopifyReference(reference: string) {
   return reference;
 }
 
+function isProductUpdateSyncServiceJob(job: any = {}) {
+  const serviceName = String(job.serviceName || "");
+  const jobName = String(job.jobName || "");
+
+  return serviceName === PRODUCT_UPDATE_SYNC_SERVICE_NAME ||
+    jobName === PRODUCT_UPDATE_SYNC_SERVICE_NAME ||
+    jobName.startsWith(`${PRODUCT_UPDATE_SYNC_SERVICE_NAME}_`);
+}
+
+function getServiceJobParameterValue(job: any = {}, parameterName: string) {
+  const parameter = (job.serviceJobParameters || []).find((param: any) => param.parameterName === parameterName);
+  return parameter?.parameterValue || "";
+}
+
+function getLoadedServiceJob(jobName: string) {
+  return jobs.value.find((job: any) => job.jobName === jobName) || {};
+}
+
+function isSelectedShopProductSyncJob(job: any = {}) {
+  const selectedShopifyShopIds = [
+    shop.value.shopifyShopId,
+    props.id
+  ].filter(Boolean).map(String);
+
+  return selectedShopifyShopIds.length > 0 &&
+    isProductUpdateSyncServiceJob(job) &&
+    selectedShopifyShopIds.includes(String(getServiceJobParameterValue(job, "shopifyShopId")));
+}
+
 
 const recentSyncErrors = computed(() => {
   if (errorLogs.value && errorLogs.value.length) {
@@ -933,12 +968,12 @@ async function loadWizard() {
     await Promise.all([
       store.dispatch("productStore/fetchProductStores"),
       store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PRODUCT_TYPE"),
-      fetchJobs()
+      fetchJobs({})
     ]);
 
 
     // Fetch details for product-update sync jobs to get parameters (needed to find the job for this shop)
-    const syncJobs = jobs.value.filter((job: any) => job.instanceOfProductId === PRODUCT_UPDATE_SYNC_JOB_PRODUCT_ID || (syncJobId.value && job.jobName === syncJobId.value));
+    const syncJobs = jobs.value.filter((job: any) => isProductUpdateSyncServiceJob(job) || (syncJobId.value && job.jobName === syncJobId.value));
 
     await Promise.all(syncJobs.map(async (job: any) => {
       const details = await fetchJobDetail(job.jobName);
@@ -955,6 +990,8 @@ async function loadWizard() {
     await loadLatestSystemMessage();
     await loadPendingUpdateRequests();
     await loadShopifyShopProductCount();
+    await loadSyncJobLatestRun();
+    await loadBulkOperationSendJobLatestRun();
 
     setupState.value = await ShopifyProductSyncService.fetchSetupState({
       shopId: props.id,
@@ -999,13 +1036,23 @@ async function loadWizard() {
 }
 
 async function loadBulkOperationMonitoringJobs() {
-  const [sendJob, pollJob] = await Promise.all([
-    fetchJobDetail(BULK_OPERATION_SEND_JOB_NAME),
-    fetchJobDetail(BULK_OPERATION_POLL_JOB_NAME)
-  ]);
+  bulkOperationSendJob.value = getLoadedServiceJob(BULK_OPERATION_SEND_JOB_NAME);
+  bulkOperationPollJob.value = getLoadedServiceJob(BULK_OPERATION_POLL_JOB_NAME);
+}
 
-  bulkOperationSendJob.value = sendJob || {};
-  bulkOperationPollJob.value = pollJob || {};
+async function loadBulkOperationSendJobLatestRun() {
+  if (!bulkOperationSendJob.value?.jobName) {
+    bulkOperationSendJobRecentRuns.value = [];
+    return;
+  }
+
+  try {
+    const jobRuns = await fetchJobRuns(bulkOperationSendJob.value.jobName, { pageSize: 1, pageIndex: 0 });
+    bulkOperationSendJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
+  } catch (error: any) {
+    logger.error(error);
+    bulkOperationSendJobRecentRuns.value = [];
+  }
 }
 
 async function loadSelectedShopSystemMessageRemoteId() {
@@ -1103,6 +1150,7 @@ async function loadLatestSystemMessage() {
 
   latestSystemMessage.value = await selectTrackProgressSystemMessage(syncRunState.systemMessages || []);
   latestConfirmedSystemMessage.value = syncRunState.latestConfirmedSystemMessage || null;
+  latestConsumedSystemMessage.value = syncRunState.latestConsumedSystemMessage || null;
   lastProductUpdateSyncedAt.value = syncRunState.lastSyncedAt || "";
 
   if (latestSystemMessage.value?.systemMessageId) {
@@ -1244,6 +1292,7 @@ async function runSyncJob(job: any) {
           try {
             await runNow(job.jobName);
             showToast(translate("Job has been scheduled to run now"));
+            await loadSyncJobLatestRun();
           } catch (err) {
             logger.error("Failed to run job now", err);
             showToast(translate("Failed to run job"));
@@ -1337,6 +1386,21 @@ async function refreshSyncJobDetails() {
     showToast(translate("Failed to load sync job details."));
   } finally {
     isSyncJobDetailsLoading.value = false;
+  }
+}
+
+async function loadSyncJobLatestRun() {
+  if (!syncJobObj.value?.jobName) {
+    syncJobRecentRuns.value = [];
+    return;
+  }
+
+  try {
+    const jobRuns = await fetchJobRuns(syncJobObj.value.jobName, { pageSize: 1, pageIndex: 0 });
+    syncJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
+  } catch (error: any) {
+    logger.error(error);
+    syncJobRecentRuns.value = [];
   }
 }
 
@@ -1771,11 +1835,27 @@ function getSyncJobRunTitle(run: any) {
 }
 
 function getSyncJobRunStartedAt(run: any) {
-  return run.startDate || run.startTime || run.createdDate || run.createdStamp || run.lastUpdatedStamp || "";
+  return run.runTime ||
+    run.runDate ||
+    run.startDate ||
+    run.startTime ||
+    run.startedDate ||
+    run.startedAt ||
+    run.runStartDate ||
+    run.createdDate ||
+    run.createdStamp ||
+    "";
 }
 
 function getSyncJobRunCompletedAt(run: any) {
-  return run.endDate || run.endTime || run.finishDateTime || "";
+  return run.endDate ||
+    run.endTime ||
+    run.finishDateTime ||
+    run.finishedAt ||
+    run.completedDate ||
+    run.completedAt ||
+    run.lastUpdatedStamp ||
+    "";
 }
 
 function getSyncJobRunStatus(run: any) {

@@ -374,6 +374,7 @@
   "Waiting to be sent": "Waiting to be sent",
   "Produced messages wait for the send job to post them to Shopify. The Shopify bulk operation ID appears after Shopify accepts the request.": "Produced messages wait for the send job to post them to Shopify. The Shopify bulk operation ID appears after Shopify accepts the request.",
   "Next send attempt": "Next send attempt",
+  "No requests queued to send": "No requests queued to send",
   "Next poll attempt": "Next poll attempt",
   "Product export request payload": "Product export request payload",
   "Using Shopify's bulk query API to export all products in the catalog.": "Using Shopify's bulk query API to export all products in the catalog.",
