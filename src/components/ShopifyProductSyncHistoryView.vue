@@ -28,7 +28,7 @@
               <ion-label>{{ run.mdmStatusLabel }}</ion-label>
               <ion-icon :icon="getStatusIcon(run.mdmStatus)" />
             </ion-chip>
-            <p>{{ translate("HotWax bulk import") }}</p>
+            <p>{{ translate("Bulk import") }}</p>
           </ion-label>
           <div>
             <ion-spinner v-if="run.loading" name="crescent" size="small" />
@@ -45,7 +45,7 @@
           <div class="shopify-bulk-operation list-item">
             <ion-item lines="none">
               <ion-label>
-                {{ translate("Shopify bulk operation Id") }}
+                {{ translate("Shopify bulk operation") }}
                 <p>{{ run.bulkOperationId || "N/A" }}</p>
               </ion-label>
             </ion-item>
@@ -64,7 +64,7 @@
           <div class="hotwax-bulk-import list-item">
             <ion-item lines="none">
               <ion-label>
-                {{ translate("HotWax bulk import id") }}
+                {{ translate("Bulk import") }}
                 <p>{{ run.mdmImportId || "N/A" }}</p>
               </ion-label>
             </ion-item>

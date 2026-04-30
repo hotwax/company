@@ -1,4 +1,5 @@
 import api from "@/api";
+import logger from "@/logger";
 
 export interface ShopifyProductSyncSetupState {
   hasLinkedOmsProducts: boolean;
@@ -626,41 +627,35 @@ const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewS
   const stats = await fetchLiveCatalogCounts(payload);
 
   try {
-    const omsProductResp = await callBackend(
-      {
-        url: "oms/dataDocumentView",
-        method: "post",
-        data: {
-          dataDocumentId: "PROD_STORE_PRODUCTS_COUNT",
-          pageIndex: 0,
-          pageSize: 1,
-          customParametersMap: {
-            productStoreId: payload.productStoreId,
-            isVirtual: "Y"
-          },
-          fieldsToSelect: "productCount,productStoreId"
-        }
-      },
-      { entityValueList: [] }
-    ) as any;
+    const omsProductResp = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "PROD_STORE_PRODUCTS_COUNT",
+        pageIndex: 0,
+        pageSize: 1,
+        customParametersMap: {
+          productStoreId: payload.productStoreId,
+          isVirtual: "Y"
+        },
+        fieldsToSelect: "productCount,productStoreId"
+      }
+    });
 
-    const omsVariantResp = await callBackend(
-      {
-        url: "oms/dataDocumentView",
-        method: "post",
-        data: {
-          dataDocumentId: "PROD_STORE_PRODUCTS_COUNT",
-          pageIndex: 0,
-          pageSize: 1,
-          customParametersMap: {
-            productStoreId: payload.productStoreId,
-            isVariant: "Y"
-          },
-          fieldsToSelect: "productCount,productStoreId"
-        }
-      },
-      { entityValueList: [] }
-    ) as any;
+    const omsVariantResp = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "PROD_STORE_PRODUCTS_COUNT",
+        pageIndex: 0,
+        pageSize: 1,
+        customParametersMap: {
+          productStoreId: payload.productStoreId,
+          isVariant: "Y"
+        },
+        fieldsToSelect: "productCount,productStoreId"
+      }
+    });
 
     stats.omsProductCount = omsProductResp?.entityValueList?.[0]?.productCount || 0;
     stats.omsVariantCount = omsVariantResp?.entityValueList?.[0]?.productCount || 0;
@@ -717,7 +712,6 @@ const fetchPreflight = async (payload: any): Promise<any[]> => {
 
     const omsProducts = omsResp?.data?.entityValueList || [];
 
-    let ab = 0;
     return shopifyVariants.map((v: any) => {
       const omsProduct = omsProducts.find((p: any) => p.shopifyProductId === v.legacyResourceId);
       
@@ -749,21 +743,14 @@ const fetchPreflight = async (payload: any): Promise<any[]> => {
 };
 
 const startInitialImport = async (payload: any): Promise<any> => {
-  return callBackend(
-    {
-      url: "shopify/products/sync",
-      method: "post",
-      data: {
-        shopifyShopId: payload.shopId,
-        includeAll: true
-      }
-    },
-    {
-      success: false,
-      error: "Product sync import backend endpoint is unavailable.",
-      backendAvailable: false
+  const response = await requestBackend<any>({
+    url: "shopify/products/sync",
+    method: "post",
+    data: {
+      shopifyShopId: payload.shopId,
+      includeAll: true
     }
-  }, "Shopify product sync reconcile endpoint");
+  }, "Shopify product sync import endpoint");
   return validateReconcile(response);
 };
 
