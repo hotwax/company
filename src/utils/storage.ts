@@ -1,4 +1,5 @@
 import Dexie, { Table } from 'dexie';
+import logger from '@/logger';
 
 const EXPIRATION_TIME = 2 * 60 * 60 * 1000; // 2 hour in milliseconds
 
@@ -8,10 +9,14 @@ const EXPIRATION_TIME = 2 * 60 * 60 * 1000; // 2 hour in milliseconds
 export interface ErrorRecord {
   id?: number;
   logContentId: string;
+  logId?: string;
   numericId: string;
   title: string;
   handle: string;
   sku: string;
+  barcode: string;
+  vendor: string;
+  productType: string;
   error: string;
   createdAt: number;   // Timestamp for automatic invalidation
   raw: any;
@@ -41,30 +46,38 @@ export const setErrorRecords = async (logContentId: string, records: any[]): Pro
     const timestamp = Date.now();
     const formattedRecords: ErrorRecord[] = records.map(record => {
       const product = record.virtualProduct || {};
+      const variantsData = product.variants?.edges || (Array.isArray(product.variants) ? product.variants : []);
+      const firstVariant = variantsData[0]?.node || variantsData[0] || {};
       return {
         logContentId,
+        logId: record.logId || '',
         numericId: record.numericId || (product.id ? product.id.split('/').pop() : ''),
         title: record.title || product.title || '',
         handle: record.handle || product.handle || '',
-        sku: record.sku || (product.variants?.[0]?.sku) || '',
+        sku: record.sku || firstVariant.sku || product.sku || '',
+        barcode: record.barcode || firstVariant.barcode || product.barcode || '',
+        vendor: record.vendor || product.vendor || '',
+        productType: record.productType || product.productType || '',
         error: record.error || record._ERROR_MESSAGE_ || record.message || record.errorMessage || '',
         createdAt: timestamp,
         raw: record.raw || record
       };
     });
 
-    await db.errorLogRecords.where({ logContentId }).delete();
-    await db.errorLogRecords.bulkAdd(formattedRecords);
+    await db.transaction('rw', db.errorLogRecords, async () => {
+      await db.errorLogRecords.where({ logContentId }).delete();
+      await db.errorLogRecords.bulkAdd(formattedRecords);
+    });
     
     // Also trigger a background cleanup for other old logs
     cleanupExpiredRecords();
   } catch (err) {
-    console.error("Dexie: Failed to save error records", err);
+    logger.error("Dexie: Failed to save error records", err);
   }
 };
 
 /**
- * Get error records and automatically invalidate if older than 1 hour.
+ * Get error records and automatically invalidate if older than 2 hours.
  */
 export const getErrorRecords = async (logContentId: string): Promise<any[]> => {
   try {
@@ -80,14 +93,18 @@ export const getErrorRecords = async (logContentId: string): Promise<any[]> => {
 
     return records.map(r => ({
       ...r.raw,
+      logId: r.logId,
       numericId: r.numericId,
       title: r.title,
       handle: r.handle,
       sku: r.sku,
+      barcode: r.barcode,
+      vendor: r.vendor,
+      productType: r.productType,
       error: r.error
     }));
   } catch (err) {
-    console.error("Dexie: Failed to get error records", err);
+    logger.error("Dexie: Failed to get error records", err);
     return [];
   }
 };
@@ -99,19 +116,19 @@ export const deleteErrorRecords = async (logContentId: string): Promise<void> =>
   try {
     await db.errorLogRecords.where({ logContentId }).delete();
   } catch (err) {
-    console.error("Dexie: Failed to delete records", err);
+    logger.error("Dexie: Failed to delete records", err);
   }
 };
 
 /**
- * Background cleanup for all logs older than 1 hour.
+ * Background cleanup for all logs older than 2 hours.
  */
 export const cleanupExpiredRecords = async (): Promise<void> => {
   try {
     const expirationLimit = Date.now() - EXPIRATION_TIME;
     await db.errorLogRecords.where('createdAt').below(expirationLimit).delete();
   } catch (err) {
-    console.error("Dexie: Cleanup failed", err);
+    logger.error("Dexie: Cleanup failed", err);
   }
 };
 

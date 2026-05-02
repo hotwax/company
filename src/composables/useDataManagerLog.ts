@@ -21,6 +21,59 @@ export function useDataManagerLog() {
     }
   };
 
+  const parseCSVRow = (row: string) => {
+    const values = [];
+    let currentValue = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < row.length; index++) {
+      const char = row[index];
+      const nextChar = row[index + 1];
+
+      if (char === '"' && inQuotes && nextChar === '"') {
+        currentValue += '"';
+        index++;
+        continue;
+      }
+
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+
+      if (char === ',' && !inQuotes) {
+        values.push(currentValue.trim());
+        currentValue = "";
+        continue;
+      }
+
+      currentValue += char;
+    }
+
+    values.push(currentValue.trim());
+    return values;
+  };
+
+  const parseErrorRecords = (data: any) => {
+    if (!data || typeof data !== "string") return [];
+    if (isValidJSON(data)) {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    const rows = data.split(/\r?\n/).filter(Boolean);
+    if (rows.length <= 1) return [];
+
+    const headers = parseCSVRow(rows[0]);
+    return rows.slice(1).map((row) => {
+      const values = parseCSVRow(row);
+      return headers.reduce((record: Record<string, string>, header, index) => {
+        record[header] = values[index] || "";
+        return record;
+      }, {});
+    });
+  };
+
   const downloadDataManagerFile = async (configId: string, logContentId: string) => {
     if (!configId || !logContentId) return null;
 
@@ -36,7 +89,6 @@ export function useDataManagerLog() {
 
   const fetchFailedRecords = async (configId: string, errorLogContentId: string) => {
     state.loading = true;
-    console.log("Fetching failed records", configId, errorLogContentId);
     const cachedData = await getErrorRecords(errorLogContentId);
     if (cachedData && cachedData.length > 0) {
       state.errorLogs = cachedData;
@@ -48,15 +100,12 @@ export function useDataManagerLog() {
       const resp = await downloadDataManagerFile(configId, errorLogContentId);
 
       state.errorCsvRecords = resp?.data?.csvData || resp?.data;
-      if (isValidJSON(state.errorCsvRecords)) {
-        state.errorLogs = JSON.parse(state.errorCsvRecords);
+      const parsedRecords = parseErrorRecords(state.errorCsvRecords);
+      if (parsedRecords.length) {
+        state.errorLogs = parsedRecords;
         await setErrorRecords(errorLogContentId, state.errorLogs);
       } else {
-        // Fallback since PapaParse might not be available in this app
-        // Stores raw CSV string as an array of rows
-        state.errorLogs = state.errorCsvRecords && typeof state.errorCsvRecords === 'string' 
-          ? state.errorCsvRecords.split('\n').filter(Boolean) 
-          : [];
+        state.errorLogs = [];
       }
       state.loading = false;
     } catch (err) {
@@ -71,7 +120,6 @@ export function useDataManagerLog() {
       ...mdmLog,
       successRecordCount: (Number(mdmLog?.totalRecordCount) || 0) - (Number(mdmLog?.failedRecordCount) || 0)
     };
-    console.log({mdmLog, mdmLogDetails})
 
     state.currentMdmLog = mdmLogDetails;
 
@@ -195,8 +243,8 @@ export function useDataManagerLog() {
         if (!records || records.length === 0) {
           const resp = await downloadDataManagerFile(configId, errorLogContentId);
           const data = resp?.data?.csvData || resp?.data;
-          if (isValidJSON(data)) {
-            records = JSON.parse(data);
+          records = parseErrorRecords(data);
+          if (records.length) {
             await setErrorRecords(errorLogContentId, records);
           }
         }

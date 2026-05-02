@@ -81,7 +81,7 @@ export default function useServiceJob() {
           cronString: job.cronExpression ? getCronString(job.cronExpression) : ''
         }));
 
-        total = resp?.data?.serviceJobList?.length || 0;
+        total = respJobs.length;
         allJobs = pageIndex > 0 ? allJobs.concat(respJobs) : respJobs;
         pageIndex++;
       } while(total === 250);

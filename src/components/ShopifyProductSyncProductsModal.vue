@@ -181,6 +181,7 @@ const hasNextPage = ref(false);
 const endCursor = ref("");
 const contentRef = ref(null as any);
 const infiniteScrollRef = ref(null as any);
+let scrollElement: HTMLElement | null = null;
 let searchDebounceTimer: number | undefined;
 let productSearchRequestId = 0;
 
@@ -205,7 +206,8 @@ const emptyStateLabel = computed(() => {
 });
 
 onMounted(() => {
-  loadProducts();
+  void initializeScrollElement();
+  void loadProducts();
 });
 
 onIonViewWillEnter(() => {
@@ -321,15 +323,17 @@ function clearSearchDebounce() {
   searchDebounceTimer = undefined;
 }
 
+async function initializeScrollElement() {
+  scrollElement = await contentRef.value?.$el?.getScrollElement?.();
+}
+
 function enableScrolling() {
-  const parentElement = contentRef.value?.$el;
-  if (!parentElement) return;
-  const scrollEl = parentElement.shadowRoot.querySelector("div[part='scroll']");
-  const scrollHeight = scrollEl.scrollHeight;
-  const infiniteHeight = infiniteScrollRef.value?.$el.offsetHeight;
-  const scrollTop = scrollEl.scrollTop;
+  if (!scrollElement) return;
+  const scrollHeight = scrollElement.scrollHeight;
+  const infiniteHeight = infiniteScrollRef.value?.$el?.offsetHeight || 0;
+  const scrollTop = scrollElement.scrollTop;
   const threshold = 100;
-  const height = scrollEl.offsetHeight;
+  const height = scrollElement.offsetHeight;
   const distanceFromInfinite = scrollHeight - infiniteHeight - scrollTop - threshold - height;
   isScrollingEnabled.value = distanceFromInfinite >= 0;
 }

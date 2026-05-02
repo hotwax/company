@@ -1144,28 +1144,17 @@ function isSelectedShopProductSyncJob(job: any = {}) {
 const filteredParsedErrorRecords = computed(() => {
   const query = detailedErrorSearchQuery.value.trim().toLowerCase();
   const records = errorLogs.value.map((err: any) => {
-    const product = err.virtualProduct || {};
-    const numericId = product.id ? product.id.split('/').pop() : '';
-    
-    // Robust extraction of SKU and Barcode (handles variants array, GraphQL edges, or top-level properties)
-    const variantsData = product.variants?.edges || (Array.isArray(product.variants) ? product.variants : []);
-    const firstVariant = variantsData[0]?.node || variantsData[0] || {};
-    const sku = firstVariant.sku || product.sku || err.sku || '';
-    const barcode = firstVariant.barcode || product.barcode || err.barcode || '';
-
-    const error = err.error || err._ERROR_MESSAGE_ || err.message || (typeof err === 'string' ? err : '');
-
     return {
-      id: product.id || err.id,
-      numericId,
-      logId: currentMdmLog.value?.logId,
-      title: product.title || err.title || translate("Unknown product"),
-      vendor: product.vendor || err.vendor,
-      handle: product.handle,
-      productType: product.productType,
-      sku,
-      barcode,
-      error: error || translate("Unknown error"),
+      id: err.id,
+      numericId: err.numericId,
+      logId: err.logId || currentMdmLog.value?.logId,
+      title: err.title || translate("Unknown product"),
+      vendor: err.vendor,
+      handle: err.handle,
+      productType: err.productType,
+      sku: err.sku,
+      barcode: err.barcode,
+      error: err.error || translate("Unknown error"),
       raw: err
     }
   });
@@ -1920,7 +1909,7 @@ async function refreshSyncJobDetails() {
     if (jobDetails?.instanceOfProductId && !products.value?.[jobDetails.instanceOfProductId]) {
       await fetchProductDetail(jobDetails.instanceOfProductId);
     }
-    void loadSyncJobAuditHistory(selectedSyncJobDetailsJob.value.jobName);
+    void loadSyncJobAuditHistory(jobDetails.jobName);
   } catch (error: any) {
     logger.error(error);
     syncJobDetails.value = {};
