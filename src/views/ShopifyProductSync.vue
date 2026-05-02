@@ -65,6 +65,7 @@
           :has-current-shopify-request="hasRunningShopifyBulkOperation"
           :sync-job-obj="syncJobObj"
           :error-record-count="errorRecordCount"
+          :last-sync-total-record-count="lastSyncTotalRecordCount"
           :failed-records="pagedFilteredParsedErrorRecords"
           :total-detailed-errors-count="filteredParsedErrorRecords.length"
           :has-detailed-errors="recentMdmLogs.length > 0"
@@ -899,6 +900,10 @@ const systemMessageSendJobNextRunLabel = computed(() => {
 });
 const bulkOperationPollJobNextRunLabel = computed(() => {
   return getJobNextRunLabel(bulkOperationPollJob.value);
+});
+const lastSyncTotalRecordCount = computed(() => {
+  const latestLog = recentMdmLogs.value[0];
+  return latestLog?.totalRecordCount || 0;
 });
 const stepDetailsTitle = computed(() => {
   if (currentStepDetail.value?.type === "systemMessage") return translate("System Message");

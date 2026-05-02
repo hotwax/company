@@ -27,7 +27,7 @@
         </ion-item>
         <ion-item>
           <ion-label>{{ translate("Updates synced") }}</ion-label>
-          <ion-label slot="end">{{ 40 }}</ion-label>
+          <ion-label slot="end">{{ lastSyncTotalRecordCount }}</ion-label>
         </ion-item>
         <ion-item button :detail="isSyncScheduled" @click="isSyncScheduled ? emit('open-sync-job-details') : undefined">
           <ion-label>{{ translate("Next sync time") }}
@@ -367,6 +367,7 @@ const props = defineProps<{
   isSyncPaused?: boolean
   lastSyncLabel: string
   lastSyncRelativeLabel: string
+  lastSyncTotalRecordCount: number | string
   nextSyncLabel: string
   nextSyncRelativeLabel: string
   systemMessageSendJobNextRunLabel: string

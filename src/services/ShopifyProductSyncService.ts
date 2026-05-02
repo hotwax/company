@@ -662,7 +662,7 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
   const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed");
   const consumedMessages = systemMessages.filter((systemMessage: any) => {
     const statusId = String(systemMessage.statusId || "").toLowerCase();
-    return statusId === "smsgconsumed" || statusId === "consumed";
+    return statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
   });
   const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages, ["processedDate", "lastUpdatedStamp", "initDate"]);
   const latestConsumedSystemMessage = getLatestSystemMessage(consumedMessages, ["initDate", "lastUpdatedStamp", "processedDate"]);

@@ -163,6 +163,7 @@ export function useDataManagerLog() {
         method: "GET",
         params: {
           configId,
+          orderByField: "-finishDateTime",
           pageSize,
           pageIndex: 0
         }
