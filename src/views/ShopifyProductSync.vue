@@ -1143,28 +1143,14 @@ function isSelectedShopProductSyncJob(job: any = {}) {
 
 const filteredParsedErrorRecords = computed(() => {
   const query = detailedErrorSearchQuery.value.trim().toLowerCase();
-  const records = errorLogs.value.map((err: any) => {
-    return {
-      id: err.id,
-      numericId: err.numericId,
-      logId: err.logId || currentMdmLog.value?.logId,
-      title: err.title || translate("Unknown product"),
-      vendor: err.vendor,
-      handle: err.handle,
-      productType: err.productType,
-      sku: err.sku,
-      barcode: err.barcode,
-      error: err.error || translate("Unknown error"),
-      raw: err
-    }
-  });
+  const records = errorLogs.value;
 
   if (!query) return records;
 
   return records.filter((record: any) => 
-    record.numericId?.toLowerCase().includes(query) ||
-    record.title?.toLowerCase().includes(query) ||
-    record.handle?.toLowerCase().includes(query)
+    String(record.numericId || "").toLowerCase().includes(query) ||
+    String(record.title || "").toLowerCase().includes(query) ||
+    String(record.handle || "").toLowerCase().includes(query)
   );
 });
 

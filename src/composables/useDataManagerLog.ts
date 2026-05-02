@@ -102,8 +102,8 @@ export function useDataManagerLog() {
       state.errorCsvRecords = resp?.data?.csvData || resp?.data;
       const parsedRecords = parseErrorRecords(state.errorCsvRecords);
       if (parsedRecords.length) {
-        state.errorLogs = parsedRecords;
-        await setErrorRecords(errorLogContentId, state.errorLogs);
+        await setErrorRecords(errorLogContentId, parsedRecords);
+        state.errorLogs = await getErrorRecords(errorLogContentId);
       } else {
         state.errorLogs = [];
       }
@@ -243,9 +243,10 @@ export function useDataManagerLog() {
         if (!records || records.length === 0) {
           const resp = await downloadDataManagerFile(configId, errorLogContentId);
           const data = resp?.data?.csvData || resp?.data;
-          records = parseErrorRecords(data);
-          if (records.length) {
-            await setErrorRecords(errorLogContentId, records);
+          const parsedRecords = parseErrorRecords(data);
+          if (parsedRecords.length) {
+            await setErrorRecords(errorLogContentId, parsedRecords);
+            records = await getErrorRecords(errorLogContentId);
           }
         }
 
