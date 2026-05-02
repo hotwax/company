@@ -20,9 +20,28 @@ const showToast = async (message: string) => {
     })
   return toast.present();
 }
-
 const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
 
-export { generateInternalId, hasError, showToast ,getCurrentTime}
+
+const getDownloadFileContent = (data: any) => {
+  const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
+  if (typeof fileContent === "string") return fileContent;
+  if (fileContent === undefined || fileContent === null) return "";
+  return JSON.stringify(fileContent, null, 2);
+}
+
+const downloadTextFile = (content: string, fileName: string) => {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export { generateInternalId, hasError, showToast ,getCurrentTime, getDownloadFileContent, downloadTextFile}

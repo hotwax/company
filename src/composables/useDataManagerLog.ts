@@ -1,6 +1,7 @@
 import { reactive, toRefs } from 'vue';
 import api from '@/api';
 import logger from '@/logger';
+import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 
 export function useDataManagerLog() {
   const state = reactive({
@@ -34,12 +35,22 @@ export function useDataManagerLog() {
   };
 
   const fetchFailedRecords = async (configId: string, errorLogContentId: string) => {
+    state.loading = true;
+    console.log("Fetching failed records", configId, errorLogContentId);
+    const cachedData = await getErrorRecords(errorLogContentId);
+    if (cachedData && cachedData.length > 0) {
+      state.errorLogs = cachedData;
+      state.loading = false;
+      return;
+    }
+
     try {
       const resp = await downloadDataManagerFile(configId, errorLogContentId);
 
       state.errorCsvRecords = resp?.data?.csvData || resp?.data;
       if (isValidJSON(state.errorCsvRecords)) {
         state.errorLogs = JSON.parse(state.errorCsvRecords);
+        await setErrorRecords(errorLogContentId, state.errorLogs);
       } else {
         // Fallback since PapaParse might not be available in this app
         // Stores raw CSV string as an array of rows
@@ -47,7 +58,9 @@ export function useDataManagerLog() {
           ? state.errorCsvRecords.split('\n').filter(Boolean) 
           : [];
       }
+      state.loading = false;
     } catch (err) {
+      state.loading = false;
       logger.error("Failed to download the error records", err);
       throw err;
     }
@@ -58,6 +71,7 @@ export function useDataManagerLog() {
       ...mdmLog,
       successRecordCount: (Number(mdmLog?.totalRecordCount) || 0) - (Number(mdmLog?.failedRecordCount) || 0)
     };
+    console.log({mdmLog, mdmLogDetails})
 
     state.currentMdmLog = mdmLogDetails;
 
@@ -166,6 +180,45 @@ export function useDataManagerLog() {
     return [];
   };
 
+  const fetchAllRecentFailedRecords = async (configId: string, logs: any[]) => {
+    state.loading = true;
+    const accumulatedLogs: any[] = [];
+    
+    try {
+      for (const log of logs) {
+        const errorLogContentId = log.errorLogContentId;
+        if (!errorLogContentId) continue;
+
+        let records = await getErrorRecords(errorLogContentId);
+        
+        if (!records || records.length === 0) {
+          const resp = await downloadDataManagerFile(configId, errorLogContentId);
+          const data = resp?.data?.csvData || resp?.data;
+          if (isValidJSON(data)) {
+            records = JSON.parse(data);
+            await setErrorRecords(errorLogContentId, records);
+          }
+        }
+
+        if (records && records.length > 0) {
+          // Flatten to include the logId for context if needed
+          const logId = log.logId;
+          accumulatedLogs.push(...records.map(r => ({ ...r, logId })));
+        }
+
+        // Target at least 100 errors total across all processed logs
+        if (accumulatedLogs.length >= 100) {
+          break;
+        }
+      }
+      state.errorLogs = accumulatedLogs;
+    } catch (err) {
+      logger.error("Failed to aggregate error records", err);
+    } finally {
+      state.loading = false;
+    }
+  };
+
   return {
     ...toRefs(state),
     downloadDataManagerFile,
@@ -173,6 +226,8 @@ export function useDataManagerLog() {
     fetchMdmLogBySystemMessageId,
     fetchMdmLogBySystemMessageIds,
     fetchLogDetails,
-    fetchRecentLogsByConfigId
+    fetchAllRecentFailedRecords,
+    fetchRecentLogsByConfigId,
+    clearStorage
   };
 }

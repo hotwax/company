@@ -1216,6 +1216,36 @@ const configureSyncJob = async (payload: any): Promise<any> => {
   });
 };
 
+const fetchErrorRecordCount = async (payload: any): Promise<number> => {
+  const { shopId, configId } = payload;
+  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
+
+  try {
+    const response = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
+        customParametersMap: {
+          configId: configId || "SYNC_SHOPIFY_PRODUCT",
+          parameterName: "shopId",
+          parameterValue: shopId,
+          failedRecordCount: 0,
+          failedRecordCount_op: "equals",
+          failedRecordCount_not: "true",
+          finishDateTime_from: finishDateTimeFrom.toString()
+        },
+        fieldsToSelect: "failedRecordCount"
+      }
+    });
+
+    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
+  } catch (error) {
+    logger.warn("Failed to fetch error record count using dataDocumentView", error);
+    return 0;
+  }
+};
+
 export const ShopifyProductSyncService = {
   fetchShopSystemMessageRemoteId,
   fetchProductUpdateSyncRunState,
@@ -1235,5 +1265,6 @@ export const ShopifyProductSyncService = {
   fetchReconcile,
   fetchHistory,
   fetchSyncJobConfig,
-  configureSyncJob
+  configureSyncJob,
+  fetchErrorRecordCount
 };

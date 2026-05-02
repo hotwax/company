@@ -44,7 +44,6 @@
           :system-message-send-job-next-run-label="systemMessageSendJobNextRunLabel"
           :bulk-operation-poll-job-next-run-label="bulkOperationPollJobNextRunLabel"
           :current-sync-run="currentSyncRun"
-          :recent-sync-errors="recentSyncErrors"
           :recent-sync-updates="recentSyncUpdates"
           :selected-product-store-name="selectedProductStoreName"
           :summary-subtitle="syncSummarySubtitle"
@@ -64,6 +63,16 @@
           :current-shopify-request-status-color="currentShopifyRequestStatusColor"
           :has-current-shopify-request="hasRunningShopifyBulkOperation"
           :sync-job-obj="syncJobObj"
+          :error-record-count="errorRecordCount"
+          :failed-records="pagedFilteredParsedErrorRecords"
+          :total-detailed-errors-count="filteredParsedErrorRecords.length"
+          :has-detailed-errors="recentMdmLogs.length > 0"
+          :detailed-error-query="detailedErrorSearchQuery"
+          @update:detailed-error-query="detailedErrorSearchQuery = $event"
+          @show-error-modal="openErrorDetailsModal"
+          @refresh-errors="refreshErrorRecords"
+          @resync-product="resyncProduct"
+          @load-more-errors="loadMoreErrorRecords"
           @open-history="openHistory"
           @open-sync-job-details="openSyncJobDetailsModal"
           @schedule-sync="scheduleSyncJob"
@@ -73,6 +82,7 @@
           @open-resync-entire-catalog="openResyncEntireCatalogModal"
           @open-step-details="openStepDetails"
           @run-job="runSyncJob"
+          @download-file="downloadRawFile"
         />
 
         <shopify-product-sync-wizard-view
@@ -135,8 +145,9 @@
           @toggle-start-confirmation="toggleStartConfirmation"
           @open-step-details="openStepDetails"
         />
+      </template>
 
-        <ion-modal :is-open="showModeModal" :backdrop-dismiss="false" @didDismiss="showModeModal = false">
+      <ion-modal :is-open="showModeModal" :backdrop-dismiss="false" @didDismiss="showModeModal = false">
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -537,7 +548,29 @@
           </ion-content>
         </ion-modal>
 
-      </template>
+        <ion-modal :is-open="showErrorDetailsModal" @didDismiss="showErrorDetailsModal = false">
+          <ion-header>
+            <ion-toolbar>
+              <ion-buttons slot="start">
+                <ion-button @click="showErrorDetailsModal = false">
+                  <ion-icon slot="icon-only" :icon="closeOutline" />
+                </ion-button>
+              </ion-buttons>
+              <ion-title>{{ translate("Error details") }}</ion-title>
+              <ion-buttons slot="end">
+                <ion-button color="primary" @click="resyncProduct(selectedErrorRecord)">
+                  {{ translate("Resync") }}
+                </ion-button>
+              </ion-buttons>
+            </ion-toolbar>
+          </ion-header>
+          <ion-content>
+            <div class="ion-padding">
+              <pre>{{ JSON.stringify(selectedErrorRecord, null, 2) }}</pre>
+            </div>
+          </ion-content>
+        </ion-modal>
+
     </ion-content>
   </ion-page>
 </template>
@@ -600,6 +633,7 @@ import {
   canStartProductSync,
   createProductSyncWizardDraft,
   getReviewImportAction,
+  getRawShopifyFileName,
   nextProductSyncStep,
   normalizeProductSyncStatus,
   previousProductSyncStep,
@@ -610,13 +644,14 @@ import {
   selectProductStore,
   shouldShowProductSyncProgress
 } from "@/utils/shopifyProductSyncWizard";
-import { hasError, showToast } from "@/utils";
+import { downloadTextFile, getDownloadFileContent, hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useProductUpdateHistory } from "@/composables/useProductUpdateHistory";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
+import { deleteErrorRecords } from "@/utils/storage";
 
 const props = defineProps(["id"]);
 const store = useStore();
@@ -632,7 +667,7 @@ const {
   updateJob,
   runNow
 } = useServiceJob();
-const { fetchLogDetails, fetchMdmLogBySystemMessageId, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs } = useDataManagerLog();
+const { downloadDataManagerFile, fetchLogDetails, fetchMdmLogBySystemMessageId, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs, fetchAllRecentFailedRecords, clearStorage } = useDataManagerLog();
 const { productUpdateHistories, fetchProductUpdateHistory } = useProductUpdateHistory();
 const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
 const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
@@ -700,6 +735,7 @@ const relatedShops = ref<any[]>([]);
 const shopifyShopProductCount = ref(0);
 const pendingUpdateRequestsCount = ref(0);
 const pendingUpdateRequestsLastCreatedAt = ref("");
+const errorRecordCount = ref(0);
 const syncJobDetails = ref<any>({});
 const syncJobDraftCronExpression = ref("");
 const syncJobDraftActive = ref(true);
@@ -739,6 +775,9 @@ const progressState = ref<any>({
   queuedJobsAhead: 0
 });
 const reconcileState = ref<any>({});
+const detailedErrorSearchQuery = ref("");
+const selectedErrorRecord = ref<any>(null);
+const showErrorDetailsModal = ref(false);
 let progressPoll: number | undefined;
 let nextSyncRefreshPoll: number | undefined;
 
@@ -1094,31 +1133,49 @@ function isSelectedShopProductSyncJob(job: any = {}) {
 }
 
 
-const recentSyncErrors = computed(() => {
-  if (errorLogs.value && errorLogs.value.length) {
-    return errorLogs.value.map((err: any, index: number) => ({
-      id: err.id || err.internalName || err.shopifyId || `sync-error-${index}`,
-      internalName: err.internalName || translate("Unknown product"),
-      shopifyId: err.shopifyId || err.id || "N/A",
-      updatedTime: err.updatedTime || currentMdmLog.value?.createdDate || translate("Recent"),
-      errorContent: err.errorString || err.error || err.message || JSON.stringify(err)
-    }));
-  }
-  return recentMdmLogs.value
-    .filter((log: any) => {
-      return Number(log.failedRecordCount || 0) > 0 || log.errorLogContentId || String(log.statusId || "").toLowerCase().includes("error");
-    })
-    .map((log: any) => ({
-      id: log.logId || [log.configId, log.createdDate].filter(Boolean).join("-"),
-      internalName: log.logId || translate("Data Manager log"),
-      shopifyId: `${translate("Config ID")}: ${log.configId || PRODUCT_SYNC_MDM_CONFIG_ID}`,
-      updatedTime: log.createdDate ? new Date(log.createdDate).toLocaleString() : translate("Recent"),
-      errorContent: translate("{failed} failed of {total} records.", {
-        failed: Number(log.failedRecordCount || 0),
-        total: Number(log.totalRecordCount || 0)
-      })
-    }));
+
+const filteredParsedErrorRecords = computed(() => {
+  const query = detailedErrorSearchQuery.value.trim().toLowerCase();
+  const records = errorLogs.value.map((err: any) => {
+    const product = err.virtualProduct || {};
+    const numericId = product.id ? product.id.split('/').pop() : '';
+    
+    // Robust extraction of SKU and Barcode (handles variants array, GraphQL edges, or top-level properties)
+    const variantsData = product.variants?.edges || (Array.isArray(product.variants) ? product.variants : []);
+    const firstVariant = variantsData[0]?.node || variantsData[0] || {};
+    const sku = firstVariant.sku || product.sku || err.sku || '';
+    const barcode = firstVariant.barcode || product.barcode || err.barcode || '';
+
+    const error = err.error || err._ERROR_MESSAGE_ || err.message || (typeof err === 'string' ? err : '');
+
+    return {
+      id: product.id || err.id,
+      numericId,
+      logId: currentMdmLog.value?.logId,
+      title: product.title || err.title || translate("Unknown product"),
+      vendor: product.vendor || err.vendor,
+      handle: product.handle,
+      productType: product.productType,
+      sku,
+      barcode,
+      error: error || translate("Unknown error"),
+      raw: err
+    }
+  });
+
+  if (!query) return records;
+
+  return records.filter((record: any) => 
+    record.numericId?.toLowerCase().includes(query) ||
+    record.title?.toLowerCase().includes(query) ||
+    record.handle?.toLowerCase().includes(query)
+  );
 });
+
+const pagedFilteredParsedErrorRecords = computed(() => {
+  return filteredParsedErrorRecords.value.slice(0, 100);
+});
+
 const preflightTitle = computed(() => {
   return requiresPreflightConfirmation(preflightResult.value)
     ? translate("Review possible catalog mismatch")
@@ -1340,6 +1397,18 @@ async function loadPendingUpdateRequests() {
   }
 }
 
+async function loadErrorRecordCount() {
+  try {
+    errorRecordCount.value = await ShopifyProductSyncService.fetchErrorRecordCount({
+      shopId: props.id,
+      configId: PRODUCT_SYNC_MDM_CONFIG_ID
+    });
+  } catch (error) {
+    logger.error("Failed to load error record count", error);
+    errorRecordCount.value = 0;
+  }
+}
+
 async function openUnsyncedUpdatesModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
     showToast(translate("Shopify product search is unavailable for this shop."));
@@ -1460,8 +1529,98 @@ async function loadLatestSystemMessage() {
 
   await Promise.all([
     fetchProductUpdateHistory({ shopId: props.id, pageSize: 10 }),
-    fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT)
+    fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT),
+    loadErrorRecordCount()
   ]);
+  
+  if (recentMdmLogs.value.length) {
+    await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
+  }
+}
+
+async function downloadRawFile(item: any) {
+  try {
+    const configId = item.configId || PRODUCT_SYNC_MDM_CONFIG_ID;
+    const logContentId = item.logContentId;
+
+    if (!configId || !logContentId) {
+      showToast(translate("Raw file is not available"));
+      return;
+    }
+
+    const response = await downloadDataManagerFile(configId, logContentId);
+    const fileContent = getDownloadFileContent(response?.data);
+
+    if (!fileContent) {
+      throw new Error("No file content returned");
+    }
+
+    downloadTextFile(fileContent, getRawShopifyFileName(item));
+    showToast(translate("File downloaded successfully"));
+  } catch (error) {
+    logger.error(`Failed to download raw file for ${item.id}`, error);
+    showToast(translate("Failed to download raw file"));
+  }
+}
+
+async function viewErrorDetails(item: any) {
+  const logId = item.logId;
+  if (!logId) {
+    showToast(translate("Log ID is not available"));
+    return;
+  }
+
+  try {
+    await fetchLogDetails(logId);
+    if (!errorLogs.value.length) {
+       showToast(translate("No detailed error records found in this log"));
+    }
+  } catch (error) {
+    logger.error(`Failed to fetch log details for ${logId}`, error);
+    showToast(translate("Failed to fetch detailed error records"));
+  }
+}
+
+function openErrorDetailsModal(record: any) {
+  selectedErrorRecord.value = record;
+  showErrorDetailsModal.value = true;
+}
+
+async function refreshErrorRecords() {
+  await clearStorage();
+  errorLogs.value = [];
+  detailedErrorSearchQuery.value = "";
+  
+  // Re-fetch everything fresh
+  await fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT);
+  if (recentMdmLogs.value.length) {
+    await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
+  }
+}
+
+async function resyncProduct(record: any) {
+  const shopifyProductId = record.numericId;
+  if (!shopifyProductId) {
+    showToast(translate("Shopify product ID not available for resync."));
+    return;
+  }
+
+  isSaving.value = true;
+  try {
+    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+      shopId: props.id,
+      shopifyProductIds: [shopifyProductId]
+    });
+
+    showToast(getSelectedProductSyncResultMessage(result, 1));
+    await loadLatestSystemMessage();
+    await loadPendingUpdateRequests();
+  } catch (error: any) {
+    logger.error(error);
+    showToast(getErrorMessage(error, translate("Failed to resync product.")));
+  } finally {
+    isSaving.value = false;
+  }
 }
 
 async function selectTrackProgressSystemMessage(systemMessages: any[]) {

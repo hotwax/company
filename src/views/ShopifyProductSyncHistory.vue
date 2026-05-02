@@ -128,7 +128,7 @@ import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistor
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
-import { showToast } from "@/utils";
+import { downloadTextFile, getDownloadFileContent, showToast } from "@/utils";
 import {
   getSystemMessageTime,
   hasMoreForwardSystemMessagePages,
@@ -137,6 +137,7 @@ import {
 } from "@/utils/systemMessageHistory";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 
+import { getRawShopifyFileName } from "@/utils/shopifyProductSyncWizard";
 const props = defineProps(["id"]);
 const store = useStore();
 const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
@@ -601,30 +602,6 @@ async function getDownloadableHistoryRun(run: ShopifyProductSyncHistoryRun) {
   };
   updateHistoryRun(run.id, updatedRun);
   return updatedRun;
-}
-
-function getDownloadFileContent(data: any) {
-  const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
-  if (typeof fileContent === "string") return fileContent;
-  if (fileContent === undefined || fileContent === null) return "";
-  return JSON.stringify(fileContent, null, 2);
-}
-
-function getRawShopifyFileName(run: ShopifyProductSyncHistoryRun) {
-  const fileName = String(run.mdmLogFileName || "").split(/[\\/]/).pop();
-  return fileName || `shopify-product-sync-${run.id}.json`;
-}
-
-function downloadTextFile(content: string, fileName: string) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 function getErrorMessage(error: any, defaultMessage: string) {

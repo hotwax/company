@@ -162,9 +162,9 @@
         <ion-item>
           <ion-label>
             {{ translate("Error records")}}
-            <p>In the last 24 hours</p>
+            <p>{{ translate("In the last 24 hours") }}</p>
           </ion-label>
-          <ion-label slot="end">0</ion-label>
+          <ion-label slot="end">{{ errorRecordCount }}</ion-label>
         </ion-item>
       </ion-list>
     </ion-card>
@@ -268,47 +268,62 @@
     </div>
   </section>
 
+
   <section class="sync-stat">
     <div class="stat-header">
       <ion-item class="stat-title" lines="none">
         <ion-label>
-          <h2>{{ translate("Recent sync errors") }}</h2>
-          <p>{{ translate("Audit what products failed to sync recently and retry them") }}</p>
+          <h2>{{ translate("Parsed error details") }}</h2>
+          <p style="margin-top: 2px;">{{ failedRecords.length }} {{ translate("of") }} {{ totalDetailedErrorsCount }} {{ translate("failed objects") }}</p>
         </ion-label>
       </ion-item>
-      <ion-searchbar v-model="errorsQuery" :placeholder="translate('Search by internal name')" />
+      <ion-buttons slot="end" v-if="hasDetailedErrors">
+        <ion-button color="medium" @click="emit('refresh-errors')">
+          <ion-icon slot="icon-only" :icon="refreshOutline" />
+        </ion-button>
+      </ion-buttons>
+      <ion-searchbar :value="detailedErrorQuery" @ionInput="emit('update:detailed-error-query', $event.detail.value)" :placeholder="translate('Search by ID, Name or Handle')" />
     </div>
-    <div class="stat-data">
-      <ion-card v-for="item in filteredErrors" :key="item.id">
-      <ion-list lines="full">
-        <ion-item>
-          <ion-label>
-            {{ item.internalName }}
-            <p>{{ item.shopifyId }}</p>
-          </ion-label>
-          <ion-note slot="end">{{ item.updatedTime }}</ion-note>
-        </ion-item>
-        <ion-item>
-          <ion-label>{{ item.errorContent }}</ion-label>
-        </ion-item>
-      </ion-list>
-      <ion-card-content>
-        <ion-button fill="clear">{{ translate("Retry") }}</ion-button>
-        <ion-button fill="clear">{{ translate("Download raw file") }}</ion-button>
-      </ion-card-content>
-    </ion-card>
-    <ion-card v-if="!filteredErrors.length">
-      <ion-list lines="full">
-        <ion-item>
-          <ion-label>
-            {{ translate("No recent sync errors") }}
-            <p>{{ translate("No error records in the last {count} product update imports.", { count: errorLookbackCount }) }}</p>
+    <div class="stat-data" v-if="failedRecords.length">
+      <ion-card v-for="record in failedRecords" :key="record.id" style="flex: 0 0 320px; margin: 8px;">
+        <ion-item lines="full">
+          <ion-label class="ion-text-wrap">
+            <h3>{{ record.title }}</h3>
+            <p v-if="record.handle">{{ record.handle }}</p>
           </ion-label>
         </ion-item>
-      </ion-list>
-    </ion-card>
+        <ion-card-content>
+          <p class="ion-no-margin">
+            <strong>{{ translate("Product ID") }}:</strong> {{ record.numericId || 'N/A' }}
+          </p>
+          <p class="ion-no-margin" style="font-size: 1.1rem; margin-top: 8px;">
+            {{ record.error }}
+          </p>
+          <div class="ion-margin-top">
+            <ion-button fill="clear" size="small" class="ion-no-padding" @click="emit('show-error-modal', record)">
+              {{ translate("View details") }}
+            </ion-button>
+            <ion-button fill="clear" size="small" color="primary" @click="emit('resync-product', record)">
+              {{ translate("Retry") }}
+            </ion-button>
+          </div>
+        </ion-card-content>
+      </ion-card>
+      
+      <!-- Load More at the end of carousel -->
+      </div>
+    <div class="stat-data" v-else>
+      <ion-card>
+        <ion-item lines="none">
+          <ion-label class="ion-text-center">
+            <p v-if="detailedErrorQuery">{{ translate("No records match your search.") }}</p>
+            <p v-else>{{ translate("All caught up! No recent errors found.") }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-card>
     </div>
   </section>
+
 
 </template>
 
@@ -325,6 +340,8 @@ import {
   IonCardSubtitle,
   IonCardTitle,
   IonIcon,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
   IonItem,
   IonChip,
   IonLabel,
@@ -334,7 +351,7 @@ import {
 } from "@ionic/vue";
 import { translate } from "@/i18n";
 import { computed, defineEmits, defineProps, ref } from "vue";
-import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, pauseCircleOutline, timeOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, closeOutline, ellipsisVerticalOutline, flashOutline, pauseCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { modalController, popoverController } from "@ionic/vue";
 import ScheduleModal from "./ScheduleModal.vue";
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
@@ -353,7 +370,6 @@ const props = defineProps<{
   summarySubtitle: string
   errorLookbackCount: number
   currentSyncRun?: ShopifyProductSyncRun
-  recentSyncErrors: Array<{ id: string, internalName: string, shopifyId: string, updatedTime: string, errorContent: string }>
   recentSyncUpdates: Array<{
     id: string,
     internalName: string,
@@ -377,8 +393,13 @@ const props = defineProps<{
   currentShopifyRequestStatusColor: string
   hasCurrentShopifyRequest?: boolean
   syncJobObj?: any
+  errorRecordCount: number | string
+  failedRecords: Array<{ id: string, numericId?: string, logId?: string, title: string, vendor?: string, handle?: string, productType?: string, sku?: string, barcode?: string, error: string }>
+  detailedErrorQuery: string
+  hasDetailedErrors: boolean
+  totalDetailedErrorsCount: number
 }>();
-const emit = defineEmits(["open-history", "schedule-sync", "run-job", "open-unsynced-updates", "open-specific-products-sync", "open-resync-entire-catalog", "open-sync-job-details", "open-step-details", "toggle-pause-sync-job"]);
+const emit = defineEmits(["open-history", "schedule-sync", "run-job", "open-unsynced-updates", "open-specific-products-sync", "open-resync-entire-catalog", "open-sync-job-details", "open-step-details", "toggle-pause-sync-job", "download-file", "view-error-details", "update:detailed-error-query", "show-error-modal", "refresh-errors", "resync-product"]);
 
 
 
@@ -421,7 +442,6 @@ async function openActionsPopover(event: Event) {
 
 
 const updatesQuery = ref("");
-const errorsQuery = ref("");
 const visibleChangeSummaryCount = 4;
 
 function getDetailActionLabel(type: string) {
@@ -446,14 +466,6 @@ const filteredUpdates = computed(() => {
   });
 });
 
-const filteredErrors = computed(() => {
-  const query = errorsQuery.value.trim().toLowerCase();
-  if (!query) return props.recentSyncErrors;
-
-  return props.recentSyncErrors.filter((item) => {
-    return item.internalName.toLowerCase().includes(query) || item.shopifyId.toLowerCase().includes(query);
-  });
-});
 </script>
 
 <style>

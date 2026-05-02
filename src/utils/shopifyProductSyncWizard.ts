@@ -207,3 +207,9 @@ export function resolveProductSyncExperienceMode(
 
   return hasLinkedOmsProducts ? "returning" : "first-time";
 }
+
+export function getRawShopifyFileName(run: { mdmLogFileName?: string; logId?: string; id?: string }) {
+  const fileName = String(run.mdmLogFileName || "").split(/[\\/]/).pop();
+  return fileName || `shopify-product-sync-${run.logId || run.id}.json`;
+}
+
