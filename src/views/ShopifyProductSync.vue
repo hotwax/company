@@ -35,6 +35,7 @@
       <template v-else>
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
+          :is-secondary-loading="isSecondaryLoading"
           :is-sync-scheduled="isSyncScheduled"
           :is-sync-paused="isSyncJobPaused"
           :last-sync-label="lastSyncLabel"
@@ -700,6 +701,7 @@ const latestConsumedSystemMessage = ref<any>(null);
 const lastProductUpdateSyncedAt = ref("");
 const currentTimeMs = ref(Date.now());
 const isLoading = ref(true);
+const isSecondaryLoading = ref(false);
 const loadErrorMessage = ref("");
 const isSaving = ref(false);
 const isReviewLoading = ref(false);
@@ -1219,38 +1221,19 @@ async function loadWizard() {
 
     await Promise.all([
       store.dispatch("productStore/fetchProductStores"),
-      store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PRODUCT_TYPE"),
-      fetchJobs({})
+      store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PRODUCT_TYPE")
     ]);
-
-
-    // Fetch details for product-update sync jobs to get parameters (needed to find the job for this shop)
-    const syncJobs = jobs.value.filter((job: any) => isProductUpdateSyncServiceJob(job) || (syncJobId.value && job.jobName === syncJobId.value));
-
-    await Promise.all(syncJobs.map(async (job: any) => {
-      const details = await fetchJobDetail(job.jobName);
-      Object.assign(job, details);
-    }));
-
-    await loadBulkOperationMonitoringJobs();
 
     if (shop.value.productStoreId) {
       await store.dispatch("productStore/fetchProductStoreDetails", shop.value.productStoreId);
     }
-
     await loadSelectedShopSystemMessageRemoteId();
-    await loadLatestSystemMessage();
-    await loadPendingUpdateRequests();
-    await loadShopifyShopProductCount();
-    await loadSyncJobLatestRun();
-    await loadBulkOperationSendJobLatestRun();
-    await loadBulkOperationPollJobLatestRun();
-    await loadRunningShopifyBulkOperation();
 
     setupState.value = await ShopifyProductSyncService.fetchSetupState({
       shopId: props.id,
       shop: shop.value,
-      productStore: selectedProductStore.value
+      productStore: selectedProductStore.value,
+      historyPageSize: 10
     });
     assertBackendDataAvailable(setupState.value, translate("Product sync setup is unavailable."));
 
@@ -1279,6 +1262,10 @@ async function loadWizard() {
     if (draft.value.selectedProductStoreId) {
       await loadProductStoreContext(draft.value.selectedProductStoreId);
     }
+
+    // Now kick off secondary data in background without blocking
+    loadSecondaryData().catch((e) => logger.error("Failed to load secondary data", e));
+
   } catch (error: any) {
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
@@ -1286,6 +1273,60 @@ async function loadWizard() {
     stopProgressPolling();
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function loadSecondaryData() {
+  isSecondaryLoading.value = true;
+  try {
+    // 1. Fetch dashboard summary (replaces loadLatestSystemMessage, loadPendingUpdateRequests, loadRunningShopifyBulkOperation)
+    const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+      shopId: props.id,
+      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
+      shop: shop.value
+    });
+
+    // Assign summary variables
+    latestSystemMessage.value = await selectTrackProgressSystemMessage(summary.syncRunState.systemMessages || []);
+    latestConfirmedSystemMessage.value = summary.syncRunState.latestConfirmedSystemMessage;
+    latestConsumedSystemMessage.value = summary.syncRunState.latestConsumedSystemMessage;
+    lastProductUpdateSyncedAt.value = summary.syncRunState.lastSyncedAt || "";
+
+    if (latestSystemMessage.value?.systemMessageId) {
+      await fetchSyncRun(latestSystemMessage.value.systemMessageId);
+    } else {
+      currentSyncRun.value = {} as any;
+    }
+
+    pendingUpdateRequestsCount.value = Number(summary.pendingRequests.count || 0);
+    pendingUpdateRequestsLastCreatedAt.value = summary.pendingRequests.latestSystemMessage?.initDate ||
+      summary.pendingRequests.latestSystemMessage?.createdDate ||
+      summary.pendingRequests.latestSystemMessage?.lastUpdatedStamp || "";
+
+    runningShopifyBulkOperation.value = summary.runningOperation;
+
+    // 2. Fetch jobs
+    await fetchJobs({});
+    const syncJobs = jobs.value.filter((job: any) => isProductUpdateSyncServiceJob(job) || (syncJobId.value && job.jobName === syncJobId.value));
+    await Promise.all(syncJobs.map(async (job: any) => {
+      const details = await fetchJobDetail(job.jobName);
+      Object.assign(job, details);
+    }));
+
+    await loadBulkOperationMonitoringJobs();
+
+    await Promise.all([
+      loadShopifyShopProductCount(),
+      loadSyncJobLatestRun(),
+      loadBulkOperationSendJobLatestRun(),
+      loadBulkOperationPollJobLatestRun(),
+      fetchProductUpdateHistory({ shopId: props.id, pageSize: 10 }),
+      fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT)
+    ]);
+  } catch (error) {
+    logger.error("Error loading secondary data", error);
+  } finally {
+    isSecondaryLoading.value = false;
   }
 }
 
@@ -1321,21 +1362,6 @@ async function loadBulkOperationPollJobLatestRun() {
   } catch (error: any) {
     logger.error(error);
     bulkOperationPollJobRecentRuns.value = [];
-  }
-}
-
-async function loadRunningShopifyBulkOperation() {
-  try {
-    runningShopifyBulkOperation.value = await ShopifyProductSyncService.fetchRunningBulkOperation({
-      shopId: props.id,
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shop: shop.value
-    });
-    runningShopifyBulkOperationError.value = "";
-  } catch (error: any) {
-    logger.error(error);
-    runningShopifyBulkOperation.value = null;
-    runningShopifyBulkOperationError.value = translate("Shopify request status unavailable");
   }
 }
 

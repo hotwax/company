@@ -2,6 +2,7 @@ import api from "@/api";
 import logger from "@/logger";
 
 export interface ShopifyProductSyncSetupState {
+  productUpdateHistory?: any[];
   hasLinkedOmsProducts: boolean;
   productStoreLocked: boolean;
   identifierLocked: boolean;
@@ -409,12 +410,6 @@ function assertBooleanField(value: any, fieldName: string, context: string) {
   }
 }
 
-function assertNumberField(value: any, fieldName: string, context: string) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new Error(`${context} response must include numeric ${fieldName}.`);
-  }
-}
-
 function assertStringField(value: any, fieldName: string, context: string) {
   if (typeof value !== "string") {
     throw new Error(`${context} response must include string ${fieldName}.`);
@@ -462,19 +457,6 @@ function buildProductStoreContext(payload: any): any {
   return validateProductStoreContext({
     relatedShops: payload.shops.filter((shop: any) => shop?.productStoreId === payload.productStoreId)
   });
-}
-
-function validatePreflight(response: any): ShopifyProductSyncPreflightResult {
-  const context = "Product sync preflight";
-  assertPlainObject(response, context);
-  assertNumberField(response.matched, "matched", context);
-  assertNumberField(response.sampled, "sampled", context);
-  assertStringField(response.status, "status", context);
-  if (!["matched", "warning", "conflict"].includes(response.status)) {
-    throw new Error(`${context} response returned unsupported status ${response.status}.`);
-  }
-  assertArrayField(response.items, "items", context);
-  return response as ShopifyProductSyncPreflightResult;
 }
 
 function validateProgress(response: any, requestedSyncJobId?: string): ShopifyProductSyncProgressState {
@@ -603,21 +585,33 @@ const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
       });
   }
 
-  for (const candidate of candidates) {
-    const systemMessagesResponse = await requestBackend<SystemMessagesResponse>({
-      url: "admin/systemMessages",
-      method: "get",
-      params: {
-        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
-        systemMessageRemoteId: candidate.systemMessageRemoteId,
-        pageSize: 1,
-        pageIndex: 0
+  // Check candidates in parallel, pick first valid one, otherwise fallback to first
+  const validRemoteIdPromises = candidates.map(async (candidate: any) => {
+    try {
+      const systemMessagesResponse = await requestBackend<SystemMessagesResponse>({
+        url: "admin/systemMessages",
+        method: "get",
+        params: {
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+          systemMessageRemoteId: candidate.systemMessageRemoteId,
+          pageSize: 1,
+          pageIndex: 0
+        }
+      });
+      if (Number(systemMessagesResponse?.systemMessagesCount || 0) > 0) {
+        return candidate.systemMessageRemoteId;
       }
-    });
-
-    if (Number(systemMessagesResponse?.systemMessagesCount || 0) > 0) {
-      return candidate.systemMessageRemoteId;
+    } catch (e) {
+      // Ignore errors for this check and continue
     }
+    return null;
+  });
+
+  const results = await Promise.all(validRemoteIdPromises);
+  const firstValid = results.find(id => id !== null);
+
+  if (firstValid) {
+    return firstValid;
   }
 
   return candidates[0].systemMessageRemoteId;
@@ -697,7 +691,7 @@ const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyP
       systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
       systemMessageRemoteId,
       statusId: "SmsgProduced",
-      pageSize: 1,
+      pageSize: payload.pageSize || 1,
       pageIndex: 0,
       orderBy: "-initDate"
     }
@@ -770,18 +764,20 @@ const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRunningBu
 };
 
 const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncSetupState> => {
+  const pageSize = payload.historyPageSize || 1;
   const productUpdateHistory = getProductUpdateHistoryRecords(await requestBackend<ProductUpdateHistoryResponse | any[]>({
     url: "oms/productUpdateHistory",
     method: "get",
     params: {
       shopId: payload.shopId,
-      pageSize: 1,
+      pageSize,
       orderByField: "-lastUpdatedStamp"
     }
   }, "Shopify product update history endpoint"));
   const hasLinkedOmsProducts = productUpdateHistory.length > 0;
 
   return validateSetupState({
+    productUpdateHistory,
     hasLinkedOmsProducts,
     productStoreLocked: hasLinkedOmsProducts,
     identifierLocked: hasLinkedOmsProducts,
@@ -1246,7 +1242,24 @@ const fetchErrorRecordCount = async (payload: any): Promise<number> => {
   }
 };
 
+const fetchDashboardSummary = async (payload: any): Promise<any> => {
+  const { shopId, systemMessageRemoteId, shop } = payload;
+  
+  const [syncRunState, pendingRequests, runningOperation] = await Promise.all([
+    fetchProductUpdateSyncRunState(systemMessageRemoteId),
+    fetchPendingProductUpdateRequests(systemMessageRemoteId),
+    fetchRunningBulkOperation({ shopId, systemMessageRemoteId, shop })
+  ]);
+
+  return {
+    syncRunState,
+    pendingRequests,
+    runningOperation
+  };
+};
+
 export const ShopifyProductSyncService = {
+  fetchDashboardSummary,
   fetchShopSystemMessageRemoteId,
   fetchProductUpdateSyncRunState,
   fetchPendingProductUpdateRequests,
