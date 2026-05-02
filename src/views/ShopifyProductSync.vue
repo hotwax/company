@@ -588,6 +588,7 @@ import {
   IonButton,
   IonButtons,
   IonCard,
+  IonCardContent,
   IonCardHeader,
   IonCardTitle,
   IonContent,

@@ -537,8 +537,10 @@ function getTimestampDate(value: any): string | undefined {
 }
 
 function resolveSystemMessageRemoteId(payload: any): string {
+  if (typeof payload === "string") return payload;
   return payload.systemMessageRemoteId ||
     payload.shop?.systemMessageRemoteId ||
+    payload.shopId ||
     "";
 }
 
