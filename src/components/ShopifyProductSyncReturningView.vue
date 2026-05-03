@@ -66,9 +66,9 @@
               <p>{{ currentSyncRun.systemMessageId }}</p>
               <p>{{ translate("Next send attempt") }}: {{ systemMessageSendJobNextRunLabel }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="currentSyncRun.systemMessage.statusColor">{{ currentSyncRun.systemMessage.statusLabel }}</ion-badge>
+            <ion-badge slot="end" :color="currentSyncRun.systemMessage?.statusColor || 'medium'">{{ currentSyncRun.systemMessage?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item button detail @click="emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation.id })" :disabled="!currentSyncRun.bulkOperation?.id">
+          <ion-item button detail @click="emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation?.id })" :disabled="!currentSyncRun.bulkOperation?.id">
             <ion-label>
               {{ translate("Shopify bulk operation") }}
               <p>{{ currentSyncRun.bulkOperation?.id || translate("Not started") }}</p>
@@ -79,7 +79,7 @@
             </ion-note>
             <ion-badge slot="end" :color="currentSyncRun.bulkOperation?.statusColor || 'medium'">{{ currentSyncRun.bulkOperation?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog.id })" :disabled="!currentSyncRun.mdmLog?.id">
+          <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog?.id })" :disabled="!currentSyncRun.mdmLog?.id">
             <ion-label>
               {{ translate("HotWax bulk import") }}
               <p>{{ currentSyncRun.mdmLog?.id || translate("Not started") }}</p>
@@ -274,13 +274,13 @@
 
   <section class="sync-stat">
     <div class="stat-header">
-      <ion-item class="stat-title" lines="none">
-        <ion-label>
-          <h2>{{ translate("Parsed error details") }}</h2>
-          <p style="margin-top: 2px;">{{ failedRecords.length }} {{ translate("of") }} {{ totalDetailedErrorsCount }} {{ translate("failed objects") }}</p>
-        </ion-label>
-        <ion-spinner v-if="isErrorLogsLoading" name="crescent" class="ion-margin-start" />
-      </ion-item>
+        <ion-item class="stat-title" lines="none">
+          <ion-label>
+            <h2>{{ translate("Parsed error details") }}</h2>
+            <p>{{ failedRecords.length }} {{ translate("of") }} {{ totalDetailedErrorsCount }} {{ translate("failed objects") }}</p>
+          </ion-label>
+          <ion-spinner v-if="isErrorLogsLoading" name="crescent" class="ion-margin-start" />
+        </ion-item>
       <ion-buttons slot="end" v-if="hasDetailedErrors">
         <ion-button color="medium" @click="emit('refresh-errors')">
           <ion-icon slot="icon-only" :icon="refreshOutline" />
@@ -289,7 +289,7 @@
       <ion-searchbar :value="detailedErrorQuery" @ionInput="emit('update:detailed-error-query', $event.detail.value)" :placeholder="translate('Search by ID, Name or Handle')" />
     </div>
     <div class="stat-data" v-if="failedRecords.length">
-      <ion-card v-for="record in failedRecords" :key="record.id" style="flex: 0 0 320px; margin: 8px;">
+      <ion-card v-for="record in failedRecords" :key="record.id">
         <ion-item lines="full">
           <ion-label class="ion-text-wrap">
             <h3>{{ record.title }}</h3>
@@ -300,7 +300,7 @@
           <p class="ion-no-margin">
             <strong>{{ translate("Product ID") }}:</strong> {{ record.numericId || 'N/A' }}
           </p>
-          <p class="ion-no-margin" style="font-size: 1.1rem; margin-top: 8px;">
+          <p class="ion-no-margin ion-margin-top">
             {{ record.error }}
           </p>
           <div class="ion-margin-top">

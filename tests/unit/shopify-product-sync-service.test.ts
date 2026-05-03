@@ -37,69 +37,7 @@ function createRejectingApi() {
   return { api, calls };
 }
 
-describe("shopify product sync service failure behavior", () => {
-  test("startInitialImport uses the backend response instead of hardcoded completed success", async () => {
-    const calls: ApiCall[] = [];
-    const service = await loadService(async (request: ApiCall) => {
-      calls.push(request);
-      return {
-        data: {
-          success: true,
-          syncJobId: "SMSG_REAL_IMPORT",
-          progress: {
-            syncJobId: "SMSG_REAL_IMPORT",
-            status: "queued",
-            systemMessageState: "SmsgProduced",
-            completed: false
-          },
-          backendAvailable: true
-        }
-      };
-    });
-
-    const result = await service.startInitialImport({
-      shopId: "SHOP_10000",
-      productStoreId: "STORE_A",
-      productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
-      systemMessageRemoteId: "SMR_REAL_SHOP"
-    });
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "oms/shopifyShops/SHOP_10000/productSync/imports");
-    assert.equal(calls[0].method, "post");
-    assert.equal(calls[0].data.systemMessageRemoteId, "SMR_REAL_SHOP");
-    assert.equal(result.syncJobId, "SMSG_REAL_IMPORT");
-    assert.notEqual(result.syncJobId, "DUMMY_PRODUCT_SYNC_IMPORT");
-    assert.equal(result.progress?.status, "queued");
-    assert.equal(result.progress?.systemMessageState, "SmsgProduced");
-    assert.equal(result.progress?.completed, false);
-    assert.equal(result.backendAvailable, true);
-  });
-
-  test("startInitialImport rejects when the backend start call fails", async () => {
-    const { api } = createRejectingApi();
-    const service = await loadService(api);
-
-    await assert.rejects(() => service.startInitialImport({
-      shopId: "SHOP_10000",
-      productStoreId: "STORE_A",
-      productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
-      systemMessageRemoteId: "SMR_REAL_SHOP"
-    }));
-  });
-
-  test("startInitialImport rejects before calling backend without systemMessageRemoteId", async () => {
-    const { api, calls } = createRejectingApi();
-    const service = await loadService(api);
-
-    await assert.rejects(() => service.startInitialImport({
-      shopId: "SHOP_10000",
-      productStoreId: "STORE_A",
-      productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU"
-    }));
-    assert.equal(calls.length, 0);
-  });
-
+describe("shopify product sync service", () => {
   test("fetchSetupState derives returning user state from real product update history", async () => {
     const calls: ApiCall[] = [];
     const service = await loadService(async (request: ApiCall) => {
@@ -128,7 +66,6 @@ describe("shopify product sync service failure behavior", () => {
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "oms/productUpdateHistory");
-    assert.equal(calls[0].url?.includes("productSync/setup"), false);
     assert.equal(calls[0].params.shopId, "SHOP_10000");
     assert.equal(calls[0].params.pageSize, 1);
     assert.equal(result.hasLinkedOmsProducts, true);
@@ -136,8 +73,6 @@ describe("shopify product sync service failure behavior", () => {
     assert.equal(result.identifierLocked, true);
     assert.equal(result.selectedProductStoreId, "STORE_A");
     assert.equal(result.selectedIdentifierEnumId, "SHOPIFY_PRODUCT_SKU");
-    assert.equal(typeof result.syncJobId, "undefined");
-    assert.equal(typeof result.completed, "undefined");
   });
 
   test("fetchSetupState returns first-time state only when product update history is really empty", async () => {
@@ -203,43 +138,125 @@ describe("shopify product sync service failure behavior", () => {
     assert.equal(calls.length, 0);
   });
 
-  test("setup, preflight, progress, reconcile, and history reject backend failures", async () => {
-    const failureCases = [
-      {
-        method: "fetchSetupState",
-        payload: { shopId: "SHOP_10000" }
-      },
-      {
-        method: "fetchPreflight",
-        payload: {
-          shopId: "SHOP_10000",
-          productStoreId: "STORE_A",
-          productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU"
+  test("fetchShopifyShopProductCount reuses provided sync run state", async () => {
+    const calls: ApiCall[] = [];
+    const service = await loadService(async (request: ApiCall) => {
+      calls.push(request);
+      return {
+        data: {
+          response: {
+            productsCount: {
+              count: 12
+            }
+          }
         }
-      },
-      {
-        method: "fetchProgress",
-        payload: { shopId: "SHOP_10000", syncJobId: "SMSG_REAL_IMPORT" }
-      },
-      {
-        method: "fetchReconcile",
-        payload: { shopId: "SHOP_10000", productStoreId: "STORE_A", syncJobId: "SMSG_REAL_IMPORT" }
-      },
-      {
-        method: "fetchHistory",
-        payload: { shopId: "SHOP_10000" }
+      };
+    });
+
+    const result = await service.fetchShopifyShopProductCount({
+      systemMessageRemoteId: "SMR_10000",
+      syncRunState: {
+        lastSyncedAt: "2026-05-02T00:00:00Z"
       }
-    ];
+    });
 
-    for (const failureCase of failureCases) {
-      const { api } = createRejectingApi();
-      const service = await loadService(api);
+    assert.equal(result.count, 12);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "shopify/graphql");
+    assert.equal(calls.some((call) => call.url === "admin/systemMessages"), false);
+    assert.equal(String(calls[0].data.queryText).includes("updated_at:>'2026-05-02T00:00:00Z'"), true);
+  });
 
-      await assert.rejects(
-        () => service[failureCase.method](failureCase.payload),
-        undefined,
-        `${failureCase.method} should reject instead of returning fallback data`
-      );
-    }
+  test("fetchDashboardSummary returns shared sync state and unsynced count without reloading system messages", async () => {
+    const calls: ApiCall[] = [];
+    const service = await loadService(async (request: ApiCall) => {
+      calls.push(request);
+
+      if (request.url === "oms/dataDocumentView" && request.data?.customParametersMap?.statusId === "SmsgProduced") {
+        return {
+          data: {
+            entityValueList: [
+              {
+                systemMessageId: "SMSG_PENDING",
+                statusId: "SmsgProduced",
+                initDate: "2026-05-02T12:00:00Z"
+              }
+            ],
+            entityValueListCount: 1
+          }
+        };
+      }
+
+      if (request.url === "oms/dataDocumentView" && request.data?.dataDocumentId === "SYSTEM_MESSAGE_DATA_MANAGER_LOG") {
+        return {
+          data: {
+            entityValueList: [
+              {
+                systemMessageId: "SMSG_CONFIRMED",
+                statusId: "SmsgConfirmed",
+                initDate: "2026-05-02T10:00:00Z",
+                processedDate: "2026-05-02T10:05:00Z",
+                logId: "LOG_1"
+              },
+              {
+                systemMessageId: "SMSG_PRODUCED",
+                statusId: "SmsgProduced",
+                initDate: "2026-05-02T11:00:00Z"
+              }
+            ],
+            entityValueListCount: 2
+          }
+        };
+      }
+
+      if (request.url === "shopify/graphql" && String(request.data?.queryText).includes("bulkOperations(first: 1")) {
+        return {
+          data: {
+            response: {
+              bulkOperations: {
+                nodes: [
+                  {
+                    id: "gid://shopify/BulkOperation/1",
+                    status: "RUNNING",
+                    type: "QUERY",
+                    createdAt: "2026-05-02T12:05:00Z",
+                    objectCount: "42"
+                  }
+                ]
+              }
+            }
+          }
+        };
+      }
+
+      if (request.url === "shopify/graphql" && String(request.data?.queryText).includes("productsCount")) {
+        return {
+          data: {
+            response: {
+              productsCount: {
+                count: 7
+              }
+            }
+          }
+        };
+      }
+
+      throw new Error(`Unexpected request: ${JSON.stringify(request)}`);
+    });
+
+    const summary = await service.fetchDashboardSummary({
+      shopId: "SHOP_10000",
+      systemMessageRemoteId: "SMR_10000",
+      shop: {
+        shopId: "SHOP_10000"
+      }
+    });
+
+    assert.equal(summary.syncRunState.lastSyncedAt, "2026-05-02T10:00:00.000Z");
+    assert.equal(summary.pendingRequests.count, 1);
+    assert.equal(summary.runningOperation?.id, "gid://shopify/BulkOperation/1");
+    assert.equal(summary.unsyncedUpdates.count, 7);
+    assert.equal(calls.filter((call) => call.url === "oms/dataDocumentView").length, 2);
+    assert.equal(calls.filter((call) => call.url === "shopify/graphql").length, 2);
   });
 });

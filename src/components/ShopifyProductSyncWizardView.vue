@@ -233,141 +233,48 @@
     </ion-card>
 
     <template v-if="currentStep === 'progress'">
-      <ion-card>
-        <ion-card-header>
-          <ion-card-title>{{ translate("Track sync progress") }}</ion-card-title>
-          <ion-card-subtitle>{{ translate("Monitor each step as products get imported from Shopify")
-            }}</ion-card-subtitle>
-        </ion-card-header>
-        <ion-list lines="full">
-          <template v-if="currentSyncRun && currentSyncRun.systemMessageId">
-            <ion-item button detail
-              @click="$emit('open-step-details', { type: 'systemMessage', id: currentSyncRun.systemMessageId })">
-              <ion-label>
-                {{ translate("System message") }}
-                <p>{{ currentSyncRun.systemMessageId }}</p>
-                <p>{{ translate("Next send attempt") }}: {{ systemMessageSendJobNextRunLabel }}</p>
-              </ion-label>
-              <ion-badge slot="end" :color="currentSyncRun.statusColor">{{ currentSyncRun.status }}</ion-badge>
-            </ion-item>
-            <ion-item button detail
-              @click="$emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation.id })"
-              :disabled="!currentSyncRun.bulkOperation?.id">
-              <ion-label>
-                {{ translate("Shopify bulk operation") }}
-                <p>{{ currentSyncRun.bulkOperation?.id || translate("Not started") }}</p>
-                <p>{{ translate("Next poll attempt") }}: {{ bulkOperationPollJobNextRunLabel }}</p>
-              </ion-label>
-              <ion-note slot="end" v-if="currentSyncRun.bulkOperation?.objectCount">
-                {{ currentSyncRun.bulkOperation.objectCount }} {{ translate("objects") }}
-              </ion-note>
-              <ion-badge slot="end" :color="currentSyncRun.bulkOperation?.statusColor || 'medium'">{{
-                currentSyncRun.bulkOperation?.statusLabel || translate("Pending") }}</ion-badge>
-            </ion-item>
-            <ion-item button detail @click="$emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog.id })"
-              :disabled="!currentSyncRun.mdmLog?.id">
-              <ion-label>
-                {{ translate("HotWax bulk import") }}
-                <p>{{ currentSyncRun.mdmLog?.id || translate("Not started") }}</p>
-              </ion-label>
-              <ion-note slot="end" v-if="currentSyncRun.mdmLog?.totalRecordCount">
-                {{ currentSyncRun.mdmLog.totalRecordCount }} {{ translate("records") }}
-              </ion-note>
-              <ion-badge slot="end" :color="currentSyncRun.mdmLog?.statusColor || 'medium'">{{
-                currentSyncRun.mdmLog?.statusLabel || translate("Pending") }}</ion-badge>
-            </ion-item>
-          </template>
-          <ion-item v-else>
-            <ion-label>{{ translate("Syncing...") }}</ion-label>
-          </ion-item>
-        </ion-list>
-      </ion-card>
 
-      <ion-card>
-        <ion-card-header>
-          <ion-card-title>{{ translate("Product export request payload") }}</ion-card-title>
-          <ion-card-subtitle>{{ translate("Using Shopify's bulk query API to export all products in the catalog.") }}</ion-card-subtitle>
-        </ion-card-header>
-        <ion-list lines="full">
-          <ion-item button detail
-            @click="emit('open-step-details', { type: 'systemMessage', id: systemMessageId })"
-            :disabled="!systemMessageId">
-            <ion-icon slot="start" :icon="documentTextOutline" />
+      <div class="bulk-steps">
+        <!-- Export message -->
+        <ion-card class="message">
+          <ion-item lines="none">
+            <ion-icon slot="start" :icon="pulseOutline" />
             <ion-label>
-              {{ translate("System message") }}
-              <p>{{ systemMessageId || translate("Not available") }}</p>
+              {{ translate("Product export request payload") }}
+              <p>{{ translate("Using Shopify’s bulk query API to export all products in the catalog.") }}</p>
+              <p>{{ translate("System message id") }}: {{ systemMessageId }}</p>
             </ion-label>
             <ion-badge slot="end" :color="systemMessageStatusColor">{{ systemMessageStatusLabel }}</ion-badge>
           </ion-item>
-          <ion-item button detail
-            @click="emit('open-step-details', { type: 'bulkOperation', id: bulkOperationId })"
-            :disabled="!bulkOperationId">
+        </ion-card>
+
+        <!-- Shopify bulk operation -->
+        <ion-card class="export">
+          <ion-item lines="none">
             <ion-icon slot="start" :icon="pulseOutline" />
             <ion-label>
-              {{ translate("Shopify bulk operation") }}
+              {{ translate("Pending bulk operations") }}
               <p>{{ translate("Shopify might take some time to process bulk operation requests.") }}</p>
               <p>{{ bulkOperationProgressLabel }}</p>
-              <p>{{ translate("Next poll attempt") }}: {{ bulkOperationPollJobNextRunLabel }}</p>
+              <p v-if="bulkOperationId">{{ translate("Bulk operation id") }}: {{ bulkOperationId }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="bulkOperationStatusColor">{{ bulkOperationStatusLabel }}</ion-badge>
+            <ion-badge :color="bulkOperationStatusColor" slot="end">{{ bulkOperationStatusLabel }}</ion-badge>
           </ion-item>
-          <ion-progress-bar v-if="hasBulkOperationProgress" :value="bulkOperationProgressValue" />
-          <ion-item>
-            <ion-label>{{ translate("Products and variants processed / Total product count") }}</ion-label>
-            <ion-note slot="end">{{ bulkOperationProgressLabel }}</ion-note>
-          </ion-item>
-        </ion-list>
-      </ion-card>
+          <ion-progress-bar :value="bulkOperationProgressValue"></ion-progress-bar>
+        </ion-card>
 
-      <ion-card>
-        <ion-card-header>
-          <ion-card-title>{{ translate("Pending bulk operations") }}</ion-card-title>
-          <ion-card-subtitle>{{ translate("Shopify might take some time to process bulk operation requests.") }}</ion-card-subtitle>
-        </ion-card-header>
-        <ion-list lines="full">
-          <ion-item v-if="queuedJobsAhead">
-            <ion-label>{{ translate("Queued jobs ahead") }}</ion-label>
-            <ion-note slot="end">{{ queuedJobsAhead }}</ion-note>
-          </ion-item>
-          <ion-item>
-            <ion-icon slot="start" :icon="sendOutline" />
+        <!-- HotWax bulk import -->
+        <ion-card class="import">
+          <ion-item lines="none">
+            <ion-icon slot="start" :icon="pulseOutline" />
             <ion-label>
-              {{ translate("Your request") }}
-              <p>{{ bulkOperationId || systemMessageId || translate("Not available") }}</p>
+              {{ translate("Bulk file process") }}
+              <p>{{ bulkFileProcessDescription }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="bulkOperationStatusColor">{{ bulkOperationStatusLabel }}</ion-badge>
+            <ion-note :color="mdmLogStatusColor">{{ mdmLogStatusLabel }}</ion-note>
           </ion-item>
-        </ion-list>
-      </ion-card>
-
-      <ion-card>
-        <ion-card-header>
-          <ion-card-title>{{ translate("Bulk file process") }}</ion-card-title>
-          <ion-card-subtitle>{{ bulkFileProcessDescription }}</ion-card-subtitle>
-        </ion-card-header>
-        <ion-list lines="full">
-          <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: mdmLogId })"
-            :disabled="!mdmLogId">
-            <ion-icon slot="start" :icon="serverOutline" />
-            <ion-label>
-              {{ translate("HotWax bulk import") }}
-              <p>{{ mdmLogId || translate("Not started") }}</p>
-            </ion-label>
-            <ion-note slot="end" v-if="mdmRecordCount">
-              {{ mdmRecordCount }} {{ translate("records") }}
-            </ion-note>
-            <ion-badge slot="end" :color="mdmLogStatusColor">{{ mdmLogStatusLabel }}</ion-badge>
-          </ion-item>
-        </ion-list>
-        <ion-card-content>
-          <ion-button expand="block" fill="outline" @click="$emit('load-progress')">{{ translate("Refresh status")
-            }}</ion-button>
-          <ion-button expand="block" :disabled="!reconcileAvailable" @click="$emit('go-next')"
-            data-testid="reconcile-sync">
-            {{ translate("Reconcile product sync") }}
-          </ion-button>
-        </ion-card-content>
-      </ion-card>
+        </ion-card>
+      </div>
     </template>
 
     <ion-card class="step" v-if="currentStep === 'reconcile'">
@@ -379,11 +286,11 @@
       <ion-list lines="full">
         <ion-item>
           <ion-label>{{ translate("Shopify products") }}</ion-label>
-          <ion-note slot="end">{{ reviewStats.shopifyProductCount }}</ion-note>
+          <ion-note slot="end">{{ reviewStats?.shopifyProductCount }}</ion-note>
         </ion-item>
         <ion-item>
           <ion-label>{{ translate("HotWax products") }}</ion-label>
-          <ion-note slot="end">{{ reviewStats.omsProductCount }}</ion-note>
+          <ion-note slot="end">{{ reviewStats?.omsProductCount }}</ion-note>
         </ion-item>
         <ion-item>
           <ion-label>{{ translate("Completion status") }}</ion-label>
@@ -502,6 +409,8 @@
 <script setup lang="ts">
 import type { ShopifyProductSyncRun } from "@/services/ShopifyProductSyncService";
 import {
+  IonAccordion,
+  IonAccordionGroup,
   IonBadge,
   IonButton,
   IonButtons,
@@ -657,6 +566,8 @@ const hasBulkOperationProgress = computed(() => {
 });
 
 const bulkOperationProgressValue = computed(() => {
+  const status = (props.currentSyncRun?.bulkOperation?.status || props.progressState?.bulkOperationStatus || "").toLowerCase();
+  if (status === "complete" || status === "completed") return 1;
   return bulkOperationProgress.value.value;
 });
 
@@ -728,4 +639,17 @@ function isCompleteStatus(status = "") {
   justify-self: center;
 }
 
+.bulk-steps {
+  grid-column: 2;
+}
+
+.bulk-steps ion-card {
+  border: 1px solid var(--ion-color-medium);
+  --background: transparent;
+  border-radius: 8px;
+}
+
+.bulk-steps ion-item {
+  --background: transparent;
+}
 </style>
