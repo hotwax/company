@@ -615,19 +615,22 @@ import {
   alertController,
   modalController
 } from "@ionic/vue";
+import {
+  selectMostRecentSystemMessage
+} from "@/utils/shopifyProductSync";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
 import { translate } from "@/i18n";
 import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
 import { useStore } from "vuex";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { ShopifyService } from "@/services/ShopifyService";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
+import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
 import { UserService } from "@/services/UserService";
 import {
   canAdvanceProductSyncStep,
@@ -658,6 +661,7 @@ import { deleteErrorRecords } from "@/utils/storage";
 const props = defineProps(["id"]);
 const store = useStore();
 const router = useRouter();
+const route = useRoute();
 const {
   jobs,
   products,
@@ -669,33 +673,14 @@ const {
   updateJob,
   runNow
 } = useServiceJob();
-const { downloadDataManagerFile, fetchLogDetails, fetchMdmLogBySystemMessageId, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs, fetchAllRecentFailedRecords, clearStorage } = useDataManagerLog();
-const { productUpdateHistories, fetchProductUpdateHistory } = useProductUpdateHistory();
+const { downloadDataManagerFile, fetchLogDetails, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs, fetchAllRecentFailedRecords, clearStorage } = useDataManagerLog();
+const { productUpdateHistories, fetchProductUpdateHistory, setProductUpdateHistory } = useProductUpdateHistory();
 const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
 const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
 const BULK_OPERATION_SEND_JOB_NAME = "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery";
 const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
 const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
-const SYSTEM_MESSAGE_CONSUMED_STATUSES = ["smsgconsumed", "consumed"];
-const SYSTEM_MESSAGE_RECEIVED_STATUSES = ["smsgreceived", "received"];
-const SYSTEM_MESSAGE_SENT_STATUSES = ["smsgsent", "sent"];
-const SYSTEM_MESSAGE_PRODUCED_STATUSES = ["smsgproduced", "produced"];
-const TERMINAL_MDM_LOG_STATUSES = [
-  "dmlsuccess",
-  "dmlerror",
-  "success",
-  "succeeded",
-  "complete",
-  "completed",
-  "finished",
-  "error",
-  "failed",
-  "failure",
-  "cancelled",
-  "canceled"
-];
-
 const latestSystemMessage = ref<any>(null);
 const latestConfirmedSystemMessage = ref<any>(null);
 const latestConsumedSystemMessage = ref<any>(null);
@@ -1254,6 +1239,7 @@ async function loadWizard() {
       historyPageSize: 10
     });
     assertBackendDataAvailable(setupState.value, translate("Product sync setup is unavailable."));
+    setProductUpdateHistory(setupState.value.productUpdateHistory || []);
 
     draft.value = createProductSyncWizardDraft({
       selectedProductStoreId: setupState.value.selectedProductStoreId || shop.value.productStoreId || "",
@@ -1281,6 +1267,15 @@ async function loadWizard() {
       await loadProductStoreContext(draft.value.selectedProductStoreId);
     }
 
+    // Dev override to land on a specific step
+    if (route.query.step) {
+      currentStep.value = route.query.step as ProductSyncWizardStep;
+      if (currentStep.value === "progress") {
+        const loadedProgress = await loadProgress();
+        if (loadedProgress) startProgressPolling();
+      }
+    }
+
     // Now kick off secondary data in background without blocking
     loadSecondaryData().catch((e) => logger.error("Failed to load secondary data", e));
 
@@ -1297,33 +1292,19 @@ async function loadWizard() {
 async function loadSecondaryData() {
   isSecondaryLoading.value = true;
   try {
-    // 1. Fetch dashboard summary (replaces loadLatestSystemMessage, loadPendingUpdateRequests, loadRunningShopifyBulkOperation)
     const summary = await ShopifyProductSyncService.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       shop: shop.value
     });
-
-    // Assign summary variables
-    latestSystemMessage.value = await selectTrackProgressSystemMessage(summary.syncRunState.systemMessages || []);
-    latestConfirmedSystemMessage.value = summary.syncRunState.latestConfirmedSystemMessage;
-    latestConsumedSystemMessage.value = summary.syncRunState.latestConsumedSystemMessage;
-    lastProductUpdateSyncedAt.value = summary.syncRunState.lastSyncedAt || "";
+    applyDashboardSummary(summary);
 
     if (latestSystemMessage.value?.systemMessageId) {
-      await fetchSyncRun(latestSystemMessage.value.systemMessageId);
+      await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
     } else {
       currentSyncRun.value = {} as any;
     }
 
-    pendingUpdateRequestsCount.value = Number(summary.pendingRequests.count || 0);
-    pendingUpdateRequestsLastCreatedAt.value = summary.pendingRequests.latestSystemMessage?.initDate ||
-      summary.pendingRequests.latestSystemMessage?.createdDate ||
-      summary.pendingRequests.latestSystemMessage?.lastUpdatedStamp || "";
-
-    runningShopifyBulkOperation.value = summary.runningOperation;
-
-    // 2. Fetch jobs
     await fetchJobs({});
     const syncJobs = jobs.value.filter((job: any) => isProductUpdateSyncServiceJob(job) || (syncJobId.value && job.jobName === syncJobId.value));
     await Promise.all(syncJobs.map(async (job: any) => {
@@ -1334,11 +1315,9 @@ async function loadSecondaryData() {
     await loadBulkOperationMonitoringJobs();
 
     await Promise.all([
-      loadShopifyShopProductCount(),
       loadSyncJobLatestRun(),
       loadBulkOperationSendJobLatestRun(),
       loadBulkOperationPollJobLatestRun(),
-      fetchProductUpdateHistory({ shopId: props.id, pageSize: 10 }),
       fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT)
     ]);
   } catch (error) {
@@ -1346,6 +1325,20 @@ async function loadSecondaryData() {
   } finally {
     isSecondaryLoading.value = false;
   }
+}
+
+function applyDashboardSummary(summary: ShopifyProductSyncDashboardSummary) {
+  latestSystemMessage.value = selectMostRecentSystemMessage(summary.syncRunState.systemMessages || []);
+  latestConfirmedSystemMessage.value = summary.syncRunState.latestConfirmedSystemMessage || null;
+  latestConsumedSystemMessage.value = summary.syncRunState.latestConsumedSystemMessage || null;
+  lastProductUpdateSyncedAt.value = summary.syncRunState.lastSyncedAt || "";
+  pendingUpdateRequestsCount.value = Number(summary.pendingRequests.count || 0);
+  pendingUpdateRequestsLastCreatedAt.value = summary.pendingRequests.latestSystemMessage?.initDate ||
+    summary.pendingRequests.latestSystemMessage?.createdDate ||
+    summary.pendingRequests.latestSystemMessage?.lastUpdatedStamp ||
+    "";
+  runningShopifyBulkOperation.value = summary.runningOperation;
+  shopifyShopProductCount.value = Number(summary.unsyncedUpdates?.count || 0);
 }
 
 async function loadBulkOperationMonitoringJobs() {
@@ -1404,40 +1397,6 @@ async function openStepDetails(step: any) {
     } finally {
       isStepDetailsLoading.value = false;
     }
-  }
-}
-
-async function loadShopifyShopProductCount() {
-  try {
-    const countState = await ShopifyProductSyncService.fetchShopifyShopProductCount({
-      shopId: props.id,
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      lastSyncedAt: lastProductUpdateSyncedAt.value,
-      shop: shop.value
-    });
-    shopifyShopProductCount.value = Number(countState.count || 0);
-  } catch (error: any) {
-    logger.error(error);
-    throw error;
-  }
-}
-
-async function loadPendingUpdateRequests() {
-  try {
-    const pendingState = await ShopifyProductSyncService.fetchPendingProductUpdateRequests({
-      shopId: props.id,
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shop: shop.value
-    });
-    pendingUpdateRequestsCount.value = Number(pendingState.count || 0);
-    pendingUpdateRequestsLastCreatedAt.value = pendingState.latestSystemMessage?.initDate ||
-      pendingState.latestSystemMessage?.createdDate ||
-      pendingState.latestSystemMessage?.lastUpdatedStamp ||
-      "";
-  } catch (error: any) {
-    logger.error(error);
-    pendingUpdateRequestsCount.value = 0;
-    pendingUpdateRequestsLastCreatedAt.value = "";
   }
 }
 
@@ -1522,7 +1481,6 @@ async function handleSelectedProductsForSync(data: any) {
 
     showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
     await loadLatestSystemMessage();
-    await loadPendingUpdateRequests();
   } catch (error: any) {
     logger.error(error);
     showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
@@ -1554,19 +1512,15 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const syncRunState = await ShopifyProductSyncService.fetchProductUpdateSyncRunState({
+  const summary = await ShopifyProductSyncService.fetchDashboardSummary({
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     shop: shop.value
   });
-
-  latestSystemMessage.value = await selectTrackProgressSystemMessage(syncRunState.systemMessages || []);
-  latestConfirmedSystemMessage.value = syncRunState.latestConfirmedSystemMessage || null;
-  latestConsumedSystemMessage.value = syncRunState.latestConsumedSystemMessage || null;
-  lastProductUpdateSyncedAt.value = syncRunState.lastSyncedAt || "";
+  applyDashboardSummary(summary);
 
   if (latestSystemMessage.value?.systemMessageId) {
-    await fetchSyncRun(latestSystemMessage.value.systemMessageId);
+    await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
   } else {
     currentSyncRun.value = {} as any;
   }
@@ -1658,7 +1612,6 @@ async function resyncProduct(record: any) {
 
     showToast(getSelectedProductSyncResultMessage(result, 1));
     await loadLatestSystemMessage();
-    await loadPendingUpdateRequests();
   } catch (error: any) {
     logger.error(error);
     showToast(getErrorMessage(error, translate("Failed to resync product.")));
@@ -1667,58 +1620,6 @@ async function resyncProduct(record: any) {
   }
 }
 
-async function selectTrackProgressSystemMessage(systemMessages: any[]) {
-  if (!systemMessages.length) return null;
-
-  const consumedMessages = systemMessages.filter((message) => hasSystemMessageStatus(message, SYSTEM_MESSAGE_CONSUMED_STATUSES));
-  const oldestConsumedMessages = sortSystemMessagesOldestFirst(consumedMessages);
-
-  for (const message of oldestConsumedMessages) {
-    const mdmLog = await fetchMdmLogBySystemMessageId(message.systemMessageId);
-    if (mdmLog?.logId && !isTerminalMdmLogStatus(mdmLog.statusId)) {
-      return message;
-    }
-  }
-
-  return getOldestSystemMessageByStatus(systemMessages, SYSTEM_MESSAGE_RECEIVED_STATUSES) ||
-    getOldestSystemMessageByStatus(systemMessages, SYSTEM_MESSAGE_SENT_STATUSES) ||
-    getOldestSystemMessageByStatus(systemMessages, SYSTEM_MESSAGE_PRODUCED_STATUSES) ||
-    sortSystemMessagesNewestFirst(consumedMessages)[0] ||
-    null;
-}
-
-function getOldestSystemMessageByStatus(systemMessages: any[], statuses: string[]) {
-  return sortSystemMessagesOldestFirst(systemMessages.filter((message) => hasSystemMessageStatus(message, statuses)))[0];
-}
-
-function hasSystemMessageStatus(systemMessage: any, statuses: string[]) {
-  return statuses.includes(normalizeStatusValue(systemMessage?.statusId));
-}
-
-function isTerminalMdmLogStatus(statusId: string) {
-  return TERMINAL_MDM_LOG_STATUSES.includes(normalizeStatusValue(statusId));
-}
-
-function sortSystemMessagesOldestFirst(systemMessages: any[]) {
-  return [...systemMessages].sort((firstMessage, secondMessage) => {
-    return getSystemMessageTime(firstMessage) - getSystemMessageTime(secondMessage);
-  });
-}
-
-function sortSystemMessagesNewestFirst(systemMessages: any[]) {
-  return [...systemMessages].sort((firstMessage, secondMessage) => {
-    return getSystemMessageTime(secondMessage) - getSystemMessageTime(firstMessage);
-  });
-}
-
-function getSystemMessageTime(systemMessage: any) {
-  const value = systemMessage?.initDate || systemMessage?.lastUpdatedStamp || systemMessage?.processedDate;
-  return parseDateTimeValue(value)?.toMillis() || 0;
-}
-
-function normalizeStatusValue(statusId: string) {
-  return String(statusId || "").toLowerCase().replace(/[_\-\s]/g, "");
-}
 
 
 async function loadProductStoreContext(productStoreId: string) {
@@ -2347,7 +2248,7 @@ async function loadProgress() {
     const syncRunState = await ShopifyProductSyncService.fetchProductUpdateSyncRunState(selectedShopSystemMessageRemoteId.value);
     assertBackendDataAvailable(syncRunState, translate("Product sync run state is unavailable."));
 
-    const latestMessage = syncRunState.latestSystemMessage;
+    const latestMessage = selectMostRecentSystemMessage(syncRunState.systemMessages || []);
     if (latestMessage) {
       progressState.value = {
         syncJobId: syncJobId.value || "",
@@ -2358,7 +2259,7 @@ async function loadProgress() {
       } as any;
 
       if (latestMessage.systemMessageId) {
-        await fetchSyncRun(latestMessage.systemMessageId);
+        await fetchSyncRun(latestMessage.systemMessageId, latestMessage);
       }
     }
 

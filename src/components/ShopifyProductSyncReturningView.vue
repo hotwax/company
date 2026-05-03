@@ -66,9 +66,9 @@
               <p>{{ currentSyncRun.systemMessageId }}</p>
               <p>{{ translate("Next send attempt") }}: {{ systemMessageSendJobNextRunLabel }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="currentSyncRun.systemMessage.statusColor">{{ currentSyncRun.systemMessage.statusLabel }}</ion-badge>
+            <ion-badge slot="end" :color="currentSyncRun.systemMessage?.statusColor || 'medium'">{{ currentSyncRun.systemMessage?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item button detail @click="emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation.id })" :disabled="!currentSyncRun.bulkOperation?.id">
+          <ion-item button detail @click="emit('open-step-details', { type: 'bulkOperation', id: currentSyncRun.bulkOperation?.id })" :disabled="!currentSyncRun.bulkOperation?.id">
             <ion-label>
               {{ translate("Shopify bulk operation") }}
               <p>{{ currentSyncRun.bulkOperation?.id || translate("Not started") }}</p>
@@ -79,7 +79,7 @@
             </ion-note>
             <ion-badge slot="end" :color="currentSyncRun.bulkOperation?.statusColor || 'medium'">{{ currentSyncRun.bulkOperation?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog.id })" :disabled="!currentSyncRun.mdmLog?.id">
+          <ion-item button detail @click="emit('open-step-details', { type: 'mdmLog', id: currentSyncRun.mdmLog?.id })" :disabled="!currentSyncRun.mdmLog?.id">
             <ion-label>
               {{ translate("HotWax bulk import") }}
               <p>{{ currentSyncRun.mdmLog?.id || translate("Not started") }}</p>

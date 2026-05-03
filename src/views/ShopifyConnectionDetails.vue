@@ -438,18 +438,11 @@ async function loadProductsInventorySummary() {
 
     const trackProgressMessage = await selectTrackProgressSystemMessage(productSyncSummary.value.syncRunState?.systemMessages || []);
     if (trackProgressMessage?.systemMessageId) {
-      await fetchSyncRun(trackProgressMessage.systemMessageId);
+      await fetchSyncRun(trackProgressMessage.systemMessageId, trackProgressMessage);
     }
 
     productSyncRecordsProcessed.value = Number(currentSyncRun.value?.mdmLog?.totalRecordCount || 0);
-
-    const unsyncedCountState = await ShopifyProductSyncService.fetchShopifyShopProductCount({
-      shopId: props.id,
-      systemMessageRemoteId,
-      lastSyncedAt: productSyncSummary.value.syncRunState?.lastSyncedAt,
-      shop: shop.value
-    });
-    productSyncUnsyncedCount.value = Number(unsyncedCountState.count || 0);
+    productSyncUnsyncedCount.value = Number(productSyncSummary.value.unsyncedUpdates?.count || 0);
   } catch (error) {
     logger.error(error);
     hasProductSyncSummaryError.value = true;

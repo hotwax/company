@@ -136,6 +136,11 @@ function getProductUpdateHistoryPayload(data: any): any[] {
 }
 
 export function useProductUpdateHistory() {
+  const setProductUpdateHistory = (histories: any) => {
+    state.productUpdateHistories = processHistories(getProductUpdateHistoryPayload(histories));
+    return state.productUpdateHistories;
+  };
+
   const fetchProductUpdateHistory = async (params: any) => {
     state.loading = true;
     try {
@@ -148,8 +153,7 @@ export function useProductUpdateHistory() {
         }
       }) as any;
 
-      state.productUpdateHistories = processHistories(getProductUpdateHistoryPayload(response?.data));
-      return state.productUpdateHistories;
+      return setProductUpdateHistory(response?.data);
     } catch (err) {
       logger.error("Failed to fetch product update history", err);
       state.productUpdateHistories = [];
@@ -161,6 +165,7 @@ export function useProductUpdateHistory() {
 
   return {
     ...toRefs(state),
+    setProductUpdateHistory,
     fetchProductUpdateHistory
   };
 }
