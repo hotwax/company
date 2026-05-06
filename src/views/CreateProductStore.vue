@@ -23,6 +23,12 @@
         <ion-item lines="none">
           <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store ID represents an unique ID for your product store')" :clear-input="true" />
         </ion-item>
+        <ion-item lines="none">
+          <ion-select interface="popover" :placeholder="translate('Select')" v-model="formData.defaultCurrencyUomId">
+            <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
+            <ion-select-option v-for="currency in currencies" :key="currency.uomId" :value="currency.uomId">{{ currency.description}} ({{currency.abbreviation }})</ion-select-option>
+          </ion-select>
+        </ion-item>
 
         <ion-item  v-if="!dbicCountriesCount">
           <ion-icon slot="start" :icon="mapOutline"/>
@@ -47,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
 import { useRouter } from "vue-router";
@@ -57,6 +63,7 @@ import SelectOperatingCountriesModal from "@/components/SelectOperatingCountries
 import { generateInternalId, hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
+import { UtilService } from "@/services/UtilService";
 import emitter from "@/event-bus";
 
 const store = useStore();
@@ -65,10 +72,12 @@ const router = useRouter();
 const formData = ref({
   companyName: "",
   storeName: "",
-  productStoreId: ""
+  productStoreId: "",
+  defaultCurrencyUomId: ""
 }) as any;
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
+const currencies = ref([]) as any;
 
 const productStores = computed(() => store.getters["productStore/getProductStores"])
 const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
@@ -79,10 +88,22 @@ onIonViewWillEnter(async () => {
   await store.dispatch("util/fetchDBICCountries");
   store.dispatch("productStore/fetchCompany");
   if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
+  await fetchCurrencies();
 })
 
+async function fetchCurrencies() {
+  try {
+    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
+    if(!hasError(resp) && resp.data?.length) {
+      currencies.value = resp.data;
+    }
+  } catch(err) {
+    logger.error("Failed to fetch currencies", err)
+  }
+}
+
 async function manageConfigurations() {
-  if (!formData.value.storeName?.trim()) {
+  if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
     showToast(translate('Please fill all the required fields'))
     return;
   }
@@ -105,7 +126,8 @@ async function manageConfigurations() {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
       companyName: company.value.companyName,
-      payToPartyId: organizationPartyId.value
+      payToPartyId: organizationPartyId.value,
+      defaultCurrencyUomId: formData.value.defaultCurrencyUomId
     } as any;
 
     if(!productStores.value.length) {

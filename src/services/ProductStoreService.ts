@@ -4,7 +4,7 @@ import { hasError } from "@/utils";
 
 const createProductStore = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/productStores",
+    url: "admin/productStores",
     method: "post",
     data: payload
   });

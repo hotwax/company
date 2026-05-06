@@ -72,6 +72,14 @@ const fetchOrganization = async (payload: any): Promise<any> => {
   })
 }
 
+const fetchCurrencies = async (payload: any): Promise<any> => {
+  return api({
+    url: "admin/uoms",
+    method: "get",
+    params: payload
+  })
+}
+
 export const UtilService = {
   fetchDBICCountries,
   fetchEnums,
@@ -81,5 +89,6 @@ export const UtilService = {
   fetchFacilities,
   fetchOperatingCountries,
   fetchOrganization,
+  fetchCurrencies,
   fetchShipmentMethodTypes
 }
