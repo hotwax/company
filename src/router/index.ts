@@ -14,6 +14,7 @@ import SalesChannel from "@/views/SalesChannel.vue";
 import Departments from "@/views/Departments.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
+import AppVersion from "@/views/AppVersion.vue";
 
 const authGuard = async (to: any, from: any, next: any) => {
   const authStore = useAuthStore()
@@ -63,6 +64,12 @@ const routes: Array<RouteRecordRaw> = [
     path: "/netsuite/shipment-methods",
     name: "ShipmentMethods",
     component: ShipmentMethods,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/app-version",
+    name: "AppVersion",
+    component: AppVersion,
     beforeEnter: authGuard,
   },
   // {

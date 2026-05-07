@@ -72,7 +72,26 @@ const fetchOrganization = async (payload: any): Promise<any> => {
   })
 }
 
+const fetchAppVersions = async(): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "get",
+    params: {
+      pageSize: 250
+    }
+  })
+}
+
+const updateAppVersion = async(payload: any): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "PUT",
+    data: payload
+  })
+}
+
 export const UtilService = {
+  fetchAppVersions,
   fetchDBICCountries,
   fetchEnums,
   fetchEnumGroupMember,
@@ -81,5 +100,6 @@ export const UtilService = {
   fetchFacilities,
   fetchOperatingCountries,
   fetchOrganization,
-  fetchShipmentMethodTypes
+  fetchShipmentMethodTypes,
+  updateAppVersion
 }

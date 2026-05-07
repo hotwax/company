@@ -33,7 +33,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { businessOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { appsOutline, businessOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useStore } from "@/store";
 import { useRouter } from "vue-router";
 import { translate } from "@/i18n";
@@ -61,6 +61,12 @@ const appPages = [
     childRoutes: ["/netsuite/"],
     iosIcon: walletOutline,
     mdIcon: walletOutline
+  },
+  {
+    title: "App Version",
+    url: "/app-version",
+    iosIcon: appsOutline,
+    mdIcon: appsOutline
   },
   {
     title: "Settings",
