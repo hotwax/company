@@ -26,7 +26,7 @@
         <ion-item lines="none">
           <ion-select interface="popover" :placeholder="translate('Select')" v-model="formData.defaultCurrencyUomId">
             <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
-            <ion-select-option v-for="currency in currencies" :key="currency.uomId" :value="currency.uomId">{{ currency.description}} ({{currency.abbreviation }})</ion-select-option>
+            <ion-select-option v-for="currency in currencies" :key="currency.uomId" :value="currency.uomId">{{ currency.description}} ({{ currency.abbreviation }})</ion-select-option>
           </ion-select>
         </ion-item>
 

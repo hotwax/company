@@ -10,7 +10,7 @@ const fetchDBICCountries = async (payload: any): Promise <any> => {
 
 const fetchFacilityGroups = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/facilityGroups",
+    url: "admin/facilityGroups",
     method: "get",
     params: payload
   });
@@ -18,7 +18,7 @@ const fetchFacilityGroups = async (payload: any): Promise <any> => {
 
 const fetchFacilities = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/facilities",
+    url: "admin/facilities",
     method: "get",
     params: payload
   })
