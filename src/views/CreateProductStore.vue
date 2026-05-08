@@ -76,9 +76,11 @@ const company = computed(() => store.getters["productStore/getCompany"])
 const organizationPartyId = computed(() => store.getters["util/getOrganizationPartyId"])
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("util/fetchDBICCountries");
-  store.dispatch("productStore/fetchCompany");
-  if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
+  await Promise.all([
+    store.dispatch("util/fetchDBICCountries"),
+    store.dispatch("productStore/fetchCompany"),
+    (!dbicCountriesCount.value) ? store.dispatch("util/fetchOperatingCountries") : Promise.resolve()
+  ]);
 })
 
 async function manageConfigurations() {

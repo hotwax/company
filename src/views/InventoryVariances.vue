@@ -94,8 +94,10 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("netSuite/fetchInventoryVariances");
-  await store.dispatch("netSuite/fetchEnumGroupMember")
+  await Promise.all([
+    store.dispatch("netSuite/fetchInventoryVariances"),
+    store.dispatch("netSuite/fetchEnumGroupMember")
+  ]);
 });
 
 async function openTransferInventoryModal(variance: any) {

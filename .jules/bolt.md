@@ -1,0 +1,3 @@
+## 2026-05-08 - Client-Side Memory Bloating
+**Learning:** In applications holding heavy amounts of state (like syncing, mappings, data representations in Vuex), it's important to aggressively clear that state on lifecycle termination events like user logout to reduce memory footprint and memory leaks. In this project, `productStore`, `util`, and `netSuite` states were correctly getting cleared on logout, but `shopify` state was omitted. This led to memory bloat over time.
+**Action:** Always verify `clearState` actions across all modules are being fired off the appropriate teardown events (like user logout).

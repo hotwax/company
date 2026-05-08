@@ -91,8 +91,10 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("netSuite/fetchPaymentMethods")
-  await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE")
+  await Promise.all([
+    store.dispatch("netSuite/fetchPaymentMethods"),
+    store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE")
+  ]);
 })
 
 function getShopifyMappingId(paymentMethodTypeId: any) {

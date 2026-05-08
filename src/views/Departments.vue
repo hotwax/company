@@ -83,9 +83,11 @@ const facilitiesIdentifications = computed(() => store.getters["netSuite/getFaci
 const getShopifyShopLocation = computed(() => store.getters["netSuite/getShopifyShopLocation"])
 
 onIonViewDidEnter(async () => {
-  await store.dispatch("util/fetchFacilities")
-  await store.dispatch("netSuite/fetchFacilitiesIdentifications")
-  await store.dispatch("netSuite/fetchShopifyShopLocation")
+  await Promise.all([
+    store.dispatch("util/fetchFacilities"),
+    store.dispatch("netSuite/fetchFacilitiesIdentifications"),
+    store.dispatch("netSuite/fetchShopifyShopLocation")
+  ]);
 })
 
 function getFacilityInFacilityIdentification(facility: any) {

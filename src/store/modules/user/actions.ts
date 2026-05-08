@@ -128,6 +128,7 @@ const actions: ActionTree<UserState, RootState> = {
     this.dispatch("productStore/clearProductStoreState");
     this.dispatch("util/clearUtilState");
     this.dispatch("netSuite/clearNetSuiteState");
+    this.dispatch("shopify/clearShopifyState");
     dispatch("setOmsRedirectionInfo", { url: "", token: "" })
     resetConfig();
     resetPermissions();

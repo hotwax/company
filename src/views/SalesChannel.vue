@@ -81,8 +81,10 @@ const salesChannel = computed(() => store.getters["netSuite/getSalesChannel"])
 const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_ORDER_SOURCE"))
 
 onIonViewDidEnter(async () => {
-  await store.dispatch("netSuite/fetchSalesChannel")
-  await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_ORDER_SOURCE")
+  await Promise.all([
+    store.dispatch("netSuite/fetchSalesChannel"),
+    store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_ORDER_SOURCE")
+  ]);
 })
 
 function getShopifyMappingId(salesChannelEnumId: any) {

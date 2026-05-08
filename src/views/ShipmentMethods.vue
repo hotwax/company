@@ -109,9 +109,11 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("util/fetchShipmentMethodTypes");
-  await store.dispatch("netSuite/fetchProductStoreShipmentMethods")
-  await store.dispatch("netSuite/fetchShopifyShopsCarrierShipments")
+  await Promise.all([
+    store.dispatch("util/fetchShipmentMethodTypes"),
+    store.dispatch("netSuite/fetchProductStoreShipmentMethods"),
+    store.dispatch("netSuite/fetchShopifyShopsCarrierShipments")
+  ]);
 })
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {

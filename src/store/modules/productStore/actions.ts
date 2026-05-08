@@ -20,8 +20,10 @@ const actions: ActionTree<ProductStoreState, RootState> = {
         productStores = resp.data;
 
         if(payload?.fetchCounts) {
-          const productStoresFacilityCount = await dispatch("fetchProductStoresFacilityCount")
-          const productStoresShipmentMethodCount = await dispatch("fetchProductStoresShipmentMethodCount")
+          const [productStoresFacilityCount, productStoresShipmentMethodCount] = await Promise.all([
+            dispatch("fetchProductStoresFacilityCount"),
+            dispatch("fetchProductStoresShipmentMethodCount")
+          ]);
           if(Object.keys(productStoresFacilityCount).length) {
             productStores.map((store: any) => store.facilityCount = productStoresFacilityCount[store.productStoreId] ? productStoresFacilityCount[store.productStoreId] : 0)
           }

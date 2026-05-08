@@ -79,7 +79,9 @@ const store = useStore();
 const shops = computed(() => store.getters["shopify/getShops"])
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("shopify/fetchShopifyShops")
+  await Promise.all([
+    store.dispatch("shopify/fetchShopifyShops")
+  ]);
 })
 
 async function openShopifyConnectionActionsPopover(event: Event) {
