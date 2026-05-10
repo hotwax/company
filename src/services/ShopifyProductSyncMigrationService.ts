@@ -227,12 +227,12 @@ async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
   // maargInfo is fetched once at login (user/login → util/fetchMaargInfo)
   // and persisted via vuex-persistedstate. The dispatch below is a safety
   // net for sessions that pre-date that wiring or where the bootstrap
-  // dispatch failed; the action no-ops when the store is already populated.
+  // dispatch failed; the action no-ops when the store is already populated,
+  // returns the in-flight promise when a concurrent fetch is mid-flight,
+  // and rethrows the underlying network/shape error otherwise — so callers
+  // see the real failure instead of a generic fallback message.
   await store.dispatch("util/fetchMaargInfo");
   const maargInfo = store.getters["util/getMaargInfo"];
-  if (!maargInfo || typeof maargInfo !== "object") {
-    throw new Error("Maarg version response is unavailable.");
-  }
   const componentRelease = String(maargInfo?.instanceInfo?.componentRelease || "").trim();
 
   return {
