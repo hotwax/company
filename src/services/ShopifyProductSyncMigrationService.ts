@@ -1,5 +1,6 @@
 import api from "@/api";
 import logger from "@/logger";
+import store from "@/store";
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { DateTime } from "luxon";
@@ -222,21 +223,16 @@ export function buildLegacySystemMessageItem(systemMessage: any): ProductSyncMig
   };
 }
 
-async function fetchMaargInfo() {
-  const response = await api({
-    url: "admin/maarg",
-    method: "GET"
-  }) as any;
-
-  if (!response?.data || typeof response.data !== "object") {
+async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
+  // maargInfo is fetched once at login (user/login → util/fetchMaargInfo)
+  // and persisted via vuex-persistedstate. The dispatch below is a safety
+  // net for sessions that pre-date that wiring or where the bootstrap
+  // dispatch failed; the action no-ops when the store is already populated.
+  await store.dispatch("util/fetchMaargInfo");
+  const maargInfo = store.getters["util/getMaargInfo"];
+  if (!maargInfo || typeof maargInfo !== "object") {
     throw new Error("Maarg version response is unavailable.");
   }
-
-  return response.data;
-}
-
-async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
-  const maargInfo = await fetchMaargInfo();
   const componentRelease = String(maargInfo?.instanceInfo?.componentRelease || "").trim();
 
   return {
