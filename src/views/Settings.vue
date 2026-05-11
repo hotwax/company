@@ -294,6 +294,7 @@ function refreshCache() {
   store.dispatch('productStore/fetchProductStores');
   store.dispatch('shopify/fetchShopifyShops');
   fetchJobs();
+  store.dispatch('util/fetchMaargInfo', { force: true }).catch(() => { /* noop */ });
 }
 
 defineProps({
