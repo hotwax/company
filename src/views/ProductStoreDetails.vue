@@ -52,6 +52,11 @@
               </ion-item-divider>
 
               <ion-item>
+                <ion-select :label="translate('Currency')" interface="popover" :placeholder="translate('Select')" :value="productStore.defaultCurrencyUomId" @ionChange="updateProductStoreDetail($event, 'defaultCurrencyUomId', false)">
+                  <ion-select-option v-for="currency in currencies" :key="currency.uomId" :value="currency.uomId">{{ currency.description }} ({{ currency.abbreviation }})</ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
                 <ion-input :label="translate('ID prefix')" :placeholder="translate('prefix')" :value="productStore.orderNumberPrefix" @keydown.enter="updateProductStoreDetail($event, 'orderNumberPrefix', false)" @ionBlur="updateProductStoreDetail($event, 'orderNumberPrefix', false)" />
               </ion-item>
               <ion-item lines="none">
@@ -354,6 +359,7 @@ import { computed, defineProps, ref } from "vue";
 import { hasError, showToast } from "@/utils";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
+import { UtilService } from "@/services/UtilService";
 import emitter from "@/event-bus";
 import { DateTime } from "luxon";
 import { useProductIdentificationStore } from "@hotwax/dxp-components";
@@ -362,6 +368,7 @@ const props = defineProps(["productStoreId"]);
 const store = useStore();
 
 const autoCancellationActive = ref(false);
+const currencies = ref([]) as any;
 
 const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
 const productStore = computed(() => store.getters["productStore/getCurrent"])
@@ -373,10 +380,21 @@ const productIdentificationOptions = computed(() => useProductIdentificationStor
 
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes"), useProductIdentificationStore()?.prepareProductIdentifierOptions()])
+  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes"), useProductIdentificationStore()?.prepareProductIdentifierOptions(), fetchCurrencies()])
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
   emitter.emit("dismissLoader");
 })
+
+async function fetchCurrencies() {
+  try {
+    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
+    if(!hasError(resp) && resp.data?.length) {
+      currencies.value = resp.data;
+    }
+  } catch(err) {
+    logger.error("Failed to fetch currencies", err)
+  }
+}
 
 function getPreferredIdentification(id: string) {
   const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
