@@ -348,12 +348,6 @@ function getEventLabel(emailType: string) {
   return getKlaviyoEventLabel(emailTypes.value, emailType);
 }
 
-function getStateLabel(evt: any) {
-  if (!evt.enabled) return translate("Off");
-  if (!evt.ownedByThisGateway) return translate("On (other connection)");
-  return translate("On");
-}
-
 function defaultSubjectFor(emailType: string) {
   const map: Record<string, string> = {
     READY_FOR_PICKUP: translate("Your order is ready for pickup"),

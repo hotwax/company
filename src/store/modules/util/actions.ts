@@ -231,12 +231,15 @@ const actions: ActionTree<UtilState, RootState> = {
   //     callers all observe the same outcome rather than racing.
   //   - Otherwise → makes the request, commits, and resolves with the data.
   //
+  // Pass { force: true } to bypass the cache and re-fetch — used by the
+  // Settings "Refresh cache" action.
+  //
   // Errors (network failures, malformed responses) propagate to the caller so
   // that consumers like ShopifyProductSyncMigrationService can surface the
   // actual failure instead of a generic fallback. Fire-and-forget callers
   // (Settings.vue onMounted, user/login bootstrap) attach .catch() handlers.
-  async fetchMaargInfo({ commit, state }) {
-    if (state.maargInfo) return state.maargInfo
+  async fetchMaargInfo({ commit, state }, payload?: { force?: boolean }) {
+    if (!payload?.force && state.maargInfo) return state.maargInfo
     if (inflightMaargFetch) return inflightMaargFetch
 
     commit(types.UTIL_FETCH_STATUS_UPDATED, { maargInfo: 'pending' })

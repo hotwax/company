@@ -158,7 +158,7 @@ import { translate } from "@/i18n";
 import { KlaviyoService } from "@/services/KlaviyoService";
 import { getResponseErrorMessage, showToast } from "@/utils";
 import logger from "@/logger";
-import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
+import { getDefaultUnigateSendUrl, getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const store = useStore();
 const config = computed(() => store.getters["klaviyo/getUnigateConfig"]);
@@ -220,7 +220,7 @@ async function save() {
   try {
     const payload: any = {
       internalId: form.internalId.trim(),
-      sendUrl: form.sendUrl.trim(),
+      sendUrl: form.sendUrl.trim() || getDefaultUnigateSendUrl(maargInfo.value),
       description: form.description.trim(),
       authHeaderName: form.authHeaderName.trim() || "api_key",
     };
