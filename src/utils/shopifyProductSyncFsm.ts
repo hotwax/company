@@ -14,6 +14,10 @@ export interface ProductSyncFsmNextJob {
   nextRunLabel: string;
   relativeNextRunLabel: string;
   paused: boolean;
+  /** Epoch ms of the next scheduled run, if known. Drives the depleting progress bar. */
+  nextRunAtMs: number | null;
+  /** Epoch ms of the previous run (or previous cron firing), used as the bar's start point. */
+  previousRunAtMs: number | null;
 }
 
 export interface ProductSyncFsmState {
@@ -32,8 +36,12 @@ interface ProductSyncFsmInput {
   pollJob?: any;
   sendJobNextRunLabel?: string;
   sendJobRelativeNextRunLabel?: string;
+  sendJobNextRunAtMs?: number | null;
+  sendJobPreviousRunAtMs?: number | null;
   pollJobNextRunLabel?: string;
   pollJobRelativeNextRunLabel?: string;
+  pollJobNextRunAtMs?: number | null;
+  pollJobPreviousRunAtMs?: number | null;
   isSendJobPaused?: boolean;
   isPollJobPaused?: boolean;
 }
@@ -42,7 +50,15 @@ function normalizeStatusId(statusId = "") {
   return String(statusId || "").trim();
 }
 
-function buildNextJob(job: any, label: string, nextRunLabel: string, relativeNextRunLabel: string, paused: boolean): ProductSyncFsmNextJob | null {
+function buildNextJob(
+  job: any,
+  label: string,
+  nextRunLabel: string,
+  relativeNextRunLabel: string,
+  paused: boolean,
+  nextRunAtMs: number | null = null,
+  previousRunAtMs: number | null = null
+): ProductSyncFsmNextJob | null {
   if (!job?.jobName) return null;
 
   return {
@@ -50,7 +66,9 @@ function buildNextJob(job: any, label: string, nextRunLabel: string, relativeNex
     label,
     nextRunLabel: nextRunLabel || translate("Not scheduled"),
     relativeNextRunLabel: relativeNextRunLabel || "",
-    paused
+    paused,
+    nextRunAtMs,
+    previousRunAtMs
   };
 }
 
@@ -72,7 +90,9 @@ export function getProductSyncFsmState(input: ProductSyncFsmInput): ProductSyncF
           translate("Send update request"),
           input.sendJobNextRunLabel || "",
           input.sendJobRelativeNextRunLabel || "",
-          !!input.isSendJobPaused
+          !!input.isSendJobPaused,
+          input.sendJobNextRunAtMs ?? null,
+          input.sendJobPreviousRunAtMs ?? null
         ),
         nextJobReason: translate("The next logical step is to send the produced bulk query to Shopify.")
       };
@@ -88,7 +108,9 @@ export function getProductSyncFsmState(input: ProductSyncFsmInput): ProductSyncF
           translate("Import completed requests"),
           input.pollJobNextRunLabel || "",
           input.pollJobRelativeNextRunLabel || "",
-          !!input.isPollJobPaused
+          !!input.isPollJobPaused,
+          input.pollJobNextRunAtMs ?? null,
+          input.pollJobPreviousRunAtMs ?? null
         ),
         nextJobReason: translate("The next logical step is to check whether Shopify finished the bulk operation.")
       };

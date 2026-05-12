@@ -36,6 +36,7 @@
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
           :is-secondary-loading="isSecondaryLoading"
+          :is-refreshing="isRefreshInFlight"
           :is-sync-scheduled="isSyncScheduled"
           :is-sync-paused="isSyncJobPaused"
           :last-sync-label="lastSyncLabel"
@@ -348,8 +349,9 @@
                       {{ translate("Run now") }}
                       <p>{{ translate("Create an immediate execution of this service job without changing its schedule.") }}</p>
                     </ion-label>
-                    <ion-button slot="end" fill="outline" color="primary" :disabled="isSyncJobDetailsSaving" @click="runSyncJob(selectedSyncJobDetailsJob)">
-                      {{ translate("Run now") }}
+                    <ion-button slot="end" fill="outline" color="primary" :disabled="isSyncJobDetailsSaving || isSyncJobRunNowLoading(selectedSyncJobDetailsJob)" @click="runSyncJob(selectedSyncJobDetailsJob)">
+                      <ion-spinner v-if="isSyncJobRunNowLoading(selectedSyncJobDetailsJob)" name="crescent" />
+                      <span v-else>{{ translate("Run now") }}</span>
                     </ion-button>
                   </ion-item>
                   <ion-item>
@@ -770,6 +772,7 @@ import { downloadTextFile, formatDateTime, getDownloadFileContent, hasError, par
 import logger from "@/logger";
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
+import { useLiveDashboard } from "@/composables/useLiveDashboard";
 import { useProductUpdateHistory } from "@/composables/useProductUpdateHistory";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
@@ -801,9 +804,9 @@ const latestSystemMessage = ref<any>(null);
 const latestConfirmedSystemMessage = ref<any>(null);
 const latestConsumedSystemMessage = ref<any>(null);
 const lastProductUpdateSyncedAt = ref("");
-const currentTimeMs = ref(Date.now());
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
+const hasEverLoadedSecondary = ref(false);
 const loadErrorMessage = ref("");
 const isSaving = ref(false);
 const isReviewLoading = ref(false);
@@ -857,6 +860,7 @@ const syncJobAuditUsers = ref<Record<string, any>>({});
 const latestPauseAuditByJobName = ref<Record<string, any>>({});
 const isSyncJobAuditHistoryLoading = ref(false);
 const syncJobAuditHistoryError = ref("");
+const syncJobRunNowJobName = ref("");
 const selectedSyncJobDetailsJob = ref<any>(null);
 const syncJobId = ref("");
 const selectedShopSystemMessageRemoteId = ref("");
@@ -904,10 +908,17 @@ const webhookSubscriptions = ref<any[]>([]);
 const isWebhookLoading = ref(false);
 const isWebhookSupported = ref(false);
 let progressPoll: number | undefined;
-let nextSyncRefreshPoll: number | undefined;
 let scheduledJobRefreshAtMs: number | null = null;
 let scheduledJobRefreshGraceUntilMs: number | null = null;
-let isScheduledJobRefreshInFlight = false;
+let lastKnownJobRunStartTime = 0;
+let lastKnownJobRunEndTime = 0;
+
+const liveDashboard = useLiveDashboard({
+  tickIntervalMs: 15000,
+  onTick: () => evaluateScheduledRefresh(),
+  onVisible: () => evaluateScheduledRefresh({ forceProbe: true })
+});
+const { currentTimeMs, isRefreshInFlight } = liveDashboard;
 
 const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
 const userProfile = computed(() => store.getters["user/getUserProfile"] || {});
@@ -1099,11 +1110,23 @@ const systemMessageSendJobNextRunLabel = computed(() => {
 const systemMessageSendJobRelativeNextRunLabel = computed(() => {
   return getRelativeNextRunLabel(bulkOperationSendJob.value);
 });
+const systemMessageSendJobNextRunAtMs = computed(() => {
+  return getNextRunMillis(bulkOperationSendJob.value);
+});
+const systemMessageSendJobPreviousRunAtMs = computed(() => {
+  return getJobLatestRunMillis(bulkOperationSendJobRecentRuns.value);
+});
 const bulkOperationPollJobNextRunLabel = computed(() => {
   return getJobNextRunLabel(bulkOperationPollJob.value);
 });
 const bulkOperationPollJobRelativeNextRunLabel = computed(() => {
   return getRelativeNextRunLabel(bulkOperationPollJob.value);
+});
+const bulkOperationPollJobNextRunAtMs = computed(() => {
+  return getNextRunMillis(bulkOperationPollJob.value);
+});
+const bulkOperationPollJobPreviousRunAtMs = computed(() => {
+  return getJobLatestRunMillis(bulkOperationPollJobRecentRuns.value);
 });
 const systemMessageFsmState = computed(() => {
   return getProductSyncFsmState({
@@ -1113,8 +1136,12 @@ const systemMessageFsmState = computed(() => {
     pollJob: bulkOperationPollJob.value,
     sendJobNextRunLabel: systemMessageSendJobNextRunLabel.value,
     sendJobRelativeNextRunLabel: systemMessageSendJobRelativeNextRunLabel.value,
+    sendJobNextRunAtMs: systemMessageSendJobNextRunAtMs.value,
+    sendJobPreviousRunAtMs: systemMessageSendJobPreviousRunAtMs.value,
     pollJobNextRunLabel: bulkOperationPollJobNextRunLabel.value,
     pollJobRelativeNextRunLabel: bulkOperationPollJobRelativeNextRunLabel.value,
+    pollJobNextRunAtMs: bulkOperationPollJobNextRunAtMs.value,
+    pollJobPreviousRunAtMs: bulkOperationPollJobPreviousRunAtMs.value,
     isSendJobPaused: isBulkOperationSendJobPaused.value,
     isPollJobPaused: isBulkOperationPollJobPaused.value
   });
@@ -1708,8 +1735,14 @@ async function loadWizard() {
   }
 }
 
-async function loadSecondaryData() {
-  isSecondaryLoading.value = true;
+async function loadSecondaryData(opts: { silent?: boolean } = {}) {
+  // On cold start we surface skeletons via isSecondaryLoading. Every subsequent
+  // refresh keeps the last-known-good data visible — the subtle indicator driven
+  // by liveDashboard.isRefreshInFlight is the only loading affordance.
+  const isColdStart = !hasEverLoadedSecondary.value;
+  if (isColdStart && !opts.silent) {
+    isSecondaryLoading.value = true;
+  }
   latestPauseAuditByJobName.value = {};
   try {
     const summary = await ShopifyProductSyncService.fetchDashboardSummary({
@@ -1777,6 +1810,7 @@ async function loadSecondaryData() {
     logger.error("Error loading secondary data", error);
   } finally {
     isSecondaryLoading.value = false;
+    hasEverLoadedSecondary.value = true;
     updateScheduledJobRefreshAt();
   }
 }
@@ -2203,10 +2237,11 @@ function handleExperienceModeChange(mode: ProductSyncExperienceMode) {
 
 async function runSyncJob(job: any) {
   if (!job?.jobName) return;
+  if (syncJobRunNowJobName.value === job.jobName) return;
 
   const jobAlert = await alertController.create({
     header: translate("Run now"),
-    message: translate("Running this job now will not replace this job. A copy of this job will be created and run immediately. You may not be able to reverse this action."),
+    message: translate("Once this job starts running, it cannot be stopped."),
     buttons: [
       {
         text: translate("Cancel"),
@@ -2214,15 +2249,10 @@ async function runSyncJob(job: any) {
       },
       {
         text: translate("Run now"),
-        handler: async () => {
-          try {
-            await runNow(job.jobName);
-            showToast(translate("Job has been scheduled to run now"));
-            await refreshAfterRunNow(job);
-          } catch (err) {
-            logger.error("Failed to run job now", err);
-            showToast(translate("Failed to run job"));
-          }
+        handler: () => {
+          syncJobRunNowJobName.value = job.jobName;
+          void executeRunSyncJob(job);
+          return true;
         }
       }
     ]
@@ -2231,15 +2261,34 @@ async function runSyncJob(job: any) {
   await jobAlert.present();
 }
 
+async function executeRunSyncJob(job: any) {
+  try {
+    await runNow(job.jobName);
+    showToast(translate("Job has been scheduled to run now"));
+    await refreshAfterRunNow(job);
+  } catch (err) {
+    logger.error("Failed to run job now", err);
+    showToast(translate("Failed to run job"));
+  } finally {
+    if (syncJobRunNowJobName.value === job.jobName) {
+      syncJobRunNowJobName.value = "";
+    }
+  }
+}
+
+function isSyncJobRunNowLoading(job: any) {
+  return !!job?.jobName && syncJobRunNowJobName.value === job.jobName;
+}
+
 async function refreshAfterRunNow(job: any) {
   const refreshTasks = [loadSyncJobLatestRun()];
 
   if (activeExperienceMode.value === "returning") {
-    refreshTasks.push(loadSecondaryData());
+    refreshTasks.push(loadSecondaryData({ silent: true }));
   }
 
   if (!syncJobDetailsDirty.value && selectedSyncJobDetailsJob.value?.jobName === job?.jobName) {
-    refreshTasks.push(refreshSyncJobDetails());
+    refreshTasks.push(refreshSyncJobDetails({ silent: true }));
   }
 
   await Promise.all(refreshTasks);
@@ -2392,12 +2441,14 @@ async function saveSyncJobDetails() {
   }
 }
 
-async function refreshSyncJobDetails() {
+async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
   if (!selectedSyncJobDetailsJob.value?.jobName) return;
 
-  isSyncJobDetailsLoading.value = true;
-  syncJobAuditHistory.value = [];
-  syncJobAuditHistoryError.value = "";
+  if (!opts.silent) {
+    isSyncJobDetailsLoading.value = true;
+    syncJobAuditHistory.value = [];
+    syncJobAuditHistoryError.value = "";
+  }
   try {
     const [jobDetails, jobRuns] = await Promise.all([
       fetchJobDetail(selectedSyncJobDetailsJob.value.jobName),
@@ -2412,14 +2463,18 @@ async function refreshSyncJobDetails() {
     void loadSyncJobAuditHistory(jobDetails.jobName);
   } catch (error: any) {
     logger.error(error);
-    syncJobDetails.value = {};
-    syncJobDetailsRecentRuns.value = [];
-    syncJobAuditHistory.value = [];
-    syncJobAuditHistoryError.value = "";
-    resetSyncJobDetailsDraft();
-    showToast(translate("Failed to load sync job details."));
+    if (!opts.silent) {
+      syncJobDetails.value = {};
+      syncJobDetailsRecentRuns.value = [];
+      syncJobAuditHistory.value = [];
+      syncJobAuditHistoryError.value = "";
+      resetSyncJobDetailsDraft();
+      showToast(translate("Failed to load sync job details."));
+    }
   } finally {
-    isSyncJobDetailsLoading.value = false;
+    if (!opts.silent) {
+      isSyncJobDetailsLoading.value = false;
+    }
     updateScheduledJobRefreshAt();
   }
 }
@@ -2823,7 +2878,7 @@ async function refreshAfterSystemMessageAction() {
   const refreshTasks: Promise<any>[] = [loadProgress()];
 
   if (activeExperienceMode.value === "returning") {
-    refreshTasks.push(loadSecondaryData());
+    refreshTasks.push(loadSecondaryData({ silent: true }));
   }
 
   await Promise.all(refreshTasks);
@@ -2832,43 +2887,34 @@ async function refreshAfterSystemMessageAction() {
 async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   if (systemMessageActionLoadingId.value) return;
 
+  // Send / Poll route through the same run-now flow as the job modal so the
+  // backend cron job is what produces or polls — not a direct service call.
+  if (actionId === "send") {
+    await runSyncJob(bulkOperationSendJob.value);
+    return;
+  }
+  if (actionId === "poll") {
+    await runSyncJob(bulkOperationPollJob.value);
+    return;
+  }
+
+  // Cancel is a system-message-level discard with no corresponding job.
   const systemMessageId = currentSyncRun.value?.systemMessageId || progressState.value?.systemMessageId;
-  if (!systemMessageId && actionId === "cancel") {
+  if (!systemMessageId) {
     showToast(translate("System message is not available."));
     return;
   }
 
-  if (actionId === "cancel") {
-    const confirmed = await confirmCancelSystemMessage();
-    if (!confirmed) return;
-  }
+  const confirmed = await confirmCancelSystemMessage();
+  if (!confirmed) return;
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    if (actionId === "send") {
-      await ShopifyProductSyncService.sendShopifyBulkQueryMessage({
-        systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-        queryText: currentSyncRun.value?.systemMessage?.messageText
-      });
-      showToast(translate("Product export request sent to Shopify."));
-    } else if (actionId === "poll") {
-      await ShopifyProductSyncService.pollBulkOperationResult({
-        parentSystemMessageTypeId: "ShopifyBulkQuery"
-      });
-      showToast(translate("Shopify bulk operation polled."));
-    } else if (actionId === "cancel") {
-      await ShopifyProductSyncService.cancelSystemMessage(systemMessageId);
-      showToast(translate("Product sync run cancelled."));
-    }
-
+    await ShopifyProductSyncService.cancelSystemMessage(systemMessageId);
+    showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
-    const actionLabel = actionId === "send"
-      ? translate("send the product export request")
-      : actionId === "poll"
-        ? translate("poll the Shopify bulk operation")
-        : translate("cancel the product sync run");
-    showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel })));
+    showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
     logger.error(err);
   } finally {
     systemMessageActionLoadingId.value = "";
@@ -3046,20 +3092,12 @@ function stopProgressPolling() {
 }
 
 function startNextSyncRefreshPolling() {
-  stopNextSyncRefreshPolling();
-  currentTimeMs.value = Date.now();
   updateScheduledJobRefreshAt();
-  nextSyncRefreshPoll = window.setInterval(() => {
-    currentTimeMs.value = Date.now();
-    void refreshScheduledJobStateIfNeeded();
-  }, 15000);
+  liveDashboard.start();
 }
 
 function stopNextSyncRefreshPolling() {
-  if (nextSyncRefreshPoll) {
-    window.clearInterval(nextSyncRefreshPoll);
-    nextSyncRefreshPoll = undefined;
-  }
+  liveDashboard.stop();
   scheduledJobRefreshAtMs = null;
   scheduledJobRefreshGraceUntilMs = null;
 }
@@ -3088,10 +3126,9 @@ function updateScheduledJobRefreshAt() {
   }
 }
 
-let lastKnownJobRunStartTime = 0;
-let lastKnownJobRunEndTime = 0;
+async function evaluateScheduledRefresh(opts: { forceProbe?: boolean } = {}) {
+  if (isRefreshInFlight.value) return;
 
-async function refreshScheduledJobStateIfNeeded() {
   const shouldRefreshForScheduledRun = !!scheduledJobRefreshAtMs && currentTimeMs.value >= scheduledJobRefreshAtMs;
   const shouldRefreshDuringGraceWindow = !!scheduledJobRefreshGraceUntilMs && currentTimeMs.value <= scheduledJobRefreshGraceUntilMs;
 
@@ -3114,11 +3151,10 @@ async function refreshScheduledJobStateIfNeeded() {
         const latestRun = recentRuns[0];
         const runStartTime = latestRun.startTime ? new Date(latestRun.startTime).getTime() : 0;
         const runEndTime = latestRun.endTime ? new Date(latestRun.endTime).getTime() : 0;
-        
+
         let hasNewActivity = false;
 
         if (lastKnownJobRunStartTime === 0) {
-          // Initialize without triggering refresh
           lastKnownJobRunStartTime = runStartTime;
           lastKnownJobRunEndTime = runEndTime;
         } else {
@@ -3131,12 +3167,12 @@ async function refreshScheduledJobStateIfNeeded() {
             hasNewActivity = true;
           }
         }
-        
+
         if (hasNewActivity) {
           const infoMessage = latestRun.infoMessage || latestRun.errorMessages || latestRun.messages || "";
-          const hasNoActivity = infoMessage.includes("No bulk operation currently in progress") || 
+          const hasNoActivity = infoMessage.includes("No bulk operation currently in progress") ||
                                 infoMessage.includes("Aborting, no ShopifyBulkQuery Operation System Messages found to process");
-                                
+
           if (!hasNoActivity || !runEndTime) {
             needsRefresh = true;
           }
@@ -3147,30 +3183,31 @@ async function refreshScheduledJobStateIfNeeded() {
     }
   }
 
-  if (!needsRefresh || isScheduledJobRefreshInFlight) {
-    return;
+  // Tab-focus refresh: once we've loaded once in this session, returning to the tab kicks a refresh
+  // so the user sees fresh state without waiting for the next tick.
+  if (!needsRefresh && opts.forceProbe && hasEverLoadedSecondary.value) {
+    needsRefresh = true;
   }
 
-  isScheduledJobRefreshInFlight = true;
-  const scheduledRefreshAtMs = scheduledJobRefreshAtMs;
-  if (shouldRefreshForScheduledRun && scheduledRefreshAtMs) {
-    scheduledJobRefreshGraceUntilMs = scheduledRefreshAtMs + 2 * 60 * 1000;
+  if (!needsRefresh) return;
+
+  if (shouldRefreshForScheduledRun && scheduledJobRefreshAtMs) {
+    scheduledJobRefreshGraceUntilMs = scheduledJobRefreshAtMs + 2 * 60 * 1000;
   }
   scheduledJobRefreshAtMs = null;
-  try {
-    if (activeExperienceMode.value === "returning" && !isLoading.value) {
-      await loadSecondaryData();
-    }
 
+  await liveDashboard.runRefresh(async () => {
+    if (activeExperienceMode.value === "returning" && !isLoading.value) {
+      await loadSecondaryData({ silent: true });
+    }
     if (showSyncJobDetailsModal.value && selectedSyncJobDetailsJob.value?.jobName && !syncJobDetailsDirty.value) {
-      await refreshSyncJobDetails();
+      await refreshSyncJobDetails({ silent: true });
     }
-  } finally {
-    isScheduledJobRefreshInFlight = false;
-    updateScheduledJobRefreshAt();
-    if (!scheduledJobRefreshAtMs && scheduledJobRefreshGraceUntilMs && currentTimeMs.value > scheduledJobRefreshGraceUntilMs) {
-      scheduledJobRefreshGraceUntilMs = null;
-    }
+  });
+
+  updateScheduledJobRefreshAt();
+  if (!scheduledJobRefreshAtMs && scheduledJobRefreshGraceUntilMs && currentTimeMs.value > scheduledJobRefreshGraceUntilMs) {
+    scheduledJobRefreshGraceUntilMs = null;
   }
 }
 
@@ -3212,6 +3249,20 @@ function getCronDescription(cronExpression: string) {
   } catch (error) {
     return "";
   }
+}
+
+function getNextRunMillis(job: any): number | null {
+  if (!job?.jobName || !job?.cronExpression || isJobPaused(job)) return null;
+  const nextRun = getNextRunDateTime(job);
+  return nextRun?.toMillis() ?? null;
+}
+
+function getJobLatestRunMillis(runs: any[]): number | null {
+  if (!runs?.length) return null;
+  const started = getSyncJobRunStartedAt(runs[0]);
+  if (!started) return null;
+  const parsed = parseDateTimeValue(started);
+  return parsed?.isValid ? parsed.toMillis() : null;
 }
 
 function getNextRunDateTime(job: any) {

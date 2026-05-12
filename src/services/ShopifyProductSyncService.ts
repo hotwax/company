@@ -1120,9 +1120,13 @@ const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProd
   }
 
   return requestBackend<ShopifyProductSyncActionResult>({
-    url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/cancel`,
-    method: "post"
-  }, "System message cancel endpoint");
+    url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}`,
+    method: "put",
+    data: {
+      systemMessageId,
+      statusId: "SmsgCancelled"
+    }
+  }, "System message status update endpoint");
 };
 
 const fetchProductStoreContext = async (payload: any): Promise<any> => {

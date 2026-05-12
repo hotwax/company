@@ -83,7 +83,31 @@
             </ion-label>
             <ion-badge slot="end" :color="currentSyncRun.systemMessage?.statusColor || 'medium'">{{ currentSyncRun.systemMessage?.statusLabel || translate("Pending") }}</ion-badge>
           </ion-item>
-          <ion-item v-if="systemMessageFsmState.nextJob || systemMessageFsmState.primaryAction || systemMessageFsmState.secondaryActions.length" lines="none">
+          <ion-item v-if="hasNextStepBar" lines="none">
+            <ion-progress-bar :value="nextStepProgressValue" />
+            <ion-buttons slot="end">
+              <ion-button
+                v-if="systemMessageFsmState.primaryAction"
+                :disabled="!!systemMessageActionLoadingId"
+                @click="emit('run-system-message-action', systemMessageFsmState.primaryAction.id)"
+              >
+                <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" name="crescent" />
+                <template v-else>{{ systemMessageFsmState.primaryAction.label }}</template>
+              </ion-button>
+              <ion-button
+                v-for="action in systemMessageFsmState.secondaryActions"
+                :key="action.id"
+                fill="clear"
+                color="medium"
+                :disabled="!!systemMessageActionLoadingId"
+                @click="emit('run-system-message-action', action.id)"
+              >
+                <ion-spinner v-if="systemMessageActionLoadingId === action.id" name="crescent" />
+                <span v-else>{{ action.label }}</span>
+              </ion-button>
+            </ion-buttons>
+          </ion-item>
+          <ion-item v-else-if="systemMessageFsmState.nextJob || systemMessageFsmState.primaryAction || systemMessageFsmState.secondaryActions.length" lines="none">
             <ion-label>
               {{ translate("Next step") }}
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
@@ -177,7 +201,7 @@
     <ion-card>
       <ion-card-header>
         <ion-card-title>{{ translate("Product sync jobs") }}</ion-card-title>
-        <ion-card-subtitle>{{ translate("Explain product sync jobs verification") }}</ion-card-subtitle>
+        <ion-card-subtitle>{{ translate("Review the jobs that move product updates through the sync pipeline") }}</ion-card-subtitle>
       </ion-card-header>
       <ion-list>
         <ion-item button detail :disabled="!syncJobObj" @click="emit('open-sync-job-details', syncJobObj)">
@@ -277,6 +301,7 @@
   </section>
 
   <section class="sync-stat">
+    <ion-progress-bar v-if="isRefreshing" type="indeterminate" />
     <div class="stat-header">
       <ion-item class="stat-title" lines="none">
         <ion-label>
@@ -393,13 +418,13 @@
 
 
   <section class="sync-stat">
+    <ion-progress-bar v-if="isRefreshing || isErrorLogsLoading" type="indeterminate" />
     <div class="stat-header">
         <ion-item class="stat-title" lines="none">
           <ion-label>
             <h2>{{ translate("Parsed error details") }}</h2>
             <p>{{ failedRecords.length }} {{ translate("of") }} {{ totalDetailedErrorsCount }} {{ translate("failed objects") }}</p>
           </ion-label>
-          <ion-spinner v-if="isErrorLogsLoading" name="crescent" class="ion-margin-start" />
         </ion-item>
       <ion-buttons slot="end" v-if="hasDetailedErrors">
         <ion-button color="medium" @click="emit('refresh-errors')">
@@ -408,42 +433,41 @@
       </ion-buttons>
       <ion-searchbar :value="detailedErrorQuery" @ionInput="emit('update:detailed-error-query', $event.detail.value)" :placeholder="translate('Search by ID, Name or Handle')" />
     </div>
-    <div class="stat-data" v-if="failedRecords.length">
-      <ion-card v-for="record in failedRecords" :key="record.id">
-        <ion-item lines="full">
-          <ion-label class="ion-text-wrap">
-            <h3>{{ record.title }}</h3>
-            <p v-if="record.handle">{{ record.handle }}</p>
-          </ion-label>
-        </ion-item>
-        <ion-card-content>
-          <p class="ion-no-margin">
-            <strong>{{ translate("Product ID") }}:</strong> {{ record.numericId || 'N/A' }}
-          </p>
-          <p class="ion-no-margin ion-margin-top">
-            {{ record.error }}
-          </p>
-          <div class="ion-margin-top">
-            <ion-button fill="clear" size="small" class="ion-no-padding" @click="emit('show-error-modal', record)">
-              {{ translate("View details") }}
-            </ion-button>
-            <ion-button fill="clear" size="small" color="primary" @click="emit('resync-product', record)">
-              {{ translate("Retry") }}
-            </ion-button>
-          </div>
-        </ion-card-content>
-      </ion-card>
-      
-      </div>
-    <div class="stat-data" v-else>
-      <ion-card>
-        <ion-item lines="none">
-          <ion-label class="ion-text-center">
-            <p v-if="detailedErrorQuery">{{ translate("No records match your search.") }}</p>
-            <p v-else>{{ translate("All caught up! No recent errors found.") }}</p>
-          </ion-label>
-        </ion-item>
-      </ion-card>
+    <div class="stat-data">
+      <transition-group name="list" tag="div" class="list-transition-group">
+        <ion-card v-for="record in failedRecords" :key="record.id">
+          <ion-item lines="full">
+            <ion-label class="ion-text-wrap">
+              <h3>{{ record.title }}</h3>
+              <p v-if="record.handle">{{ record.handle }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-card-content>
+            <p class="ion-no-margin">
+              <strong>{{ translate("Product ID") }}:</strong> {{ record.numericId || 'N/A' }}
+            </p>
+            <p class="ion-no-margin ion-margin-top">
+              {{ record.error }}
+            </p>
+            <div class="ion-margin-top">
+              <ion-button fill="clear" size="small" class="ion-no-padding" @click="emit('show-error-modal', record)">
+                {{ translate("View details") }}
+              </ion-button>
+              <ion-button fill="clear" size="small" color="primary" @click="emit('resync-product', record)">
+                {{ translate("Retry") }}
+              </ion-button>
+            </div>
+          </ion-card-content>
+        </ion-card>
+        <ion-card v-if="!failedRecords.length" key="no-failed-records-card">
+          <ion-item lines="none">
+            <ion-label class="ion-text-center">
+              <p v-if="detailedErrorQuery">{{ translate("No records match your search.") }}</p>
+              <p v-else>{{ translate("All caught up! No recent errors found.") }}</p>
+            </ion-label>
+          </ion-item>
+        </ion-card>
+      </transition-group>
     </div>
   </section>
 
@@ -473,7 +497,7 @@ import {
   IonSpinner
 } from "@ionic/vue";
 import { translate } from "@/i18n";
-import { computed, defineEmits, defineProps, ref } from "vue";
+import { computed, defineEmits, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, openOutline, pauseCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { popoverController } from "@ionic/vue";
 import AnimatedNumber from "@/components/AnimatedNumber.vue";
@@ -530,6 +554,7 @@ const props = defineProps<{
   hasCurrentShopifyRequest?: boolean
   syncJobObj?: any
   isSecondaryLoading?: boolean
+  isRefreshing?: boolean
   isErrorLogsLoading?: boolean
   errorRecordCount: number | string
   failedRecords: Array<{ id: string, numericId?: string, logId?: string, title: string, vendor?: string, handle?: string, productType?: string, sku?: string, barcode?: string, error: string }>
@@ -572,6 +597,34 @@ async function openActionsPopover(event: Event) {
 
 const updatesQuery = ref("");
 const visibleChangeSummaryCount = 4;
+
+// Bar between now and the next scheduled run of the next-step job.
+// Driven by `nextStepNowMs` which ticks every 500ms while the component is mounted.
+const nextStepNowMs = ref(Date.now());
+let nextStepTickHandle: number | undefined;
+onMounted(() => {
+  nextStepTickHandle = window.setInterval(() => { nextStepNowMs.value = Date.now(); }, 500);
+});
+onBeforeUnmount(() => {
+  if (nextStepTickHandle) window.clearInterval(nextStepTickHandle);
+});
+
+const hasNextStepBar = computed(() => {
+  const job = props.systemMessageFsmState?.nextJob;
+  if (!job || job.paused) return false;
+  if (!job.nextRunAtMs || !job.previousRunAtMs) return false;
+  return job.nextRunAtMs > job.previousRunAtMs;
+});
+
+const nextStepProgressValue = computed(() => {
+  const job = props.systemMessageFsmState?.nextJob;
+  if (!job?.nextRunAtMs || !job?.previousRunAtMs) return 0;
+  const total = job.nextRunAtMs - job.previousRunAtMs;
+  if (total <= 0) return 0;
+  const remaining = job.nextRunAtMs - nextStepNowMs.value;
+  if (remaining <= 0) return 0;
+  return Math.min(1, Math.max(0, remaining / total));
+});
 
 function getDetailActionLabel(type: string) {
   return type === "added" ? translate("Added") : translate("Removed");
@@ -727,4 +780,5 @@ ion-buttons {
 .list-move {
   transition: transform 0.5s ease;
 }
+
 </style>
