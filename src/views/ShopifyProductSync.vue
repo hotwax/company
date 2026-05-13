@@ -3560,7 +3560,6 @@ async function toggleWebhookSubscription(subscribe: boolean) {
       await ShopifyProductSyncService.subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
-        endPoint: "shopify/webhook/payload"
       });
       showToast(translate("Subscribed to bulk operations finish webhook."));
     } else {

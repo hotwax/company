@@ -1414,7 +1414,7 @@ const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDa
 
 const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {
   const response = await requestBackend<any>({
-    url: "shopify/webhook",
+    url: "shopify/webhook-subscription",
     method: "get",
     params: {
       systemMessageRemoteId: payload.systemMessageRemoteId,
@@ -1429,7 +1429,7 @@ const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {
 
 const subscribeWebhook = async (payload: any): Promise<any> => {
   return await requestBackend<any>({
-    url: "shopify/webhook",
+    url: "shopify/webhook-subscription",
     method: "post",
     data: {
       systemMessageRemoteId: payload.systemMessageRemoteId,
@@ -1440,7 +1440,7 @@ const subscribeWebhook = async (payload: any): Promise<any> => {
 
 const unsubscribeWebhook = async (payload: any): Promise<any> => {
   return await requestBackend<any>({
-    url: "shopify/webhook",
+    url: "shopify/webhook-subscription",
     method: "delete",
     data: {
       systemMessageRemoteId: payload.systemMessageRemoteId,
