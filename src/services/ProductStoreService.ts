@@ -4,7 +4,7 @@ import { hasError } from "@/utils";
 
 const createProductStore = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/productStores",
+    url: "admin/productStores",
     method: "post",
     data: payload
   });
@@ -12,21 +12,21 @@ const createProductStore = async (payload: any): Promise <any> => {
 
 const fetchCurrentStoreSettings = async (productStoreId: any): Promise <any> => {
   return api({
-    url: `oms/productStores/${productStoreId}/settings`,
+    url: `admin/productStores/${productStoreId}/settings`,
     method: "get"
   });
 }
 
 const fetchProductStoreDetails = async (productStoreId: any): Promise <any> => {
   return api({
-    url: `oms/productStores/${productStoreId}`,
+    url: `admin/productStores/${productStoreId}`,
     method: "get"
   });
 }
 
 const fetchProductStores = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/productStores",
+    url: "admin/productStores",
     method: "get",
     params: payload
   });
@@ -35,7 +35,7 @@ const fetchProductStores = async (payload: any): Promise <any> => {
 const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
   try {
     const response = await api({
-      url: "oms/productStores/facilities/counts",
+      url: "admin/productStores/facilities/counts",
       method: "get",
       params: payload
     });
@@ -51,7 +51,7 @@ const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
 
 const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/productStores/shipmentMethods/counts",
+    url: "admin/productStores/shipmentMethods/counts",
     method: "get",
     params: payload
   });
@@ -59,7 +59,7 @@ const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any
 
 const updateProductStore = async (payload: any): Promise <any> => {
   return api({
-    url: `oms/productStores/${payload.productStoreId}`,
+    url: `admin/productStores/${payload.productStoreId}`,
     method: "put",
     data: payload
   });
@@ -102,7 +102,7 @@ const updateCompany = async (payload: any): Promise <any> => {
 
 const updateCurrentStoreSettings = async (payload: any): Promise <any> => {
   return api({
-    url: `oms/productStores/${payload.productStoreId}/settings`,
+    url: `admin/productStores/${payload.productStoreId}/settings`,
     method: "post",
     data: payload
   });

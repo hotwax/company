@@ -2,7 +2,7 @@ import api from "@/api"
 
 const fetchProductStoreShipmentMethods = async (payload: any): Promise<any> => {
   return api({
-    url: `oms/productStores/${payload.productStoreId}/shipmentMethods`,
+    url: `admin/productStores/${payload.productStoreId}/shipmentMethods`,
     method: "get",
     params: payload
   })
