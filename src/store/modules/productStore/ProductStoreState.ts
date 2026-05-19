@@ -3,5 +3,9 @@ export default interface ProductStoreState {
   currentStoreSettings: any;
   productStores: any;
   company: any;
-  netSuiteProductStore: any
+  netSuiteProductStore: any;
+  fetchStatus: {
+    productStores: string;
+    lastFetched: number;
+  };
 }

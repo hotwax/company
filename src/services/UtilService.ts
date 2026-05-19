@@ -72,6 +72,14 @@ const fetchOrganization = async (payload: any): Promise<any> => {
   })
 }
 
+const fetchStatusItems = async (payload: any): Promise<any> => {
+  return api({
+    url: "oms/statuses",
+    method: "get",
+    params: payload
+  })
+}
+
 const fetchCurrencies = async (payload: any): Promise<any> => {
   return api({
     url: "admin/uoms",
@@ -90,5 +98,6 @@ export const UtilService = {
   fetchOperatingCountries,
   fetchOrganization,
   fetchCurrencies,
-  fetchShipmentMethodTypes
+  fetchShipmentMethodTypes,
+  fetchStatusItems
 }

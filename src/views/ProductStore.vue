@@ -60,7 +60,7 @@ const productStores = computed(() => store.getters["productStore/getProductStore
 const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("productStore/fetchProductStores");
+  await store.dispatch("productStore/fetchProductStores", { fetchCounts: true });
 })
 
 async function viewProductStoreDetails(productStoreId: string) {

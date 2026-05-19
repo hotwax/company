@@ -4,9 +4,6 @@ export default interface NetSuiteState {
   paymentMethods: any
   salesChannel: any
   integrationTypeMappings: any
-  shopifyTypeMappings: any
-  shopifyShopsCarrierShipments: any
-  shopifyShopLocations: any
   facilitiesIdentifications: any
   enumsInEnumGroup: any
 }

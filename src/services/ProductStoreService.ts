@@ -33,11 +33,20 @@ const fetchProductStores = async (payload: any): Promise <any> => {
 }
 
 const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
-  return api({
-    url: "oms/productStores/facilities/counts",
-    method: "get",
-    params: payload
-  });
+  try {
+    const response = await api({
+      url: "oms/productStores/facilities/counts",
+      method: "get",
+      params: payload
+    });
+    return response ? response.data : [];
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      logger.warn("Product store facility counts endpoint not found (404)");
+      return [];
+    }
+    throw error;
+  }
 }
 
 const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any> => {

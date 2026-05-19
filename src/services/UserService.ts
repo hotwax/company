@@ -52,18 +52,23 @@ const getUserProfile = async (token: any): Promise<any> => {
 }
 
 const getAvailableTimeZones = async (): Promise <any>  => {
-  const url = store.getters["user/getBaseUrl"]
-  const baseURL = url.startsWith('http') ? url.includes('/rest/s1/') ? url : `${url}/rest/s1/` : `https://${url}.hotwax.io/rest/s1/`;
-  return client({
+  return api({
     url: "admin/user/getAvailableTimeZones",
     method: "get",
-    baseURL,
     cache: true
   });
 }
+
+const getUserAccount = async (userId: string): Promise<any> => {
+  return api({
+    url: `admin/users/${encodeURIComponent(userId)}`,
+    method: "GET"
+  });
+}
+
 const setUserTimeZone = async (payload: any): Promise <any>  => {
   return api({
-    url: "setUserTimeZone",
+    url: "admin/user/profile",
     method: "post",
     data: payload
   });
@@ -161,6 +166,7 @@ const getUserPermissions = async (payload: any, url: string, token: any): Promis
 
 export const UserService = {
   getAvailableTimeZones,
+  getUserAccount,
   getUserProfile,
   getUserPermissions,
   login,
