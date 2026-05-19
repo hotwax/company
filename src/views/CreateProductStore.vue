@@ -94,7 +94,7 @@ onIonViewWillEnter(async () => {
 async function fetchCurrencies() {
   try {
     const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(!hasError(resp) && resp.data?.length) {
+    if(resp.data?.length) {
       currencies.value = resp.data;
     }
   } catch(err) {
