@@ -170,6 +170,8 @@ const parsedRows = ref<ParsedRow[]>([]);
 
 const issuing = ref(false);
 const results = ref<GiftCardIssueResult[]>([]);
+const issuedAmount = ref("");
+const issuedCurrencyCode = ref("");
 
 onIonViewWillEnter(async () => {
   if (!shops.value.length) {
@@ -206,9 +208,7 @@ const previewRows = computed(() => {
     firstNameSeen.set(firstSlug, seenIndex + 1);
 
     let namePart: string;
-    if (seenIndex === 0 && (firstNameCounts.get(firstSlug) || 0) === 1) {
-      namePart = firstSlug;
-    } else if (seenIndex === 0) {
+    if (seenIndex === 0) {
       namePart = firstSlug;
     } else if (lastSlug) {
       namePart = `${firstSlug}-${lastSlug.charAt(0)}`;
@@ -260,13 +260,20 @@ async function onShopChange(shopId: string) {
       shopifyShopId: shop.shopifyShopId,
       shopId: shop.shopId
     });
+    if (selectedShopId.value !== shopId) return;
     if (!remoteId) throw new Error("No Shopify system message remote found for this shop.");
+    const currency = await GiftCardService.fetchShopCurrencyCode(remoteId);
+    if (selectedShopId.value !== shopId) return;
     systemMessageRemoteId.value = remoteId;
-    currencyCode.value = await GiftCardService.fetchShopCurrencyCode(remoteId);
+    currencyCode.value = currency;
   } catch (error: any) {
-    shopError.value = error?.message || "Failed to connect to this Shopify shop.";
+    if (selectedShopId.value === shopId) {
+      shopError.value = error?.message || "Failed to connect to this Shopify shop.";
+    }
   } finally {
-    resolvingShop.value = false;
+    if (selectedShopId.value === shopId) {
+      resolvingShop.value = false;
+    }
   }
 }
 
@@ -335,6 +342,8 @@ async function issueAll() {
   issuing.value = true;
   results.value = [];
   const initialValue = Number(value.value).toFixed(2);
+  issuedAmount.value = initialValue;
+  issuedCurrencyCode.value = currencyCode.value;
   try {
     for (const row of previewRows.value) {
       const result = await GiftCardService.issueGiftCard({
@@ -343,7 +352,7 @@ async function issueAll() {
         code: row.code,
         initialValue
       });
-      results.value = [...results.value, result];
+      results.value.push(result);
     }
     if (failedCount.value === 0) {
       showToast(translate("All gift cards issued."));
@@ -366,8 +375,8 @@ function downloadResults() {
   const rows = results.value.map((r) => [
     csvEscape(r.name),
     csvEscape(r.code),
-    csvEscape(Number(value.value).toFixed(2)),
-    csvEscape(currencyCode.value || ""),
+    csvEscape(issuedAmount.value),
+    csvEscape(issuedCurrencyCode.value),
     csvEscape(r.status),
     csvEscape(r.error || "")
   ].join(","));
