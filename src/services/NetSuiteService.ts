@@ -63,31 +63,6 @@ const removeIntegrationMappingValue = async (payload: any): Promise <any> => {
   })
 }
 
-const fetchShopifyTypeMappings = async (payload: any): Promise <any> => {
-  return api({
-    url: "oms/shopifyShops/typeMappings",
-    method: "get",
-    params: payload
-  })
-}
-
-const fetchShopifyShopsCarrierShipments = async (payload: any): Promise <any> => {
-  return api({
-    url: "oms/shopifyShops/carrierShipments",
-    method: "get",
-    params: payload
-  })
-}
-
-const fetchShopifyShopLocation = async (payload: any): Promise <any> => {
-  return api({
-    url: "oms/shopifyShops/locations",
-    method: "get",
-    params: payload
-  })
-}
-
-// TODO: need to add dynamic api to update the sftp configs.
 const updateSftpConfig = async (payload: any): Promise <any> => {
   return api({
     url: "updateSftp",
@@ -109,9 +84,6 @@ export const NetSuiteService = {
   fetchIntegrationTypeMappings,
   fetchPaymentMethods,
   fetchProductStoreShipmentMethods,
-  fetchShopifyTypeMappings,
-  fetchShopifyShopsCarrierShipments,
-  fetchShopifyShopLocation,
   fetchfacilitiesIdentifications,
   removeIntegrationMappingValue,
   updateEnumCode,

@@ -12,7 +12,11 @@ const productStoreModule: Module<ProductStoreState, RootState> = {
     currentStoreSettings: {},
     productStores: [],
     company: {},
-    netSuiteProductStore: {}
+    netSuiteProductStore: {},
+    fetchStatus: {
+      productStores: 'none',
+      lastFetched: 0
+    }
   },
   getters,
   actions,

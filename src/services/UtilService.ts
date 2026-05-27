@@ -10,7 +10,7 @@ const fetchDBICCountries = async (payload: any): Promise <any> => {
 
 const fetchFacilityGroups = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/facilityGroups",
+    url: "admin/facilityGroups",
     method: "get",
     params: payload
   });
@@ -18,7 +18,7 @@ const fetchFacilityGroups = async (payload: any): Promise <any> => {
 
 const fetchFacilities = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/facilities",
+    url: "admin/facilities",
     method: "get",
     params: payload
   })
@@ -90,6 +90,22 @@ const updateAppVersion = async(payload: any): Promise<any> => {
   })
 }
 
+const fetchStatusItems = async (payload: any): Promise<any> => {
+  return api({
+    url: "oms/statuses",
+    method: "get",
+    params: payload
+  })
+}
+
+const fetchCurrencies = async (payload: any): Promise<any> => {
+  return api({
+    url: "admin/uoms",
+    method: "get",
+    params: payload
+  })
+}
+
 export const UtilService = {
   fetchAppVersions,
   fetchDBICCountries,
@@ -101,5 +117,7 @@ export const UtilService = {
   fetchOperatingCountries,
   fetchOrganization,
   fetchShipmentMethodTypes,
-  updateAppVersion
+  updateAppVersion,
+  fetchCurrencies,
+  fetchStatusItems
 }

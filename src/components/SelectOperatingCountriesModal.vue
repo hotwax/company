@@ -15,7 +15,7 @@
 
     <ion-list>
       <ion-item v-for="country in filteredCountries" :key="country.geoId" @click="toggleCountrySelection(country)">
-        <ion-checkbox :checked="isAlreadySelected(country.geoId)">
+        <ion-checkbox :checked="isAlreadySelected(country.geoId)" justify="space-between">
           <ion-label>
             <p class="overline">{{ country.geoId }}</p>
             {{ country.geoName ? country.geoName : country.geoId }}

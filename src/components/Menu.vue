@@ -33,7 +33,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { appsOutline, businessOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { appsOutline, businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useStore } from "@/store";
 import { useRouter } from "vue-router";
 import { translate } from "@/i18n";
@@ -48,13 +48,20 @@ const appPages = [
     iosIcon: businessOutline,
     mdIcon: businessOutline,
   },
-  // {
-  //   title: "Shopify",
-  //   url: "/shopify",
-  //   childRoutes: ["/shopify/"],
-  //   iosIcon: cartOutline,
-  //   mdIcon: cartOutline,
-  // },
+  {
+    title: "Shopify",
+    url: "/shopify",
+    childRoutes: ["/shopify-connection-details"],
+    iosIcon: cartOutline,
+    mdIcon: cartOutline,
+  },
+  {
+    title: "Klaviyo",
+    url: "/klaviyo",
+    childRoutes: ["/klaviyo/"],
+    iosIcon: mailOutline,
+    mdIcon: mailOutline,
+  },
   {
     title: "NetSuite",
     url: "/netsuite",

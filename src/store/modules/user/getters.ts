@@ -28,5 +28,8 @@ const getters: GetterTree <UserState, RootState> = {
   getUserPermissions (state) {
     return state.permissions;
   },
+  getFetchStatus(state) {
+    return state.fetchStatus;
+  }
 }
 export default getters;

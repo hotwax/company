@@ -7,4 +7,9 @@ export default interface UserState {
     token: string;
   },
   permissions: any;
+  fetchStatus: {
+    profile: string;
+    permissions: string;
+    lastFetched: number;
+  };
 }

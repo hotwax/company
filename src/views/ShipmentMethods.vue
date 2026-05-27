@@ -42,13 +42,13 @@
           </ion-label>
         </ion-item>
         <ion-label>
-          {{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId)?.carrierPartyId ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).carrierPartyId : "-" }}
-          <p>{{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId) ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).carrierPartyId : "-" }}</p>
+          {{ shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId]?.carrierPartyId ? shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId].carrierPartyId : "-" }}
+          <p>{{ shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId] ? shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId].carrierPartyId : "-" }}</p>
         </ion-label>
 
         <ion-label>
-          {{ shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId)?.shopifyShippingMethod ? shopifyShopsCarrierShipments(shipmentMethod.shipmentMethodTypeId).shopifyShippingMethod : "-" }}
-          <p>{{ translate("Shopify name") }}</p>
+          {{ shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId]?.shopifyShippingMethod ? shopifyShopsCarrierShipments[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId].shopifyShippingMethod : "-" }}
+          <p>{{ translate("Shopify Name") }}</p>
         </ion-label>
         
         <template v-if="updatedNetSuiteIds[shipmentMethod.shipmentMethodTypeId]">
@@ -94,7 +94,7 @@ const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMeth
 const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
 const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](shipmentMethodTypeId))
-const shopifyShopsCarrierShipments = computed(() => store.getters["netSuite/getShopifyShopsCarrierShipments"])
+const shopifyShopsCarrierShipments = computed(() => store.getters["shopify/getShopifyShopsCarrierShipments"])
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)

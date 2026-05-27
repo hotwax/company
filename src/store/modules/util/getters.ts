@@ -21,8 +21,20 @@ const getters: GetterTree <UtilState, RootState> = {
   getShipmentMethodTypes(state) {
     return state.shipmentMethodTypes;
   },
+  getEmailTypes(state) {
+    return state.emailTypes;
+  },
   getOrganizationPartyId(state) {
     return state.organizationPartyId;
+  },
+  getStatusItems(state) {
+    return state.statusItems;
+  },
+  getMaargInfo(state) {
+    return state.maargInfo;
+  },
+  getFetchStatus(state) {
+    return state.fetchStatus;
   }
 }
 export default getters;

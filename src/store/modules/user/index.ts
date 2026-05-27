@@ -15,7 +15,12 @@ const userModule: Module<UserState, RootState> = {
       url: "",
       token: ""
     },
-    permissions: []
+    permissions: [],
+    fetchStatus: {
+      profile: 'none',
+      permissions: 'none',
+      lastFetched: 0
+    }
   },
   getters,
   actions,

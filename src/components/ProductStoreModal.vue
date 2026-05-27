@@ -60,7 +60,7 @@ const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
 onMounted(async () => {
-  await store.dispatch("productStore/fetchProductStores", "productStoreModal");
+  await store.dispatch("productStore/fetchProductStores");
   if(netSuiteProductStore.value) {
     selectedProductStoreId.value = netSuiteProductStore.value.productStoreId;
     subsidiaryId.value = netSuiteProductStore.value.subsidiaryId;

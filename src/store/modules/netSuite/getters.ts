@@ -23,15 +23,6 @@ const getters: GetterTree <NetSuiteState, RootState> = {
   },
   getIntegrationTypeMappings: (state) => (typeId: any) => {
     return state.integrationTypeMappings[typeId] ? state.integrationTypeMappings[typeId] : []
-  },
-  getShopifyTypeMappings: (state) => (typeId: any) => {
-    return state.shopifyTypeMappings[typeId] ? state.shopifyTypeMappings[typeId] : []
-  },
-  getShopifyShopsCarrierShipments: (state) => (shipmentMethodTypeId: any) => {
-    return state.shopifyShopsCarrierShipments[shipmentMethodTypeId] ? state.shopifyShopsCarrierShipments[shipmentMethodTypeId] : []
-  },
-  getShopifyShopLocation: (state) => (facilityId: any) => {
-    return state.shopifyShopLocations[facilityId]
   }
 }
 export default getters;

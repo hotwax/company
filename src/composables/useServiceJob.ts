@@ -1,0 +1,264 @@
+import { reactive, toRefs } from 'vue';
+import api from '@/api';
+import logger from '@/logger';
+import cronstrue from 'cronstrue';
+import store from '@/store';
+
+const getCronString = (cronExpression: any) => {
+  try {
+    return cronstrue.toString(cronExpression);
+  } catch(e) {
+    logger.warn(e);
+    return "";
+  }
+}
+
+const getNormalizedJob = (job: any = {}) => ({
+  serviceInParameters: Array.isArray(job?.serviceInParameters) ? job.serviceInParameters : [],
+  serviceJobParameters: Array.isArray(job?.serviceJobParameters) ? job.serviceJobParameters : [],
+  ...job
+});
+
+const getServiceJobs = (payload: any) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.serviceJobs)) return payload.serviceJobs;
+  if (Array.isArray(payload?.serviceJobList)) return payload.serviceJobList;
+  if (Array.isArray(payload?.jobs)) return payload.jobs;
+  if (Array.isArray(payload?.jobList)) return payload.jobList;
+  if (Array.isArray(payload?.docs)) return payload.docs;
+  if (Array.isArray(payload?.entityValueList)) return payload.entityValueList;
+  return [];
+};
+
+const getEntityAuditLogs = (payload: any) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload?._entity === "moqui.entity.EntityAuditLog") return [payload];
+  if (Array.isArray(payload?.entityAuditLogs)) return payload.entityAuditLogs;
+  if (Array.isArray(payload?.entityAuditLogList)) return payload.entityAuditLogList;
+  if (Array.isArray(payload?.auditLogs)) return payload.auditLogs;
+  if (Array.isArray(payload?.auditLogList)) return payload.auditLogList;
+  if (Array.isArray(payload?.entityValueList)) return payload.entityValueList;
+  if (Array.isArray(payload?.docs)) return payload.docs;
+  return [];
+};
+
+export const getNormalizedJobDetail = (jobDetail: any = {}) => {
+  return getNormalizedJob(jobDetail);
+};
+
+const state = reactive({
+  jobs: [] as Array<any>,
+  products: {} as any,
+  loading: false
+});
+
+const defaultJobFetchParams = {
+  instanceOfProductId_op: "empty",
+  instanceOfProductId_not: "Y"
+};
+
+const pendingRequests = {} as any;
+const fetchDeduplicated = async (key: string, fetchFn: () => Promise<any>) => {
+  if (pendingRequests[key]) return pendingRequests[key];
+  pendingRequests[key] = fetchFn().finally(() => delete pendingRequests[key]);
+  return pendingRequests[key];
+};
+
+export default function useServiceJob() {
+
+
+  const fetchJobs = async (params: Record<string, any> = defaultJobFetchParams) => {
+    // Normalize params to ensure stable keying (especially for empty objects vs defaults)
+    const normalizedParams = (params && Object.keys(params).length > 0) ? params : {};
+    const key = `jobs_${JSON.stringify(normalizedParams)}`;
+
+    return fetchDeduplicated(key, async () => {
+      state.loading = true;
+      try {
+        let total = 0;
+        let pageIndex = 0;
+        let allJobs = [] as any[];
+        do {
+          const resp = await api({
+            url: "admin/serviceJobs",
+            method: "GET",
+            params: {
+              pageSize: 250,
+              pageIndex,
+              ...normalizedParams
+            }
+          }) as any;
+
+
+          const respJobs = getServiceJobs(resp?.data).map((job: any) => ({
+            ...job,
+            cronString: job.cronExpression ? getCronString(job.cronExpression) : ''
+          }));
+
+          total = respJobs.length;
+          allJobs = pageIndex > 0 ? allJobs.concat(respJobs) : respJobs;
+          pageIndex++;
+        } while(total === 250);
+        
+        state.jobs = allJobs;
+      } catch(err) {
+        logger.error("Failed to fetch jobs", err);
+        throw err;
+      } finally {
+        state.loading = false;
+      }
+    });
+  };
+
+  const fetchServiceParams = async (serviceName: string) => {
+    const encodedServiceName = encodeURIComponent(serviceName);
+    return fetchDeduplicated(`service_params_${encodedServiceName}`, async () => {
+      let parameters = [];
+      try {
+        const resp = await api({
+          url: `admin/services/${encodedServiceName}/parameters`,
+          method: "GET",
+          params: {
+            pageSize: 1000
+          }
+        }) as any;
+        parameters = resp?.data?.serviceInParameters || [];
+      } catch(err) {
+        logger.error("Failed to fetch service parameters", err);
+        throw err;
+      }
+      return parameters;
+    });
+  };
+
+  const fetchProductDetail = async (productId: string) => {
+    if (state.products[productId]) return;
+    return fetchDeduplicated(`product_${productId}`, async () => {
+      try {
+        const resp = await api({
+          url: `oms/products/${productId}`,
+          method: "GET"
+        }) as any;
+        if (resp?.data) {
+          state.products[productId] = resp.data;
+        }
+      } catch(err) {
+        logger.error("Failed to fetch product detail", err);
+        throw err;
+      }
+    });
+  };
+
+  const fetchJobDetail = async (jobName: string) => {
+    return fetchDeduplicated(`job_detail_${jobName}`, async () => {
+      let jobDetails: Record<string, any> = {};
+      try {
+        const resp = await api({
+          url: `admin/serviceJobs/${jobName}`,
+          method: "GET",
+          params: {
+            pageSize: 1000
+          }
+        }) as any;
+        const job = resp?.data?.jobDetail || {};
+
+        const isJobProductStoreDependent = () => job.serviceJobParameters?.some((param: any) => param.parameterName === "productStoreIds");
+
+        if (isJobProductStoreDependent()) {
+          const jobProductStore = job.serviceJobParameters.find((param: any) => param.parameterName === "productStoreIds");
+          // get productStoreId from store
+          const currentProductStoreId = store.getters["productStore/getCurrent"]?.productStoreId; 
+          
+          if (jobProductStore?.parameterName && jobProductStore.parameterValue === currentProductStoreId) {
+            jobDetails = job;
+          } else if (!jobProductStore?.parameterName) {
+            jobDetails = { ...job, isDraftJob: true };
+          }
+        } else {
+          jobDetails = job;
+        }
+      } catch(err) {
+        logger.error("Failed to fetch job details", err);
+        throw err;
+      }
+
+      if (!Object.keys(jobDetails || {}).length) {
+        throw new Error(`Service job detail is unavailable for ${jobName}.`);
+      }
+
+      const job = getNormalizedJobDetail(jobDetails);
+      if (job.instanceOfProductId && !state.products[job.instanceOfProductId]) {
+        await fetchProductDetail(job.instanceOfProductId);
+      }
+      return job;
+    });
+  };
+
+  const fetchJobRuns = async (jobName: string, payload: any) => {
+    const params = {
+      pageSize: 250,
+      pageIndex: 0,
+      orderByField: "-startTime",
+      ...payload
+    }
+    const key = `job_runs_${jobName}_${JSON.stringify(params)}`;
+    return fetchDeduplicated(key, async () => {
+      let jobRuns = [] as any;
+      try {
+        const resp = await api({
+          url: `admin/serviceJobs/${jobName}/runs`,
+          method: "GET",
+          params
+        }) as any;
+        jobRuns = resp?.data || [];
+      } catch(err) {
+        logger.error("Failed to fetch job runs", err);
+        throw err;
+      }
+      return Array.isArray(jobRuns) ? jobRuns : [];
+    });
+  };
+
+  const fetchJobAuditHistory = async (jobName: string, payload = { pageSize: 10, pageIndex: 0 }) => {
+    const resp = await api({
+      url: "admin/entityAuditLogs",
+      method: "GET",
+      params: {
+        pageSize: payload.pageSize,
+        pageIndex: payload.pageIndex,
+        changedEntityName: "moqui.service.job.ServiceJob",
+        pkPrimaryValue: jobName,
+        orderByField: "-changedDate"
+      }
+    }) as any;
+
+    return getEntityAuditLogs(resp?.data);
+  };
+
+  const updateJob = async (payload: any) => {
+    return await api({
+      url: `admin/serviceJobs/${payload.jobName}`,
+      method: "PUT",
+      data: payload,
+    });
+  };
+
+  const runNow = async (jobName: string) => {
+    return await api({
+      url: `admin/serviceJobs/${jobName}/runNow`,
+      method: "POST"
+    });
+  };
+
+  return {
+    ...toRefs(state),
+    fetchJobs,
+    fetchServiceParams,
+    fetchProductDetail,
+    fetchJobDetail,
+    fetchJobRuns,
+    fetchJobAuditHistory,
+    updateJob,
+    runNow
+  };
+}

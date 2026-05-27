@@ -42,7 +42,6 @@ axios.interceptors.response.use(function (response) {
   setTimeout(() => emitter.emit("dismissLoader"), 100);
   if (error.response) {
     // TODO Handle case for failed queue request
-    const { status } = error.response;
     // if (status === StatusCodes.UNAUTHORIZED) {
     //   store.dispatch("user/logout");
     //   const redirectUrl = window.location.origin + '/login';

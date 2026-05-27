@@ -43,6 +43,9 @@
             <ion-card-title>
               {{ oms }}
             </ion-card-title>
+            <ion-card-subtitle>
+              {{ omsVersionLabel }}
+            </ion-card-subtitle> 
           </ion-card-header>
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
@@ -87,13 +90,40 @@
             <ion-button @click="changeTimeZone()" slot="end" fill="outline" color="dark">{{ translate("Change") }}</ion-button>
           </ion-item>
         </ion-card>
+
+        <ion-card>
+          <ion-card-header>
+            <div class="card-header">
+              <div>
+                <ion-card-title>{{ translate('Data Fetch Status') }}</ion-card-title>
+                <ion-card-subtitle v-if="oldestSyncTime">{{ translate("Oldest sync:") }} {{ oldestSyncTime }}</ion-card-subtitle>
+              </div>
+              <ion-button fill="clear" @click="refreshCache()" size="small">
+                <ion-icon slot="icon-only" :icon="syncOutline" />
+              </ion-button>
+            </div>
+          </ion-card-header>
+          <ion-list lines="none">
+            <ion-item v-for="item in harmonizedFetchStatus" :key="item.label">
+              <ion-icon slot="start" :icon="getStatusIcon(item.status)" :color="getStatusColor(item.status)" />
+              <ion-label>
+                {{ item.label }}
+                <p v-if="item.status === 'success' && item.count !== undefined">{{ translate("Fetched") }} {{ item.count }} {{ translate("records") }}</p>
+                <p v-else>{{ translate(getStatusLabel(item.status)) }}</p>
+              </ion-label>
+              <ion-button slot="end" fill="clear" @click="item.refresh()">
+                <ion-icon slot="icon-only" :icon="syncOutline" />
+              </ion-button>
+            </ion-item>
+          </ion-list>
+        </ion-card>
       </section>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { Actions, hasPermission } from '@/authorization'
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useStore } from "vuex";
@@ -101,24 +131,172 @@ import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import { DateTime } from "luxon";
 import { translate } from "@/i18n"
-import { openOutline } from "ionicons/icons"
+import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 import { goToOms } from "@hotwax/dxp-components";
 import { getCurrentTime } from "../utils"
+import useServiceJob from "@/composables/useServiceJob";
 const store = useStore()
+const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
 const appVersion = ref("")
+const maargInfo = computed(() => store.getters["util/getMaargInfo"])
+const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
 const appInfo = (process.env.VUE_APP_VERSION_INFO ? JSON.parse(process.env.VUE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => store.getters["user/getUserProfile"])
 const oms = computed(() => store.getters["user/getInstanceUrl"])
 const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
+const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
+const statusItems = computed(() => store.state.util.statusItems)
+const facilities = computed(() => store.state.util.facilities)
+const fetchStatus = computed(() => store.getters["util/getFetchStatus"])
+const userFetchStatus = computed(() => store.getters["user/getFetchStatus"])
+const productStoreFetchStatus = computed(() => store.getters["productStore/getFetchStatus"])
+const shopifyFetchStatus = computed(() => store.getters["shopify/getFetchStatus"])
+
+const oldestSyncTime = computed(() => {
+  const timestamps = [
+    userFetchStatus.value.lastFetched,
+    fetchStatus.value.lastFetched,
+    productStoreFetchStatus.value.lastFetched,
+    shopifyFetchStatus.value.lastFetched
+  ].filter(t => t > 0);
+  
+  if (!timestamps.length) return '';
+  const oldest = Math.min(...timestamps);
+  return DateTime.fromMillis(oldest).toLocaleString(DateTime.DATETIME_MED);
+})
+
+const harmonizedFetchStatus = computed(() => [
+  {
+    label: translate("User Profile"),
+    status: userFetchStatus.value.profile,
+    count: userProfile.value ? 1 : 0,
+    refresh: () => store.dispatch('user/fetchUserProfile', store.state.user.token)
+  },
+  {
+    label: translate("Permissions"),
+    status: userFetchStatus.value.permissions,
+    count: store.state.user.permissions.length,
+    refresh: () => store.dispatch('user/fetchPermissions', { params: { permissionIds: [process.env.VUE_APP_PERMISSION_ID] }, url: omsRedirectionInfo.value.url, token: omsRedirectionInfo.value.token })
+  },
+  {
+    label: translate("Product Stores"),
+    status: productStoreFetchStatus.value.productStores,
+    count: store.state.productStore.productStores.length,
+    refresh: () => store.dispatch('productStore/fetchProductStores')
+  },
+  {
+    label: translate("Shopify Shops"),
+    status: shopifyFetchStatus.value.shops,
+    count: store.state.shopify.shops.length,
+    refresh: () => store.dispatch('shopify/fetchShopifyShops')
+  },
+  {
+    label: translate("Statuses"),
+    status: fetchStatus.value.statuses,
+    count: Object.keys(statusItems.value).length,
+    refresh: () => store.dispatch('util/fetchStatusItems')
+  },
+  {
+    label: translate("Facilities"),
+    status: fetchStatus.value.facilities,
+    count: facilities.value.length,
+    refresh: () => store.dispatch('util/fetchFacilities')
+  },
+  {
+    label: translate("Organization"),
+    status: fetchStatus.value.organizationPartyId,
+    count: store.state.util.organizationPartyId ? 1 : 0,
+    refresh: () => store.dispatch('util/fetchOrganizationPartyId')
+  },
+  {
+    label: translate("Facility Groups"),
+    status: fetchStatus.value.facilityGroups,
+    count: store.state.util.facilityGroups.length,
+    refresh: () => store.dispatch('util/fetchFacilityGroups')
+  },
+  {
+    label: translate("DBIC Countries"),
+    status: fetchStatus.value.dbicCountries,
+    count: store.state.util.dbicCountries.list?.length,
+    refresh: () => store.dispatch('util/fetchDBICCountries')
+  },
+  {
+    label: translate("Operating Countries"),
+    status: fetchStatus.value.operatingCountries,
+    count: store.state.util.operatingCountries.length,
+    refresh: () => store.dispatch('util/fetchOperatingCountries')
+  },
+  {
+    label: translate("Product Identifiers"),
+    status: fetchStatus.value.productIdentifiers,
+    count: store.state.util.productIdentifiers.length,
+    refresh: () => store.dispatch('util/fetchProductIdentifiers')
+  },
+  {
+    label: translate("Shipment Method Types"),
+    status: fetchStatus.value.shipmentMethodTypes,
+    count: store.state.util.shipmentMethodTypes.length,
+    refresh: () => store.dispatch('util/fetchShipmentMethodTypes')
+  },
+  {
+    label: translate("Jobs"),
+    status: loadingJobs.value ? 'pending' : (jobs.value.length ? 'success' : 'none'),
+    count: jobs.value.length,
+    refresh: () => fetchJobs()
+  }
+])
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'success': return checkmarkCircle;
+    case 'error': return closeCircle;
+    case 'pending': return syncOutline;
+    default: return syncOutline;
+  }
+}
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'success': return 'success';
+    case 'error': return 'danger';
+    case 'pending': return 'warning';
+    default: return 'medium';
+  }
+}
+
+const getStatusLabel = (status: string) => {
+  switch (status) {
+    case 'success': return 'Fetched';
+    case 'error': return 'Failed';
+    case 'pending': return 'Fetching';
+    default: return 'Not Fetched';
+  }
+}
 
 const browserTimeZone = ref({
   label: '',
   id: Intl.DateTimeFormat().resolvedOptions().timeZone
 })
 
-const props = defineProps({
+function refreshCache() {
+  store.dispatch('user/fetchUserProfile', store.state.user.token);
+  store.dispatch("user/fetchPermissions", { url: store.getters["user/getOmsRedirectionInfo"].url, token: store.getters["user/getOmsRedirectionInfo"].token });
+  store.dispatch('util/fetchStatusItems');
+  store.dispatch('util/fetchFacilities');
+  store.dispatch('util/fetchOrganizationPartyId');
+  store.dispatch('util/fetchFacilityGroups');
+  store.dispatch('util/fetchDBICCountries');
+  store.dispatch('util/fetchOperatingCountries');
+  store.dispatch('util/fetchProductIdentifiers');
+  store.dispatch('util/fetchShipmentMethodTypes');
+  store.dispatch('productStore/fetchProductStores');
+  store.dispatch('shopify/fetchShopifyShops');
+  fetchJobs();
+}
+
+defineProps({
   showBrowserTimeZone: {
     type: Boolean,
     default: true
@@ -134,13 +312,26 @@ const props = defineProps({
 })
 onMounted(() => {
   appVersion.value = appInfo.branch ? (appInfo.branch + "-" + appInfo.revision) : appInfo.tag;
+  // maargInfo is fetched once on login via util/fetchMaargInfo. Dispatch
+  // again here as a safety net for sessions that pre-date that wiring or
+  // where the initial dispatch failed; the action itself is idempotent.
+  // Failures are surfaced via the empty omsVersion label, so swallow the
+  // rejection here to avoid an unhandled promise warning.
+  store.dispatch("util/fetchMaargInfo").catch(() => { /* noop */ });
 })
 
 async function changeTimeZone() {
   const timeZoneModal = await modalController.create({
     component: TimeZoneModal,
   });
-  return timeZoneModal.present();
+  timeZoneModal.present();
+
+  const { data } = await timeZoneModal.onDidDismiss();
+  if (data && data.timeZoneId) {
+    await store.dispatch("user/setUserTimeZone", {
+      "tzId": data.timeZoneId
+    })
+  }
 }
 
 function logout() {
@@ -180,5 +371,10 @@ function goToLaunchpad() {
     justify-content: space-between;
     align-items: center;
     padding: var(--spacer-xs) 10px 0px;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 </style>

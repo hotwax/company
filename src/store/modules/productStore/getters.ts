@@ -17,6 +17,9 @@ const getters: GetterTree <ProductStoreState, RootState> = {
   },
   getNetSuiteProductStore(state) {
     return state.netSuiteProductStore
+  },
+  getFetchStatus(state) {
+    return state.fetchStatus
   }
 }
 export default getters;

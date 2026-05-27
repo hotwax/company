@@ -144,14 +144,15 @@ const actions: ActionTree<NetSuiteState, RootState> = {
     commit(types.NET_SUITE_PAYMENT_METHODS_UPDATED, paymentMethods);
   },
 
-  async fetchProductStoreShipmentMethods({ commit }) {
+  async fetchProductStoreShipmentMethods({ commit }, params: any = {}) {
     let productStoreShipmentMethods = [] as any, pageIndex = 0, resp;
     
     try {
       const netSuiteProductStoreId = store.getters["productStore/getNetSuiteProductStore"]
+      const productStoreId = params.productStoreId || netSuiteProductStoreId?.productStoreId
       do {
         const payload = {
-          productStoreId: netSuiteProductStoreId?.productStoreId,
+          productStoreId,
           pageSize: 100,
           pageIndex
         }
@@ -209,103 +210,6 @@ const actions: ActionTree<NetSuiteState, RootState> = {
       logger.error(error);
     }
     commit(types.NET_SUITE_INTEGRATION_TYPE_MAPPINGS_UPDATED, integrationTypeMappings)
-  },
-
-  async fetchShopifyShopsCarrierShipments({ commit }) {
-    let shopifyShopsCarrierShipments = {} as any, pageIndex = 0, resp;
-
-    try {
-      do {
-        const payload = {
-          pageSize: 100,
-          pageIndex
-        }
-
-        resp = await NetSuiteService.fetchShopifyShopsCarrierShipments(payload)
-
-        if(!hasError(resp)) {
-          const newShipments = resp.data.reduce((shipmentMethods: any, shipmentMethod: any) => {
-            shipmentMethods[shipmentMethod.shipmentMethodTypeId] = {
-              carrierPartyId: shipmentMethod.carrierPartyId,
-              shopifyShippingMethod: shipmentMethod.shopifyShippingMethod,
-            };
-            return shipmentMethods;
-          }, {});
-          shopifyShopsCarrierShipments = { ...shopifyShopsCarrierShipments, ...newShipments };
-        } else {
-          throw resp.data;
-        }
-        pageIndex++;
-      } while (resp.data.length >= 100);
-    } catch (error) {
-      logger.error(error);
-    }
-    commit(types.NET_SUITE_SHOPIFY_SHOPS_CARRIER_SHIPMENTS_UPDATED, shopifyShopsCarrierShipments);
-  },
-
-  async fetchShopifyShopLocation({ commit }) {
-    let shopifyShopLocations = {} as any, pageIndex = 0, resp;
-
-    try {
-      do {
-        const payload = {
-          pageSize: 100,
-          pageIndex
-        }
-
-        resp = await NetSuiteService.fetchShopifyShopLocation(payload)
-
-        if(!hasError(resp)) {
-          const newshopifyShopLocations = resp.data.reduce((shopifyShop: any, shopifyShopLocation: any) => {
-            shopifyShop[shopifyShopLocation.facilityId] = shopifyShopLocation.shopifyLocationId
-            return shopifyShop;
-          }, {});
-          shopifyShopLocations = { ...shopifyShopLocations, ...newshopifyShopLocations };
-        } else {
-          throw resp.data;
-        }
-        pageIndex++;
-      } while (resp.data.length >= 100);
-    } catch (error: any) {
-      logger.error(error);
-    }
-    commit(types.NET_SUITE_SHOPIFY_SHOPS_LOCATIONS_UPDATED, shopifyShopLocations);
-  },
-
-  async fetchShopifyTypeMappings({ commit }, mappedTypeId) {
-    let shopifyTypeMappings = {} as any, pageIndex = 0, resp;
-
-    try {
-      do {
-        const payload = {
-          mappedTypeId: mappedTypeId,
-          pageSize: 100,
-          pageIndex
-        }
-
-        resp = await NetSuiteService.fetchShopifyTypeMappings(payload)
-        if(!hasError(resp) && resp.data) {
-          const responseData = resp.data
-          const newShopifyTypeMappings = responseData.reduce((mappedTypeId: any, shopifyTypeMappings: any) => {
-            const typeId = shopifyTypeMappings.mappedTypeId;
-          
-            if(!mappedTypeId[typeId]) {
-              mappedTypeId[typeId] = [];
-            }
-
-            mappedTypeId[typeId].push(shopifyTypeMappings);
-            return mappedTypeId;
-          }, {});   
-          shopifyTypeMappings = { ...shopifyTypeMappings, ...newShopifyTypeMappings };
-        } else {
-          throw resp.data
-        }
-        pageIndex++;
-      } while (resp.data.length >= 100);
-    } catch (error) {
-      logger.error(error);
-    }
-    commit(types.NET_SUITE_SHOPIFY_TYPE_MAPPINGS_UPDATED, shopifyTypeMappings)
   },
 
   async clearNetSuiteState({ commit }) {

@@ -20,14 +20,14 @@
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
-            <p class="overline">Retail</p>
-            Store 1 name
-            <p>Facility Id</p>
+            <p class="overline">{{ translate("Retail") }}</p>
+            {{ translate("Store 1 name") }}
+            <p>{{ translate("Facility Id") }}</p>
           </ion-label>
         </ion-item>
 
         <ion-label>
-          shopify mapping
+          {{ translate("Shopify mapping") }}
           <p>{{ translate("Shopify location") }}</p>
         </ion-label>
         

@@ -14,7 +14,23 @@ const utilModule: Module<UtilState, RootState> = {
     dbicCountries: {},
     productIdentifiers: [],
     shipmentMethodTypes: [],
-    organizationPartyId: ""
+    emailTypes: [],
+    organizationPartyId: "",
+    statusItems: {},
+    maargInfo: null,
+    fetchStatus: {
+      facilities: 'none',
+      statuses: 'none',
+      organizationPartyId: 'none',
+      facilityGroups: 'none',
+      dbicCountries: 'none',
+      operatingCountries: 'none',
+      productIdentifiers: 'none',
+      shipmentMethodTypes: 'none',
+      emailTypes: 'none',
+      maargInfo: 'none',
+      lastFetched: 0
+    }
   },
   getters,
   actions,
