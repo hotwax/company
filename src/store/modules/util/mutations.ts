@@ -34,8 +34,8 @@ const mutations: MutationTree <UtilState> = {
     state.emailTypes = []
     state.statusItems = {}
     state.maargInfo = null
-    state.appEnvs = {}
-    state.appsInfo = {}
+    state.appEnvs = []
+    state.appsInfo = []
   },
   [types.UTIL_ORGANIZATION_PARTY_ID_UPDATED](state, payload) {
     state.organizationPartyId = payload

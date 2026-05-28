@@ -19,7 +19,7 @@
       </ion-item>
       <ion-item>
         <ion-select label="Environment" v-model="selectedEnv" :disabled="!selectedApp" interface="popover">
-          <ion-select-option v-for="env in appOptions[selectedApp]?.envs" :value="env.enumId">{{ env.description }}</ion-select-option>
+          <ion-select-option v-for="env in appOptions[selectedApp]?.envs" :key="env" :value="env.enumId">{{ env.description }}</ion-select-option>
         </ion-select>
       </ion-item>
       <ion-item :lines="errorMessage ? 'none' : 'inset'">
@@ -39,7 +39,7 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonList, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { close, saveOutline } from "ionicons/icons";
 import { translate } from "@/i18n";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, defineProps, onMounted, ref, watch } from "vue";
 import store from "@/store";
 import logger from "@/logger";
 import { showToast } from "@/utils";
