@@ -22,4 +22,6 @@ export default interface UtilState {
     maargInfo: string;
     lastFetched: number;
   };
+  appsInfo: any[];
+  appEnvs: any[];
 }

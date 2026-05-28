@@ -30,7 +30,9 @@ const utilModule: Module<UtilState, RootState> = {
       emailTypes: 'none',
       maargInfo: 'none',
       lastFetched: 0
-    }
+    },
+    appsInfo: [],
+    appEnvs: []
   },
   getters,
   actions,
