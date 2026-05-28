@@ -14,6 +14,7 @@ import SalesChannel from "@/views/SalesChannel.vue";
 import Departments from "@/views/Departments.vue";
 import { DxpLogin, useAuthStore } from "@hotwax/dxp-components";
 import { loader } from '@/user-utils';
+import AppVersion from "@/views/AppVersion.vue";
 import ShopifyConnectionDetails from "@/views/ShopifyConnectionDetails.vue";
 import Klaviyo from "@/views/Klaviyo.vue";
 import KlaviyoConnectionDetails from "@/views/KlaviyoConnectionDetails.vue";
@@ -156,6 +157,12 @@ const routes: Array<RouteRecordRaw> = [
     path: "/netsuite/shipment-methods",
     name: "ShipmentMethods",
     component: ShipmentMethods,
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/app-version",
+    name: "AppVersion",
+    component: AppVersion,
     beforeEnter: authGuard,
   },
   // {

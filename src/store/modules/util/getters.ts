@@ -35,6 +35,12 @@ const getters: GetterTree <UtilState, RootState> = {
   },
   getFetchStatus(state) {
     return state.fetchStatus;
+  },
+  getAppsInfo(state) {
+    return state.appsInfo;
+  },
+  getAppEnvs(state) {
+    return state.appEnvs;
   }
 }
 export default getters;

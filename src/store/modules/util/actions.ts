@@ -260,6 +260,39 @@ const actions: ActionTree<UtilState, RootState> = {
     return inflightMaargFetch
   },
 
+  async fetchAppsInformation({ commit }) {
+    try {
+      const resp = await UtilService.fetchAppsInfo()
+
+      if(resp.data?.length) {
+        commit(types.UTIL_APPS_INFO, resp.data)
+      } else {
+        throw resp.data
+      }
+    } catch (error) {
+      logger.error(error)
+      commit(types.UTIL_APPS_INFO, [])
+    }
+  },
+
+  async fetchAppEnvs({ commit }) {
+    try {
+      const resp = await UtilService.fetchEnums({
+        enumTypeId: "AppEnvironment",
+        pageSize: 250
+      })
+
+      if(resp.data?.length) {
+        commit(types.UTIL_APP_ENVS, resp.data)
+      } else {
+        throw resp.data
+      }
+    } catch (error) {
+      logger.error(error)
+      commit(types.UTIL_APP_ENVS, [])
+    }
+  },
+
   async clearUtilState({ commit }) {
     commit(types.UTIL_CLEARED)
     commit(types.UTIL_ORGANIZATION_PARTY_ID_UPDATED, "")

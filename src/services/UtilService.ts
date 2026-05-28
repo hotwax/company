@@ -72,6 +72,50 @@ const fetchOrganization = async (payload: any): Promise<any> => {
   })
 }
 
+const fetchAppsInfo = async(): Promise<any> => {
+  return api({
+    url: "admin/apps",
+    method: "get",
+    params: {
+      pageSize: 250
+    }
+  })
+}
+
+const fetchAppVersions = async(): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "get",
+    params: {
+      pageSize: 250
+    }
+  })
+}
+
+const updateAppVersion = async(payload: any): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "PUT",
+    data: payload
+  })
+}
+
+const createAppVersion = async(payload: any): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "POST",
+    data: payload
+  })
+}
+
+const removeAppVersion = async(payload: any): Promise<any> => {
+  return api({
+    url: "admin/appVersion",
+    method: "DELETE",
+    data: payload
+  })
+}
+
 const fetchStatusItems = async (payload: any): Promise<any> => {
   return api({
     url: "oms/statuses",
@@ -89,6 +133,9 @@ const fetchCurrencies = async (payload: any): Promise<any> => {
 }
 
 export const UtilService = {
+  createAppVersion,
+  fetchAppsInfo,
+  fetchAppVersions,
   fetchDBICCountries,
   fetchEnums,
   fetchEnumGroupMember,
@@ -97,7 +144,9 @@ export const UtilService = {
   fetchFacilities,
   fetchOperatingCountries,
   fetchOrganization,
-  fetchCurrencies,
   fetchShipmentMethodTypes,
-  fetchStatusItems
+  updateAppVersion,
+  fetchCurrencies,
+  fetchStatusItems,
+  removeAppVersion
 }
