@@ -4,6 +4,11 @@
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/netsuite" />
         <ion-title>{{ translate("App Version") }}</ion-title>
+        <ion-buttons slot="end" v-if="Object.keys(apps).length">
+          <ion-button slot="icon-only" @click="createAppVersion" color="primary">
+            <ion-icon :icon="addOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -26,7 +31,7 @@
       </div>
 
       <div class="empty-state" v-else-if="!Object.keys(apps).length">
-        {{ translate("Failed to load app version information") }}
+        {{ translate("Failed to load app version information, please contact administrator.") }}
       </div>
 
       <div class="list-item ion-padding-end" v-for="(app, id) in apps" :key="id">
@@ -37,20 +42,20 @@
           </ion-label>
         </ion-item>
         
-        <ion-label :color="app.isSandbox === 'Y' ? 'warning' : 'danger'">
-          {{ getAppEnvironment(app) }}
+        <ion-label :color="envColor[app.environmentTypeId]">
+          {{ app.enumDesc }}
         </ion-label>
 
         <template v-if="app.version">
           <div class="ion-text-center">
-            <ion-chip outline @click="editAppVersion(id, app)">
+            <ion-chip outline :color="envColor[app.environmentTypeId]" @click="editAppVersion(app.id, app)">
               <ion-label>{{ app.version }}</ion-label>
-              <ion-icon :icon="closeCircleOutline" @click.stop="updateAppVersion(id, '', app)"/>
+              <ion-icon :icon="closeCircleOutline" @click.stop="removeAppVersion(app)"/>
             </ion-chip>
           </div>
         </template>
         <template v-else>
-          <ion-button size="small" fill="outline" @click="editAppVersion(id, app)">
+          <ion-button size="small" fill="outline" @click="editAppVersion(app.id, app)">
             <ion-icon slot="start" :icon="addOutline"/>
             <ion-label>{{ translate("app version") }}</ion-label>
           </ion-button>
@@ -61,64 +66,86 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonSpinner, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
+import { IonButton, IonButtons, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonSpinner, IonTitle, IonToolbar, alertController, onIonViewDidEnter, modalController } from "@ionic/vue";
 import { addOutline, closeCircleOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import { translate } from "@/i18n"
-import { computed, Ref, ref } from "vue";
+import { Ref, ref } from "vue";
 import { showToast } from '@/utils';
 import emitter from "@/event-bus";
 import logger from '@/logger';
 import { UtilService } from "@/services/UtilService";
+import CreateAppVersion from "@/components/CreateAppVersion.vue";
 
 interface AppInfo {
   id: string;
   appName: string;
-  isSandbox: string;
   version: string;
+  environmentTypeId: string;
+  enumDesc: string;
 }
 
 interface App {
   [key: string]: AppInfo
 }
 
+const envColor = {
+  AppEnvDev: "primary",
+  AppEnvUAT: "medium",
+  AppEnvProd: "danger"
+} as any
+
 const apps: Ref<App> = ref({})
 let isLoading = ref(true)
 
-const getAppEnvironment = computed(() => (app: AppInfo) => app.isSandbox === 'Y' ? "UAT" : "PROD")
-
 onIonViewDidEnter(async () => {
+  await fetchAppVersions();
+  isLoading.value = false
+})
+
+async function fetchAppVersions() {
   try {
     const resp = await UtilService.fetchAppVersions()
     resp.data.forEach((app: any) => {
-      // if(app.version?.trim()) {
-        apps.value[app.appVersionId] = {
-          id: app.appVersionId,
-          appName: app.appName,
-          version: app.version,
-          isSandbox: app.isSandbox
-        }
-      // }
+      apps.value[`${app.appId}_${app.environmentTypeId}`] = {
+        id: app.appId,
+        appName: app.appName || app.appId,
+        environmentTypeId: app.environmentTypeId,
+        version: app.currentVersion,
+        enumDesc: app.enumDesc
+      }
     });
   } catch(err) {
     logger.error("Failed to fetch app versions", err)
   }
-  isLoading.value = false
-})
+}
+
+async function removeAppVersion(app: AppInfo) {
+  emitter.emit("presentLoader");
+  try {
+    await UtilService.removeAppVersion({
+      appId: app.id,
+      environmentTypeId: app.environmentTypeId
+    });
+
+    showToast(translate("version removed, app will be served on latest production release", { appName: app.appName, environment: app.enumDesc }))
+    await fetchAppVersions()
+  } catch(err) {
+    logger.error(err)
+  }
+  emitter.emit('dismissLoader')
+}
 
 async function updateAppVersion(id: string, appVersion: string, app: AppInfo) {
   emitter.emit("presentLoader");
   try {
     await UtilService.updateAppVersion({
-      appVersionId: id,
-      version: appVersion
+      appId: id,
+      environmentTypeId: app.environmentTypeId,
+      currentVersion: appVersion
     });
-    apps.value[id].version = appVersion
 
-    if(appVersion) {
-      showToast(translate("version updated successfully", { appName: app.appName, environment: getAppEnvironment.value(app) }))
-    } else {
-      showToast(translate("version removed, app will be served on latest production release", { appName: app.appName, environment: getAppEnvironment.value(app) }))
-    }
+    showToast(translate("version updated successfully", { appName: app.appName, environment: app.enumDesc }))
+    await fetchAppVersions()
   } catch(err) {
     logger.error(err)
   }
@@ -155,6 +182,21 @@ async function editAppVersion(id: string, app: AppInfo) {
     ]
   });
   await alert.present();
+}
+
+async function createAppVersion() {
+  const appVersionModal = await modalController.create({
+    component: CreateAppVersion,
+    componentProps: { appsVersionInfo: apps.value }
+  })
+
+  appVersionModal.onDidDismiss().then(async (data) => {
+    if(data?.data?.fetchInfo) {
+      await fetchAppVersions()
+    }
+  })
+
+  appVersionModal.present();
 }
 </script>
 
