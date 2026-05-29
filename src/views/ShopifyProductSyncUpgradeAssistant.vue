@@ -186,6 +186,15 @@
                     {{ translate("Only unfinished legacy messages appear here. Cancel them so the old sync cannot keep processing.") }}
                     {{ legacySystemMessagesSummary }}
                   </p>
+                  <div v-if="assistantState.legacySystemMessagesTotalCount >= 50" class="ion-margin-top ion-padding" style="background: var(--ion-color-warning-tiny, #fff9e6); border: 1px solid var(--ion-color-warning, #ffc409); border-radius: 8px; display: flex; align-items: start; gap: 8px;">
+                    <ion-icon :icon="warningOutline" color="warning" style="font-size: 20px; flex-shrink: 0;" />
+                    <ion-label style="margin: 0; font-size: 14px;">
+                      <strong style="color: var(--ion-color-warning-shade, #e0a800);">{{ translate("High volume of pending messages") }}</strong>
+                      <p style="margin: 4px 0 0 0; color: var(--ion-color-step-600, #666666);">
+                        {{ translate("Canceling 50 or more messages from here will trigger a large number of API requests, which may slow down the app or cause timeout errors. We recommend canceling them manually in the database or background instead.") }}
+                      </p>
+                    </ion-label>
+                  </div>
                 </ion-card-content>
                 <ion-item v-for="message in assistantState.legacySystemMessages" :key="message.id" class="hover-action">
                   <ion-label>
@@ -356,7 +365,7 @@ import {
   alertController,
   onIonViewWillEnter
 } from "@ionic/vue";
-import { arrowForwardOutline, checkmarkCircleOutline } from "ionicons/icons";
+import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
 import { computed, defineProps, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
@@ -884,7 +893,7 @@ async function runTeardownAction(item: ProductSyncMigrationLegacyItem, kind: "ty
     return;
   }
 
-  await ShopifyProductSyncMigrationService.cancelLegacySystemMessage(item.id);
+  await ShopifyProductSyncMigrationService.cancelLegacySystemMessage(item);
 }
 </script>
 
