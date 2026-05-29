@@ -1,4 +1,4 @@
-import api from "@/api";
+import api from '@common';
 import logger from "@/logger";
 import { parseDateTimeValue } from "@/utils";
 

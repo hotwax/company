@@ -5,7 +5,7 @@ import { hasError } from "@/utils"
 import logger from "@/logger"
 import UtilState from "./UtilState"
 import { UtilService } from "@/services/UtilService"
-import api from "@/api"
+import api from '@common'
 
 // Module-local promise that holds the in-flight maarg fetch. Concurrent
 // callers await the same request instead of seeing an empty store while a
