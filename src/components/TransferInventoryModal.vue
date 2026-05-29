@@ -49,7 +49,7 @@ import { translate } from "@/i18n"
 import { defineProps, onMounted, ref } from 'vue';
 import { showToast } from "@/utils";
 
-const inventoryVarianceTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
+const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const props = defineProps(["varianceEnumId", "integrationMapping"]);

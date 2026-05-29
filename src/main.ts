@@ -42,7 +42,7 @@ const app = createApp(App)
     mode: "md"
   })
   .use(logger, {
-    level: process.env.VUE_APP_DEFAULT_LOG_LEVEL
+    level: import.meta.env.VITE_DEFAULT_LOG_LEVEL
   })
   .use(router)
   .use(i18n)
@@ -56,7 +56,7 @@ const app = createApp(App)
     login,
     logout,
     loader,
-    appLoginUrl: process.env.VUE_APP_LOGIN_URL as string,
+    appLoginUrl: import.meta.env.VITE_LOGIN_URL as string,
     askQuery,
     fetchGoodIdentificationTypes,
     getConfig,

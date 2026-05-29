@@ -74,7 +74,7 @@ import { DateTime } from 'luxon';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-const inventoryVarianceTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
+const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { removeNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const inventoryVariances = computed(() => store.getters["netSuite/getInventoryVariances"]);

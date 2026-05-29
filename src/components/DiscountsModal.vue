@@ -46,7 +46,7 @@ import { computed, onMounted, ref } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-const discountTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
+const discountTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(discountTypeId)
 
 const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](discountTypeId))

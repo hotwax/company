@@ -140,7 +140,7 @@ const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
 const appVersion = ref("")
 const maargInfo = computed(() => store.getters["util/getMaargInfo"])
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
-const appInfo = (process.env.VUE_APP_VERSION_INFO ? JSON.parse(process.env.VUE_APP_VERSION_INFO) : {}) as any
+const appInfo = (import.meta.env.VITE_APP_VERSION_INFO ? JSON.parse(import.meta.env.VITE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => store.getters["user/getUserProfile"])
 const oms = computed(() => store.getters["user/getInstanceUrl"])
@@ -178,7 +178,7 @@ const harmonizedFetchStatus = computed(() => [
     label: translate("Permissions"),
     status: userFetchStatus.value.permissions,
     count: store.state.user.permissions.length,
-    refresh: () => store.dispatch('user/fetchPermissions', { params: { permissionIds: [process.env.VUE_APP_PERMISSION_ID] }, url: omsRedirectionInfo.value.url, token: omsRedirectionInfo.value.token })
+    refresh: () => store.dispatch('user/fetchPermissions', { params: { permissionIds: [import.meta.env.VITE_APP_PERMISSION_ID] }, url: omsRedirectionInfo.value.url, token: omsRedirectionInfo.value.token })
   },
   {
     label: translate("Product Stores"),
@@ -337,7 +337,7 @@ async function changeTimeZone() {
 function logout() {
   store.dispatch("user/logout").then(() => {
     const redirectUrl = window.location.origin + '/login'
-    window.location.href = `${process.env.VUE_APP_LOGIN_URL}?isLoggedOut=true&redirectUrl=${redirectUrl}`
+    window.location.href = `${import.meta.env.VITE_LOGIN_URL}?isLoggedOut=true&redirectUrl=${redirectUrl}`
   })
 }
 
@@ -346,7 +346,7 @@ function getDateTime(time: any) {
 }
 
 function goToLaunchpad() {
-  window.location.href = `${process.env.VUE_APP_LOGIN_URL}`
+  window.location.href = `${import.meta.env.VITE_LOGIN_URL}`
 }
 </script>
 

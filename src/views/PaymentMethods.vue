@@ -71,7 +71,7 @@ import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-const paymentMethodTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PAYMENT_METHOD_TYPE_ID
+const paymentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PAYMENT_METHOD_TYPE_ID
 const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(paymentMethodTypeId);
 
 const paymentMethods = computed(() => store.getters["netSuite/getPaymentMehtods"])

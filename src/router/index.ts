@@ -25,7 +25,7 @@ const authGuard = async (to: any, from: any, next: any) => {
     await loader.present(translate("Authenticating"))
     // TODO use authenticate() when support is there
     const redirectUrl = window.location.origin + '/login'
-    window.location.href = `${process.env.VUE_APP_LOGIN_URL}?redirectUrl=${redirectUrl}`
+    window.location.href = `${import.meta.env.VITE_LOGIN_URL}?redirectUrl=${redirectUrl}`
     loader.dismiss()
   }
   next()
@@ -218,7 +218,7 @@ const routes: Array<RouteRecordRaw> = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(process.env.BASE_URL),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 

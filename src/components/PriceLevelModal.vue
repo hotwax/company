@@ -64,7 +64,7 @@ import { ref, onMounted } from "vue"
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const store = useStore();
-const priceLevelTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
+const priceLevelTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
 const { updateNetSuiteId } = useNetSuiteComposables(priceLevelTypeId);
 
 const integrationMapping = ref("") as any;

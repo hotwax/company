@@ -29,7 +29,7 @@ const actions: ActionTree<UserState, RootState> = {
 
       // Checking if the user has permission to access the app
       // If there is no configuration, the permission check is not enabled
-      const permissionId = process.env.VUE_APP_PERMISSION_ID;
+      const permissionId = import.meta.env.VITE_APP_PERMISSION_ID;
       if(permissionId) {
         // TODO Abstract this out, how token is handled should be part of the method not the callee
         const hasPermission = state.permissions.some((appPermission: any) => appPermission.action === permissionId );
@@ -96,7 +96,7 @@ const actions: ActionTree<UserState, RootState> = {
     commit(types.USER_FETCH_STATUS_UPDATED, { permissions: 'pending' })
     try {
       // Getting the permissions list from server
-      const permissionId = process.env.VUE_APP_PERMISSION_ID;
+      const permissionId = import.meta.env.VITE_APP_PERMISSION_ID;
       // Prepare permissions list
       const serverPermissionsFromRules = getServerPermissionsFromRules();
       if (permissionId) serverPermissionsFromRules.push(permissionId);
