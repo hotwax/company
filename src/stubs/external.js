@@ -16,12 +16,18 @@ export const releaseProxy = Symbol('releaseProxy');
 export const transfer = noop;
 export const Group = noop;
 
+// @shopify/app-bridge
+export const createApp = noop;
+
 // @shopify/app-bridge/actions
 export const Features = stub;
 export const Redirect = stub;
 export const Scanner = stub;
 export const AppLink = stub;
 export const useAppBridge = noop;
+
+// @shopify/app-bridge-utils
+export const getSessionToken = () => Promise.resolve("");
 
 // @module-federation/runtime
 export const loadRemote = noop;
