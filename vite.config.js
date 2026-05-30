@@ -12,10 +12,26 @@ const commonRoot = path.resolve(projectRoot, '../accxui/common')
 
 // Custom plugin: resolve bare specifiers from @common code using the project's node_modules.
 // @common lives outside this package's node_modules tree, so Rollup can't find its deps.
+// Packages from @common that this app doesn't use.
+// In production builds they are externalized via rollupOptions.
+// In dev mode they are stubbed with an empty virtual module to prevent
+// "Failed to load url" pre-transform errors from Vite's esbuild phase.
+const COMMON_EXTERNALS = [
+  'firebase/app', 'firebase/messaging',
+  'comlink', 'encoding-japanese', 'child_process',
+  '@shopify/app-bridge', '@shopify/app-bridge-utils',
+  '@module-federation/runtime'
+]
+const STUB_FILE = path.resolve(projectRoot, 'src/stubs/external.js')
+
 function resolveCommonDeps() {
   return {
     name: 'resolve-common-deps',
     resolveId(id, importer) {
+      // Stub unused packages with a real stub file in dev; build uses rollupOptions.external
+      if (COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))) {
+        return STUB_FILE
+      }
       if (
         importer &&
         importer.startsWith(commonRoot) &&
@@ -30,7 +46,7 @@ function resolveCommonDeps() {
           return null
         }
       }
-    }
+    },
   }
 }
 
@@ -52,21 +68,16 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['luxon', 'mitt', 'pinia', 'vue-i18n', 'vue-logger-plugin']
+    include: ['luxon', 'mitt', 'pinia', 'vue-i18n', 'vue-logger-plugin', 'cron-parser', 'axios', 'axios-cache-adapter'],
+    // Force CommonJS → ESM interop for packages with CJS-only default exports
+    esbuildOptions: {
+      target: 'esnext'
+    }
   },
   build: {
     rollupOptions: {
-      // These packages are imported by @common but not used by this app
-      external: (id) => {
-        // Packages used by @common but not needed by this app
-        const externals = [
-          'firebase/app', 'firebase/messaging',
-          'comlink', 'encoding-japanese', 'child_process',
-          '@shopify/app-bridge', '@shopify/app-bridge-utils',
-          '@module-federation/runtime'
-        ]
-        return externals.some(e => id === e || id.startsWith(e + '/'))
-      }
+      // resolveCommonDeps plugin handles externals for both dev + build
+      external: (id) => COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))
     }
   },
   test: {
