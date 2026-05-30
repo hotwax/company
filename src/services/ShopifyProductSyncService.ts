@@ -1370,7 +1370,7 @@ const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => 
           parameterName: "shopId",
           parameterValue: shopId,
           statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
-          statusId_op: "not_in"
+          statusId_not: "true"
         }
       }
     });

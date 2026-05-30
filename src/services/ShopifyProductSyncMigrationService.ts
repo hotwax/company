@@ -43,6 +43,9 @@ export interface ProductSyncMigrationLegacyItem {
   label: string;
   status: "active" | "partial" | "deprecated" | "deactivated" | "cancelled" | "terminal" | "missing" | "failed" | "checking";
   note: string;
+  systemMessageTypeId?: string;
+  remoteMessageId?: string;
+  systemMessageRemoteId?: string;
 }
 
 export interface ProductSyncMigrationAssistantState {
@@ -97,15 +100,13 @@ function isTerminalLegacyMessageStatus(statusId: string) {
   return normalizedStatusId === "smsgconfirmed" ||
     normalizedStatusId === "confirmed" ||
     normalizedStatusId === "smsgconsumed" ||
-    normalizedStatusId === "consumed";
+    normalizedStatusId === "consumed" ||
+    normalizedStatusId === "smsgsent" ||
+    normalizedStatusId === "sent";
 }
 
 function getLegacySystemMessageLabel(message: any) {
   return String(message?.systemMessageTypeId || message?.systemMessageId || "Legacy system message").trim();
-}
-
-function isLegacyProductSyncMessage(systemMessage: any, systemMessageTypeId: string) {
-  return String(systemMessage?.systemMessageTypeId || "").trim() === String(systemMessageTypeId || "").trim();
 }
 
 function formatLegacyDateTime(value: any) {
@@ -218,7 +219,10 @@ export function buildLegacySystemMessageItem(systemMessage: any): ProductSyncMig
     id: String(systemMessage?.systemMessageId || "").trim(),
     label: getLegacySystemMessageLabel(systemMessage),
     status: "active",
-    note: `${statusId || "Unknown status"}${formattedInitDate ? ` · ${formattedInitDate}` : ""}`
+    note: `${statusId || "Unknown status"}${formattedInitDate ? ` · ${formattedInitDate}` : ""}`,
+    systemMessageTypeId: systemMessage?.systemMessageTypeId,
+    remoteMessageId: systemMessage?.remoteMessageId,
+    systemMessageRemoteId: systemMessage?.systemMessageRemoteId
   };
 }
 
@@ -389,13 +393,36 @@ async function fetchLegacySystemMessageRemoteIds(payload: any) {
   }
 }
 
+async function fetchDynamicLegacySystemMessageTypes(): Promise<string[]> {
+  try {
+    const response = await api({
+      url: "admin/systemMessages/types",
+      method: "GET",
+      params: {
+        systemMessageTypeId: "BulkProductAndVariantsByIdQuery",
+        systemMessageTypeId_op: "like",
+        pageSize: 50
+      }
+    }) as any;
+    
+    const types = Array.isArray(response?.data) ? response.data : [];
+    return types.map((t: any) => String(t?.systemMessageTypeId || "").trim());
+  } catch (error) {
+    logger.error("Failed to fetch dynamic system message types", error);
+    return [];
+  }
+}
+
 async function fetchLegacySystemMessageTypeState(): Promise<ProductSyncMigrationLegacyItem[]> {
-  return Promise.all(PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes.map(async (systemMessageTypeId) => {
+  const dynamicTypes = await fetchDynamicLegacySystemMessageTypes();
+  const allTypes = [...new Set([...PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes, ...dynamicTypes])];
+
+  return Promise.all(allTypes.map(async (systemMessageTypeId) => {
     try {
       const systemMessageType = await fetchSystemMessageTypeEntity(systemMessageTypeId);
       return describeLegacySystemMessageTypeState(systemMessageTypeId, systemMessageType);
     } catch (error) {
-      logger.warn(`Failed to inspect legacy system message type ${systemMessageTypeId}`, error);
+      logger.error(`Failed to inspect legacy system message type ${systemMessageTypeId}`, error);
       return {
         id: systemMessageTypeId,
         label: systemMessageTypeId,
@@ -406,8 +433,84 @@ async function fetchLegacySystemMessageTypeState(): Promise<ProductSyncMigration
   }));
 }
 
-async function fetchLegacyServiceJobState(): Promise<ProductSyncMigrationLegacyItem[]> {
-  return Promise.all(PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.serviceJobs.map(async (jobName) => {
+async function fetchDynamicLegacyServiceJobs(shopId: string, systemMessageRemoteIds: string[]): Promise<ProductSyncMigrationLegacyItem[]> {
+  try {
+    const response = await api({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "SERVICE_JOB_PARAMETER",
+        customParametersMap: {
+          jobName: "%queue_BulkQuerySystemMessage_BulkProductAndVariantsById%",
+          jobName_op: "like"
+        },
+        pageSize: 250
+      }
+    }) as any;
+
+    const rows = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : [];
+
+    const jobsMap: Record<string, any[]> = {};
+    for (const row of rows) {
+      const name = String(row?.jobName || "").trim();
+      if (!name) continue;
+      if (!jobsMap[name]) jobsMap[name] = [];
+      jobsMap[name].push(row);
+    }
+
+    const matchedJobs: ProductSyncMigrationLegacyItem[] = [];
+
+    for (const [jobName, jobRows] of Object.entries(jobsMap)) {
+      const params: Record<string, string> = {};
+      for (const row of jobRows) {
+        const paramName = String(row?.parameterName || "").trim();
+        const paramValue = String(row?.parameterValue || "").trim();
+        if (paramName) {
+          params[paramName] = paramValue;
+        }
+      }
+
+      const typeValue = params["systemMessageTypeId"] || "";
+      const remoteValue = params["systemMessageRemoteId"] || "";
+
+      const matchesType = typeValue && typeValue.includes("BulkProductAndVariantsByIdQuery");
+      const matchesRemote = remoteValue && systemMessageRemoteIds.includes(remoteValue);
+
+      if (matchesType && matchesRemote) {
+        try {
+          const jobDetail = await fetchServiceJobEntity(jobName);
+          if (jobDetail) {
+            matchedJobs.push(describeLegacyServiceJobState(jobDetail));
+          } else {
+            logger.warn(`Could not fetch details for dynamic legacy job ${jobName}, adding as missing.`);
+            matchedJobs.push({
+              id: jobName,
+              label: jobName,
+              status: "missing",
+              note: "Could not retrieve details for this dynamic job."
+            });
+          }
+        } catch (err) {
+          logger.error(`Error fetching service job entity for ${jobName}`, err);
+          matchedJobs.push({
+            id: jobName,
+            label: jobName,
+            status: "failed",
+            note: "Failed to inspect this dynamic service job."
+          });
+        }
+      }
+    }
+
+    return matchedJobs;
+  } catch (error) {
+    logger.error("Failed to fetch dynamic legacy service jobs", error);
+    return [];
+  }
+}
+
+async function fetchLegacyServiceJobState(shopId: string, systemMessageRemoteIds: string[] = []): Promise<ProductSyncMigrationLegacyItem[]> {
+  const staticJobs = await Promise.all(PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.serviceJobs.map(async (jobName) => {
     try {
       const jobDetail = await fetchServiceJobEntity(jobName);
       if (!jobDetail?.jobName) {
@@ -430,14 +533,26 @@ async function fetchLegacyServiceJobState(): Promise<ProductSyncMigrationLegacyI
       } as ProductSyncMigrationLegacyItem;
     }
   }));
+
+  const dynamicJobs = systemMessageRemoteIds.length ? await fetchDynamicLegacyServiceJobs(shopId, systemMessageRemoteIds) : [];
+  return [...staticJobs, ...dynamicJobs];
 }
 
 async function fetchLegacySystemMessages(payload: any): Promise<{ items: ProductSyncMigrationLegacyItem[]; totalCount: number }> {
+  const shopId = getShopId(payload);
+  if (!shopId) {
+    logger.warn("Shop ID is missing. Cannot fetch legacy system messages.");
+    return {
+      items: [],
+      totalCount: 0
+    };
+  }
   const systemMessageRemoteIds = payload?.legacySystemMessageRemoteIds?.length ?
     payload.legacySystemMessageRemoteIds :
     await fetchLegacySystemMessageRemoteIds(payload);
 
   if (!systemMessageRemoteIds.length) {
+    logger.warn("No legacy system message remote IDs found for this shop.");
     return {
       items: [],
       totalCount: 0
@@ -446,41 +561,57 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
 
   const systemMessages: any[] = [];
   const previewLimit = payload?.previewLimit || 25;
-  const pageSize = payload?.includeAllSystemMessages ? 250 : 10;
+  const pageSize = payload?.includeAllSystemMessages ? 250 : 50; // Increased to 50 for better coverage in fewer calls
+  const maxPages = 3; // Strict hard stop to prevent infinite pagination loops
 
-  for (const systemMessageTypeId of PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes) {
-    let pageIndex = 0;
-    let shouldContinue = true;
+  const dynamicTypes = await fetchDynamicLegacySystemMessageTypes();
+  const allTypes = [...new Set([...PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes, ...dynamicTypes])];
 
-    while (shouldContinue) {
-      const response = await api({
-        url: "admin/systemMessages",
-        method: "GET",
-        params: {
-          systemMessageTypeId,
-          systemMessageRemoteId: systemMessageRemoteIds,
-          systemMessageRemoteId_op: "in",
-          orderBy: "-initDate",
-          pageIndex,
-          pageSize
-        }
-      }) as any;
+  let pageIndex = 0;
+  let shouldContinue = true;
 
-      const page = (Array.isArray(response?.data?.systemMessages) ? response.data.systemMessages : [])
-        .filter((systemMessage: any) => isLegacyProductSyncMessage(systemMessage, systemMessageTypeId));
-
-      systemMessages.push(...page);
-      pageIndex++;
-
-      if (!payload?.includeAllSystemMessages && systemMessages.length >= previewLimit) {
-        shouldContinue = false;
-      } else if (page.length < pageSize) {
-        shouldContinue = false;
+  while (shouldContinue && pageIndex < maxPages) {
+    const response = await api({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+        customParametersMap: {
+          systemMessageTypeId: allTypes,
+          remoteInternalId: shopId,
+          remoteInternalIdType: "HOTWAX_SHOP_ID",
+          statusId: ["SmsgSent", "SmsgConsumed", "SmsgConfirmed", "SmsgCancelled", "SmsgRejected"],
+          statusId_not: "true",
+          orderByField: "-initDate"
+        },
+        fieldsToSelect: "systemMessageId,systemMessageTypeId,statusId,initDate,remoteMessageId,systemMessageRemoteId",
+        pageIndex,
+        pageSize
       }
-    }
+    }) as any;
+
+    const pageMessages = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : [];
+    
+    const matchedMessages = pageMessages.filter((systemMessage: any) => {
+      const remoteId = String(systemMessage?.systemMessageRemoteId || "").trim();
+      
+      if (!systemMessageRemoteIds.includes(remoteId)) {
+        return false;
+      }
+
+      const typeId = String(systemMessage?.systemMessageTypeId || "");
+      const isLegacy = (PRODUCT_SYNC_MIGRATION_CONFIG.outgoing.systemMessageTypes as readonly string[]).includes(typeId) || 
+                       typeId.includes("BulkProductAndVariantsByIdQuery");
+      return isLegacy;
+    });
+
+    systemMessages.push(...matchedMessages);
+    pageIndex++;
 
     if (!payload?.includeAllSystemMessages && systemMessages.length >= previewLimit) {
-      break;
+      shouldContinue = false;
+    } else if (pageMessages.length < pageSize) {
+      shouldContinue = false;
     }
   }
 
@@ -492,7 +623,6 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
   const actionableSystemMessages = dedupedSystemMessages
     .map((systemMessage: any) => buildLegacySystemMessageItem(systemMessage))
     .filter((item: ProductSyncMigrationLegacyItem | null): item is ProductSyncMigrationLegacyItem => !!item);
-
   return {
     items: actionableSystemMessages,
     totalCount: actionableSystemMessages.length
@@ -500,10 +630,12 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
 }
 
 async function fetchLegacyTeardownState(payload: any) {
+  const shopId = getShopId(payload);
+
   const legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds(payload);
   const [legacySystemMessageTypes, legacyServiceJobs, legacySystemMessageState] = await Promise.all([
     fetchLegacySystemMessageTypeState(),
-    fetchLegacyServiceJobState(),
+    fetchLegacyServiceJobState(shopId, legacySystemMessageRemoteIds),
     fetchLegacySystemMessages({
       ...payload,
       legacySystemMessageRemoteIds
@@ -578,7 +710,49 @@ async function enableServiceJob(jobName: string, jobDetail: any): Promise<void> 
   });
 }
 
-async function cancelLegacySystemMessage(systemMessageId: string): Promise<void> {
+async function cancelLegacySystemMessage(systemMessage: any): Promise<void> {
+  const systemMessageId = typeof systemMessage === "string" ? systemMessage : systemMessage.id;
+
+  if (typeof systemMessage === "object" && systemMessage !== null) {
+    const systemMessageTypeId = String(systemMessage.systemMessageTypeId || "").trim();
+    const remoteMessageId = String(systemMessage.remoteMessageId || "").trim();
+    const systemMessageRemoteId = String(systemMessage.systemMessageRemoteId || "").trim();
+
+    if (systemMessageTypeId.includes("BulkProductAndVariantsByIdQuery") && remoteMessageId && systemMessageRemoteId) {
+      try {
+        const cancelMutation = `
+          mutation {
+            bulkOperationCancel(id: "${remoteMessageId}") {
+              bulkOperation {
+                id
+                status
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+        const response = await api({
+          url: "shopify/graphql",
+          method: "post",
+          data: {
+            systemMessageRemoteId,
+            queryText: cancelMutation
+          }
+        }) as any;
+
+        const result = response?.response || response?.data || response;
+        if (result?.errors?.length || result?.data?.bulkOperationCancel?.userErrors?.length) {
+          logger.warn(`Shopify bulkOperationCancel returned errors: ${JSON.stringify(result?.errors || result?.data?.bulkOperationCancel?.userErrors)}`);
+        }
+      } catch (shopifyError) {
+        logger.error(`Error encountered while cancelling Shopify bulk operation ${remoteMessageId}`, shopifyError);
+      }
+    }
+  }
+
   await api({
     url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/cancel`,
     method: "POST"
@@ -700,7 +874,7 @@ async function teardownLegacySync(
     });
 
     try {
-      await cancelLegacySystemMessage(systemMessage.id);
+      await cancelLegacySystemMessage(systemMessage);
       onProgress?.({
         kind: "message",
         id: systemMessage.id,
@@ -840,7 +1014,7 @@ async function fetchAssistantState(
     // Fetch legacy items in parallel blocks
     const [legacyTypes, legacyJobs, legacyMessages] = await Promise.all([
       fetchLegacySystemMessageTypeState(),
-      fetchLegacyServiceJobState(),
+      fetchLegacyServiceJobState(shopId, state.legacySystemMessageRemoteIds),
       fetchLegacySystemMessages({
         shopId,
         shop: payload?.shop,
