@@ -40,23 +40,26 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useProductStoreStore } from '@/store/productStore';
+import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, onMounted, ref } from "vue";
 import { ShopifyService } from "@/services/ShopifyService";
-import { getResponseErrorMessage, hasError, showToast } from "@/utils";
+import { hasError, showToast } from '@common'
+import { getResponseErrorMessage } from '@/utils';
 import emitter from "@/event-bus";
 import logger from "@/logger";
 
 const props = defineProps(['shop']);
-const store = useStore();
+const productStoreStore = useProductStoreStore();
+const shopifyStore = useShopifyStore();
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
+const productStores = computed(() => productStoreStore.productStores)
 const selectedProductStoreId = ref("");
 const currentProductStoreId = computed(() => props.shop?.productStoreId || "");
 
 onMounted(async () => {
-  await store.dispatch("productStore/fetchProductStores");
+  await productStoreStore.fetchProductStores();
   selectedProductStoreId.value = currentProductStoreId.value;
 })
 
@@ -72,16 +75,16 @@ async function updateProductStoreMapping() {
       productStoreId: selectedProductStoreId.value
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Product store linked successfully"));
-      await store.dispatch("shopify/fetchShopifyShops"); // Refresh state
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Product store linked successfully"));
+      await shopifyStore.fetchShopifyShops(); // Refresh state
       closeModal();
     } else {
       throw resp.data;
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(getResponseErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to link product store")));
   }
   emitter.emit("dismissLoader");
 }

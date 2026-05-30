@@ -81,19 +81,19 @@ import {
 } from "@ionic/vue";
 import { computed, onBeforeMount, ref ,defineProps} from "vue";
 import { close, save } from "ionicons/icons";
-import { useStore } from "@/store";
-import { getCurrentTime } from "@/utils"
-import { translate } from "@/i18n"
+import { useUserStore } from '@/store/user';
+import { getCurrentTime } from '@/utils'
+import { translate } from '@common'
 import { UserService } from "@/services/UserService";
 import logger from "@/logger";
 
-const store = useStore();
+const userStore = useUserStore();
 let queryString = ref("")
 let filteredTimeZones = ref([])
 let timeZones =  ref([])
 let timeZoneId = ref("")
 let isLoading = ref(true)
-const userProfile = computed(() => store.getters["user/getUserProfile"])
+const userProfile = computed(() => userStore.getUserProfile)
 // Fetching timeZone of the browser
 const browserTimeZone = ref({
   label: '',

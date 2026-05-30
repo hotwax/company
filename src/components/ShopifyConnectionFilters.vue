@@ -20,5 +20,5 @@
 <script setup lang="ts">
 import { IonContent, IonHeader, IonIcon, IonItem, IonList, IonMenu, IonTitle, IonToggle, IonToolbar } from '@ionic/vue'
 import { flashOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
+import { translate } from '@common'
 </script>

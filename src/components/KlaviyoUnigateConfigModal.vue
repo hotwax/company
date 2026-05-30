@@ -153,18 +153,21 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
+import { useKlaviyoStore } from '@/store/klaviyo';
+import { useUtilStore } from '@/store/util';
+import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
-import { getResponseErrorMessage, showToast } from "@/utils";
+import { showToast } from '@common'
+import { getResponseErrorMessage } from '@/utils';
 import logger from "@/logger";
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
-const store = useStore();
-const config = computed(() => store.getters["klaviyo/getUnigateConfig"]);
+const klaviyoStore = useKlaviyoStore();
+const utilStore = useUtilStore();
+const config = computed(() => klaviyoStore.getUnigateConfig);
 // maargInfo is fetched once at login (user/login → util/fetchMaargInfo).
 // Read from the store instead of refetching per modal open.
-const maargInfo = computed(() => store.getters["util/getMaargInfo"]);
+const maargInfo = computed(() => utilStore.maargInfo);
 
 const form = reactive({
   internalId: config.value?.internalId || "",
@@ -227,12 +230,12 @@ async function save() {
       payload.publicKey = form.newApiKey.trim();
     }
     await KlaviyoService.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
-    await store.dispatch("klaviyo/fetchUnigateConfig");
-    showToast(translate("Unigate tenant updated"));
+    await klaviyoStore.fetchUnigateConfig();
+    commonUtil.showToast(translate("Unigate tenant updated"));
     closeModal();
   } catch (error: any) {
     logger.error(error);
-    showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
+    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
   } finally {
     isSaving.value = false;
   }

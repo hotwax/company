@@ -50,7 +50,7 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonSearchbar, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { close, downloadOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 
 function closeModal() {
   modalController.dismiss();

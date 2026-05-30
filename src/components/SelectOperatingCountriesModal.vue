@@ -35,18 +35,18 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonSearchbar, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { checkmarkOutline, closeOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
-import { useStore } from "vuex";
+import { translate } from '@common';
+import { useUtilStore } from '@/store/util';
 import { computed, defineProps, onMounted, ref } from "vue";
 
-const store = useStore();
+const utilStore = useUtilStore();
 
 const props = defineProps(["selectedCountries"]);
 const queryString = ref("");
 const filteredCountries = ref([]) as any;
 const selectedCountryValues = ref([]) as any;
 
-const operatingCountries = computed(() => store.getters["util/getOperatingCountries"]);
+const operatingCountries = computed(() => utilStore.operatingCountries);
 
 onMounted(() => {
   selectedCountryValues.value = props.selectedCountries.length ? JSON.parse(JSON.stringify(props.selectedCountries)) : [];

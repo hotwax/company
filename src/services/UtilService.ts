@@ -1,4 +1,4 @@
-import api from '@common'
+import { api } from '@common'
 
 const fetchDBICCountries = async (payload: any): Promise <any> => {
   return api({

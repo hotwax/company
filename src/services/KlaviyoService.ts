@@ -1,4 +1,4 @@
-import api from '@common';
+import { api } from '@common';
 
 // All Klaviyo backend endpoints are documented in
 // `documentation/klaviyo-api-contracts.md`. The functions in this file are the

@@ -52,9 +52,9 @@
 import { ref, computed } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from "@/i18n"
+import { translate } from '@common'
 import { NetSuiteService } from '@/services/NetSuiteService';
-import { hasError, showToast } from '@/utils';
+import { hasError, showToast } from '@common';
 import emitter from "@/event-bus";
 import logger from "@/logger";
 
@@ -88,14 +88,14 @@ async function saveSftpConfig() {
 
     const resp = await NetSuiteService.updateSftpConfig(payload);
 
-    if(!hasError(resp)) {
-      showToast(translate("SFTP configurations updated successfully"))
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("SFTP configurations updated successfully"))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update SFTP configurations"))
+    commonUtil.showToast(translate("Failed to update SFTP configurations"))
   }
 
   emitter.emit("dismissLoader")

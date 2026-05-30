@@ -1,6 +1,6 @@
-import api from '@common'
+import { api } from '@common'
 import logger from "@/logger";
-import { hasError } from "@/utils";
+import { commonUtil } from '@common';
 
 const createProductStore = async (payload: any): Promise <any> => {
   return api({
@@ -89,7 +89,7 @@ const updateCompany = async (payload: any): Promise <any> => {
       data: payload
     }) as any;
 
-    if(hasError(resp)) {
+    if(commonUtil.hasError(resp)) {
       return Promise.resolve(resp.data);
     } else {
       throw resp.data;

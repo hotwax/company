@@ -620,9 +620,9 @@ import {
   timeOutline,
   alertCircleOutline
 } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { computed, defineEmits, defineProps } from "vue";
-import { formatDateTime } from "@/utils";
+import { formatDateTime } from '@/utils';
 import { getProductSyncBulkOperationProgress } from "@/utils/shopifyProductSyncWizard";
 
 

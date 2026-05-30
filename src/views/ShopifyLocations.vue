@@ -69,23 +69,25 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useUtilStore } from '@/store/util';
+import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from "@/utils"
+import { hasError, showToast } from '@common'
 import emitter from "@/event-bus";
 import logger from "@/logger";
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
-const store = useStore();
+const utilStore = useUtilStore();
+const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 
-const facilities = computed(() => store.getters["util/getFacilities"])
-const shopifyShopLocations = computed(() => store.getters["shopify/getShopifyShopsLocations"])
+const facilities = computed(() => utilStore.facilities)
+const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -98,8 +100,8 @@ const isDirty = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
-    store.dispatch("util/fetchFacilities"),
-    store.dispatch("shopify/fetchShopifyShopLocations")
+    utilStore.fetchFacilities(),
+    shopifyStore.fetchShopifyShopLocations()
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -142,7 +144,7 @@ async function saveMapping(facilityId: string) {
   const shopifyLocationId = localMappings.value[facilityId];
 
   if (!shopifyLocationId) {
-    showToast(translate("Please provide a Shopify location ID"));
+    commonUtil.showToast(translate("Please provide a Shopify location ID"));
     return;
   }
 
@@ -154,16 +156,16 @@ async function saveMapping(facilityId: string) {
       shopifyLocationId
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Mapping updated successfully"));
-      await store.dispatch("shopify/fetchShopifyShopLocations");
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Mapping updated successfully"));
+      await shopifyStore.fetchShopifyShopLocations();
       editingItemId.value = "";
     } else {
       throw resp.data;
     }
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(translate("Failed to update mapping"));
   }
   emitter.emit("dismissLoader");
 }
@@ -180,11 +182,11 @@ async function saveAllDirtyMappings() {
         shopifyLocationId: localMappings.value[id]
       });
     }
-    await store.dispatch("shopify/fetchShopifyShopLocations");
-    showToast(translate("All mappings saved successfully"));
+    await shopifyStore.fetchShopifyShopLocations();
+    commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(translate("Failed to save some mappings"));
   }
   emitter.emit("dismissLoader");
 }

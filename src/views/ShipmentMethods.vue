@@ -82,19 +82,23 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useUtilStore } from '@/store/util';
+import { useNetSuiteStore } from '@/store/netSuite';
+import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-const store = useStore();
+const utilStore = useUtilStore();
+const netSuiteStore = useNetSuiteStore();
+const shopifyStore = useShopifyStore();
 const shipmentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
 const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMethodTypeId);
 
-const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
-const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](shipmentMethodTypeId))
-const shopifyShopsCarrierShipments = computed(() => store.getters["shopify/getShopifyShopsCarrierShipments"])
+const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
+const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
+const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(shipmentMethodTypeId))
+const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)
@@ -109,9 +113,9 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("util/fetchShipmentMethodTypes");
-  await store.dispatch("netSuite/fetchProductStoreShipmentMethods")
-  await store.dispatch("netSuite/fetchShopifyShopsCarrierShipments")
+  await utilStore.fetchShipmentMethodTypes();
+  await netSuiteStore.fetchProductStoreShipmentMethods({})
+  await shopifyStore.fetchShopifyShopsCarrierShipments({})
 })
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {

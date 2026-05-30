@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { IonContent, IonIcon, IonItem, IonLabel, IonList, popoverController } from "@ionic/vue";
-import { translate } from '@/i18n';
+import { translate } from '@common';
 import { calendarOutline, pauseOutline, playOutline } from 'ionicons/icons';
 import { defineProps } from "vue";
 

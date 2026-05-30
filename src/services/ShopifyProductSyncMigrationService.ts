@@ -1,4 +1,4 @@
-import api from '@common';
+import { api } from '@common';
 import logger from "@/logger";
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";

@@ -59,20 +59,20 @@
 <script setup lang="ts">
 import { IonBackButton, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToggle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { cloudUploadOutline, saveOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { computed, defineProps, ref, watch } from "vue";
-import { useStore } from "vuex";
+import { useShopifyStore } from '@/store/shopify';
 import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from "@/utils";
+import { hasError, showToast } from '@common';
 import TimezoneModal from "@/components/TimezoneModal.vue";
 import emitter from "@/event-bus";
 import logger from "@/logger";
 
 const props = defineProps(['id']);
-const store = useStore();
+const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const shopDetails = ref({
   name: "",
   timezone: "",
@@ -88,7 +88,7 @@ const isDirty = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   if (!shop.value.shopId) {
-    await store.dispatch("shopify/fetchShopifyShops")
+    await shopifyStore.fetchShopifyShops()
   }
   setShopDetails();
   isLoading.value = false;
@@ -133,15 +133,15 @@ async function saveShopDetails() {
       ...shopDetails.value
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Shop details updated successfully"));
-      await store.dispatch("shopify/fetchShopifyShops");
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Shop details updated successfully"));
+      await shopifyStore.fetchShopifyShops();
     } else {
       throw resp.data;
     }
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to update shop details"));
+    commonUtil.showToast(translate("Failed to update shop details"));
   }
   emitter.emit("dismissLoader");
 }

@@ -34,11 +34,11 @@ import {
 } from "@ionic/vue";
 import { computed } from "vue";
 import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
-import { useStore } from "@/store";
+import { useAuth } from '@common/composables/useAuth';
 import { useRouter } from "vue-router";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 
-const store = useStore();
+const { isAuthenticated } = useAuth();
 const router = useRouter();
 const appPages = [
   {
@@ -77,7 +77,7 @@ const appPages = [
   }
 ];
 
-const isUserAuthenticated = computed(() => store.getters["user/isUserAuthenticated"])
+const isUserAuthenticated = computed(() => isAuthenticated.value)
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
