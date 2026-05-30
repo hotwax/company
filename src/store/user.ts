@@ -61,10 +61,9 @@ export const useUserStore = defineStore('user', {
         let resp: any
         do {
           resp = await api({
-            url: 'getPermissions',
-            method: 'post',
-            baseURL: commonUtil.getOmsURL(),
-            data: { viewIndex, viewSize }
+            url: 'admin/user/permissions',
+            method: 'get',
+            params: { viewIndex, viewSize }
           })
           if (resp.status === 200 && resp.data.docs?.length && !commonUtil.hasError(resp)) {
             serverPermissions.push(...resp.data.docs.map((p: any) => p.permissionId))
