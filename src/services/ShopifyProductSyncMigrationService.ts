@@ -109,13 +109,6 @@ function getLegacySystemMessageLabel(message: any) {
   return String(message?.systemMessageTypeId || message?.systemMessageId || "Legacy system message").trim();
 }
 
-function isLegacyProductSyncMessage(systemMessage: any, systemMessageTypeId: string) {
-  const msgTypeId = String(systemMessage?.systemMessageTypeId || "").trim();
-  const targetTypeId = String(systemMessageTypeId || "").trim();
-  return msgTypeId === targetTypeId || 
-    (targetTypeId.includes("BulkProductAndVariantsByIdQuery") && msgTypeId.includes("BulkProductAndVariantsByIdQuery"));
-}
-
 function formatLegacyDateTime(value: any) {
   if (value === undefined || value === null || value === "") return "";
 
@@ -638,15 +631,6 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
 
 async function fetchLegacyTeardownState(payload: any) {
   const shopId = getShopId(payload);
-  let primaryRemoteId = "";
-  try {
-    primaryRemoteId = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
-      shopId,
-      shop: payload?.shop
-    });
-  } catch (err) {
-    logger.warn("Failed to fetch primary remote ID for job filtering", err);
-  }
 
   const legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds(payload);
   const [legacySystemMessageTypes, legacyServiceJobs, legacySystemMessageState] = await Promise.all([
