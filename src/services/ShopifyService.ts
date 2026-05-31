@@ -96,6 +96,28 @@ const deleteShopifyShopLocation = async (payload: any): Promise <any> => {
   })
 }
 
+const fetchLocationsFromShopify = async (payload: any): Promise<any> => {
+  return api({
+    url: `shopify/shops/${payload.shopId}/shopify-locations`,
+    method: 'get'
+  })
+}
+
+const importShopifyFacilities = async (payload: any): Promise<any> => {
+  return api({
+    url: `shopify/shops/${payload.shopId}/shopify-locations/import`,
+    method: 'post',
+    data: payload
+  })
+}
+
+const fetchShopifyFacilityHealth = async (payload: any): Promise<any> => {
+  return api({
+    url: `shopify/shops/${payload.shopId}/shopify-locations/health`,
+    method: 'get'
+  })
+}
+
 export const ShopifyService = {
   createShopifyShopCarrierShipment,
   createShopifyShopLocation,
@@ -103,10 +125,13 @@ export const ShopifyService = {
   deleteShopifyShopCarrierShipment,
   deleteShopifyShopLocation,
   deleteShopifyShopTypeMapping,
+  fetchLocationsFromShopify,
+  fetchShopifyFacilityHealth,
   fetchShopifyShops,
   fetchShopifyTypeMappings,
   fetchShopifyShopsCarrierShipments,
   fetchShopifyShopLocations,
+  importShopifyFacilities,
   updateShopifyShop,
   updateShopifyShopCarrierShipment
 }
