@@ -4,10 +4,62 @@
       <ion-toolbar>
         <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
         <ion-title>{{ translate("Inventory locations") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="runAudit" :disabled="isAuditing">
+            <ion-icon slot="icon-only" :icon="isAuditing ? refreshOutline : checkmarkCircleOutline" />
+          </ion-button>
+          <ion-button @click="openImportModal">
+            <ion-icon slot="icon-only" :icon="cloudDownloadOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
+      <!-- Health audit panel — shown after user runs audit -->
+      <ion-card v-if="health" class="ion-margin">
+        <ion-card-content>
+          <div class="health-summary">
+            <span><strong>{{ health.totalShopifyLocations }}</strong> {{ translate("Shopify locations") }}</span>
+            <ion-button fill="clear" size="small" :disabled="isAuditing" @click="runAudit">
+              <ion-icon :icon="refreshOutline" slot="start" />
+              {{ translate("Re-run") }}
+            </ion-button>
+          </div>
+          <div class="health-items">
+            <span>
+              <ion-icon :icon="health.unmapped === 0 ? checkmarkCircleOutline : refreshOutline"
+                        :color="health.unmapped === 0 ? 'success' : 'warning'" />
+              {{ health.totalShopifyLocations - health.unmapped }} {{ translate("mapped") }}
+            </span>
+            <span v-if="health.unmapped > 0" class="health-warning">
+              {{ health.unmapped }} {{ translate("not imported") }}
+            </span>
+            <span v-if="health.stale > 0" class="health-warning">
+              {{ health.stale }} {{ translate("stale") }}
+            </span>
+            <span v-if="health.missingAddress > 0" class="health-warning">
+              {{ health.missingAddress }} {{ translate("missing address") }}
+            </span>
+            <span v-if="health.missingGeoPoint > 0" class="health-warning">
+              {{ health.missingGeoPoint }} {{ translate("missing coordinates") }}
+            </span>
+            <span v-if="health.missingProductStore > 0" class="health-warning">
+              {{ health.missingProductStore }} {{ translate("not linked to store") }}
+            </span>
+          </div>
+        </ion-card-content>
+      </ion-card>
+
+      <!-- Run Audit button — shown before first audit -->
+      <div v-else class="ion-padding-horizontal ion-padding-bottom">
+        <ion-button fill="outline" expand="block" :disabled="isAuditing" @click="runAudit">
+          <ion-spinner v-if="isAuditing" name="crescent" slot="start" />
+          <ion-icon v-else :icon="checkmarkCircleOutline" slot="start" />
+          {{ translate("Run Facility Audit") }}
+        </ion-button>
+      </div>
+
       <div class="header ion-margin-top">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
@@ -67,8 +119,9 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonBackButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
+import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
 import { translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';
@@ -85,6 +138,8 @@ const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
+const health = ref<any>(null)
+const isAuditing = ref(false)
 
 const facilities = computed(() => utilStore.facilities)
 const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
@@ -191,6 +246,30 @@ async function saveAllDirtyMappings() {
   emitter.emit("dismissLoader");
 }
 
+async function openImportModal() {
+  const modal = await modalController.create({
+    component: ImportShopifyLocationsModal,
+    componentProps: { shopId: props.id }
+  })
+  await modal.present()
+  const { data } = await modal.onDidDismiss()
+  if (data?.imported) {
+    await shopifyStore.fetchShopifyShopLocations()
+  }
+}
+
+async function runAudit() {
+  isAuditing.value = true
+  try {
+    const resp = await ShopifyService.fetchShopifyFacilityHealth({ shopId: props.id })
+    health.value = resp.data
+  } catch (e) {
+    showToast(translate('Audit failed'))
+  } finally {
+    isAuditing.value = false
+  }
+}
+
 onBeforeRouteLeave(async () => {
   if (!isDirty.value) {
     return true;
@@ -249,5 +328,23 @@ onBeforeRouteLeave(async () => {
   --padding-end: 0;
   text-align: right;
   max-width: 200px;
+}
+
+.health-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.health-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.health-warning {
+  color: var(--ion-color-warning);
 }
 </style>
