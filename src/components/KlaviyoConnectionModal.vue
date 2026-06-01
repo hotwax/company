@@ -155,8 +155,8 @@ import {
 } from "@ionic/vue";
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
 import { translate } from '@common';
-import { KlaviyoService } from "@/services/KlaviyoService";
 import { commonUtil, hasError } from '@common'
 import { getResponseErrorMessage } from '@/utils';
 import { logger } from '@common';
@@ -180,11 +180,11 @@ const isSaving = ref(false);
 
 const previewAuthId = computed(() => {
   if (!form.value.description.trim()) return translate("(generated when you enter a name)");
-  return KlaviyoService.generateAuthId(form.value.description).slice(0, 60);
+  return generateAuthId(form.value.description).slice(0, 60);
 });
 
 const maskedExistingKey = computed(() => {
-  const masked = KlaviyoService.maskApiKey(props.connection?.publicKey);
+  const masked = maskApiKey(props.connection?.publicKey);
   return masked || translate("Not set");
 });
 
@@ -240,25 +240,25 @@ async function save() {
         description: form.value.description.trim(),
       };
       if (isReplacingKey.value && form.value.privateApiKey.trim()) {
-        payload.publicKey = KlaviyoService.ensureKeyPrefix(form.value.privateApiKey.trim());
+        payload.publicKey = ensureKeyPrefix(form.value.privateApiKey.trim());
         payload.authHeaderName = form.value.authHeaderName || "Authorization";
         payload.baseUrl = form.value.baseUrl;
       }
-      const updated = await KlaviyoService.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
+      const updated = await klaviyoStore.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
       await klaviyoStore.fetchConnections();
       commonUtil.commonUtil.showToast(translate("Klaviyo connection updated"));
       closeModal({ dismissed: false, connection: updated });
     } else {
-      const id = KlaviyoService.generateAuthId(form.value.description.trim());
+      const id = generateAuthId(form.value.description.trim());
       const payload = {
         commGatewayAuthId: id,
         commGatewayConfigId: "KLAVIYO",
         description: form.value.description.trim(),
         baseUrl: form.value.baseUrl,
         authHeaderName: form.value.authHeaderName,
-        publicKey: KlaviyoService.ensureKeyPrefix(form.value.privateApiKey.trim()),
+        publicKey: ensureKeyPrefix(form.value.privateApiKey.trim()),
       };
-      const created: any = await KlaviyoService.createCommGatewayAuth(payload);
+      const created: any = await klaviyoStore.createCommGatewayAuth(payload);
       if (commonUtil.hasError({ data: created })) throw created;
       await klaviyoStore.fetchConnections();
       commonUtil.commonUtil.showToast(translate("Klaviyo connected"));

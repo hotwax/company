@@ -843,5 +843,7 @@
   "Type DELETE below to confirm:": "Type DELETE below to confirm:",
   "Klaviyo connection disconnected": "Klaviyo connection disconnected",
   "Failed to disconnect Klaviyo": "Failed to disconnect Klaviyo",
-  "Processing": "Processing"
+  "Processing": "Processing",
+  "{count} locations from Shopify": "{count} locations from Shopify",
+  "{count} locations imported": "{count} locations imported"
 }

@@ -154,9 +154,9 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
 import { translate } from '@common';
-import { KlaviyoService } from "@/services/KlaviyoService";
 import { commonUtil } from '@common'
 import { getResponseErrorMessage } from '@/utils';
 import { logger } from '@common';
@@ -182,7 +182,7 @@ const confirmedKeyReplacement = ref(false);
 const isSaving = ref(false);
 
 const existingMaskedKey = computed(() => {
-  const masked = KlaviyoService.maskApiKey(config.value?.publicKey);
+  const masked = maskApiKey(config.value?.publicKey);
   return masked || translate("Saved on the server (not visible)");
 });
 
@@ -229,7 +229,7 @@ async function save() {
     if (isReplacingKey.value && form.newApiKey.trim()) {
       payload.publicKey = form.newApiKey.trim();
     }
-    await KlaviyoService.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
+    await klaviyoStore.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
     await klaviyoStore.fetchUnigateConfig();
     commonUtil.commonUtil.showToast(translate("Unigate tenant updated"));
     closeModal();

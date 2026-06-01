@@ -31,7 +31,7 @@ export const useShopifyStore = defineStore('shopify', {
       this.fetchStatus = { ...this.fetchStatus, shops: 'pending' }
       let shops: any[] = []
       try {
-        const resp = await api({ url: "admin/shopifyShops", method: "get", params: { pageSize: 100 } })
+        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageSize: 100 } })
         if (!commonUtil.hasError(resp) && resp.data) {
           shops = resp.data
           this.fetchStatus = { shops: 'success', lastFetched: Date.now() }
