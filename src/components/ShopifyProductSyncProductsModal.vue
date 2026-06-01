@@ -159,11 +159,13 @@ import { translate } from '@common';
 import { commonUtil } from '@common'
 import { formatDateTime } from '@/utils';
 import { logger } from '@common';
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import type { ShopifyProductSyncProductSearchResult } from "@/services/ShopifyProductSyncService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncProductSearchResult } from "@/store/shopifyProductSync";
 
 type ProductPickerMode = "search" | "unsynced";
 const SEARCH_DEBOUNCE_MS = 600;
+
+const shopifyProductSyncStore = useShopifyProductSyncStore();
 
 const props = defineProps<{
   mode?: ProductPickerMode
@@ -231,12 +233,12 @@ async function loadProducts() {
   const requestId = ++productSearchRequestId;
   try {
     const response = isSearchMode.value
-      ? await ShopifyProductSyncService.fetchRecentlyUpdatedShopifyProducts({
+      ? await shopifyProductSyncStore.fetchRecentlyUpdatedShopifyProducts({
           systemMessageRemoteId: props.systemMessageRemoteId,
           pageSize: 15
         })
       : {
-          products: await ShopifyProductSyncService.fetchUnsyncedProductUpdates({
+          products: await shopifyProductSyncStore.fetchUnsyncedProductUpdates({
             systemMessageRemoteId: props.systemMessageRemoteId,
             shopId: props.shopId,
             lastSyncedAt: props.lastSyncedAt,
