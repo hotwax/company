@@ -24,12 +24,6 @@ const authGuard = async () => {
   }
 }
 
-const loginGuard = () => {
-  if (useAuth().isAuthenticated.value) {
-    return { path: '/' }
-  }
-}
-
 const routes: Array<RouteRecordRaw> = [
   { path: '/', redirect: '/product-store' },
   { path: '/product-store', name: 'ProductStore', component: ProductStore, beforeEnter: authGuard },
@@ -63,7 +57,7 @@ const routes: Array<RouteRecordRaw> = [
       if (from.path !== '/create-product-store') return { path: from.path }
     }
   },
-  { path: '/login', name: 'Login', component: Login, beforeEnter: loginGuard },
+  { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
 ]
 

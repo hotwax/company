@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../job-manager"
+		},
+		{
+			"path": "../../maarg-sd/notnaked"
+		},
+		{
+			"path": "../accxui"
+		}
+	],
+	"settings": {}
+}
