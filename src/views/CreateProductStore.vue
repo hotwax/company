@@ -61,7 +61,7 @@ import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { hasError, showToast } from '@common'
+import { commonUtil, hasError } from '@common'
 import { generateInternalId } from '@/utils';
 import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
@@ -94,7 +94,7 @@ onIonViewWillEnter(async () => {
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
-    commonUtil.showToast(translate('Please fill all the required fields'))
+    commonUtil.commonUtil.showToast(translate('Please fill all the required fields'))
     return;
   }
 
@@ -103,7 +103,7 @@ async function manageConfigurations() {
   }
 
   if (formData.value.productStoreId.length > 20) {
-    commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
+    commonUtil.commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
     return
   }
 
@@ -147,14 +147,14 @@ async function manageConfigurations() {
         await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
-      commonUtil.showToast(translate("Product store created successfully."))
+      commonUtil.commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
       router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }
   } catch(error: any) {
-    commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
+    commonUtil.commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
 

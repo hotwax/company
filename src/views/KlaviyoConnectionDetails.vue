@@ -247,7 +247,7 @@ import router from "@/router";
 import { translate } from '@common';
 import { KlaviyoService, ProductStoreEmailSetting } from "@/services/KlaviyoService";
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
-import { showToast } from '@common'
+import { commonUtil } from '@common'
 import { getResponseErrorMessage } from '@/utils';
 import { logger } from '@common';
 import {
@@ -392,11 +392,11 @@ async function commitSubjectIfChanged(evt: any) {
     };
     await KlaviyoService.upsertEmailSetting(payload);
     await klaviyoStore.fetchAllEmailSettings();
-    commonUtil.showToast(translate("Subject updated"));
+    commonUtil.commonUtil.showToast(translate("Subject updated"));
     delete subjectDrafts.value[evt.emailType];
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update subject")));
+    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update subject")));
   } finally {
     busyEvent.value = null;
   }
@@ -416,15 +416,15 @@ async function toggleEvent(evt: any, enabled: boolean) {
         gatewayAuthId: connection.value.commGatewayAuthId,
       };
       await KlaviyoService.upsertEmailSetting(payload);
-      commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));
+      commonUtil.commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));
     } else {
       await KlaviyoService.deleteEmailSetting(selectedStoreId.value, evt.emailType);
-      commonUtil.showToast(translate("{label} turned off", { label: getEventLabel(evt.emailType) }));
+      commonUtil.commonUtil.showToast(translate("{label} turned off", { label: getEventLabel(evt.emailType) }));
     }
     await klaviyoStore.fetchAllEmailSettings();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update email event")));
+    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update email event")));
   } finally {
     busyEvent.value = null;
   }
@@ -458,13 +458,13 @@ async function performDelete() {
   isDeleting.value = true;
   try {
     await KlaviyoService.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
-    commonUtil.showToast(translate("Klaviyo connection disconnected"));
+    commonUtil.commonUtil.showToast(translate("Klaviyo connection disconnected"));
     showDeleteModal.value = false;
     await klaviyoStore.hydrate();
     router.replace("/klaviyo");
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to disconnect Klaviyo")));
+    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to disconnect Klaviyo")));
   } finally {
     isDeleting.value = false;
   }

@@ -130,7 +130,7 @@ import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistor
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
-import { showToast } from '@common'
+import { commonUtil } from '@common'
 import { downloadTextFile, getDownloadFileContent, parseDateTimeValue } from '@/utils';
 import {
   getSystemMessageTime,
@@ -255,7 +255,7 @@ async function loadHistory() {
     if (isStaleHistoryLoad(loadToken)) return;
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync history"));
-    commonUtil.showToast(translate("Failed to load product sync history"));
+    commonUtil.commonUtil.showToast(translate("Failed to load product sync history"));
     historyRuns.value = [];
     hasMoreBackendHistory.value = false;
   } finally {
@@ -586,7 +586,7 @@ async function loadMoreHistory(event: CustomEvent) {
     if (isStaleHistoryLoad(loadToken)) return;
     logger.error(error);
     historyRuns.value = historyRuns.value.slice(0, previousRunCount);
-    commonUtil.showToast(translate("Failed to load product sync history"));
+    commonUtil.commonUtil.showToast(translate("Failed to load product sync history"));
     hasMoreBackendHistory.value = false;
   } finally {
     isLoadingMore.value = false;
@@ -603,7 +603,7 @@ async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
   try {
     const downloadableRun = await getDownloadableHistoryRun(run);
     if (!downloadableRun?.mdmLogConfigId || !downloadableRun?.mdmLogContentId) {
-      commonUtil.showToast(translate("Raw Shopify file is not available"));
+      commonUtil.commonUtil.showToast(translate("Raw Shopify file is not available"));
       return;
     }
 
@@ -615,10 +615,10 @@ async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
     }
 
     downloadTextFile(fileContent, getRawShopifyFileName(downloadableRun));
-    commonUtil.showToast(translate("File downloaded successfully"));
+    commonUtil.commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download raw Shopify file for message ${run.id}`, error);
-    commonUtil.showToast(translate("Failed to download raw Shopify file"));
+    commonUtil.commonUtil.showToast(translate("Failed to download raw Shopify file"));
   }
 }
 
@@ -626,7 +626,7 @@ async function downloadFailedRecordsFile(run: ShopifyProductSyncHistoryRun) {
   try {
     const downloadableRun = await getDownloadableHistoryRun(run);
     if (!downloadableRun?.mdmLogConfigId || !downloadableRun?.mdmErrorLogContentId) {
-      commonUtil.showToast(translate("Failed records file is not available"));
+      commonUtil.commonUtil.showToast(translate("Failed records file is not available"));
       return;
     }
 
@@ -638,10 +638,10 @@ async function downloadFailedRecordsFile(run: ShopifyProductSyncHistoryRun) {
     }
 
     downloadTextFile(fileContent, getFailedRecordsFileName(downloadableRun));
-    commonUtil.showToast(translate("File downloaded successfully"));
+    commonUtil.commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download failed records file for message ${run.id}`, error);
-    commonUtil.showToast(translate("Failed to download failed records file"));
+    commonUtil.commonUtil.showToast(translate("Failed to download failed records file"));
   }
 }
 

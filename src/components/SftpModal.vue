@@ -54,7 +54,7 @@ import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, Ion
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from '@common'
 import { NetSuiteService } from '@/services/NetSuiteService';
-import { hasError, showToast } from '@common';
+import { commonUtil, hasError } from '@common';
 import { emitter } from '@common';
 import { logger } from '@common';
 
@@ -89,13 +89,13 @@ async function saveSftpConfig() {
     const resp = await NetSuiteService.updateSftpConfig(payload);
 
     if(!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("SFTP configurations updated successfully"))
+      commonUtil.commonUtil.showToast(translate("SFTP configurations updated successfully"))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    commonUtil.showToast(translate("Failed to update SFTP configurations"))
+    commonUtil.commonUtil.showToast(translate("Failed to update SFTP configurations"))
   }
 
   emitter.emit("dismissLoader")

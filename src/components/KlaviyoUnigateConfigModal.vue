@@ -157,7 +157,7 @@ import { useKlaviyoStore } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
 import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
-import { showToast } from '@common'
+import { commonUtil } from '@common'
 import { getResponseErrorMessage } from '@/utils';
 import { logger } from '@common';
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
@@ -231,11 +231,11 @@ async function save() {
     }
     await KlaviyoService.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
     await klaviyoStore.fetchUnigateConfig();
-    commonUtil.showToast(translate("Unigate tenant updated"));
+    commonUtil.commonUtil.showToast(translate("Unigate tenant updated"));
     closeModal();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
+    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
   } finally {
     isSaving.value = false;
   }

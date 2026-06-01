@@ -58,7 +58,7 @@ import router from "@/router";
 import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { computed, defineProps, ref } from "vue";
-import { hasError, showToast } from '@common';
+import { commonUtil, hasError } from '@common';
 import { useUtilStore } from '@/store/util';
 import { emitter } from '@common';
 
@@ -106,7 +106,7 @@ async function setupProductStore() {
 
     const resp = await ProductStoreService.updateProductStore(payload);
     if(!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Product store configurations updated successfully."))
+      commonUtil.commonUtil.showToast(translate("Product store configurations updated successfully."))
       emitter.emit("dismissLoader");
       router.replace(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
@@ -114,7 +114,7 @@ async function setupProductStore() {
     }
   } catch(error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to add configurations to the product store."))
+    commonUtil.commonUtil.showToast(translate("Failed to add configurations to the product store."))
   }
 
   emitter.emit("dismissLoader");
