@@ -10,6 +10,8 @@ export const useUserStore = defineStore('user', {
     permissions: [] as string[],
     oms: '',
     instanceUrl: '',
+    availableTimeZones: [] as any[],
+    userAccount: null as any,
     fetchStatus: {
       profile: '' as string,
       permissions: '' as string,
@@ -117,6 +119,37 @@ export const useUserStore = defineStore('user', {
         logger.error('setUserTimeZone', err)
         commonUtil.showToast(translate('Failed to update time zone'))
         return Promise.reject('')
+      }
+    },
+
+    async fetchAvailableTimeZones() {
+      try {
+        const resp = await api({
+          url: 'admin/user/getAvailableTimeZones',
+          method: 'get',
+          cache: true
+        })
+        if (resp?.data) {
+          this.availableTimeZones = resp.data.timeZones ?? (Array.isArray(resp.data) ? resp.data : [])
+        }
+        return resp
+      } catch (error: any) {
+        logger.error('fetchAvailableTimeZones', error)
+        return Promise.reject(error)
+      }
+    },
+
+    async fetchUserAccount(userId: string) {
+      try {
+        const resp = await api({
+          url: `admin/users/${encodeURIComponent(userId)}`,
+          method: 'GET'
+        })
+        this.userAccount = resp?.data ?? null
+        return resp
+      } catch (error: any) {
+        logger.error('fetchUserAccount', error)
+        return Promise.reject(error)
       }
     },
 

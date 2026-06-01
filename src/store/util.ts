@@ -17,6 +17,7 @@ export const useUtilStore = defineStore('util', {
     organizationPartyId: '' as string,
     statusItems: {} as any,
     maargInfo: null as any,
+    currencies: [] as any[],
     fetchStatus: {
       facilities: 'none',
       statuses: 'none',
@@ -28,6 +29,7 @@ export const useUtilStore = defineStore('util', {
       shipmentMethodTypes: 'none',
       emailTypes: 'none',
       maargInfo: 'none',
+      currencies: 'none',
       lastFetched: 0
     }
   }),
@@ -43,6 +45,7 @@ export const useUtilStore = defineStore('util', {
     getOrganizationPartyId: (state) => state.organizationPartyId,
     getStatusItems: (state) => state.statusItems,
     getMaargInfo: (state) => state.maargInfo,
+    getCurrencies: (state) => state.currencies,
     getFetchStatus: (state) => state.fetchStatus
   },
 
@@ -267,6 +270,32 @@ export const useUtilStore = defineStore('util', {
         }
       })()
       return inflightMaargFetch
+    },
+
+    async addEnumToEnumGroup(payload: any) {
+      try {
+        const resp = await UtilService.addEnumToEnumGroup(payload)
+        return resp
+      } catch (error: any) {
+        logger.error('addEnumToEnumGroup', error)
+        return Promise.reject(error)
+      }
+    },
+
+    async fetchCurrencies(payload: any) {
+      this.fetchStatus = { ...this.fetchStatus, currencies: 'pending' }
+      try {
+        const resp = await UtilService.fetchCurrencies(payload)
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          this.currencies = resp.data
+          this.fetchStatus = { ...this.fetchStatus, currencies: 'success', lastFetched: Date.now() }
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error('fetchCurrencies', error)
+        this.fetchStatus = { ...this.fetchStatus, currencies: 'error' }
+      }
     },
 
     clearUtilState() {

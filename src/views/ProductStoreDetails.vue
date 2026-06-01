@@ -360,7 +360,6 @@ import { computed, defineProps, ref } from "vue";
 import { commonUtil } from '@common';
 import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
-import { UtilService } from "@/services/UtilService";
 import { emitter } from '@common';
 import { DateTime } from "luxon";
 
@@ -369,7 +368,7 @@ const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
 
 const autoCancellationActive = ref(false);
-const currencies = ref([]) as any;
+const currencies = computed(() => utilStore.currencies)
 
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const productStore = computed(() => productStoreStore.getCurrent)
@@ -381,21 +380,12 @@ const productIdentificationOptions = computed(() => utilStore.productIdentifiers
 
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
-  await Promise.allSettled([utilStore.fetchDBICCountries(), productStoreStore.fetchProductStoreDetails(props.productStoreId), productStoreStore.fetchCurrentStoreSettings(props.productStoreId), utilStore.fetchFacilityGroups(), utilStore.fetchProductIdentifiers(), utilStore.fetchShipmentMethodTypes(), fetchCurrencies()])
+  await Promise.allSettled([utilStore.fetchDBICCountries(), productStoreStore.fetchProductStoreDetails(props.productStoreId), productStoreStore.fetchCurrentStoreSettings(props.productStoreId), utilStore.fetchFacilityGroups(), utilStore.fetchProductIdentifiers(), utilStore.fetchShipmentMethodTypes(), utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 })])
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
   emitter.emit("dismissLoader");
 })
 
-async function fetchCurrencies() {
-  try {
-    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(resp.data?.length) {
-      currencies.value = resp.data;
-    }
-  } catch(err) {
-    logger.error("Failed to fetch currencies", err)
-  }
-}
+
 
 function getPreferredIdentification(id: string) {
   const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}

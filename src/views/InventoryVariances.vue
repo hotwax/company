@@ -69,11 +69,12 @@ import { commonUtil } from '@common';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from 'vue';
 import { translate } from '@common'
-import { UtilService } from '@/services/UtilService';
+import { useUtilStore } from '@/store/util';
 import { DateTime } from 'luxon';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
 const netSuiteStore = useNetSuiteStore();
+const utilStore = useUtilStore();
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { removeNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
@@ -130,7 +131,7 @@ async function addVarianceToGroup(enumId: any, event: any) {
       }
     }
     
-    resp = await UtilService.addEnumToEnumGroup(payload);
+    resp = await utilStore.addEnumToEnumGroup(payload);
     if(!commonUtil.hasError(resp)) {
       await netSuiteStore.fetchEnumGroupMember();
     } else {

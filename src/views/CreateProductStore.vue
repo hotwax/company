@@ -65,7 +65,6 @@ import { hasError, showToast } from '@common'
 import { generateInternalId } from '@/utils';
 import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
-import { UtilService } from "@/services/UtilService";
 import { emitter } from '@common';
 
 const productStoreStore = useProductStoreStore();
@@ -79,7 +78,7 @@ const formData = ref({
 }) as any;
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
-const currencies = ref([]) as any;
+const currencies = computed(() => utilStore.currencies)
 
 const productStores = computed(() => productStoreStore.productStores)
 const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
@@ -90,19 +89,8 @@ onIonViewWillEnter(async () => {
   await utilStore.fetchDBICCountries();
   productStoreStore.fetchCompany();
   if(!dbicCountriesCount.value) await utilStore.fetchOperatingCountries();
-  await fetchCurrencies();
+  await utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
 })
-
-async function fetchCurrencies() {
-  try {
-    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(resp.data?.length) {
-      currencies.value = resp.data;
-    }
-  } catch(err) {
-    logger.error("Failed to fetch currencies", err)
-  }
-}
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {

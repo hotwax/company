@@ -754,7 +754,6 @@ import AnimatedDuration from "@/components/AnimatedDuration.vue";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { ShopifyService } from "@/services/ShopifyService";
 import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
-import { UserService } from "@/services/UserService";
 import {
   canAdvanceProductSyncStep,
 
@@ -786,6 +785,7 @@ const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
+const userStore = useUserStore();
 const {
   jobs,
   products,
@@ -3349,7 +3349,7 @@ async function loadSyncJobAuditUsers(auditLogs: any[]) {
   if (!missingUserIds.length) return;
 
   const responses = await Promise.allSettled(missingUserIds.map(async (userId) => {
-    const resp = await UserService.getUserAccount(userId);
+    const resp = await userStore.fetchUserAccount(userId);
     return { userId, data: resp?.data || {} };
   }));
 
