@@ -57,13 +57,7 @@
         </ion-card>
       </section>
       <hr />
-      <div class="section-header">
-        <h1>
-          {{ translate("App") }}
-          <p class="overline" >{{ translate("Version:", { appVersion }) }}</p>
-        </h1>
-        <p class="overline">{{ translate("Built:", { builtTime:  getDateTime(appInfo.builtTime)}) }}</p>
-      </div>
+      <DxpAppVersionInfo />
       <section>
         <ion-card>
           <ion-card-header>
@@ -133,6 +127,7 @@ import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
+import DxpAppVersionInfo from "@/components/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
 import { translate } from '@common'
 import router from '@/router'
@@ -146,10 +141,8 @@ const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
-const appVersion = ref("")
 const maargInfo = computed(() => utilStore.maargInfo)
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
-const appInfo = (import.meta.env.VITE_APP_VERSION_INFO ? JSON.parse(import.meta.env.VITE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => userStore.instanceUrl)
@@ -320,7 +313,6 @@ defineProps({
   }
 })
 onMounted(() => {
-  appVersion.value = appInfo.branch ? (appInfo.branch + "-" + appInfo.revision) : appInfo.tag;
   // maargInfo is fetched once on login via util/fetchMaargInfo. Dispatch
   // again here as a safety net for sessions that pre-date that wiring or
   // where the initial dispatch failed; the action itself is idempotent.
@@ -344,10 +336,6 @@ async function changeTimeZone() {
 async function logout() {
   await userStore.postLogout();
   router.push('/login');
-}
-
-function getDateTime(time: any) {
-  return time ? DateTime.fromMillis(time).toLocaleString({ ...DateTime.DATETIME_MED, hourCycle: "h12" }) : "";
 }
 
 function goToLaunchpad() {
