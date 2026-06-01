@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { commonUtil } from '@common'
-import logger from '@/logger'
+import { logger } from '@common'
 import { NetSuiteService } from '@/services/NetSuiteService'
 import { UtilService } from '@/services/UtilService'
 import { useProductStoreStore } from './productStore'

@@ -358,10 +358,10 @@ import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
 import { commonUtil } from '@common';
-import logger from "@/logger";
+import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { UtilService } from "@/services/UtilService";
-import emitter from "@/event-bus";
+import { emitter } from '@common';
 import { DateTime } from "luxon";
 
 const props = defineProps(["productStoreId"]);

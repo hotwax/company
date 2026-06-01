@@ -88,8 +88,8 @@ import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { ShopifyService } from "@/services/ShopifyService";
 import { hasError, showToast } from '@common';
-import emitter from "@/event-bus";
-import logger from "@/logger";
+import { emitter } from '@common';
+import { logger } from '@common';
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);

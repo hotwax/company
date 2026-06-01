@@ -65,8 +65,8 @@ import { useShopifyStore } from '@/store/shopify';
 import { ShopifyService } from "@/services/ShopifyService";
 import { hasError, showToast } from '@common';
 import TimezoneModal from "@/components/TimezoneModal.vue";
-import emitter from "@/event-bus";
-import logger from "@/logger";
+import { emitter } from '@common';
+import { logger } from '@common';
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();

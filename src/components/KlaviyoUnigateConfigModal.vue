@@ -159,7 +159,7 @@ import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
 import { showToast } from '@common'
 import { getResponseErrorMessage } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const klaviyoStore = useKlaviyoStore();

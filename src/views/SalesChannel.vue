@@ -72,8 +72,8 @@ import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
 import { commonUtil } from '@common';
-import emitter from "@/event-bus";
-import logger from '@/logger';
+import { emitter } from '@common';
+import { logger } from '@common';
 
 
 const netSuiteStore = useNetSuiteStore();

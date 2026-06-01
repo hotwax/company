@@ -55,12 +55,12 @@ import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, I
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { translate } from '@common';
 import { useRouter } from "vue-router";
-import logger from "@/logger";
+import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { computed, defineProps, ref } from "vue";
 import { hasError, showToast } from '@common';
 import { useUtilStore } from '@/store/util';
-import emitter from "@/event-bus";
+import { emitter } from '@common';
 
 const utilStore = useUtilStore();
 const router = useRouter();

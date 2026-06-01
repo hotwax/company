@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import logger from './logger'
+import { logger } from '@common'
 
 import { IonicVue } from '@ionic/vue'
 

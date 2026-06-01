@@ -63,10 +63,10 @@ import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
 import { hasError, showToast } from '@common'
 import { generateInternalId } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { UtilService } from "@/services/UtilService";
-import emitter from "@/event-bus";
+import { emitter } from '@common';
 
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();

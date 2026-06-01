@@ -85,7 +85,7 @@ import { useUserStore } from '@/store/user';
 import { getCurrentTime } from '@/utils'
 import { translate } from '@common'
 import { UserService } from "@/services/UserService";
-import logger from "@/logger";
+import { logger } from '@common';
 
 const userStore = useUserStore();
 let queryString = ref("")

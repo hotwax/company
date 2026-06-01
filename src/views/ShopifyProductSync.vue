@@ -773,7 +773,7 @@ import {
 } from "@/utils/shopifyProductSyncWizard";
 import { hasError, showToast } from '@common'
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useLiveDashboard } from "@/composables/useLiveDashboard";

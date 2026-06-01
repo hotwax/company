@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { commonUtil } from '@common'
-import logger from '@/logger'
+import { logger } from '@common'
 import { ProductStoreService } from '@/services/ProductStoreService'
 import { useUtilStore } from './util'
 

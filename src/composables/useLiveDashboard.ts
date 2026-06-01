@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref } from "vue";
-import logger from "@/logger";
+import { logger } from '@common';
 
 export interface LiveDashboardOptions {
   /** How often the tick callback fires while the dashboard is active. Defaults to 15s. */

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { api, commonUtil } from '@common'
-import logger from '@/logger'
+import { logger } from '@common'
 import { UtilService } from '@/services/UtilService'
 
 let inflightMaargFetch: Promise<any> | null = null

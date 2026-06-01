@@ -1,5 +1,5 @@
 import { api } from '@common'
-import logger from "@/logger";
+import { logger } from '@common';
 import { commonUtil } from '@common';
 
 const createProductStore = async (payload: any): Promise <any> => {

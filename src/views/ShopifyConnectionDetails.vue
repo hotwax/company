@@ -227,7 +227,7 @@ import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue"
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { ShopifyProductSyncMigrationService } from "@/services/ShopifyProductSyncMigrationService";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
-import logger from "@/logger";
+import { logger } from '@common';
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();

@@ -1,5 +1,5 @@
 import { api } from '@common';
-import logger from "@/logger";
+import { logger } from '@common';
 import { parseDateTimeValue } from "@/utils";
 
 export interface ShopifyProductSyncSetupState {

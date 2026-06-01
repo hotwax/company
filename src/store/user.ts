@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { Settings } from 'luxon'
 import { api, commonUtil, translate } from '@common'
 import { useAuth } from '@common/composables/useAuth'
-import logger from '@/logger'
+import { logger } from '@common'
 
 export const useUserStore = defineStore('user', {
   state: () => ({

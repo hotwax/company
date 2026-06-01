@@ -159,7 +159,7 @@ import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
 import { hasError, showToast } from '@common'
 import { getResponseErrorMessage } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 
 const props = defineProps<{ connection?: any | null }>();
 

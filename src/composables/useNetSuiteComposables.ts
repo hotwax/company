@@ -1,6 +1,6 @@
 import { commonUtil } from '@common';
-import emitter from "@/event-bus";
-import logger from '@/logger';
+import { emitter } from '@common';
+import { logger } from '@common';
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { onMounted } from "vue";

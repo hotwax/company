@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import logger from '@/logger'
+import { logger } from '@common'
 import { KlaviyoService } from '@/services/KlaviyoService'
 import { useUtilStore } from './util'
 import type { CommGatewayAuth, CommGatewayConfig, ProductStoreEmailSetting, SystemMessageRemote } from '@/services/KlaviyoService'

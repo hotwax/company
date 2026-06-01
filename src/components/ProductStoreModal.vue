@@ -49,8 +49,8 @@ import { hasError, showToast } from '@common';
 import { useProductStoreStore } from '@/store/productStore';
 import { computed, onMounted, ref } from "vue";
 import { ProductStoreService } from "@/services/ProductStoreService";
-import emitter from "@/event-bus";
-import logger from "@/logger";
+import { emitter } from '@common';
+import { logger } from '@common';
 
 const productStoreStore = useProductStoreStore();
 

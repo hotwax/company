@@ -47,8 +47,8 @@ import { computed, defineProps, onMounted, ref } from "vue";
 import { ShopifyService } from "@/services/ShopifyService";
 import { hasError, showToast } from '@common'
 import { getResponseErrorMessage } from '@/utils';
-import emitter from "@/event-bus";
-import logger from "@/logger";
+import { emitter } from '@common';
+import { logger } from '@common';
 
 const props = defineProps(['shop']);
 const productStoreStore = useProductStoreStore();

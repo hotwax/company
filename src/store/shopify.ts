@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { commonUtil } from '@common'
-import logger from '@/logger'
+import { logger } from '@common'
 import { ShopifyService } from '@/services/ShopifyService'
 
 export const useShopifyStore = defineStore('shopify', {

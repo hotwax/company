@@ -63,8 +63,8 @@
 import { IonBackButton, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
 import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import TransferInventoryModal from '@/components/TransferInventoryModal.vue';
-import emitter from "@/event-bus";
-import logger from '@/logger';
+import { emitter } from '@common';
+import { logger } from '@common';
 import { commonUtil } from '@common';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from 'vue';

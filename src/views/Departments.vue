@@ -73,8 +73,8 @@ import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
 import { commonUtil } from '@common';
 import { DateTime } from "luxon";
-import emitter from "@/event-bus";
-import logger from '@/logger';
+import { emitter } from '@common';
+import { logger } from '@common';
 import { NetSuiteService } from '@/services/NetSuiteService';
 
 const utilStore = useUtilStore();

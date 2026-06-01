@@ -55,8 +55,8 @@ import { closeOutline, informationCircleOutline, openOutline, saveOutline } from
 import { translate } from '@common'
 import { NetSuiteService } from '@/services/NetSuiteService';
 import { hasError, showToast } from '@common';
-import emitter from "@/event-bus";
-import logger from "@/logger";
+import { emitter } from '@common';
+import { logger } from '@common';
 
 const sftpFormData = ref({
   guid: "",

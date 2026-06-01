@@ -381,7 +381,7 @@ import {
 } from "@/services/ShopifyProductSyncMigrationService";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import { commonUtil } from '@common';
-import logger from "@/logger";
+import { logger } from '@common';
 
 const props = defineProps(["id"]);
 const router = useRouter();

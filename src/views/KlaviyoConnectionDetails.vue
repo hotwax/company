@@ -249,7 +249,7 @@ import { KlaviyoService, ProductStoreEmailSetting } from "@/services/KlaviyoServ
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
 import { showToast } from '@common'
 import { getResponseErrorMessage } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 import {
   getDefaultKlaviyoProductStoreId,
   getKlaviyoEventLabel,

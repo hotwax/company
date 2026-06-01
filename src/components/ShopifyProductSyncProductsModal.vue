@@ -158,7 +158,7 @@ import { computed, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 import { translate } from '@common';
 import { showToast } from '@common'
 import { formatDateTime } from '@/utils';
-import logger from "@/logger";
+import { logger } from '@common';
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import type { ShopifyProductSyncProductSearchResult } from "@/services/ShopifyProductSyncService";
 

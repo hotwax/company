@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import logger from "@/logger";
+import { logger } from '@common';
 
 const EXPIRATION_TIME = 2 * 60 * 60 * 1000; // 2 hour in milliseconds
 
