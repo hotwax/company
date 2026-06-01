@@ -1,5 +1,4 @@
 import { commonUtil } from '@common';
-import { commonUtil } from '@common';
 import emitter from "@/event-bus";
 import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';

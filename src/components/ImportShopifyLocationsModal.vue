@@ -106,8 +106,7 @@ const facilityTypes = ref<Record<string, string>>({})
 const selectedForImport = computed(() =>
   locations.value.filter(loc =>
     !loc.alreadyInOms &&
-    selectedIds.value.has(loc.shopifyLocationId) &&
-    facilityTypes.value[loc.shopifyLocationId]
+    selectedIds.value.has(loc.shopifyLocationId)
   )
 )
 
@@ -121,13 +120,30 @@ async function fetchData() {
     ])
 
     const alreadyMapped = new Set(
-      (omsResp.data?.shopifyShopLocations || []).map((m: any) => m.shopifyLocationId)
+      (omsResp.data || []).map((m: any) => String(m.shopifyLocationId))
     )
 
-    locations.value = (shopifyResp.data?.locations || []).map((loc: any) => ({
-      ...loc,
-      alreadyInOms: alreadyMapped.has(loc.shopifyLocationId)
-    }))
+    const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
+    locations.value = nodes.map((node: any) => {
+      const shopifyLocationId = String(node.id).split('/').pop()!
+      return {
+        shopifyLocationId,
+        name:                node.name,
+        isFulfillmentService: node.isFulfillmentService,
+        fulfillmentServiceName: node.fulfillmentService?.serviceName ?? null,
+        pickupEnabled:       !!node.localPickupSettingsV2?.pickupTime,
+        address1:            node.address?.address1,
+        address2:            node.address?.address2,
+        city:                node.address?.city,
+        provinceCode:        node.address?.provinceCode,
+        countryCode:         node.address?.countryCode,
+        zip:                 node.address?.zip,
+        phone:               node.address?.phone,
+        latitude:            node.address?.latitude,
+        longitude:           node.address?.longitude,
+        alreadyInOms:        alreadyMapped.has(shopifyLocationId)
+      }
+    })
 
     locations.value.forEach(loc => {
       if (!loc.alreadyInOms) selectedIds.value.add(loc.shopifyLocationId)

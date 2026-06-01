@@ -256,16 +256,17 @@ async function runAudit() {
       ShopifyService.fetchLocationsFromShopify({ shopId: props.id }),
       ShopifyService.fetchShopifyShopLocations({ shopId: props.id })
     ])
-    const shopifyLocations = shopifyResp.data?.locations || []
-    const omsMappings = omsResp.data?.shopifyShopLocations || []
-    const mappedIds = new Set(omsMappings.map((m: any) => m.shopifyLocationId))
+    const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
+    const omsMappings = omsResp.data || []
+    const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)))
+    const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]))
 
     health.value = {
-      totalShopifyLocations: shopifyLocations.length,
-      unmapped: shopifyLocations.filter((loc: any) => !mappedIds.has(loc.shopifyLocationId)).length,
+      totalShopifyLocations: nodes.length,
+      unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop())).length,
       stale: omsMappings.filter((m: any) => {
-        const shopifyLoc = shopifyLocations.find((l: any) => l.shopifyLocationId === m.shopifyLocationId)
-        return shopifyLoc && !shopifyLoc.isActive
+        const node = nodeById.get(String(m.shopifyLocationId))
+        return node && !node.isActive
       }).length
     }
   } catch (e) {
