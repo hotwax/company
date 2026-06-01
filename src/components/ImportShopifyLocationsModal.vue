@@ -187,7 +187,7 @@ async function importSelected() {
         longitude:   loc.longitude
       }))
     })
-    const count = resp.data?.facilitiesImported ?? selectedForImport.value.length
+    const count = Array.isArray(resp.data) ? resp.data.length : selectedForImport.value.length
     showToast(translate('{count} locations imported', { count }))
     modalController.dismiss({ imported: count })
   } catch (e: any) {

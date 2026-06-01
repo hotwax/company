@@ -105,9 +105,9 @@ const fetchLocationsFromShopify = async (payload: any): Promise<any> => {
 
 const importShopifyFacilities = async (payload: any): Promise<any> => {
   return api({
-    url: `shopify/shops/${payload.shopId}/shopify-locations/import`,
+    url: `shopify/shops/${payload.shopId}/shopify-locations`,
     method: 'post',
-    data: payload
+    data: payload.locations
   })
 }
 
