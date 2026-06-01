@@ -3,20 +3,20 @@ import { RouteRecordRaw } from 'vue-router'
 import { Login } from '@common'
 import { useAuth } from '@common/composables/useAuth'
 
-import CreateProductStore from '@/views/CreateProductStore.vue'
-import AddConfigurations from '@/views/AddConfigurations.vue'
-import ProductStoreDetails from '@/views/ProductStoreDetails.vue'
-import ProductStore from '@/views/ProductStore.vue'
-import NetSuite from '@/views/NetSuite.vue'
-import Settings from '@/views/Settings.vue'
-import ShipmentMethods from '@/views/ShipmentMethods.vue'
-import InventoryVariances from '@/views/InventoryVariances.vue'
-import PaymentMethods from '@/views/PaymentMethods.vue'
-import SalesChannel from '@/views/SalesChannel.vue'
-import Departments from '@/views/Departments.vue'
-import ShopifyConnectionDetails from '@/views/ShopifyConnectionDetails.vue'
-import Klaviyo from '@/views/Klaviyo.vue'
-import KlaviyoConnectionDetails from '@/views/KlaviyoConnectionDetails.vue'
+const CreateProductStore = () => import('@/views/CreateProductStore.vue')
+const AddConfigurations = () => import('@/views/AddConfigurations.vue')
+const ProductStoreDetails = () => import('@/views/ProductStoreDetails.vue')
+const ProductStore = () => import('@/views/ProductStore.vue')
+const NetSuite = () => import('@/views/NetSuite.vue')
+const Settings = () => import('@/views/Settings.vue')
+const ShipmentMethods = () => import('@/views/ShipmentMethods.vue')
+const InventoryVariances = () => import('@/views/InventoryVariances.vue')
+const PaymentMethods = () => import('@/views/PaymentMethods.vue')
+const SalesChannel = () => import('@/views/SalesChannel.vue')
+const Departments = () => import('@/views/Departments.vue')
+const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.vue')
+const Klaviyo = () => import('@/views/Klaviyo.vue')
+const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {

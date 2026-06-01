@@ -64,7 +64,6 @@ import SelectOperatingCountriesModal from "@/components/SelectOperatingCountries
 import { commonUtil, hasError } from '@common'
 import { generateInternalId } from '@/utils';
 import { logger } from '@common';
-import { ProductStoreService } from "@/services/ProductStoreService";
 import { emitter } from '@common';
 
 const productStoreStore = useProductStoreStore();
@@ -124,7 +123,7 @@ async function manageConfigurations() {
       payload["companyName"] = formData.value.companyName
     }
 
-    resp = await ProductStoreService.createProductStore(payload);
+    resp = await productStoreStore.createProductStore(payload);
 
     if(!commonUtil.hasError(resp)) {
       const productStoreId = resp.data.productStoreId;

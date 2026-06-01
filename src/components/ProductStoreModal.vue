@@ -48,7 +48,6 @@ import { translate } from '@common'
 import { commonUtil, hasError } from '@common';
 import { useProductStoreStore } from '@/store/productStore';
 import { computed, onMounted, ref } from "vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
 import { emitter } from '@common';
 import { logger } from '@common';
 
@@ -85,7 +84,7 @@ async function updateSubsidiaryId() {
       productStoreId: selectedProductStoreId.value
     };
 
-    const resp = await ProductStoreService.updateProductStore(updatedStore);
+    const resp = await productStoreStore.updateProductStore(updatedStore);
     if(!commonUtil.hasError(resp)) {
       commonUtil.commonUtil.showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
       await productStoreStore.updateSelectedProductStore({
