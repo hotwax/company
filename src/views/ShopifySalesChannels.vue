@@ -70,8 +70,7 @@ import { translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common'
+import { commonUtil, hasError } from '@common'
 import { emitter } from '@common';
 import { logger } from '@common';
 import { onBeforeRouteLeave } from "vue-router";
@@ -150,14 +149,14 @@ async function saveMapping(salesChannelEnumId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await ShopifyService.deleteShopifyShopTypeMapping({
+      await shopifyStore.deleteShopifyShopTypeMapping({
         shopId: props.id,
         mappedTypeId: "SHOPIFY_ORDER_SOURCE",
         mappedKey: oldMappedKey
       });
     }
 
-    const resp = await ShopifyService.createShopifyShopTypeMapping({
+    const resp = await shopifyStore.createShopifyShopTypeMapping({
       shopId: props.id,
       mappedTypeId: "SHOPIFY_ORDER_SOURCE",
       mappedKey: newMappedKey,
@@ -188,14 +187,14 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMappingId(id);
 
       if (oldMappedKey) {
-        await ShopifyService.deleteShopifyShopTypeMapping({
+        await shopifyStore.deleteShopifyShopTypeMapping({
           shopId: props.id,
           mappedTypeId: "SHOPIFY_ORDER_SOURCE",
           mappedKey: oldMappedKey
         });
       }
 
-      await ShopifyService.createShopifyShopTypeMapping({
+      await shopifyStore.createShopifyShopTypeMapping({
         shopId: props.id,
         mappedTypeId: "SHOPIFY_ORDER_SOURCE",
         mappedKey: newMappedKey,

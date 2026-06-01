@@ -86,8 +86,7 @@ import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common';
+import { commonUtil, hasError } from '@common';
 import { emitter } from '@common';
 import { logger } from '@common';
 import { onBeforeRouteLeave } from "vue-router";
@@ -217,7 +216,7 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.createShopifyShopCarrierShipment({
+    const resp = await shopifyStore.createShopifyShopCarrierShipment({
       shopId: props.id,
       shipmentMethodTypeId,
       shopifyShippingMethod: mapping.shopifyShippingMethod,
@@ -251,7 +250,7 @@ async function saveAllDirtyMappings() {
     for (const key of dirtyKeys) {
       const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
-      await ShopifyService.createShopifyShopCarrierShipment({
+      await shopifyStore.createShopifyShopCarrierShipment({
         shopId: props.id,
         shipmentMethodTypeId,
         shopifyShippingMethod: mapping.shopifyShippingMethod,

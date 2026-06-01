@@ -62,8 +62,7 @@ import { cloudUploadOutline, saveOutline } from "ionicons/icons";
 import { translate } from '@common';
 import { computed, defineProps, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common';
+import { commonUtil, hasError } from '@common';
 import TimezoneModal from "@/components/TimezoneModal.vue";
 import { emitter } from '@common';
 import { logger } from '@common';
@@ -128,7 +127,7 @@ function updateRefundProcessing(event: any) {
 async function saveShopDetails() {
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.id,
       ...shopDetails.value
     });

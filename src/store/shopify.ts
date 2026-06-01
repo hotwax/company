@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
-import { commonUtil } from '@common'
+import { api, commonUtil } from '@common'
 import { logger } from '@common'
-import { ShopifyService } from '@/services/ShopifyService'
 
 export const useShopifyStore = defineStore('shopify', {
   state: () => ({
@@ -32,7 +31,7 @@ export const useShopifyStore = defineStore('shopify', {
       this.fetchStatus = { ...this.fetchStatus, shops: 'pending' }
       let shops: any[] = []
       try {
-        const resp = await ShopifyService.fetchShopifyShops({ pageSize: 100 })
+        const resp = await api({ url: "admin/shopifyShops", method: "get", params: { pageSize: 100 } })
         if (!commonUtil.hasError(resp) && resp.data) {
           shops = resp.data
           this.fetchStatus = { shops: 'success', lastFetched: Date.now() }
@@ -54,10 +53,10 @@ export const useShopifyStore = defineStore('shopify', {
       let shopifyShopsCarrierShipments: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await ShopifyService.fetchShopifyShopsCarrierShipments({
-            ...payload,
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: "oms/shopifyShops/carrierShipments",
+            method: "get",
+            params: { ...payload, pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp)) {
             const newShipments = resp.data.reduce((acc: any, item: any) => {
@@ -83,7 +82,7 @@ export const useShopifyStore = defineStore('shopify', {
       let shopifyShopLocations: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await ShopifyService.fetchShopifyShopLocations({ pageSize: 100, pageIndex })
+          resp = await api({ url: "oms/shopifyShops/locations", method: "get", params: { pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             const newLocations = resp.data.reduce((acc: any, item: any) => {
               acc[item.facilityId] = item.shopifyLocationId
@@ -105,7 +104,7 @@ export const useShopifyStore = defineStore('shopify', {
       let shopifyTypeMappings: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await ShopifyService.fetchShopifyTypeMappings({ mappedTypeId, pageSize: 100, pageIndex })
+          resp = await api({ url: "oms/shopifyShops/typeMappings", method: "get", params: { mappedTypeId, pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newMappings = resp.data.reduce((acc: any, item: any) => {
               const typeId = item.mappedTypeId
@@ -123,6 +122,69 @@ export const useShopifyStore = defineStore('shopify', {
         logger.error(error)
       }
       this.shopifyTypeMappings = { ...this.shopifyTypeMappings, ...shopifyTypeMappings }
+    },
+
+    async updateShopifyShop(payload: any) {
+      return api({
+        url: `oms/shopifyShops/shops/${payload.shopId}`,
+        method: "put",
+        data: payload
+      })
+    },
+
+    async createShopifyShopTypeMapping(payload: any) {
+      return api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async deleteShopifyShopTypeMapping(payload: any) {
+      return api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "delete",
+        data: payload
+      })
+    },
+
+    async createShopifyShopCarrierShipment(payload: any) {
+      return api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async createShopifyShopLocation(payload: any) {
+      return api({
+        url: "oms/shopifyShops/locations",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async fetchLocationsFromShopify(payload: any) {
+      return api({
+        url: `shopify/shops/${payload.shopId}/shopify-locations`,
+        method: 'get'
+      })
+    },
+
+    async fetchShopifyShopLocationsRaw(payload: any) {
+      return api({
+        url: "oms/shopifyShops/locations",
+        method: "get",
+        params: payload
+      })
+    },
+
+    async importShopifyFacilities(payload: any) {
+      return api({
+        url: `shopify/shops/${payload.shopId}/shopify-locations`,
+        method: 'post',
+        data: payload.locations
+      })
     },
 
     clearShopifyState() {

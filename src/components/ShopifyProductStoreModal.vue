@@ -44,8 +44,7 @@ import { translate } from '@common'
 import { useProductStoreStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, onMounted, ref } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common'
+import { commonUtil, hasError } from '@common'
 import { getResponseErrorMessage } from '@/utils';
 import { emitter } from '@common';
 import { logger } from '@common';
@@ -70,7 +69,7 @@ function closeModal() {
 async function updateProductStoreMapping() {
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.shop.shopId,
       productStoreId: selectedProductStoreId.value
     });

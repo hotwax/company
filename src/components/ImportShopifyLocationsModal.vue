@@ -90,11 +90,12 @@ import {
   modalController
 } from '@ionic/vue'
 import { close, downloadOutline } from 'ionicons/icons'
-import { translate, showToast } from '@common'
-import { ShopifyService } from '@/services/ShopifyService'
+import { commonUtil, translate } from '@common'
+import { useShopifyStore } from '@/store/shopify'
 import { computed, ref, onMounted } from 'vue'
 
 const props = defineProps(['shopId'])
+const shopifyStore = useShopifyStore()
 
 const isLoading    = ref(true)
 const isImporting  = ref(false)
@@ -115,8 +116,8 @@ async function fetchData() {
   fetchError.value = ''
   try {
     const [shopifyResp, omsResp] = await Promise.all([
-      ShopifyService.fetchLocationsFromShopify({ shopId: props.shopId }),
-      ShopifyService.fetchShopifyShopLocations({ shopId: props.shopId })
+      shopifyStore.fetchLocationsFromShopify({ shopId: props.shopId }),
+      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.shopId })
     ])
 
     const alreadyMapped = new Set(
@@ -164,13 +165,13 @@ async function importSelected() {
     loc => !facilityTypes.value[loc.shopifyLocationId]
   )
   if (missing.length) {
-    showToast(translate('Set a facility type for all selected locations'))
+    commonUtil.showToast(translate('Set a facility type for all selected locations'))
     return
   }
 
   isImporting.value = true
   try {
-    const resp = await ShopifyService.importShopifyFacilities({
+    const resp = await shopifyStore.importShopifyFacilities({
       shopId: props.shopId,
       locations: selectedForImport.value.map(loc => ({
         shopifyLocationId: loc.shopifyLocationId,
@@ -188,10 +189,10 @@ async function importSelected() {
       }))
     })
     const count = Array.isArray(resp.data) ? resp.data.length : selectedForImport.value.length
-    showToast(translate('{count} locations imported', { count }))
+    commonUtil.showToast(translate('{count} locations imported', { count }))
     modalController.dismiss({ imported: count })
   } catch (e: any) {
-    showToast(translate('Import failed'))
+    commonUtil.showToast(translate('Import failed'))
   } finally {
     isImporting.value = false
   }

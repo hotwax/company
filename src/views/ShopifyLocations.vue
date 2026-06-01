@@ -117,8 +117,7 @@ import { translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common'
+import { commonUtil, hasError } from '@common'
 import { emitter } from '@common';
 import { logger } from '@common';
 import { onBeforeRouteLeave } from "vue-router";
@@ -196,7 +195,7 @@ async function saveMapping(facilityId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.createShopifyShopLocation({
+    const resp = await shopifyStore.createShopifyShopLocation({
       shopId: props.id,
       facilityId,
       shopifyLocationId
@@ -222,7 +221,7 @@ async function saveAllDirtyMappings() {
 
   try {
     for (const id of dirtyIds) {
-      await ShopifyService.createShopifyShopLocation({
+      await shopifyStore.createShopifyShopLocation({
         shopId: props.id,
         facilityId: id,
         shopifyLocationId: localMappings.value[id]
@@ -253,8 +252,8 @@ async function runAudit() {
   isAuditing.value = true
   try {
     const [shopifyResp, omsResp] = await Promise.all([
-      ShopifyService.fetchLocationsFromShopify({ shopId: props.id }),
-      ShopifyService.fetchShopifyShopLocations({ shopId: props.id })
+      shopifyStore.fetchLocationsFromShopify({ shopId: props.id }),
+      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.id })
     ])
     const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
     const omsMappings = omsResp.data || []
@@ -270,7 +269,7 @@ async function runAudit() {
       }).length
     }
   } catch (e) {
-    showToast(translate('Audit failed'))
+    commonUtil.showToast(translate('Audit failed'))
   } finally {
     isAuditing.value = false
   }
