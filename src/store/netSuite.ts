@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { api } from '@common'
 import { commonUtil } from '@common'
 import { logger } from '@common'
-import { UtilService } from '@/services/UtilService'
 import { useProductStoreStore } from './productStore'
 
 export const useNetSuiteStore = defineStore('netSuite', {
@@ -32,7 +31,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let inventoryVariances: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnums({ enumTypeId: 'IID_REASON', pageSize: 100, pageIndex })
+          resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'IID_REASON', pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             inventoryVariances = inventoryVariances.concat(resp.data)
           } else {
@@ -50,10 +49,10 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let enumsInEnumGroup: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnumGroupMember({
-            enumerationGroupId: 'NETSUITE_IIV_REASON',
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: `admin/enumGroups/NETSUITE_IIV_REASON/members`,
+            method: "get",
+            params: { enumerationGroupId: 'NETSUITE_IIV_REASON', pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newEnums = resp.data
@@ -102,7 +101,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let salesChannel: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnums({ enumTypeId: 'ORDER_SALES_CHANNEL', pageSize: 100, pageIndex })
+          resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'ORDER_SALES_CHANNEL', pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             salesChannel = salesChannel.concat(resp.data)
           } else {

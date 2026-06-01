@@ -173,10 +173,10 @@ import {
 } from "@ionic/vue";
 import { addCircleOutline, addOutline, serverOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { translate } from '@common';
-import { KlaviyoService } from "@/services/KlaviyoService";
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
 import KlaviyoUnigateConfigModal from "@/components/KlaviyoUnigateConfigModal.vue";
 import { getUnigateSendUrlWarning } from "@/utils/maarg";
@@ -207,7 +207,7 @@ onIonViewWillEnter(async () => {
 });
 
 function maskedKey(conn: any) {
-  return KlaviyoService.maskApiKey(conn?.publicKey) || translate("Not set");
+  return maskApiKey(conn?.publicKey) || translate("Not set");
 }
 
 function eventCountLabel(conn: any) {

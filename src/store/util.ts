@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { api, commonUtil } from '@common'
 import { logger } from '@common'
-import { UtilService } from '@/services/UtilService'
 
 let inflightMaargFetch: Promise<any> | null = null
 
@@ -56,7 +55,7 @@ export const useUtilStore = defineStore('util', {
 
       try {
         do {
-          resp = await UtilService.fetchFacilityGroups({ pageSize: 100, pageIndex })
+          resp = await api({ url: "admin/facilityGroups", method: "get", params: { pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             facilityGroups = facilityGroups.concat(resp.data)
           } else {
@@ -78,13 +77,17 @@ export const useUtilStore = defineStore('util', {
 
       try {
         do {
-          resp = await UtilService.fetchFacilities({
-            facilityTypeId: 'VIRTUAL_FACILITY',
-            facilityTypeId_not: 'Y',
-            parentTypeId: 'VIRTUAL_FACILITY',
-            parentTypeId_not: 'Y',
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: "admin/facilities",
+            method: "get",
+            params: {
+              facilityTypeId: 'VIRTUAL_FACILITY',
+              facilityTypeId_not: 'Y',
+              parentTypeId: 'VIRTUAL_FACILITY',
+              parentTypeId_not: 'Y',
+              pageSize: 100,
+              pageIndex
+            }
           })
           if (!commonUtil.hasError(resp) && resp.data) {
             facilities = facilities.concat(resp.data.filter((f: any) => f.externalId))
@@ -106,7 +109,7 @@ export const useUtilStore = defineStore('util', {
       let countries: any[] = []
 
       try {
-        const resp = await UtilService.fetchDBICCountries({ toGeoId: 'DBIC', pageSize: 200 })
+        const resp = await api({ url: "admin/geos/assocs", method: "get", params: { toGeoId: 'DBIC', pageSize: 200 } })
         if (!commonUtil.hasError(resp)) {
           countries = resp.data
           this.fetchStatus = { ...this.fetchStatus, dbicCountries: 'success', lastFetched: Date.now() }
@@ -126,7 +129,7 @@ export const useUtilStore = defineStore('util', {
       let operatingCountries: any[] = []
 
       try {
-        const resp = await UtilService.fetchOperatingCountries({ pageSize: 300, geoTypeEnumId: 'GEOT_COUNTRY' })
+        const resp = await api({ url: "admin/geos", method: "get", params: { pageSize: 300, geoTypeEnumId: 'GEOT_COUNTRY' } })
         if (!commonUtil.hasError(resp)) {
           operatingCountries = resp.data
           this.fetchStatus = { ...this.fetchStatus, operatingCountries: 'success', lastFetched: Date.now() }
@@ -146,7 +149,7 @@ export const useUtilStore = defineStore('util', {
       let productIdentifiers: any[] = []
 
       try {
-        const resp = await UtilService.fetchEnums({ enumTypeId: 'SHOP_PROD_IDENTITY', pageSize: 100 })
+        const resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'SHOP_PROD_IDENTITY', pageSize: 100 } })
         if (!commonUtil.hasError(resp)) {
           productIdentifiers = resp.data
           this.fetchStatus = { ...this.fetchStatus, productIdentifiers: 'success', lastFetched: Date.now() }
@@ -166,7 +169,7 @@ export const useUtilStore = defineStore('util', {
       let emailTypes: any[] = []
 
       try {
-        const resp = await UtilService.fetchEnums({ enumTypeId: 'PRDS_EMAIL', pageSize: 100 })
+        const resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'PRDS_EMAIL', pageSize: 100 } })
         if (!commonUtil.hasError(resp)) {
           emailTypes = resp.data
           this.fetchStatus = { ...this.fetchStatus, emailTypes: 'success', lastFetched: Date.now() }
@@ -187,7 +190,7 @@ export const useUtilStore = defineStore('util', {
 
       try {
         do {
-          resp = await UtilService.fetchShipmentMethodTypes({ pageSize: 100, pageIndex })
+          resp = await api({ url: "oms/shippingGateways/shipmentMethodTypes", method: "get", params: { pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             shipmentMethodTypes = shipmentMethodTypes.concat(resp.data)
           } else {
@@ -208,10 +211,7 @@ export const useUtilStore = defineStore('util', {
       let partyId = ''
 
       try {
-        const resp = await UtilService.fetchOrganization({
-          roleTypeId: 'INTERNAL_ORGANIZATIO',
-          pageSize: 1
-        })
+        const resp = await api({ url: "admin/organizations", method: "get", params: { roleTypeId: 'INTERNAL_ORGANIZATIO', pageSize: 1 } })
         if (!commonUtil.hasError(resp)) {
           partyId = resp.data[0]?.partyId
           this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'success', lastFetched: Date.now() }
@@ -230,7 +230,7 @@ export const useUtilStore = defineStore('util', {
       let statusItems: any = {}
 
       try {
-        const resp = await UtilService.fetchStatusItems({ pageSize: 1000 })
+        const resp = await api({ url: "oms/statuses", method: "get", params: { pageSize: 1000 } })
         if (!commonUtil.hasError(resp) && resp.data) {
           statusItems = resp.data.reduce((items: any, item: any) => {
             items[item.statusId] = item
@@ -274,7 +274,11 @@ export const useUtilStore = defineStore('util', {
 
     async addEnumToEnumGroup(payload: any) {
       try {
-        const resp = await UtilService.addEnumToEnumGroup(payload)
+        const resp = await api({
+          url: `admin/enumGroups/${payload.enumerationGroupId}/members`,
+          method: "post",
+          data: payload
+        })
         return resp
       } catch (error: any) {
         logger.error('addEnumToEnumGroup', error)
@@ -285,7 +289,7 @@ export const useUtilStore = defineStore('util', {
     async fetchCurrencies(payload: any) {
       this.fetchStatus = { ...this.fetchStatus, currencies: 'pending' }
       try {
-        const resp = await UtilService.fetchCurrencies(payload)
+        const resp = await api({ url: "admin/uoms", method: "get", params: payload })
         if (!commonUtil.hasError(resp) && resp.data?.length) {
           this.currencies = resp.data
           this.fetchStatus = { ...this.fetchStatus, currencies: 'success', lastFetched: Date.now() }

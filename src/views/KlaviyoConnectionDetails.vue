@@ -241,11 +241,12 @@ import {
 } from "@ionic/vue";
 import { closeOutline, createOutline, trashOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey } from '@/store/klaviyo';
+import type { ProductStoreEmailSetting } from '@/store/klaviyo';
 import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { translate } from '@common';
-import { KlaviyoService, ProductStoreEmailSetting } from "@/services/KlaviyoService";
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
 import { commonUtil } from '@common'
 import { getResponseErrorMessage } from '@/utils';
@@ -279,7 +280,7 @@ const connection = computed(() => klaviyoStore.getConnectionById(decodedId.value
 const eventsForThisConnection = computed(() => {
   return klaviyoStore.getEmailSettingsForGateway(decodedId.value) || [];
 });
-const maskedKey = computed(() => KlaviyoService.maskApiKey(connection.value?.publicKey) || translate("Not set"));
+const maskedKey = computed(() => maskApiKey(connection.value?.publicKey) || translate("Not set"));
 
 const canConfirmDelete = computed(() => {
   if (!eventsForThisConnection.value.length) return true;
@@ -390,7 +391,7 @@ async function commitSubjectIfChanged(evt: any) {
       gatewayAuthId: connection.value.commGatewayAuthId,
       fromAddress: evt.setting.fromAddress,
     };
-    await KlaviyoService.upsertEmailSetting(payload);
+    await klaviyoStore.upsertEmailSetting(payload);
     await klaviyoStore.fetchAllEmailSettings();
     commonUtil.commonUtil.showToast(translate("Subject updated"));
     delete subjectDrafts.value[evt.emailType];
@@ -415,10 +416,10 @@ async function toggleEvent(evt: any, enabled: boolean) {
         systemMessageRemoteId: "UNIGATE_CONFIG",
         gatewayAuthId: connection.value.commGatewayAuthId,
       };
-      await KlaviyoService.upsertEmailSetting(payload);
+      await klaviyoStore.upsertEmailSetting(payload);
       commonUtil.commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));
     } else {
-      await KlaviyoService.deleteEmailSetting(selectedStoreId.value, evt.emailType);
+      await klaviyoStore.deleteEmailSetting(selectedStoreId.value, evt.emailType);
       commonUtil.commonUtil.showToast(translate("{label} turned off", { label: getEventLabel(evt.emailType) }));
     }
     await klaviyoStore.fetchAllEmailSettings();
@@ -457,7 +458,7 @@ async function performDelete() {
   if (!canConfirmDelete.value) return;
   isDeleting.value = true;
   try {
-    await KlaviyoService.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
+    await klaviyoStore.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
     commonUtil.commonUtil.showToast(translate("Klaviyo connection disconnected"));
     showDeleteModal.value = false;
     await klaviyoStore.hydrate();
