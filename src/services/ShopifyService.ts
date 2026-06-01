@@ -111,13 +111,6 @@ const importShopifyFacilities = async (payload: any): Promise<any> => {
   })
 }
 
-const fetchShopifyFacilityHealth = async (payload: any): Promise<any> => {
-  return api({
-    url: `shopify/shops/${payload.shopId}/shopify-locations/health`,
-    method: 'get'
-  })
-}
-
 export const ShopifyService = {
   createShopifyShopCarrierShipment,
   createShopifyShopLocation,
@@ -126,7 +119,6 @@ export const ShopifyService = {
   deleteShopifyShopLocation,
   deleteShopifyShopTypeMapping,
   fetchLocationsFromShopify,
-  fetchShopifyFacilityHealth,
   fetchShopifyShops,
   fetchShopifyTypeMappings,
   fetchShopifyShopsCarrierShipments,

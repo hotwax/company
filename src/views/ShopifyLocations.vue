@@ -38,15 +38,6 @@
             <span v-if="health.stale > 0" class="health-warning">
               {{ health.stale }} {{ translate("stale") }}
             </span>
-            <span v-if="health.missingAddress > 0" class="health-warning">
-              {{ health.missingAddress }} {{ translate("missing address") }}
-            </span>
-            <span v-if="health.missingGeoPoint > 0" class="health-warning">
-              {{ health.missingGeoPoint }} {{ translate("missing coordinates") }}
-            </span>
-            <span v-if="health.missingProductStore > 0" class="health-warning">
-              {{ health.missingProductStore }} {{ translate("not linked to store") }}
-            </span>
           </div>
         </ion-card-content>
       </ion-card>
@@ -261,8 +252,22 @@ async function openImportModal() {
 async function runAudit() {
   isAuditing.value = true
   try {
-    const resp = await ShopifyService.fetchShopifyFacilityHealth({ shopId: props.id })
-    health.value = resp.data
+    const [shopifyResp, omsResp] = await Promise.all([
+      ShopifyService.fetchLocationsFromShopify({ shopId: props.id }),
+      ShopifyService.fetchShopifyShopLocations({ shopId: props.id })
+    ])
+    const shopifyLocations = shopifyResp.data?.locations || []
+    const omsMappings = omsResp.data?.shopifyShopLocations || []
+    const mappedIds = new Set(omsMappings.map((m: any) => m.shopifyLocationId))
+
+    health.value = {
+      totalShopifyLocations: shopifyLocations.length,
+      unmapped: shopifyLocations.filter((loc: any) => !mappedIds.has(loc.shopifyLocationId)).length,
+      stale: omsMappings.filter((m: any) => {
+        const shopifyLoc = shopifyLocations.find((l: any) => l.shopifyLocationId === m.shopifyLocationId)
+        return shopifyLoc && !shopifyLoc.isActive
+      }).length
+    }
   } catch (e) {
     showToast(translate('Audit failed'))
   } finally {
