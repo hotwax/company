@@ -35,7 +35,7 @@ const fetchProductStores = async (payload: any): Promise <any> => {
 const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
   try {
     const response = await api({
-      url: "oms/productStores/facilities/counts",
+      url: "admin/productStores/facilities/counts",
       method: "get",
       params: payload
     });
@@ -51,7 +51,7 @@ const fetchProductStoresFacilityCount = async (payload: any): Promise <any> => {
 
 const fetchProductStoresShipmentMethodCount = async (payload: any): Promise <any> => {
   return api({
-    url: "oms/productStores/shipmentMethods/counts",
+    url: "admin/productStores/shipmentMethods/counts",
     method: "get",
     params: payload
   });
