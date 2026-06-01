@@ -1,7 +1,6 @@
 import { commonUtil } from '@common';
 import { emitter } from '@common';
 import { logger } from '@common';
-import { NetSuiteService } from '@/services/NetSuiteService';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { onMounted } from "vue";
 import { alertController } from '@ionic/vue';
@@ -67,7 +66,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
     let resp;
 
     try {
-      resp = await NetSuiteService.addIntegrationTypeMappings(payload);
+      resp = await netSuiteStore.addIntegrationTypeMappings(payload);
       if(!commonUtil.hasError(resp)) {
         commonUtil.showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
@@ -89,7 +88,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
     let resp;
 
     try {
-      resp = await NetSuiteService.updateIntegrationTypeMappings(payload, integrationMappingId);
+      resp = await netSuiteStore.updateIntegrationTypeMappings(payload, integrationMappingId);
       if(!commonUtil.hasError(resp)) {
         commonUtil.showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD" && payload.integrationTypeId !== "NETSUITE_PRICE_LEVEL") {
@@ -111,7 +110,7 @@ export function useNetSuiteComposables(integrationTypeId: any) {
     let resp;
 
     try {
-      resp = await NetSuiteService.removeIntegrationMappingValue(integrationMappingId);
+      resp = await netSuiteStore.removeIntegrationMappingValue(integrationMappingId);
       if(!commonUtil.hasError(resp)) {
         commonUtil.showToast(translate("NetSuite Id removed successfully"));
         await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId: integrationTypeId });

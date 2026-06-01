@@ -751,7 +751,6 @@ import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncRetu
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
 import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
 import {
   canAdvanceProductSyncStep,
@@ -2628,7 +2627,7 @@ async function persistIdentifierSelection() {
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
     };
-    const resp = await ProductStoreService.updateProductStore(payload);
+    const resp = await productStoreStore.updateProductStore(payload);
 
     if (!commonUtil.hasError(resp)) {
       productStoreStore.updateCurrent(payload);

@@ -75,7 +75,6 @@ import { commonUtil } from '@common';
 import { DateTime } from "luxon";
 import { emitter } from '@common';
 import { logger } from '@common';
-import { NetSuiteService } from '@/services/NetSuiteService';
 
 const utilStore = useUtilStore();
 const netSuiteStore = useNetSuiteStore();
@@ -134,7 +133,7 @@ async function editNetSuiteId(facility: any) {
               fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
             };
             
-            resp = await NetSuiteService.updateFacilityIdentification(payload);
+            resp = await netSuiteStore.updateFacilityIdentification(payload);
             if(!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("NetSuite department Id updated successfully"))
               await netSuiteStore.fetchFacilitiesIdentifications()
@@ -163,7 +162,7 @@ async function removeNetSuiteId(facility: any) {
       thruDate: DateTime.now().toMillis()
     };
 
-    const resp = await NetSuiteService.updateFacilityIdentification(payload);
+    const resp = await netSuiteStore.updateFacilityIdentification(payload);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("NetSuite department Id removed successfully"));
       await netSuiteStore.fetchFacilitiesIdentifications();

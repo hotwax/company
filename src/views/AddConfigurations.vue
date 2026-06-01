@@ -53,16 +53,17 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { translate } from '@common';
+import { translate, api } from '@common';
 import router from "@/router";
 import { logger } from '@common';
-import { ProductStoreService } from "@/services/ProductStoreService";
+import { useProductStoreStore } from '@/store/productStore';
 import { computed, defineProps, ref } from "vue";
 import { commonUtil, hasError } from '@common';
 import { useUtilStore } from '@/store/util';
 import { emitter } from '@common';
 
 const utilStore = useUtilStore();
+const productStoreStore = useProductStoreStore();
 
 const props = defineProps(["productStoreId"]);
 
@@ -82,11 +83,14 @@ onIonViewWillEnter(() => {
 
 async function fetchProductStore() {
   try {
-    const resp = await ProductStoreService.fetchProductStoreDetails(props.productStoreId)
+    const resp = await api({
+      url: `admin/productStores/${props.productStoreId}`,
+      method: "get"
+    })
     if(!commonUtil.hasError(resp)) {
-      productStore.value = resp.data;
+      productStore.value = (resp as any).data;
     } else {
-      throw resp.data;
+      throw (resp as any).data;
     }
   } catch(error: any) {
     logger.error("Failed to fetch product store details.")
@@ -104,7 +108,7 @@ async function setupProductStore() {
       productIdentifierEnumId: formData.value.productIdentifierEnumId
     }
 
-    const resp = await ProductStoreService.updateProductStore(payload);
+    const resp = await productStoreStore.updateProductStore(payload);
     if(!commonUtil.hasError(resp)) {
       commonUtil.commonUtil.showToast(translate("Product store configurations updated successfully."))
       emitter.emit("dismissLoader");

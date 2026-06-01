@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
+import { api } from '@common'
 import { commonUtil } from '@common'
 import { logger } from '@common'
-import { NetSuiteService } from '@/services/NetSuiteService'
 import { UtilService } from '@/services/UtilService'
 import { useProductStoreStore } from './productStore'
 
@@ -78,10 +78,10 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let facilitiesIdentifications: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await NetSuiteService.fetchfacilitiesIdentifications({
-            facilityIdenTypeId: 'ORDR_ORGN_DPT',
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: "oms/facilities/identifications",
+            method: "get",
+            params: { facilityIdenTypeId: 'ORDR_ORGN_DPT', pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp)) {
             facilitiesIdentifications = facilitiesIdentifications.concat(
@@ -120,7 +120,11 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let paymentMethods: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await NetSuiteService.fetchPaymentMethods({ pageSize: 100, pageIndex })
+          resp = await api({
+            url: "admin/paymentMethodTypes",
+            method: "get",
+            params: { pageSize: 100, pageIndex }
+          })
           if (!commonUtil.hasError(resp)) {
             paymentMethods = paymentMethods.concat(resp.data)
           } else {
@@ -140,7 +144,11 @@ export const useNetSuiteStore = defineStore('netSuite', {
         const netSuiteProductStore = useProductStoreStore().getNetSuiteProductStore
         const productStoreId = params.productStoreId || netSuiteProductStore?.productStoreId
         do {
-          resp = await NetSuiteService.fetchProductStoreShipmentMethods({ productStoreId, pageSize: 100, pageIndex })
+          resp = await api({
+            url: `oms/productStores/${productStoreId}/shipmentMethods`,
+            method: "get",
+            params: { productStoreId, pageSize: 100, pageIndex }
+          })
           if (!commonUtil.hasError(resp) && resp.data) {
             productStoreShipmentMethods = productStoreShipmentMethods.concat(resp.data)
           } else {
@@ -165,7 +173,11 @@ export const useNetSuiteStore = defineStore('netSuite', {
           }
           if (params.mappingKey) payload.mappingKey = params.mappingKey
 
-          resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
+          resp = await api({
+            url: "admin/integrationTypeMappings",
+            method: "get",
+            params: payload
+          })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newMappings = resp.data.reduce((acc: any, item: any) => {
               const typeId = item.integrationTypeId
@@ -183,6 +195,53 @@ export const useNetSuiteStore = defineStore('netSuite', {
         logger.error(error)
       }
       this.integrationTypeMappings = integrationTypeMappings
+    },
+
+    async updateFacilityIdentification(payload: any): Promise<any> {
+      return api({
+        url: `oms/facilities/${payload.facilityId}/identifications`,
+        method: "post",
+        data: payload
+      })
+    },
+
+    async addIntegrationTypeMappings(payload: any): Promise<any> {
+      return api({
+        url: "admin/integrationTypeMappings",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateIntegrationTypeMappings(payload: any, integrationMappingId: any): Promise<any> {
+      return api({
+        url: `admin/integrationTypeMappings/${integrationMappingId}`,
+        method: "post",
+        data: payload
+      })
+    },
+
+    async removeIntegrationMappingValue(integrationMappingId: any): Promise<any> {
+      return api({
+        url: `admin/integrationTypeMappings/${integrationMappingId}`,
+        method: "delete"
+      })
+    },
+
+    async updateSftpConfig(payload: any): Promise<any> {
+      return api({
+        url: "updateSftp",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateEnumCode(payload: any): Promise<any> {
+      return api({
+        url: `admin/enums/${payload.enumId}`,
+        method: "put",
+        data: payload
+      })
     },
 
     clearNetSuiteState() {

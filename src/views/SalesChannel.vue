@@ -67,7 +67,6 @@
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
-import { NetSuiteService } from '@/services/NetSuiteService';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
@@ -132,7 +131,7 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
 
   try {
     channel.enumCode = netSuiteId;
-    resp = await NetSuiteService.updateEnumCode(channel);
+    resp = await netSuiteStore.updateEnumCode(channel);
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("NetSuite Id updated successfully"));

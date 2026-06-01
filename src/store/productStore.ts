@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
+import { api } from '@common'
 import { commonUtil } from '@common'
 import { logger } from '@common'
-import { ProductStoreService } from '@/services/ProductStoreService'
 import { useUtilStore } from './util'
 
 export const useProductStoreStore = defineStore('productStore', {
@@ -32,7 +32,11 @@ export const useProductStoreStore = defineStore('productStore', {
       let productStores: any[] = []
 
       try {
-        const resp = await ProductStoreService.fetchProductStores({ pageSize: 100 })
+        const resp = await api({
+          url: "admin/productStores",
+          method: "get",
+          params: { pageSize: 100 }
+        })
         if (!commonUtil.hasError(resp)) {
           productStores = resp.data
           if (payload?.fetchCounts) {
@@ -65,7 +69,10 @@ export const useProductStoreStore = defineStore('productStore', {
     async fetchProductStoreDetails(productStoreId: string) {
       let current = {} as any
       try {
-        const resp = await ProductStoreService.fetchProductStoreDetails(productStoreId)
+        const resp = await api({
+          url: `admin/productStores/${productStoreId}`,
+          method: "get"
+        })
         if (!commonUtil.hasError(resp)) {
           current = resp.data
         } else {
@@ -80,7 +87,20 @@ export const useProductStoreStore = defineStore('productStore', {
     async fetchProductStoresFacilityCount(): Promise<Record<string, number>> {
       const counts: Record<string, number> = {}
       try {
-        const resp = await ProductStoreService.fetchProductStoresFacilityCount({ pageSize: 100 })
+        let resp: any
+        try {
+          resp = await api({
+            url: "oms/productStores/facilities/counts",
+            method: "get",
+            params: { pageSize: 100 }
+          })
+        } catch (error: any) {
+          if (error.response?.status === 404) {
+            logger.warn("Product store facility counts endpoint not found (404)");
+            return counts
+          }
+          throw error
+        }
         if (!commonUtil.hasError(resp)) {
           resp.data.forEach((r: any) => { counts[r.productStoreId] = r.facilityCount })
         } else {
@@ -95,7 +115,11 @@ export const useProductStoreStore = defineStore('productStore', {
     async fetchProductStoresShipmentMethodCount(): Promise<Record<string, number>> {
       const counts: Record<string, number> = {}
       try {
-        const resp = await ProductStoreService.fetchProductStoresShipmentMethodCount({ pageSize: 100 })
+        const resp = await api({
+          url: "oms/productStores/shipmentMethods/counts",
+          method: "get",
+          params: { pageSize: 100 }
+        })
         if (!commonUtil.hasError(resp)) {
           resp.data.forEach((r: any) => { counts[r.productStoreId] = r.shipmentMethodCount })
         } else {
@@ -110,7 +134,10 @@ export const useProductStoreStore = defineStore('productStore', {
     async fetchCurrentStoreSettings(productStoreId: string) {
       const storeSettings: any = {}
       try {
-        const resp = await ProductStoreService.fetchCurrentStoreSettings(productStoreId)
+        const resp = await api({
+          url: `admin/productStores/${productStoreId}/settings`,
+          method: "get"
+        })
         if (!commonUtil.hasError(resp)) {
           resp.data.forEach((setting: any) => {
             if (!setting.thruDate) {
@@ -130,7 +157,12 @@ export const useProductStoreStore = defineStore('productStore', {
       let company = {}
       try {
         const utilStore = useUtilStore()
-        const resp = await ProductStoreService.fetchCompany({ partyId: utilStore.organizationPartyId })
+        const partyId = utilStore.organizationPartyId
+        const resp = await api({
+          url: `admin/organizations/${partyId}`,
+          method: "get",
+          params: { partyId }
+        })
         if (!commonUtil.hasError(resp)) {
           company = { ...resp.data, companyName: resp.data.groupName }
         } else {
@@ -144,6 +176,56 @@ export const useProductStoreStore = defineStore('productStore', {
 
     updateCurrentStoreSettings(payload: any) {
       this.currentStoreSettings = payload
+    },
+
+    async createProductStore(payload: any): Promise<any> {
+      return api({
+        url: "admin/productStores",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateProductStore(payload: any): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}`,
+        method: "put",
+        data: payload
+      })
+    },
+
+    async addDBICCountries(payload: any): Promise<any> {
+      return api({
+        url: "admin/geos/assocs",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateCompany(payload: any): Promise<any> {
+      try {
+        const resp = await api({
+          url: `admin/organizations/${payload.partyId}`,
+          method: "post",
+          data: payload
+        }) as any
+        if (commonUtil.hasError(resp)) {
+          return Promise.resolve(resp.data)
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+        return Promise.resolve({})
+      }
+    },
+
+    async saveCurrentStoreSettings(payload: any): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/settings`,
+        method: "post",
+        data: payload
+      })
     },
 
     updateCurrent(current: any) {

@@ -359,7 +359,6 @@ import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
 import { commonUtil } from '@common';
 import { logger } from '@common';
-import { ProductStoreService } from "@/services/ProductStoreService";
 import { emitter } from '@common';
 import { DateTime } from "luxon";
 
@@ -414,7 +413,7 @@ async function updatePreferredIdentification(event: any, identifier: string) {
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
     if(!commonUtil.hasError(resp)) {
       const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
       if(settingEnums[payload.settingTypeEnumId]) {
@@ -460,7 +459,7 @@ async function renameProductStore() {
         updatedStore.storeName = data.storeName.trim();
 
         try {
-          const resp = await ProductStoreService.updateProductStore(updatedStore);
+          const resp = await productStoreStore.updateProductStore(updatedStore);
 
           if(!commonUtil.hasError(resp)) {
             productStoreStore.updateCurrent(updatedStore);
@@ -515,7 +514,7 @@ async function createUpdateTag(enumId: string) {
         }
 
         try {
-          const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+          const resp = await productStoreStore.saveCurrentStoreSettings(payload);
 
           if(!commonUtil.hasError(resp)) {
             if(!settingEnums[enumId]?.productStoreId) settingEnums[enumId] = payload;
@@ -543,7 +542,7 @@ async function removeTag(enumId: string) {
   };
 
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
 
     if(!commonUtil.hasError(resp)) {
       settingEnums[enumId] = payload;
@@ -580,7 +579,7 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
   try {
     payload = { ...productStore.value, ...payload }
     
-    const resp = await ProductStoreService.updateProductStore(payload);
+    const resp = await productStoreStore.updateProductStore(payload);
     if(!commonUtil.hasError(resp)) {
       if(fieldName === "daysToCancelNonPay" && (!payload.daysToCancelNonPay || parseInt(payload.daysToCancelNonPay) === 0)) autoCancellationActive.value = false;
       commonUtil.showToast("Product store setting updated successfully.")
@@ -637,7 +636,7 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
     if(!commonUtil.hasError(resp)) {
       if(settingEnums[enumId]) settingEnums[enumId].settingValue = payload.settingValue
       else settingEnums[enumId] = payload;
@@ -665,7 +664,7 @@ async function updateOrderCancellationStatus() {
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateProductStore(currentStore);
+    const resp = await productStoreStore.updateProductStore(currentStore);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Product store setting updated successfully."))
       productStoreStore.updateCurrent(currentStore)

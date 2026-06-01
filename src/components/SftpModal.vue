@@ -53,10 +53,12 @@ import { ref, computed } from 'vue';
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { translate } from '@common'
-import { NetSuiteService } from '@/services/NetSuiteService';
+import { useNetSuiteStore } from '@/store/netSuite';
 import { commonUtil, hasError } from '@common';
 import { emitter } from '@common';
 import { logger } from '@common';
+
+const netSuiteStore = useNetSuiteStore();
 
 const sftpFormData = ref({
   guid: "",
@@ -86,7 +88,7 @@ async function saveSftpConfig() {
       defaultDirectory: sftpFormData.value.defaultDirectory
     };
 
-    const resp = await NetSuiteService.updateSftpConfig(payload);
+    const resp = await netSuiteStore.updateSftpConfig(payload);
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.commonUtil.showToast(translate("SFTP configurations updated successfully"))

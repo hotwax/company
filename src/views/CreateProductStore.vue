@@ -129,7 +129,7 @@ async function manageConfigurations() {
       const productStoreId = resp.data.productStoreId;
       
       if(!dbicCountriesCount.value) {
-        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => ProductStoreService.addDBICCountries({
+        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => productStoreStore.addDBICCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
             geoAssocTypeEnumId: "GROUP_MEMBER"
@@ -143,7 +143,7 @@ async function manageConfigurations() {
       }
       
       if(!productStores.value.length && formData.value.companyName) {
-        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+        await productStoreStore.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
       commonUtil.commonUtil.showToast(translate("Product store created successfully."))
