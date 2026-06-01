@@ -134,7 +134,7 @@ import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import { DateTime } from "luxon";
-import { translate } from '@common'
+import { cookieHelper, translate } from '@common'
 import { useRouter } from 'vue-router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
@@ -153,7 +153,7 @@ const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componen
 const appInfo = (import.meta.env.VITE_APP_VERSION_INFO ? JSON.parse(import.meta.env.VITE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => userStore.getUserProfile)
-const oms = computed(() => userStore.instanceUrl)
+const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
