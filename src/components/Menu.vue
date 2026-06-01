@@ -35,11 +35,10 @@ import {
 import { computed } from "vue";
 import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { translate } from '@common';
 
 const { isAuthenticated } = useAuth();
-const router = useRouter();
 const appPages = [
   {
     title: "Product Store",

@@ -56,7 +56,7 @@
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
@@ -70,7 +70,6 @@ import { emitter } from '@common';
 
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const formData = ref({
   companyName: "",

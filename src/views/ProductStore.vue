@@ -47,13 +47,12 @@
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { computed } from "vue";
 import { useProductStoreStore } from '@/store/productStore';
 import { useAuth } from '@common/composables/useAuth'
 
 const productStoreStore = useProductStoreStore();
-const router = useRouter();
 const { isAuthenticated } = useAuth();
 
 const productStores = computed(() => productStoreStore.productStores)

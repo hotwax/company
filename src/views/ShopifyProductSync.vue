@@ -746,7 +746,7 @@ import { useShopifyStore } from '@/store/shopify';
 import { useUserStore } from '@/store/user';
 import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
-import { useRoute, useRouter } from "vue-router";
+import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
@@ -786,8 +786,6 @@ const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
-const router = useRouter();
-const route = useRoute();
 const {
   jobs,
   products,
@@ -1718,8 +1716,8 @@ async function loadWizard() {
     await loadWebhookSubscriptions();
 
     // Dev override to land on a specific step
-    if (route.query.step) {
-      currentStep.value = route.query.step as ProductSyncWizardStep;
+    if (router.currentRoute.value.query.step) {
+      currentStep.value = router.currentRoute.value.query.step as ProductSyncWizardStep;
       if (currentStep.value === "progress") {
         const loadedProgress = await loadProgress();
         if (loadedProgress) startProgressPolling();

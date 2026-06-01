@@ -243,7 +243,7 @@ import { closeOutline, createOutline, trashOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { useProductStoreStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { translate } from '@common';
 import { KlaviyoService, ProductStoreEmailSetting } from "@/services/KlaviyoService";
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
@@ -260,7 +260,6 @@ const props = defineProps<{ id: string }>();
 const klaviyoStore = useKlaviyoStore();
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const isLoading = ref(false);
 const showDeleteModal = ref(false);

@@ -174,7 +174,7 @@ import {
 import { addCircleOutline, addOutline, serverOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
@@ -183,7 +183,6 @@ import { getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const klaviyoStore = useKlaviyoStore();
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const isInitialLoading = ref(false);
 const isRechecking = ref(false);

@@ -54,7 +54,7 @@
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { logger } from '@common';
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { computed, defineProps, ref } from "vue";
@@ -63,7 +63,6 @@ import { useUtilStore } from '@/store/util';
 import { emitter } from '@common';
 
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const props = defineProps(["productStoreId"]);
 

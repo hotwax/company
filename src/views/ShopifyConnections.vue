@@ -66,13 +66,12 @@
 import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSearchbar, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { filterOutline, flashOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { computed } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 
 import ShopifyConnectionFilters from "@/components/ShopifyConnectionFilters.vue";
 
-const router = useRouter();
 const shopifyStore = useShopifyStore();
 
 const shops = computed(() => shopifyStore.shops)

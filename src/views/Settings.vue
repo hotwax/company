@@ -135,7 +135,7 @@ import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import { DateTime } from "luxon";
 import { translate } from '@common'
-import { useRouter } from 'vue-router'
+import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
@@ -145,7 +145,6 @@ const productStoreStore = useProductStoreStore();
 const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
-const router = useRouter();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
 const appVersion = ref("")
 const maargInfo = computed(() => utilStore.maargInfo)

@@ -367,7 +367,7 @@ import {
 } from "@ionic/vue";
 import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
 import { computed, defineProps, ref } from "vue";
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { useShopifyStore } from '@/store/shopify';
 import { translate } from '@common';
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
@@ -384,7 +384,6 @@ import { commonUtil } from '@common';
 import { logger } from '@common';
 
 const props = defineProps(["id"]);
-const router = useRouter();
 const shopifyStore = useShopifyStore();
 const migrationConfig = PRODUCT_SYNC_MIGRATION_CONFIG;
 const isLoading = ref(true);

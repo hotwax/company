@@ -108,7 +108,7 @@
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { search } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
+import router from "@/router";
 import { useProductStoreStore } from '@/store/productStore';
 import { computed } from "vue";
 import SftpModal from "@/components/SftpModal.vue";
@@ -117,7 +117,6 @@ import PriceLevelModal from "@/components/PriceLevelModal.vue";
 import DiscountsModal from "@/components/DiscountsModal.vue";
 
 const productStoreStore = useProductStoreStore();
-const router = useRouter();
 
 const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore)
 
