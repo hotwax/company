@@ -10,6 +10,11 @@ export const useUserStore = defineStore('user', {
     permissions: [] as string[],
     oms: '',
     instanceUrl: '',
+    fetchStatus: {
+      profile: '' as string,
+      permissions: '' as string,
+      lastFetched: 0 as number
+    }
   }),
 
   getters: {
@@ -31,6 +36,7 @@ export const useUserStore = defineStore('user', {
 
   actions: {
     async fetchUserProfile() {
+      this.fetchStatus.profile = 'pending'
       try {
         const resp = await api({
           url: 'admin/user/profile',
@@ -43,7 +49,10 @@ export const useUserStore = defineStore('user', {
         if (this.current.timeZone) {
           Settings.defaultZone = this.current.timeZone
         }
+        this.fetchStatus.profile = 'success'
+        this.fetchStatus.lastFetched = Date.now()
       } catch (error: any) {
+        this.fetchStatus.profile = 'error'
         commonUtil.showToast(translate('Failed to fetch user profile'))
         logger.error('fetchUserProfile', error)
         useAuth().clearAuth()
@@ -52,6 +61,7 @@ export const useUserStore = defineStore('user', {
     },
 
     async fetchPermissions() {
+      this.fetchStatus.permissions = 'pending'
       const permissionId = import.meta.env.VITE_APP_PERMISSION_ID
       const serverPermissions: string[] = []
       const viewSize = 200
@@ -76,11 +86,14 @@ export const useUserStore = defineStore('user', {
         if (permissionId && !serverPermissions.includes(permissionId)) {
           const msg = 'You do not have permission to access the app.'
           commonUtil.showToast(translate(msg))
+          this.fetchStatus.permissions = 'error'
           return Promise.reject(new Error(msg))
         }
 
         this.permissions = serverPermissions
+        this.fetchStatus.permissions = 'success'
       } catch (error: any) {
+        this.fetchStatus.permissions = 'error'
         return Promise.reject(error)
       }
     },
