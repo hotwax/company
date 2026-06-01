@@ -134,6 +134,12 @@ const routes: Array<RouteRecordRaw> = [
     beforeEnter: authGuard,
   },
   {
+    path: "/gift-cards",
+    name: "GiftCardIssuer",
+    component: () => import("@/views/GiftCardIssuer.vue"),
+    beforeEnter: authGuard,
+  },
+  {
     path: "/klaviyo",
     name: "Klaviyo",
     component: Klaviyo,
