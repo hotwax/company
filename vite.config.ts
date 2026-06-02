@@ -79,9 +79,5 @@ export default defineConfig({
       // resolveCommonDeps plugin handles externals for both dev + build
       external: (id) => COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))
     }
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom'
   }
 })

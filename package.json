@@ -8,7 +8,6 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "vitest",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -50,7 +49,6 @@
     "eslint": "catalog:",
     "eslint-plugin-vue": "^9.0.0",
     "typescript": "catalog:",
-    "vite": "catalog:",
-    "vitest": "catalog:"
+    "vite": "catalog:"
   }
 }
