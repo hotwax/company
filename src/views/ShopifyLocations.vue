@@ -244,7 +244,15 @@ async function openImportModal() {
   await modal.present()
   const { data } = await modal.onDidDismiss()
   if (data?.imported) {
-    await shopifyStore.fetchShopifyShopLocations()
+    isLoading.value = true
+    await Promise.all([
+      utilStore.fetchFacilities(),
+      shopifyStore.fetchShopifyShopLocations()
+    ])
+    initializeLocalMappings()
+    isLoading.value = false
+    // Re-run the audit so the health panel reflects the newly imported facilities
+    await runAudit()
   }
 }
 
