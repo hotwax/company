@@ -118,6 +118,7 @@
           :preflight-subtitle="preflightSubtitle"
           :preflight-title="preflightTitle"
           :preflight-warning-confirmed="preflightWarningConfirmed"
+          :product-store-context-error="productStoreContextError"
           :product-store-locked="productStoreLocked"
           :product-stores="productStores"
           :progress-badge-color="progressBadgeColor"
@@ -741,7 +742,7 @@ import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
 import { translate } from '@common';
-import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUserStore } from '@/store/user';
 import { useProductStoreStore } from '@/store/productStore';
@@ -757,9 +758,9 @@ import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } fr
 import { UserService } from "@/services/UserService";
 import {
   canAdvanceProductSyncStep,
-
   canStartProductSync,
   createProductSyncWizardDraft,
+  getEffectiveProductSyncIdentifier,
   getReviewImportAction,
   getRawShopifyFileName,
   nextProductSyncStep,
@@ -781,6 +782,11 @@ import { useProductUpdateHistory } from "@/composables/useProductUpdateHistory";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
+import {
+  getProductSyncDecision,
+  getProductSyncRunStatus,
+  PRODUCT_SYNC_IDS
+} from "@/utils/shopifyProductSyncState";
 
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
@@ -801,10 +807,11 @@ const {
 const { downloadDataManagerFile, fetchLogDetails, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs, fetchAllRecentFailedRecords, clearStorage, loading: isErrorLogsLoading } = useDataManagerLog();
 const { productUpdateHistories, fetchProductUpdateHistory, setProductUpdateHistory } = useProductUpdateHistory();
 const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
-const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
-const BULK_OPERATION_SEND_JOB_NAME = "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery";
-const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
-const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
+const PRODUCT_UPDATE_SYNC_SERVICE_NAME = PRODUCT_SYNC_IDS.serviceJob.productUpdates;
+const BULK_OPERATION_SEND_JOB_NAME = PRODUCT_SYNC_IDS.serviceJob.sendBulkQuery;
+const BULK_OPERATION_POLL_JOB_NAME = PRODUCT_SYNC_IDS.serviceJob.pollBulkOperation;
+const PRODUCT_SYNC_MDM_CONFIG_ID = PRODUCT_SYNC_IDS.dataManagerConfig.productSync;
+const PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC = PRODUCT_SYNC_IDS.webhookTopic.bulkOperationsFinish;
 const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
 const latestSystemMessage = ref<any>(null);
 const latestConfirmedSystemMessage = ref<any>(null);
@@ -977,8 +984,15 @@ const recommendedIdentifierEnumId = computed(() => {
   });
   return skuIdentifier?.enumId || identifierOptions.value[0]?.enumId || "";
 });
+const effectiveSelectedIdentifierEnumId = computed(() => {
+  return getEffectiveProductSyncIdentifier(
+    draft.value.selectedIdentifierEnumId,
+    selectedProductStore.value.productIdentifierEnumId,
+    recommendedIdentifierEnumId.value
+  );
+});
 const selectedIdentifierLabel = computed(() => {
-  const identifier = identifierOptions.value.find((option: any) => option.enumId === draft.value.selectedIdentifierEnumId);
+  const identifier = identifierOptions.value.find((option: any) => option.enumId === effectiveSelectedIdentifierEnumId.value);
   return identifier?.description || identifier?.enumId || translate("Setup");
 });
 
@@ -1048,7 +1062,7 @@ const activeExperienceMode = computed(() => {
 });
 const isWebhookSubscribed = computed(() => {
   return webhookSubscriptions.value.some((subscription: any) => 
-    subscription.node.topic === "BULK_OPERATIONS_FINISH"
+    subscription.node.topic === PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC
   );
 });
 const activeExperienceModeLabel = computed(() => {
@@ -1364,19 +1378,47 @@ const syncJobParameters = computed(() => {
 const reviewReady = computed(() => {
   return !!reviewStats.value.loaded && !isReviewLoading.value;
 });
-const nextDisabled = computed(() => {
-  if (productStoreContextError.value) return true;
-  return !canAdvanceProductSyncStep(currentStep.value, {
-    draft: draft.value,
+function canAdvanceCurrentProductSyncStep() {
+  return canAdvanceProductSyncStep(currentStep.value, {
+    draft: {
+      ...draft.value,
+      selectedIdentifierEnumId: effectiveSelectedIdentifierEnumId.value
+    },
     productStoreLocked: productStoreLocked.value,
     identifierLocked: identifierLocked.value,
     reviewReady: reviewReady.value,
     progressComplete: isProgressComplete.value
   });
-});
-const startSyncDisabled = computed(() => !canStartProductSync(draft.value.startConfirmed) || !hasShopifyWriteAccess.value);
+}
+const nextDisabled = computed(() => !canAdvanceCurrentProductSyncStep());
 const progressStatus = computed(() => normalizeProductSyncStatus(progressState.value));
 const isProgressComplete = computed(() => normalizeProductSyncStatus(progressState.value) === "completed");
+const latestProductSyncRunStatus = computed(() => {
+  const hasTrackedRun = !!(
+    currentSyncRun.value?.systemMessageId ||
+    progressState.value?.systemMessageId ||
+    latestSystemMessage.value?.systemMessageId
+  );
+  if (!hasTrackedRun) return "";
+
+  return getProductSyncRunStatus({
+    status: progressStatus.value,
+    systemMessageState: currentSyncRun.value?.systemMessage?.statusId || progressState.value?.systemMessageState,
+    logStatusId: currentSyncRun.value?.mdmLog?.statusId || progressState.value?.logStatusId,
+    logId: currentSyncRun.value?.mdmLog?.id || progressState.value?.logId
+  });
+});
+const productSyncDecision = computed(() => {
+  return getProductSyncDecision({
+    hasWriteAccess: hasShopifyWriteAccess.value,
+    lastSyncedAt: lastProductUpdateSyncedAt.value,
+    unsyncedUpdateCount: shopifyShopProductCount.value,
+    pendingRequestCount: pendingUpdateRequestsCount.value,
+    latestRunStatus: latestProductSyncRunStatus.value,
+    syncJobPaused: isSyncJobPaused.value
+  });
+});
+const startSyncDisabled = computed(() => !canStartProductSync(draft.value.startConfirmed) || productSyncDecision.value.reasons.includes("blocked-by-access"));
 const importStatusLabel = computed(() => {
   if (currentStep.value === "progress") return progressStatus.value;
   return translate("Not started");
@@ -1872,10 +1914,19 @@ async function loadBulkOperationPollJobLatestRun() {
 }
 
 async function loadSelectedShopSystemMessageRemoteId() {
-  selectedShopSystemMessageRemoteId.value = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
-    shopId: props.id,
-    shop: shop.value
-  });
+  try {
+    selectedShopSystemMessageRemoteId.value = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+      shopId: props.id,
+      shop: shop.value
+    });
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    if (!message.includes("No SystemMessageRemote found with remoteId")) {
+      throw error;
+    }
+    logger.warn("Product sync remote is unavailable for this Shopify shop", error);
+    selectedShopSystemMessageRemoteId.value = "";
+  }
 }
 
 async function openStepDetails(step: any) {
@@ -2230,7 +2281,10 @@ function handleProductStoreChange(productStoreId: string) {
 
 function handleIdentifierChange(identifierEnumId: string) {
   if (identifierLocked.value) return;
-  draft.value.selectedIdentifierEnumId = identifierEnumId;
+  draft.value = {
+    ...draft.value,
+    selectedIdentifierEnumId: identifierEnumId
+  };
 }
 
 function handleExperienceModeChange(mode: ProductSyncExperienceMode) {
@@ -2570,7 +2624,7 @@ function openHistory() {
 }
 
 async function goNext() {
-  if (nextDisabled.value || isSaving.value) return;
+  if (isSaving.value || !canAdvanceCurrentProductSyncStep()) return;
 
   if (currentStep.value === "product-store") {
     const saved = await persistProductStoreSelection();
@@ -2578,6 +2632,12 @@ async function goNext() {
   }
 
   if (currentStep.value === "identifier") {
+    if (!draft.value.selectedIdentifierEnumId) {
+      draft.value = {
+        ...draft.value,
+        selectedIdentifierEnumId: effectiveSelectedIdentifierEnumId.value
+      };
+    }
     const saved = await persistIdentifierSelection();
     if (!saved) return;
   }
@@ -2624,12 +2684,15 @@ async function persistProductStoreSelection() {
 
 async function persistIdentifierSelection() {
   if (identifierLocked.value || !draft.value.selectedProductStoreId) return true;
+  const identifierEnumId = effectiveSelectedIdentifierEnumId.value;
+  if (selectedProductStore.value.productIdentifierEnumId === identifierEnumId) return true;
+
   isSaving.value = true;
   try {
     const payload = {
       ...selectedProductStore.value,
       productStoreId: draft.value.selectedProductStoreId,
-      productIdentifierEnumId: draft.value.selectedIdentifierEnumId
+      productIdentifierEnumId: identifierEnumId
     };
     const resp = await ProductStoreService.updateProductStore(payload);
 
@@ -2676,17 +2739,23 @@ async function loadReviewStats() {
   }
 }
 
-function toggleProductStoreVerification() {
+function toggleProductStoreVerification(checked?: boolean) {
   if (!draft.value.selectedProductStoreId || productStoreLocked.value) return;
-  draft.value.productStoreVerified = !draft.value.productStoreVerified;
+  draft.value = {
+    ...draft.value,
+    productStoreVerified: typeof checked === "boolean" ? checked : !draft.value.productStoreVerified
+  };
 }
 
-function togglePreflightWarningConfirmation() {
-  preflightWarningConfirmed.value = !preflightWarningConfirmed.value;
+function togglePreflightWarningConfirmation(checked?: boolean) {
+  preflightWarningConfirmed.value = typeof checked === "boolean" ? checked : !preflightWarningConfirmed.value;
 }
 
-function toggleStartConfirmation() {
-  draft.value.startConfirmed = !draft.value.startConfirmed;
+function toggleStartConfirmation(checked?: boolean) {
+  draft.value = {
+    ...draft.value,
+    startConfirmed: typeof checked === "boolean" ? checked : !draft.value.startConfirmed
+  };
 }
 
 async function loadPreflight() {
@@ -2744,7 +2813,10 @@ async function openStartSyncModal() {
 
     const action = getReviewImportAction();
     if (action.opensStartConfirmation) {
-      draft.value.startConfirmed = false;
+      draft.value = {
+        ...draft.value,
+        startConfirmed: false
+      };
       showStartSyncModal.value = true;
       
       const jobName = syncJobObj.value?.jobName;
@@ -2826,7 +2898,10 @@ async function startProductSync() {
       throw resp;
     }
 
-    draft.value.syncStarted = true;
+    draft.value = {
+      ...draft.value,
+      syncStarted: true
+    };
     showStartSyncModal.value = false;
     commonUtil.showToast(translate("Product sync started."));
 
@@ -3544,7 +3619,7 @@ async function loadWebhookSubscriptions() {
   try {
     webhookSubscriptions.value = await ShopifyProductSyncService.fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      topic: "BULK_OPERATIONS_FINISH"
+      topic: PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC
     });
     isWebhookSupported.value = true;
   } catch (error) {
@@ -3565,11 +3640,11 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     if (subscribe) {
       await ShopifyProductSyncService.subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-        topic: "BULK_OPERATIONS_FINISH",
+        topic: PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC,
       });
       commonUtil.showToast(translate("Subscribed to bulk operations finish webhook."));
     } else {
-      const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
+      const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC);
       if (subscription) {
         await ShopifyProductSyncService.unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,

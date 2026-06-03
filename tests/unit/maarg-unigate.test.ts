@@ -35,12 +35,12 @@ describe("maarg unigate defaults", () => {
     );
   });
 
-  test("leaves unknown instance types without a default url", () => {
+  test("maps dev instances to the uat unigate url", () => {
     assert.equal(
       getDefaultUnigateSendUrl({
         instanceInfo: { instancePurpose: "dev" }
       }),
-      ""
+      "https://unigate-uat.hotwax.io/rest/s1/unigate/"
     );
   });
 
@@ -57,7 +57,7 @@ describe("maarg unigate defaults", () => {
         "https://unigate-uat.hotwax.io/rest/s1/unigate/",
         { instanceInfo: { instancePurpose: "prod" } }
       ),
-      "production OMS instances are expected to use https://unigate.hotwax.io/rest/s1/unigate/. This tenant is currently using https://unigate-uat.hotwax.io/rest/s1/unigate/."
+      "This is the UAT Unigate URL configured on a production OMS instance. Klaviyo calls will be proxied to the wrong environment."
     );
   });
 
@@ -67,7 +67,7 @@ describe("maarg unigate defaults", () => {
         "https://unigate.hotwax.io/rest/s1/unigate/",
         { instanceInfo: { instancePurpose: "uat" } }
       ),
-      "UAT OMS instances are expected to use https://unigate-uat.hotwax.io/rest/s1/unigate/. This tenant is currently using https://unigate.hotwax.io/rest/s1/unigate/."
+      "This is the production Unigate URL configured on a UAT OMS instance. Klaviyo calls will be proxied to the wrong environment."
     );
   });
 

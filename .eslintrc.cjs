@@ -1,12 +1,19 @@
 module.exports = {
   root: true,
+  ignorePatterns: [
+    'coverage/**',
+    'dist/**',
+    'node_modules/**',
+    'tests/unit/jest.setup.js'
+  ],
   env: {
+    browser: true,
     node: true
   },
   'extends': [
     'plugin:vue/vue3-essential',
     'eslint:recommended',
-    '@vue/typescript/recommended'
+    'plugin:@typescript-eslint/recommended'
   ],
   parserOptions: {
     ecmaVersion: 2020,

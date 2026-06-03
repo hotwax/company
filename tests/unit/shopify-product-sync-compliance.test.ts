@@ -71,13 +71,14 @@ describe("shopify product sync implementation compliance", () => {
 
   test("product sync service does not call Shopify directly or fake import success", () => {
     const service = readProjectFile("src/services/ShopifyProductSyncService.ts");
+    const sharedState = readProjectFile("src/utils/shopifyProductSyncState.ts");
 
     assert.equal(/myshopify|admin\/api|bulkOperationRunQuery|client\(/.test(service), false);
     assert.equal(/DUMMY_/.test(service), false);
     assert.equal(service.includes("productSync/setup"), false);
     assert.equal(service.includes("productSync/productStores"), false);
     assert.equal(service.includes("oms/dataDocumentView"), true);
-    assert.equal(service.includes("SYSTEM_MESSAGE_DATA_MANAGER_LOG"), true);
+    assert.equal(sharedState.includes("SYSTEM_MESSAGE_DATA_MANAGER_LOG"), true);
   });
 
   test("production source does not contain dummy or product sync fallback implementations", () => {
@@ -219,7 +220,7 @@ describe("shopify product sync implementation compliance", () => {
     assert.equal(wizardSource.includes("getProductSyncBulkOperationProgress"), true);
     assert.equal(wizardSource.includes("reviewStats?.shopifyProductCount"), true);
     assert.equal(wizardSource.includes("currentSyncRun?.bulkOperation?.objectCount"), true);
-    assert.equal(wizardSource.includes("queuedJobsAhead"), true);
+    assert.equal(wizardSource.includes("systemMessageFsmState.nextJobReason"), true);
     assert.equal(productSyncSource.includes("await loadReviewStats();"), true);
     assert.equal(historyViewSource.includes("Product export request payload"), false);
     assert.equal(historyViewSource.includes("getProductSyncBulkOperationProgress"), false);

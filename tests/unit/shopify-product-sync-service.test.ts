@@ -1,5 +1,8 @@
 import assert from "assert";
-import path from "path";
+import { beforeEach, vi } from "vitest";
+
+import { api } from "@common";
+import { ShopifyProductSyncService } from "../../src/services/ShopifyProductSyncService";
 
 type ApiCall = {
   url?: string;
@@ -8,40 +11,42 @@ type ApiCall = {
   params?: any;
 };
 
-declare const global: any;
+vi.mock("@common", () => ({
+  api: vi.fn()
+}));
 
-const servicePath = path.resolve(__dirname, "../../src/services/ShopifyProductSyncService.ts");
-
-async function loadService(api: (request: ApiCall) => Promise<any>) {
-  global.__clearUnitMocks();
-  global.__setUnitMock("@/api", api);
-  global.__setUnitMock("@/logger", {
+vi.mock("@/logger", () => ({
+  default: {
     info: () => undefined,
     warn: () => undefined,
     error: () => undefined
-  });
+  }
+}));
 
-  delete require.cache[require.resolve(servicePath)];
-  const loadedService = await import(servicePath);
-  global.__clearUnitMocks();
-  return loadedService.ShopifyProductSyncService;
-}
+const mockedApi = api as unknown as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  mockedApi.mockReset();
+});
 
 function createRejectingApi() {
   const calls: ApiCall[] = [];
-  const api = async (request: ApiCall) => {
+  mockedApi.mockImplementation(async (request: ApiCall) => {
     calls.push(request);
     throw new Error("backend failed");
-  };
+  });
 
-  return { api, calls };
+  return { calls };
 }
 
 describe("shopify product sync service", () => {
   test("fetchSetupState derives returning user state from product sync system messages", async () => {
     const calls: ApiCall[] = [];
-    const service = await loadService(async (request: ApiCall) => {
+    mockedApi.mockImplementation(async (request: ApiCall) => {
       calls.push(request);
+      if (request.url === "oms/systemMessageRemotes") {
+        return { data: { systemMessageRemoteList: [] } };
+      }
       return {
         data: {
           entityValueList: [
@@ -56,7 +61,7 @@ describe("shopify product sync service", () => {
       };
     });
 
-    const result = await service.fetchSetupState({
+    const result = await ShopifyProductSyncService.fetchSetupState({
       shopId: "SHOP_10000",
       shop: {
         productStoreId: "STORE_A"
@@ -66,10 +71,9 @@ describe("shopify product sync service", () => {
       }
     });
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "oms/dataDocumentView");
-    assert.equal(calls[0].data.dataDocumentId, "SYSTEM_MESSAGE_DATA_MANAGER_LOG");
-    assert.equal(calls[0].data.customParametersMap.remoteInternalId, "SHOP_10000");
+    const setupRequest = calls.find((call) => call.url === "oms/dataDocumentView");
+    assert.equal(setupRequest?.data.dataDocumentId, "SYSTEM_MESSAGE_DATA_MANAGER_LOG");
+    assert.equal(setupRequest?.data.customParametersMap.remoteInternalId, "SHOP_10000");
     assert.equal(calls.some((call) => call.url === "oms/products/productUpdateHistories"), false);
     assert.equal(result.hasLinkedOmsProducts, true);
     assert.equal(result.productStoreLocked, true);
@@ -79,13 +83,18 @@ describe("shopify product sync service", () => {
   });
 
   test("fetchSetupState returns first-time state only when product sync system messages are empty", async () => {
-    const service = await loadService(async () => ({
-      data: {
-        entityValueListCount: 0
+    mockedApi.mockImplementation(async (request: ApiCall) => {
+      if (request.url === "oms/systemMessageRemotes") {
+        return { data: { systemMessageRemoteList: [] } };
       }
-    }));
+      return {
+        data: {
+          entityValueListCount: 0
+        }
+      };
+    });
 
-    const result = await service.fetchSetupState({
+    const result = await ShopifyProductSyncService.fetchSetupState({
       shopId: "SHOP_10000",
       shop: {
         productStoreId: "STORE_A"
@@ -103,22 +112,26 @@ describe("shopify product sync service", () => {
   });
 
   test("fetchSetupState rejects invalid system message response shapes", async () => {
-    const service = await loadService(async () => ({
-      data: {
-        entityValueListCount: 1
+    mockedApi.mockImplementation(async (request: ApiCall) => {
+      if (request.url === "oms/systemMessageRemotes") {
+        return { data: { systemMessageRemoteList: [] } };
       }
-    }));
+      return {
+        data: {
+          entityValueListCount: 1
+        }
+      };
+    });
 
-    await assert.rejects(() => service.fetchSetupState({
+    await assert.rejects(() => ShopifyProductSyncService.fetchSetupState({
       shopId: "SHOP_10000"
     }));
   });
 
   test("fetchProductStoreContext derives related shops from loaded Shopify shops", async () => {
-    const { api, calls } = createRejectingApi();
-    const service = await loadService(api);
+    const { calls } = createRejectingApi();
 
-    const result = await service.fetchProductStoreContext({
+    const result = await ShopifyProductSyncService.fetchProductStoreContext({
       productStoreId: "STORE_A",
       shops: [
         { shopId: "SHOP_10000", productStoreId: "STORE_A" },
@@ -132,10 +145,9 @@ describe("shopify product sync service", () => {
   });
 
   test("fetchProductStoreContext rejects missing Shopify shop data instead of calling a fallback endpoint", async () => {
-    const { api, calls } = createRejectingApi();
-    const service = await loadService(api);
+    const { calls } = createRejectingApi();
 
-    await assert.rejects(() => service.fetchProductStoreContext({
+    await assert.rejects(() => ShopifyProductSyncService.fetchProductStoreContext({
       productStoreId: "STORE_A"
     }));
     assert.equal(calls.length, 0);
@@ -143,7 +155,7 @@ describe("shopify product sync service", () => {
 
   test("fetchShopifyShopProductCount reuses provided sync run state", async () => {
     const calls: ApiCall[] = [];
-    const service = await loadService(async (request: ApiCall) => {
+    mockedApi.mockImplementation(async (request: ApiCall) => {
       calls.push(request);
       return {
         data: {
@@ -156,7 +168,7 @@ describe("shopify product sync service", () => {
       };
     });
 
-    const result = await service.fetchShopifyShopProductCount({
+    const result = await ShopifyProductSyncService.fetchShopifyShopProductCount({
       systemMessageRemoteId: "SMR_10000",
       syncRunState: {
         lastSyncedAt: "2026-05-02T00:00:00Z"
@@ -172,7 +184,7 @@ describe("shopify product sync service", () => {
 
   test("fetchDashboardSummary returns shared sync state and unsynced count without reloading system messages", async () => {
     const calls: ApiCall[] = [];
-    const service = await loadService(async (request: ApiCall) => {
+    mockedApi.mockImplementation(async (request: ApiCall) => {
       calls.push(request);
 
       if (request.url === "oms/dataDocumentView" && request.data?.customParametersMap?.statusId === "SmsgProduced") {
@@ -255,7 +267,7 @@ describe("shopify product sync service", () => {
       throw new Error(`Unexpected request: ${JSON.stringify(request)}`);
     });
 
-    const summary = await service.fetchDashboardSummary({
+    const summary = await ShopifyProductSyncService.fetchDashboardSummary({
       shopId: "SHOP_10000",
       systemMessageRemoteId: "SMR_10000",
       shop: {

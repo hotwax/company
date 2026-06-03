@@ -1,5 +1,5 @@
 // Stubs for packages used by @common/accxui but not needed by the company app.
-const noop = () => {};
+const noop = () => undefined;
 const stub = {};
 
 // firebase/app + firebase/messaging

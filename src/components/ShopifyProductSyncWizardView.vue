@@ -89,16 +89,34 @@
           <ion-note slot="end">{{ relatedShop.createdDate || relatedShop.createdStamp || translate("Created date unavailable") }}</ion-note>
         </ion-item>
       </ion-list>
-      <ion-item v-if="!productStoreLocked" lines="full" button :disabled="!draft.selectedProductStoreId"
-        @click="$emit('toggle-product-store-verification')">
-        <ion-checkbox :checked="draft.productStoreVerified"
-          :disabled="!draft.selectedProductStoreId" data-testid="product-store-verification">
-          {{ translate("I have verified that these Shopify stores are part of the selected Product Store.") }}
-        </ion-checkbox>
+      <ion-item v-if="productStoreContextError" lines="none">
+        <ion-label>
+          {{ translate("Related Shopify stores unavailable") }}
+          <p>{{ productStoreContextError }}</p>
+        </ion-label>
       </ion-item>
       <ion-card-content>
+        <ion-button
+          v-if="!productStoreLocked"
+          :key="draft.productStoreVerified ? 'product-store-verified' : 'product-store-unverified'"
+          expand="block"
+          :fill="draft.productStoreVerified ? 'solid' : 'outline'"
+          :disabled="!draft.selectedProductStoreId"
+          @click="emitProductStoreVerification(!draft.productStoreVerified)"
+          data-testid="product-store-verification"
+        >
+          <ion-icon v-if="draft.productStoreVerified" slot="start" :icon="checkmarkCircleOutline" />
+          {{ draft.productStoreVerified ? translate("Product store verified") : translate("Verify product store") }}
+        </ion-button>
         <ion-button expand="block" fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="$emit('go-next')"
+        <ion-button
+          expand="block"
+          :key="productStoreNextDisabled ? 'product-store-next-disabled' : 'product-store-next-enabled'"
+          :disabled="productStoreNextDisabled"
+          @click.stop="emitGoNext"
+          @pointerup.stop="emitGoNext"
+          @keydown.enter.prevent="emitGoNext"
+          @keydown.space.prevent="emitGoNext"
           data-testid="product-store-next">
           {{ translate("Next") }}
         </ion-button>
@@ -149,7 +167,14 @@
       </ion-list>
       <ion-card-content>
         <ion-button expand="block" fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
-        <ion-button expand="block" :disabled="nextDisabled || isSaving" @click="$emit('go-next')"
+        <ion-button
+          expand="block"
+          :key="nextDisabled || isSaving ? 'identifier-next-disabled' : 'identifier-next-enabled'"
+          :disabled="nextDisabled || isSaving"
+          @click.stop="emitGoNext"
+          @pointerup.stop="emitGoNext"
+          @keydown.enter.prevent="emitGoNext"
+          @keydown.space.prevent="emitGoNext"
           data-testid="identifier-next">
           {{ translate("Next") }}
         </ion-button>
@@ -177,7 +202,7 @@
       <ion-card>
         <ion-card-content>
           <p class="big-number">
-            <AnimatedNumber v-if="reviewStats.shopifyProductCount !== undefined && reviewStats.shopifyProductCount !== null" :value="Number(reviewStats.shopifyProductCount)" />
+            <AnimatedNumber v-if="canAnimateCount(reviewStats.shopifyProductCount)" :value="getCountValue(reviewStats.shopifyProductCount)" />
             <template v-else>{{ formatCount(reviewStats.shopifyProductCount) }}</template>
           </p>
         </ion-card-content>
@@ -190,7 +215,7 @@
       <ion-card>
         <ion-card-content>
           <p class="big-number">
-            <AnimatedNumber v-if="reviewStats.shopifyVariantCount !== undefined && reviewStats.shopifyVariantCount !== null" :value="Number(reviewStats.shopifyVariantCount)" />
+            <AnimatedNumber v-if="canAnimateCount(reviewStats.shopifyVariantCount)" :value="getCountValue(reviewStats.shopifyVariantCount)" />
             <template v-else>{{ formatCount(reviewStats.shopifyVariantCount) }}</template>
           </p>
         </ion-card-content>
@@ -212,7 +237,7 @@
       <ion-card>
         <ion-card-content>
           <p class="big-number">
-            <AnimatedNumber v-if="reviewStats.omsProductCount !== undefined && reviewStats.omsProductCount !== null" :value="Number(reviewStats.omsProductCount)" />
+            <AnimatedNumber v-if="canAnimateCount(reviewStats.omsProductCount)" :value="getCountValue(reviewStats.omsProductCount)" />
             <template v-else>{{ formatCount(reviewStats.omsProductCount) }}</template>
           </p>
         </ion-card-content>
@@ -225,7 +250,7 @@
       <ion-card>
         <ion-card-content>
           <p class="big-number">
-            <AnimatedNumber v-if="reviewStats.omsVariantCount !== undefined && reviewStats.omsVariantCount !== null" :value="Number(reviewStats.omsVariantCount)" />
+            <AnimatedNumber v-if="canAnimateCount(reviewStats.omsVariantCount)" :value="getCountValue(reviewStats.omsVariantCount)" />
             <template v-else>{{ formatCount(reviewStats.omsVariantCount) }}</template>
           </p>
         </ion-card-content>
@@ -238,7 +263,7 @@
       <ion-card>
         <ion-card-content>
           <p class="big-number">
-            <AnimatedNumber v-if="reviewStats.linkedShopCount !== undefined && reviewStats.linkedShopCount !== null" :value="Number(reviewStats.linkedShopCount)" />
+            <AnimatedNumber v-if="canAnimateCount(reviewStats.linkedShopCount)" :value="getCountValue(reviewStats.linkedShopCount)" />
             <template v-else>{{ formatCount(reviewStats.linkedShopCount) }}</template>
           </p>
         </ion-card-content>
@@ -472,14 +497,16 @@
             <ion-badge slot="end" :color="getPreflightBadgeColor(item.status)">{{ item.status }}</ion-badge>
           </ion-item>
         </ion-list>
-        <ion-item v-if="preflightRequiresConfirmation" lines="full" button
-          @click="$emit('toggle-preflight-warning-confirmation')">
-          <ion-checkbox :checked="preflightWarningConfirmed" label-placement="start"
-            data-testid="preflight-warning-confirmation">
-            {{ translate("I reviewed the warning and want to continue.") }}
-          </ion-checkbox>
-        </ion-item>
         <div class="ion-padding" v-if="preflightRequiresConfirmation">
+          <ion-button
+            expand="block"
+            :fill="preflightWarningConfirmed ? 'solid' : 'outline'"
+            @click="emitPreflightWarningConfirmation(!preflightWarningConfirmed)"
+            data-testid="preflight-warning-confirmation"
+          >
+            <ion-icon v-if="preflightWarningConfirmed" slot="start" :icon="checkmarkCircleOutline" />
+            {{ preflightWarningConfirmed ? translate("Warning reviewed") : translate("Review warning") }}
+          </ion-button>
           <ion-button expand="block" :disabled="!preflightWarningConfirmed"
             @click="$emit('accept-preflight-and-open-start-sync')" data-testid="accept-preflight-warning">
             {{ translate("Continue to import") }}
@@ -556,12 +583,16 @@
               <ion-badge slot="end" :color="shopifyAccessBadgeColor">{{ shopifyAccessLabel }}</ion-badge>
             </ion-item>
           </ion-list>
-          <ion-item lines="full" button @click="$emit('toggle-start-confirmation')">
-            <ion-checkbox :checked="draft.startConfirmed" label-placement="start" data-testid="start-sync-confirmation">
-              {{ translate("I understand and want to start the first product sync.") }}
-            </ion-checkbox>
-          </ion-item>
           <ion-card-content>
+            <ion-button
+              expand="block"
+              :fill="draft.startConfirmed ? 'solid' : 'outline'"
+              @click="emitStartConfirmation(!draft.startConfirmed)"
+              data-testid="start-sync-confirmation"
+            >
+              <ion-icon v-if="draft.startConfirmed" slot="start" :icon="checkmarkCircleOutline" />
+              {{ draft.startConfirmed ? translate("First sync confirmed") : translate("Confirm first sync") }}
+            </ion-button>
             <ion-item v-if="shopifyAccessBlockingMessage" lines="none">
               <ion-label>
                 <p>{{ shopifyAccessBlockingMessage }}</p>
@@ -594,7 +625,6 @@ import {
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
-  IonCheckbox,
   IonContent,
   IonHeader,
   IonIcon,
@@ -621,7 +651,7 @@ import {
   alertCircleOutline
 } from "ionicons/icons";
 import { translate } from '@common';
-import { computed, defineEmits, defineProps } from "vue";
+import { computed } from "vue";
 import { formatDateTime } from '@/utils';
 import { getProductSyncBulkOperationProgress } from "@/utils/shopifyProductSyncWizard";
 
@@ -646,6 +676,7 @@ const props = defineProps<{
   preflightSubtitle: string
   preflightTitle: string
   preflightWarningConfirmed: boolean
+  productStoreContextError: string
   productStoreLocked: boolean
   productStores: any[]
   progressBadgeColor: string
@@ -701,6 +732,26 @@ const emit = defineEmits([
   "toggle-product-store-verification",
   "toggle-start-confirmation",
 ]);
+let lastGoNextAt = 0;
+
+function emitProductStoreVerification(checked: boolean) {
+  emit("toggle-product-store-verification", checked);
+}
+
+function emitPreflightWarningConfirmation(checked: boolean) {
+  emit("toggle-preflight-warning-confirmation", checked);
+}
+
+function emitStartConfirmation(checked: boolean) {
+  emit("toggle-start-confirmation", checked);
+}
+
+function emitGoNext() {
+  const now = Date.now();
+  if (now - lastGoNextAt < 500) return;
+  lastGoNextAt = now;
+  emit("go-next");
+}
 
 function getPreflightBadgeColor(status: string) {
   switch (status) {
@@ -716,6 +767,10 @@ function getPreflightBadgeColor(status: string) {
 
 const selectedProductStore = computed(() => {
   return props.productStores.find((productStore: any) => productStore.productStoreId === props.draft.selectedProductStoreId);
+});
+
+const productStoreNextDisabled = computed(() => {
+  return props.isSaving || !props.draft.selectedProductStoreId || (!props.productStoreLocked && !props.draft.productStoreVerified);
 });
 
 const selectedIdentifier = computed(() => {
@@ -827,8 +882,18 @@ const bulkFileProcessDescription = computed(() => {
   return translate("HotWax is processing the exported Shopify product file.");
 });
 
-function formatCount(value: number) {
-  return new Intl.NumberFormat().format(value);
+function canAnimateCount(value: unknown) {
+  if (value === undefined || value === null || value === "") return false;
+  return Number.isFinite(Number(value));
+}
+
+function getCountValue(value: unknown) {
+  return Number(value);
+}
+
+function formatCount(value: unknown) {
+  if (!canAnimateCount(value)) return translate("N/A");
+  return new Intl.NumberFormat().format(Number(value));
 }
 
 function isCompleteStatus(status = "") {

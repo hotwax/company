@@ -4,6 +4,7 @@ import {
   canShowProductSyncReconcile,
   canStartProductSync,
   createProductSyncWizardDraft,
+  getEffectiveProductSyncIdentifier,
   getProductSyncBulkOperationProgress,
   getReviewImportAction,
   requiresPreflightConfirmation,
@@ -73,6 +74,21 @@ describe("shopify product sync wizard state", () => {
         identifierLocked: true
       }),
       true
+    );
+  });
+
+  test("identifier step uses a product-store or recommended identifier when the draft is empty", () => {
+    assert.equal(
+      getEffectiveProductSyncIdentifier("", "SHOPIFY_PRODUCT_SKU", "SHOPIFY_PRODUCT_ID"),
+      "SHOPIFY_PRODUCT_SKU"
+    );
+    assert.equal(
+      getEffectiveProductSyncIdentifier("", "", "SHOPIFY_PRODUCT_ID"),
+      "SHOPIFY_PRODUCT_ID"
+    );
+    assert.equal(
+      getEffectiveProductSyncIdentifier("SHOPIFY_PRODUCT_UPC", "SHOPIFY_PRODUCT_SKU", "SHOPIFY_PRODUCT_ID"),
+      "SHOPIFY_PRODUCT_UPC"
     );
   });
 
