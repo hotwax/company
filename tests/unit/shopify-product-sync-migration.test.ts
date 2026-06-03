@@ -1,10 +1,18 @@
 import assert from "assert";
+import { vi } from "vitest";
 
-const setUnitMock = (global as any).__setUnitMock;
+vi.mock("@common", () => ({
+  api: vi.fn()
+}));
 
-setUnitMock("@/api", { default: async () => ({ data: {} }) });
-setUnitMock("@/logger", { default: { warn: () => undefined, error: () => undefined } });
-setUnitMock("@/config/productSyncMigration", {
+vi.mock("@/logger", () => ({
+  default: {
+    warn: () => undefined,
+    error: () => undefined
+  }
+}));
+
+vi.mock("@/config/productSyncMigration", () => ({
   PRODUCT_SYNC_MIGRATION_CONFIG: {
     minimumComponentRelease: "product-sync",
     incoming: {
@@ -18,16 +26,17 @@ setUnitMock("@/config/productSyncMigration", {
     }
   },
   isProductSyncMigrationEligibleRelease: () => true
-});
-setUnitMock("@/services/ShopifyProductSyncService", {
-  ShopifyProductSyncService: {}
-});
+}));
 
-const {
+vi.mock("@/services/ShopifyProductSyncService", () => ({
+  ShopifyProductSyncService: {}
+}));
+
+import {
   buildLegacySystemMessageItem,
   describeLegacyServiceJobState,
   describeLegacySystemMessageTypeState
-} = require("../../src/services/ShopifyProductSyncMigrationService");
+} from "../../src/services/ShopifyProductSyncMigrationService";
 
 describe("shopify product sync migration state", () => {
   test("marks service jobs partially deactivated when only one teardown field changed", () => {
@@ -79,8 +88,8 @@ describe("shopify product sync migration state", () => {
       initDate: "1744254089563"
     });
 
-    assert.equal(item.status, "active");
-    assert.match(item.note, /^SmsgCreated · Apr \d+, 2025,/);
+    assert.equal(item?.status, "active");
+    assert.match(item?.note || "", /^SmsgCreated · Apr \d+, 2025,/);
   });
 
   test("does not show terminal legacy system messages in the teardown list", () => {

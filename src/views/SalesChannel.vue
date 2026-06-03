@@ -66,23 +66,25 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
+import { translate } from '@common'
 import { NetSuiteService } from '@/services/NetSuiteService';
-import { useStore } from "vuex";
+import { useNetSuiteStore } from '@/store/netSuite';
+import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
-import { showToast, hasError } from '@/utils';
+import { commonUtil } from '@common';
 import emitter from "@/event-bus";
 import logger from '@/logger';
 
 
-const store = useStore();
+const netSuiteStore = useNetSuiteStore();
+const shopifyStore = useShopifyStore();
 
-const salesChannel = computed(() => store.getters["netSuite/getSalesChannel"])
-const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_ORDER_SOURCE"))
+const salesChannel = computed(() => netSuiteStore.salesChannel)
+const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_ORDER_SOURCE"))
 
 onIonViewDidEnter(async () => {
-  await store.dispatch("netSuite/fetchSalesChannel")
-  await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_ORDER_SOURCE")
+  await netSuiteStore.fetchSalesChannel()
+  await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_ORDER_SOURCE")
 })
 
 function getShopifyMappingId(salesChannelEnumId: any) {
@@ -108,12 +110,12 @@ async function editNetSuiteSalesChannelId(channel: any) {
           const netSuiteId = data.netSuiteSalesChannelId.trim();
           
           if(!netSuiteId) {
-            showToast(translate("Please enter a valid NetSuite ID"));
+            commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
             return false;
           }
 
           if(channel.enumCode === netSuiteId) {
-            showToast(translate("Please update the NetSuite ID"));
+            commonUtil.showToast(translate("Please update the NetSuite ID"));
             return false;
           }
           await updateSalesChannelNetSuiteId(channel, netSuiteId);
@@ -132,9 +134,9 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
     channel.enumCode = netSuiteId;
     resp = await NetSuiteService.updateEnumCode(channel);
 
-    if(!hasError(resp)) {
-      showToast(translate("NetSuite Id updated successfully"));
-      await store.dispatch("netSuite/fetchSalesChannel");
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("NetSuite Id updated successfully"));
+      await netSuiteStore.fetchSalesChannel();
     } else {
       throw resp.data;
     }

@@ -219,9 +219,9 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { computed, defineEmits, defineProps, ref } from "vue";
-import { formatDateTime } from "@/utils";
+import { formatDateTime } from '@/utils';
 import { parseSystemMessageDateTime } from "@/utils/systemMessageHistory";
 import {
   alertCircleOutline,

@@ -55,18 +55,21 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { useRouter } from "vue-router";
-import { useStore } from "vuex";
+import { useProductStoreStore } from '@/store/productStore';
+import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { generateInternalId, hasError, showToast } from "@/utils";
+import { hasError, showToast } from '@common'
+import { generateInternalId } from '@/utils';
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { UtilService } from "@/services/UtilService";
 import emitter from "@/event-bus";
 
-const store = useStore();
+const productStoreStore = useProductStoreStore();
+const utilStore = useUtilStore();
 const router = useRouter();
 
 const formData = ref({
@@ -79,15 +82,15 @@ const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
 const currencies = ref([]) as any;
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
-const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
-const company = computed(() => store.getters["productStore/getCompany"])
-const organizationPartyId = computed(() => store.getters["util/getOrganizationPartyId"])
+const productStores = computed(() => productStoreStore.productStores)
+const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
+const company = computed(() => productStoreStore.company)
+const organizationPartyId = computed(() => utilStore.organizationPartyId)
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("util/fetchDBICCountries");
-  store.dispatch("productStore/fetchCompany");
-  if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
+  await utilStore.fetchDBICCountries();
+  productStoreStore.fetchCompany();
+  if(!dbicCountriesCount.value) await utilStore.fetchOperatingCountries();
   await fetchCurrencies();
 })
 
@@ -104,7 +107,7 @@ async function fetchCurrencies() {
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
-    showToast(translate('Please fill all the required fields'))
+    commonUtil.showToast(translate('Please fill all the required fields'))
     return;
   }
 
@@ -113,7 +116,7 @@ async function manageConfigurations() {
   }
 
   if (formData.value.productStoreId.length > 20) {
-    showToast(translate("Product store ID cannot be more than 20 characters."))
+    commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
     return
   }
 
@@ -136,7 +139,7 @@ async function manageConfigurations() {
 
     resp = await ProductStoreService.createProductStore(payload);
 
-    if(!hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       const productStoreId = resp.data.productStoreId;
       
       if(!dbicCountriesCount.value) {
@@ -157,14 +160,14 @@ async function manageConfigurations() {
         await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
-      showToast(translate("Product store created successfully."))
+      commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
       router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }
   } catch(error: any) {
-    showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
+    commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
 

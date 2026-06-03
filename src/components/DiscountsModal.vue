@@ -40,16 +40,16 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useNetSuiteStore } from '@/store/netSuite';
 import { computed, onMounted, ref } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-const store = useStore();
-const discountTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
+const netSuiteStore = useNetSuiteStore();
+const discountTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(discountTypeId)
 
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](discountTypeId))
+const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(discountTypeId))
 
 const orderLevelDiscount = ref("");
 const itemLevelDiscount = ref("");

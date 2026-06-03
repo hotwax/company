@@ -65,18 +65,20 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useNetSuiteStore } from '@/store/netSuite';
+import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-const store = useStore();
-const paymentMethodTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PAYMENT_METHOD_TYPE_ID
+const netSuiteStore = useNetSuiteStore();
+const shopifyStore = useShopifyStore();
+const paymentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PAYMENT_METHOD_TYPE_ID
 const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(paymentMethodTypeId);
 
-const paymentMethods = computed(() => store.getters["netSuite/getPaymentMehtods"])
-const integrationTypeMappings = computed(() => store.getters["netSuite/getIntegrationTypeMappings"](paymentMethodTypeId))
-const shopifyTypeMappings = computed(() => store.getters["netSuite/getShopifyTypeMappings"]("SHOPIFY_PAYMENT_TYPE"))
+const paymentMethods = computed(() => netSuiteStore.paymentMethods)
+const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(paymentMethodTypeId))
+const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_PMT_MTHD)
@@ -91,8 +93,8 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("netSuite/fetchPaymentMethods")
-  await store.dispatch("netSuite/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE")
+  await netSuiteStore.fetchPaymentMethods()
+  await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE")
 })
 
 function getShopifyMappingId(paymentMethodTypeId: any) {

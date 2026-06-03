@@ -1,3 +1,5 @@
+import { getProductSyncRunStatus } from "./shopifyProductSyncState";
+
 export type ProductSyncWizardStep =
   | "home"
   | "product-store"
@@ -81,6 +83,14 @@ export function selectProductStore(
   };
 }
 
+export function getEffectiveProductSyncIdentifier(
+  draftIdentifierEnumId = "",
+  productStoreIdentifierEnumId = "",
+  recommendedIdentifierEnumId = ""
+): string {
+  return draftIdentifierEnumId || productStoreIdentifierEnumId || recommendedIdentifierEnumId;
+}
+
 export function canAdvanceProductSyncStep(step: ProductSyncWizardStep, context: ProductSyncGateContext): boolean {
   const { draft } = context;
 
@@ -143,45 +153,7 @@ export function canShowProductSyncReconcile(progress: ProductSyncProgressSnapsho
 }
 
 export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot = {}): string {
-  if (progress.status === "error") {
-    return "error";
-  }
-
-  const systemMessageState = progress.systemMessageState;
-  const logStatusId = progress.logStatusId;
-  const logId = progress.logId;
-
-  // A sync run is considered terminal (completed) if:
-  // 1. There is an MDM log AND it is finished or errored
-  // 2. There is NO MDM log AND the system message is consumed (handling empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "DmlsFinished" || logStatusId === "DmlsError")) ||
-                     (!logId && (systemMessageState === "SmsgConsumed" || systemMessageState === "SmsgError" || systemMessageState === "SmsgCancelled"));
-
-  if (isTerminal) {
-    if (logStatusId === "DmlsError" || systemMessageState === "SmsgError") return "error";
-    if (systemMessageState === "SmsgCancelled") return "cancelled";
-    return "completed";
-  }
-
-  if (logStatusId === "DmlsRunning" || logStatusId === "DmlsPending") {
-    return "importing";
-  }
-
-  switch (systemMessageState) {
-    case "SmsgProduced":
-      return "queued";
-    case "SmsgSent":
-      return "running";
-    case "SmsgConfirmed":
-    case "SmsgConsumed":
-      return "importing";
-    case "SmsgCancelled":
-      return "cancelled";
-    case "SmsgError":
-      return "error";
-    default:
-      return "queued";
-  }
+  return getProductSyncRunStatus(progress);
 }
 
 export function getProductSyncBulkOperationProgress(objectCount?: number | string, totalProductCount?: number | string): ProductSyncBulkOperationProgress {

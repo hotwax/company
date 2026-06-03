@@ -46,21 +46,21 @@
 <script setup lang="ts">
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { useRouter } from "vue-router";
 import { computed } from "vue";
-import { useStore } from "vuex";
-import { useAuthStore } from '@hotwax/dxp-components'
+import { useProductStoreStore } from '@/store/productStore';
+import { useAuth } from '@common/composables/useAuth'
 
-const store = useStore();
+const productStoreStore = useProductStoreStore();
 const router = useRouter();
-const authStore = useAuthStore();
+const { isAuthenticated } = useAuth();
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
-const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
+const productStores = computed(() => productStoreStore.productStores)
+
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("productStore/fetchProductStores", { fetchCounts: true });
+  await productStoreStore.fetchProductStores({ fetchCounts: true });
 })
 
 async function viewProductStoreDetails(productStoreId: string) {
@@ -72,7 +72,8 @@ function createStore() {
 }
 
 function viewFacilities(productStoreId: string) {
-  const facilitiesListUrl = `${process.env.VUE_APP_FACILITIES_LOGIN_URL}?oms=${omsRedirectionInfo.value.url}&token=${authStore.token.value}&expirationTime=${authStore.token.expiration}&productStoreId=${productStoreId}`
+  const { token } = useAuth();
+  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?productStoreId=${productStoreId}`
   window.open(facilitiesListUrl, "_blank")
 }
 </script>

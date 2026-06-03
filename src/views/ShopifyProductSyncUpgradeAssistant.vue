@@ -368,8 +368,8 @@ import {
 import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
 import { computed, defineProps, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
+import { useShopifyStore } from '@/store/shopify';
+import { translate } from '@common';
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
 import {
   type ProductSyncMigrationAssistantState,
@@ -380,12 +380,12 @@ import {
   ShopifyProductSyncMigrationService
 } from "@/services/ShopifyProductSyncMigrationService";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import { showToast } from "@/utils";
+import { commonUtil } from '@common';
 import logger from "@/logger";
 
 const props = defineProps(["id"]);
 const router = useRouter();
-const store = useStore();
+const shopifyStore = useShopifyStore();
 const migrationConfig = PRODUCT_SYNC_MIGRATION_CONFIG;
 const isLoading = ref(true);
 const loadErrorMessage = ref("");
@@ -416,7 +416,7 @@ const assistantState = ref<ProductSyncMigrationAssistantState>({
   legacySystemMessages: []
 });
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const entryAction = computed<ProductSyncMigrationEntryAction>(() => {
   return ShopifyProductSyncMigrationService.resolveEntryAction(assistantState.value);
 });
@@ -577,10 +577,10 @@ async function loadAssistant() {
 
   try {
     if (!shop.value.shopId) {
-      await store.dispatch("shopify/fetchShopifyShops");
+      await shopifyStore.fetchShopifyShops();
     }
 
-    const currentShop = store.getters["shopify/getShopById"](props.id) || {};
+    const currentShop = shopifyStore.getShopById(props.id) || {};
 
     await ShopifyProductSyncMigrationService.fetchAssistantState(
       { shopId: props.id, shop: currentShop },
@@ -718,11 +718,11 @@ async function configureSyncJobForShop() {
       productIdentifierEnumId: shop.value.productStore?.productIdentifierEnumId || shop.value.productIdentifierEnumId
     });
 
-    await showToast(translate("Product sync job scheduled successfully."));
+    await commonUtil.showToast(translate("Product sync job scheduled successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error("Failed to configure sync job", error);
-    await showToast(translate("Failed to schedule job."));
+    await commonUtil.showToast(translate("Failed to schedule job."));
   } finally {
     isConfiguringSyncJob.value = false;
   }
@@ -732,11 +732,11 @@ async function enableJob(artifactCheck: any) {
   isEnablingJob.value[artifactCheck.id] = true;
   try {
     await ShopifyProductSyncMigrationService.enableServiceJob(artifactCheck.id, artifactCheck.jobDetail);
-    await showToast(translate("Job enabled successfully."));
+    await commonUtil.showToast(translate("Job enabled successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error("Failed to enable job", error);
-    await showToast(translate("Failed to enable job."));
+    await commonUtil.showToast(translate("Failed to enable job."));
   } finally {
     isEnablingJob.value[artifactCheck.id] = false;
   }
@@ -760,7 +760,7 @@ async function copyArtifactCheckToClipboard(artifactCheck: any) {
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text);
-    await showToast(translate("Details copied to clipboard."));
+    await commonUtil.showToast(translate("Details copied to clipboard."));
   } catch (err) {
     logger.error("Failed to copy to clipboard", err);
   }
@@ -799,7 +799,7 @@ async function teardownLegacySync() {
   teardownFailedSteps.value = [];
 
   try {
-    const currentShop = store.getters["shopify/getShopById"](props.id) || {};
+    const currentShop = shopifyStore.getShopById(props.id) || {};
     const result = await ShopifyProductSyncMigrationService.teardownLegacySync(
       { shopId: props.id, shop: currentShop },
       (step: ProductSyncMigrationTeardownStep) => {
@@ -827,14 +827,14 @@ async function teardownLegacySync() {
 
     if (result.failedSteps.length > 0) {
       teardownSuccessMessage.value = translate("Teardown completed with {count} step(s) that could not be completed. See details below.", { count: result.failedSteps.length });
-      await showToast(translate("Teardown completed. {count} step(s) failed.", { count: result.failedSteps.length }));
+      await commonUtil.showToast(translate("Teardown completed. {count} step(s) failed.", { count: result.failedSteps.length }));
     } else {
       teardownSuccessMessage.value = translate("Legacy product sync teardown completed successfully for all artifacts on this shop.");
-      await showToast(translate("Legacy product sync teardown completed."));
+      await commonUtil.showToast(translate("Legacy product sync teardown completed."));
     }
   } catch (error: any) {
     teardownErrorMessage.value = error?.message || translate("Failed to deactivate the legacy product sync.");
-    await showToast(teardownErrorMessage.value);
+    await commonUtil.showToast(teardownErrorMessage.value);
   } finally {
     isTeardownRunning.value = false;
   }
@@ -844,11 +844,11 @@ async function teardownItem(item: ProductSyncMigrationLegacyItem, kind: "type" |
   isTeardownItemRunning.value[item.id] = true;
   try {
     await runTeardownAction(item, kind);
-    await showToast(translate("Artifact deactivated successfully."));
+    await commonUtil.showToast(translate("Artifact deactivated successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error(`Failed to teardown legacy ${kind} ${item.id}`, error);
-    await showToast(translate("Failed to deactivate artifact."));
+    await commonUtil.showToast(translate("Failed to deactivate artifact."));
   } finally {
     isTeardownItemRunning.value[item.id] = false;
   }
@@ -872,11 +872,11 @@ async function teardownSection(kind: "type" | "job" | "message") {
       await runTeardownAction(item, kind);
     }
 
-    await showToast(translate("Section deactivated successfully."));
+    await commonUtil.showToast(translate("Section deactivated successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error(`Failed to teardown legacy section ${kind}`, error);
-    await showToast(translate("Failed to deactivate section."));
+    await commonUtil.showToast(translate("Failed to deactivate section."));
   } finally {
     isTeardownSectionRunning.value[kind] = false;
   }

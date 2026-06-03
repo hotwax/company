@@ -155,8 +155,9 @@ import {
 import { closeOutline, refreshOutline } from "ionicons/icons";
 import { computed, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { translate } from "@/i18n";
-import { formatDateTime, showToast } from "@/utils";
+import { translate } from '@common';
+import { showToast } from '@common'
+import { formatDateTime } from '@/utils';
 import logger from "@/logger";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
 import type { ShopifyProductSyncProductSearchResult } from "@/services/ShopifyProductSyncService";
@@ -252,7 +253,7 @@ async function loadProducts() {
   } catch (error: any) {
     if (requestId !== productSearchRequestId) return;
     logger.error(error);
-    showToast(isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates."));
+    commonUtil.showToast(isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates."));
     products.value = [];
     hasNextPage.value = false;
     endCursor.value = "";
@@ -281,7 +282,7 @@ async function searchProducts(after?: string) {
   } catch (error: any) {
     if (requestId !== productSearchRequestId) return;
     logger.error(error);
-    showToast(translate("Failed to search Shopify products."));
+    commonUtil.showToast(translate("Failed to search Shopify products."));
     products.value = after ? products.value : [];
     hasNextPage.value = false;
     endCursor.value = "";
@@ -295,7 +296,7 @@ async function searchProducts(after?: string) {
 async function handleSearch() {
   clearSearchDebounce();
   if (!queryString.value.trim()) {
-    showToast(translate("Enter product sku to search"));
+    commonUtil.showToast(translate("Enter product sku to search"));
     await loadProducts();
     return;
   }

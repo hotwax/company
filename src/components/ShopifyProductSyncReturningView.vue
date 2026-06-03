@@ -496,8 +496,8 @@ import {
   IonSkeletonText,
   IonSpinner
 } from "@ionic/vue";
-import { translate } from "@/i18n";
-import { computed, defineEmits, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
+import { translate } from '@common';
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, openOutline, pauseCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { popoverController } from "@ionic/vue";
 import AnimatedNumber from "@/components/AnimatedNumber.vue";

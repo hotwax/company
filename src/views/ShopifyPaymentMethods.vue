@@ -66,23 +66,25 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { translate } from '@common'
+import { useNetSuiteStore } from '@/store/netSuite';
+import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from "@/utils"
+import { hasError, showToast } from '@common'
 import emitter from "@/event-bus";
 import logger from "@/logger";
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
-const store = useStore();
+const netSuiteStore = useNetSuiteStore();
+const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 
-const paymentMethods = computed(() => store.getters["netSuite/getPaymentMehtods"])
-const shopifyTypeMappings = computed(() => store.getters["shopify/getShopifyTypeMappings"]("SHOPIFY_PAYMENT_TYPE"))
+const paymentMethods = computed(() => netSuiteStore.paymentMethods)
+const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -95,8 +97,8 @@ const isDirty = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
-    store.dispatch("netSuite/fetchPaymentMethods"),
-    store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE")
+    netSuiteStore.fetchPaymentMethods(),
+    shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE")
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -141,7 +143,7 @@ async function saveMapping(paymentMethodTypeId: string) {
   const oldMappedKey = getShopifyMapping(paymentMethodTypeId);
 
   if (!newMappedKey) {
-    showToast(translate("Please provide a Shopify payment method name"));
+    commonUtil.showToast(translate("Please provide a Shopify payment method name"));
     return;
   }
 
@@ -162,16 +164,16 @@ async function saveMapping(paymentMethodTypeId: string) {
       mappedValue: paymentMethodTypeId
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Mapping updated successfully"));
-      await store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE");
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Mapping updated successfully"));
+      await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
       editingItemId.value = "";
     } else {
       throw resp.data;
     }
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(translate("Failed to update mapping"));
   }
   emitter.emit("dismissLoader");
 }
@@ -200,11 +202,11 @@ async function saveAllDirtyMappings() {
         mappedValue: id
       });
     }
-    await store.dispatch("shopify/fetchShopifyTypeMappings", "SHOPIFY_PAYMENT_TYPE");
-    showToast(translate("All mappings saved successfully"));
+    await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
+    commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(translate("Failed to save some mappings"));
   }
   emitter.emit("dismissLoader");
 }

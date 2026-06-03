@@ -1,18 +1,19 @@
-import { showToast, hasError } from '@/utils';
+import { commonUtil } from '@common';
+import { commonUtil } from '@common';
 import emitter from "@/event-bus";
 import logger from '@/logger';
 import { NetSuiteService } from '@/services/NetSuiteService';
-import { useStore } from "vuex";
+import { useNetSuiteStore } from '@/store/netSuite';
 import { onMounted } from "vue";
 import { alertController } from '@ionic/vue';
 import { translate } from "@/i18n"
 
 export function useNetSuiteComposables(integrationTypeId: any) {
 
-  const store = useStore();
+  const netSuiteStore = useNetSuiteStore();
   // Fetch integration type mappings
   onMounted(async () => {    
-    await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId });
+    await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId });
   });  
   
   // This function opens an alert dialog to edit the NetSuite ID, taking a mapping key and the current integration mapping as parameters.
@@ -34,12 +35,12 @@ export function useNetSuiteComposables(integrationTypeId: any) {
             const netSuiteId = data.netSuiteId.trim();
         
             if(!netSuiteId) {
-              showToast(translate("Please enter a valid NetSuite ID"));
+              commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
               return false;
             }
 
             if(integrationMapping?.mappingValue === netSuiteId) {
-              showToast(translate("Please update the NetSuite ID"));
+              commonUtil.showToast(translate("Please update the NetSuite ID"));
               return false;
             }
 
@@ -68,17 +69,17 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.addIntegrationTypeMappings(payload);
-      if(!hasError(resp)) {
-        showToast(translate("NetSuite Id updated successfully"));
+      if(!commonUtil.hasError(resp)) {
+        commonUtil.showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD") {
-          await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
+          await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId: integrationTypeId });
         }
       } else {
         throw resp.data;
       }
     } catch (err) {
       logger.error(err);
-      showToast(translate("Failed to add netSuite id"))
+      commonUtil.showToast(translate("Failed to add netSuite id"))
     }
     emitter.emit('dismissLoader');
   };
@@ -90,17 +91,17 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.updateIntegrationTypeMappings(payload, integrationMappingId);
-      if(!hasError(resp)) {
-        showToast(translate("NetSuite Id updated successfully"));
+      if(!commonUtil.hasError(resp)) {
+        commonUtil.showToast(translate("NetSuite Id updated successfully"));
         if(payload.integrationTypeId !== "NETSUITE_DISC_MTHD" && payload.integrationTypeId !== "NETSUITE_PRICE_LEVEL") {
-          await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
+          await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId: integrationTypeId });
         }
       } else {
         throw resp.data;
       }
     } catch (err) {
       logger.error(err);
-      showToast(translate("Failed to update netSuite id"))
+      commonUtil.showToast(translate("Failed to update netSuite id"))
     }
     emitter.emit('dismissLoader');
   };
@@ -112,15 +113,15 @@ export function useNetSuiteComposables(integrationTypeId: any) {
 
     try {
       resp = await NetSuiteService.removeIntegrationMappingValue(integrationMappingId);
-      if(!hasError(resp)) {
-        showToast(translate("NetSuite Id removed successfully"));
-        await store.dispatch("netSuite/fetchIntegrationTypeMappings", { integrationTypeId: integrationTypeId });
+      if(!commonUtil.hasError(resp)) {
+        commonUtil.showToast(translate("NetSuite Id removed successfully"));
+        await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId: integrationTypeId });
       } else {
         throw resp.data;
       }
     } catch (err) {
       logger.error(err);
-      showToast(translate("Failed to remove netSuite id"))
+      commonUtil.showToast(translate("Failed to remove netSuite id"))
     }
     emitter.emit('dismissLoader');
   };

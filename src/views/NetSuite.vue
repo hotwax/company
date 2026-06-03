@@ -107,19 +107,19 @@
 <script setup lang="ts">
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { search } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { useRouter } from "vue-router";
-import { useStore } from "vuex";
+import { useProductStoreStore } from '@/store/productStore';
 import { computed } from "vue";
 import SftpModal from "@/components/SftpModal.vue";
 import ProductStoreModal from "@/components/ProductStoreModal.vue";
 import PriceLevelModal from "@/components/PriceLevelModal.vue";
 import DiscountsModal from "@/components/DiscountsModal.vue";
 
-const store = useStore();
+const productStoreStore = useProductStoreStore();
 const router = useRouter();
 
-const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"])
+const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore)
 
 function openShipmentMethod() {
   router.push("/netsuite/shipment-methods")

@@ -45,11 +45,11 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { businessOutline, closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
-import { translate } from "@/i18n"
+import { translate } from '@common'
 import { defineProps, onMounted, ref } from 'vue';
-import { showToast } from "@/utils";
+import { commonUtil } from '@common';
 
-const inventoryVarianceTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
+const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const props = defineProps(["varianceEnumId", "integrationMapping"]);
@@ -64,12 +64,12 @@ onMounted(async() => {
 // Validates the input data, saves or updates NetSuite facility ID for inventory transfers associated with the integration type ID: NETSUITE_VAR_TRAN.
 async function saveTransferInventoryNetSuiteId() {
   if(!transferLocationId.value) {
-    showToast(translate("Please enter a valid NetSuite ID"));
+    commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
     return false;
   }
 
   if(props.integrationMapping?.mappingValue === transferLocationId.value) {
-    showToast(translate("Please update the NetSuite ID"));
+    commonUtil.showToast(translate("Please update the NetSuite ID"));
     return false;
   }
 

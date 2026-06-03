@@ -25,7 +25,7 @@
           <ion-button color="danger" @click="logout()">{{ translate("Logout") }}</ion-button>
           <!-- Commenting this code as we currently do not have reset password functionality -->
           <!-- <ion-button fill="outline" color="medium">{{ "Reset password") }}</ion-button> -->
-          <ion-button :standalone-hidden="!hasPermission(Actions.APP_PWA_STANDALONE_ACCESS)" fill="outline" @click="goToLaunchpad()">
+          <ion-button :standalone-hidden="!userStore.hasPermission('APP_PWA_STANDALONE_ACCESS')" fill="outline" @click="goToLaunchpad()">
             {{ translate("Go to Launchpad") }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -50,7 +50,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button :disabled="!omsRedirectionInfo.token || !omsRedirectionInfo.url || !hasPermission(Actions.APP_COMMERCE_VIEW)" @click="goToOms(omsRedirectionInfo.token, omsRedirectionInfo.url)" fill="clear">
+          <ion-button :disabled="!userStore.hasPermission('APP_COMMERCE_VIEW')" @click="window.open(commonUtil.getMaargURL(), '_blank')" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -124,35 +124,45 @@
 
 <script setup lang="ts">
 import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { Actions, hasPermission } from '@/authorization'
+
 import { computed, onMounted, ref , defineProps} from "vue";
-import { useStore } from "vuex";
+import { useUserStore } from '@/store/user';
+import { useProductStoreStore } from '@/store/productStore';
+import { useShopifyStore } from '@/store/shopify';
+import { useUtilStore } from '@/store/util';
+import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import { DateTime } from "luxon";
-import { translate } from "@/i18n"
+import { cookieHelper, translate } from '@common'
+import { useRouter } from 'vue-router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
-import { goToOms } from "@hotwax/dxp-components";
+
 import { getCurrentTime } from "../utils"
 import useServiceJob from "@/composables/useServiceJob";
-const store = useStore()
+const userStore = useUserStore();
+const productStoreStore = useProductStoreStore();
+const shopifyStore = useShopifyStore();
+const utilStore = useUtilStore();
+const { isAuthenticated } = useAuth();
+const router = useRouter();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
 const appVersion = ref("")
-const maargInfo = computed(() => store.getters["util/getMaargInfo"])
+const maargInfo = computed(() => utilStore.maargInfo)
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
-const appInfo = (process.env.VUE_APP_VERSION_INFO ? JSON.parse(process.env.VUE_APP_VERSION_INFO) : {}) as any
+const appInfo = (import.meta.env.VITE_APP_VERSION_INFO ? JSON.parse(import.meta.env.VITE_APP_VERSION_INFO) : {}) as any
 
-const userProfile = computed(() => store.getters["user/getUserProfile"])
-const oms = computed(() => store.getters["user/getInstanceUrl"])
-const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
+const userProfile = computed(() => userStore.getUserProfile)
+const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
+
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
-const statusItems = computed(() => store.state.util.statusItems)
-const facilities = computed(() => store.state.util.facilities)
-const fetchStatus = computed(() => store.getters["util/getFetchStatus"])
-const userFetchStatus = computed(() => store.getters["user/getFetchStatus"])
-const productStoreFetchStatus = computed(() => store.getters["productStore/getFetchStatus"])
-const shopifyFetchStatus = computed(() => store.getters["shopify/getFetchStatus"])
+const statusItems = computed(() => utilStore.statusItems)
+const facilities = computed(() => utilStore.facilities)
+const fetchStatus = computed(() => utilStore.fetchStatus)
+const userFetchStatus = computed(() => userStore.fetchStatus)
+const productStoreFetchStatus = computed(() => productStoreStore.fetchStatus)
+const shopifyFetchStatus = computed(() => shopifyStore.fetchStatus)
 
 const oldestSyncTime = computed(() => {
   const timestamps = [
@@ -172,73 +182,73 @@ const harmonizedFetchStatus = computed(() => [
     label: translate("User Profile"),
     status: userFetchStatus.value.profile,
     count: userProfile.value ? 1 : 0,
-    refresh: () => store.dispatch('user/fetchUserProfile', store.state.user.token)
+    refresh: () => userStore.fetchUserProfile()
   },
   {
     label: translate("Permissions"),
     status: userFetchStatus.value.permissions,
-    count: store.state.user.permissions.length,
-    refresh: () => store.dispatch('user/fetchPermissions', { params: { permissionIds: [process.env.VUE_APP_PERMISSION_ID] }, url: omsRedirectionInfo.value.url, token: omsRedirectionInfo.value.token })
+    count: userStore.permissions?.length || 0,
+    refresh: () => userStore.fetchPermissions()
   },
   {
     label: translate("Product Stores"),
     status: productStoreFetchStatus.value.productStores,
-    count: store.state.productStore.productStores.length,
-    refresh: () => store.dispatch('productStore/fetchProductStores')
+    count: productStoreStore.productStores?.length || 0,
+    refresh: () => productStoreStore.fetchProductStores()
   },
   {
     label: translate("Shopify Shops"),
     status: shopifyFetchStatus.value.shops,
-    count: store.state.shopify.shops.length,
-    refresh: () => store.dispatch('shopify/fetchShopifyShops')
+    count: shopifyStore.shops?.length || 0,
+    refresh: () => shopifyStore.fetchShopifyShops()
   },
   {
     label: translate("Statuses"),
     status: fetchStatus.value.statuses,
     count: Object.keys(statusItems.value).length,
-    refresh: () => store.dispatch('util/fetchStatusItems')
+    refresh: () => utilStore.fetchStatusItems()
   },
   {
     label: translate("Facilities"),
     status: fetchStatus.value.facilities,
     count: facilities.value.length,
-    refresh: () => store.dispatch('util/fetchFacilities')
+    refresh: () => utilStore.fetchFacilities()
   },
   {
     label: translate("Organization"),
     status: fetchStatus.value.organizationPartyId,
-    count: store.state.util.organizationPartyId ? 1 : 0,
-    refresh: () => store.dispatch('util/fetchOrganizationPartyId')
+    count: utilStore.organizationPartyId ? 1 : 0,
+    refresh: () => utilStore.fetchOrganizationPartyId()
   },
   {
     label: translate("Facility Groups"),
     status: fetchStatus.value.facilityGroups,
-    count: store.state.util.facilityGroups.length,
-    refresh: () => store.dispatch('util/fetchFacilityGroups')
+    count: utilStore.facilityGroups?.length || 0,
+    refresh: () => utilStore.fetchFacilityGroups()
   },
   {
     label: translate("DBIC Countries"),
     status: fetchStatus.value.dbicCountries,
-    count: store.state.util.dbicCountries.list?.length,
-    refresh: () => store.dispatch('util/fetchDBICCountries')
+    count: utilStore.dbicCountries?.list?.length || 0,
+    refresh: () => utilStore.fetchDBICCountries()
   },
   {
     label: translate("Operating Countries"),
     status: fetchStatus.value.operatingCountries,
-    count: store.state.util.operatingCountries.length,
-    refresh: () => store.dispatch('util/fetchOperatingCountries')
+    count: utilStore.operatingCountries?.length || 0,
+    refresh: () => utilStore.fetchOperatingCountries()
   },
   {
     label: translate("Product Identifiers"),
     status: fetchStatus.value.productIdentifiers,
-    count: store.state.util.productIdentifiers.length,
-    refresh: () => store.dispatch('util/fetchProductIdentifiers')
+    count: utilStore.productIdentifiers?.length || 0,
+    refresh: () => utilStore.fetchProductIdentifiers()
   },
   {
     label: translate("Shipment Method Types"),
     status: fetchStatus.value.shipmentMethodTypes,
-    count: store.state.util.shipmentMethodTypes.length,
-    refresh: () => store.dispatch('util/fetchShipmentMethodTypes')
+    count: utilStore.shipmentMethodTypes?.length || 0,
+    refresh: () => utilStore.fetchShipmentMethodTypes()
   },
   {
     label: translate("Jobs"),
@@ -281,18 +291,18 @@ const browserTimeZone = ref({
 })
 
 function refreshCache() {
-  store.dispatch('user/fetchUserProfile', store.state.user.token);
-  store.dispatch("user/fetchPermissions", { url: store.getters["user/getOmsRedirectionInfo"].url, token: store.getters["user/getOmsRedirectionInfo"].token });
-  store.dispatch('util/fetchStatusItems');
-  store.dispatch('util/fetchFacilities');
-  store.dispatch('util/fetchOrganizationPartyId');
-  store.dispatch('util/fetchFacilityGroups');
-  store.dispatch('util/fetchDBICCountries');
-  store.dispatch('util/fetchOperatingCountries');
-  store.dispatch('util/fetchProductIdentifiers');
-  store.dispatch('util/fetchShipmentMethodTypes');
-  store.dispatch('productStore/fetchProductStores');
-  store.dispatch('shopify/fetchShopifyShops');
+  userStore.fetchUserProfile();
+  userStore.fetchPermissions();
+  utilStore.fetchStatusItems();
+  utilStore.fetchFacilities();
+  utilStore.fetchOrganizationPartyId();
+  utilStore.fetchFacilityGroups();
+  utilStore.fetchDBICCountries();
+  utilStore.fetchOperatingCountries();
+  utilStore.fetchProductIdentifiers();
+  utilStore.fetchShipmentMethodTypes();
+  productStoreStore.fetchProductStores();
+  shopifyStore.fetchShopifyShops();
   fetchJobs();
 }
 
@@ -317,7 +327,7 @@ onMounted(() => {
   // where the initial dispatch failed; the action itself is idempotent.
   // Failures are surfaced via the empty omsVersion label, so swallow the
   // rejection here to avoid an unhandled promise warning.
-  store.dispatch("util/fetchMaargInfo").catch(() => { /* noop */ });
+  utilStore.fetchMaargInfo().catch(() => { /* noop */ });
 })
 
 async function changeTimeZone() {
@@ -328,17 +338,13 @@ async function changeTimeZone() {
 
   const { data } = await timeZoneModal.onDidDismiss();
   if (data && data.timeZoneId) {
-    await store.dispatch("user/setUserTimeZone", {
-      "tzId": data.timeZoneId
-    })
+    await userStore.setUserTimeZone(data.timeZoneId)
   }
 }
 
-function logout() {
-  store.dispatch("user/logout").then(() => {
-    const redirectUrl = window.location.origin + '/login'
-    window.location.href = `${process.env.VUE_APP_LOGIN_URL}?isLoggedOut=true&redirectUrl=${redirectUrl}`
-  })
+async function logout() {
+  await userStore.postLogout();
+  router.push('/login');
 }
 
 function getDateTime(time: any) {
@@ -346,7 +352,7 @@ function getDateTime(time: any) {
 }
 
 function goToLaunchpad() {
-  window.location.href = `${process.env.VUE_APP_LOGIN_URL}`
+  window.location.href = import.meta.env.VITE_LOGIN_URL || '/';
 }
 </script>
 

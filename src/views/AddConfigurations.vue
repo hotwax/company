@@ -53,16 +53,16 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { useRouter } from "vue-router";
 import logger from "@/logger";
 import { ProductStoreService } from "@/services/ProductStoreService";
 import { computed, defineProps, ref } from "vue";
-import { hasError, showToast } from "@/utils";
-import { useStore } from "vuex";
+import { hasError, showToast } from '@common';
+import { useUtilStore } from '@/store/util';
 import emitter from "@/event-bus";
 
-const store = useStore();
+const utilStore = useUtilStore();
 const router = useRouter();
 
 const props = defineProps(["productStoreId"]);
@@ -74,17 +74,17 @@ const formData = ref({
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU"
 })
 
-const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
+const productIdentifiers = computed(() => utilStore.productIdentifiers)
 
 onIonViewWillEnter(() => {
-  store.dispatch("util/fetchProductIdentifiers");
+  utilStore.fetchProductIdentifiers();
   fetchProductStore();
 })
 
 async function fetchProductStore() {
   try {
     const resp = await ProductStoreService.fetchProductStoreDetails(props.productStoreId)
-    if(!hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       productStore.value = resp.data;
     } else {
       throw resp.data;
@@ -106,8 +106,8 @@ async function setupProductStore() {
     }
 
     const resp = await ProductStoreService.updateProductStore(payload);
-    if(!hasError(resp)) {
-      showToast(translate("Product store configurations updated successfully."))
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Product store configurations updated successfully."))
       emitter.emit("dismissLoader");
       router.replace(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
@@ -115,7 +115,7 @@ async function setupProductStore() {
     }
   } catch(error: any) {
     logger.error(error)
-    showToast(translate("Failed to add configurations to the product store."))
+    commonUtil.showToast(translate("Failed to add configurations to the product store."))
   }
 
   emitter.emit("dismissLoader");

@@ -154,15 +154,16 @@ import {
   modalController,
 } from "@ionic/vue";
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
+import { useKlaviyoStore } from '@/store/klaviyo';
+import { translate } from '@common';
 import { KlaviyoService } from "@/services/KlaviyoService";
-import { getResponseErrorMessage, hasError, showToast } from "@/utils";
+import { hasError, showToast } from '@common'
+import { getResponseErrorMessage } from '@/utils';
 import logger from "@/logger";
 
 const props = defineProps<{ connection?: any | null }>();
 
-const store = useStore();
+const klaviyoStore = useKlaviyoStore();
 const isEdit = computed(() => !!props.connection?.commGatewayAuthId);
 
 const form = ref({
@@ -244,8 +245,8 @@ async function save() {
         payload.baseUrl = form.value.baseUrl;
       }
       const updated = await KlaviyoService.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
-      await store.dispatch("klaviyo/fetchConnections");
-      showToast(translate("Klaviyo connection updated"));
+      await klaviyoStore.fetchConnections();
+      commonUtil.showToast(translate("Klaviyo connection updated"));
       closeModal({ dismissed: false, connection: updated });
     } else {
       const id = KlaviyoService.generateAuthId(form.value.description.trim());
@@ -258,14 +259,14 @@ async function save() {
         publicKey: KlaviyoService.ensureKeyPrefix(form.value.privateApiKey.trim()),
       };
       const created: any = await KlaviyoService.createCommGatewayAuth(payload);
-      if (hasError({ data: created })) throw created;
-      await store.dispatch("klaviyo/fetchConnections");
-      showToast(translate("Klaviyo connected"));
+      if (commonUtil.hasError({ data: created })) throw created;
+      await klaviyoStore.fetchConnections();
+      commonUtil.showToast(translate("Klaviyo connected"));
       closeModal({ dismissed: false, connection: created || payload });
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
+    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
   } finally {
     isSaving.value = false;
   }

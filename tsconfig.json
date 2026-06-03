@@ -2,23 +2,20 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
-    "strict": true,
+    "strict": false,
     "jsx": "preserve",
     "importHelpers": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "sourceMap": true,
     "baseUrl": ".",
     "resolveJsonModule": true,
-    "types": [
-      "webpack-env"
-    ],
     "paths": {
-      "@/*": [
-        "src/*"
-      ]
+      "@/*": ["src/*"],
+      "@common/*": ["../accxui/common/*"],
+      "@common": ["../accxui/common/index.ts"]
     },
     "lib": [
       "esnext",
@@ -30,7 +27,8 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "src/**/*.vue"
+    "src/**/*.vue",
+    "vite.config.js"
   ],
   "exclude": [
     "node_modules"

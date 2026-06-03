@@ -1,5 +1,5 @@
 import { reactive, toRefs } from 'vue';
-import api from '@/api';
+import { api } from '@common';
 import logger from '@/logger';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';

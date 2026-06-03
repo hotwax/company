@@ -216,11 +216,12 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { translate } from "@/i18n";
-import { formatDateTime, parseDateTimeValue } from "@/utils";
+import { translate } from '@common';
+import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, ref } from "vue";
-import { useStore } from "vuex";
+import { useShopifyStore } from '@/store/shopify';
+import { useProductStoreStore } from '@/store/productStore';
 import { useRouter } from "vue-router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
 import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
@@ -229,7 +230,8 @@ import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun
 import logger from "@/logger";
 
 const props = defineProps(['id']);
-const store = useStore();
+const shopifyStore = useShopifyStore();
+const productStoreStore = useProductStoreStore();
 const router = useRouter();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
@@ -273,7 +275,7 @@ const legacyProductSyncState = ref({
   legacySystemMessages: [] as any[]
 });
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const effectiveProductSyncMigrationEligibility = computed(() => {
   if (debugPageState.value === "incompatible") {
     return {
@@ -545,7 +547,7 @@ const activityGraphAriaLabel = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   if (!shop.value.shopId) {
-    await store.dispatch("shopify/fetchShopifyShops")
+    await shopifyStore.fetchShopifyShops()
   }
   isLoading.value = false;
   await loadProductsInventorySummary();
@@ -661,7 +663,7 @@ async function openProductStoreModal() {
     componentProps: { shop: shop.value }
   });
   modal.onDidDismiss().then(async () => {
-    await store.dispatch("shopify/fetchShopifyShops");
+    await shopifyStore.fetchShopifyShops();
   });
   modal.present();
 }
