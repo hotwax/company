@@ -129,7 +129,7 @@ import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import DxpAppVersionInfo from "@/components/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { translate, commonUtil } from '@common'
+import { translate, commonUtil, cookieHelper } from '@common'
 import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
@@ -145,7 +145,7 @@ const maargInfo = computed(() => utilStore.maargInfo)
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
 
 const userProfile = computed(() => userStore.getUserProfile)
-const oms = computed(() => userStore.instanceUrl)
+const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
 
 const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
