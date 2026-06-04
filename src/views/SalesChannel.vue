@@ -66,13 +66,13 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
-import { commonUtil } from '@common';
-import { emitter } from '@common';
-import { logger } from '@common';
+;
+;
+;
 
 
 const netSuiteStore = useNetSuiteStore();

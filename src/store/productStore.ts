@@ -1,10 +1,8 @@
 import { defineStore } from 'pinia'
-import { api } from '@common'
-import { commonUtil } from '@common'
-import { logger } from '@common'
+import { api, commonUtil, logger } from '@common'
 import { useUtilStore } from './util'
 
-export const useProductStoreStore = defineStore('productStore', {
+export const useProductStore = defineStore('productStore', {
   state: () => ({
     current: {} as any,
     currentStoreSettings: {} as any,

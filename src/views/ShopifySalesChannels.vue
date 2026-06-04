@@ -66,13 +66,12 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from '@common'
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { commonUtil, hasError } from '@common'
-import { emitter } from '@common';
-import { logger } from '@common';
+;
+;
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);

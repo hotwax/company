@@ -742,11 +742,12 @@ import {
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
-import { translate } from '@common';
+import { commonUtil, hasError, logger, translate } from '@common'
+;
 import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUserStore } from '@/store/user';
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
@@ -771,9 +772,8 @@ import {
   resolveProductSyncExperienceMode,
   selectProductStore
 } from "@/utils/shopifyProductSyncWizard";
-import { commonUtil, hasError } from '@common'
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
-import { logger } from '@common';
+;
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useLiveDashboard } from "@/composables/useLiveDashboard";
@@ -785,7 +785,7 @@ import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/sho
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
 const shopifyProductSyncStore = useShopifyProductSyncStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
 const userStore = useUserStore();
 const {
@@ -1734,7 +1734,7 @@ async function loadWizard() {
   } catch (error: any) {
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
-    commonUtil.commonUtil.showToast(translate("Failed to load product sync"));
+    commonUtil.showToast(translate("Failed to load product sync"));
     stopProgressPolling();
   } finally {
     isLoading.value = false;
@@ -1888,7 +1888,7 @@ async function openStepDetails(step: any) {
       await fetchLogDetails(step.id);
     } catch (error: any) {
       logger.error(error);
-      commonUtil.commonUtil.showToast(translate("Failed to load sync step details."));
+      commonUtil.showToast(translate("Failed to load sync step details."));
     } finally {
       isStepDetailsLoading.value = false;
     }
@@ -1897,7 +1897,7 @@ async function openStepDetails(step: any) {
 
 async function openUnsyncedUpdatesModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    commonUtil.commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
@@ -1921,7 +1921,7 @@ async function openUnsyncedUpdatesModal() {
 
 async function openSpecificProductsSyncModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    commonUtil.commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
@@ -1942,7 +1942,7 @@ async function openSpecificProductsSyncModal() {
 
 async function openResyncEntireCatalogModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    commonUtil.commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
     return;
   }
 
@@ -1963,11 +1963,11 @@ async function handleSelectedProductsForSync(data: any) {
       shopifyProductId: shopifyProductIds
     });
 
-    commonUtil.commonUtil.showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
+    commonUtil.showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
     await loadLatestSystemMessage();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
   } finally {
     isSaving.value = false;
   }
@@ -2025,7 +2025,7 @@ async function downloadRawFile(item: any) {
     const logContentId = item.logContentId;
 
     if (!configId || !logContentId) {
-      commonUtil.commonUtil.showToast(translate("Raw file is not available"));
+      commonUtil.showToast(translate("Raw file is not available"));
       return;
     }
 
@@ -2037,10 +2037,10 @@ async function downloadRawFile(item: any) {
     }
 
     downloadTextFile(fileContent, getRawShopifyFileName(item));
-    commonUtil.commonUtil.showToast(translate("File downloaded successfully"));
+    commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download raw file for ${item.id}`, error);
-    commonUtil.commonUtil.showToast(translate("Failed to download raw file"));
+    commonUtil.showToast(translate("Failed to download raw file"));
   }
 }
 
@@ -2064,7 +2064,7 @@ async function refreshErrorRecords() {
 async function resyncProduct(record: any) {
   const shopifyProductId = record.numericId;
   if (!shopifyProductId) {
-    commonUtil.commonUtil.showToast(translate("Shopify product ID not available for resync."));
+    commonUtil.showToast(translate("Shopify product ID not available for resync."));
     return;
   }
 
@@ -2075,11 +2075,11 @@ async function resyncProduct(record: any) {
       shopifyProductId: [shopifyProductId]
     });
 
-    commonUtil.commonUtil.showToast(getSelectedProductSyncResultMessage(result, 1));
+    commonUtil.showToast(getSelectedProductSyncResultMessage(result, 1));
     await loadLatestSystemMessage();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(getErrorMessage(error, translate("Failed to resync product.")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to resync product.")));
   } finally {
     isSaving.value = false;
   }
@@ -2100,7 +2100,7 @@ async function loadProductStoreContext(productStoreId: string) {
     logger.error(error);
     relatedShops.value = [];
     productStoreContextError.value = getErrorMessage(error, translate("Failed to load product store sync context."));
-    commonUtil.commonUtil.showToast(translate("Failed to load product store sync context."));
+    commonUtil.showToast(translate("Failed to load product store sync context."));
   }
 }
 
@@ -2270,11 +2270,11 @@ async function runSyncJob(job: any) {
 async function executeRunSyncJob(job: any) {
   try {
     await runNow(job.jobName);
-    commonUtil.commonUtil.showToast(translate("Job has been scheduled to run now"));
+    commonUtil.showToast(translate("Job has been scheduled to run now"));
     await refreshAfterRunNow(job);
   } catch (err) {
     logger.error("Failed to run job now", err);
-    commonUtil.commonUtil.showToast(translate("Failed to run job"));
+    commonUtil.showToast(translate("Failed to run job"));
   } finally {
     if (syncJobRunNowJobName.value === job.jobName) {
       syncJobRunNowJobName.value = "";
@@ -2317,7 +2317,7 @@ async function completeSetupAndOpenReturningView() {
 
   const jobName = syncJobObj.value?.jobName || scheduledJobName.value;
   if (!jobName) {
-    commonUtil.commonUtil.showToast(translate("Product sync job not found for this shop."));
+    commonUtil.showToast(translate("Product sync job not found for this shop."));
     return;
   }
 
@@ -2379,11 +2379,11 @@ async function updateSyncJob(payload: any, successMessage: string) {
       await loadPausedJobAuditSummaries();
     }
 
-    commonUtil.commonUtil.showToast(successMessage);
+    commonUtil.showToast(successMessage);
     return true;
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(translate("Failed to update sync job."));
+    commonUtil.showToast(translate("Failed to update sync job."));
     return false;
   }
 }
@@ -2475,7 +2475,7 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
       syncJobAuditHistory.value = [];
       syncJobAuditHistoryError.value = "";
       resetSyncJobDetailsDraft();
-      commonUtil.commonUtil.showToast(translate("Failed to load sync job details."));
+      commonUtil.showToast(translate("Failed to load sync job details."));
     }
   } finally {
     if (!opts.silent) {
@@ -2616,7 +2616,7 @@ async function persistProductStoreSelection() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(getErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to link product store")));
   }
   isSaving.value = false;
   return false;
@@ -2642,7 +2642,7 @@ async function persistIdentifierSelection() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(translate("Failed to update product store settings."));
+    commonUtil.showToast(translate("Failed to update product store settings."));
   }
   isSaving.value = false;
   return false;
@@ -2669,7 +2669,7 @@ async function loadReviewStats() {
       linkedShopCount: relatedShops.value.length,
       loaded: false
     };
-    commonUtil.commonUtil.showToast(translate("Failed to load Shopify product counts."));
+    commonUtil.showToast(translate("Failed to load Shopify product counts."));
     return false;
   } finally {
     isReviewLoading.value = false;
@@ -2719,7 +2719,7 @@ async function openMistakeModal() {
     await loadPreflight();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(translate("Failed to load preflight review."));
+    commonUtil.showToast(translate("Failed to load preflight review."));
   } finally {
     isPreflightLoading.value = false;
   }
@@ -2728,7 +2728,7 @@ async function openMistakeModal() {
 async function openStartSyncModal() {
   try {
     if (!hasShopifyWriteAccess.value) {
-      commonUtil.commonUtil.showToast(shopifyAccessBlockingMessage.value);
+      commonUtil.showToast(shopifyAccessBlockingMessage.value);
       return;
     }
 
@@ -2756,7 +2756,7 @@ async function openStartSyncModal() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(translate("Failed to prepare product sync."));
+    commonUtil.showToast(translate("Failed to prepare product sync."));
   }
 }
 
@@ -2790,12 +2790,12 @@ async function configureSyncJob() {
     });
     
     syncJobConfigured.value = true;
-    commonUtil.commonUtil.showToast(translate("Product sync job scheduled successfully."));
+    commonUtil.showToast(translate("Product sync job scheduled successfully."));
     await fetchJobs(); // Refresh job list
     await checkSyncJobConfig(); // Refresh state
   } catch (error) {
     logger.error("Failed to configure sync job", error);
-    commonUtil.commonUtil.showToast(translate("Failed to schedule job."));
+    commonUtil.showToast(translate("Failed to schedule job."));
   }
   isSyncJobConfiguring.value = false;
 }
@@ -2809,7 +2809,7 @@ function acceptPreflightAndOpenStartSync() {
 
 async function startProductSync() {
   if (!canStartProductSync(draft.value.startConfirmed) || !hasShopifyWriteAccess.value) {
-    commonUtil.commonUtil.showToast(shopifyAccessBlockingMessage.value);
+    commonUtil.showToast(shopifyAccessBlockingMessage.value);
     return;
   }
   isSaving.value = true;
@@ -2828,7 +2828,7 @@ async function startProductSync() {
 
     draft.value.syncStarted = true;
     showStartSyncModal.value = false;
-    commonUtil.commonUtil.showToast(translate("Product sync started."));
+    commonUtil.showToast(translate("Product sync started."));
 
     // Keep the selected shop remote id stable. The sync endpoint returns a system message id,
     // which is useful for progress state but cannot replace the shop-level remote id used by
@@ -2852,7 +2852,7 @@ async function startProductSync() {
       if (loadedProgress) startProgressPolling();
     }
   } catch (err) {
-    commonUtil.commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
+    commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
     logger.error(err);
   } finally {
     isSaving.value = false;
@@ -2907,7 +2907,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   // Cancel is a system-message-level discard with no corresponding job.
   const systemMessageId = currentSyncRun.value?.systemMessageId || progressState.value?.systemMessageId;
   if (!systemMessageId) {
-    commonUtil.commonUtil.showToast(translate("System message is not available."));
+    commonUtil.showToast(translate("System message is not available."));
     return;
   }
 
@@ -2917,10 +2917,10 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   systemMessageActionLoadingId.value = actionId;
   try {
     await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
-    commonUtil.commonUtil.showToast(translate("Product sync run cancelled."));
+    commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
-    commonUtil.commonUtil.showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
+    commonUtil.showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
     logger.error(err);
   } finally {
     systemMessageActionLoadingId.value = "";
@@ -2953,10 +2953,10 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
     if (loadedProgress) startProgressPolling();
 
     modalRef.value = false;
-    commonUtil.commonUtil.showToast(translate(successMsg));
+    commonUtil.showToast(translate(successMsg));
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(translate("Failed to start product sync"));
+    commonUtil.showToast(translate("Failed to start product sync"));
   } finally {
     loadingRef.value = false;
   }
@@ -2964,7 +2964,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
 
 async function startResyncEntireCatalog() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    commonUtil.commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
     return;
   }
   await performSync({ includeAll: true }, "Full catalog re-sync started.", showResyncEntireCatalogModal, isResyncEntireCatalogStarting);
@@ -2977,7 +2977,7 @@ function openReplaySyncModal() {
 
 async function startReplaySync() {
   if (!replaySyncFromDate.value) {
-    commonUtil.commonUtil.showToast(translate("Please select a date to start the sync from."));
+    commonUtil.showToast(translate("Please select a date to start the sync from."));
     return;
   }
   await performSync({ fromDate: formatDateTime(replaySyncFromDate.value, "yyyy-MM-dd HH:mm:ss") }, "Product sync replay started.", showReplaySyncModal, isReplaySyncStarting);
@@ -3557,7 +3557,7 @@ async function loadWebhookSubscriptions() {
 
 async function toggleWebhookSubscription(subscribe: boolean) {
   if (!selectedShopSystemMessageRemoteId.value) {
-    commonUtil.commonUtil.showToast(translate("Shop connection details not fully loaded."));
+    commonUtil.showToast(translate("Shop connection details not fully loaded."));
     return;
   }
   isWebhookLoading.value = true;
@@ -3567,7 +3567,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
       });
-      commonUtil.commonUtil.showToast(translate("Subscribed to bulk operations finish webhook."));
+      commonUtil.showToast(translate("Subscribed to bulk operations finish webhook."));
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
       if (subscription) {
@@ -3575,13 +3575,13 @@ async function toggleWebhookSubscription(subscribe: boolean) {
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });
-        commonUtil.commonUtil.showToast(translate("Unsubscribed from bulk operations finish webhook."));
+        commonUtil.showToast(translate("Unsubscribed from bulk operations finish webhook."));
       }
     }
     await loadWebhookSubscriptions();
   } catch (error) {
     logger.error("Failed to toggle webhook subscription", error);
-    commonUtil.commonUtil.showToast(translate("Failed to update webhook subscription."));
+    commonUtil.showToast(translate("Failed to update webhook subscription."));
   } finally {
     isWebhookLoading.value = false;
   }

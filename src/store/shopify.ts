@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import { api, commonUtil } from '@common'
-import { logger } from '@common'
+import { api, commonUtil, logger } from '@common'
 
 export const useShopifyStore = defineStore('shopify', {
   state: () => ({

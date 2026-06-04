@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
-import { api } from '@common'
-import { commonUtil } from '@common'
-import { logger } from '@common'
-import { useProductStoreStore } from './productStore'
+import { api, commonUtil, logger } from '@common'
+import { useProductStore } from './productStore'
 
 export const useNetSuiteStore = defineStore('netSuite', {
   state: () => ({
@@ -12,6 +10,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
     salesChannel: [] as any[],
     integrationTypeMappings: {} as any,
     facilitiesIdentifications: [] as any[],
+    shopifyShopLocations: [] as any[],
     enumsInEnumGroup: {} as any
   }),
 
@@ -21,6 +20,8 @@ export const useNetSuiteStore = defineStore('netSuite', {
     getPaymentMehtods: (state) => state.paymentMethods,
     getSalesChannel: (state) => state.salesChannel,
     getFacilitiesIdentifications: (state) => state.facilitiesIdentifications,
+    getShopifyShopLocation: (state) => (facilityId: string) =>
+      state.shopifyShopLocations.find((l: any) => l.facilityId === facilityId)?.shopifyLocationId,
     getEnumGroups: (state) => (enumId: any) => state.enumsInEnumGroup[enumId],
     getIntegrationTypeMappings: (state) => (typeId: any) =>
       state.integrationTypeMappings[typeId] ?? []
@@ -140,7 +141,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
     async fetchProductStoreShipmentMethods(params: any = {}) {
       let productStoreShipmentMethods: any[] = [], pageIndex = 0, resp: any
       try {
-        const netSuiteProductStore = useProductStoreStore().getNetSuiteProductStore
+        const netSuiteProductStore = useProductStore().getNetSuiteProductStore
         const productStoreId = params.productStoreId || netSuiteProductStore?.productStoreId
         do {
           resp = await api({
@@ -241,6 +242,19 @@ export const useNetSuiteStore = defineStore('netSuite', {
         method: "put",
         data: payload
       })
+    },
+
+    async fetchShopifyShopLocation() {
+      const productStoreId = useProductStore().current?.productStoreId
+      if (!productStoreId) return
+      try {
+        const resp = await api({ url: 'oms/shopifyShops/locations', method: 'get', params: { pageSize: 200 } })
+        if (!commonUtil.hasError(resp) && Array.isArray(resp.data)) {
+          this.shopifyShopLocations = resp.data
+        }
+      } catch (err) {
+        logger.error('fetchShopifyShopLocation', err)
+      }
     },
 
     clearNetSuiteState() {

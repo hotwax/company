@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import { api } from '@common'
-import { logger } from '@common'
+import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 import { fetchShopSystemMessageRemoteIdInternal, fetchSyncJobConfigInternal } from "@/store/shopifyProductSync";
 import { DateTime } from "luxon";

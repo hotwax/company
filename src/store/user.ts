@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { Settings } from 'luxon'
-import { api, commonUtil, translate } from '@common'
+import { api, commonUtil, logger, translate } from '@common'
 import { useAuth } from '@common/composables/useAuth'
-import { logger } from '@common'
 import { prepareAppPermissions } from '@/authorization'
 
 export const useUserStore = defineStore('user', {
@@ -172,13 +171,13 @@ export const useUserStore = defineStore('user', {
       useAuth().clearAuth()
 
       // Reset all other persisted stores so no data leaks across sessions
-      const { useProductStoreStore } = await import('./productStore')
+      const { useProductStore } = await import('./productStore')
       const { useUtilStore } = await import('./util')
       const { useNetSuiteStore } = await import('./netSuite')
       const { useShopifyStore } = await import('./shopify')
       const { useKlaviyoStore } = await import('./klaviyo')
 
-      useProductStoreStore().clearProductStoreState()
+      useProductStore().clearProductStoreState()
       useUtilStore().clearUtilState()
       useNetSuiteStore().clearNetSuiteState()
       useShopifyStore().clearShopifyState()

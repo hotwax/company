@@ -1,6 +1,7 @@
-import { commonUtil } from '@common';
-import { emitter } from '@common';
-import { logger } from '@common';
+import { commonUtil, emitter, logger } from '@common'
+;
+;
+;
 import { useNetSuiteStore } from '@/store/netSuite';
 import { onMounted } from "vue";
 import { alertController } from '@ionic/vue';

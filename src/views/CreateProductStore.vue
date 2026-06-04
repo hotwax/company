@@ -55,18 +55,18 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
-import { translate } from '@common';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+;
 import router from "@/router";
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { commonUtil, hasError } from '@common'
 import { generateInternalId } from '@/utils';
-import { logger } from '@common';
-import { emitter } from '@common';
+;
+;
 
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
 
 const formData = ref({
@@ -93,7 +93,7 @@ onIonViewWillEnter(async () => {
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
-    commonUtil.commonUtil.showToast(translate('Please fill all the required fields'))
+    commonUtil.showToast(translate('Please fill all the required fields'))
     return;
   }
 
@@ -102,7 +102,7 @@ async function manageConfigurations() {
   }
 
   if (formData.value.productStoreId.length > 20) {
-    commonUtil.commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
+    commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
     return
   }
 
@@ -146,14 +146,14 @@ async function manageConfigurations() {
         await productStoreStore.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
-      commonUtil.commonUtil.showToast(translate("Product store created successfully."))
+      commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
       router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }
   } catch(error: any) {
-    commonUtil.commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
+    commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
 

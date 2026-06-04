@@ -83,8 +83,8 @@ import { computed, onBeforeMount, ref ,defineProps} from "vue";
 import { close, save } from "ionicons/icons";
 import { useUserStore } from '@/store/user';
 import { getCurrentTime } from '@/utils'
-import { translate } from '@common'
-import { logger } from '@common';
+import { logger, translate } from '@common'
+;
 
 const userStore = useUserStore();
 let queryString = ref("")

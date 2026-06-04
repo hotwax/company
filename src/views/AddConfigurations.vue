@@ -53,17 +53,18 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { translate, api } from '@common';
+import { api, commonUtil, emitter, hasError, logger, translate } from '@common'
+;
 import router from "@/router";
-import { logger } from '@common';
-import { useProductStoreStore } from '@/store/productStore';
+;
+import { useProductStore } from '@/store/productStore';
 import { computed, defineProps, ref } from "vue";
-import { commonUtil, hasError } from '@common';
+;
 import { useUtilStore } from '@/store/util';
-import { emitter } from '@common';
+;
 
 const utilStore = useUtilStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 
 const props = defineProps(["productStoreId"]);
 
@@ -110,7 +111,7 @@ async function setupProductStore() {
 
     const resp = await productStoreStore.updateProductStore(payload);
     if(!commonUtil.hasError(resp)) {
-      commonUtil.commonUtil.showToast(translate("Product store configurations updated successfully."))
+      commonUtil.showToast(translate("Product store configurations updated successfully."))
       emitter.emit("dismissLoader");
       router.replace(`/product-store-details/${productStore.value.productStoreId}`);
     } else {
@@ -118,7 +119,7 @@ async function setupProductStore() {
     }
   } catch(error: any) {
     logger.error(error)
-    commonUtil.commonUtil.showToast(translate("Failed to add configurations to the product store."))
+    commonUtil.showToast(translate("Failed to add configurations to the product store."))
   }
 
   emitter.emit("dismissLoader");

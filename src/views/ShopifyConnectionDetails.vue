@@ -216,22 +216,23 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { translate } from '@common';
+import { logger, translate } from '@common'
+;
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, ref } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
-import { logger } from '@common';
+;
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const shopifyProductSyncStore = useShopifyProductSyncStore();
 const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);

@@ -40,17 +40,16 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline } from 'ionicons/icons'
-import { translate } from '@common'
-import { useProductStoreStore } from '@/store/productStore';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, onMounted, ref } from "vue";
-import { commonUtil, hasError } from '@common'
 import { getResponseErrorMessage } from '@/utils';
-import { emitter } from '@common';
-import { logger } from '@common';
+;
+;
 
 const props = defineProps(['shop']);
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
 
 const productStores = computed(() => productStoreStore.productStores)

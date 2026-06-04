@@ -49,10 +49,10 @@ import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate, commonUtil } from '@common';
 import router from "@/router";
 import { computed } from "vue";
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useAuth } from '@common/composables/useAuth'
 
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const { isAuthenticated } = useAuth();
 
 const productStores = computed(() => productStoreStore.productStores)

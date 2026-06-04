@@ -156,10 +156,10 @@ import { closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
-import { translate } from '@common';
-import { commonUtil } from '@common'
+import { commonUtil, logger, translate } from '@common'
+;
 import { getResponseErrorMessage } from '@/utils';
-import { logger } from '@common';
+;
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const klaviyoStore = useKlaviyoStore();
@@ -231,11 +231,11 @@ async function save() {
     }
     await klaviyoStore.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
     await klaviyoStore.fetchUnigateConfig();
-    commonUtil.commonUtil.showToast(translate("Unigate tenant updated"));
+    commonUtil.showToast(translate("Unigate tenant updated"));
     closeModal();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
+    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
   } finally {
     isSaving.value = false;
   }

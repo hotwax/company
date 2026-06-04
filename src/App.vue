@@ -11,9 +11,8 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/Menu.vue'
-import { emitter } from '@common'
+import { emitter, translate } from '@common'
 import { Settings } from 'luxon'
-import { translate } from '@common'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()

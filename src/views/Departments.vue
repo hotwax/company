@@ -67,14 +67,14 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
-import { commonUtil } from '@common';
+;
 import { DateTime } from "luxon";
-import { emitter } from '@common';
-import { logger } from '@common';
+;
+;
 
 const utilStore = useUtilStore();
 const netSuiteStore = useNetSuiteStore();

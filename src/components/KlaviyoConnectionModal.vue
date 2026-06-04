@@ -156,10 +156,10 @@ import {
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
-import { translate } from '@common';
-import { commonUtil, hasError } from '@common'
+import { commonUtil, hasError, logger, translate } from '@common'
+;
 import { getResponseErrorMessage } from '@/utils';
-import { logger } from '@common';
+;
 
 const props = defineProps<{ connection?: any | null }>();
 
@@ -246,7 +246,7 @@ async function save() {
       }
       const updated = await klaviyoStore.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
       await klaviyoStore.fetchConnections();
-      commonUtil.commonUtil.showToast(translate("Klaviyo connection updated"));
+      commonUtil.showToast(translate("Klaviyo connection updated"));
       closeModal({ dismissed: false, connection: updated });
     } else {
       const id = generateAuthId(form.value.description.trim());
@@ -261,12 +261,12 @@ async function save() {
       const created: any = await klaviyoStore.createCommGatewayAuth(payload);
       if (commonUtil.hasError({ data: created })) throw created;
       await klaviyoStore.fetchConnections();
-      commonUtil.commonUtil.showToast(translate("Klaviyo connected"));
+      commonUtil.showToast(translate("Klaviyo connected"));
       closeModal({ dismissed: false, connection: created || payload });
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
+    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
   } finally {
     isSaving.value = false;
   }

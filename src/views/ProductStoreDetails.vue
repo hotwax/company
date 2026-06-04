@@ -353,17 +353,18 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { addCircleOutline, closeCircleOutline, compassOutline, mapOutline, wineOutline } from "ionicons/icons";
-import { translate } from '@common';
-import { useProductStoreStore } from '@/store/productStore';
+import { commonUtil, emitter, logger, translate } from '@common'
+;
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
-import { commonUtil } from '@common';
-import { logger } from '@common';
-import { emitter } from '@common';
+;
+;
+;
 import { DateTime } from "luxon";
 
 const props = defineProps(["productStoreId"]);
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
 
 const autoCancellationActive = ref(false);

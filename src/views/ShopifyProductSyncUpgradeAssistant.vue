@@ -369,7 +369,8 @@ import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ion
 import { computed, defineProps, ref } from "vue";
 import router from "@/router";
 import { useShopifyStore } from '@/store/shopify';
-import { translate } from '@common';
+import { commonUtil, logger, translate } from '@common'
+;
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
 import {
   type ProductSyncMigrationAssistantState,
@@ -380,8 +381,8 @@ import {
   useShopifyProductSyncMigrationStore
 } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
-import { commonUtil } from '@common';
-import { logger } from '@common';
+;
+;
 
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();

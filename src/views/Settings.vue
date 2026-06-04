@@ -121,7 +121,7 @@ import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSu
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
@@ -136,7 +136,7 @@ import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons
 import { getCurrentTime } from "../utils"
 import useServiceJob from "@/composables/useServiceJob";
 const userStore = useUserStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();

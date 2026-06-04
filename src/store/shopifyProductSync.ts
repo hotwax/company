@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import { api } from '@common'
-import { logger } from '@common'
+import { api, logger } from '@common'
 import { parseDateTimeValue } from "@/utils";
 
 export interface ShopifyProductSyncSetupState {
