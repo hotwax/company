@@ -70,8 +70,6 @@ import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-;
-;
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);

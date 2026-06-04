@@ -54,9 +54,6 @@ import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, Ion
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
-;
-;
-;
 
 const netSuiteStore = useNetSuiteStore();
 

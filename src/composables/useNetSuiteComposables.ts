@@ -1,7 +1,4 @@
 import { commonUtil, emitter, logger } from '@common'
-;
-;
-;
 import { useNetSuiteStore } from '@/store/netSuite';
 import { onMounted } from "vue";
 import { alertController } from '@ionic/vue';

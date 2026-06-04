@@ -47,7 +47,6 @@ import { businessOutline, closeOutline, informationCircleOutline, openOutline, s
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 import { commonUtil, translate } from '@common'
 import { defineProps, onMounted, ref } from 'vue';
-;
 
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);

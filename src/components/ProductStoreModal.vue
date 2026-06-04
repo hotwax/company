@@ -45,11 +45,8 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
-;
 import { useProductStore } from '@/store/productStore';
 import { computed, onMounted, ref } from "vue";
-;
-;
 
 const productStoreStore = useProductStore();
 

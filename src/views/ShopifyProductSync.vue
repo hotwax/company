@@ -743,7 +743,6 @@ import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
 import { commonUtil, hasError, logger, translate } from '@common'
-;
 import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUserStore } from '@/store/user';
@@ -773,7 +772,6 @@ import {
   selectProductStore
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
-;
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useLiveDashboard } from "@/composables/useLiveDashboard";

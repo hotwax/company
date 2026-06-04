@@ -247,10 +247,7 @@ import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common'
-;
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
-import { getResponseErrorMessage } from '@/utils';
-;
 import {
   getDefaultKlaviyoProductStoreId,
   getKlaviyoEventLabel,
@@ -397,7 +394,7 @@ async function commitSubjectIfChanged(evt: any) {
     delete subjectDrafts.value[evt.emailType];
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update subject")));
+    commonUtil.showToast(translate("Failed to update subject"));
   } finally {
     busyEvent.value = null;
   }
@@ -425,7 +422,7 @@ async function toggleEvent(evt: any, enabled: boolean) {
     await klaviyoStore.fetchAllEmailSettings();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update email event")));
+    commonUtil.showToast(translate("Failed to update email event"));
   } finally {
     busyEvent.value = null;
   }
@@ -465,7 +462,7 @@ async function performDelete() {
     router.replace("/klaviyo");
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to disconnect Klaviyo")));
+    commonUtil.showToast(translate("Failed to disconnect Klaviyo"));
   } finally {
     isDeleting.value = false;
   }

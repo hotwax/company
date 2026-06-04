@@ -354,13 +354,9 @@
 import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { addCircleOutline, closeCircleOutline, compassOutline, mapOutline, wineOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common'
-;
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
-;
-;
-;
 import { DateTime } from "luxon";
 
 const props = defineProps(["productStoreId"]);

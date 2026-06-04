@@ -70,9 +70,6 @@ import { commonUtil, emitter, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
-;
-;
-;
 
 
 const netSuiteStore = useNetSuiteStore();

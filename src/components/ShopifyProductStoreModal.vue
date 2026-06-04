@@ -44,9 +44,6 @@ import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, onMounted, ref } from "vue";
-import { getResponseErrorMessage } from '@/utils';
-;
-;
 
 const props = defineProps(['shop']);
 const productStoreStore = useProductStore();
@@ -82,7 +79,7 @@ async function updateProductStoreMapping() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(translate("Failed to link product store"));
   }
   emitter.emit("dismissLoader");
 }

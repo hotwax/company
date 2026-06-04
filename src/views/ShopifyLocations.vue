@@ -117,8 +117,6 @@ import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-;
-;
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);

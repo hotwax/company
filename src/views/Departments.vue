@@ -71,10 +71,7 @@ import { commonUtil, emitter, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
-;
 import { DateTime } from "luxon";
-;
-;
 
 const utilStore = useUtilStore();
 const netSuiteStore = useNetSuiteStore();

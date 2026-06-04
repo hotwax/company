@@ -157,9 +157,6 @@ import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
 import { commonUtil, hasError, logger, translate } from '@common'
-;
-import { getResponseErrorMessage } from '@/utils';
-;
 
 const props = defineProps<{ connection?: any | null }>();
 
@@ -266,7 +263,7 @@ async function save() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
+    commonUtil.showToast(translate("Failed to save Klaviyo connection"));
   } finally {
     isSaving.value = false;
   }

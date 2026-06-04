@@ -217,7 +217,6 @@
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { logger, translate } from '@common'
-;
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, ref } from "vue";
@@ -228,7 +227,6 @@ import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue"
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
-;
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();

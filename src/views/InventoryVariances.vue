@@ -64,9 +64,6 @@ import { IonBackButton, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, 
 import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import TransferInventoryModal from '@/components/TransferInventoryModal.vue';
 import { commonUtil, emitter, logger, translate } from '@common'
-;
-;
-;
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from 'vue';
 import { useUtilStore } from '@/store/util';

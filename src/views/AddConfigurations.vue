@@ -54,14 +54,10 @@
 import { IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, hasError, logger, translate } from '@common'
-;
 import router from "@/router";
-;
 import { useProductStore } from '@/store/productStore';
 import { computed, defineProps, ref } from "vue";
-;
 import { useUtilStore } from '@/store/util';
-;
 
 const utilStore = useUtilStore();
 const productStoreStore = useProductStore();

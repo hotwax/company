@@ -84,7 +84,6 @@ import { close, save } from "ionicons/icons";
 import { useUserStore } from '@/store/user';
 import { getCurrentTime } from '@/utils'
 import { logger, translate } from '@common'
-;
 
 const userStore = useUserStore();
 let queryString = ref("")

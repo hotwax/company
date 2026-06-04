@@ -156,9 +156,7 @@ import { closeOutline, refreshOutline } from "ionicons/icons";
 import { computed, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { commonUtil, logger, translate } from '@common'
-;
 import { formatDateTime } from '@/utils';
-;
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import type { ShopifyProductSyncProductSearchResult } from "@/store/shopifyProductSync";
 

@@ -56,15 +56,12 @@
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
-;
 import router from "@/router";
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
 import { generateInternalId } from '@/utils';
-;
-;
 
 const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
