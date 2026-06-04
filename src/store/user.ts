@@ -45,7 +45,7 @@ export const useUserStore = defineStore('user', {
           method: 'get',
           baseURL: commonUtil.getMaargURL()
         })
-        if (commonUtil.hasError(resp)) throw resp.data._ERROR_MESSAGE_
+        if (commonUtil.hasError(resp)) throw resp
         this.current = resp.data
         useAuth().updateUserId(this.current.userId)
         if (this.current.timeZone) {
