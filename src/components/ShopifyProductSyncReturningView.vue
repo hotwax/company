@@ -494,6 +494,7 @@ import {
   IonNote,
   IonSearchbar,
   IonSkeletonText,
+  IonProgressBar,
   IonSpinner
 } from "@ionic/vue";
 import { translate } from '@common';

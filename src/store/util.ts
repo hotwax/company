@@ -11,6 +11,7 @@ export const useUtilStore = defineStore('util', {
     operatingCountries: [] as any[],
     dbicCountries: { list: [] as any[], total: 0 },
     productIdentifiers: [] as any[],
+    productTypes: [] as any[],
     shipmentMethodTypes: [] as any[],
     emailTypes: [] as any[],
     organizationPartyId: '' as string,
@@ -25,6 +26,7 @@ export const useUtilStore = defineStore('util', {
       dbicCountries: 'none',
       operatingCountries: 'none',
       productIdentifiers: 'none',
+      productTypes: 'none',
       shipmentMethodTypes: 'none',
       emailTypes: 'none',
       maargInfo: 'none',
@@ -39,6 +41,7 @@ export const useUtilStore = defineStore('util', {
     getOperatingCountries: (state) => state.operatingCountries,
     getDBICCountriesCount: (state) => state.dbicCountries.total,
     getProductIdentifiers: (state) => state.productIdentifiers,
+    getProductTypes: (state) => state.productTypes,
     getShipmentMethodTypes: (state) => state.shipmentMethodTypes,
     getEmailTypes: (state) => state.emailTypes,
     getOrganizationPartyId: (state) => state.organizationPartyId,
@@ -284,6 +287,28 @@ export const useUtilStore = defineStore('util', {
         logger.error('addEnumToEnumGroup', error)
         return Promise.reject(error)
       }
+    },
+
+    async fetchProductTypes() {
+      this.fetchStatus = { ...this.fetchStatus, productTypes: 'pending' }
+      let productTypes: any[] = [], pageIndex = 0, resp: any
+
+      try {
+        do {
+          resp = await api({ url: 'oms/productTypes', method: 'get', params: { pageSize: 200, pageIndex } })
+          if (!commonUtil.hasError(resp) && resp.data?.length) {
+            productTypes = productTypes.concat(resp.data)
+            pageIndex++
+          } else {
+            resp = null
+          }
+        } while (resp)
+        this.fetchStatus = { ...this.fetchStatus, productTypes: 'success', lastFetched: Date.now() }
+      } catch (error: any) {
+        logger.error('fetchProductTypes', error)
+        this.fetchStatus = { ...this.fetchStatus, productTypes: 'error' }
+      }
+      this.productTypes = productTypes
     },
 
     async fetchCurrencies(payload: any) {

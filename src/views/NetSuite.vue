@@ -53,7 +53,7 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Products and Inventory") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
           <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
@@ -67,22 +67,22 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Orders and fulfillment") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
             <ion-label>{{ translate("Shipping methods") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
             <ion-label>{{ translate("Payment method") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
             <ion-label>{{ translate("Price level") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
             <ion-label>{{ translate("Discounts") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
             <ion-label>{{ translate("Sales Channel") }}</ion-label>
           </ion-item>
         </section>

@@ -716,6 +716,8 @@ import {
   IonHeader,
   IonDatetime,
   IonDatetimeButton,
+  IonPopover,
+  IonProgressBar,
   IonIcon,
   IonInput,
   IonItem,
