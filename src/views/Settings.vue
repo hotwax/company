@@ -50,7 +50,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button :disabled="!userStore.hasPermission('APP_COMMERCE_VIEW')" @click="window.open(commonUtil.getMaargURL(), '_blank')" fill="clear">
+          <ion-button :disabled="!userStore.hasPermission('APP_COMMERCE_VIEW')" @click="openOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -129,7 +129,7 @@ import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
 import DxpAppVersionInfo from "@/components/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { translate } from '@common'
+import { translate, commonUtil } from '@common'
 import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
@@ -146,6 +146,8 @@ const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componen
 
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => userStore.instanceUrl)
+
+const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)

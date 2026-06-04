@@ -224,14 +224,16 @@ import { useShopifyStore } from '@/store/shopify';
 import { useProductStoreStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import { ShopifyProductSyncMigrationService } from "@/services/ShopifyProductSyncMigrationService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
 import { logger } from '@common';
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
 const productStoreStore = useProductStoreStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
 const PRODUCT_SYNC_ACTIVITY_HOUR_COUNT = 24;
@@ -593,10 +595,10 @@ async function loadProductsInventorySummary() {
   }
 
   const [eligibilityResult, accessStateResult, legacyTeardownStateResult, systemMessageRemoteIdResult] = await Promise.allSettled([
-    ShopifyProductSyncMigrationService.fetchEligibility(),
-    ShopifyProductSyncService.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncMigrationService.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncService.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
+    shopifyProductSyncMigrationStore.fetchEligibility(),
+    shopifyProductSyncStore.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncStore.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -627,7 +629,7 @@ async function loadProductsInventorySummary() {
   }
 
   try {
-    productSyncSummary.value = await ShopifyProductSyncService.fetchDashboardSummary({
+    productSyncSummary.value = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId,
       shop: shop.value

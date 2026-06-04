@@ -504,7 +504,7 @@ import AnimatedNumber from "@/components/AnimatedNumber.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
 
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
-import type { ShopifyProductSyncRun } from "@/services/ShopifyProductSyncService";
+import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";
 import type { ProductSyncFsmState } from "@/utils/shopifyProductSyncFsm";
 
 const props = defineProps<{

@@ -751,7 +751,8 @@ import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncRetu
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {
   canAdvanceProductSyncStep,
 
@@ -781,6 +782,7 @@ import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/sho
 
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
 const productStoreStore = useProductStoreStore();
 const utilStore = useUtilStore();
 const userStore = useUserStore();
@@ -1677,7 +1679,7 @@ async function loadWizard() {
     }
     await loadSelectedShopSystemMessageRemoteId();
 
-    setupState.value = await ShopifyProductSyncService.fetchSetupState({
+    setupState.value = await shopifyProductSyncStore.fetchSetupState({
       shopId: props.id,
       shop: shop.value,
       productStore: selectedProductStore.value
@@ -1747,7 +1749,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
   latestPauseAuditByJobName.value = {};
   try {
-    const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+    const summary = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       shop: shop.value
@@ -1868,7 +1870,7 @@ async function loadBulkOperationPollJobLatestRun() {
 }
 
 async function loadSelectedShopSystemMessageRemoteId() {
-  selectedShopSystemMessageRemoteId.value = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+  selectedShopSystemMessageRemoteId.value = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
     shopId: props.id,
     shop: shop.value
   });
@@ -1954,7 +1956,7 @@ async function handleSelectedProductsForSync(data: any) {
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: shopifyProductIds
     });
@@ -1992,7 +1994,7 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+  const summary = await shopifyProductSyncStore.fetchDashboardSummary({
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     shop: shop.value
@@ -2066,7 +2068,7 @@ async function resyncProduct(record: any) {
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
     });
@@ -2084,7 +2086,7 @@ async function resyncProduct(record: any) {
 async function loadProductStoreContext(productStoreId: string) {
   try {
     assertShopifyShopsLoaded();
-    const context = await ShopifyProductSyncService.fetchProductStoreContext({
+    const context = await shopifyProductSyncStore.fetchProductStoreContext({
       shopId: props.id,
       productStoreId,
       shops: shopifyStore.shops || []
@@ -2647,7 +2649,7 @@ async function persistIdentifierSelection() {
 async function loadReviewStats() {
   isReviewLoading.value = true;
   try {
-    reviewStats.value = await ShopifyProductSyncService.fetchReviewStats({
+    reviewStats.value = await shopifyProductSyncStore.fetchReviewStats({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId,
       linkedShopCount: relatedShops.value.length,
@@ -2686,7 +2688,7 @@ function toggleStartConfirmation() {
 }
 
 async function loadPreflight() {
-  const rawItems = await ShopifyProductSyncService.fetchPreflight({
+  const rawItems = await shopifyProductSyncStore.fetchPreflight({
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     productStoreId: draft.value.selectedProductStoreId,
     productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2760,7 +2762,7 @@ async function checkSyncJobConfig() {
   isSyncJobConfigLoaded.value = false;
   try {
     const shopId = props.id; 
-    const result = await ShopifyProductSyncService.fetchSyncJobConfig({ shopId });
+    const result = await shopifyProductSyncStore.fetchSyncJobConfig({ shopId });
     
     syncJobConfigured.value = result.isConfigured;
     if (result.isConfigured) {
@@ -2779,7 +2781,7 @@ async function configureSyncJob() {
     const shopId = shop.value?.shopId;
     if (!shopId) throw new Error("Shop ID not available");
 
-    await ShopifyProductSyncService.configureSyncJob({
+    await shopifyProductSyncStore.configureSyncJob({
       shopId,
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2814,7 +2816,7 @@ async function startProductSync() {
       await loadSelectedShopSystemMessageRemoteId();
     }
 
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({ 
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({ 
       shopId: props.id,
       includeAll: true 
     });
@@ -2912,7 +2914,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    await ShopifyProductSyncService.cancelSystemMessage(systemMessageId);
+    await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
     commonUtil.commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
@@ -2928,7 +2930,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
   try {
     currentSyncRun.value = {} as any;
     const job = syncJobObj.value;
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({
       shopId: props.id,
       ...params
     });
@@ -2985,7 +2987,7 @@ async function loadProgress() {
   let loadedRunState = false;
   try {
     const [syncRunStateResult, sendJobResult, pollJobResult, sendJobRunsResult, pollJobRunsResult] = await Promise.allSettled([
-      ShopifyProductSyncService.fetchProductUpdateSyncRunState({
+      shopifyProductSyncStore.fetchProductUpdateSyncRunState({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         shopId: props.id,
         systemMessageId: progressState.value?.systemMessageId
@@ -3538,7 +3540,7 @@ async function loadWebhookSubscriptions() {
   if (!selectedShopSystemMessageRemoteId.value) return;
   isWebhookLoading.value = true;
   try {
-    webhookSubscriptions.value = await ShopifyProductSyncService.fetchWebhookSubscriptions({
+    webhookSubscriptions.value = await shopifyProductSyncStore.fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       topic: "BULK_OPERATIONS_FINISH"
     });
@@ -3559,7 +3561,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
   isWebhookLoading.value = true;
   try {
     if (subscribe) {
-      await ShopifyProductSyncService.subscribeWebhook({
+      await shopifyProductSyncStore.subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
       });
@@ -3567,7 +3569,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
       if (subscription) {
-        await ShopifyProductSyncService.unsubscribeWebhook({
+        await shopifyProductSyncStore.unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });

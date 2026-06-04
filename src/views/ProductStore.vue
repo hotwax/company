@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
-import { translate } from '@common';
+import { translate, commonUtil } from '@common';
 import router from "@/router";
 import { computed } from "vue";
 import { useProductStoreStore } from '@/store/productStore';
@@ -71,8 +71,12 @@ function createStore() {
 }
 
 function viewFacilities(productStoreId: string) {
-  const { token } = useAuth();
-  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?productStoreId=${productStoreId}`
+  // Pass OMS + auth context so the external Facilities app lands in the right
+  // authenticated instance (parity with the pre-migration deep link).
+  const oms = commonUtil.getMaargURL()
+  const token = commonUtil.getToken()
+  const expirationTime = commonUtil.getTokenExpiration()
+  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${oms}&token=${token}&expirationTime=${expirationTime}&productStoreId=${productStoreId}`
   window.open(facilitiesListUrl, "_blank")
 }
 </script>

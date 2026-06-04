@@ -270,7 +270,7 @@ async function searchProducts(after?: string) {
   isLoading.value = true;
   const requestId = ++productSearchRequestId;
   try {
-    const response = await ShopifyProductSyncService.searchShopifyProducts({
+    const response = await shopifyProductSyncStore.searchShopifyProducts({
       systemMessageRemoteId: props.systemMessageRemoteId,
       queryString: queryString.value.trim(),
       pageSize: 20,

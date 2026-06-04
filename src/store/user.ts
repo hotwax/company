@@ -3,6 +3,7 @@ import { Settings } from 'luxon'
 import { api, commonUtil, translate } from '@common'
 import { useAuth } from '@common/composables/useAuth'
 import { logger } from '@common'
+import { prepareAppPermissions } from '@/authorization'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -92,7 +93,9 @@ export const useUserStore = defineStore('user', {
           return Promise.reject(new Error(msg))
         }
 
-        this.permissions = serverPermissions
+        // Map raw server permission IDs to app-action permissions (e.g. COMMERCEUSER_VIEW -> APP_COMMERCE_VIEW)
+        // so hasPermission('APP_COMMERCE_VIEW') checks resolve correctly.
+        this.permissions = prepareAppPermissions(serverPermissions)
         this.fetchStatus.permissions = 'success'
       } catch (error: any) {
         this.fetchStatus.permissions = 'error'
@@ -106,7 +109,7 @@ export const useUserStore = defineStore('user', {
         const resp: any = await api({
           url: 'admin/user/profile',
           method: 'POST',
-          data: { userId: this.current.userId, tzId }
+          data: { userId: this.current.userId, timeZone: tzId }
         })
         if (resp?.status === 200) {
           this.current.timeZone = tzId
@@ -166,6 +169,20 @@ export const useUserStore = defineStore('user', {
     // Called by @common's initialiseConfig after logout
     async postLogout() {
       this.$reset()
+      useAuth().clearAuth()
+
+      // Reset all other persisted stores so no data leaks across sessions
+      const { useProductStoreStore } = await import('./productStore')
+      const { useUtilStore } = await import('./util')
+      const { useNetSuiteStore } = await import('./netSuite')
+      const { useShopifyStore } = await import('./shopify')
+      const { useKlaviyoStore } = await import('./klaviyo')
+
+      useProductStoreStore().clearProductStoreState()
+      useUtilStore().clearUtilState()
+      useNetSuiteStore().clearNetSuiteState()
+      useShopifyStore().clearShopifyState()
+      useKlaviyoStore().clear()
     }
   },
 

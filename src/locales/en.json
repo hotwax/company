@@ -845,5 +845,6 @@
   "Failed to disconnect Klaviyo": "Failed to disconnect Klaviyo",
   "Processing": "Processing",
   "{count} locations from Shopify": "{count} locations from Shopify",
-  "{count} locations imported": "{count} locations imported"
+  "{count} locations imported": "{count} locations imported",
+  "Currency": "Currency"
 }
