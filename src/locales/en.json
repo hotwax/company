@@ -914,5 +914,10 @@
   "Product store sync context is unavailable.": "Product store sync context is unavailable.",
   "Map Shopify product types to Hotwax to ensure products are categorized correctly.": "Map Shopify product types to Hotwax to ensure products are categorized correctly.",
   "Map product types": "Map product types",
-  "Map Shopify product types to Hotwax...": "Map Shopify product types to Hotwax..."
+  "Map Shopify product types to Hotwax...": "Map Shopify product types to Hotwax...",
+  "Local OMS": "Local OMS",
+  "Login failed": "Login failed",
+  "Back to Login": "Back to Login",
+  "Something went wrong while login. Please contact administrator.": "Something went wrong while login. Please contact administrator.",
+  "Please contact the administrator.": "Please contact the administrator."
 }
