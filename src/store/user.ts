@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { Settings } from 'luxon'
 import { api, commonUtil, logger, translate } from '@common'
 import { useAuth } from '@common/composables/useAuth'
-import { prepareAppPermissions } from '@/authorization'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -92,9 +91,7 @@ export const useUserStore = defineStore('user', {
           return Promise.reject(new Error(msg))
         }
 
-        // Map raw server permission IDs to app-action permissions (e.g. COMMERCEUSER_VIEW -> APP_COMMERCE_VIEW)
-        // so hasPermission('APP_COMMERCE_VIEW') checks resolve correctly.
-        this.permissions = prepareAppPermissions(serverPermissions)
+        this.permissions = serverPermissions
         this.fetchStatus.permissions = 'success'
       } catch (error: any) {
         this.fetchStatus.permissions = 'error'

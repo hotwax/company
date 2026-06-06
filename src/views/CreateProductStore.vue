@@ -77,7 +77,7 @@ const storeId = ref({}) as any;
 const currencies = computed(() => utilStore.currencies)
 
 const productStores = computed(() => productStoreStore.productStores)
-const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
+const dbicCountriesCount = computed(() => utilStore.getDBICCountriesCount)
 const company = computed(() => productStoreStore.company)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
 

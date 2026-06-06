@@ -53,6 +53,9 @@ function resolveCommonDeps() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    port: 8100
+  },
   plugins: [
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
