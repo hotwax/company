@@ -39,6 +39,12 @@
                 <p>{{ translate("Product Store") }}</p>
               </ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openCredentialsModal()">
+              <ion-label>
+                {{ translate("API credentials") }}
+                <p>{{ translate("Access token and secrets") }}</p>
+              </ion-label>
+            </ion-item>
           </section>
         </div>
 
@@ -224,6 +230,7 @@ import { useShopifyStore } from '@/store/shopify';
 import { useProductStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
+import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
@@ -655,6 +662,14 @@ async function loadTrackProgressDetails() {
   } catch (error) {
     logger.warn("Failed to load track progress details in background", error);
   }
+}
+
+async function openCredentialsModal() {
+  const modal = await modalController.create({
+    component: EditShopifyCredentialsModal,
+    componentProps: { shop: shop.value }
+  })
+  await modal.present()
 }
 
 async function openProductStoreModal() {

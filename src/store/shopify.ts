@@ -186,6 +186,78 @@ export const useShopifyStore = defineStore('shopify', {
       })
     },
 
+    async createShopifyConnection(payload: {
+      shopId: string
+      shopifyShopId: string
+      myshopifyDomain: string
+      shopAccessToken: string
+      clientId: string
+      clientSecret: string
+      name?: string
+      productStoreId?: string
+    }) {
+      // Create SystemMessageRemote with predictable ID so it links back to the shop
+      const remoteResp = await api({
+        url: 'oms/systemMessageRemotes',
+        method: 'post',
+        data: {
+          systemMessageRemoteId: `${payload.shopId}_REMOTE`,
+          sendUrl: payload.myshopifyDomain,
+          remoteAppCode: payload.clientId,
+          sharedSecret: payload.clientSecret,
+          sendSharedSecret: payload.shopAccessToken,
+          password: payload.shopAccessToken,
+          remoteId: payload.shopifyShopId,
+          remoteIdType: 'SHOPIFY_SHOP_ID',
+          internalId: payload.shopId,
+          internalIdType: 'HOTWAX_SHOP_ID',
+          authHeaderName: 'X-Shopify-Access-Token',
+          description: payload.name || payload.myshopifyDomain
+        }
+      })
+      if (commonUtil.hasError(remoteResp)) throw remoteResp
+
+      // Create ShopifyShop
+      const shopResp = await api({
+        url: 'oms/shopifyShops/shops',
+        method: 'post',
+        data: {
+          shopId: payload.shopId,
+          shopifyShopId: payload.shopifyShopId,
+          myshopifyDomain: payload.myshopifyDomain,
+          name: payload.name || payload.myshopifyDomain.split('.')[0],
+          productStoreId: payload.productStoreId || undefined,
+          isEnabled: 'Y'
+        }
+      })
+      if (commonUtil.hasError(shopResp)) throw shopResp
+
+      this.shops.push(shopResp.data)
+      return shopResp.data
+    },
+
+    async updateShopifyRemote(payload: {
+      myShopifydomain: string
+      shopifyShopId: string
+      shopAccessToken: string
+      clientId: string
+      clientSecret: string
+      oldClientSecret?: string
+      name?: string
+      hotwaxShopId?: string
+    }) {
+      const resp = await api({ url: 'sob/shop/remote', method: 'post', data: payload })
+      if (commonUtil.hasError(resp)) throw resp
+      return resp.data
+    },
+
+    async fetchSystemMessageRemote(shopId: string) {
+      const resp = await api({ url: 'oms/systemMessageRemotes', method: 'get' })
+      if (commonUtil.hasError(resp)) throw resp
+      const list: any[] = resp.data?.systemMessageRemoteList ?? []
+      return list.find((r: any) => r.internalId === shopId && r.internalIdType === 'HOTWAX_SHOP_ID') ?? null
+    },
+
     clearShopifyState() {
       this.$reset()
     }
