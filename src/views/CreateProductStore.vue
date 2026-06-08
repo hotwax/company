@@ -145,7 +145,7 @@ async function manageConfigurations() {
 
       commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
-      router.replace(`add-configurations/${productStoreId}`);
+      router.replace(`/add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }

@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import { RouteRecordRaw } from 'vue-router'
-import { Login } from '@common'
+import { Login, logger } from '@common/index'
 import { useAuth } from '@common/composables/useAuth'
 
 const CreateProductStore = () => import('@/views/CreateProductStore.vue')
@@ -17,6 +17,7 @@ const Departments = () => import('@/views/Departments.vue')
 const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.vue')
 const Klaviyo = () => import('@/views/Klaviyo.vue')
 const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
+const CloneProductStore = () => import('@/views/CloneProductStore.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -54,11 +55,15 @@ const routes: Array<RouteRecordRaw> = [
     component: AddConfigurations,
     props: true,
     beforeEnter: (to, from) => {
-      if (from.path !== '/create-product-store') return { path: from.path }
+      logger.info("AddConfigurations beforeEnter guard", { to: to.path, from: from.path, fromName: from.name });
+      if (from.path !== '/create-product-store' && from.name !== 'CreateProductStore') {
+        return { path: from.path || '/product-store' }
+      }
     }
   },
   { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
+  { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
 ]
 
 const router = createRouter({
