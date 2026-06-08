@@ -57,6 +57,8 @@ const routes: Array<RouteRecordRaw> = [
       if (from.path !== '/create-product-store') return { path: from.path }
     }
   },
+  { path: '/mdm', name: 'Mdm', component: () => import('@/views/MdmPage.vue'), beforeEnter: authGuard },
+  { path: '/mdm/configs/:configId', name: 'MdmConfigDetail', component: () => import('@/views/MdmConfigDetail.vue'), props: true, beforeEnter: authGuard },
   { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
 ]
