@@ -232,8 +232,16 @@ export const useShopifyStore = defineStore('shopify', {
       })
       if (commonUtil.hasError(shopResp)) throw shopResp
 
-      this.shops.push(shopResp.data)
-      return shopResp.data
+      const newShop = {
+        shopId: payload.shopId,
+        shopifyShopId: payload.shopifyShopId,
+        myshopifyDomain: payload.myshopifyDomain,
+        name: payload.name || payload.myshopifyDomain.split('.')[0],
+        productStoreId: payload.productStoreId || null,
+        isEnabled: 'Y'
+      }
+      this.shops.push(newShop)
+      return newShop
     },
 
     async updateShopifyRemote(payload: {
