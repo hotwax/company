@@ -92,7 +92,7 @@ Confirmed existing patterns to use:
 |------|-----------------|
 | Page shell | `ion-page` + `ion-header :translucent` + `ion-toolbar` + `ion-content` |
 | Upload action in toolbar | `ion-buttons slot="end"` + `ion-button` icon-only + `ion-icon :icon="cloudUploadOutline"` |
-| Two-tab layout | `ion-segment` + `ion-segment-button` (inside `ion-item` in content, same as ShopifyProductSync) |
+| Two-tab layout | `ion-segment` + `ion-segment-button` inside `ion-item` at top of `ion-content` (same as ShopifyProductSync — no view uses segment in the header) |
 | Status filter | `ion-select` inside `ion-item` with `interface="popover"` (same as ShopifyProductSyncHistory) |
 | Config search | `ion-searchbar` (same as TimezoneModal / ShopifyConnections) |
 | List rows | `div.list-item` + `ion-item lines="none"` + `ion-label` (same as ShopifyConnections) |
@@ -101,6 +101,7 @@ Confirmed existing patterns to use:
 | Accordion runs | `ion-accordion-group` + `ion-accordion` + `div.list-item slot="header"` + `ion-list slot="content"` (same as ShopifyProductSyncHistoryView) |
 | Loading state | `ion-card` with `ion-spinner name="crescent"` (same as ShopifyProductSync) |
 | Error state | `ion-card` + `ion-button fill="outline"` retry (same as ShopifyProductSync) |
+| `showToast` | `import { showToast } from '@/utils'` — NOT from `@common` |
 | Empty state | `div.empty-state` (class already in variables.css) |
 | FAB | `ion-fab slot="fixed" vertical="bottom" horizontal="end"` + `ion-fab-button` + `ion-icon :icon="addOutline"` (same as ShopifyConnections) |
 | Modals | `modalController.create({ component: XyzModal })` + `modal.present()` (same as ShopifyConnections) |
@@ -393,12 +394,12 @@ ion-fab slot="fixed" vertical="bottom" horizontal="end"
 
 ```typescript
 state: () => ({
-  configs: [] as DataManagerConfig[],
-  logs: [] as DataManagerLogDetails[],
+  configs: [] as any[],
+  logs: [] as any[],
   fetchStatus: {
-    configs: '' as string,   // '', 'pending', 'success', 'error'
-    logs: '' as string,
-    lastFetched: 0 as number
+    configs: 'none',   // 'none' | 'pending' | 'success' | 'error'
+    logs: 'none',
+    lastFetched: 0
   }
 })
 ```
