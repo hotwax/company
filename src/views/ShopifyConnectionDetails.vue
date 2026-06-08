@@ -5,6 +5,12 @@
         <ion-back-button slot="start" default-href="/shopify"/>
         <ion-title v-if="isLoading"><ion-skeleton-text animated style="width: 100px" /></ion-title>
         <ion-title v-else>{{ shop.name || id }}</ion-title>
+        <ion-buttons slot="end" v-if="!isLoading">
+          <ion-button @click="openCloneSettingsModal()">
+            <ion-icon slot="start" :icon="copyOutline" />
+            {{ translate("Clone settings") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -221,7 +227,8 @@
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { copyOutline } from "ionicons/icons";
 import { logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
@@ -231,6 +238,7 @@ import { useProductStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
 import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
+import CloneShopifySettingsModal from "@/components/CloneShopifySettingsModal.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
@@ -681,6 +689,17 @@ async function openProductStoreModal() {
     await shopifyStore.fetchShopifyShops();
   });
   modal.present();
+}
+
+async function openCloneSettingsModal() {
+  const modal = await modalController.create({
+    component: CloneShopifySettingsModal,
+    componentProps: { targetShop: shop.value }
+  });
+  modal.onDidDismiss().then(async () => {
+    await loadProductsInventorySummary();
+  });
+  await modal.present();
 }
 
 function openProductSyncEntry() {
