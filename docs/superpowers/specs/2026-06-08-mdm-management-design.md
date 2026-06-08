@@ -56,19 +56,36 @@ Primary daily job: **check status of recent imports** across all configs.
 | `errorRecordContentId` | FK | Error CSV file (present when failedRecordCount > 0) |
 
 ### REST API (base: `/rest/s1/admin`)
-> **Note:** Endpoints are confusingly nested under `/permissions` — this is a Moqui
-> routing quirk, not a semantic one.
 
-| Method | Path | Description |
+All MDM endpoints are under the `/dataManager` resource. (The `/permissions` resource in
+`admin.rest.xml` is `SecurityPermission` — unrelated to MDM despite the confusing Moqui
+admin screen URL.)
+
+#### Available today
+
+| Method | Path | Backed by | Notes |
+|--------|------|-----------|-------|
+| `GET` | `/dataManager` | `DataManagerConfig` entity list | All fields filterable as query params |
+| `GET` | `/dataManager/{configId}` | `DataManagerConfig` entity one | |
+| `GET` | `/dataManager/{configId}/downloadTemplate` | `download#Template` service | Generates CSV with column headers derived from import service in-params. **CSV only — no JSON template.** |
+| `GET` | `/dataManager/logs` | `DataManagerLogAndContent` view list | Cross join of Log + one Content record; use `/details` for the Imports feed |
+| `GET` | `/dataManager/logs/{logId}` | `DataManagerLog` entity one | |
+| `PUT` | `/dataManager/logs/{logId}` | `DataManagerLog` entity update | Used to cancel a running log |
+| `GET` | `/dataManager/downloadDataManagerFile` | `download#DataManagerFile` service | Params: `logContentId` (required) + `configId` (required). Get `logContentId` from `/details` response. |
+| `GET` | `/dataManager/details` | `get#DataManagerLogDetails` service | **Primary endpoint for Imports feed.** Returns `DataManagerLogDetails` view: all Config fields + all Log fields + `logContentId` (uploaded file) + `errorLogContentId` (error file) in one row. Filterable by `configId`, `statusId`, `createdDate_from/thru`. Paginated. |
+| `POST` | `/uploadDataManagerFile` | `upload#DataManagerFile` service | Multipart: `configId` (required) + file. Returns `logId`. |
+
+#### Missing — must be added to `admin.rest.xml` before implementation
+
+| Method | Path | What to add |
 |--------|------|-------------|
-| `GET` | `/permissions` | List DataManagerConfig |
-| `POST` | `create#DataManagerConfig` (entity) | Create new config |
-| `PUT` | `update#DataManagerConfig` (entity) | Update config |
-| `GET` | `/permissions/{configId}` | Get one config |
-| `GET` | `/permissions/logs` | List DataManagerLog (cross-config) |
-| `GET` | `/permissions/logs/{logId}` | Get one log |
-| `GET` | `/permissions/downloadDataManagerFile` | Download uploaded/error file |
-| `POST` | `/uploadDataManagerFile` | Upload file → creates log entry |
+| `POST` | `/dataManager` | `DataManagerConfig` entity `create` |
+| `PUT` | `/dataManager/{configId}` | `DataManagerConfig` entity `update` |
+| `DELETE` | `/dataManager/logs/{logId}` | `remove#DataManagerLog` service (already exists, just not exposed) |
+
+These three additions to `admin.rest.xml` are required before the Configs CRUD and log
+delete features can be built. They are a one-line change each. OMS PR should go in before
+the Company app implementation starts.
 
 ---
 
@@ -131,8 +148,9 @@ list; no additional API call per filter change.
   - `DmlsCrashed` / `DmlsFailed` → red / "Failed"
 - Timestamp: `createdDate` formatted as "DD Mon HH:mm"
 - Record counts: `totalRecordCount / failedRecordCount` — right-aligned
-- **Error file button** (only when `failedRecordCount > 0`): tapping downloads the error
-  CSV via `GET /permissions/downloadDataManagerFile?logId={logId}&type=error`
+- **Error file button** (only when `failedRecordCount > 0`): tapping calls
+  `GET /dataManager/downloadDataManagerFile?logContentId={errorLogContentId}&configId={configId}`.
+  `errorLogContentId` comes from the `/dataManager/details` response.
 
 **Tap log card** → opens `ion-modal` as a bottom sheet with full log detail:
 - Config ID + description
@@ -144,8 +162,8 @@ list; no additional API call per filter change.
 - [Download error file] button (if applicable)
 
 **Auto-refresh:** When the tab is active and any log has status `DmlsPending` or
-`DmlsRunning`, poll `GET /permissions/logs` every 30 seconds. Stop polling when all
-visible logs are terminal (Finished / Cancelled / Crashed).
+`DmlsRunning`, poll `GET /dataManager/details` (same params as initial load) every 30
+seconds. Stop polling when all visible logs are terminal (Finished / Cancelled / Crashed).
 
 **Upload button** in toolbar → triggers upload bottom sheet (see Upload Flow section).
 
@@ -235,9 +253,9 @@ Config *
 
 File *
 [ Choose file…                                       ]
-  Accepts .csv, .json
+  Accepts .csv, .json, .txt
 
-[ ⬇ Download CSV template  ]  [ ⬇ Download JSON template ]
+[ ⬇ Download CSV template ]
 
                                               [ Upload ]
 ```
@@ -245,8 +263,9 @@ File *
 - Config selector: searchable ion-select showing `description (configId)` — sorted by
   description. Pre-filled when coming from config detail.
 - File input: accepts `.csv` and `.json` only; shows selected filename.
-- Template downloads: `GET /permissions/downloadDataManagerFile?configId={id}&type=csv`
-  (or `json`). Only shown after a config is selected.
+- Template download: `GET /dataManager/{configId}/downloadTemplate` — generates a CSV
+  with the correct column headers for this config's import service. **CSV only** (the
+  `download#Template` service only produces CSV). Only shown after a config is selected.
 - Upload: `POST /uploadDataManagerFile` with multipart form data (`configId`, `file`).
 - On success: close sheet → switch to Imports tab → new log card appears at top in
   Pending status.
@@ -280,12 +299,14 @@ state: () => ({
 ```
 
 Actions:
-- `fetchConfigs()` — GET /permissions, populates `configs`
-- `fetchLogs(configId?: string)` — GET /permissions/logs (optionally filtered), populates `logs`
-- `createConfig(data)` — POST create#DataManagerConfig
-- `updateConfig(data)` — PUT update#DataManagerConfig
-- `uploadFile(configId, file)` — POST /uploadDataManagerFile
-- `downloadFile(logId, type)` — GET /permissions/downloadDataManagerFile, triggers browser download
+- `fetchConfigs()` — `GET /dataManager`, populates `configs`
+- `fetchLogs(params?)` — `GET /dataManager/details` with optional `configId` / `statusId` / date filters; populates `logs` with `DataManagerLogDetails` records (includes `logContentId` + `errorLogContentId`)
+- `createConfig(data)` — `POST /dataManager` *(requires new endpoint in admin.rest.xml)*
+- `updateConfig(data)` — `PUT /dataManager/{configId}` *(requires new endpoint in admin.rest.xml)*
+- `uploadFile(configId, file)` — `POST /uploadDataManagerFile`, returns `logId`
+- `downloadFile(logContentId, configId)` — `GET /dataManager/downloadDataManagerFile?logContentId=…&configId=…`
+- `downloadTemplate(configId)` — `GET /dataManager/{configId}/downloadTemplate`
+- `removeLog(logId)` — `DELETE /dataManager/logs/{logId}` *(requires new endpoint in admin.rest.xml)*
 
 ---
 
@@ -310,11 +331,32 @@ Actions:
 
 ---
 
-## REST API Gaps to Confirm
+## OMS Changes Required Before Implementation
 
-Before implementation, confirm with OMS team:
+Three REST endpoints are missing from `admin.rest.xml` in the `maarg-util` component.
+These need an OMS PR that lands before Company app implementation begins:
 
-1. Does `GET /permissions/logs` support `configId` filter param?
-2. Does `GET /permissions/downloadDataManagerFile` accept `type=csv` / `type=json` for templates (no logId)?
-3. Does `POST /uploadDataManagerFile` return the new `logId` in the response?
-4. Are `create#DataManagerConfig` and `update#DataManagerConfig` exposed as REST or only as entity auto-services (may need a named REST wrapper)?
+```xml
+<!-- In the existing <resource name="dataManager"> block -->
+
+<!-- 1. Create config -->
+<method type="post">
+    <entity name="co.hotwax.datamanager.DataManagerConfig" operation="create"/>
+</method>
+
+<!-- 2. Update config — inside the existing <id name="configId"> block -->
+<method type="put">
+    <entity name="co.hotwax.datamanager.DataManagerConfig" operation="update"/>
+</method>
+
+<!-- 3. Delete log — inside the existing <id name="logId"> block under <resource name="logs"> -->
+<method type="delete">
+    <service name="co.hotwax.util.UtilityServices.remove#DataManagerLog"/>
+</method>
+```
+
+Everything else needed is already available:
+- `GET /dataManager/details` — confirmed; supports `configId`, `statusId`, date range, pagination
+- `POST /uploadDataManagerFile` — confirmed; returns `logId`
+- `GET /dataManager/{configId}/downloadTemplate` — confirmed; generates CSV only (no JSON)
+- `GET /dataManager/downloadDataManagerFile` — confirmed; params are `logContentId` + `configId` (get `logContentId` / `errorLogContentId` from the `/details` response)
