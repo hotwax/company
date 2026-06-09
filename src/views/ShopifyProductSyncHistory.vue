@@ -121,15 +121,15 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { translate } from "@/i18n";
+import { commonUtil, logger, translate } from '@common'
 import { computed, defineProps, reactive, ref } from "vue";
-import { useStore } from "vuex";
-import logger from "@/logger";
+import { useShopifyStore } from '@/store/shopify';
+import { useUtilStore } from '@/store/util';
 import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistoryView.vue";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
-import { downloadTextFile, getDownloadFileContent, parseDateTimeValue, showToast } from "@/utils";
+import { downloadTextFile, getDownloadFileContent, parseDateTimeValue } from '@/utils';
 import {
   getSystemMessageTime,
   hasMoreForwardSystemMessagePages,
@@ -140,7 +140,9 @@ import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 
 import { getRawShopifyFileName } from "@/utils/shopifyProductSyncWizard";
 const props = defineProps(["id"]);
-const store = useStore();
+const shopifyStore = useShopifyStore();
+const utilStore = useUtilStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
 const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
 const { downloadDataManagerFile, fetchLogDetails } = useDataManagerLog();
 
@@ -207,8 +209,8 @@ const sortOptions = [
   { value: "oldest", label: translate("Oldest first") }
 ];
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
-const statusItems = computed(() => store.getters["util/getStatusItems"] || store.state.util.statusItems || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const statusItems = computed(() => utilStore.statusItems || {});
 const hasMoreHistory = computed(() => bufferedSystemMessages.value.length > 0 || hasMoreBackendHistory.value);
 
 onIonViewWillEnter(async () => {
@@ -221,12 +223,12 @@ async function loadHistory() {
   loadErrorMessage.value = "";
   try {
     if (!shop.value.shopId) {
-      await store.dispatch("shopify/fetchShopifyShops");
+      await shopifyStore.fetchShopifyShops();
     }
 
     if (isStaleHistoryLoad(loadToken)) return;
 
-    const resolvedSystemMessageRemoteIds = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+    const resolvedSystemMessageRemoteIds = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
       shopId: props.id,
       shopifyShopId: shop.value.shopifyShopId,
       shop: shop.value,
@@ -252,7 +254,7 @@ async function loadHistory() {
     if (isStaleHistoryLoad(loadToken)) return;
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync history"));
-    showToast(translate("Failed to load product sync history"));
+    commonUtil.showToast(translate("Failed to load product sync history"));
     historyRuns.value = [];
     hasMoreBackendHistory.value = false;
   } finally {
@@ -583,7 +585,7 @@ async function loadMoreHistory(event: CustomEvent) {
     if (isStaleHistoryLoad(loadToken)) return;
     logger.error(error);
     historyRuns.value = historyRuns.value.slice(0, previousRunCount);
-    showToast(translate("Failed to load product sync history"));
+    commonUtil.showToast(translate("Failed to load product sync history"));
     hasMoreBackendHistory.value = false;
   } finally {
     isLoadingMore.value = false;
@@ -600,7 +602,7 @@ async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
   try {
     const downloadableRun = await getDownloadableHistoryRun(run);
     if (!downloadableRun?.mdmLogConfigId || !downloadableRun?.mdmLogContentId) {
-      showToast(translate("Raw Shopify file is not available"));
+      commonUtil.showToast(translate("Raw Shopify file is not available"));
       return;
     }
 
@@ -612,10 +614,10 @@ async function downloadRawShopifyFile(run: ShopifyProductSyncHistoryRun) {
     }
 
     downloadTextFile(fileContent, getRawShopifyFileName(downloadableRun));
-    showToast(translate("File downloaded successfully"));
+    commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download raw Shopify file for message ${run.id}`, error);
-    showToast(translate("Failed to download raw Shopify file"));
+    commonUtil.showToast(translate("Failed to download raw Shopify file"));
   }
 }
 
@@ -623,7 +625,7 @@ async function downloadFailedRecordsFile(run: ShopifyProductSyncHistoryRun) {
   try {
     const downloadableRun = await getDownloadableHistoryRun(run);
     if (!downloadableRun?.mdmLogConfigId || !downloadableRun?.mdmErrorLogContentId) {
-      showToast(translate("Failed records file is not available"));
+      commonUtil.showToast(translate("Failed records file is not available"));
       return;
     }
 
@@ -635,10 +637,10 @@ async function downloadFailedRecordsFile(run: ShopifyProductSyncHistoryRun) {
     }
 
     downloadTextFile(fileContent, getFailedRecordsFileName(downloadableRun));
-    showToast(translate("File downloaded successfully"));
+    commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download failed records file for message ${run.id}`, error);
-    showToast(translate("Failed to download failed records file"));
+    commonUtil.showToast(translate("Failed to download failed records file"));
   }
 }
 

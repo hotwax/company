@@ -494,9 +494,10 @@ import {
   IonNote,
   IonSearchbar,
   IonSkeletonText,
+  IonProgressBar,
   IonSpinner
 } from "@ionic/vue";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 import { computed, defineEmits, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, openOutline, pauseCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { popoverController } from "@ionic/vue";
@@ -504,7 +505,7 @@ import AnimatedNumber from "@/components/AnimatedNumber.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
 
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
-import type { ShopifyProductSyncRun } from "@/services/ShopifyProductSyncService";
+import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";
 import type { ProductSyncFsmState } from "@/utils/shopifyProductSyncFsm";
 
 const props = defineProps<{

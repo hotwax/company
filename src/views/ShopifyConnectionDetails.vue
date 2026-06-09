@@ -39,6 +39,12 @@
                 <p>{{ translate("Product Store") }}</p>
               </ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openCredentialsModal()">
+              <ion-label>
+                {{ translate("API credentials") }}
+                <p>{{ translate("Access token and secrets") }}</p>
+              </ion-label>
+            </ion-item>
           </section>
         </div>
 
@@ -216,21 +222,24 @@
 
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { translate } from "@/i18n";
-import { formatDateTime, parseDateTimeValue } from "@/utils";
+import { logger, translate } from '@common'
+import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, ref } from "vue";
-import { useStore } from "vuex";
-import { useRouter } from "vue-router";
+import { useShopifyStore } from '@/store/shopify';
+import { useProductStore } from '@/store/productStore';
+import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import { ShopifyProductSyncMigrationService } from "@/services/ShopifyProductSyncMigrationService";
+import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
-import logger from "@/logger";
 
 const props = defineProps(['id']);
-const store = useStore();
-const router = useRouter();
+const shopifyStore = useShopifyStore();
+const productStoreStore = useProductStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
 const PRODUCT_SYNC_ACTIVITY_HOUR_COUNT = 24;
@@ -273,7 +282,7 @@ const legacyProductSyncState = ref({
   legacySystemMessages: [] as any[]
 });
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const effectiveProductSyncMigrationEligibility = computed(() => {
   if (debugPageState.value === "incompatible") {
     return {
@@ -545,7 +554,7 @@ const activityGraphAriaLabel = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   if (!shop.value.shopId) {
-    await store.dispatch("shopify/fetchShopifyShops")
+    await shopifyStore.fetchShopifyShops()
   }
   isLoading.value = false;
   await loadProductsInventorySummary();
@@ -592,10 +601,10 @@ async function loadProductsInventorySummary() {
   }
 
   const [eligibilityResult, accessStateResult, legacyTeardownStateResult, systemMessageRemoteIdResult] = await Promise.allSettled([
-    ShopifyProductSyncMigrationService.fetchEligibility(),
-    ShopifyProductSyncService.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncMigrationService.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncService.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
+    shopifyProductSyncMigrationStore.fetchEligibility(),
+    shopifyProductSyncStore.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncStore.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -626,7 +635,7 @@ async function loadProductsInventorySummary() {
   }
 
   try {
-    productSyncSummary.value = await ShopifyProductSyncService.fetchDashboardSummary({
+    productSyncSummary.value = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId,
       shop: shop.value
@@ -655,13 +664,21 @@ async function loadTrackProgressDetails() {
   }
 }
 
+async function openCredentialsModal() {
+  const modal = await modalController.create({
+    component: EditShopifyCredentialsModal,
+    componentProps: { shop: shop.value }
+  })
+  await modal.present()
+}
+
 async function openProductStoreModal() {
   const modal = await modalController.create({
     component: ShopifyProductStoreModal,
     componentProps: { shop: shop.value }
   });
   modal.onDidDismiss().then(async () => {
-    await store.dispatch("shopify/fetchShopifyShops");
+    await shopifyStore.fetchShopifyShops();
   });
   modal.present();
 }

@@ -353,48 +353,35 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { addCircleOutline, closeCircleOutline, compassOutline, mapOutline, wineOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
-import { useStore } from "vuex";
+import { commonUtil, emitter, logger, translate } from '@common'
+import { useProductStore } from '@/store/productStore';
+import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
-import { hasError, showToast } from "@/utils";
-import logger from "@/logger";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import { UtilService } from "@/services/UtilService";
-import emitter from "@/event-bus";
 import { DateTime } from "luxon";
-import { useProductIdentificationStore } from "@hotwax/dxp-components";
 
 const props = defineProps(["productStoreId"]);
-const store = useStore();
+const productStoreStore = useProductStore();
+const utilStore = useUtilStore();
 
 const autoCancellationActive = ref(false);
-const currencies = ref([]) as any;
+const currencies = computed(() => utilStore.currencies)
 
-const facilityGroups = computed(() => store.getters["util/getFacilityGroups"])
-const productStore = computed(() => store.getters["productStore/getCurrent"])
-const settings = computed(() => store.getters["productStore/getCurrentStoreSettings"])
-const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
-const productIdentifiers = computed(() => store.getters["util/getProductIdentifiers"])
-const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
-const productIdentificationOptions = computed(() => useProductIdentificationStore()?.getProductIdentificationOptions)
+const facilityGroups = computed(() => utilStore.facilityGroups)
+const productStore = computed(() => productStoreStore.getCurrent)
+const settings = computed(() => productStoreStore.currentStoreSettings)
+const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
+const productIdentifiers = computed(() => utilStore.productIdentifiers)
+const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
+const productIdentificationOptions = computed(() => utilStore.productIdentifiers)
 
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
-  await Promise.allSettled([store.dispatch("util/fetchDBICCountries"), store.dispatch("productStore/fetchProductStoreDetails", props.productStoreId), store.dispatch("productStore/fetchCurrentStoreSettings", props.productStoreId), store.dispatch("util/fetchFacilityGroups"), store.dispatch("util/fetchProductIdentifiers"), store.dispatch("util/fetchShipmentMethodTypes"), useProductIdentificationStore()?.prepareProductIdentifierOptions(), fetchCurrencies()])
+  await Promise.allSettled([utilStore.fetchDBICCountries(), productStoreStore.fetchProductStoreDetails(props.productStoreId), productStoreStore.fetchCurrentStoreSettings(props.productStoreId), utilStore.fetchFacilityGroups(), utilStore.fetchProductIdentifiers(), utilStore.fetchShipmentMethodTypes(), utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 })])
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
   emitter.emit("dismissLoader");
 })
 
-async function fetchCurrencies() {
-  try {
-    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(resp.data?.length) {
-      currencies.value = resp.data;
-    }
-  } catch(err) {
-    logger.error("Failed to fetch currencies", err)
-  }
-}
+
 
 function getPreferredIdentification(id: string) {
   const identifications = settings.value['PRDT_IDEN_PREF']?.settingValue ? JSON.parse(settings.value['PRDT_IDEN_PREF'].settingValue) : {}
@@ -423,8 +410,8 @@ async function updatePreferredIdentification(event: any, identifier: string) {
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
-    if(!hasError(resp)) {
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
+    if(!commonUtil.hasError(resp)) {
       const settingEnums = Object.keys(settings.value).length ? JSON.parse(JSON.stringify(settings.value)) : {}
       if(settingEnums[payload.settingTypeEnumId]) {
         settingEnums[payload.settingTypeEnumId].settingValue = payload.settingValue;
@@ -432,14 +419,14 @@ async function updatePreferredIdentification(event: any, identifier: string) {
         settingEnums[payload.settingTypeEnumId] = payload;
       }
 
-      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
-      showToast(translate("Product store setting updated successfully."))
+      productStoreStore.updateCurrentStoreSettings(settingEnums)
+      commonUtil.showToast(translate("Product store setting updated successfully."))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings."))
+    commonUtil.showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }
@@ -459,7 +446,7 @@ async function renameProductStore() {
       text: translate("Confirm"),
       handler: async(data) => {
         if(!data.storeName.trim()) {
-          showToast(translate("Product store name can't be empty."));
+          commonUtil.showToast(translate("Product store name can't be empty."));
           return false;
         }
 
@@ -469,17 +456,17 @@ async function renameProductStore() {
         updatedStore.storeName = data.storeName.trim();
 
         try {
-          const resp = await ProductStoreService.updateProductStore(updatedStore);
+          const resp = await productStoreStore.updateProductStore(updatedStore);
 
-          if(!hasError(resp)) {
-            store.dispatch("productStore/updateCurrent", updatedStore);
-            showToast(translate("Product store name updated successfully."))
+          if(!commonUtil.hasError(resp)) {
+            productStoreStore.updateCurrent(updatedStore);
+            commonUtil.showToast(translate("Product store name updated successfully."))
           } else {
             throw resp.data;
           }
         } catch(error: any) {
           logger.error(error);
-          showToast(translate("Failed to update product store name."))
+          commonUtil.showToast(translate("Failed to update product store name."))
         }
       }
     }]
@@ -504,7 +491,7 @@ async function createUpdateTag(enumId: string) {
       text: settingEnums[enumId]?.settingValue ? translate("Update") : translate("Add"),
       handler: async(data) => {
         if(!data.tag.trim()) {
-          showToast(translate("Tags can't be empty."));
+          commonUtil.showToast(translate("Tags can't be empty."));
           return false;
         }
 
@@ -524,18 +511,18 @@ async function createUpdateTag(enumId: string) {
         }
 
         try {
-          const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+          const resp = await productStoreStore.saveCurrentStoreSettings(payload);
 
-          if(!hasError(resp)) {
+          if(!commonUtil.hasError(resp)) {
             if(!settingEnums[enumId]?.productStoreId) settingEnums[enumId] = payload;
-            store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
-            showToast(translate("Product store setting updated successfully."))
+            productStoreStore.updateCurrentStoreSettings(settingEnums)
+            commonUtil.showToast(translate("Product store setting updated successfully."))
           } else {
             throw resp.data;
           }
         } catch(error: any) {
           logger.error(error);
-          showToast(translate("Failed to update product store settings."))
+          commonUtil.showToast(translate("Failed to update product store settings."))
         }
       }
     }]
@@ -552,18 +539,18 @@ async function removeTag(enumId: string) {
   };
 
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
 
-    if(!hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       settingEnums[enumId] = payload;
-      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
-      showToast(translate("Tag removed successfully."))
+      productStoreStore.updateCurrentStoreSettings(settingEnums)
+      commonUtil.showToast(translate("Tag removed successfully."))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to remove tag."))
+    commonUtil.showToast(translate("Failed to remove tag."))
   }
 }
 
@@ -589,17 +576,17 @@ async function updateProductStoreDetail(event: any, fieldName: string, isToggle:
   try {
     payload = { ...productStore.value, ...payload }
     
-    const resp = await ProductStoreService.updateProductStore(payload);
-    if(!hasError(resp)) {
+    const resp = await productStoreStore.updateProductStore(payload);
+    if(!commonUtil.hasError(resp)) {
       if(fieldName === "daysToCancelNonPay" && (!payload.daysToCancelNonPay || parseInt(payload.daysToCancelNonPay) === 0)) autoCancellationActive.value = false;
-      showToast("Product store setting updated successfully.")
-      store.dispatch("productStore/updateCurrent", payload)
+      commonUtil.showToast("Product store setting updated successfully.")
+      productStoreStore.updateCurrent(payload)
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings."))
+    commonUtil.showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }
@@ -646,19 +633,19 @@ async function updateProductStoreSettings(event: any, enumId: string, isToggle: 
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateCurrentStoreSettings(payload);
-    if(!hasError(resp)) {
+    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
+    if(!commonUtil.hasError(resp)) {
       if(settingEnums[enumId]) settingEnums[enumId].settingValue = payload.settingValue
       else settingEnums[enumId] = payload;
 
-      store.dispatch("productStore/updateCurrentStoreSettings", settingEnums)
-      showToast(translate("Product store setting updated successfully."))
+      productStoreStore.updateCurrentStoreSettings(settingEnums)
+      commonUtil.showToast(translate("Product store setting updated successfully."))
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings."))
+    commonUtil.showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }
@@ -674,17 +661,17 @@ async function updateOrderCancellationStatus() {
 
   emitter.emit("presentLoader")
   try {
-    const resp = await ProductStoreService.updateProductStore(currentStore);
-    if(!hasError(resp)) {
-      showToast(translate("Product store setting updated successfully."))
-      store.dispatch("productStore/updateCurrent", currentStore)
+    const resp = await productStoreStore.updateProductStore(currentStore);
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Product store setting updated successfully."))
+      productStoreStore.updateCurrent(currentStore)
       autoCancellationActive.value = false;
     } else {
       throw resp.data;
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings."))
+    commonUtil.showToast(translate("Failed to update product store settings."))
   }
   emitter.emit("dismissLoader")
 }

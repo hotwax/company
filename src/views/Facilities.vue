@@ -49,7 +49,7 @@
   </ion-page>
 </template>
 <script setup lang="ts">
-import { translate } from "@/i18n"
+import { translate } from '@common'
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar } from "@ionic/vue";
 import { closeCircleOutline, ellipsisVerticalOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 

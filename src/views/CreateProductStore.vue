@@ -55,19 +55,16 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
-import { useRouter } from "vue-router";
-import { useStore } from "vuex";
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import router from "@/router";
+import { useProductStore } from '@/store/productStore';
+import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { generateInternalId, hasError, showToast } from "@/utils";
-import logger from "@/logger";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import { UtilService } from "@/services/UtilService";
-import emitter from "@/event-bus";
+import { generateInternalId } from '@/utils';
 
-const store = useStore();
-const router = useRouter();
+const productStoreStore = useProductStore();
+const utilStore = useUtilStore();
 
 const formData = ref({
   companyName: "",
@@ -77,34 +74,23 @@ const formData = ref({
 }) as any;
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
-const currencies = ref([]) as any;
+const currencies = computed(() => utilStore.currencies)
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
-const dbicCountriesCount = computed(() => store.getters["util/getDBICCountriesCount"])
-const company = computed(() => store.getters["productStore/getCompany"])
-const organizationPartyId = computed(() => store.getters["util/getOrganizationPartyId"])
+const productStores = computed(() => productStoreStore.productStores)
+const dbicCountriesCount = computed(() => utilStore.getDBICCountriesCount)
+const company = computed(() => productStoreStore.company)
+const organizationPartyId = computed(() => utilStore.organizationPartyId)
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("util/fetchDBICCountries");
-  store.dispatch("productStore/fetchCompany");
-  if(!dbicCountriesCount.value) await store.dispatch("util/fetchOperatingCountries");
-  await fetchCurrencies();
+  await utilStore.fetchDBICCountries();
+  productStoreStore.fetchCompany();
+  if(!dbicCountriesCount.value) await utilStore.fetchOperatingCountries();
+  await utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
 })
-
-async function fetchCurrencies() {
-  try {
-    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(resp.data?.length) {
-      currencies.value = resp.data;
-    }
-  } catch(err) {
-    logger.error("Failed to fetch currencies", err)
-  }
-}
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
-    showToast(translate('Please fill all the required fields'))
+    commonUtil.showToast(translate('Please fill all the required fields'))
     return;
   }
 
@@ -113,7 +99,7 @@ async function manageConfigurations() {
   }
 
   if (formData.value.productStoreId.length > 20) {
-    showToast(translate("Product store ID cannot be more than 20 characters."))
+    commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
     return
   }
 
@@ -134,13 +120,13 @@ async function manageConfigurations() {
       payload["companyName"] = formData.value.companyName
     }
 
-    resp = await ProductStoreService.createProductStore(payload);
+    resp = await productStoreStore.createProductStore(payload);
 
-    if(!hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       const productStoreId = resp.data.productStoreId;
       
       if(!dbicCountriesCount.value) {
-        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => ProductStoreService.addDBICCountries({
+        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => productStoreStore.addDBICCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
             geoAssocTypeEnumId: "GROUP_MEMBER"
@@ -154,17 +140,17 @@ async function manageConfigurations() {
       }
       
       if(!productStores.value.length && formData.value.companyName) {
-        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+        await productStoreStore.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
-      showToast(translate("Product store created successfully."))
+      commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
       router.replace(`add-configurations/${productStoreId}`);
     } else {
       throw resp.data;
     }
   } catch(error: any) {
-    showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
+    commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
   } 
 

@@ -59,33 +59,52 @@
         </main>
       </div>
     </ion-content>
+
+    <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+      <ion-fab-button @click="openCreateModal()">
+        <ion-icon :icon="addOutline" />
+      </ion-fab-button>
+    </ion-fab>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSearchbar, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { filterOutline, flashOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
-import { useRouter } from "vue-router";
+import { IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSearchbar, IonTitle, IonToggle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, filterOutline, flashOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
+import { translate } from '@common';
+import router from "@/router";
 import { computed } from "vue";
-import { useStore } from "vuex";
+import { useShopifyStore } from '@/store/shopify';
 
 import ShopifyConnectionFilters from "@/components/ShopifyConnectionFilters.vue";
+import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue";
 
-const router = useRouter();
-const store = useStore();
+const shopifyStore = useShopifyStore();
 
-const shops = computed(() => store.getters["shopify/getShops"])
+const shops = computed(() => shopifyStore.shops)
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("shopify/fetchShopifyShops")
+  await shopifyStore.fetchShopifyShops()
 })
 
 
 
 function openShopifyConnectionDetails(shop: any) {
-  store.dispatch("shopify/updateCurrentShop", shop)
+  shopifyStore.updateCurrentShop(shop)
   router.push({ path: `/shopify-connection-details/${shop.shopId}` })
+}
+
+async function openCreateModal() {
+  const modal = await modalController.create({
+    component: CreateShopifyConnectionModal
+  })
+  await modal.present()
+  const { data } = await modal.onWillDismiss()
+  if (data?.shopId) {
+    const newShop = shopifyStore.getShopById(data.shopId)
+    if (newShop) shopifyStore.updateCurrentShop(newShop)
+    router.push({ path: `/shopify-connection-details/${data.shopId}` })
+  }
 }
 </script>
 

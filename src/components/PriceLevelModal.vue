@@ -58,24 +58,24 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
-import { translate } from "@/i18n"
-import { useStore } from "vuex"
+import { translate } from '@common'
+import { useNetSuiteStore } from '@/store/netSuite'
 import { ref, onMounted } from "vue"
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 
-const store = useStore();
-const priceLevelTypeId = JSON.parse(process.env.VUE_APP_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
+const netSuiteStore = useNetSuiteStore();
+const priceLevelTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
 const { updateNetSuiteId } = useNetSuiteComposables(priceLevelTypeId);
 
 const integrationMapping = ref("") as any;
 const selectedPriceLevel = ref("")
 
 onMounted(async () => {
-  await store.dispatch("netSuite/fetchIntegrationTypeMappings", { 
+  await netSuiteStore.fetchIntegrationTypeMappings({ 
     integrationTypeId: priceLevelTypeId,
     mappingKey: "PRICE_LEVEL"
   })
-  const integrationMappings = store.getters["netSuite/getIntegrationTypeMappings"](priceLevelTypeId);
+  const integrationMappings = netSuiteStore.getIntegrationTypeMappings(priceLevelTypeId);
   selectedPriceLevel.value = (integrationMapping.value = integrationMappings[0]).mappingValue || "";
 })
 

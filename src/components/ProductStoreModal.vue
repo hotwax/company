@@ -44,23 +44,19 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { hasError, showToast } from "@/utils";
-import { useStore } from "vuex";
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useProductStore } from '@/store/productStore';
 import { computed, onMounted, ref } from "vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import emitter from "@/event-bus";
-import logger from "@/logger";
 
-const store = useStore();
+const productStoreStore = useProductStore();
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
-const netSuiteProductStore = computed(() => store.getters["productStore/getNetSuiteProductStore"]);
+const productStores = computed(() => productStoreStore.productStores)
+const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore);
 const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
 onMounted(async () => {
-  await store.dispatch("productStore/fetchProductStores");
+  await productStoreStore.fetchProductStores();
   if(netSuiteProductStore.value) {
     selectedProductStoreId.value = netSuiteProductStore.value.productStoreId;
     subsidiaryId.value = netSuiteProductStore.value.subsidiaryId;
@@ -85,10 +81,10 @@ async function updateSubsidiaryId() {
       productStoreId: selectedProductStoreId.value
     };
 
-    const resp = await ProductStoreService.updateProductStore(updatedStore);
-    if(!hasError(resp)) {
-      showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
-      await store.dispatch("productStore/updateSelectedProductStore", {
+    const resp = await productStoreStore.updateProductStore(updatedStore);
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
+      await productStoreStore.updateSelectedProductStore({
         productStoreId: selectedProductStoreId.value,
         subsidiaryId: subsidiaryId.value
       });
@@ -97,7 +93,7 @@ async function updateSubsidiaryId() {
     }
   } catch(error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings"))
+    commonUtil.showToast(translate("Failed to update product store settings"))
   }
   emitter.emit("dismissLoader")
   closeModal();

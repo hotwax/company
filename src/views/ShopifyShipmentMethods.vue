@@ -81,26 +81,26 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonButtons, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useUtilStore } from '@/store/util';
+import { useNetSuiteStore } from '@/store/netSuite';
+import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from "@/utils";
-import emitter from "@/event-bus";
-import logger from "@/logger";
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
-const store = useStore();
+const utilStore = useUtilStore();
+const netSuiteStore = useNetSuiteStore();
+const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 const editingItemKey = ref("");
 const localMappings = ref<any>({});
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const selectedCarrierPartyId = ref("");
 
-const shipmentMethodTypes = computed(() => store.getters["util/getShipmentMethodTypes"])
-const productStoreShipmentMethods = computed(() => store.getters["netSuite/getProductStoreShipmentMehtods"])
-const shopifyShopsCarrierShipments = computed(() => store.getters["shopify/getShopifyShopsCarrierShipments"])
+const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
+const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
+const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
 
 const carriers = computed(() => {
   const carrierMap: any = {};
@@ -133,9 +133,9 @@ const isDirty = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
-    store.dispatch("util/fetchShipmentMethodTypes"),
-    store.dispatch("netSuite/fetchProductStoreShipmentMethods", { productStoreId: shop.value.productStoreId }),
-    store.dispatch("shopify/fetchShopifyShopsCarrierShipments", { shopId: props.id })
+    utilStore.fetchShipmentMethodTypes(),
+    netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: shop.value.productStoreId }),
+    shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id })
   ]);
   
   if (carriers.value.length && !selectedCarrierPartyId.value) {
@@ -207,29 +207,29 @@ async function saveMapping(shipmentMethodTypeId: string) {
   const key = `${selectedCarrierPartyId.value}_${shipmentMethodTypeId}`;
   const mapping = localMappings.value[key];
   if (!mapping.shopifyShippingMethod) {
-    showToast(translate("Please provide Shopify name"));
+    commonUtil.showToast(translate("Please provide Shopify name"));
     return;
   }
 
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.createShopifyShopCarrierShipment({
+    const resp = await shopifyStore.createShopifyShopCarrierShipment({
       shopId: props.id,
       shipmentMethodTypeId,
       shopifyShippingMethod: mapping.shopifyShippingMethod,
       carrierPartyId: selectedCarrierPartyId.value
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Mapping updated successfully"));
-      await store.dispatch("shopify/fetchShopifyShopsCarrierShipments");
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Mapping updated successfully"));
+      await shopifyStore.fetchShopifyShopsCarrierShipments({});
       editingItemKey.value = "";
     } else {
       throw resp.data;
     }
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(translate("Failed to update mapping"));
   }
   emitter.emit("dismissLoader");
 }
@@ -247,18 +247,18 @@ async function saveAllDirtyMappings() {
     for (const key of dirtyKeys) {
       const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
-      await ShopifyService.createShopifyShopCarrierShipment({
+      await shopifyStore.createShopifyShopCarrierShipment({
         shopId: props.id,
         shipmentMethodTypeId,
         shopifyShippingMethod: mapping.shopifyShippingMethod,
         carrierPartyId: carrierPartyId
       });
     }
-    await store.dispatch("shopify/fetchShopifyShopsCarrierShipments");
-    showToast(translate("All mappings saved successfully"));
+    await shopifyStore.fetchShopifyShopsCarrierShipments({});
+    commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(translate("Failed to save some mappings"));
   }
   emitter.emit("dismissLoader");
 }

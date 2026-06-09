@@ -4,10 +4,53 @@
       <ion-toolbar>
         <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
         <ion-title>{{ translate("Inventory locations") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="runAudit" :disabled="isAuditing">
+            <ion-icon slot="icon-only" :icon="isAuditing ? refreshOutline : checkmarkCircleOutline" />
+          </ion-button>
+          <ion-button @click="openImportModal">
+            <ion-icon slot="icon-only" :icon="cloudDownloadOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
+      <!-- Health audit panel — shown after user runs audit -->
+      <ion-card v-if="health" class="ion-margin">
+        <ion-card-content>
+          <div class="health-summary">
+            <span><strong>{{ health.totalShopifyLocations }}</strong> {{ translate("Shopify locations") }}</span>
+            <ion-button fill="clear" size="small" :disabled="isAuditing" @click="runAudit">
+              <ion-icon :icon="refreshOutline" slot="start" />
+              {{ translate("Re-run") }}
+            </ion-button>
+          </div>
+          <div class="health-items">
+            <span>
+              <ion-icon :icon="health.unmapped === 0 ? checkmarkCircleOutline : refreshOutline"
+                        :color="health.unmapped === 0 ? 'success' : 'warning'" />
+              {{ health.totalShopifyLocations - health.unmapped }} {{ translate("mapped") }}
+            </span>
+            <span v-if="health.unmapped > 0" class="health-warning">
+              {{ health.unmapped }} {{ translate("not imported") }}
+            </span>
+            <span v-if="health.stale > 0" class="health-warning">
+              {{ health.stale }} {{ translate("stale") }}
+            </span>
+          </div>
+        </ion-card-content>
+      </ion-card>
+
+      <!-- Run Audit button — shown before first audit -->
+      <div v-else class="ion-padding-horizontal ion-padding-bottom">
+        <ion-button fill="outline" expand="block" :disabled="isAuditing" @click="runAudit">
+          <ion-spinner v-if="isAuditing" name="crescent" slot="start" />
+          <ion-icon v-else :icon="checkmarkCircleOutline" slot="start" />
+          {{ translate("Run Facility Audit") }}
+        </ion-button>
+      </div>
+
       <div class="header ion-margin-top">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
@@ -67,25 +110,26 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { alertController, IonButton, IonBackButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
+import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useUtilStore } from '@/store/util';
+import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from "@/utils"
-import emitter from "@/event-bus";
-import logger from "@/logger";
 import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
-const store = useStore();
+const utilStore = useUtilStore();
+const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
+const health = ref<any>(null)
+const isAuditing = ref(false)
 
-const facilities = computed(() => store.getters["util/getFacilities"])
-const shopifyShopLocations = computed(() => store.getters["shopify/getShopifyShopsLocations"])
+const facilities = computed(() => utilStore.facilities)
+const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -98,8 +142,8 @@ const isDirty = computed(() => {
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
-    store.dispatch("util/fetchFacilities"),
-    store.dispatch("shopify/fetchShopifyShopLocations")
+    utilStore.fetchFacilities(),
+    shopifyStore.fetchShopifyShopLocations()
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -142,28 +186,28 @@ async function saveMapping(facilityId: string) {
   const shopifyLocationId = localMappings.value[facilityId];
 
   if (!shopifyLocationId) {
-    showToast(translate("Please provide a Shopify location ID"));
+    commonUtil.showToast(translate("Please provide a Shopify location ID"));
     return;
   }
 
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.createShopifyShopLocation({
+    const resp = await shopifyStore.createShopifyShopLocation({
       shopId: props.id,
       facilityId,
       shopifyLocationId
     });
 
-    if (!hasError(resp)) {
-      showToast(translate("Mapping updated successfully"));
-      await store.dispatch("shopify/fetchShopifyShopLocations");
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Mapping updated successfully"));
+      await shopifyStore.fetchShopifyShopLocations();
       editingItemId.value = "";
     } else {
       throw resp.data;
     }
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to update mapping"));
+    commonUtil.showToast(translate("Failed to update mapping"));
   }
   emitter.emit("dismissLoader");
 }
@@ -174,19 +218,66 @@ async function saveAllDirtyMappings() {
 
   try {
     for (const id of dirtyIds) {
-      await ShopifyService.createShopifyShopLocation({
+      await shopifyStore.createShopifyShopLocation({
         shopId: props.id,
         facilityId: id,
         shopifyLocationId: localMappings.value[id]
       });
     }
-    await store.dispatch("shopify/fetchShopifyShopLocations");
-    showToast(translate("All mappings saved successfully"));
+    await shopifyStore.fetchShopifyShopLocations();
+    commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
-    showToast(translate("Failed to save some mappings"));
+    commonUtil.showToast(translate("Failed to save some mappings"));
   }
   emitter.emit("dismissLoader");
+}
+
+async function openImportModal() {
+  const modal = await modalController.create({
+    component: ImportShopifyLocationsModal,
+    componentProps: { shopId: props.id }
+  })
+  await modal.present()
+  const { data } = await modal.onDidDismiss()
+  if (data?.imported) {
+    isLoading.value = true
+    await Promise.all([
+      utilStore.fetchFacilities(),
+      shopifyStore.fetchShopifyShopLocations()
+    ])
+    initializeLocalMappings()
+    isLoading.value = false
+    // Re-run the audit so the health panel reflects the newly imported facilities
+    await runAudit()
+  }
+}
+
+async function runAudit() {
+  isAuditing.value = true
+  try {
+    const [shopifyResp, omsResp] = await Promise.all([
+      shopifyStore.fetchLocationsFromShopify({ shopId: props.id }),
+      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.id })
+    ])
+    const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
+    const omsMappings = omsResp.data || []
+    const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)))
+    const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]))
+
+    health.value = {
+      totalShopifyLocations: nodes.length,
+      unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop())).length,
+      stale: omsMappings.filter((m: any) => {
+        const node = nodeById.get(String(m.shopifyLocationId))
+        return node && !node.isActive
+      }).length
+    }
+  } catch (e) {
+    commonUtil.showToast(translate('Audit failed'))
+  } finally {
+    isAuditing.value = false
+  }
 }
 
 onBeforeRouteLeave(async () => {
@@ -247,5 +338,23 @@ onBeforeRouteLeave(async () => {
   --padding-end: 0;
   text-align: right;
   max-width: 200px;
+}
+
+.health-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.health-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.health-warning {
+  color: var(--ion-color-warning);
 }
 </style>

@@ -172,42 +172,42 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { addCircleOutline, addOutline, serverOutline } from "ionicons/icons";
-import { useStore } from "vuex";
-import { useRouter } from "vue-router";
-import { translate } from "@/i18n";
-import { KlaviyoService } from "@/services/KlaviyoService";
+import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey } from '@/store/klaviyo';
+import { useUtilStore } from '@/store/util';
+import router from "@/router";
+import { translate } from '@common';
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
 import KlaviyoUnigateConfigModal from "@/components/KlaviyoUnigateConfigModal.vue";
 import { getUnigateSendUrlWarning } from "@/utils/maarg";
 
-const store = useStore();
-const router = useRouter();
+const klaviyoStore = useKlaviyoStore();
+const utilStore = useUtilStore();
 
 const isInitialLoading = ref(false);
 const isRechecking = ref(false);
 
-const hasUnigateConfig = computed(() => store.getters["klaviyo/hasUnigateConfig"]);
-const unigateConfig = computed(() => store.getters["klaviyo/getUnigateConfig"]);
-const klaviyoConnections = computed(() => store.getters["klaviyo/getKlaviyoConnections"] || []);
-const eventCountByGateway = computed(() => store.getters["klaviyo/getEventCountByGateway"] || {});
+const hasUnigateConfig = computed(() => klaviyoStore.hasUnigateConfig);
+const unigateConfig = computed(() => klaviyoStore.getUnigateConfig);
+const klaviyoConnections = computed(() => klaviyoStore.getKlaviyoConnections || []);
+const eventCountByGateway = computed(() => klaviyoStore.getEventCountByGateway || {});
 // maargInfo is fetched once at login (see user/login → util/fetchMaargInfo)
-// and lives in the util Vuex module. Read it from the store instead of
-// triggering a per-screen fetch.
-const maargInfo = computed(() => store.getters["util/getMaargInfo"]);
+// Read from the store instead of triggering a per-screen fetch.
+const maargInfo = computed(() => utilStore.maargInfo);
 const unigateConfigWarning = computed(() => {
   return getUnigateSendUrlWarning(unigateConfig.value?.sendUrl, maargInfo.value);
 });
 
 onIonViewWillEnter(async () => {
-  if (!store.getters["klaviyo/hasCheckedUnigate"]) {
+  if (!klaviyoStore.hasCheckedUnigate) {
     isInitialLoading.value = true;
   }
-  await store.dispatch("klaviyo/hydrate");
+  await klaviyoStore.hydrate();
   isInitialLoading.value = false;
 });
 
 function maskedKey(conn: any) {
-  return KlaviyoService.maskApiKey(conn?.publicKey) || translate("Not set");
+  return maskApiKey(conn?.publicKey) || translate("Not set");
 }
 
 function eventCountLabel(conn: any) {
@@ -220,7 +220,7 @@ function eventCountLabel(conn: any) {
 async function recheckUnigate() {
   isRechecking.value = true;
   try {
-    await store.dispatch("klaviyo/hydrate");
+    await klaviyoStore.hydrate();
   } finally {
     isRechecking.value = false;
   }
@@ -233,7 +233,7 @@ async function openConnectionModal() {
   });
   modal.onDidDismiss().then(async (event: any) => {
     if (event?.data?.connection) {
-      await store.dispatch("klaviyo/fetchConnections");
+      await klaviyoStore.fetchConnections();
       router.push(`/klaviyo/${encodeURIComponent(event.data.connection.commGatewayAuthId)}`);
     }
   });
@@ -243,13 +243,13 @@ async function openConnectionModal() {
 async function openUnigateConfigModal() {
   const modal = await modalController.create({ component: KlaviyoUnigateConfigModal });
   modal.onDidDismiss().then(async () => {
-    await store.dispatch("klaviyo/fetchUnigateConfig");
+    await klaviyoStore.fetchUnigateConfig();
   });
   modal.present();
 }
 
 function openConnection(conn: any) {
-  store.dispatch("klaviyo/setCurrent", conn);
+  klaviyoStore.setCurrent(conn);
   router.push(`/klaviyo/${encodeURIComponent(conn.commGatewayAuthId)}`);
 }
 </script>
