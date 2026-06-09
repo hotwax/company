@@ -43,41 +43,45 @@
         </ion-list-header>
 
         <ion-item button data-testid="product-sync-products-select-all-row" @click="toggleAllVisibleProducts">
-          <ion-label>
-            {{ translate("Select all") }}
-            <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
-          </ion-label>
           <ion-checkbox
-            slot="end"
+            label-placement="start"
+            justify="space-between"
             :checked="areAllVisibleProductsSelected"
             :indeterminate="areSomeVisibleProductsSelected"
             data-testid="product-sync-products-select-all-checkbox"
             @click.stop="toggleAllVisibleProducts"
-          />
+          >
+            <div slot="label">
+              {{ translate("Select all") }}
+              <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
+            </div>
+          </ion-checkbox>
         </ion-item>
 
         <ion-item v-for="product in products" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
           <ion-thumbnail v-if="product.imageUrl" slot="start">
             <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
           </ion-thumbnail>
-          <ion-label>
-            <h2>{{ product.title }}</h2>
-            <p>{{ product.handle }}</p>
-            <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
-            <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
-            <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
-          </ion-label>
+          <ion-checkbox
+            label-placement="start"
+            justify="space-between"
+            :checked="isProductSelected(product.id)"
+            :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
+            @click.stop="toggleProduct(product)"
+          >
+            <div slot="label">
+              <h2>{{ product.title }}</h2>
+              <p>{{ product.handle }}</p>
+              <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
+              <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
+              <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
+            </div>
+          </ion-checkbox>
           <ion-note slot="end">
             {{ product.variantsCount }} {{ translate("variants") }}
             <p>{{ product.status }}</p>
             <p>{{ translate("Inventory") }} {{ product.totalInventory ?? 0 }}</p>
           </ion-note>
-          <ion-checkbox
-            slot="end"
-            :checked="isProductSelected(product.id)"
-            :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
-            @click.stop="toggleProduct(product)"
-          />
         </ion-item>
       </ion-list>
 

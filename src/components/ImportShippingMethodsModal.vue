@@ -14,8 +14,9 @@
     <ion-searchbar :placeholder="translate('Search shipping method')"/>
 
     <ion-item-divider color="light">
-      <ion-label>{{ translate("Select all") }}</ion-label>
-      <ion-checkbox />
+      <ion-checkbox label-placement="start" justify="space-between">
+        {{ translate("Select all") }}
+      </ion-checkbox>
     </ion-item-divider>
 
     <ion-list>

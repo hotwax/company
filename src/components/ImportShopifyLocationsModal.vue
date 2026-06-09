@@ -34,26 +34,27 @@
       <ion-list>
         <ion-item v-for="loc in locations" :key="loc.shopifyLocationId" lines="full">
           <ion-checkbox
-            slot="start"
+            label-placement="end"
+            justify="start"
             :checked="selectedIds.has(loc.shopifyLocationId)"
             :disabled="loc.alreadyInOms"
             @ionChange="toggleSelection(loc.shopifyLocationId, $event.detail.checked)"
-          />
-
-          <ion-label>
-            <p class="overline">{{ loc.shopifyLocationId }}</p>
-            {{ loc.name }}
-            <p>{{ [loc.city, loc.provinceCode, loc.countryCode].filter(Boolean).join(', ') }}</p>
-            <ion-note v-if="loc.isFulfillmentService" color="warning">
-              {{ loc.fulfillmentServiceName || translate("Fulfillment Service") }}
-            </ion-note>
-            <ion-note v-else-if="loc.pickupEnabled" color="success">
-              {{ translate("Pickup enabled") }}
-            </ion-note>
-            <ion-note v-if="loc.alreadyInOms" color="medium">
-              {{ translate("Already in OMS") }}
-            </ion-note>
-          </ion-label>
+          >
+            <div slot="label">
+              <p class="overline">{{ loc.shopifyLocationId }}</p>
+              {{ loc.name }}
+              <p>{{ [loc.city, loc.provinceCode, loc.countryCode].filter(Boolean).join(', ') }}</p>
+              <ion-note v-if="loc.isFulfillmentService" color="warning">
+                {{ loc.fulfillmentServiceName || translate("Fulfillment Service") }}
+              </ion-note>
+              <ion-note v-else-if="loc.pickupEnabled" color="success">
+                {{ translate("Pickup enabled") }}
+              </ion-note>
+              <ion-note v-if="loc.alreadyInOms" color="medium">
+                {{ translate("Already in OMS") }}
+              </ion-note>
+            </div>
+          </ion-checkbox>
 
           <ion-select
             v-if="!loc.alreadyInOms"

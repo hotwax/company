@@ -41,8 +41,7 @@
             <ion-label>{{ translate("Settings categories to clone") }}</ion-label>
           </ion-list-header>
           <ion-item v-for="(cat, key) in categories" :key="key">
-            <ion-checkbox slot="start" v-model="cat.selected" />
-            <ion-label>{{ cat.label }}</ion-label>
+            <ion-checkbox label-placement="end" justify="start" v-model="cat.selected">{{ cat.label }}</ion-checkbox>
           </ion-item>
         </ion-list>
 
