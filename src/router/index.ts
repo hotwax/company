@@ -47,7 +47,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/netsuite/payment-methods', name: 'PaymentMethods', component: PaymentMethods, beforeEnter: authGuard },
   { path: '/netsuite/sales-channel', name: 'SalesChannel', component: SalesChannel, beforeEnter: authGuard },
   { path: '/netsuite/departments', name: 'Departments', component: Departments, beforeEnter: authGuard },
-  { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore },
+  { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore, beforeEnter: authGuard },
   {
     path: '/add-configurations/:productStoreId',
     name: 'AddConfigurations',

@@ -207,7 +207,7 @@ export const useProductStore = defineStore('productStore', {
           method: "post",
           data: payload
         }) as any
-        if (commonUtil.hasError(resp)) {
+        if (!commonUtil.hasError(resp)) {
           return Promise.resolve(resp.data)
         } else {
           throw resp.data
