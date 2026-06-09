@@ -37,6 +37,10 @@
             <ion-icon slot="start" :icon="addOutline"/>
             {{ translate("Create new product store") }}
           </ion-button>
+          <ion-button fill="outline" @click="cloneStoreSettings()">
+            <ion-icon slot="start" :icon="copyOutline"/>
+            {{ translate("Clone store settings") }}
+          </ion-button>
         </div>
       </main>
     </ion-content>
@@ -45,7 +49,7 @@
 
 <script setup lang="ts">
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
+import { addOutline, copyOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate, commonUtil } from '@common';
 import router from "@/router";
 import { computed } from "vue";
@@ -68,6 +72,10 @@ async function viewProductStoreDetails(productStoreId: string) {
 
 function createStore() {
   router.push("/create-product-store")
+}
+
+function cloneStoreSettings() {
+  router.push("/clone-product-store")
 }
 
 function viewFacilities(productStoreId: string) {
