@@ -16,10 +16,10 @@
     <ion-list>
       <ion-item v-for="country in filteredCountries" :key="country.geoId" @click="toggleCountrySelection(country)">
         <ion-checkbox :checked="isAlreadySelected(country.geoId)" justify="space-between">
-          <div slot="label">
-            <p class="overline">{{ country.geoId }}</p>
+          <ion-label>  
             {{ country.geoName ? country.geoName : country.geoId }}
-          </div>
+            <p>{{ country.geoId }}</p>
+          </ion-label>
         </ion-checkbox>
       </ion-item>
     </ion-list>
