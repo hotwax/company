@@ -8,10 +8,32 @@
 
     <ion-content>
       <ion-list id="company-list">
+        <!-- Main Pages -->
         <ion-menu-toggle auto-hide="false" v-for="(p, i) in appPages" :key="i">
-          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIndex === i }">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: isRouteSelected(p) }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
-            <ion-label>{{ p.title }}</ion-label>
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <!-- Agents Divider -->
+        <ion-item-divider color="light">
+          <ion-label>{{ translate("Agents") }}</ion-label>
+        </ion-item-divider>
+
+        <!-- Agent Pages -->
+        <ion-menu-toggle auto-hide="false" v-for="(p, i) in agentPages" :key="'agent-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: isRouteSelected(p) }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <!-- Settings Page -->
+        <ion-menu-toggle auto-hide="false">
+          <ion-item button router-direction="root" :router-link="settingsPage.url" class="hydrated" :class="{ selected: isRouteSelected(settingsPage) }">
+            <ion-icon slot="start" :ios="settingsPage.iosIcon" :md="settingsPage.mdIcon" />
+            <ion-label>{{ translate(settingsPage.title) }}</ion-label>
           </ion-item>
         </ion-menu-toggle>
       </ion-list>
@@ -25,6 +47,7 @@ import {
   IonIcon,
   IonHeader,
   IonItem,
+  IonItemDivider,
   IonLabel,
   IonList,
   IonTitle,
@@ -33,7 +56,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -67,20 +90,36 @@ const appPages = [
     childRoutes: ["/netsuite/"],
     iosIcon: walletOutline,
     mdIcon: walletOutline
-  },
-  {
-    title: "Settings",
-    url: "/settings",
-    iosIcon: settingsOutline,
-    mdIcon: settingsOutline,
   }
 ];
 
+const agentPages = [
+  {
+    title: "Composer",
+    url: "/composer",
+    iosIcon: schoolOutline,
+    mdIcon: schoolOutline,
+  },
+  {
+    title: "Workforce",
+    url: "/workforce",
+    iosIcon: briefcaseOutline,
+    mdIcon: briefcaseOutline,
+  }
+];
+
+const settingsPage = {
+  title: "Settings",
+  url: "/settings",
+  iosIcon: settingsOutline,
+  mdIcon: settingsOutline,
+};
+
 const isUserAuthenticated = computed(() => isAuthenticated.value)
-const selectedIndex = computed(() => {
+const isRouteSelected = (page: any) => {
   const path = router.currentRoute.value.path
-  return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
-})
+  return page.url === path || page.childRoutes?.includes(path) || page.childRoutes?.some((route: string) => path.includes(route))
+}
 </script>
 
 <style scoped>

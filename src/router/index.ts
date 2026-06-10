@@ -18,6 +18,8 @@ const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.
 const Klaviyo = () => import('@/views/Klaviyo.vue')
 const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
 const CloneProductStore = () => import('@/views/CloneProductStore.vue')
+const Composer = () => import('@/views/Composer.vue')
+const Workforce = () => import('@/views/Workforce.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -64,6 +66,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
   { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
+  { path: '/composer', name: 'Composer', component: Composer, beforeEnter: authGuard },
+  { path: '/workforce', name: 'Workforce', component: Workforce, beforeEnter: authGuard },
 ]
 
 const router = createRouter({
