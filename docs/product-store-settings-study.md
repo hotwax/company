@@ -12,10 +12,10 @@ This study separates:
 
 ## Current Company Surface
 
-Company currently manages 24 editable product store values on the detail/setup flows:
+Company currently manages 22 editable product store values on the detail/setup flows:
 
 - 8 direct `ProductStore` fields.
-- 16 `ProductStoreSetting` records.
+- 14 `ProductStoreSetting` records.
 
 ### Direct ProductStore fields
 
@@ -38,10 +38,8 @@ Company currently manages 24 editable product store values on the detail/setup f
 | `RETURN_DEADLINE_DAYS` | Limit how far back orders remain eligible for return creation. |
 | `PRE_SLCTD_FAC_TAG` | Shopify order tag that enables preselected facility logic. |
 | `ORD_ITM_SHIP_FAC` | Shopify line item property name for selected ship facility. |
-| `BRK_SHPMNT_THRESHOLD` | Minimum value before brokering shipment split applies. |
 | `FULFILL_NOTIF` | Send fulfillment notifications back to Shopify. |
 | `BOPIS_PART_ODR_REJ` | Allow partial rejection of BOPIS orders. |
-| `INV_CNT_VIEW_QOH` | Show systemic QOH in inventory count flows. |
 | `HOLD_PRORD_PHYCL_INV` | Treat physical preorder inventory as held when preorder queue exists. |
 | `PRE_ORDER_GROUP_ID` | Facility group used for multi-channel preorder inventory. |
 | `PRDT_IDEN_PREF` | JSON preference for primary and secondary product identifiers. |
@@ -53,7 +51,7 @@ Company currently manages 24 editable product store values on the detail/setup f
 
 ## Backend ProductStoreSetting Universe
 
-Backend data and upgrade files define 44 unique `PROD_STR_STNG` enum IDs:
+Backend data and upgrade files define 35 supported `PROD_STR_STNG` enum IDs after removing deprecated product-store settings:
 
 | Setting ID | Suggested UX home |
 | --- | --- |
@@ -62,31 +60,22 @@ Backend data and upgrade files define 44 unique `PROD_STR_STNG` enum IDs:
 | `AUTO_REJ_IDLE_ORD` | Rejection and exception handling |
 | `BARCODE_IDEN_PREF` | Product identity and scanning |
 | `BOPIS_PART_ODR_REJ` | Store pickup / BOPIS |
-| `BRK_SHPMNT_THRESHOLD` | Brokering and routing |
 | `CAPTURE_PAYMENT_TAG` | Approval and payment checks |
 | `CUST_ALLOW_CNCL` | Customer self-service |
 | `CUST_DLVRADR_UPDATE` | Customer self-service |
 | `CUST_DLVRMTHD_UPDATE` | Customer self-service |
 | `CUST_PCKUP_UPDATE` | Customer self-service |
-| `DEFAULT_CARRIER` | Shipping and carriers |
 | `DEFULT_PKG_BOPIS_ORD` | Store pickup / BOPIS |
-| `DISABLE_SHIPNOW` | Fulfillment operations |
-| `DISABLE_UNPACK` | Fulfillment operations |
-| `DIS_REJ_NOTI_ON_CNCL` | Notifications and Shopify behavior |
 | `ENABLE_TRACKING` | Store pickup / BOPIS |
 | `EX_INV_BY_PRD_TYPE` | Inventory sync |
 | `FF_COLLATERAL_REJ` | Rejection and exception handling |
-| `FF_USE_NEW_REJ_API` | Rejection and exception handling |
 | `FULFILL_FORCE_SCAN` | Fulfillment operations |
 | `FULFILL_NOTIF` | Notifications and Shopify behavior |
 | `FULFILL_PART_ODR_REJ` | Fulfillment operations |
 | `HOLD_PRORD_PHYCL_INV` | Inventory and preorder |
-| `INV_CNT_VIEW_QOH` | Inventory counting |
 | `ORD_ITM_PICKUP_FAC` | Brokering and routing |
 | `ORD_ITM_SHIP_FAC` | Brokering and routing |
 | `ORD_ITM_SHIP_METH` | Brokering and routing |
-| `PCKGING_BOX_ALGO` | Packing and documents |
-| `PKG_SLIP` | Packing and documents |
 | `PRDT_IDEN_PREF` | Product identity |
 | `PRE_ORDER_GROUP_ID` | Inventory and preorder |
 | `PRE_SLCTD_FAC_TAG` | Brokering and routing |
@@ -101,6 +90,22 @@ Backend data and upgrade files define 44 unique `PROD_STR_STNG` enum IDs:
 | `RTN_RSTCK_FAC` | Returns |
 | `SAVE_BILL_TO_INF` | Order import |
 | `SHOW_SHIPPING_ORDERS` | Store pickup / BOPIS |
+
+### Removed ProductStoreSetting records
+
+These setting IDs should not be presented as product-store settings in Company:
+
+| Setting ID | Replacement path |
+| --- | --- |
+| `BRK_SHPMNT_THRESHOLD` | Remove; no supported runtime owner found. |
+| `DEFAULT_CARRIER` | Remove after replacing legacy Shopify carrier fallback logic. |
+| `PCKGING_BOX_ALGO` | Remove with legacy packing-box algorithm support. |
+| `PKG_SLIP` | Remove with legacy packing-slip content lookup support. |
+| `FF_USE_NEW_REJ_API` | Remove; no supported runtime owner found. |
+| `DISABLE_UNPACK` | Replace with an action permission that controls who can unpack. |
+| `DISABLE_SHIPNOW` | Replace with an action permission that controls who can ship now. |
+| `INV_CNT_VIEW_QOH` | Remove only as a `ProductStoreSetting`; keep the inventory-count permission. |
+| `DIS_REJ_NOTI_ON_CNCL` | Replace with backend default behavior that suppresses notifications for Shopify cancellation rejections. |
 
 ## UX Direction
 

@@ -117,7 +117,7 @@ const CATEGORY_MAP = {
   },
   brokering: {
     fields: ["enableBrokering", "allowSplit"],
-    settings: ["PRE_SLCTD_FAC_TAG", "ORD_ITM_SHIP_FAC", "BRK_SHPMNT_THRESHOLD"]
+    settings: ["PRE_SLCTD_FAC_TAG", "ORD_ITM_SHIP_FAC"]
   },
   fulfillment: {
     fields: ["daysToCancelNonPay"],
@@ -125,7 +125,7 @@ const CATEGORY_MAP = {
   },
   inventory: {
     fields: ["reserveInventory"],
-    settings: ["INV_CNT_VIEW_QOH", "HOLD_PRORD_PHYCL_INV", "PRE_ORDER_GROUP_ID"]
+    settings: ["HOLD_PRORD_PHYCL_INV", "PRE_ORDER_GROUP_ID"]
   },
   product: {
     fields: ["productIdentifierEnumId"],

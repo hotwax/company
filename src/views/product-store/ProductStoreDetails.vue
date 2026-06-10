@@ -297,7 +297,6 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
     title: "Inventory and preorder settings",
     settings: [
       setting("HOLD_PRORD_PHYCL_INV", "Hold pre-order physical inventory", "toggle", "true-false"),
-      setting("INV_CNT_VIEW_QOH", "View QOH while inventory counting", "toggle", "true-false"),
       setting("PRE_ORDER_GROUP_ID", "Pre-order group ID", "textarea"),
       setting("REL_PREORD_ROUGRP_ID", "Release preorder routing group ID", "textarea"),
       setting("EX_INV_BY_PRD_TYPE", "Exclude inventory by product type", "textarea")
@@ -306,7 +305,6 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
   {
     title: "Brokering and routing settings",
     settings: [
-      setting("BRK_SHPMNT_THRESHOLD", "Brokering shipment threshold", "number"),
       setting("PRE_SLCTD_FAC_TAG", "Pre-selected facility tag", "textarea"),
       setting("ORD_ITM_PICKUP_FAC", "Order item pickup facility", "textarea"),
       setting("ORD_ITM_SHIP_FAC", "Order item ship facility", "textarea"),
@@ -319,8 +317,6 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
       setting("FULFILL_NOTIF", "Fulfillment notifications", "toggle", "yn"),
       setting("FULFILL_FORCE_SCAN", "Fulfillment force scan", "toggle", "true-false"),
       setting("FULFILL_PART_ODR_REJ", "Fulfillment partial order rejection", "toggle", "true-false"),
-      setting("DISABLE_SHIPNOW", "Disable ship now", "toggle", "true-false"),
-      setting("DISABLE_UNPACK", "Disable unpack", "toggle", "true-false"),
       setting("RECEIVE_FORCE_SCAN", "Receiving force scan", "toggle", "true-false")
     ]
   },
@@ -348,15 +344,7 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
   {
     title: "Shipping and carrier settings",
     settings: [
-      setting("RATE_SHOPPING", "Rate shopping", "toggle", "yn"),
-      setting("DEFAULT_CARRIER", "Default carrier", "textarea")
-    ]
-  },
-  {
-    title: "Packing and document settings",
-    settings: [
-      setting("PCKGING_BOX_ALGO", "Packaging box algorithm", "textarea"),
-      setting("PKG_SLIP", "Packing slip", "textarea")
+      setting("RATE_SHOPPING", "Rate shopping", "toggle", "yn")
     ]
   },
   {
@@ -367,18 +355,11 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
     ]
   },
   {
-    title: "Notifications and Shopify behavior settings",
-    settings: [
-      setting("DIS_REJ_NOTI_ON_CNCL", "Disable rejection notification on Shopify cancellation", "toggle", "yn")
-    ]
-  },
-  {
     title: "Rejection and exception settings",
     settings: [
       setting("AFFECT_QOH_ON_REJ", "Affect QOH on rejection", "toggle", "yn"),
       setting("REJ_ITM_CC_CRT", "Create cycle count for rejected items", "toggle", "true-false"),
-      setting("FF_COLLATERAL_REJ", "Fulfillment collateral rejection", "toggle", "true-false"),
-      setting("FF_USE_NEW_REJ_API", "Fulfillment use new rejection API", "toggle", "true-false")
+      setting("FF_COLLATERAL_REJ", "Fulfillment collateral rejection", "toggle", "true-false")
     ]
   }
 ];
