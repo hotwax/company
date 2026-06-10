@@ -18,12 +18,6 @@
                 <p>{{ productStore.productStoreId }}</p>
               </ion-label>
             </ion-item>
-            <ion-item class="item-box" lines="none">
-              <ion-label class="ion-text-wrap">
-                Operating countries
-                <p>{{ translate(dbicCountriesCount == 1 ? "country" : "countries", {count: dbicCountriesCount}) }}</p>
-              </ion-label>
-            </ion-item>
           </section>
         </div>
 
@@ -119,7 +113,6 @@
 import { IonBackButton, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonPage, IonTextarea, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from '@common'
 import { useProductStore } from '@/store/productStore';
-import { useUtilStore } from '@/store/util';
 import { computed, defineProps } from "vue";
 import { DateTime } from "luxon";
 
@@ -142,11 +135,9 @@ type ProductStoreSettingConfig = {
 
 const props = defineProps(["productStoreId"]);
 const productStoreStore = useProductStore();
-const utilStore = useUtilStore();
 
 const productStore = computed(() => productStoreStore.getCurrent)
 const settings = computed(() => productStoreStore.currentStoreSettings)
-const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
 
 const idMaxLength = 20;
 const idLongMaxLength = 60;
@@ -367,7 +358,6 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
   await Promise.allSettled([
-    utilStore.fetchDBICCountries(),
     productStoreStore.fetchProductStoreDetails(props.productStoreId),
     productStoreStore.fetchCurrentStoreSettings(props.productStoreId)
   ])

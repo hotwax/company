@@ -221,18 +221,6 @@ const harmonizedFetchStatus = computed(() => [
     refresh: () => utilStore.fetchFacilityGroups()
   },
   {
-    label: translate("DBIC Countries"),
-    status: fetchStatus.value.dbicCountries,
-    count: utilStore.dbicCountries?.list?.length || 0,
-    refresh: () => utilStore.fetchDBICCountries()
-  },
-  {
-    label: translate("Operating Countries"),
-    status: fetchStatus.value.operatingCountries,
-    count: utilStore.operatingCountries?.length || 0,
-    refresh: () => utilStore.fetchOperatingCountries()
-  },
-  {
     label: translate("Product Identifiers"),
     status: fetchStatus.value.productIdentifiers,
     count: utilStore.productIdentifiers?.length || 0,
@@ -291,8 +279,6 @@ function refreshCache() {
   utilStore.fetchFacilities();
   utilStore.fetchOrganizationPartyId();
   utilStore.fetchFacilityGroups();
-  utilStore.fetchDBICCountries();
-  utilStore.fetchOperatingCountries();
   utilStore.fetchProductIdentifiers();
   utilStore.fetchShipmentMethodTypes();
   productStoreStore.fetchProductStores();

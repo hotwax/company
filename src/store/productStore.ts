@@ -192,14 +192,6 @@ export const useProductStore = defineStore('productStore', {
       })
     },
 
-    async addDBICCountries(payload: any): Promise<any> {
-      return api({
-        url: "admin/geos/assocs",
-        method: "post",
-        data: payload
-      })
-    },
-
     async updateCompany(payload: any): Promise<any> {
       try {
         const resp = await api({

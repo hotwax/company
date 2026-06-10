@@ -1,0 +1,90 @@
+<h2>Operating Map Variants</h2>
+<p class="subtitle">Same metaphor, different interaction model. Which one should be the default experience?</p>
+
+<div class="cards">
+  <div class="card" data-choice="a-connection-graph" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="min-height:230px;display:grid;place-items:center">
+        <div style="position:relative;width:520px;max-width:100%;height:210px">
+          <div style="position:absolute;left:210px;top:70px;width:100px;height:100px;border:3px solid #111827;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;font-weight:700">OMS</div>
+          <div style="position:absolute;left:20px;top:18px;width:110px;height:72px;border:2px solid #2563eb;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#eff6ff">Shopify</div>
+          <div style="position:absolute;right:20px;top:18px;width:110px;height:72px;border:2px solid #475569;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#f8fafc">NetSuite</div>
+          <div style="position:absolute;left:38px;bottom:18px;width:110px;height:72px;border:2px dashed #64748b;border-radius:14px;display:flex;align-items:center;justify-content:center;background:white">Klaviyo</div>
+          <div style="position:absolute;right:38px;bottom:18px;width:110px;height:72px;border:2px dashed #64748b;border-radius:14px;display:flex;align-items:center;justify-content:center;background:white">Unigate</div>
+          <div style="position:absolute;left:130px;top:58px;width:88px;height:2px;background:#94a3b8;transform:rotate(14deg)"></div>
+          <div style="position:absolute;right:130px;top:58px;width:88px;height:2px;background:#94a3b8;transform:rotate(-14deg)"></div>
+          <div style="position:absolute;left:140px;bottom:72px;width:88px;height:2px;background:#94a3b8;transform:rotate(-20deg)"></div>
+          <div style="position:absolute;right:140px;bottom:72px;width:88px;height:2px;background:#94a3b8;transform:rotate(20deg)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Connection Graph</h3>
+      <p>Best for integrations. Nodes are systems; edges are syncs. Clicking an incomplete Shopify node opens the exact setup path: install app, generate/copy credentials, validate connection, then create jobs.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b-business-topology" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="min-height:230px;display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:14px;align-items:center">
+        <div style="display:grid;gap:10px">
+          <div style="border:2px solid #475569;border-radius:14px;padding:14px;background:#f8fafc">Warehouse</div>
+          <div style="border:2px solid #475569;border-radius:14px;padding:14px;background:#f8fafc">Hub Store</div>
+        </div>
+        <div style="border:3px solid #111827;border-radius:18px;padding:16px;background:white">
+          <div style="font-weight:700;margin-bottom:12px">Capital Hair Model</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:12px;text-align:center">Store 1</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:12px;text-align:center">Store 2</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:12px;text-align:center">Store 3</div>
+            <div style="border:1px dashed #94a3b8;border-radius:10px;padding:12px;text-align:center">+57</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:12px;text-align:center">Pickup</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:12px;text-align:center">Ship</div>
+          </div>
+        </div>
+        <div style="display:grid;gap:10px">
+          <div style="border:2px solid #2563eb;border-radius:14px;padding:14px;background:#eff6ff">Shopify</div>
+          <div style="border:2px solid #475569;border-radius:14px;padding:14px;background:#f8fafc">Carrier</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Business Topology</h3>
+      <p>Best for discovery. Retailer models the real network first: shops, warehouses, stores, hubs, pickup/ship eligibility, regions. OMS config is generated from the topology.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-live-setup-map" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="min-height:230px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="border:2px solid #111827;border-radius:16px;padding:14px;background:white">
+          <div style="font-weight:700;margin-bottom:12px">Map</div>
+          <div style="display:grid;gap:10px">
+            <div style="border:2px solid #16a34a;border-radius:12px;padding:10px;background:#f0fdf4">Product Store created</div>
+            <div style="border:2px solid #2563eb;border-radius:12px;padding:10px;background:#eff6ff">Shopify stub needs connection</div>
+            <div style="border:2px dashed #64748b;border-radius:12px;padding:10px;background:white">NetSuite later</div>
+            <div style="border:2px dashed #64748b;border-radius:12px;padding:10px;background:white">Carrier later</div>
+          </div>
+        </div>
+        <div style="border:2px solid #cbd5e1;border-radius:16px;padding:14px;background:#f8fafc">
+          <div style="font-weight:700;margin-bottom:12px">Selected node</div>
+          <div style="display:grid;gap:8px">
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:10px;background:white">1. Install HotWax app in Shopify</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:10px;background:white">2. Generate connection token in OMS</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:10px;background:white">3. Paste OMS URL + token in Shopify</div>
+            <div style="border:1px solid #94a3b8;border-radius:10px;padding:10px;background:white">4. Test and create sync jobs</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Live Setup Map</h3>
+      <p>Best for onboarding execution. The map is also a checklist: placeholders become real records as users complete connection tasks.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>My current recommendation</h3>
+  <p>Use C as the product shell, with A inside integration nodes and B inside store-operations/routing nodes. That keeps onboarding visual and actionable without forcing every business concept into one giant graph.</p>
+</div>
