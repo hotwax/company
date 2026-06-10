@@ -152,14 +152,6 @@
                 <ion-toggle :checked="getBooleanValue(productStore.allowSplit)" @click.prevent="updateProductStoreDetail($event, 'allowSplit', true)">{{ translate("Order splitting") }}</ion-toggle>
               </ion-item>
 
-              <ion-item>
-                <ion-input :label="translate('Minimum shipment threshold')" :placeholder="translate('threshold')" type="number" min="0" :value="settings['BRK_SHPMNT_THRESHOLD']?.settingValue" @keydown.enter="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" @keydown="validateInput($event)" @ionBlur="updateProductStoreSettings($event, 'BRK_SHPMNT_THRESHOLD', false)" />
-              </ion-item>
-              <ion-item lines="none">
-                <ion-label>
-                  <p>{{ translate("Split orders into multiple groups and fulfill them from different fulfillment centers.") }}</p>
-                </ion-label>
-              </ion-item>
             </ion-list>
           </ion-card>
 
@@ -228,19 +220,6 @@
             </ion-card-header>
 
             <ion-list>
-              <ion-item-divider color="light">
-                <ion-label>{{ translate("Inventory view") }}</ion-label>
-              </ion-item-divider>
-
-              <ion-item>
-                <ion-toggle :checked="getBooleanValue(settings['INV_CNT_VIEW_QOH']?.settingValue)" @click.prevent="updateProductStoreSettings($event, 'INV_CNT_VIEW_QOH', true)" >{{ translate("Show systemic inventory") }}</ion-toggle>
-              </ion-item>
-              <ion-item lines="none">
-                <ion-label>
-                  <p>{{ translate("Display current physical quantity expected at locations while inventory counting.") }}</p>
-                </ion-label>
-              </ion-item>
-
               <ion-item-divider color="light">
                 <ion-label>{{ translate("Pre-order computation") }}</ion-label>
               </ion-item-divider>
