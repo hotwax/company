@@ -76,8 +76,8 @@ import router from "@/router";
 import { computed } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 
-import ShopifyConnectionFilters from "@/components/ShopifyConnectionFilters.vue";
-import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue";
+import ShopifyConnectionFilters from "@/components/shopify/ShopifyConnectionFilters.vue";
+import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConnectionModal.vue";
 
 const shopifyStore = useShopifyStore();
 

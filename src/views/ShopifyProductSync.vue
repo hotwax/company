@@ -749,10 +749,10 @@ import { useUserStore } from '@/store/user';
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
-import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
-import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
-import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
-import AnimatedDuration from "@/components/AnimatedDuration.vue";
+import ShopifyProductSyncReturningView from "@/components/shopify/ShopifyProductSyncReturningView.vue";
+import ShopifyProductSyncProductsModal from "@/components/shopify/ShopifyProductSyncProductsModal.vue";
+import ShopifyProductSyncWizardView from "@/components/shopify/ShopifyProductSyncWizardView.vue";
+import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {

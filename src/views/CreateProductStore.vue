@@ -65,7 +65,7 @@ import router from "@/router";
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
-import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
+import SelectOperatingCountriesModal from "@/components/product-store/SelectOperatingCountriesModal.vue";
 import { generateInternalId } from '@/utils';
 
 const productStoreStore = useProductStore();

@@ -247,7 +247,7 @@ import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common'
-import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
+import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
 import {
   getDefaultKlaviyoProductStoreId,
   getKlaviyoEventLabel,

@@ -111,10 +111,10 @@ import { translate } from '@common';
 import router from "@/router";
 import { useProductStore } from '@/store/productStore';
 import { computed } from "vue";
-import SftpModal from "@/components/SftpModal.vue";
-import ProductStoreModal from "@/components/ProductStoreModal.vue";
-import PriceLevelModal from "@/components/PriceLevelModal.vue";
-import DiscountsModal from "@/components/DiscountsModal.vue";
+import SftpModal from "@/components/netsuite/SftpModal.vue";
+import ProductStoreModal from "@/components/product-store/ProductStoreModal.vue";
+import PriceLevelModal from "@/components/netsuite/PriceLevelModal.vue";
+import DiscountsModal from "@/components/netsuite/DiscountsModal.vue";
 
 const productStoreStore = useProductStore();
 

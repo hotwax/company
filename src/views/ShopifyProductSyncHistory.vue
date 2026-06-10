@@ -125,7 +125,7 @@ import { commonUtil, logger, translate } from '@common'
 import { computed, defineProps, reactive, ref } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
-import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistoryView.vue";
+import ShopifyProductSyncHistoryView from "@/components/shopify/ShopifyProductSyncHistoryView.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";

@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonBackButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
+import ImportShopifyLocationsModal from '@/components/shopify/ImportShopifyLocationsModal.vue'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';

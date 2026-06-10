@@ -10,7 +10,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
-import Menu from '@/components/Menu.vue'
+import Menu from '@/components/common/Menu.vue'
 import { emitter, translate } from '@common'
 import { Settings } from 'luxon'
 import { useUserStore } from '@/store/user'
