@@ -10,33 +10,28 @@
     <ion-content class="ion-padding">
       <main>
         <section class="configuration">
-          <ion-list>
-            <!-- Agent Name -->
-            <ion-input
-              fill="outline"
-              :label="translate('Give your agent a name')"
-              label-placement="stacked"
-              :placeholder="translate('Name')"
-              :helper-text="translate('Your agent requires a name to start testing')"
-            />
+          <!-- Agent Name -->
+          <div class="agent">
+            <div class="agent-name">
+              <ion-input class="agent-name" fill="outline" :label="translate('Give your agent a name')"
+                label-placement="stacked" :placeholder="translate('Name')"
+                :helper-text="translate('Your agent requires a name to start testing')" />
+            </div>
+            <div class="agent-description">
+              <ion-textarea fill="outline" :label="translate('Instructions')" label-placement="stacked"
+                :placeholder="translate('Input text')" :rows="5" />
 
-            <!-- Instructions -->
-            <ion-textarea
-              fill="outline"
-              :label="translate('Instructions')"
-              label-placement="stacked"
-              :placeholder="translate('Input text')"
-              :rows="5"
-            />
-
-            <!-- Rewrite Button -->
-            <ion-item lines="none">
               <ion-button fill="outline" color="primary">
                 <ion-icon slot="start" :icon="sparklesOutline" />
-                {{ translate("Rewrite") }}
+                {{ translate("Enhance") }}
               </ion-button>
-            </ion-item>
+            </div>
+          </div>
 
+          <ion-list class="model">
+            <ion-list-header>
+              {{ translate("Select your model") }}
+            </ion-list-header>
             <!-- Model Dropdown -->
             <ion-select
               fill="outline"
@@ -65,7 +60,7 @@
           </ion-list>
 
           <!-- Tools Section -->
-          <ion-card>
+          <ion-card class="tools">
             <ion-item-divider color="light">
               <ion-label>{{ translate("Tools") }}</ion-label>
               <ion-button slot="end" fill="clear" size="small" @click="openToolsModal">
@@ -100,10 +95,17 @@
           </ion-card>
         </section>
         <section class="preview">
-          <chat-container
-            :chat="previewChat"
-            @send-message="addPreviewMessage"
-          />
+
+          <div class="conversation ion-padding">
+            <chat-container
+              :chat="previewChat"
+              @send-message="addPreviewMessage"
+            />
+          </div>
+          <ion-button size="large">
+            Save
+            <ion-icon slot="end" :icon="saveOutline" />
+          </ion-button>
         </section>
       </main>
       <ion-modal :is-open="showToolsModal" @didDismiss="showToolsModal = false">
@@ -171,7 +173,7 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { addOutline, checkmarkOutline, closeOutline, removeCircleOutline, sparklesOutline } from "ionicons/icons";
+import { addOutline, checkmarkOutline, closeOutline, removeCircleOutline, saveOutline, sparklesOutline } from "ionicons/icons";
 import { translate } from "@common";
 import { computed, ref } from "vue";
 import ChatContainer from "@/components/chat/ChatContainer.vue";
@@ -320,11 +322,31 @@ main {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacer-xl);
+  max-width: 1100px;
+  margin-inline: auto;
 }
 
-.preview {
+.configuration {
+  padding: var(--spacer-sm);
+}
+
+.configuration .agent {
+  margin-bottom: var(--spacer-xl);
+}
+
+.agent > *:not(:last-child), .model > ion-select:not(:last-child) {
+  margin-bottom: var(--spacer-base);
+}
+
+.tools {
+  margin: 0;
+  margin-block-start: var(--spacer-xl);
+}
+
+.conversation {
   border: 1px solid var(--ion-color-medium);
   border-radius: 16px;
+  overflow: hidden;
 }
 
 </style>

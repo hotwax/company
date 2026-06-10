@@ -1,64 +1,67 @@
 <template>
-  <ion-list>
-    <chat-message
-      v-for="message in chat.messages"
-      :key="message.id"
-      :user-name="message.userName"
-      :content="message.content"
-    />
-
-    <chat-tool-call
-      v-for="toolCall in chat.toolCalls"
-      :key="toolCall.id"
-      :tool-name="toolCall.toolName"
-      :args="toolCall.args"
-    />
-
-    <chat-tool-permission
-      v-for="permission in chat.permissions"
-      :key="permission.id"
-      :name="permission.name"
-      :tool-name="permission.toolName"
-      @allow="$emit('allow-tool', permission)"
-      @deny="$emit('deny-tool', permission)"
-    >
-      {{ permission.message }}
-    </chat-tool-permission>
-
-    <ion-item v-for="step in chat.steps" :key="step.id" lines="none">
-      <ion-icon slot="start" :icon="checkmarkCircleOutline" aria-hidden="true" />
-      <ion-label>
-        {{ step.name }}
-        <p>{{ step.description }}</p>
-      </ion-label>
-    </ion-item>
-
-    <div v-if="chat.agentMessageText">
-      <ion-item lines="none">
-        <ion-icon slot="start" :icon="terminalOutline" aria-hidden="true" />
-        <ion-label>{{ chat.agentName }}</ion-label>
-      </ion-item>
-
-      <ion-text>
-        <p>{{ chat.agentMessageText }}</p>
-      </ion-text>
-    </div>
-
-    <ion-item lines="full">
-      <ion-textarea
-        v-model="messageText"
-        :label="translate('Message')"
-        label-placement="stacked"
-        :placeholder="translate('Ask the agent')"
-        :auto-grow="true"
-        :rows="1"
+  <div class="chat-container">
+    <div class="thread">
+      <chat-message
+        v-for="message in chat.messages"
+        :key="message.id"
+        :user-name="message.userName"
+        :content="message.content"
       />
 
-      <ion-button slot="end" fill="clear" :disabled="!messageText.trim()" @click="sendMessage">
-        <ion-icon slot="icon-only" :icon="sendOutline" />
-      </ion-button>
-    </ion-item>
-  </ion-list>
+      <chat-tool-call
+        v-for="toolCall in chat.toolCalls"
+        :key="toolCall.id"
+        :tool-name="toolCall.toolName"
+        :args="toolCall.args"
+      />
+
+      <chat-tool-permission
+        v-for="permission in chat.permissions"
+        :key="permission.id"
+        :name="permission.name"
+        :tool-name="permission.toolName"
+        @allow="$emit('allow-tool', permission)"
+        @deny="$emit('deny-tool', permission)"
+      >
+        {{ permission.message }}
+      </chat-tool-permission>
+
+      <ion-item v-for="step in chat.steps" :key="step.id" lines="none">
+        <ion-icon slot="start" :icon="checkmarkCircleOutline" aria-hidden="true" />
+        <ion-label>
+          {{ step.name }}
+          <p>{{ step.description }}</p>
+        </ion-label>
+      </ion-item>
+
+      <div v-if="chat.agentMessageText">
+        <ion-item lines="none">
+          <ion-icon slot="start" :icon="terminalOutline" aria-hidden="true" />
+          <ion-label class="overline">{{ chat.agentName }}</ion-label>
+        </ion-item>
+
+        <ion-text class="ion-padding">
+          {{ chat.agentMessageText }}
+        </ion-text>
+      </div>
+    </div>
+    <div class="next-message ion-padding">
+      <ion-item lines="full">
+        <ion-textarea
+          v-model="messageText"
+          :label="translate('Message')"
+          label-placement="stacked"
+          :placeholder="translate('Ask the agent')"
+          :auto-grow="true"
+          :rows="1"
+        />
+
+        <ion-button slot="end" fill="clear" :disabled="!messageText.trim()" @click="sendMessage">
+          <ion-icon slot="icon-only" :icon="sendOutline" />
+        </ion-button>
+      </ion-item>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -133,3 +136,21 @@ function sendMessage() {
   messageText.value = "";
 }
 </script>
+
+<style scoped>
+
+.chat-container {
+  display: grid;
+  grid-template-rows: 1fr min-content;
+  height: 100%;
+}
+
+.thread {
+  overflow-y: auto;
+}
+
+.next-message {
+  border-top: 1px solid var(--ion-color-medium);
+}
+
+</style>

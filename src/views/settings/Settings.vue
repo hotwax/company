@@ -133,7 +133,7 @@ import { translate, commonUtil, cookieHelper } from '@common'
 import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
-import { getCurrentTime } from "../utils"
+import { getCurrentTime } from "../../utils"
 import useServiceJob from "@/composables/useServiceJob";
 const userStore = useUserStore();
 const productStoreStore = useProductStore();
