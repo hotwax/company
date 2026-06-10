@@ -10,7 +10,7 @@
 
     <ion-content>
       <main>
-        <h1 class="ion-margin-start">{{ translate('Create a new product store') }}</h1>
+        <h1>{{ translate('Create a new product store') }}</h1>
 
         <ion-item lines="none" v-if="!productStores.length">
           <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
@@ -36,12 +36,17 @@
           <ion-button fill="outline" slot="end" @click="openSelectOperatingCountriesModal()">{{ translate("Add") }}</ion-button>
         </ion-item>
 
-        <ion-item lines="none" v-if="!dbicCountriesCount">
-          <ion-chip outline v-for="country in selectedCountries" :key="country.geoId">
-            {{ country.geoName }}
-            <ion-icon :icon="closeCircleOutline" @click="removeCountry(country.geoId)" />
-          </ion-chip>
-        </ion-item>
+        <ion-list v-if="!dbicCountriesCount && selectedCountries.length">
+          <ion-item v-for="country in selectedCountries" :key="country.geoId">
+            <ion-label>
+              {{ country.geoName }}
+              <p>{{ country.geoId }}</p>
+            </ion-label>
+            <ion-button fill="clear" color="danger" slot="end" @click="removeCountry(country.geoId)">
+              <ion-icon slot="icon-only" :icon="closeCircleOutline" />
+            </ion-button>
+          </ion-item>
+        </ion-list>
 
         <ion-button class="ion-margin-top" @click="manageConfigurations()">
           {{ translate("Manage configurations") }}
@@ -53,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import router from "@/router";
