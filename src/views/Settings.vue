@@ -123,6 +123,7 @@ import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
 import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
+import { useTikTokStore } from '@/store/tiktok';
 import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
@@ -138,6 +139,7 @@ import useServiceJob from "@/composables/useServiceJob";
 const userStore = useUserStore();
 const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
+const tiktokStore = useTikTokStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
@@ -157,13 +159,15 @@ const fetchStatus = computed(() => utilStore.fetchStatus)
 const userFetchStatus = computed(() => userStore.fetchStatus)
 const productStoreFetchStatus = computed(() => productStoreStore.fetchStatus)
 const shopifyFetchStatus = computed(() => shopifyStore.fetchStatus)
+const tiktokFetchStatus = computed(() => tiktokStore.fetchStatus)
 
 const oldestSyncTime = computed(() => {
   const timestamps = [
     userFetchStatus.value.lastFetched,
     fetchStatus.value.lastFetched,
     productStoreFetchStatus.value.lastFetched,
-    shopifyFetchStatus.value.lastFetched
+    shopifyFetchStatus.value.lastFetched,
+    tiktokFetchStatus.value.lastFetched
   ].filter(t => t > 0);
   
   if (!timestamps.length) return '';
@@ -195,6 +199,12 @@ const harmonizedFetchStatus = computed(() => [
     status: shopifyFetchStatus.value.shops,
     count: shopifyStore.shops?.length || 0,
     refresh: () => shopifyStore.fetchShopifyShops()
+  },
+  {
+    label: translate("TikTok Shops"),
+    status: tiktokFetchStatus.value.shops,
+    count: tiktokStore.shops?.length || 0,
+    refresh: () => tiktokStore.fetchTikTokShops()
   },
   {
     label: translate("Statuses"),
@@ -297,6 +307,7 @@ function refreshCache() {
   utilStore.fetchShipmentMethodTypes();
   productStoreStore.fetchProductStores();
   shopifyStore.fetchShopifyShops();
+  tiktokStore.fetchTikTokShops();
   fetchJobs();
 }
 
