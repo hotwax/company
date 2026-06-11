@@ -33,7 +33,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { businessOutline, cartOutline, cubeOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -67,6 +67,13 @@ const appPages = [
     childRoutes: ["/netsuite/"],
     iosIcon: walletOutline,
     mdIcon: walletOutline
+  },
+  {
+    title: "QuickBox",
+    url: "/quickbox",
+    childRoutes: ["/quickbox/"],
+    iosIcon: cubeOutline,
+    mdIcon: cubeOutline,
   },
   {
     title: "Settings",
