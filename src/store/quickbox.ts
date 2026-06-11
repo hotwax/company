@@ -82,7 +82,6 @@ export const useQuickBoxStore = defineStore('quickbox', {
         method: 'put',
         data
       })
-      await this.fetchConnectionConfig()
       return resp.data
     },
 
