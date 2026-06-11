@@ -13,16 +13,18 @@
           <!-- Agent Name -->
           <div class="agent">
             <div class="agent-name">
-              <ion-input class="agent-name" fill="outline" :label="translate('Give your agent a name')"
+              <ion-input class="agent-name" fill="outline" v-model="composer.agentName"
+                :label="translate('Give your agent a name')"
                 label-placement="stacked" :placeholder="translate('Name')"
                 :helper-text="translate('Your agent requires a name to start testing')" />
             </div>
             <div class="agent-description">
-              <ion-textarea fill="outline" :label="translate('Instructions')" label-placement="stacked"
-                :placeholder="translate('Input text')" :rows="5" />
+              <ion-textarea fill="outline" v-model="composer.instructions" :label="translate('Instructions')"
+                label-placement="stacked" :placeholder="translate('Input text')" :rows="5" />
 
-              <ion-button fill="outline" color="primary">
-                <ion-icon slot="start" :icon="sparklesOutline" />
+              <ion-button fill="outline" color="primary" :disabled="composer.enhancing || !composer.instructions.trim()" @click="enhance">
+                <ion-spinner v-if="composer.enhancing" slot="start" name="crescent" />
+                <ion-icon v-else slot="start" :icon="sparklesOutline" />
                 {{ translate("Enhance") }}
               </ion-button>
             </div>
@@ -40,8 +42,10 @@
               :placeholder="translate('Select')"
               v-model="selectedModel"
             >
-              <ion-select-option v-for="model in models" :key="model" :value="model">
-                {{ model }}
+              <ion-select-option v-for="model in composer.modelOptions"
+                :key="`${model.providerName}::${model.modelName}`"
+                :value="`${model.providerName}::${model.modelName}`">
+                {{ model.modelName }} ({{ model.providerName }})
               </ion-select-option>
             </ion-select>
 
@@ -51,9 +55,9 @@
               :label="translate('Reasoning effort')"
               interface="popover"
               :placeholder="translate('Select')"
-              v-model="selectedReasoningEffort"
+              v-model="composer.reasoningEffort"
             >
-              <ion-select-option v-for="effort in reasoningEfforts" :key="effort" :value="effort">
+              <ion-select-option v-for="effort in composer.reasoningEffortOptions" :key="effort" :value="effort">
                 {{ translate(effort) }}
               </ion-select-option>
             </ion-select>
@@ -70,20 +74,21 @@
             </ion-item-divider>
 
             <ion-list>
-              <ion-item v-if="!selectedTools.length">
+              <ion-item v-if="!composer.selectedTools.length">
                 <ion-label>
                   {{ translate("No tools selected") }}
                   <p>{{ translate("Add tools this agent can use") }}</p>
                 </ion-label>
               </ion-item>
 
-              <ion-item v-for="tool in selectedTools" :key="tool.toolId">
+              <ion-item v-for="tool in composer.selectedTools" :key="tool.toolId">
                 <ion-label>
-                  <h2>{{ translate(tool.name) }}</h2>
-                  <p>{{ translate(tool.description) }}</p>
+                  <h2>{{ tool.toolName }}</h2>
+                  <p>{{ tool.description }}</p>
                 </ion-label>
 
-                <ion-checkbox slot="end" label-placement="bottom" justify="center">
+                <ion-checkbox slot="end" label-placement="bottom" justify="center"
+                  :checked="tool.autoApprove" @ionChange="tool.autoApprove = $event.detail.checked">
                   {{ translate("Auto approve") }}
                 </ion-checkbox>
 
@@ -98,14 +103,22 @@
 
           <div class="conversation ion-padding">
             <chat-container
-              :chat="previewChat"
-              @send-message="addPreviewMessage"
+              :agent-name="composer.agentName || translate('Agent')"
+              :items="composer.previewItems"
+              :busy="composer.previewing"
+              @send-message="sendPreview"
             />
           </div>
-          <ion-button size="large">
-            Save
-            <ion-icon slot="end" :icon="saveOutline" />
-          </ion-button>
+          <div class="actions">
+            <ion-button size="large" fill="outline" :disabled="composer.saving || !composer.agentName.trim()" @click="save">
+              {{ translate("Save") }}
+              <ion-icon slot="end" :icon="saveOutline" />
+            </ion-button>
+            <ion-button size="large" :disabled="!composer.canActivate" @click="activate">
+              {{ translate("Activate") }}
+              <ion-icon slot="end" :icon="rocketOutline" />
+            </ion-button>
+          </div>
         </section>
       </main>
       <ion-modal :is-open="showToolsModal" @didDismiss="showToolsModal = false">
@@ -127,11 +140,11 @@
             <ion-item v-for="tool in filteredTools" :key="tool.toolId" @click="toggleToolSelection(tool.toolId)">
               <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="space-between">
                 <ion-label>
-                  {{ translate(tool.name) }}
-                  <p>{{ translate(tool.description) }}</p>
+                  {{ tool.toolName }}
+                  <p>{{ tool.description }}</p>
                 </ion-label>
               </ion-checkbox>
-              <ion-note slot="end">{{ translate(tool.category) }}</ion-note>
+              <ion-note slot="end">{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</ion-note>
             </ion-item>
           </ion-list>
 
@@ -162,6 +175,7 @@ import {
   IonItemDivider,
   IonLabel,
   IonList,
+  IonListHeader,
   IonMenuButton,
   IonModal,
   IonNote,
@@ -169,119 +183,48 @@ import {
   IonSearchbar,
   IonSelect,
   IonSelectOption,
+  IonSpinner,
   IonTextarea,
   IonTitle,
-  IonToolbar
+  IonToolbar,
+  alertController,
+  onIonViewWillEnter
 } from "@ionic/vue";
-import { addOutline, checkmarkOutline, closeOutline, removeCircleOutline, saveOutline, sparklesOutline } from "ionicons/icons";
+import { addOutline, checkmarkOutline, closeOutline, removeCircleOutline, rocketOutline, saveOutline, sparklesOutline } from "ionicons/icons";
 import { translate } from "@common";
 import { computed, ref } from "vue";
 import ChatContainer from "@/components/chat/ChatContainer.vue";
+import { useComposerStore } from "@/store/composer";
+import { showToast } from "@/utils";
 
-const selectedModel = ref("5.5");
-const selectedReasoningEffort = ref("High");
+const composer = useComposerStore();
+
 const showToolsModal = ref(false);
 const toolQueryString = ref("");
 const draftToolIds = ref([] as string[]);
-const previewChat = ref({
-  agentName: "Circuit",
-  agentMessageText: "I can help test this agent once a name, instructions, and tools are configured.",
-  messages: [
-    {
-      id: "message-1",
-      userName: "User first name",
-      content: "Find open orders that need attention and explain what changed."
-    }
-  ],
-  toolCalls: [
-    {
-      id: "tool-call-1",
-      toolName: "Order lookup",
-      args: "{\n  \"status\": \"open\",\n  \"limit\": 5\n}"
-    }
-  ],
-  permissions: [
-    {
-      id: "permission-1",
-      name: "Circuit",
-      toolName: "Inventory availability",
-      message: "Circuit wants to check availability across facilities."
-    }
-  ],
-  steps: [
-    {
-      id: "step-1",
-      name: "Read instructions",
-      description: "Loaded the current draft agent instructions."
-    },
-    {
-      id: "step-2",
-      name: "Prepare tool plan",
-      description: "Matched requested work to allowed tools."
-    }
-  ]
-});
-const selectedTools = ref([
-  {
-    toolId: "orders.lookup",
-    name: "Order lookup",
-    description: "Find orders, customers, and fulfillment status",
-    category: "OMS"
-  }
-]);
 
-const models = ["5.0", "5.5", "6.0"];
-const reasoningEfforts = ["Low", "Medium", "High"];
-const availableTools = [
-  {
-    toolId: "orders.lookup",
-    name: "Order lookup",
-    description: "Find orders, customers, and fulfillment status",
-    category: "OMS"
-  },
-  {
-    toolId: "inventory.read",
-    name: "Inventory availability",
-    description: "Read product availability across facilities",
-    category: "Inventory"
-  },
-  {
-    toolId: "product.store",
-    name: "Product store settings",
-    description: "Review product store configuration and channels",
-    category: "Company"
-  },
-  {
-    toolId: "shopify.sync",
-    name: "Shopify sync history",
-    description: "Inspect catalog, order, and fulfillment sync activity",
-    category: "Shopify"
-  },
-  {
-    toolId: "netsuite.lookup",
-    name: "NetSuite lookup",
-    description: "Check NetSuite identifiers and integration mappings",
-    category: "ERP"
-  },
-  {
-    toolId: "klaviyo.connection",
-    name: "Klaviyo connection",
-    description: "Read Klaviyo connection health and tenant configuration",
-    category: "Marketing"
+const selectedModel = computed({
+  get: () => composer.modelName ? `${composer.providerName}::${composer.modelName}` : "",
+  set: (value: string) => {
+    const [providerName, modelName] = value.split("::");
+    composer.providerName = providerName;
+    composer.modelName = modelName;
   }
-];
+});
 
 const filteredTools = computed(() => {
   const query = toolQueryString.value.trim().toLowerCase();
-  if(!query) return availableTools;
+  if(!query) return composer.toolCatalog;
+  return composer.toolCatalog.filter((tool) =>
+    [tool.toolName, tool.description, tool.toolId].some((value) => (value || "").toLowerCase().includes(query)));
+});
 
-  return availableTools.filter((tool) => {
-    return [tool.name, tool.description, tool.category, tool.toolId].some((value) => value.toLowerCase().includes(query));
-  });
+onIonViewWillEnter(async () => {
+  await Promise.all([composer.fetchModelOptions(), composer.fetchToolCatalog()]);
 });
 
 function openToolsModal() {
-  draftToolIds.value = selectedTools.value.map((tool) => tool.toolId);
+  draftToolIds.value = composer.selectedTools.map((tool) => tool.toolId);
   toolQueryString.value = "";
   showToolsModal.value = true;
 }
@@ -303,16 +246,70 @@ function toggleToolSelection(toolId: string) {
 }
 
 function saveTools() {
-  selectedTools.value = availableTools.filter((tool) => draftToolIds.value.includes(tool.toolId));
+  composer.selectedTools = draftToolIds.value.map((toolId) => {
+    const existing = composer.selectedTools.find((tool) => tool.toolId === toolId);
+    if(existing) return existing;
+    const catalogTool = composer.toolCatalog.find((tool) => tool.toolId === toolId) as any;
+    // default the checkbox to the tool's actual default: read-only tools are auto-approved already
+    return { ...catalogTool, autoApprove: (catalogTool.requiresApproval || "N") === "N" };
+  });
   closeToolsModal();
 }
 
 function removeTool(toolId: string) {
-  selectedTools.value = selectedTools.value.filter((tool) => tool.toolId !== toolId);
+  composer.selectedTools = composer.selectedTools.filter((tool) => tool.toolId !== toolId);
 }
 
-function addPreviewMessage(message: any) {
-  previewChat.value.messages.push(message);
+async function save() {
+  try {
+    await composer.saveDraft();
+    showToast(translate("Draft saved"));
+  } catch {
+    showToast(translate("Failed to save agent"));
+  }
+}
+
+async function activate() {
+  try {
+    await composer.saveDraft();
+    await composer.activate();
+    showToast(translate("Agent activated. Find it in the Workforce."));
+    composer.clearComposerState();
+  } catch {
+    showToast(translate("Failed to activate agent"));
+  }
+}
+
+async function enhance() {
+  const alert = await alertController.create({
+    header: translate("Enhance instructions"),
+    message: translate("Replace your instructions with an improved version written by the model?"),
+    buttons: [
+      { text: translate("Cancel"), role: "cancel" },
+      { text: translate("Enhance"), role: "confirm" }
+    ]
+  });
+  await alert.present();
+  const { role } = await alert.onDidDismiss();
+  if(role !== "confirm") return;
+  try {
+    await composer.enhanceInstructions();
+    showToast(translate("Instructions enhanced"));
+  } catch {
+    showToast(translate("Failed to enhance instructions"));
+  }
+}
+
+async function sendPreview(content: string) {
+  if(!composer.agentName.trim()) {
+    showToast(translate("Your agent requires a name to start testing"));
+    return;
+  }
+  try {
+    await composer.sendPreviewMessage(content);
+  } catch {
+    showToast(translate("Preview failed"));
+  }
 }
 </script>
 
@@ -347,6 +344,12 @@ main {
   border: 1px solid var(--ion-color-medium);
   border-radius: 16px;
   overflow: hidden;
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacer-sm);
+  margin-block-start: var(--spacer-base);
 }
 
 </style>
