@@ -4,6 +4,11 @@
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Workforce") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="openNewConversationModal">
+            <ion-icon slot="icon-only" :icon="addOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -26,14 +31,14 @@
           <ion-list lines="full">
             <conversation-item
               v-for="conversation in filteredConversations"
-              :key="conversation.id"
+              :key="conversation.conversationId"
               :agent-name="conversation.agentName"
-              :conversation-name="conversation.conversationName"
+              :conversation-name="conversation.title || translate('New conversation')"
               :pending-request="statusCaption(conversation)"
-              :badge="conversation.status !== 'running'"
-              :badge-color="conversation.status === 'error' ? 'danger' : 'primary'"
-              :class="{ 'workforce__conversation--active': conversation.id === selectedConversationId }"
-              @click="selectedConversationId = conversation.id"
+              :badge="conversation.derivedStatus === 'pending' || conversation.derivedStatus === 'error'"
+              :badge-color="conversation.derivedStatus === 'error' ? 'danger' : 'primary'"
+              :class="{ 'workforce__conversation--active': conversation.conversationId === workforce.selectedConversationId }"
+              @click="workforce.selectConversation(conversation.conversationId)"
             />
           </ion-list>
         </aside>
@@ -41,8 +46,10 @@
         <!-- Conversation thread pane -->
         <section class="workforce__thread">
           <chat-container
-            v-if="selectedChat"
-            :chat="selectedChat"
+            v-if="workforce.selectedConversationId"
+            :agent-name="workforce.detail?.agent?.agentName || ''"
+            :items="workforce.chatItems"
+            :busy="workforce.sending || workforce.deciding"
             @send-message="onSendMessage"
             @allow-tool="onAllowTool"
             @deny-tool="onDenyTool"
@@ -52,39 +59,65 @@
           </div>
         </section>
       </div>
+
+      <ion-modal :is-open="showNewConversationModal" @didDismiss="showNewConversationModal = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="showNewConversationModal = false">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Start a conversation") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content>
+          <ion-list>
+            <ion-item v-if="!workforce.activeAgents.length">
+              <ion-label>{{ translate("No active agents found. Compose and activate one first.") }}</ion-label>
+            </ion-item>
+            <ion-item v-for="agent in workforce.activeAgents" :key="agent.agentId" button @click="startConversation(agent.agentId)">
+              <ion-label>
+                <h2>{{ agent.agentName }}</h2>
+                <p>{{ agent.description }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import {
+  IonButton,
+  IonButtons,
   IonChip,
   IonContent,
   IonHeader,
   IonIcon,
+  IonItem,
   IonLabel,
   IonList,
   IonMenuButton,
+  IonModal,
   IonPage,
   IonText,
   IonTitle,
-  IonToolbar
+  IonToolbar,
+  onIonViewWillEnter,
+  onIonViewWillLeave
 } from "@ionic/vue";
-import { ellipse } from "ionicons/icons";
+import { addOutline, closeOutline, ellipse } from "ionicons/icons";
 import { translate } from "@common";
 import { computed, ref } from "vue";
 import ChatContainer from "@/components/chat/ChatContainer.vue";
 import ConversationItem from "@/components/chat/ConversationItem.vue";
+import { useWorkforceStore, WorkforceConversation } from "@/store/workforce";
+import { showToast } from "@/utils";
 
-type ConversationStatus = "pending" | "running" | "error";
-
-type Conversation = {
-  id: string;
-  agentName: string;
-  conversationName: string;
-  status: ConversationStatus;
-  pendingTool?: string;
-};
+const workforce = useWorkforceStore();
 
 const filters = [
   { value: "all", label: "All", color: "" },
@@ -94,41 +127,19 @@ const filters = [
 ] as const;
 
 const activeFilter = ref<string>("all");
-
-const conversations = ref<Conversation[]>([
-  {
-    id: "conversation-1",
-    agentName: "Agent Name",
-    conversationName: "Conversation Name",
-    status: "pending",
-    pendingTool: "tool name"
-  },
-  {
-    id: "conversation-2",
-    agentName: "Agent Name",
-    conversationName: "Conversation Name",
-    status: "running"
-  },
-  {
-    id: "conversation-3",
-    agentName: "Agent Name",
-    conversationName: "Conversation Name",
-    status: "error"
-  }
-]);
-
-const selectedConversationId = ref<string>("conversation-1");
+const showNewConversationModal = ref(false);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const filteredConversations = computed(() =>
   activeFilter.value === "all"
-    ? conversations.value
-    : conversations.value.filter((conversation) => conversation.status === activeFilter.value)
+    ? workforce.conversations
+    : workforce.conversations.filter((conversation) => conversation.derivedStatus === activeFilter.value)
 );
 
-function statusCaption(conversation: Conversation): string {
-  switch (conversation.status) {
+function statusCaption(conversation: WorkforceConversation): string {
+  switch (conversation.derivedStatus) {
     case "pending":
-      return `${translate("Pending request")} ${conversation.pendingTool ?? ""}`.trim();
+      return `${translate("Pending request")} ${conversation.pendingToolName ?? ""}`.trim();
     case "running":
       return translate("Running");
     case "error":
@@ -138,31 +149,57 @@ function statusCaption(conversation: Conversation): string {
   }
 }
 
-// Mock thread for the selected conversation, rendered by ChatContainer.
-const selectedChat = computed(() => {
-  if (!selectedConversationId.value) return null;
+async function refresh() {
+  await workforce.fetchConversations();
+  if(workforce.selectedConversationId) await workforce.fetchConversationDetail();
+}
 
-  return {
-    agentName: "CIRCUIT",
-    agentMessageText: "Message content",
-    messages: [{ id: "message-1", userName: "User first name", content: "Message content" }],
-    toolCalls: [{ id: "tool-1", toolName: "Tool name", args: "" }],
-    permissions: [],
-    steps: []
-  };
+onIonViewWillEnter(async () => {
+  await refresh();
+  pollTimer = setInterval(refresh, 10000);
 });
 
-function onSendMessage(message: unknown) {
-  // Wire up to the agent backend when available.
-  console.log("send-message", message);
+onIonViewWillLeave(() => {
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+});
+
+async function onSendMessage(content: string) {
+  try {
+    await workforce.sendMessage(content);
+  } catch {
+    showToast(translate("Failed to send message"));
+  }
 }
 
-function onAllowTool(permission: unknown) {
-  console.log("allow-tool", permission);
+async function onAllowTool(item: any) {
+  try {
+    await workforce.decideToolCall(item.permissionId, true);
+  } catch {
+    showToast(translate("Failed to record decision"));
+  }
 }
 
-function onDenyTool(permission: unknown) {
-  console.log("deny-tool", permission);
+async function onDenyTool(item: any) {
+  try {
+    await workforce.decideToolCall(item.permissionId, false);
+  } catch {
+    showToast(translate("Failed to record decision"));
+  }
+}
+
+async function openNewConversationModal() {
+  await workforce.fetchActiveAgents();
+  showNewConversationModal.value = true;
+}
+
+async function startConversation(agentId: string) {
+  try {
+    await workforce.startConversation(agentId);
+    showNewConversationModal.value = false;
+  } catch {
+    showToast(translate("Failed to start conversation"));
+  }
 }
 </script>
 
