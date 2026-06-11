@@ -3,13 +3,13 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { createRequire } from 'module'
 import { defineConfig } from 'vite'
-import { versionInfoUtil } from '../accxui/common/utils/versionInfoUtil'
-import { localApiServerDiscoveryPlugin } from '../accxui/common/vite/localApiServerDiscoveryPlugin'
+import { versionInfoUtil } from '../../common/utils/versionInfoUtil'
+import { localApiServerDiscoveryPlugin } from '../../common/vite/localApiServerDiscoveryPlugin'
 import pkg from './package.json'
 
 const require = createRequire(import.meta.url)
 const projectRoot = path.resolve(new URL('.', import.meta.url).pathname)
-const commonRoot = path.resolve(projectRoot, '../accxui/common')
+const commonRoot = path.resolve(projectRoot, '../../common')
 
 // Custom plugin: resolve bare specifiers from @common code using the project's node_modules.
 // @common lives outside this package's node_modules tree, so Rollup can't find its deps.
