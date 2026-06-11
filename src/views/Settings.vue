@@ -124,6 +124,7 @@ import { useUserStore } from '@/store/user';
 import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
+import { useQuickBoxStore } from '@/store/quickbox';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
@@ -139,6 +140,7 @@ const userStore = useUserStore();
 const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
+const quickBoxStore = useQuickBoxStore();
 const { isAuthenticated } = useAuth();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
 const maargInfo = computed(() => utilStore.maargInfo)
@@ -157,13 +159,15 @@ const fetchStatus = computed(() => utilStore.fetchStatus)
 const userFetchStatus = computed(() => userStore.fetchStatus)
 const productStoreFetchStatus = computed(() => productStoreStore.fetchStatus)
 const shopifyFetchStatus = computed(() => shopifyStore.fetchStatus)
+const quickBoxFetchStatus = computed(() => quickBoxStore.fetchStatus)
 
 const oldestSyncTime = computed(() => {
   const timestamps = [
     userFetchStatus.value.lastFetched,
     fetchStatus.value.lastFetched,
     productStoreFetchStatus.value.lastFetched,
-    shopifyFetchStatus.value.lastFetched
+    shopifyFetchStatus.value.lastFetched,
+    quickBoxFetchStatus.value.lastFetched
   ].filter(t => t > 0);
   
   if (!timestamps.length) return '';
@@ -195,6 +199,11 @@ const harmonizedFetchStatus = computed(() => [
     status: shopifyFetchStatus.value.shops,
     count: shopifyStore.shops?.length || 0,
     refresh: () => shopifyStore.fetchShopifyShops()
+  },
+  {
+    label: translate("QuickBox Connection"),
+    status: quickBoxFetchStatus.value.connection,
+    refresh: () => quickBoxStore.fetchConnectionConfig()
   },
   {
     label: translate("Statuses"),
