@@ -105,13 +105,13 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "Inventory",
     summary: "Decide the source of truth and first load path before fulfillment workflows are turned on.",
-    capability: "backend-gap",
+    capability: "existing-api",
     questions: [
       "Which system owns available inventory?",
       "Should HotWax reserve inventory for online orders?",
       "Should initial QOH load from Shopify, ERP, WMS, or a file?"
     ],
-    outputs: ["Inventory source", "Reservation policy", "Initial inventory load task"]
+    outputs: ["Reservation policy", "Inventory count visibility", "Preorder inventory pool"]
   },
   {
     id: "orders",

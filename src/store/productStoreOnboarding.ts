@@ -21,6 +21,10 @@ export interface ProductStoreOnboardingDraft {
   primaryProductIdentification: string
   secondaryProductIdentification: string
   inventorySource: string
+  reserveInventory: string
+  showSystemicInventory: string
+  holdPreorderPhysicalInventory: string
+  preorderFacilityGroupId: string
   orderImportMode: string
   selectedWorkflows: string[]
 }
@@ -46,6 +50,10 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   primaryProductIdentification: "",
   secondaryProductIdentification: "",
   inventorySource: "Shopify",
+  reserveInventory: "Y",
+  showSystemicInventory: "true",
+  holdPreorderPhysicalInventory: "false",
+  preorderFacilityGroupId: "",
   orderImportMode: "Realtime and fallback batch",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }

@@ -388,6 +388,69 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'inventory'" lines="full">
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.inventorySource"
+                  @ionChange="onboardingStore.updateDraftField('inventorySource', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Inventory source") }}</div>
+                  <ion-select-option value="Shopify">{{ translate("Shopify") }}</ion-select-option>
+                  <ion-select-option value="ERP or WMS">{{ translate("ERP or WMS") }}</ion-select-option>
+                  <ion-select-option value="HotWax file reset">{{ translate("HotWax file reset") }}</ion-select-option>
+                  <ion-select-option value="Not sure yet">{{ translate("Not sure yet") }}</ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.reserveInventory === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('reserveInventory', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Reserve inventory for imported orders") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.showSystemicInventory === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('showSystemicInventory', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Show systemic inventory") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Pre-order computation") }}</ion-label>
+              </ion-list-header>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.holdPreorderPhysicalInventory === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('holdPreorderPhysicalInventory', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Hold pre-order physical inventory") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.preorderFacilityGroupId"
+                  @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Pre-order group") }}</div>
+                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                  <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
+                    {{ group.facilityGroupName || group.facilityGroupId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-label>
+                  {{ translate("Initial inventory load") }}
+                  <p>{{ translate("Shopify, ERP, and file reset paths still need a backend wrapper before onboarding can run the first QOH load.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -503,6 +566,7 @@ const isLinkingShopifyShop = ref(false)
 const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
+const isSavingInventorySettings = ref(false)
 const isLoadingSetupData = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
@@ -518,7 +582,14 @@ const routeProductStoreId = computed(() => {
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
-const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value || isSavingProductIdentity.value || isSavingOrderDefaults.value)
+const isPrimaryActionLoading = computed(() => {
+  return isSavingProductStore.value
+    || isLinkingShopifyShop.value
+    || isImportingShopifyFacilities.value
+    || isSavingProductIdentity.value
+    || isSavingOrderDefaults.value
+    || isSavingInventorySettings.value
+})
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
   return shopifyStore.shops.filter((shop: any) => {
@@ -535,6 +606,7 @@ const linkedShopifyShop = computed(() => {
 })
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
 const facilityCount = computed(() => utilStore.facilities.length)
+const facilityGroups = computed(() => utilStore.facilityGroups)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
 const canOpenShopifyProductSync = computed(() => {
@@ -581,6 +653,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "general") return translate("Save order defaults")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
+  if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
@@ -602,6 +675,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "products") {
     return !selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId
+  }
+
+  if (currentStep.value.id === "inventory") {
+    return !selectedProductStoreId.value
   }
 
   return false
@@ -635,6 +712,7 @@ async function loadSetupData() {
       utilStore.fetchDBICCountries(),
       utilStore.fetchCurrencies({ uomTypeEnumId: "UT_CURRENCY_MEASURE", pageSize: 250 }),
       utilStore.fetchFacilities(),
+      utilStore.fetchFacilityGroups(),
       utilStore.fetchProductIdentifiers(),
       productStoreStore.fetchProductStores(),
       shopifyStore.fetchShopifyShops()
@@ -732,12 +810,28 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("autoApproveOrder", productStoreStore.current.autoApproveOrder)
   }
 
+  if (productStoreStore.current?.reserveInventory) {
+    onboardingStore.updateDraftField("reserveInventory", productStoreStore.current.reserveInventory)
+  }
+
   if (typeof productStoreStore.current?.orderNumberPrefix === "string") {
     onboardingStore.updateDraftField("orderNumberPrefix", productStoreStore.current.orderNumberPrefix)
   }
 
   if (productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue) {
     onboardingStore.updateDraftField("saveBillingInformation", productStoreStore.currentStoreSettings.SAVE_BILL_TO_INF.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.INV_CNT_VIEW_QOH?.settingValue) {
+    onboardingStore.updateDraftField("showSystemicInventory", productStoreStore.currentStoreSettings.INV_CNT_VIEW_QOH.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.HOLD_PRORD_PHYCL_INV?.settingValue) {
+    onboardingStore.updateDraftField("holdPreorderPhysicalInventory", productStoreStore.currentStoreSettings.HOLD_PRORD_PHYCL_INV.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.PRE_ORDER_GROUP_ID?.settingValue) {
+    onboardingStore.updateDraftField("preorderFacilityGroupId", productStoreStore.currentStoreSettings.PRE_ORDER_GROUP_ID.settingValue)
   }
 
   if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
@@ -770,6 +864,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "products") {
     const productIdentitySaved = await saveProductIdentity()
     if (!productIdentitySaved) return
+  }
+
+  if (currentStep.value.id === "inventory") {
+    const inventorySettingsSaved = await saveInventorySettings()
+    if (!inventorySettingsSaved) return
   }
 
   onboardingStore.goNext()
@@ -834,6 +933,70 @@ function buildSaveBillingInformationPayload() {
     productStoreId: selectedProductStoreId.value,
     settingTypeEnumId: "SAVE_BILL_TO_INF",
     settingValue: onboardingStore.draft.saveBillingInformation === "Y" ? "Y" : "N"
+  }
+}
+
+async function saveInventorySettings() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before saving inventory settings."))
+    return false
+  }
+
+  isSavingInventorySettings.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
+      ? productStoreStore.current
+      : { productStoreId: selectedProductStoreId.value }
+    const productStorePayload = {
+      ...currentStore,
+      productStoreId: selectedProductStoreId.value,
+      reserveInventory: onboardingStore.draft.reserveInventory === "Y" ? "Y" : "N"
+    }
+    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+
+    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
+
+    productStoreStore.updateCurrent(productStorePayload)
+
+    const settingPayloads = [
+      buildInventorySettingPayload("INV_CNT_VIEW_QOH", onboardingStore.draft.showSystemicInventory === "true" ? "true" : "false"),
+      buildInventorySettingPayload("HOLD_PRORD_PHYCL_INV", onboardingStore.draft.holdPreorderPhysicalInventory === "true" ? "true" : "false")
+    ]
+
+    if (onboardingStore.draft.preorderFacilityGroupId || productStoreStore.currentStoreSettings?.PRE_ORDER_GROUP_ID) {
+      settingPayloads.push(buildInventorySettingPayload("PRE_ORDER_GROUP_ID", onboardingStore.draft.preorderFacilityGroupId))
+    }
+
+    const updatedSettings = { ...productStoreStore.currentStoreSettings }
+    for (const payload of settingPayloads) {
+      const settingResp = await productStoreStore.saveCurrentStoreSettings(payload)
+      if (commonUtil.hasError(settingResp)) throw settingResp.data
+      updatedSettings[payload.settingTypeEnumId] = payload
+    }
+
+    productStoreStore.updateCurrentStoreSettings(updatedSettings)
+    commonUtil.showToast(translate("Inventory settings saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save inventory settings."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingInventorySettings.value = false
+  }
+}
+
+function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: string) {
+  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
+  return {
+    ...(existingSetting || {}),
+    fromDate: existingSetting?.fromDate || Date.now(),
+    productStoreId: selectedProductStoreId.value,
+    settingTypeEnumId,
+    settingValue
   }
 }
 
