@@ -38,19 +38,16 @@ export const useProductStore = defineStore('productStore', {
         if (!commonUtil.hasError(resp)) {
           productStores = resp.data
           if (payload?.fetchCounts) {
-            const facilityCount = await this.fetchProductStoresFacilityCount()
-            const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
-            if (Object.keys(facilityCount).length) {
+              const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
               productStores = productStores.map((s: any) => ({
                 ...s,
-                facilityCount: facilityCount[s.productStoreId] ?? 0
+                facilityCount: s.facilityCount ?? 0
               }))
-            }
-            if (Object.keys(shipmentMethodCount).length) {
-              productStores = productStores.map((s: any) => ({
-                ...s,
-                shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
-              }))
+              if (Object.keys(shipmentMethodCount).length) {
+                productStores = productStores.map((s: any) => ({
+                  ...s,
+                  shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
+                }))
             }
           }
           this.fetchStatus = { productStores: 'success', lastFetched: Date.now() }
@@ -80,34 +77,6 @@ export const useProductStore = defineStore('productStore', {
         logger.error(error)
       }
       this.current = current
-    },
-
-    async fetchProductStoresFacilityCount(): Promise<Record<string, number>> {
-      const counts: Record<string, number> = {}
-      try {
-        let resp: any
-        try {
-          resp = await api({
-            url: "oms/productStores/facilities/counts",
-            method: "get",
-            params: { pageSize: 100 }
-          })
-        } catch (error: any) {
-          if (error.response?.status === 404) {
-            logger.warn("Product store facility counts endpoint not found (404)");
-            return counts
-          }
-          throw error
-        }
-        if (!commonUtil.hasError(resp)) {
-          resp.data.forEach((r: any) => { counts[r.productStoreId] = r.facilityCount })
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-      }
-      return counts
     },
 
     async fetchProductStoresShipmentMethodCount(): Promise<Record<string, number>> {
