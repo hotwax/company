@@ -17,6 +17,7 @@
         </ion-item>
         <ion-item lines="none">
           <ion-input
+            :autofocus="true"
             ref="storeNameInput"
             name="storeName"
             v-model="formData.storeName"
@@ -111,10 +112,13 @@ onIonViewDidEnter(async () => {
   await nextTick();
   await focusStoreName();
 
-  // Some navigation timing scenarios require a second pass on initial render.
-  setTimeout(() => {
-    focusStoreName();
-  }, 150);
+  // Some navigation timing scenarios require additional retries after ion-nav animation/render.
+  const retries = [80, 180, 320, 500, 800];
+  for (const delay of retries) {
+    setTimeout(() => {
+      focusStoreName();
+    }, delay);
+  }
 })
 
 async function manageConfigurations() {
