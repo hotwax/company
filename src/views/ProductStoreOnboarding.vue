@@ -162,6 +162,110 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'facilities'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Business locations") }}
+                  <p>{{ translate("Import Shopify locations as HotWax facilities, then map inventory locations before sync starts.") }}</p>
+                </ion-label>
+                <ion-badge :color="facilityCount ? 'success' : 'warning'" slot="end">
+                  {{ facilityCount ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+              </ion-item>
+              <ion-radio-group
+                :value="onboardingStore.draft.facilityMode"
+                @ionChange="onboardingStore.updateDraftField('facilityMode', String($event.detail.value || ''))"
+              >
+                <ion-item>
+                  <ion-radio slot="start" value="One store" />
+                  <ion-label>{{ translate("One store") }}</ion-label>
+                </ion-item>
+                <ion-item>
+                  <ion-radio slot="start" value="Stores and warehouses" />
+                  <ion-label>{{ translate("Stores and warehouses") }}</ion-label>
+                </ion-item>
+                <ion-item>
+                  <ion-radio slot="start" value="Not sure yet" />
+                  <ion-label>{{ translate("Not sure yet") }}</ion-label>
+                </ion-item>
+              </ion-radio-group>
+              <ion-item>
+                <ion-icon slot="start" :icon="storefrontOutline" />
+                <ion-label>
+                  {{ translate("HotWax facilities") }}
+                  <p>{{ facilityCount }} {{ translate("facilities available for setup") }}</p>
+                </ion-label>
+                <ion-note slot="end">{{ facilityCount }}</ion-note>
+              </ion-item>
+              <ion-item v-if="linkedShopifyShop">
+                <ion-icon slot="start" :icon="cloudDownloadOutline" />
+                <ion-label>
+                  {{ translate("Import from Shopify") }}
+                  <p>{{ linkedShopifyShop.myshopifyDomain || linkedShopifyShop.name || linkedShopifyShop.shopId }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-import-shopify-facilities"
+                  :aria-label="translate('Import from Shopify')"
+                  :disabled="isImportingShopifyFacilities"
+                  @click="openShopifyLocationImport()"
+                >
+                  <ion-spinner v-if="isImportingShopifyFacilities" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-else>
+                <ion-label>
+                  {{ translate("Shopify shop required") }}
+                  <p>{{ translate("Link a Shopify shop before importing locations as facilities.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else-if="currentStep.id === 'locations'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Shopify location mapping") }}
+                  <p>{{ translate("Each active Shopify inventory location should point to the matching HotWax facility.") }}</p>
+                </ion-label>
+                <ion-badge :color="mappedShopifyLocationCount ? 'success' : 'warning'" slot="end">
+                  {{ mappedShopifyLocationCount ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+              </ion-item>
+              <ion-item>
+                <ion-icon slot="start" :icon="gitNetworkOutline" />
+                <ion-label>
+                  {{ translate("Mapped facilities") }}
+                  <p>{{ mappedShopifyLocationCount }} {{ translate("of") }} {{ facilityCount }} {{ translate("facilities have Shopify locations") }}</p>
+                </ion-label>
+                <ion-note slot="end">{{ mappedShopifyLocationCount }}</ion-note>
+              </ion-item>
+              <ion-item v-if="linkedShopifyShop">
+                <ion-label>
+                  {{ translate("Open mapping workspace") }}
+                  <p>{{ translate("Use the existing inventory location audit and mapping screen.") }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-open-location-mapping"
+                  :aria-label="translate('Open mapping workspace')"
+                  @click="openShopifyLocationMapping()"
+                >
+                  <ion-icon slot="icon-only" :icon="gitNetworkOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-else>
+                <ion-label>
+                  {{ translate("Shopify shop required") }}
+                  <p>{{ translate("Link a Shopify shop before mapping inventory locations.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -249,12 +353,14 @@ import {
   IonTitle,
   IonToggle,
   IonToolbar,
+  modalController,
   onIonViewWillEnter
 } from "@ionic/vue"
 import { computed, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { arrowBackOutline, arrowForwardOutline, radioButtonOffOutline } from "ionicons/icons"
+import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, gitNetworkOutline, radioButtonOffOutline, storefrontOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
+import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
@@ -271,19 +377,21 @@ const route = useRoute()
 const router = useRouter()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
+const isImportingShopifyFacilities = ref(false)
 const isLoadingSetupData = ref(false)
+const shopifyLocationMappings = ref<any[]>([])
 
 const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
 const routeProductStoreId = computed(() => {
-  const productStoreId = route.params.productStoreId
+  const productStoreId = (route as any)?.params?.productStoreId
   if (Array.isArray(productStoreId)) return productStoreId[0] || ""
   return productStoreId ? String(productStoreId) : ""
 })
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
-const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value)
+const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value)
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
   return shopifyStore.shops.filter((shop: any) => {
@@ -294,9 +402,13 @@ const availableShopifyShops = computed(() => {
 })
 const linkedShopifyShop = computed(() => {
   const linkedShopId = onboardingStore.draft.linkedShopifyShopId
-  if (!linkedShopId) return null
-  return shopifyStore.getShopById(linkedShopId) || { shopId: linkedShopId }
+  if (linkedShopId) return shopifyStore.getShopById(linkedShopId) || { shopId: linkedShopId }
+
+  return shopifyStore.shops.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
 })
+const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
+const facilityCount = computed(() => utilStore.facilities.length)
+const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const currencyOptions = computed(() => {
   if (utilStore.currencies.length) {
     return utilStore.currencies.map((currency: any) => ({
@@ -363,11 +475,13 @@ async function loadSetupData() {
     await Promise.allSettled([
       utilStore.fetchDBICCountries(),
       utilStore.fetchCurrencies({ uomTypeEnumId: "UT_CURRENCY_MEASURE", pageSize: 250 }),
+      utilStore.fetchFacilities(),
       productStoreStore.fetchProductStores(),
       shopifyStore.fetchShopifyShops()
     ])
 
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
+    await refreshShopifyLocationMappings()
   } catch (error: any) {
     logger.error(error)
   }
@@ -482,6 +596,7 @@ async function linkExistingShopifyShop() {
     onboardingStore.updateDraftField("linkedShopifyShopId", onboardingStore.draft.selectedShopifyShopId)
     onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
     await shopifyStore.fetchShopifyShops()
+    await refreshShopifyLocationMappings()
     commonUtil.showToast(translate("Product store linked successfully"))
     return true
   } catch (error: any) {
@@ -492,6 +607,74 @@ async function linkExistingShopifyShop() {
     emitter.emit("dismissLoader")
     isLinkingShopifyShop.value = false
   }
+}
+
+async function refreshShopifyLocationMappings() {
+  shopifyLocationMappings.value = []
+
+  if (!linkedShopifyShopId.value) return
+
+  try {
+    const resp = await shopifyStore.fetchShopifyShopLocationsRaw({
+      shopId: linkedShopifyShopId.value,
+      pageSize: 200
+    })
+
+    if (!commonUtil.hasError(resp) && Array.isArray(resp.data)) {
+      shopifyLocationMappings.value = resp.data
+    }
+  } catch (error: any) {
+    logger.error(error)
+  }
+}
+
+async function openShopifyLocationImport() {
+  if (!linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before importing facilities."))
+    return
+  }
+
+  isImportingShopifyFacilities.value = true
+
+  try {
+    const modal = await modalController.create({
+      component: ImportShopifyLocationsModal,
+      componentProps: { shopId: linkedShopifyShopId.value }
+    })
+
+    await modal.present()
+    const { data } = await modal.onDidDismiss()
+
+    if (data?.imported) {
+      await Promise.all([
+        utilStore.fetchFacilities(),
+        refreshShopifyLocationMappings()
+      ])
+    }
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to open facility import"))
+  } finally {
+    isImportingShopifyFacilities.value = false
+  }
+}
+
+function openShopifyLocationMapping() {
+  if (!linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before mapping locations."))
+    return
+  }
+
+  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/locations`
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  const fallbackUrl = `${path}?returnTo=${encodeURIComponent(returnTo)}`
+
+  if ((router as any)?.push) {
+    router.push({ path, query: { returnTo } }).catch((error: any) => logger.error(error))
+    return
+  }
+
+  window.location.href = fallbackUrl
 }
 
 function getShopifyShopLabel(shop: any) {
@@ -506,7 +689,9 @@ function replaceRouteForProductStore(productStoreId: string) {
     window.history.replaceState(window.history.state, "", path)
   }
 
-  router.replace(path).catch((error: any) => logger.error(error))
+  if ((router as any)?.replace) {
+    router.replace(path).catch((error: any) => logger.error(error))
+  }
 }
 </script>
 

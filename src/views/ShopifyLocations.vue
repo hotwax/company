@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-back-button slot="start" :defaultHref="backHref" />
         <ion-title>{{ translate("Inventory locations") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="runAudit" :disabled="isAuditing">
@@ -130,6 +130,10 @@ const isAuditing = ref(false)
 
 const facilities = computed(() => utilStore.facilities)
 const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {

@@ -79,13 +79,26 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "Facilities",
     summary: "Create or import the physical places that can hold, ship, receive, or stage inventory.",
-    capability: "backend-gap",
+    capability: "existing-api",
     questions: [
       "How many stores, warehouses, hubs, and pickup locations are in scope?",
       "Should a one-store retailer start with an automatic facility?",
       "Which facilities should be associated with this Product Store?"
     ],
     outputs: ["Facilities", "Facility groups", "ProductStoreFacility associations"]
+  },
+  {
+    id: "locations",
+    group: "setup",
+    label: "Location mapping",
+    summary: "Map Shopify inventory locations to HotWax facilities before inventory and fulfillment sync starts.",
+    capability: "existing-api",
+    questions: [
+      "Which Shopify location maps to each HotWax facility?",
+      "Are any Shopify locations fulfillment-service locations instead of stores?",
+      "Which mapped locations should be allowed to fulfill, receive, or offer pickup?"
+    ],
+    outputs: ["ShopifyShopLocation", "Facility mapping audit", "Inventory location readiness"]
   },
   {
     id: "inventory",
