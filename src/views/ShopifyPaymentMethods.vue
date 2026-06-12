@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-back-button slot="start" :default-href="backHref" />
         <ion-title>{{ translate("Payment methods") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -81,6 +81,10 @@ const localMappings = ref<any>({});
 
 const paymentMethods = computed(() => netSuiteStore.paymentMethods)
 const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -94,7 +98,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     netSuiteStore.fetchPaymentMethods(),
-    shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE")
+    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -162,7 +166,7 @@ async function saveMapping(paymentMethodTypeId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
+      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -198,7 +202,7 @@ async function saveAllDirtyMappings() {
         mappedValue: id
       });
     }
-    await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
+    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);

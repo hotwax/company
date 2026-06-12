@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-back-button slot="start" :default-href="backHref" />
         <ion-title>{{ translate("Shipment methods") }}</ion-title>
         <ion-buttons slot="primary">
           <ion-button :disabled="!isDirty" @click="saveAllDirtyMappings()">
@@ -101,6 +101,10 @@ const selectedCarrierPartyId = ref("");
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
 const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const carriers = computed(() => {
   const carrierMap: any = {};
@@ -222,7 +226,7 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopsCarrierShipments({});
+      await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
       editingItemKey.value = "";
     } else {
       throw resp.data;
@@ -254,7 +258,7 @@ async function saveAllDirtyMappings() {
         carrierPartyId: carrierPartyId
       });
     }
-    await shopifyStore.fetchShopifyShopsCarrierShipments({});
+    await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);

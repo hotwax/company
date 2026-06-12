@@ -147,7 +147,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     utilStore.fetchFacilities(),
-    shopifyStore.fetchShopifyShopLocations()
+    shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -204,7 +204,7 @@ async function saveMapping(facilityId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopLocations();
+      await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -228,7 +228,7 @@ async function saveAllDirtyMappings() {
         shopifyLocationId: localMappings.value[id]
       });
     }
-    await shopifyStore.fetchShopifyShopLocations();
+    await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -248,7 +248,7 @@ async function openImportModal() {
     isLoading.value = true
     await Promise.all([
       utilStore.fetchFacilities(),
-      shopifyStore.fetchShopifyShopLocations()
+      shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
     ])
     initializeLocalMappings()
     isLoading.value = false

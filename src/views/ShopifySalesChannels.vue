@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-back-button slot="start" :default-href="backHref" />
         <ion-title>{{ translate("Sales channels") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -81,6 +81,10 @@ const localMappings = ref<any>({});
 
 const salesChannels = computed(() => netSuiteStore.salesChannel)
 const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_ORDER_SOURCE"))
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -94,7 +98,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     netSuiteStore.fetchSalesChannel(),
-    shopifyStore.fetchShopifyTypeMappings("SHOPIFY_ORDER_SOURCE")
+    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_ORDER_SOURCE", shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -162,7 +166,7 @@ async function saveMapping(salesChannelEnumId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_ORDER_SOURCE");
+      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_ORDER_SOURCE", shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -198,7 +202,7 @@ async function saveAllDirtyMappings() {
         mappedValue: id
       });
     }
-    await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_ORDER_SOURCE");
+    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_ORDER_SOURCE", shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);

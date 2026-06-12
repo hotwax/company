@@ -296,6 +296,47 @@
                   <ion-icon v-else slot="icon-only" :icon="syncOutline" />
                 </ion-button>
               </ion-item>
+              <ion-list-header v-if="linkedShopifyShop">
+                <ion-label>{{ translate("Shopify mappings") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-if="linkedShopifyShop">
+                <ion-label>
+                  {{ translate("Mapping readiness") }}
+                  <p>{{ shopifyMappingReadinessDescription }}</p>
+                </ion-label>
+                <ion-badge :color="shopifyMappingBadgeColor" slot="end">
+                  {{ shopifyMappingStatusLabel }}
+                </ion-badge>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Refresh Shopify mappings')"
+                  :disabled="isLoadingShopifyMappingStatus"
+                  @click="refreshShopifyMappingStatus()"
+                >
+                  <ion-spinner v-if="isLoadingShopifyMappingStatus" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
+                </ion-button>
+              </ion-item>
+              <template v-if="linkedShopifyShop">
+                <ion-item
+                  v-for="mapping in shopifyMappingAreas"
+                  :key="mapping.id"
+                  button
+                  detail
+                  @click="openShopifyMappingPath(mapping.path)"
+                >
+                  <ion-icon slot="start" :icon="gitNetworkOutline" />
+                  <ion-label>
+                    {{ mapping.label }}
+                    <p>{{ mapping.description }}</p>
+                  </ion-label>
+                  <ion-note slot="end">{{ mapping.count }}</ion-note>
+                  <ion-badge :color="mapping.count ? 'success' : 'warning'" slot="end">
+                    {{ mapping.count ? translate("Ready") : translate("Gap") }}
+                  </ion-badge>
+                </ion-item>
+              </template>
               <ion-item v-for="requirement in shopifyConnectionRequirements" :key="requirement.id">
                 <ion-label>
                   {{ translate(requirement.label) }}
@@ -1009,12 +1050,20 @@ const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
+const isLoadingShopifyMappingStatus = ref(false)
 const isLoadingAccessPackageStatus = ref(false)
 const accessTemporaryPassword = ref("")
 const accessTemporaryPasswordVerify = ref("")
 const shopifyHandoffToken = ref("")
 const shopifyHandoffTokenExpirationTime = ref(0)
 const shopifyLocationMappings = ref<any[]>([])
+const shopifyMappingCounts = ref<Record<string, number>>({
+  productTypes: 0,
+  orderSources: 0,
+  paymentMethods: 0,
+  shippingMethods: 0,
+  locations: 0
+})
 
 const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
@@ -1079,6 +1128,57 @@ const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
+const shopifyMappingAreas = computed(() => [
+  {
+    id: "productTypes",
+    label: translate("Product type mappings"),
+    description: translate("Maps Shopify product types into OMS product types for product import."),
+    path: "product-types",
+    count: shopifyMappingCounts.value.productTypes
+  },
+  {
+    id: "orderSources",
+    label: translate("Sales channel mappings"),
+    description: translate("Maps Shopify order sources into OMS sales channels for imported orders."),
+    path: "sales-channels",
+    count: shopifyMappingCounts.value.orderSources
+  },
+  {
+    id: "paymentMethods",
+    label: translate("Payment method mappings"),
+    description: translate("Maps Shopify payment names into OMS payment method types."),
+    path: "payment-methods",
+    count: shopifyMappingCounts.value.paymentMethods
+  },
+  {
+    id: "shippingMethods",
+    label: translate("Shipping method mappings"),
+    description: translate("Maps Shopify shipping names into OMS shipment methods and carriers."),
+    path: "shipment-methods",
+    count: shopifyMappingCounts.value.shippingMethods
+  },
+  {
+    id: "locations",
+    label: translate("Inventory location mappings"),
+    description: translate("Maps Shopify inventory locations to HotWax facilities."),
+    path: "locations",
+    count: shopifyMappingCounts.value.locations
+  }
+])
+const readyShopifyMappingAreaCount = computed(() => {
+  return shopifyMappingAreas.value.filter((mapping) => mapping.count > 0).length
+})
+const shopifyMappingReadinessDescription = computed(() => {
+  if (isLoadingShopifyMappingStatus.value) return translate("Checking Shopify mapping readiness.")
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before configuring mappings.")
+  return `${readyShopifyMappingAreaCount.value} ${translate("of")} ${shopifyMappingAreas.value.length} ${translate("mapping areas have at least one mapping.")}`
+})
+const shopifyMappingStatusLabel = computed(() => {
+  return readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length ? translate("Ready") : translate("Gap")
+})
+const shopifyMappingBadgeColor = computed(() => {
+  return readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length ? "success" : "warning"
+})
 const canOpenShopifyProductSync = computed(() => {
   return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
 })
@@ -1429,6 +1529,49 @@ async function refreshShopifyJobStatus() {
   }
 }
 
+async function refreshShopifyMappingStatus() {
+  shopifyMappingCounts.value = {
+    productTypes: 0,
+    orderSources: 0,
+    paymentMethods: 0,
+    shippingMethods: 0,
+    locations: 0
+  }
+
+  if (!linkedShopifyShopId.value) return
+
+  isLoadingShopifyMappingStatus.value = true
+
+  try {
+    const shopId = linkedShopifyShopId.value
+    await refreshShopifyLocationMappings()
+
+    const [
+      productTypeMappings,
+      orderSourceMappings,
+      paymentMethodMappings,
+      shippingMethodMappings
+    ] = await Promise.all([
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PRODUCT_TYPE" }),
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_ORDER_SOURCE" }),
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PAYMENT_TYPE" }),
+      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId })
+    ])
+
+    shopifyMappingCounts.value = {
+      productTypes: productTypeMappings.length,
+      orderSources: orderSourceMappings.length,
+      paymentMethods: paymentMethodMappings.length,
+      shippingMethods: shippingMethodMappings.length,
+      locations: shopifyLocationMappings.value.length
+    }
+  } catch (error: any) {
+    logger.warn("Failed to refresh Shopify mapping status", error)
+  } finally {
+    isLoadingShopifyMappingStatus.value = false
+  }
+}
+
 async function refreshAccessPackageStatus() {
   if (!selectedProductStoreId.value) {
     productStoreStore.currentAccessPackageStatus = null
@@ -1475,7 +1618,7 @@ async function loadSetupData() {
 
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
     await loadSelectedProductStoreSetup()
-    await refreshShopifyLocationMappings()
+    await refreshShopifyMappingStatus()
   } catch (error: any) {
     logger.error(error)
   }
@@ -2226,7 +2369,7 @@ async function linkExistingShopifyShop() {
     onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
     await shopifyStore.fetchShopifyShops()
     await refreshShopifyJobStatus()
-    await refreshShopifyLocationMappings()
+    await refreshShopifyMappingStatus()
     commonUtil.showToast(translate("Product store linked successfully"))
     return true
   } catch (error: any) {
@@ -2276,10 +2419,8 @@ async function openShopifyLocationImport() {
     const { data } = await modal.onDidDismiss()
 
     if (data?.imported) {
-      await Promise.all([
-        utilStore.fetchFacilities(),
-        refreshShopifyLocationMappings()
-      ])
+      await utilStore.fetchFacilities()
+      await refreshShopifyMappingStatus()
     }
   } catch (error: any) {
     logger.error(error)
@@ -2290,12 +2431,16 @@ async function openShopifyLocationImport() {
 }
 
 function openShopifyLocationMapping() {
+  openShopifyMappingPath("locations")
+}
+
+function openShopifyMappingPath(pathSegment: string) {
   if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before mapping locations."))
+    commonUtil.showToast(translate("Link a Shopify shop before configuring mappings."))
     return
   }
 
-  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/locations`
+  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/${pathSegment}`
   const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
   const fallbackUrl = `${path}?returnTo=${encodeURIComponent(returnTo)}`
 

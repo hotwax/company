@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-back-button slot="start" :default-href="backHref" />
         <ion-title>{{ translate("Product types") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -79,8 +79,19 @@ const isLoading = ref(true);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 
-const productTypes = computed(() => utilStore.productTypes)
 const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PRODUCT_TYPE"))
+const productTypes = computed(() => {
+  if (utilStore.productTypes.length) return utilStore.productTypes
+
+  return shopifyTypeMappings.value.map((mapping: any) => ({
+    productTypeId: mapping.mappedValue,
+    description: mapping.mappedValue
+  }))
+})
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -94,7 +105,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     utilStore.fetchProductTypes(),
-    shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PRODUCT_TYPE")
+    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -162,7 +173,7 @@ async function saveMapping(productTypeId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PRODUCT_TYPE");
+      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -198,7 +209,7 @@ async function saveAllDirtyMappings() {
         mappedValue: id
       });
     }
-    await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PRODUCT_TYPE");
+    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
