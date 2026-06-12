@@ -21,13 +21,13 @@ export interface ProductStoreOnboardingDraft {
 type ProductStoreOnboardingStringField = Exclude<keyof ProductStoreOnboardingDraft, "selectedWorkflows">
 
 const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
-  companyName: "HotWax Retail",
-  storeName: "Demo Product Store",
-  productStoreId: "DEMO_PRODUCT_STORE",
+  companyName: "",
+  storeName: "",
+  productStoreId: "",
   defaultCurrencyUomId: "USD",
   locale: "America / English",
   timezone: "America / English",
-  shopifyDomain: "demo.myshopify.com",
+  shopifyDomain: "",
   shopifyConnectionMode: "Prepare Shopify connection",
   facilityMode: "One store",
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
@@ -39,6 +39,7 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
 export const useProductStoreOnboardingStore = defineStore("productStoreOnboarding", {
   state: () => ({
     currentStepId: "name",
+    createdProductStoreId: "",
     completedStepIds: [] as string[],
     draft: { ...DEFAULT_DRAFT } as ProductStoreOnboardingDraft
   }),
@@ -80,6 +81,10 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
       }
     },
 
+    setCreatedProductStoreId(productStoreId: string) {
+      this.createdProductStoreId = productStoreId
+    },
+
     goNext() {
       this.markCurrentStepComplete()
       const nextStepId = PRODUCT_STORE_ONBOARDING_STEP_IDS[this.currentStepIndex + 1]
@@ -93,6 +98,7 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
 
     resetDraft() {
       this.currentStepId = "name"
+      this.createdProductStoreId = ""
       this.completedStepIds = []
       this.draft = { ...DEFAULT_DRAFT }
     }
