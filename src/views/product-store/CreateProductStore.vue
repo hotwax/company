@@ -16,7 +16,14 @@
           <ion-input v-model="formData.companyName" label-placement="floating" :label="translate('Company name')" :helper-text="translate('The name of the parent organization that owns all brands deployed on the OMS')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-input v-model="formData.storeName" @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)" label-placement="floating" :helper-text="translate('Product store represents a brand in OMS')" :clear-input="true">
+          <ion-input
+            :autofocus="true"
+            v-model="formData.storeName"
+            @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)"
+            label-placement="floating"
+            :helper-text="translate('Product store represents a brand in OMS')"
+            :clear-input="true"
+          >
             <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
           </ion-input>
         </ion-item>
@@ -40,13 +47,13 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, onIonViewDidEnter, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { generateInternalId } from '@/utils';
 
 const productStoreStore = useProductStore();
@@ -68,6 +75,14 @@ const organizationPartyId = computed(() => utilStore.organizationPartyId)
 onIonViewWillEnter(async () => {
   productStoreStore.fetchCompany();
   await utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
+})
+
+onIonViewDidEnter(async () => {
+  await nextTick();
+  const input = document.querySelector('ion-input[autofocus]') as any;
+  if (input) {
+    await input.setFocus();
+  }
 })
 
 async function manageConfigurations() {
