@@ -91,6 +91,44 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'general'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Order import defaults") }}
+                  <p>{{ translate("These values control how new imported orders are identified, approved, and stored.") }}</p>
+                </ion-label>
+                <ion-badge :color="selectedProductStoreId ? 'success' : 'warning'" slot="end">
+                  {{ selectedProductStoreId ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  :value="onboardingStore.draft.orderNumberPrefix"
+                  label-placement="stacked"
+                  :label="translate('Sales order ID prefix')"
+                  :helper-text="translate('Added to HotWax sales order IDs generated for this Product Store')"
+                  :clear-input="true"
+                  @ionInput="onboardingStore.updateDraftField('orderNumberPrefix', String($event.detail.value || ''))"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.autoApproveOrder === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('autoApproveOrder', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Approve imported orders") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.saveBillingInformation === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('saveBillingInformation', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Save billing information") }}
+                </ion-toggle>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.id === 'shopify'" lines="full">
               <ion-item>
                 <ion-label>
@@ -464,6 +502,7 @@ const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
 const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
+const isSavingOrderDefaults = ref(false)
 const isLoadingSetupData = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
@@ -479,7 +518,7 @@ const routeProductStoreId = computed(() => {
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
-const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value || isSavingProductIdentity.value)
+const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value || isSavingProductIdentity.value || isSavingOrderDefaults.value)
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
   return shopifyStore.shops.filter((shop: any) => {
@@ -539,6 +578,7 @@ const nextLabel = computed(() => {
 })
 const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
+  if (currentStep.value.id === "general") return translate("Save order defaults")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
   return nextLabel.value
@@ -554,6 +594,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
     return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
+  }
+
+  if (currentStep.value.id === "general") {
+    return !selectedProductStoreId.value
   }
 
   if (currentStep.value.id === "products") {
@@ -684,6 +728,18 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
   }
 
+  if (productStoreStore.current?.autoApproveOrder) {
+    onboardingStore.updateDraftField("autoApproveOrder", productStoreStore.current.autoApproveOrder)
+  }
+
+  if (typeof productStoreStore.current?.orderNumberPrefix === "string") {
+    onboardingStore.updateDraftField("orderNumberPrefix", productStoreStore.current.orderNumberPrefix)
+  }
+
+  if (productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue) {
+    onboardingStore.updateDraftField("saveBillingInformation", productStoreStore.currentStoreSettings.SAVE_BILL_TO_INF.settingValue)
+  }
+
   if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
     onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId)
   }
@@ -706,6 +762,11 @@ async function handlePrimaryAction() {
     if (!shopLinked) return
   }
 
+  if (currentStep.value.id === "general") {
+    const orderDefaultsSaved = await saveOrderDefaults()
+    if (!orderDefaultsSaved) return
+  }
+
   if (currentStep.value.id === "products") {
     const productIdentitySaved = await saveProductIdentity()
     if (!productIdentitySaved) return
@@ -715,6 +776,64 @@ async function handlePrimaryAction() {
 
   if (productStoreId) {
     replaceRouteForProductStore(productStoreId)
+  }
+}
+
+async function saveOrderDefaults() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before saving order defaults."))
+    return false
+  }
+
+  isSavingOrderDefaults.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
+      ? productStoreStore.current
+      : { productStoreId: selectedProductStoreId.value }
+    const productStorePayload = {
+      ...currentStore,
+      productStoreId: selectedProductStoreId.value,
+      autoApproveOrder: onboardingStore.draft.autoApproveOrder === "Y" ? "Y" : "N",
+      orderNumberPrefix: onboardingStore.draft.orderNumberPrefix.trim()
+    }
+    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+
+    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
+
+    productStoreStore.updateCurrent(productStorePayload)
+
+    const billingSettingPayload = buildSaveBillingInformationPayload()
+    const billingSettingResp = await productStoreStore.saveCurrentStoreSettings(billingSettingPayload)
+
+    if (commonUtil.hasError(billingSettingResp)) throw billingSettingResp.data
+
+    productStoreStore.updateCurrentStoreSettings({
+      ...productStoreStore.currentStoreSettings,
+      SAVE_BILL_TO_INF: billingSettingPayload
+    })
+
+    commonUtil.showToast(translate("Order defaults saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save order defaults."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingOrderDefaults.value = false
+  }
+}
+
+function buildSaveBillingInformationPayload() {
+  const existingSetting = productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF
+  return {
+    ...(existingSetting || {}),
+    fromDate: existingSetting?.fromDate || Date.now(),
+    productStoreId: selectedProductStoreId.value,
+    settingTypeEnumId: "SAVE_BILL_TO_INF",
+    settingValue: onboardingStore.draft.saveBillingInformation === "Y" ? "Y" : "N"
   }
 }
 

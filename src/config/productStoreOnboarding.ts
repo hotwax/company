@@ -40,13 +40,13 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "General",
     summary: "Capture the operating defaults that should exist before solution-specific setup starts.",
-    capability: "preview",
+    capability: "existing-api",
     questions: [
       "Should imported orders auto-approve?",
       "What sales order prefix should this store use?",
       "Should billing information be saved on imported orders?"
     ],
-    outputs: ["Order defaults", "Approval policy", "Billing preference"]
+    outputs: ["Order number prefix", "Approval policy", "Billing preference"]
   },
   {
     id: "shopify",

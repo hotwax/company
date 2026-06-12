@@ -14,6 +14,9 @@ export interface ProductStoreOnboardingDraft {
   selectedShopifyShopId: string
   linkedShopifyShopId: string
   facilityMode: string
+  autoApproveOrder: string
+  orderNumberPrefix: string
+  saveBillingInformation: string
   productIdentifierEnumId: string
   primaryProductIdentification: string
   secondaryProductIdentification: string
@@ -36,6 +39,9 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   selectedShopifyShopId: "",
   linkedShopifyShopId: "",
   facilityMode: "One store",
+  autoApproveOrder: "N",
+  orderNumberPrefix: "HC",
+  saveBillingInformation: "Y",
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
   primaryProductIdentification: "",
   secondaryProductIdentification: "",
