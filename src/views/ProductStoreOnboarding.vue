@@ -213,9 +213,36 @@
               <ion-item>
                 <ion-label>
                   {{ translate("Shopify product import") }}
-                  <p>{{ translate("Product import and product sync job setup are handled after identity is saved.") }}</p>
+                  <p>{{ productSyncHandoffDescription }}</p>
                 </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Next") }}</ion-badge>
+                <ion-badge :color="canOpenShopifyProductSync ? 'success' : 'warning'" slot="end">
+                  {{ canOpenShopifyProductSync ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+              </ion-item>
+              <ion-item v-if="linkedShopifyShop">
+                <ion-icon slot="start" :icon="syncOutline" />
+                <ion-label>
+                  {{ translate("Product import workspace") }}
+                  <p>{{ translate("Review live Shopify catalog counts before starting the first import.") }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-open-product-sync"
+                  :aria-label="translate('Open product import')"
+                  :disabled="!canOpenShopifyProductSync || isSavingProductIdentity"
+                  @click="openShopifyProductSync()"
+                >
+                  <ion-spinner v-if="isSavingProductIdentity" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="openOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-else>
+                <ion-label>
+                  {{ translate("Shopify shop required") }}
+                  <p>{{ translate("Link a Shopify shop before importing products.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
             </ion-list>
 
@@ -415,7 +442,7 @@ import {
 } from "@ionic/vue"
 import { computed, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, gitNetworkOutline, radioButtonOffOutline, storefrontOutline } from "ionicons/icons"
+import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, gitNetworkOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
@@ -430,6 +457,7 @@ const onboardingStore = useProductStoreOnboardingStore()
 const productStoreStore = useProductStore()
 const shopifyStore = useShopifyStore()
 const utilStore = useUtilStore()
+const props = defineProps<{ productStoreId?: string }>()
 const route = useRoute()
 const router = useRouter()
 const isSavingProductStore = ref(false)
@@ -442,6 +470,8 @@ const shopifyLocationMappings = ref<any[]>([])
 const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
 const routeProductStoreId = computed(() => {
+  if (props.productStoreId) return props.productStoreId
+
   const productStoreId = (route as any)?.params?.productStoreId
   if (Array.isArray(productStoreId)) return productStoreId[0] || ""
   return productStoreId ? String(productStoreId) : ""
@@ -468,6 +498,14 @@ const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || ""
 const facilityCount = computed(() => utilStore.facilities.length)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
+const canOpenShopifyProductSync = computed(() => {
+  return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
+})
+const productSyncHandoffDescription = computed(() => {
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
+  if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
+  return translate("Open the existing first-time product sync wizard with this Product Store and identifier preselected.")
+})
 const productIdentityPreferences = computed(() => {
   const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
   if (!settingValue) return {} as any
@@ -847,6 +885,36 @@ function openShopifyLocationMapping() {
   }
 
   window.location.href = fallbackUrl
+}
+
+async function openShopifyProductSync() {
+  if (!canOpenShopifyProductSync.value) {
+    commonUtil.showToast(translate("Link Shopify and choose a product identifier before importing products."))
+    return
+  }
+
+  const saved = await saveProductIdentity()
+  if (!saved) return
+
+  onboardingStore.markCurrentStepComplete()
+
+  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/product-sync`
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  const query = {
+    mode: "first-time",
+    step: "review",
+    productStoreId: selectedProductStoreId.value,
+    identifierEnumId: onboardingStore.draft.productIdentifierEnumId,
+    returnTo
+  }
+  const fallbackQuery = new URLSearchParams(query).toString()
+
+  if ((router as any)?.push) {
+    router.push({ path, query }).catch((error: any) => logger.error(error))
+    return
+  }
+
+  window.location.href = `${path}?${fallbackQuery}`
 }
 
 function getShopifyShopLabel(shop: any) {
