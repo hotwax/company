@@ -97,7 +97,9 @@
                   {{ translate("Connect a Shopify store") }}
                   <p>{{ translate("A Shopify store cannot be linked to more than one product store at a time.") }}</p>
                 </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+                <ion-badge :color="linkedShopifyShop ? 'success' : 'warning'" slot="end">
+                  {{ linkedShopifyShop ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
               </ion-item>
               <ion-radio-group
                 :value="onboardingStore.draft.shopifyConnectionMode"
@@ -116,7 +118,33 @@
                   <ion-label>{{ translate("Prepare Shopify connection") }}</ion-label>
                 </ion-item>
               </ion-radio-group>
-              <ion-item>
+              <ion-item v-if="isExistingShopifyMode && linkedShopifyShop">
+                <ion-label>
+                  {{ translate("Linked Shopify shop") }}
+                  <p>{{ linkedShopifyShop.name || linkedShopifyShop.myshopifyDomain || linkedShopifyShop.shopId }}</p>
+                </ion-label>
+                <ion-badge color="success" slot="end">{{ translate("Ready") }}</ion-badge>
+              </ion-item>
+              <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && availableShopifyShops.length">
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.selectedShopifyShopId"
+                  @ionChange="onboardingStore.updateDraftField('selectedShopifyShopId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Existing Shopify shop") }} <ion-text color="danger">*</ion-text></div>
+                  <ion-select-option v-for="shop in availableShopifyShops" :key="shop.shopId" :value="shop.shopId">
+                    {{ getShopifyShopLabel(shop) }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && !availableShopifyShops.length">
+                <ion-label>
+                  {{ translate("No available Shopify connection") }}
+                  <p>{{ translate("Create the Shopify connection first, then return to link it here.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+              </ion-item>
+              <ion-item v-if="!isExistingShopifyMode">
                 <ion-input
                   :value="onboardingStore.draft.shopifyDomain"
                   label-placement="stacked"
@@ -124,6 +152,13 @@
                   :clear-input="true"
                   @ionInput="onboardingStore.updateDraftField('shopifyDomain', String($event.detail.value || ''))"
                 />
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-label>
+                  {{ translate("Connection handoff") }}
+                  <p>{{ translate("Generating an integration token and app handoff remains a backend setup gap.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
             </ion-list>
 
@@ -173,7 +208,7 @@
               </ion-button>
               <ion-button :disabled="isPrimaryActionDisabled" @click="handlePrimaryAction()">
                 {{ primaryActionLabel }}
-                <ion-spinner v-if="isSavingProductStore" slot="end" name="crescent" />
+                <ion-spinner v-if="isPrimaryActionLoading" slot="end" name="crescent" />
                 <ion-icon v-else slot="end" :icon="arrowForwardOutline" />
               </ion-button>
             </ion-card-content>
@@ -224,15 +259,18 @@ import OnboardingStepList from "@/components/product-store-onboarding/Onboarding
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
 import { useProductStore } from "@/store/productStore"
+import { useShopifyStore } from "@/store/shopify"
 import { useUtilStore } from "@/store/util"
 import { generateInternalId } from "@/utils"
 
 const onboardingStore = useProductStoreOnboardingStore()
 const productStoreStore = useProductStore()
+const shopifyStore = useShopifyStore()
 const utilStore = useUtilStore()
 const route = useRoute()
 const router = useRouter()
 const isSavingProductStore = ref(false)
+const isLinkingShopifyShop = ref(false)
 const isLoadingSetupData = ref(false)
 
 const currentStep = computed(() => onboardingStore.currentStep)
@@ -245,6 +283,20 @@ const routeProductStoreId = computed(() => {
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
+const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value)
+const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
+const availableShopifyShops = computed(() => {
+  return shopifyStore.shops.filter((shop: any) => {
+    return !shop.productStoreId
+      || shop.productStoreId === selectedProductStoreId.value
+      || shop.shopId === onboardingStore.draft.linkedShopifyShopId
+  })
+})
+const linkedShopifyShop = computed(() => {
+  const linkedShopId = onboardingStore.draft.linkedShopifyShopId
+  if (!linkedShopId) return null
+  return shopifyStore.getShopById(linkedShopId) || { shopId: linkedShopId }
+})
 const currencyOptions = computed(() => {
   if (utilStore.currencies.length) {
     return utilStore.currencies.map((currency: any) => ({
@@ -265,15 +317,20 @@ const nextLabel = computed(() => {
 })
 const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
+  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
-  if (isLastStep.value || isLoadingSetupData.value || isSavingProductStore.value) return true
+  if (isLastStep.value || isLoadingSetupData.value || isPrimaryActionLoading.value) return true
 
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
     return !onboardingStore.draft.storeName.trim()
       || !onboardingStore.draft.defaultCurrencyUomId
       || (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim())
+  }
+
+  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
+    return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
   }
 
   return false
@@ -306,7 +363,8 @@ async function loadSetupData() {
     await Promise.allSettled([
       utilStore.fetchDBICCountries(),
       utilStore.fetchCurrencies({ uomTypeEnumId: "UT_CURRENCY_MEASURE", pageSize: 250 }),
-      productStoreStore.fetchProductStores()
+      productStoreStore.fetchProductStores(),
+      shopifyStore.fetchShopifyShops()
     ])
 
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
@@ -391,11 +449,54 @@ async function handlePrimaryAction() {
     if (!productStoreId) return
   }
 
+  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
+    const shopLinked = await linkExistingShopifyShop()
+    if (!shopLinked) return
+  }
+
   onboardingStore.goNext()
 
   if (productStoreId) {
     replaceRouteForProductStore(productStoreId)
   }
+}
+
+async function linkExistingShopifyShop() {
+  if (!selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId) {
+    commonUtil.showToast(translate("Please select a Shopify shop."))
+    return false
+  }
+
+  isLinkingShopifyShop.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const selectedShop = shopifyStore.getShopById(onboardingStore.draft.selectedShopifyShopId)
+    const resp = await shopifyStore.updateShopifyShop({
+      shopId: onboardingStore.draft.selectedShopifyShopId,
+      productStoreId: selectedProductStoreId.value
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    onboardingStore.updateDraftField("linkedShopifyShopId", onboardingStore.draft.selectedShopifyShopId)
+    onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
+    await shopifyStore.fetchShopifyShops()
+    commonUtil.showToast(translate("Product store linked successfully"))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to link product store"))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isLinkingShopifyShop.value = false
+  }
+}
+
+function getShopifyShopLabel(shop: any) {
+  const name = shop.name || shop.myshopifyDomain || shop.shopId
+  return shop.productStoreId ? `${name} (${shop.productStoreId})` : name
 }
 
 function replaceRouteForProductStore(productStoreId: string) {

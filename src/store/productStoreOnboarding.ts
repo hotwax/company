@@ -11,6 +11,8 @@ export interface ProductStoreOnboardingDraft {
   timezone: string
   shopifyDomain: string
   shopifyConnectionMode: string
+  selectedShopifyShopId: string
+  linkedShopifyShopId: string
   facilityMode: string
   productIdentifierEnumId: string
   inventorySource: string
@@ -29,6 +31,8 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   timezone: "America / English",
   shopifyDomain: "",
   shopifyConnectionMode: "Prepare Shopify connection",
+  selectedShopifyShopId: "",
+  linkedShopifyShopId: "",
   facilityMode: "One store",
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
   inventorySource: "Shopify",
