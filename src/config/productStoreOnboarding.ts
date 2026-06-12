@@ -157,13 +157,13 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "workflows",
     label: "In store pickup",
     summary: "Model pickup promises, pickup facility mapping, and customer-facing pickup changes.",
-    capability: "preview",
+    capability: "existing-api",
     questions: [
       "Which stores allow pickup?",
       "How should pickup orders be identified?",
       "Can customers change pickup location before fulfillment?"
     ],
-    outputs: ["Pickup setup task", "BOPIS behavior", "Pickup permissions"]
+    outputs: ["BOPIS rejection policy", "Customer edit permissions", "Reroute shipment method"]
   },
   {
     id: "storeInventory",

@@ -30,6 +30,12 @@ export interface ProductStoreOnboardingDraft {
   sendFulfillmentNotification: string
   autoCancelOrders: string
   daysToCancelNonPay: string
+  bopisPartialRejection: string
+  customerDeliveryMethodUpdate: string
+  rerouteShippingMethodId: string
+  customerDeliveryAddressUpdate: string
+  customerPickupUpdate: string
+  customerCancelBeforeFulfillment: string
   orderImportMode: string
   selectedWorkflows: string[]
 }
@@ -64,6 +70,12 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   sendFulfillmentNotification: "Y",
   autoCancelOrders: "N",
   daysToCancelNonPay: "",
+  bopisPartialRejection: "false",
+  customerDeliveryMethodUpdate: "false",
+  rerouteShippingMethodId: "",
+  customerDeliveryAddressUpdate: "false",
+  customerPickupUpdate: "false",
+  customerCancelBeforeFulfillment: "false",
   orderImportMode: "Realtime and fallback batch",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }

@@ -501,6 +501,69 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'pickup'" lines="full">
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.bopisPartialRejection === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('bopisPartialRejection', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Partial order rejection") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Order edit permissions") }}</ion-label>
+              </ion-list-header>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.customerDeliveryMethodUpdate === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('customerDeliveryMethodUpdate', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Delivery method") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.rerouteShippingMethodId"
+                  @ionChange="onboardingStore.updateDraftField('rerouteShippingMethodId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Shipment method") }}</div>
+                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                  <ion-select-option
+                    v-for="shipmentMethod in shipmentMethodTypes"
+                    :key="shipmentMethod.shipmentMethodTypeId"
+                    :value="shipmentMethod.shipmentMethodTypeId"
+                  >
+                    {{ shipmentMethod.description || shipmentMethod.shipmentMethodTypeId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.customerDeliveryAddressUpdate === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('customerDeliveryAddressUpdate', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Delivery address") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.customerPickupUpdate === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('customerPickupUpdate', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Pick up location") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.customerCancelBeforeFulfillment === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('customerCancelBeforeFulfillment', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Cancel order before fulfillment") }}
+                </ion-toggle>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -618,6 +681,7 @@ const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
 const isSavingRoutingDefaults = ref(false)
+const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
@@ -641,6 +705,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
     || isSavingRoutingDefaults.value
+    || isSavingPickupSettings.value
 })
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
@@ -659,6 +724,7 @@ const linkedShopifyShop = computed(() => {
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
 const facilityCount = computed(() => utilStore.facilities.length)
 const facilityGroups = computed(() => utilStore.facilityGroups)
+const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
 const canOpenShopifyProductSync = computed(() => {
@@ -707,6 +773,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
+  if (currentStep.value.id === "pickup") return translate("Save pickup settings")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
@@ -735,6 +802,10 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "routing") {
+    return !selectedProductStoreId.value
+  }
+
+  if (currentStep.value.id === "pickup") {
     return !selectedProductStoreId.value
   }
 
@@ -771,6 +842,7 @@ async function loadSetupData() {
       utilStore.fetchFacilities(),
       utilStore.fetchFacilityGroups(),
       utilStore.fetchProductIdentifiers(),
+      utilStore.fetchShipmentMethodTypes(),
       productStoreStore.fetchProductStores(),
       shopifyStore.fetchShopifyShops()
     ])
@@ -911,6 +983,30 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("sendFulfillmentNotification", productStoreStore.currentStoreSettings.FULFILL_NOTIF.settingValue)
   }
 
+  if (productStoreStore.currentStoreSettings?.BOPIS_PART_ODR_REJ?.settingValue) {
+    onboardingStore.updateDraftField("bopisPartialRejection", productStoreStore.currentStoreSettings.BOPIS_PART_ODR_REJ.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.CUST_DLVRMTHD_UPDATE?.settingValue) {
+    onboardingStore.updateDraftField("customerDeliveryMethodUpdate", productStoreStore.currentStoreSettings.CUST_DLVRMTHD_UPDATE.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.RF_SHIPPING_METHOD?.settingValue) {
+    onboardingStore.updateDraftField("rerouteShippingMethodId", productStoreStore.currentStoreSettings.RF_SHIPPING_METHOD.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.CUST_DLVRADR_UPDATE?.settingValue) {
+    onboardingStore.updateDraftField("customerDeliveryAddressUpdate", productStoreStore.currentStoreSettings.CUST_DLVRADR_UPDATE.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.CUST_PCKUP_UPDATE?.settingValue) {
+    onboardingStore.updateDraftField("customerPickupUpdate", productStoreStore.currentStoreSettings.CUST_PCKUP_UPDATE.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.CUST_ALLOW_CNCL?.settingValue) {
+    onboardingStore.updateDraftField("customerCancelBeforeFulfillment", productStoreStore.currentStoreSettings.CUST_ALLOW_CNCL.settingValue)
+  }
+
   if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
     onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId)
   }
@@ -951,6 +1047,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "routing") {
     const routingDefaultsSaved = await saveRoutingDefaults()
     if (!routingDefaultsSaved) return
+  }
+
+  if (currentStep.value.id === "pickup") {
+    const pickupSettingsSaved = await savePickupSettings()
+    if (!pickupSettingsSaved) return
   }
 
   onboardingStore.goNext()
@@ -1138,6 +1239,59 @@ async function saveRoutingDefaults() {
 }
 
 function buildRoutingSettingPayload(settingTypeEnumId: string, settingValue: string) {
+  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
+  return {
+    ...(existingSetting || {}),
+    fromDate: existingSetting?.fromDate || Date.now(),
+    productStoreId: selectedProductStoreId.value,
+    settingTypeEnumId,
+    settingValue
+  }
+}
+
+async function savePickupSettings() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before saving pickup settings."))
+    return false
+  }
+
+  isSavingPickupSettings.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const settingPayloads = [
+      buildPickupSettingPayload("BOPIS_PART_ODR_REJ", onboardingStore.draft.bopisPartialRejection === "true" ? "true" : "false"),
+      buildPickupSettingPayload("CUST_DLVRMTHD_UPDATE", onboardingStore.draft.customerDeliveryMethodUpdate === "true" ? "true" : "false"),
+      buildPickupSettingPayload("CUST_DLVRADR_UPDATE", onboardingStore.draft.customerDeliveryAddressUpdate === "true" ? "true" : "false"),
+      buildPickupSettingPayload("CUST_PCKUP_UPDATE", onboardingStore.draft.customerPickupUpdate === "true" ? "true" : "false"),
+      buildPickupSettingPayload("CUST_ALLOW_CNCL", onboardingStore.draft.customerCancelBeforeFulfillment === "true" ? "true" : "false")
+    ]
+
+    if (onboardingStore.draft.rerouteShippingMethodId || productStoreStore.currentStoreSettings?.RF_SHIPPING_METHOD) {
+      settingPayloads.push(buildPickupSettingPayload("RF_SHIPPING_METHOD", onboardingStore.draft.rerouteShippingMethodId))
+    }
+
+    const updatedSettings = { ...productStoreStore.currentStoreSettings }
+    for (const payload of settingPayloads) {
+      const settingResp = await productStoreStore.saveCurrentStoreSettings(payload)
+      if (commonUtil.hasError(settingResp)) throw settingResp.data
+      updatedSettings[payload.settingTypeEnumId] = payload
+    }
+
+    productStoreStore.updateCurrentStoreSettings(updatedSettings)
+    commonUtil.showToast(translate("Pickup settings saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save pickup settings."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingPickupSettings.value = false
+  }
+}
+
+function buildPickupSettingPayload(settingTypeEnumId: string, settingValue: string) {
   const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
   return {
     ...(existingSetting || {}),
