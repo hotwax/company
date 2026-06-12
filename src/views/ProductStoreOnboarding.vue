@@ -162,6 +162,63 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'products'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Product matching") }}
+                  <p>{{ translate("Choose the identifier HotWax should trust when matching Shopify products and variants.") }}</p>
+                </ion-label>
+                <ion-badge :color="onboardingStore.draft.productIdentifierEnumId ? 'success' : 'warning'" slot="end">
+                  {{ onboardingStore.draft.productIdentifierEnumId ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.productIdentifierEnumId"
+                  @ionChange="onboardingStore.updateDraftField('productIdentifierEnumId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Global identifier") }} <ion-text color="danger">*</ion-text></div>
+                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                    {{ identifier.description || identifier.enumId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="preferredPrimaryProductIdentification"
+                  @ionChange="onboardingStore.updateDraftField('primaryProductIdentification', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Primary identifier") }}</div>
+                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                    {{ identifier.description || identifier.enumId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="preferredSecondaryProductIdentification"
+                  @ionChange="onboardingStore.updateDraftField('secondaryProductIdentification', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Secondary identifier") }}</div>
+                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                    {{ identifier.description || identifier.enumId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item>
+                <ion-label>
+                  {{ translate("Shopify product import") }}
+                  <p>{{ translate("Product import and product sync job setup are handled after identity is saved.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Next") }}</ion-badge>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.id === 'facilities'" lines="full">
               <ion-item>
                 <ion-label>
@@ -378,6 +435,7 @@ const router = useRouter()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
 const isImportingShopifyFacilities = ref(false)
+const isSavingProductIdentity = ref(false)
 const isLoadingSetupData = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
@@ -391,7 +449,7 @@ const routeProductStoreId = computed(() => {
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
-const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value)
+const isPrimaryActionLoading = computed(() => isSavingProductStore.value || isLinkingShopifyShop.value || isImportingShopifyFacilities.value || isSavingProductIdentity.value)
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
   return shopifyStore.shops.filter((shop: any) => {
@@ -409,6 +467,20 @@ const linkedShopifyShop = computed(() => {
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
 const facilityCount = computed(() => utilStore.facilities.length)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
+const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
+const productIdentityPreferences = computed(() => {
+  const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
+  if (!settingValue) return {} as any
+
+  try {
+    return JSON.parse(settingValue)
+  } catch (error: any) {
+    logger.error(error)
+    return {} as any
+  }
+})
+const preferredPrimaryProductIdentification = computed(() => onboardingStore.draft.primaryProductIdentification || productIdentityPreferences.value.primaryId || "")
+const preferredSecondaryProductIdentification = computed(() => onboardingStore.draft.secondaryProductIdentification || productIdentityPreferences.value.secondaryId || "")
 const currencyOptions = computed(() => {
   if (utilStore.currencies.length) {
     return utilStore.currencies.map((currency: any) => ({
@@ -430,6 +502,7 @@ const nextLabel = computed(() => {
 const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
+  if (currentStep.value.id === "products") return translate("Save product identity")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
@@ -443,6 +516,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
     return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
+  }
+
+  if (currentStep.value.id === "products") {
+    return !selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId
   }
 
   return false
@@ -476,11 +553,13 @@ async function loadSetupData() {
       utilStore.fetchDBICCountries(),
       utilStore.fetchCurrencies({ uomTypeEnumId: "UT_CURRENCY_MEASURE", pageSize: 250 }),
       utilStore.fetchFacilities(),
+      utilStore.fetchProductIdentifiers(),
       productStoreStore.fetchProductStores(),
       shopifyStore.fetchShopifyShops()
     ])
 
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
+    await loadSelectedProductStoreSetup()
     await refreshShopifyLocationMappings()
   } catch (error: any) {
     logger.error(error)
@@ -555,6 +634,27 @@ async function createProductStoreFromDraft() {
   }
 }
 
+async function loadSelectedProductStoreSetup() {
+  if (!selectedProductStoreId.value) return
+
+  await Promise.allSettled([
+    productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
+    productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value)
+  ])
+
+  if (productStoreStore.current?.productIdentifierEnumId) {
+    onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
+  }
+
+  if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
+    onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId)
+  }
+
+  if (!onboardingStore.draft.secondaryProductIdentification && productIdentityPreferences.value.secondaryId) {
+    onboardingStore.updateDraftField("secondaryProductIdentification", productIdentityPreferences.value.secondaryId)
+  }
+}
+
 async function handlePrimaryAction() {
   let productStoreId = selectedProductStoreId.value
 
@@ -568,10 +668,82 @@ async function handlePrimaryAction() {
     if (!shopLinked) return
   }
 
+  if (currentStep.value.id === "products") {
+    const productIdentitySaved = await saveProductIdentity()
+    if (!productIdentitySaved) return
+  }
+
   onboardingStore.goNext()
 
   if (productStoreId) {
     replaceRouteForProductStore(productStoreId)
+  }
+}
+
+async function saveProductIdentity() {
+  if (!selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId) {
+    commonUtil.showToast(translate("Please select a product identifier."))
+    return false
+  }
+
+  isSavingProductIdentity.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
+      ? productStoreStore.current
+      : { productStoreId: selectedProductStoreId.value }
+    const productStorePayload = {
+      ...currentStore,
+      productStoreId: selectedProductStoreId.value,
+      productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId
+    }
+    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+
+    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
+
+    productStoreStore.updateCurrent(productStorePayload)
+
+    const preferencePayload = buildProductIdentificationPreferencePayload()
+    if (preferencePayload) {
+      const preferenceResp = await productStoreStore.saveCurrentStoreSettings(preferencePayload)
+      if (commonUtil.hasError(preferenceResp)) throw preferenceResp.data
+
+      productStoreStore.updateCurrentStoreSettings({
+        ...productStoreStore.currentStoreSettings,
+        PRDT_IDEN_PREF: preferencePayload
+      })
+    }
+
+    commonUtil.showToast(translate("Product identity saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save product identity."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingProductIdentity.value = false
+  }
+}
+
+function buildProductIdentificationPreferencePayload() {
+  const preferences = { ...productIdentityPreferences.value }
+  const primaryId = onboardingStore.draft.primaryProductIdentification
+  const secondaryId = onboardingStore.draft.secondaryProductIdentification
+
+  if (primaryId) preferences.primaryId = primaryId
+  if (secondaryId) preferences.secondaryId = secondaryId
+
+  if (!Object.keys(preferences).length) return null
+
+  const existingSetting = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF
+  return {
+    ...(existingSetting || {}),
+    fromDate: existingSetting?.fromDate || Date.now(),
+    productStoreId: selectedProductStoreId.value,
+    settingTypeEnumId: "PRDT_IDEN_PREF",
+    settingValue: JSON.stringify(preferences)
   }
 }
 

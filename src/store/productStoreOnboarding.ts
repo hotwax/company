@@ -15,6 +15,8 @@ export interface ProductStoreOnboardingDraft {
   linkedShopifyShopId: string
   facilityMode: string
   productIdentifierEnumId: string
+  primaryProductIdentification: string
+  secondaryProductIdentification: string
   inventorySource: string
   orderImportMode: string
   selectedWorkflows: string[]
@@ -35,6 +37,8 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   linkedShopifyShopId: "",
   facilityMode: "One store",
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
+  primaryProductIdentification: "",
+  secondaryProductIdentification: "",
   inventorySource: "Shopify",
   orderImportMode: "Realtime and fallback batch",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
