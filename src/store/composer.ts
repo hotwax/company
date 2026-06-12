@@ -104,8 +104,10 @@ export const useComposerStore = defineStore('composer', {
       if (!this.agentId) return
       const resp = await api({ url: `ai/agents/${encodeURIComponent(this.agentId)}`, method: 'get' }) as any
       if (hasError(resp)) throw resp.data
-      const current: any[] = resp.data.toolList || []
-      this.statusId = resp.data.agent?.statusId || this.statusId
+      // GET /agents/{id} now returns the AiAgent 'detail' master: agent fields at top level + `grants`
+      // (each grant carries toolId + requiresApprovalOverride, same fields we diff on).
+      const current: any[] = resp.data.grants || []
+      this.statusId = resp.data.statusId || this.statusId
 
       for (const cur of current) {
         if (!this.selectedTools.some((tool) => tool.toolId === cur.toolId)) {
