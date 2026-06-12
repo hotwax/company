@@ -147,6 +147,22 @@ export const useProductStore = defineStore('productStore', {
       return shopifyJobStatus
     },
 
+    async setupProductStoreShopifyOrderImport(payload: {
+      productStoreId: string
+      shopId?: string
+      activateJobs?: boolean
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/orderImport`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+      }
+      return resp
+    },
+
     async fetchCompany() {
       let company = {}
       try {

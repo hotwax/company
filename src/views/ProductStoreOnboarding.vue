@@ -736,6 +736,7 @@ const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
+const isSettingUpOrderJobs = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
@@ -761,6 +762,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
+    || isSettingUpOrderJobs.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
 })
@@ -884,6 +886,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
+  if (currentStep.value.id === "orders") return translate("Configure order jobs")
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
   return nextLabel.value
@@ -911,6 +914,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "inventory") {
     return !selectedProductStoreId.value
+  }
+
+  if (currentStep.value.id === "orders") {
+    return !selectedProductStoreId.value || !linkedShopifyShopId.value
   }
 
   if (currentStep.value.id === "routing") {
@@ -1206,6 +1213,11 @@ async function handlePrimaryAction() {
     if (!inventorySettingsSaved) return
   }
 
+  if (currentStep.value.id === "orders") {
+    const orderJobsConfigured = await setupOrderImportJobs()
+    if (!orderJobsConfigured) return
+  }
+
   if (currentStep.value.id === "routing") {
     const routingDefaultsSaved = await saveRoutingDefaults()
     if (!routingDefaultsSaved) return
@@ -1342,6 +1354,42 @@ function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: s
     productStoreId: selectedProductStoreId.value,
     settingTypeEnumId,
     settingValue
+  }
+}
+
+async function setupOrderImportJobs() {
+  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before configuring order jobs."))
+    return false
+  }
+
+  isSettingUpOrderJobs.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreShopifyOrderImport({
+      productStoreId: selectedProductStoreId.value,
+      shopId: linkedShopifyShopId.value,
+      activateJobs: false
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.shopifyJobsStatus) {
+      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    } else {
+      await refreshShopifyJobStatus()
+    }
+
+    commonUtil.showToast(translate("Order jobs configured successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to configure order jobs."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpOrderJobs.value = false
   }
 }
 
