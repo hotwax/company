@@ -1,4 +1,4 @@
-export type ProductStoreOnboardingStepGroup = "setup" | "workflows"
+export type ProductStoreOnboardingStepGroup = "setup" | "workflows" | "review"
 export type ProductStoreOnboardingCapability = "preview" | "existing-api" | "backend-gap"
 
 export interface ProductStoreOnboardingStep {
@@ -18,7 +18,8 @@ export interface ProductStoreOnboardingGroup {
 
 export const PRODUCT_STORE_ONBOARDING_GROUPS: ProductStoreOnboardingGroup[] = [
   { id: "setup", label: "Setup" },
-  { id: "workflows", label: "Workflows" }
+  { id: "workflows", label: "Workflows" },
+  { id: "review", label: "Review" }
 ]
 
 export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
@@ -190,6 +191,19 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
       "Should preorder orders split from in-stock items?"
     ],
     outputs: ["Preorder setup task", "Preorder facility group", "Release routing task"]
+  },
+  {
+    id: "readiness",
+    group: "review",
+    label: "Readiness review",
+    summary: "Review complete, skipped, and blocked setup areas before the retailer starts using the Product Store.",
+    capability: "existing-api",
+    questions: [
+      "Which setup areas are ready for a cold-start Shopify retailer?",
+      "Which areas are blocked by backend gaps, missing data, or skipped choices?",
+      "What should the user do next before running imports and enabling operations?"
+    ],
+    outputs: ["Setup readiness", "Blocked tasks", "Next actions"]
   }
 ]
 

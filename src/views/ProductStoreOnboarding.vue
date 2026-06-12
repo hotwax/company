@@ -922,6 +922,48 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'readiness'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Cold-start readiness") }}
+                  <p>{{ readinessSummaryDescription }}</p>
+                </ion-label>
+                <ion-badge :color="readinessBadgeColor" slot="end">
+                  {{ readinessStatusLabel }}
+                </ion-badge>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Required setup") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-for="item in requiredReadinessItems" :key="item.id">
+                <ion-label>
+                  {{ item.label }}
+                  <p>{{ item.detail }}</p>
+                </ion-label>
+                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Workflow settings") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-for="item in workflowReadinessItems" :key="item.id">
+                <ion-label>
+                  {{ item.label }}
+                  <p>{{ item.detail }}</p>
+                </ion-label>
+                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Next actions") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-for="item in nextReadinessActions" :key="item.id">
+                <ion-label>
+                  {{ item.label }}
+                  <p>{{ item.detail }}</p>
+                </ion-label>
+                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -1279,6 +1321,154 @@ const accessPackageStatusDescription = computed(() => {
   if (!gapCount) return translate("Access packages are ready to create or assign users.")
   return `${gapCount} ${translate("access packages need security or permission setup.")}`
 })
+const requiredReadinessItems = computed(() => [
+  buildReadinessItem({
+    id: "productStore",
+    label: translate("Product Store"),
+    ready: !!selectedProductStoreId.value,
+    readyDetail: selectedProductStoreId.value || translate("Created ProductStore is available."),
+    gapDetail: translate("Create the Product Store identity before setup can continue.")
+  }),
+  buildReadinessItem({
+    id: "shopifyShop",
+    label: translate("Shopify connection"),
+    ready: !!linkedShopifyShopId.value,
+    readyDetail: linkedShopifyShop.value?.myshopifyDomain || linkedShopifyShop.value?.name || linkedShopifyShopId.value,
+    gapDetail: translate("Link an existing Shopify shop or prepare the Shopify app handoff.")
+  }),
+  buildReadinessItem({
+    id: "shopifyMappings",
+    label: translate("Shopify mappings"),
+    ready: readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length,
+    readyDetail: shopifyMappingReadinessDescription.value,
+    gapDetail: shopifyMappingReadinessDescription.value
+  }),
+  buildReadinessItem({
+    id: "productIdentity",
+    label: translate("Product identity"),
+    ready: !!onboardingStore.draft.productIdentifierEnumId,
+    readyDetail: onboardingStore.draft.productIdentifierEnumId,
+    gapDetail: translate("Choose the product identifier before product import starts.")
+  }),
+  buildReadinessItem({
+    id: "facilities",
+    label: translate("Facilities"),
+    ready: facilityCount.value > 0,
+    readyDetail: `${facilityCount.value} ${translate("facilities available for setup")}`,
+    gapDetail: translate("Import Shopify locations or create facilities for this Product Store.")
+  }),
+  buildReadinessItem({
+    id: "locationMappings",
+    label: translate("Inventory location mappings"),
+    ready: mappedShopifyLocationCount.value > 0,
+    readyDetail: `${mappedShopifyLocationCount.value} ${translate("Shopify location mappings")}`,
+    gapDetail: translate("Map Shopify inventory locations to HotWax facilities.")
+  }),
+  buildReadinessItem({
+    id: "inventory",
+    label: translate("Initial inventory load"),
+    ready: !shouldSetupShopifyInventoryReset.value || inventoryResetStatusLabel.value === translate("Ready"),
+    readyDetail: inventoryResetDescription.value,
+    gapDetail: inventoryResetDescription.value,
+    status: shouldSetupShopifyInventoryReset.value ? undefined : translate("Skipped"),
+    color: shouldSetupShopifyInventoryReset.value ? undefined : "medium"
+  }),
+  buildReadinessItem({
+    id: "orders",
+    label: translate("Order import"),
+    ready: orderImportStatusLabel.value === translate("Ready"),
+    readyDetail: orderImportStatusDescription.value,
+    gapDetail: orderImportStatusDescription.value
+  }),
+  buildReadinessItem({
+    id: "users",
+    label: translate("User access"),
+    ready: !!selectedAccessPackage.value?.assignedToUser,
+    readyDetail: selectedAccessPackage.value?.packageName || selectedAccessPackage.value?.packageId || translate("User access assigned."),
+    gapDetail: accessPackageStatusDescription.value
+  })
+])
+const workflowReadinessItems = computed(() => [
+  buildReadinessItem({
+    id: "routing",
+    label: translate("Order routing and fulfillment"),
+    ready: !!selectedProductStoreId.value,
+    readyDetail: translate("Routing defaults can be saved through existing ProductStore settings."),
+    gapDetail: translate("Create the Product Store before saving routing defaults.")
+  }),
+  buildReadinessItem({
+    id: "pickup",
+    label: translate("In store pickup"),
+    ready: !!selectedProductStoreId.value,
+    readyDetail: translate("Pickup permissions can be saved through ProductStoreSetting values."),
+    gapDetail: translate("Create the Product Store before saving pickup settings.")
+  }),
+  {
+    id: "storeInventory",
+    label: translate("Store inventory management"),
+    detail: translate("Inventory count and receiving app setup are represented as workflow tasks until app-specific package choices are confirmed."),
+    status: translate("Preview"),
+    color: "medium"
+  },
+  {
+    id: "preorders",
+    label: translate("Pre-orders"),
+    detail: onboardingStore.draft.preorderFacilityGroupId
+      ? translate("Preorder inventory group selected.")
+      : translate("Preorder release and routing setup still needs a dedicated task."),
+    status: onboardingStore.draft.preorderFacilityGroupId ? translate("Ready") : translate("Preview"),
+    color: onboardingStore.draft.preorderFacilityGroupId ? "success" : "medium"
+  }
+])
+const nextReadinessActions = computed(() => {
+  const actions = []
+
+  if (canOpenShopifyProductSync.value) {
+    actions.push({
+      id: "productSync",
+      label: translate("Run product sync"),
+      detail: productSyncHandoffDescription.value,
+      status: translate("Action"),
+      color: "primary"
+    })
+  }
+
+  if (shouldSetupShopifyInventoryReset.value) {
+    actions.push({
+      id: "inventoryReset",
+      label: translate("Load initial inventory"),
+      detail: inventoryResetDescription.value,
+      status: inventoryResetStatusLabel.value,
+      color: inventoryResetBadgeColor.value
+    })
+  }
+
+  actions.push({
+    id: "orderJobs",
+    label: translate("Enable order import"),
+    detail: orderImportStatusDescription.value,
+    status: orderImportStatusLabel.value,
+    color: orderImportBadgeColor.value
+  })
+
+  actions.push({
+    id: "userAccess",
+    label: translate("Assign store users"),
+    detail: accessPackageStatusDescription.value,
+    status: selectedAccessPackage.value?.assignedToUser ? translate("Assigned") : translate("Action"),
+    color: selectedAccessPackage.value?.assignedToUser ? "success" : "primary"
+  })
+
+  return actions
+})
+const requiredReadinessGapCount = computed(() => requiredReadinessItems.value.filter((item) => item.color === "warning").length)
+const requiredReadinessReadyCount = computed(() => requiredReadinessItems.value.length - requiredReadinessGapCount.value)
+const readinessStatusLabel = computed(() => requiredReadinessGapCount.value ? translate("Needs attention") : translate("Ready"))
+const readinessBadgeColor = computed(() => requiredReadinessGapCount.value ? "warning" : "success")
+const readinessSummaryDescription = computed(() => {
+  if (!requiredReadinessItems.value.length) return translate("No readiness checks available.")
+  return `${requiredReadinessReadyCount.value} ${translate("of")} ${requiredReadinessItems.value.length} ${translate("required setup areas are ready.")}`
+})
 const productIdentityPreferences = computed(() => {
   const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
   if (!settingValue) return {} as any
@@ -1323,6 +1513,7 @@ const primaryActionLabel = computed(() => {
   }
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
+  if (currentStep.value.id === "readiness") return requiredReadinessGapCount.value ? translate("Resolve gaps") : translate("Finish setup")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
@@ -1394,6 +1585,24 @@ const capabilityColor = computed(() => {
   if (currentStep.value.capability === "existing-api") return "success"
   return "medium"
 })
+
+function buildReadinessItem(payload: {
+  id: string
+  label: string
+  ready: boolean
+  readyDetail: string
+  gapDetail: string
+  status?: string
+  color?: string
+}) {
+  return {
+    id: payload.id,
+    label: payload.label,
+    detail: payload.ready ? payload.readyDetail : payload.gapDetail,
+    status: payload.status || (payload.ready ? translate("Ready") : translate("Gap")),
+    color: payload.color || (payload.ready ? "success" : "warning")
+  }
+}
 
 function findShopifyRequirement(requirementId: string) {
   return shopifyJobRequirements.value.find((requirement: any) => requirement.id === requirementId)
