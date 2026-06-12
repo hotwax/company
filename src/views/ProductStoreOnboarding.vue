@@ -475,8 +475,8 @@
                   {{ translate("Initial inventory load") }}
                   <p>{{ inventoryResetDescription }}</p>
                 </ion-label>
-                <ion-badge :color="getShopifyJobBadgeColor('inventoryReset')" slot="end">
-                  {{ getShopifyJobStatusLabel('inventoryReset') }}
+                <ion-badge :color="inventoryResetBadgeColor" slot="end">
+                  {{ inventoryResetStatusLabel }}
                 </ion-badge>
               </ion-item>
             </ion-list>
@@ -920,6 +920,7 @@ const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
+const isSettingUpInventoryResetJob = ref(false)
 const isSettingUpOrderJobs = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
 const isSettingUpAccessPackage = ref(false)
@@ -951,6 +952,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
+    || isSettingUpInventoryResetJob.value
     || isSettingUpOrderJobs.value
     || isSettingUpRealtimeOrderJobs.value
     || isSettingUpAccessPackage.value
@@ -1020,10 +1022,21 @@ const shopifyConnectionBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
 })
+const shouldSetupShopifyInventoryReset = computed(() => onboardingStore.draft.inventorySource === "Shopify")
 const inventoryResetDescription = computed(() => {
+  if (!shouldSetupShopifyInventoryReset.value) return translate("This inventory source does not need a Shopify inventory reset job.")
+  if (!selectedProductStoreId.value) return translate("Create the Product Store before configuring inventory reset.")
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before configuring inventory reset.")
+
   const inventoryRequirement = findShopifyRequirement("job.inventoryReset")
   if (inventoryRequirement?.message) return inventoryRequirement.message
-  return translate("Shopify, ERP, and file reset paths still need a backend wrapper before onboarding can run the first QOH load.")
+  return translate("Configure the Shopify inventory reset job after products and locations are mapped.")
+})
+const inventoryResetStatusLabel = computed(() => {
+  return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
+})
+const inventoryResetBadgeColor = computed(() => {
+  return shouldSetupShopifyInventoryReset.value ? getShopifyJobBadgeColor("inventoryReset") : "medium"
 })
 const orderImportStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before checking order import jobs.")
@@ -1104,6 +1117,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "general") return translate("Save order defaults")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
+  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save inventory setup")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure order jobs")
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
@@ -1508,6 +1522,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "inventory") {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
+
+    if (shouldSetupShopifyInventoryReset.value) {
+      const inventoryResetConfigured = await setupInventoryResetJob()
+      if (!inventoryResetConfigured) return
+    }
   }
 
   if (currentStep.value.id === "orders") {
@@ -1734,6 +1753,43 @@ function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: s
     productStoreId: selectedProductStoreId.value,
     settingTypeEnumId,
     settingValue
+  }
+}
+
+async function setupInventoryResetJob() {
+  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before configuring inventory reset."))
+    return false
+  }
+
+  isSettingUpInventoryResetJob.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreShopifyInventoryReset({
+      productStoreId: selectedProductStoreId.value,
+      shopId: linkedShopifyShopId.value,
+      activateJobs: false,
+      inventoryResetAdditionalParameters: {}
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.shopifyJobsStatus) {
+      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    } else {
+      await refreshShopifyJobStatus()
+    }
+
+    commonUtil.showToast(translate("Inventory reset configured successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to configure inventory reset."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpInventoryResetJob.value = false
   }
 }
 

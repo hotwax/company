@@ -226,6 +226,27 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async setupProductStoreShopifyInventoryReset(payload: {
+      productStoreId: string
+      shopId?: string
+      activateJobs?: boolean
+      inventoryResetAdditionalParameters?: Record<string, any>
+      facilityGroupId?: string
+      facilityTypeId?: string
+      parentTypeId?: string
+      productId?: string
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/inventoryReset`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+      }
+      return resp
+    },
+
     async setupProductStoreShopifyOrderImport(payload: {
       productStoreId: string
       shopId?: string
