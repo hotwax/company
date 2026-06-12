@@ -6,11 +6,13 @@ export const useProductStore = defineStore('productStore', {
   state: () => ({
     current: {} as any,
     currentStoreSettings: {} as any,
+    currentShopifyJobStatus: null as any,
     productStores: [] as any[],
     company: {} as any,
     netSuiteProductStore: null as any,
     fetchStatus: {
       productStores: 'none',
+      shopifyJobStatus: 'none',
       lastFetched: 0
     }
   }),
@@ -18,6 +20,7 @@ export const useProductStore = defineStore('productStore', {
   getters: {
     getCurrent: (state) => state.current ? JSON.parse(JSON.stringify(state.current)) : {},
     getCurrentStoreSettings: (state) => state.currentStoreSettings,
+    getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
     getProductStores: (state) => state.productStores,
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
@@ -50,7 +53,7 @@ export const useProductStore = defineStore('productStore', {
                 }))
             }
           }
-          this.fetchStatus = { productStores: 'success', lastFetched: Date.now() }
+          this.fetchStatus = { ...this.fetchStatus, productStores: 'success', lastFetched: Date.now() }
         } else {
           throw resp.data
         }
@@ -118,6 +121,30 @@ export const useProductStore = defineStore('productStore', {
         logger.error(error)
       }
       this.currentStoreSettings = storeSettings
+    },
+
+    async fetchProductStoreShopifyJobStatus(productStoreId: string) {
+      this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'pending' }
+      let shopifyJobStatus = null as any
+
+      try {
+        const resp = await api({
+          url: `admin/productStores/${productStoreId}/shopifyJobs/status`,
+          method: "get"
+        })
+        if (!commonUtil.hasError(resp)) {
+          shopifyJobStatus = resp.data?.shopifyJobsStatus || resp.data
+          this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'success', lastFetched: Date.now() }
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.warn('Failed to fetch product store Shopify job status', error)
+        this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'error' }
+      }
+
+      this.currentShopifyJobStatus = shopifyJobStatus
+      return shopifyJobStatus
     },
 
     async fetchCompany() {

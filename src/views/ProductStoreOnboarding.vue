@@ -198,6 +198,34 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
+              <ion-item v-if="selectedProductStoreId">
+                <ion-label>
+                  {{ translate("Shopify setup status") }}
+                  <p>{{ shopifySetupStatusDescription }}</p>
+                </ion-label>
+                <ion-badge :color="shopifyConnectionBadgeColor" slot="end">
+                  {{ shopifyConnectionStatusLabel }}
+                </ion-badge>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Refresh Shopify setup status')"
+                  :disabled="isLoadingShopifyJobStatus"
+                  @click="refreshShopifyJobStatus()"
+                >
+                  <ion-spinner v-if="isLoadingShopifyJobStatus" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-for="requirement in shopifyConnectionRequirements" :key="requirement.id">
+                <ion-label>
+                  {{ translate(requirement.label) }}
+                  <p>{{ requirement.message }}</p>
+                </ion-label>
+                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
+                  {{ getRequirementStatusLabel(requirement) }}
+                </ion-badge>
+              </ion-item>
             </ion-list>
 
             <ion-list v-else-if="currentStep.id === 'products'" lines="full">
@@ -253,8 +281,8 @@
                   {{ translate("Shopify product import") }}
                   <p>{{ productSyncHandoffDescription }}</p>
                 </ion-label>
-                <ion-badge :color="canOpenShopifyProductSync ? 'success' : 'warning'" slot="end">
-                  {{ canOpenShopifyProductSync ? translate("Ready") : translate("Gap") }}
+                <ion-badge :color="getShopifyJobBadgeColor('productSync')" slot="end">
+                  {{ getShopifyJobStatusLabel('productSync') }}
                 </ion-badge>
               </ion-item>
               <ion-item v-if="linkedShopifyShop">
@@ -445,7 +473,35 @@
               <ion-item>
                 <ion-label>
                   {{ translate("Initial inventory load") }}
-                  <p>{{ translate("Shopify, ERP, and file reset paths still need a backend wrapper before onboarding can run the first QOH load.") }}</p>
+                  <p>{{ inventoryResetDescription }}</p>
+                </ion-label>
+                <ion-badge :color="getShopifyJobBadgeColor('inventoryReset')" slot="end">
+                  {{ getShopifyJobStatusLabel('inventoryReset') }}
+                </ion-badge>
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else-if="currentStep.id === 'orders'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Order import readiness") }}
+                  <p>{{ orderImportStatusDescription }}</p>
+                </ion-label>
+                <ion-badge :color="orderImportBadgeColor" slot="end">{{ orderImportStatusLabel }}</ion-badge>
+              </ion-item>
+              <ion-item v-for="requirement in orderJobRequirements" :key="requirement.id">
+                <ion-label>
+                  {{ translate(requirement.label) }}
+                  <p>{{ requirement.message }}</p>
+                </ion-label>
+                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
+                  {{ getRequirementStatusLabel(requirement) }}
+                </ion-badge>
+              </ion-item>
+              <ion-item v-if="!hasShopifyJobStatus">
+                <ion-label>
+                  {{ translate("Backend status endpoint") }}
+                  <p>{{ translate("The setup flow can show job readiness after the maarg-util onboarding status endpoint is deployed.") }}</p>
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
@@ -683,6 +739,7 @@ const isSavingInventorySettings = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
+const isLoadingShopifyJobStatus = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
 const currentStep = computed(() => onboardingStore.currentStep)
@@ -722,6 +779,21 @@ const linkedShopifyShop = computed(() => {
   return shopifyStore.shops.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
 })
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
+const shopifyJobStatus = computed(() => productStoreStore.currentShopifyJobStatus)
+const hasShopifyJobStatus = computed(() => !!shopifyJobStatus.value?.requirements)
+const shopifyJobRequirements = computed(() => {
+  return Array.isArray(shopifyJobStatus.value?.requirements) ? shopifyJobStatus.value.requirements : []
+})
+const shopifyConnectionRequirements = computed(() => {
+  return shopifyJobRequirements.value.filter((requirement: any) => {
+    return ["shopifyShop", "shopifyRemote"].includes(requirement.id)
+  })
+})
+const orderJobRequirements = computed(() => {
+  return shopifyJobRequirements.value.filter((requirement: any) => {
+    return ["job.orderImport", "job.orderHistory", "job.realtimeOrderImport", "dataManager.orderConfigs"].includes(requirement.id)
+  })
+})
 const facilityCount = computed(() => utilStore.facilities.length)
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
@@ -733,7 +805,47 @@ const canOpenShopifyProductSync = computed(() => {
 const productSyncHandoffDescription = computed(() => {
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
   if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
+  const productSyncRequirement = findShopifyRequirement("job.productSync")
+  if (productSyncRequirement?.message) return productSyncRequirement.message
   return translate("Open the existing first-time product sync wizard with this Product Store and identifier preselected.")
+})
+const shopifySetupStatusDescription = computed(() => {
+  if (!selectedProductStoreId.value) return translate("Create the Product Store before checking Shopify setup.")
+  if (isLoadingShopifyJobStatus.value) return translate("Checking Shopify setup status.")
+  if (!hasShopifyJobStatus.value) return translate("The backend status endpoint is not available in this OMS yet.")
+
+  const missingCount = shopifyJobRequirements.value.filter((requirement: any) => !requirement.complete).length
+  if (!missingCount) return translate("Shopify remotes and onboarding jobs are ready.")
+  return `${missingCount} ${translate("Shopify setup items need attention.")}`
+})
+const shopifyConnectionStatusLabel = computed(() => {
+  if (!hasShopifyJobStatus.value) return translate("Gap")
+  return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? translate("Ready") : translate("Gap")
+})
+const shopifyConnectionBadgeColor = computed(() => {
+  if (!hasShopifyJobStatus.value) return "warning"
+  return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
+})
+const inventoryResetDescription = computed(() => {
+  const inventoryRequirement = findShopifyRequirement("job.inventoryReset")
+  if (inventoryRequirement?.message) return inventoryRequirement.message
+  return translate("Shopify, ERP, and file reset paths still need a backend wrapper before onboarding can run the first QOH load.")
+})
+const orderImportStatusDescription = computed(() => {
+  if (!selectedProductStoreId.value) return translate("Create the Product Store before checking order import jobs.")
+  if (!hasShopifyJobStatus.value) return translate("The backend status endpoint is required before onboarding can verify order import readiness.")
+
+  const missingOrderItems = orderJobRequirements.value.filter((requirement: any) => !requirement.complete)
+  if (!missingOrderItems.length) return translate("Order import jobs and DataManager configs are ready.")
+  return `${missingOrderItems.length} ${translate("order import setup items need attention.")}`
+})
+const orderImportStatusLabel = computed(() => {
+  if (!hasShopifyJobStatus.value) return translate("Gap")
+  return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? translate("Ready") : translate("Gap")
+})
+const orderImportBadgeColor = computed(() => {
+  if (!hasShopifyJobStatus.value) return "warning"
+  return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
 })
 const productIdentityPreferences = computed(() => {
   const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
@@ -821,6 +933,54 @@ const capabilityColor = computed(() => {
   if (currentStep.value.capability === "existing-api") return "success"
   return "medium"
 })
+
+function findShopifyRequirement(requirementId: string) {
+  return shopifyJobRequirements.value.find((requirement: any) => requirement.id === requirementId)
+}
+
+function getRequirementBadgeColor(requirement: any) {
+  return requirement?.complete ? "success" : "warning"
+}
+
+function getRequirementStatusLabel(requirement: any) {
+  return requirement?.complete ? translate("Ready") : translate("Gap")
+}
+
+function getShopifyJobStatus(jobKey: string) {
+  const jobs = Array.isArray(shopifyJobStatus.value?.jobs) ? shopifyJobStatus.value.jobs : []
+  return jobs.find((job: any) => job.key === jobKey)
+}
+
+function getShopifyJobBadgeColor(jobKey: string) {
+  const job = getShopifyJobStatus(jobKey)
+  if (job?.configured) return "success"
+  if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return "success"
+  return "warning"
+}
+
+function getShopifyJobStatusLabel(jobKey: string) {
+  const job = getShopifyJobStatus(jobKey)
+  if (job?.configured) return translate("Ready")
+  if (job?.status === "template-ready") return translate("Template")
+  if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return translate("Ready")
+  return translate("Gap")
+}
+
+async function refreshShopifyJobStatus() {
+  if (!selectedProductStoreId.value) {
+    productStoreStore.currentShopifyJobStatus = null
+    return
+  }
+
+  isLoadingShopifyJobStatus.value = true
+  try {
+    await productStoreStore.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value)
+  } catch (error: any) {
+    logger.warn("Failed to refresh Shopify job status", error)
+  } finally {
+    isLoadingShopifyJobStatus.value = false
+  }
+}
 
 onIonViewWillEnter(async () => {
   if (routeProductStoreId.value) {
@@ -911,6 +1071,7 @@ async function createProductStoreFromDraft() {
     }
 
     await productStoreStore.fetchProductStores()
+    await refreshShopifyJobStatus()
     commonUtil.showToast(translate("Product store created successfully."))
     return createdProductStoreId
   } catch (error: any) {
@@ -928,7 +1089,8 @@ async function loadSelectedProductStoreSetup() {
 
   await Promise.allSettled([
     productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
-    productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value)
+    productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
+    refreshShopifyJobStatus()
   ])
 
   if (productStoreStore.current?.productIdentifierEnumId) {
@@ -1390,6 +1552,7 @@ async function linkExistingShopifyShop() {
     onboardingStore.updateDraftField("linkedShopifyShopId", onboardingStore.draft.selectedShopifyShopId)
     onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
     await shopifyStore.fetchShopifyShops()
+    await refreshShopifyJobStatus()
     await refreshShopifyLocationMappings()
     commonUtil.showToast(translate("Product store linked successfully"))
     return true
