@@ -17,7 +17,8 @@
         </ion-item>
         <ion-item lines="none">
           <ion-input
-            :autofocus="true"
+            ref="storeNameInput"
+            name="storeName"
             v-model="formData.storeName"
             @ionBlur="formData.productStoreId ? null : setProductStoreId(formData.storeName)"
             label-placement="floating"
@@ -65,6 +66,7 @@ const formData = ref({
   productStoreId: "",
   defaultCurrencyUomId: ""
 }) as any;
+const storeNameInput = ref<any>(null);
 const storeId = ref({}) as any;
 const currencies = computed(() => utilStore.currencies)
 
@@ -78,11 +80,41 @@ onIonViewWillEnter(async () => {
 })
 
 onIonViewDidEnter(async () => {
-  await nextTick();
-  const input = document.querySelector('ion-input[autofocus]') as any;
-  if (input) {
-    await input.setFocus();
+  const focusNativeInput = async (inputComponent: any) => {
+    if (!inputComponent?.getInputElement) return;
+    try {
+      const nativeInput = await inputComponent.getInputElement();
+      nativeInput?.focus();
+    } catch (error) {
+      // no-op: best-effort focus fallback
+    }
   }
+
+  const focusStoreName = async () => {
+    const inputRef = storeNameInput.value as any;
+    if (inputRef?.setFocus) {
+      await inputRef.setFocus();
+      await focusNativeInput(inputRef);
+      return true;
+    }
+
+    const fallbackInput = document.querySelector('ion-input[name="storeName"]') as any;
+    if (fallbackInput?.setFocus) {
+      await fallbackInput.setFocus();
+      await focusNativeInput(fallbackInput);
+      return true;
+    }
+
+    return false;
+  }
+
+  await nextTick();
+  await focusStoreName();
+
+  // Some navigation timing scenarios require a second pass on initial render.
+  setTimeout(() => {
+    focusStoreName();
+  }, 150);
 })
 
 async function manageConfigurations() {
