@@ -19,7 +19,7 @@
           </ion-item>
 
           <div class="tablet" @click.stop="">
-            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="!store.facilityCount">
+            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="store.facilityCount == null">
               <ion-label>{{ translate((store.facilityCount ?? 0) === 1 ? "facility" : "facilities", { count: store.facilityCount ?? 0 }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
