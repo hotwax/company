@@ -16,15 +16,23 @@ export type WorkforceConversation = {
 
 function toChatItems(detail: any): ChatItem[] {
   const items: ChatItem[] = []
-  const userName = detail?.conversation?.userId || 'User'
-  for (const msg of detail?.messageList || []) {
+  // detail is the AiConversation 'detail' master: conversation fields at top level, plus nested
+  // agent, messages, and runs (each with its tool-call requests).
+  const userName = detail?.userId || 'User'
+  // The master does not guarantee message order; sort by the (zero-padded) sequence id.
+  const messages = [...(detail?.messages || [])].sort(
+    (a: any, b: any) => String(a.messageSeqId).localeCompare(String(b.messageSeqId)))
+  for (const msg of messages) {
     if (msg.role === 'user') {
       items.push({ id: `msg-${msg.messageSeqId}`, type: 'message', userName, content: msg.content })
     } else if (msg.role === 'assistant') {
-      if (msg.toolCalls?.length) {
+      // toolCalls is stored as a JSON string; the backend no longer pre-parses it, so parse here.
+      let toolCalls: any[] = []
+      if (msg.toolCalls) { try { toolCalls = JSON.parse(msg.toolCalls) } catch { toolCalls = [] } }
+      if (toolCalls.length) {
         // Key by position, not toolCall.id: the id is provider-supplied and not guaranteed present, so two
         // calls on one message could otherwise collapse to duplicate Vue keys (`tc-5-undefined`).
-        msg.toolCalls.forEach((toolCall: any, index: number) => {
+        toolCalls.forEach((toolCall: any, index: number) => {
           items.push({ id: `tc-${msg.messageSeqId}-${index}`, type: 'toolCall', toolName: toolCall.name,
             args: JSON.stringify(toolCall.arguments ?? {}, null, 2) })
         })
@@ -35,14 +43,20 @@ function toChatItems(detail: any): ChatItem[] {
     }
     // role 'tool' results are not rendered as bubbles; the tool-call card carries the action
   }
-  for (const req of detail?.pendingRequestList || []) {
+  // Pending-approval cards + any error bubble come from the latest run (master nests runs -> requests).
+  const runs: any[] = detail?.runs || []
+  const latestRun = runs.length
+    ? runs.reduce((a: any, b: any) => ((b.startedDate || 0) > (a.startedDate || 0) ? b : a))
+    : null
+  const pendingRequests = (latestRun?.toolCallRequests || []).filter((r: any) => r.statusId === 'AI_TCREQ_PENDING')
+  for (const req of pendingRequests) {
     let args = req.arguments
     try { args = JSON.stringify(JSON.parse(req.arguments), null, 2) } catch { /* keep raw string */ }
     items.push({ id: `perm-${req.toolCallRequestId}`, type: 'permission', permissionId: req.toolCallRequestId,
       toolName: req.toolName, message: `${req.toolName}\n${args}` })
   }
-  if (detail?.latestRun?.errorText && ['AI_RUN_FAILED', 'AI_RUN_ABORTED', 'AI_RUN_TRUNCATED'].includes(detail?.latestRun?.statusId)) {
-    items.push({ id: `err-${detail.latestRun.agentRunId}`, type: 'agentMessage', content: detail.latestRun.errorText })
+  if (latestRun?.errorText && ['AI_RUN_FAILED', 'AI_RUN_ABORTED', 'AI_RUN_TRUNCATED'].includes(latestRun?.statusId)) {
+    items.push({ id: `err-${latestRun.agentRunId}`, type: 'agentMessage', content: latestRun.errorText })
   }
   return items
 }
