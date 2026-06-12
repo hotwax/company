@@ -7,8 +7,6 @@ export const useUtilStore = defineStore('util', {
   state: () => ({
     facilityGroups: [] as any[],
     facilities: [] as any[],
-    operatingCountries: [] as any[],
-    dbicCountries: { list: [] as any[], total: 0 },
     productIdentifiers: [] as any[],
     productTypes: [] as any[],
     shipmentMethodTypes: [] as any[],
@@ -22,8 +20,6 @@ export const useUtilStore = defineStore('util', {
       statuses: 'none',
       organizationPartyId: 'none',
       facilityGroups: 'none',
-      dbicCountries: 'none',
-      operatingCountries: 'none',
       productIdentifiers: 'none',
       productTypes: 'none',
       shipmentMethodTypes: 'none',
@@ -37,8 +33,6 @@ export const useUtilStore = defineStore('util', {
   getters: {
     getFacilityGroups: (state) => state.facilityGroups,
     getFacilities: (state) => state.facilities,
-    getOperatingCountries: (state) => state.operatingCountries,
-    getDBICCountriesCount: (state) => state.dbicCountries.total,
     getProductIdentifiers: (state) => state.productIdentifiers,
     getProductTypes: (state) => state.productTypes,
     getShipmentMethodTypes: (state) => state.shipmentMethodTypes,
@@ -104,45 +98,6 @@ export const useUtilStore = defineStore('util', {
         this.fetchStatus = { ...this.fetchStatus, facilities: 'error' }
       }
       this.facilities = facilities
-    },
-
-    async fetchDBICCountries() {
-      this.fetchStatus = { ...this.fetchStatus, dbicCountries: 'pending' }
-      let countries: any[] = []
-
-      try {
-        const resp = await api({ url: "admin/geos/assocs", method: "get", params: { toGeoId: 'DBIC', pageSize: 200 } })
-        if (!commonUtil.hasError(resp)) {
-          countries = resp.data
-          this.fetchStatus = { ...this.fetchStatus, dbicCountries: 'success', lastFetched: Date.now() }
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-        this.fetchStatus = { ...this.fetchStatus, dbicCountries: 'error' }
-      }
-      this.dbicCountries = { list: countries, total: countries.length }
-    },
-
-    async fetchOperatingCountries() {
-      if (this.operatingCountries.length) return
-      this.fetchStatus = { ...this.fetchStatus, operatingCountries: 'pending' }
-      let operatingCountries: any[] = []
-
-      try {
-        const resp = await api({ url: "admin/geos", method: "get", params: { pageSize: 300, geoTypeEnumId: 'GEOT_COUNTRY' } })
-        if (!commonUtil.hasError(resp)) {
-          operatingCountries = resp.data
-          this.fetchStatus = { ...this.fetchStatus, operatingCountries: 'success', lastFetched: Date.now() }
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-        this.fetchStatus = { ...this.fetchStatus, operatingCountries: 'error' }
-      }
-      this.operatingCountries = operatingCountries
     },
 
     async fetchProductIdentifiers() {

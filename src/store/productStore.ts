@@ -38,17 +38,13 @@ export const useProductStore = defineStore('productStore', {
         if (!commonUtil.hasError(resp)) {
           productStores = resp.data
           if (payload?.fetchCounts) {
-              const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
-              productStores = productStores.map((s: any) => ({
-                ...s,
-                facilityCount: s.facilityCount ?? 0
-              }))
-              if (Object.keys(shipmentMethodCount).length) {
-                productStores = productStores.map((s: any) => ({
-                  ...s,
-                  shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
-                }))
-            }
+            const facilityCount = await this.fetchProductStoresFacilityCount(productStores)
+            const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
+            productStores = productStores.map((s: any) => ({
+              ...s,
+              facilityCount: facilityCount[s.productStoreId] ?? 0,
+              shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
+            }))
           }
           this.fetchStatus = { productStores: 'success', lastFetched: Date.now() }
         } else {
@@ -77,6 +73,51 @@ export const useProductStore = defineStore('productStore', {
         logger.error(error)
       }
       this.current = current
+    },
+
+    async fetchProductStoresFacilityCount(productStores: any[] = []): Promise<Record<string, number>> {
+      const counts: Record<string, number> = {}
+      const productStoreIds = [...new Set(productStores.map((store: any) => store?.productStoreId).filter(Boolean))]
+      if (!productStoreIds.length) return counts
+
+      const facilityMap = new Map<string, Set<string>>()
+      productStoreIds.forEach((storeId: string) => {
+        facilityMap.set(storeId, new Set())
+        counts[storeId] = 0
+      })
+
+      try {
+        for (const storeId of productStoreIds) {
+          let resp: any
+          let pageIndex = 0
+          do {
+            resp = await api({
+              url: `oms/productStores/${storeId}/facilities`,
+              method: "get",
+              params: { pageSize: 100, pageIndex }
+            })
+            if (!commonUtil.hasError(resp) && resp.data) {
+              resp.data.forEach((facilityAssociation: any) => {
+                const facilityId = facilityAssociation.facilityId || facilityAssociation.facility?.facilityId
+                if (facilityId) {
+                  facilityMap.get(storeId)?.add(facilityId)
+                }
+              })
+              pageIndex++
+            } else {
+              throw resp.data
+            }
+          } while (resp.data.length >= 100)
+        }
+
+        facilityMap.forEach((value, key) => {
+          counts[key] = value.size
+        })
+      } catch (error: any) {
+        logger.error(error)
+      }
+
+      return counts
     },
 
     async fetchProductStoresShipmentMethodCount(): Promise<Record<string, number>> {
@@ -157,14 +198,6 @@ export const useProductStore = defineStore('productStore', {
       return api({
         url: `admin/productStores/${payload.productStoreId}`,
         method: "put",
-        data: payload
-      })
-    },
-
-    async addDBICCountries(payload: any): Promise<any> {
-      return api({
-        url: "admin/geos/assocs",
-        method: "post",
         data: payload
       })
     },
