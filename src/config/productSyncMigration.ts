@@ -6,7 +6,8 @@ export const PRODUCT_SYNC_MIGRATION_CONFIG = {
     "product-sync",
     "UpcomingRelease",
     "feature-shopify-delta-sync-seevices",
-    "main"
+    "main",
+    "JUNE-15"
   ],
   outgoing: {
     systemMessageTypes: [
