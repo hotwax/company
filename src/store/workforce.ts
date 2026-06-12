@@ -9,7 +9,6 @@ export type WorkforceConversation = {
   agentName: string;
   title: string;
   userId: string;
-  userFullName?: string;
   lastActivityDate?: number;
   derivedStatus: 'pending' | 'running' | 'error' | 'idle';
   pendingToolName?: string;
@@ -17,7 +16,7 @@ export type WorkforceConversation = {
 
 function toChatItems(detail: any): ChatItem[] {
   const items: ChatItem[] = []
-  const userName = detail?.conversation?.userFullName || detail?.conversation?.userId || 'User'
+  const userName = detail?.conversation?.userId || 'User'
   for (const msg of detail?.messageList || []) {
     if (msg.role === 'user') {
       items.push({ id: `msg-${msg.messageSeqId}`, type: 'message', userName, content: msg.content })
@@ -96,7 +95,7 @@ export const useWorkforceStore = defineStore('workforce', {
     async sendMessage(content: string) {
       if (!this.selectedConversationId) return
       this.sending = true
-      const userName = this.detail?.conversation?.userFullName || 'You'
+      const userName = 'You'
       this.chatItems.push({ id: `optimistic-${Date.now()}`, type: 'message', userName, content })
       try {
         const resp = await api({ url: `ai/conversations/${encodeURIComponent(this.selectedConversationId)}/messages`,
