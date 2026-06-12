@@ -736,6 +736,7 @@ const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
+const isSettingUpInventoryJobs = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
@@ -761,6 +762,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
+    || isSettingUpInventoryJobs.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
 })
@@ -829,7 +831,7 @@ const shopifyConnectionBadgeColor = computed(() => {
 const inventoryResetDescription = computed(() => {
   const inventoryRequirement = findShopifyRequirement("job.inventoryReset")
   if (inventoryRequirement?.message) return inventoryRequirement.message
-  return translate("Shopify, ERP, and file reset paths still need a backend wrapper before onboarding can run the first QOH load.")
+  return translate("Configure the Shopify inventory reset job after products and locations are mapped.")
 })
 const orderImportStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before checking order import jobs.")
@@ -883,6 +885,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "general") return translate("Save order defaults")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
+  if (currentStep.value.id === "inventory" && linkedShopifyShopId.value) return translate("Save inventory setup")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
@@ -1204,6 +1207,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "inventory") {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
+
+    if (linkedShopifyShopId.value) {
+      const inventoryJobsConfigured = await setupInventoryResetJob()
+      if (!inventoryJobsConfigured) return
+    }
   }
 
   if (currentStep.value.id === "routing") {
@@ -1342,6 +1350,43 @@ function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: s
     productStoreId: selectedProductStoreId.value,
     settingTypeEnumId,
     settingValue
+  }
+}
+
+async function setupInventoryResetJob() {
+  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before configuring inventory jobs."))
+    return false
+  }
+
+  isSettingUpInventoryJobs.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreShopifyInventoryReset({
+      productStoreId: selectedProductStoreId.value,
+      shopId: linkedShopifyShopId.value,
+      activateJobs: false,
+      inventoryResetAdditionalParameters: {}
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.shopifyJobsStatus) {
+      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    } else {
+      await refreshShopifyJobStatus()
+    }
+
+    commonUtil.showToast(translate("Inventory reset job configured successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to configure inventory reset job."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpInventoryJobs.value = false
   }
 }
 
