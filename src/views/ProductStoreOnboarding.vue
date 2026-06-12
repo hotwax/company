@@ -543,6 +543,90 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'users'" lines="full">
+              <ion-item>
+                <ion-label>
+                  {{ translate("Access packages") }}
+                  <p>{{ accessPackageStatusDescription }}</p>
+                </ion-label>
+                <ion-badge :color="hasAccessPackageStatus ? 'success' : 'warning'" slot="end">
+                  {{ hasAccessPackageStatus ? translate("Ready") : translate("Gap") }}
+                </ion-badge>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Refresh access package status')"
+                  :disabled="isLoadingAccessPackageStatus"
+                  @click="refreshAccessPackageStatus()"
+                >
+                  <ion-spinner v-if="isLoadingAccessPackageStatus" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  :value="onboardingStore.draft.accessUserLoginId"
+                  label-placement="stacked"
+                  :helper-text="translate('Apply setup to an existing OMS login')"
+                  :clear-input="true"
+                  @ionInput="onboardingStore.updateDraftField('accessUserLoginId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("User login ID") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="accessPackages.length">
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.accessPackageId"
+                  @ionChange="onboardingStore.updateDraftField('accessPackageId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Access package") }}</div>
+                  <ion-select-option v-for="accessPackage in accessPackages" :key="accessPackage.packageId" :value="accessPackage.packageId">
+                    {{ accessPackage.packageName || accessPackage.packageId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item v-if="selectedAccessPackage">
+                <ion-label>
+                  {{ selectedAccessPackage.packageName || selectedAccessPackage.packageId }}
+                  <p>{{ selectedAccessPackage.description }}</p>
+                </ion-label>
+                <ion-badge :color="getAccessPackageBadgeColor(selectedAccessPackage)" slot="end">
+                  {{ getAccessPackageStatusLabel(selectedAccessPackage) }}
+                </ion-badge>
+              </ion-item>
+              <ion-item v-if="selectedAccessPackage?.requiresFacilities">
+                <ion-label>
+                  {{ translate("Facility scope") }}
+                  <p>{{ translate("Applies to every facility currently associated with this Product Store.") }}</p>
+                </ion-label>
+                <ion-note slot="end">
+                  {{ selectedAccessPackage.assignedFacilityCount || 0 }} / {{ selectedAccessPackage.facilityCount || facilityCount }}
+                </ion-note>
+              </ion-item>
+              <ion-item v-for="requirement in accessPackageRequirements" :key="requirement.id">
+                <ion-label>
+                  {{ translate(requirement.label) }}
+                  <p>{{ requirement.message }}</p>
+                </ion-label>
+                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
+                  {{ getRequirementStatusLabel(requirement) }}
+                </ion-badge>
+              </ion-item>
+              <ion-list-header v-if="accessPackages.length">
+                <ion-label>{{ translate("Package readiness") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-for="accessPackage in accessPackages" :key="accessPackage.packageId">
+                <ion-label>
+                  {{ accessPackage.packageName || accessPackage.packageId }}
+                  <p>{{ getAccessPackageDetail(accessPackage) }}</p>
+                </ion-label>
+                <ion-badge :color="getAccessPackageBadgeColor(accessPackage)" slot="end">
+                  {{ getAccessPackageStatusLabel(accessPackage) }}
+                </ion-badge>
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.id === 'routing'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -774,10 +858,12 @@ const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
 const isSettingUpOrderJobs = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
+const isSettingUpAccessPackage = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
+const isLoadingAccessPackageStatus = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
 const currentStep = computed(() => onboardingStore.currentStep)
@@ -801,6 +887,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingInventorySettings.value
     || isSettingUpOrderJobs.value
     || isSettingUpRealtimeOrderJobs.value
+    || isSettingUpAccessPackage.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
 })
@@ -888,6 +975,28 @@ const orderImportBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
 })
+const accessPackageStatus = computed(() => productStoreStore.currentAccessPackageStatus)
+const hasAccessPackageStatus = computed(() => !!accessPackageStatus.value?.packages)
+const accessPackages = computed(() => {
+  return Array.isArray(accessPackageStatus.value?.packages) ? accessPackageStatus.value.packages : []
+})
+const accessPackageRequirements = computed(() => {
+  return Array.isArray(accessPackageStatus.value?.requirements) ? accessPackageStatus.value.requirements : []
+})
+const selectedAccessPackage = computed(() => {
+  return accessPackages.value.find((accessPackage: any) => accessPackage.packageId === onboardingStore.draft.accessPackageId)
+    || accessPackages.value[0]
+    || null
+})
+const accessPackageStatusDescription = computed(() => {
+  if (!selectedProductStoreId.value) return translate("Create the Product Store before assigning user access.")
+  if (isLoadingAccessPackageStatus.value) return translate("Checking user access package readiness.")
+  if (!hasAccessPackageStatus.value) return translate("The backend access package endpoint is not available in this OMS yet.")
+
+  const gapCount = accessPackages.value.filter((accessPackage: any) => !accessPackage.configured).length
+  if (!gapCount) return translate("Access packages are ready to apply to existing users.")
+  return `${gapCount} ${translate("access packages need security or permission setup.")}`
+})
 const productIdentityPreferences = computed(() => {
   const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
   if (!settingValue) return {} as any
@@ -926,6 +1035,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure order jobs")
+  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) return translate("Apply access package")
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
   return nextLabel.value
@@ -959,6 +1069,12 @@ const isPrimaryActionDisabled = computed(() => {
     return !selectedProductStoreId.value
       || !linkedShopifyShopId.value
       || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
+  }
+
+  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
+    return !selectedProductStoreId.value
+      || !onboardingStore.draft.accessUserLoginId.trim()
+      || !onboardingStore.draft.accessPackageId
   }
 
   if (currentStep.value.id === "routing") {
@@ -1014,6 +1130,34 @@ function getShopifyJobStatusLabel(jobKey: string) {
   return translate("Gap")
 }
 
+function getAccessPackageBadgeColor(accessPackage: any) {
+  if (accessPackage?.assignedToUser) return "success"
+  if (accessPackage?.configured) return "primary"
+  return "warning"
+}
+
+function getAccessPackageStatusLabel(accessPackage: any) {
+  if (accessPackage?.assignedToUser) return translate("Assigned")
+  if (accessPackage?.configured) return translate("Ready")
+  return translate("Gap")
+}
+
+function getAccessPackageDetail(accessPackage: any) {
+  if (accessPackage?.assignedToUser) return translate("Assigned to selected user.")
+  const missingPermissions = accessPackage?.missingPermissions?.length || 0
+  const missingDefinitions = accessPackage?.missingPermissionDefinitions?.length || 0
+  if (missingPermissions || missingDefinitions) {
+    return `${missingPermissions + missingDefinitions} ${translate("permission items need setup.")}`
+  }
+  if (accessPackage?.requiresFacilities) {
+    return translate("Uses facility scope for Product Store facilities.")
+  }
+  if (accessPackage?.securityGroupId) {
+    return accessPackage.securityGroupId
+  }
+  return translate("No security group required.")
+}
+
 async function refreshShopifyJobStatus() {
   if (!selectedProductStoreId.value) {
     productStoreStore.currentShopifyJobStatus = null
@@ -1027,6 +1171,25 @@ async function refreshShopifyJobStatus() {
     logger.warn("Failed to refresh Shopify job status", error)
   } finally {
     isLoadingShopifyJobStatus.value = false
+  }
+}
+
+async function refreshAccessPackageStatus() {
+  if (!selectedProductStoreId.value) {
+    productStoreStore.currentAccessPackageStatus = null
+    return
+  }
+
+  isLoadingAccessPackageStatus.value = true
+  try {
+    await productStoreStore.fetchProductStoreAccessPackageStatus({
+      productStoreId: selectedProductStoreId.value,
+      userLoginId: onboardingStore.draft.accessUserLoginId.trim()
+    })
+  } catch (error: any) {
+    logger.warn("Failed to refresh access package status", error)
+  } finally {
+    isLoadingAccessPackageStatus.value = false
   }
 }
 
@@ -1138,7 +1301,8 @@ async function loadSelectedProductStoreSetup() {
   await Promise.allSettled([
     productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
     productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
-    refreshShopifyJobStatus()
+    refreshShopifyJobStatus(),
+    refreshAccessPackageStatus()
   ])
 
   if (productStoreStore.current?.productIdentifierEnumId) {
@@ -1262,6 +1426,11 @@ async function handlePrimaryAction() {
     if (!realtimeOrderJobsConfigured) return
   }
 
+  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
+    const accessPackageApplied = await setupAccessPackage()
+    if (!accessPackageApplied) return
+  }
+
   if (currentStep.value.id === "routing") {
     const routingDefaultsSaved = await saveRoutingDefaults()
     if (!routingDefaultsSaved) return
@@ -1276,6 +1445,43 @@ async function handlePrimaryAction() {
 
   if (productStoreId) {
     replaceRouteForProductStore(productStoreId)
+  }
+}
+
+async function setupAccessPackage() {
+  const userLoginId = onboardingStore.draft.accessUserLoginId.trim()
+  if (!selectedProductStoreId.value || !userLoginId || !onboardingStore.draft.accessPackageId) {
+    commonUtil.showToast(translate("Select an existing user and access package."))
+    return false
+  }
+
+  isSettingUpAccessPackage.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreAccessPackage({
+      productStoreId: selectedProductStoreId.value,
+      userLoginId,
+      packageId: onboardingStore.draft.accessPackageId
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.accessPackageStatus) {
+      productStoreStore.currentAccessPackageStatus = resp.data.accessPackageStatus
+    } else {
+      await refreshAccessPackageStatus()
+    }
+
+    commonUtil.showToast(translate("Access package applied successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to apply access package."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpAccessPackage.value = false
   }
 }
 

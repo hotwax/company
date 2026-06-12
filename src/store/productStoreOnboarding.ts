@@ -40,6 +40,8 @@ export interface ProductStoreOnboardingDraft {
   orderSqsQueueName: string
   orderSqsAwsRemoteId: string
   orderSqsExpireLockTime: string
+  accessUserLoginId: string
+  accessPackageId: string
   selectedWorkflows: string[]
 }
 
@@ -83,6 +85,8 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   orderSqsQueueName: "",
   orderSqsAwsRemoteId: "AWS_CONFIG",
   orderSqsExpireLockTime: "10",
+  accessUserLoginId: "",
+  accessPackageId: "FULFILLMENT_MANAGER",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }
 

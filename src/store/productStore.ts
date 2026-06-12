@@ -7,12 +7,14 @@ export const useProductStore = defineStore('productStore', {
     current: {} as any,
     currentStoreSettings: {} as any,
     currentShopifyJobStatus: null as any,
+    currentAccessPackageStatus: null as any,
     productStores: [] as any[],
     company: {} as any,
     netSuiteProductStore: null as any,
     fetchStatus: {
       productStores: 'none',
       shopifyJobStatus: 'none',
+      accessPackageStatus: 'none',
       lastFetched: 0
     }
   }),
@@ -21,6 +23,7 @@ export const useProductStore = defineStore('productStore', {
     getCurrent: (state) => state.current ? JSON.parse(JSON.stringify(state.current)) : {},
     getCurrentStoreSettings: (state) => state.currentStoreSettings,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
+    getCurrentAccessPackageStatus: (state) => state.currentAccessPackageStatus,
     getProductStores: (state) => state.productStores,
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
@@ -145,6 +148,57 @@ export const useProductStore = defineStore('productStore', {
 
       this.currentShopifyJobStatus = shopifyJobStatus
       return shopifyJobStatus
+    },
+
+    async fetchProductStoreAccessPackageStatus(payload: {
+      productStoreId: string
+      userLoginId?: string
+      partyId?: string
+    }) {
+      this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'pending' }
+      let accessPackageStatus = null as any
+
+      try {
+        const resp = await api({
+          url: `admin/productStores/${payload.productStoreId}/accessPackages/status`,
+          method: "get",
+          params: {
+            userLoginId: payload.userLoginId,
+            partyId: payload.partyId
+          }
+        })
+        if (!commonUtil.hasError(resp)) {
+          accessPackageStatus = resp.data?.accessPackageStatus || resp.data
+          this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'success', lastFetched: Date.now() }
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.warn('Failed to fetch product store access package status', error)
+        this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'error' }
+      }
+
+      this.currentAccessPackageStatus = accessPackageStatus
+      return accessPackageStatus
+    },
+
+    async setupProductStoreAccessPackage(payload: {
+      productStoreId: string
+      userLoginId: string
+      partyId?: string
+      packageId?: string
+      packageIds?: string[]
+      facilityIds?: string[]
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/accessPackages/assignment`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentAccessPackageStatus = resp.data?.accessPackageStatus || this.currentAccessPackageStatus
+      }
+      return resp
     },
 
     async setupProductStoreShopifyOrderImport(payload: {
