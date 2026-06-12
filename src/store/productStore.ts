@@ -38,7 +38,7 @@ export const useProductStore = defineStore('productStore', {
         if (!commonUtil.hasError(resp)) {
           productStores = resp.data
           if (payload?.fetchCounts) {
-            const facilityCount = await this.fetchProductStoresFacilityCount()
+            const facilityCount = await this.fetchProductStoresFacilityCount(productStores)
             const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
             if (Object.keys(facilityCount).length) {
               productStores = productStores.map((s: any) => ({
@@ -82,31 +82,48 @@ export const useProductStore = defineStore('productStore', {
       this.current = current
     },
 
-    async fetchProductStoresFacilityCount(): Promise<Record<string, number>> {
+    async fetchProductStoresFacilityCount(productStores: any[] = []): Promise<Record<string, number>> {
       const counts: Record<string, number> = {}
+      const productStoreIds = [...new Set(productStores.map((store: any) => store?.productStoreId).filter(Boolean))]
+      if (!productStoreIds.length) return counts
+
+      const facilityMap = new Map<string, Set<string>>()
+      productStoreIds.forEach((storeId: string) => {
+        facilityMap.set(storeId, new Set())
+        counts[storeId] = 0
+      })
+
       try {
-        let resp: any
-        try {
-          resp = await api({
-            url: "oms/productStores/facilities/counts",
-            method: "get",
-            params: { pageSize: 100 }
-          })
-        } catch (error: any) {
-          if (error.response?.status === 404) {
-            logger.warn("Product store facility counts endpoint not found (404)");
-            return counts
-          }
-          throw error
+        for (const storeId of productStoreIds) {
+          let resp: any
+          let pageIndex = 0
+          do {
+            resp = await api({
+              url: `oms/productStores/${storeId}/facilities`,
+              method: "get",
+              params: { pageSize: 100, pageIndex }
+            })
+            if (!commonUtil.hasError(resp) && resp.data) {
+              resp.data.forEach((facilityAssociation: any) => {
+                const facilityId = facilityAssociation.facilityId || facilityAssociation.facility?.facilityId
+                if (facilityId) {
+                  facilityMap.get(storeId)?.add(facilityId)
+                }
+              })
+              pageIndex++
+            } else {
+              throw resp.data
+            }
+          } while (resp.data.length >= 100)
         }
-        if (!commonUtil.hasError(resp)) {
-          resp.data.forEach((r: any) => { counts[r.productStoreId] = r.facilityCount })
-        } else {
-          throw resp.data
-        }
+
+        facilityMap.forEach((value, key) => {
+          counts[key] = value.size
+        })
       } catch (error: any) {
         logger.error(error)
       }
+
       return counts
     },
 
