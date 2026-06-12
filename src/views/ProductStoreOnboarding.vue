@@ -564,14 +564,76 @@
                 </ion-button>
               </ion-item>
               <ion-item>
+                <ion-segment
+                  :value="onboardingStore.draft.accessUserMode"
+                  @ionChange="onboardingStore.updateDraftField('accessUserMode', String($event.detail.value || 'create'))"
+                >
+                  <ion-segment-button value="create">
+                    <ion-label>{{ translate("Create user") }}</ion-label>
+                  </ion-segment-button>
+                  <ion-segment-button value="existing">
+                    <ion-label>{{ translate("Existing login") }}</ion-label>
+                  </ion-segment-button>
+                </ion-segment>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
+                <ion-input
+                  :value="onboardingStore.draft.accessFirstName"
+                  label-placement="stacked"
+                  @ionInput="onboardingStore.updateDraftField('accessFirstName', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("First name") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
+                <ion-input
+                  :value="onboardingStore.draft.accessLastName"
+                  label-placement="stacked"
+                  @ionInput="onboardingStore.updateDraftField('accessLastName', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Last name") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
+                <ion-input
+                  :value="onboardingStore.draft.accessEmailAddress"
+                  label-placement="stacked"
+                  type="email"
+                  :clear-input="true"
+                  @ionInput="updateAccessEmailAddress(String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Email") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item>
                 <ion-input
                   :value="onboardingStore.draft.accessUserLoginId"
                   label-placement="stacked"
-                  :helper-text="translate('Apply setup to an existing OMS login')"
+                  :helper-text="accessUserLoginHelperText"
                   :clear-input="true"
                   @ionInput="onboardingStore.updateDraftField('accessUserLoginId', String($event.detail.value || ''))"
                 >
                   <div slot="label">{{ translate("User login ID") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
+                <ion-input
+                  type="password"
+                  :value="accessTemporaryPassword"
+                  label-placement="stacked"
+                  @ionInput="accessTemporaryPassword = String($event.detail.value || '')"
+                >
+                  <div slot="label">{{ translate("Temporary password") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
+                <ion-input
+                  type="password"
+                  :value="accessTemporaryPasswordVerify"
+                  label-placement="stacked"
+                  @ionInput="accessTemporaryPasswordVerify = String($event.detail.value || '')"
+                >
+                  <div slot="label">{{ translate("Confirm temporary password") }}</div>
                 </ion-input>
               </ion-item>
               <ion-item v-if="accessPackages.length">
@@ -820,6 +882,8 @@ import {
   IonProgressBar,
   IonRadio,
   IonRadioGroup,
+  IonSegment,
+  IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonSpinner,
@@ -864,6 +928,8 @@ const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
 const isLoadingAccessPackageStatus = ref(false)
+const accessTemporaryPassword = ref("")
+const accessTemporaryPasswordVerify = ref("")
 const shopifyLocationMappings = ref<any[]>([])
 
 const currentStep = computed(() => onboardingStore.currentStep)
@@ -988,13 +1054,18 @@ const selectedAccessPackage = computed(() => {
     || accessPackages.value[0]
     || null
 })
+const accessUserLoginHelperText = computed(() => {
+  return onboardingStore.draft.accessUserMode === "create"
+    ? translate("New user will use this login ID")
+    : translate("Apply setup to an existing OMS login")
+})
 const accessPackageStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before assigning user access.")
   if (isLoadingAccessPackageStatus.value) return translate("Checking user access package readiness.")
   if (!hasAccessPackageStatus.value) return translate("The backend access package endpoint is not available in this OMS yet.")
 
   const gapCount = accessPackages.value.filter((accessPackage: any) => !accessPackage.configured).length
-  if (!gapCount) return translate("Access packages are ready to apply to existing users.")
+  if (!gapCount) return translate("Access packages are ready to create or assign users.")
   return `${gapCount} ${translate("access packages need security or permission setup.")}`
 })
 const productIdentityPreferences = computed(() => {
@@ -1035,7 +1106,9 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure order jobs")
-  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) return translate("Apply access package")
+  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
+    return onboardingStore.draft.accessUserMode === "create" ? translate("Create user access") : translate("Apply access package")
+  }
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
   return nextLabel.value
@@ -1072,6 +1145,18 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
+    if (onboardingStore.draft.accessUserMode === "create") {
+      return !selectedProductStoreId.value
+        || !onboardingStore.draft.accessFirstName.trim()
+        || !onboardingStore.draft.accessLastName.trim()
+        || !onboardingStore.draft.accessEmailAddress.trim()
+        || !onboardingStore.draft.accessUserLoginId.trim()
+        || !accessTemporaryPassword.value
+        || !accessTemporaryPasswordVerify.value
+        || accessTemporaryPassword.value !== accessTemporaryPasswordVerify.value
+        || !onboardingStore.draft.accessPackageId
+    }
+
     return !selectedProductStoreId.value
       || !onboardingStore.draft.accessUserLoginId.trim()
       || !onboardingStore.draft.accessPackageId
@@ -1158,6 +1243,13 @@ function getAccessPackageDetail(accessPackage: any) {
   return translate("No security group required.")
 }
 
+function updateAccessEmailAddress(value: string) {
+  onboardingStore.updateDraftField("accessEmailAddress", value)
+  if (onboardingStore.draft.accessUserMode === "create" && !onboardingStore.draft.accessUserLoginId.trim()) {
+    onboardingStore.updateDraftField("accessUserLoginId", value.trim().toLowerCase())
+  }
+}
+
 async function refreshShopifyJobStatus() {
   if (!selectedProductStoreId.value) {
     productStoreStore.currentShopifyJobStatus = null
@@ -1184,7 +1276,7 @@ async function refreshAccessPackageStatus() {
   try {
     await productStoreStore.fetchProductStoreAccessPackageStatus({
       productStoreId: selectedProductStoreId.value,
-      userLoginId: onboardingStore.draft.accessUserLoginId.trim()
+      userLoginId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessUserLoginId.trim() : ""
     })
   } catch (error: any) {
     logger.warn("Failed to refresh access package status", error)
@@ -1451,19 +1543,48 @@ async function handlePrimaryAction() {
 async function setupAccessPackage() {
   const userLoginId = onboardingStore.draft.accessUserLoginId.trim()
   if (!selectedProductStoreId.value || !userLoginId || !onboardingStore.draft.accessPackageId) {
-    commonUtil.showToast(translate("Select an existing user and access package."))
+    commonUtil.showToast(translate("Enter a user login ID and access package."))
     return false
+  }
+
+  if (onboardingStore.draft.accessUserMode === "create") {
+    if (!onboardingStore.draft.accessFirstName.trim() || !onboardingStore.draft.accessLastName.trim() || !onboardingStore.draft.accessEmailAddress.trim()) {
+      commonUtil.showToast(translate("Enter the user name and email."))
+      return false
+    }
+
+    if (!accessTemporaryPassword.value || !accessTemporaryPasswordVerify.value) {
+      commonUtil.showToast(translate("Enter and confirm the temporary password."))
+      return false
+    }
+
+    if (accessTemporaryPassword.value !== accessTemporaryPasswordVerify.value) {
+      commonUtil.showToast(translate("Temporary passwords do not match."))
+      return false
+    }
   }
 
   isSettingUpAccessPackage.value = true
   emitter.emit("presentLoader")
 
   try {
-    const resp = await productStoreStore.setupProductStoreAccessPackage({
-      productStoreId: selectedProductStoreId.value,
-      userLoginId,
-      packageId: onboardingStore.draft.accessPackageId
-    })
+    const resp = onboardingStore.draft.accessUserMode === "create"
+      ? await productStoreStore.createProductStoreAccessPackageUser({
+        productStoreId: selectedProductStoreId.value,
+        userLoginId,
+        firstName: onboardingStore.draft.accessFirstName.trim(),
+        lastName: onboardingStore.draft.accessLastName.trim(),
+        emailAddress: onboardingStore.draft.accessEmailAddress.trim(),
+        temporaryPassword: accessTemporaryPassword.value,
+        temporaryPasswordVerify: accessTemporaryPasswordVerify.value,
+        organizationPartyId: organizationPartyId.value,
+        packageId: onboardingStore.draft.accessPackageId
+      })
+      : await productStoreStore.setupProductStoreAccessPackage({
+        productStoreId: selectedProductStoreId.value,
+        userLoginId,
+        packageId: onboardingStore.draft.accessPackageId
+      })
 
     if (commonUtil.hasError(resp)) throw resp.data
 
@@ -1473,11 +1594,20 @@ async function setupAccessPackage() {
       await refreshAccessPackageStatus()
     }
 
-    commonUtil.showToast(translate("Access package applied successfully."))
+    if (onboardingStore.draft.accessUserMode === "create") {
+      accessTemporaryPassword.value = ""
+      accessTemporaryPasswordVerify.value = ""
+    }
+
+    commonUtil.showToast(onboardingStore.draft.accessUserMode === "create"
+      ? translate("User access created successfully.")
+      : translate("Access package applied successfully."))
     return true
   } catch (error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to apply access package."))
+    commonUtil.showToast(onboardingStore.draft.accessUserMode === "create"
+      ? translate("Failed to create user access.")
+      : translate("Failed to apply access package."))
     return false
   } finally {
     emitter.emit("dismissLoader")

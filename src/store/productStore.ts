@@ -201,6 +201,31 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async createProductStoreAccessPackageUser(payload: {
+      productStoreId: string
+      userLoginId: string
+      partyId?: string
+      firstName?: string
+      lastName?: string
+      emailAddress?: string
+      temporaryPassword: string
+      temporaryPasswordVerify?: string
+      organizationPartyId?: string
+      packageId?: string
+      packageIds?: string[]
+      facilityIds?: string[]
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/accessPackages/users`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentAccessPackageStatus = resp.data?.accessPackageStatus || this.currentAccessPackageStatus
+      }
+      return resp
+    },
+
     async setupProductStoreShopifyOrderImport(payload: {
       productStoreId: string
       shopId?: string
