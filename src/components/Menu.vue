@@ -1,5 +1,5 @@
 <template>
-  <ion-menu content-id="main-content" type="overlay" :disabled="!isUserAuthenticated">
+  <ion-menu content-id="main-content" type="overlay" side="start" :disabled="!isAuthenticated">
     <ion-header>
       <ion-toolbar>
         <ion-title>{{ translate("Company") }}</ion-title>
@@ -8,7 +8,7 @@
 
     <ion-content>
       <ion-list id="company-list">
-        <ion-menu-toggle auto-hide="false" v-for="(p, i) in appPages" :key="i">
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in appPages" :key="i">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ p.title }}</ion-label>
@@ -76,7 +76,6 @@ const appPages = [
   }
 ];
 
-const isUserAuthenticated = computed(() => isAuthenticated.value)
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
