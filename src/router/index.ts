@@ -4,6 +4,7 @@ import { Login, logger } from '@common/index'
 import { useAuth } from '@common/composables/useAuth'
 
 const CreateProductStore = () => import('@/views/CreateProductStore.vue')
+const ProductStoreOnboarding = () => import('@/views/ProductStoreOnboarding.vue')
 const AddConfigurations = () => import('@/views/AddConfigurations.vue')
 const ProductStoreDetails = () => import('@/views/ProductStoreDetails.vue')
 const ProductStore = () => import('@/views/ProductStore.vue')
@@ -49,6 +50,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/netsuite/sales-channel', name: 'SalesChannel', component: SalesChannel, beforeEnter: authGuard },
   { path: '/netsuite/departments', name: 'Departments', component: Departments, beforeEnter: authGuard },
   { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore, beforeEnter: authGuard },
+  { path: '/product-store-onboarding', name: 'ProductStoreOnboarding', component: ProductStoreOnboarding, beforeEnter: authGuard },
+  { path: '/product-store-onboarding/:productStoreId', name: 'ProductStoreOnboardingForStore', component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },
   {
     path: '/add-configurations/:productStoreId',
     name: 'AddConfigurations',
