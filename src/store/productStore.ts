@@ -163,6 +163,24 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async setupProductStoreShopifyRealtimeOrderImport(payload: {
+      productStoreId: string
+      queueName: string
+      awsRemoteId?: string
+      expireLockTime?: number
+      activateJobs?: boolean
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/realtimeOrderImport`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+      }
+      return resp
+    },
+
     async fetchCompany() {
       let company = {}
       try {

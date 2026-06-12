@@ -489,6 +489,42 @@
                 </ion-label>
                 <ion-badge :color="orderImportBadgeColor" slot="end">{{ orderImportStatusLabel }}</ion-badge>
               </ion-item>
+              <ion-item>
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.orderImportMode"
+                  @ionChange="onboardingStore.updateDraftField('orderImportMode', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Order import mode") }}</div>
+                  <ion-select-option value="Realtime and fallback batch">{{ translate("Realtime and fallback batch") }}</ion-select-option>
+                  <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item v-if="shouldConfigureRealtimeOrderImport">
+                <ion-input
+                  :value="onboardingStore.draft.orderSqsQueueName"
+                  @ionInput="onboardingStore.updateDraftField('orderSqsQueueName', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Realtime SQS queue") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="shouldConfigureRealtimeOrderImport">
+                <ion-input
+                  :value="onboardingStore.draft.orderSqsAwsRemoteId"
+                  @ionInput="onboardingStore.updateDraftField('orderSqsAwsRemoteId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("AWS remote ID") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item v-if="shouldConfigureRealtimeOrderImport">
+                <ion-input
+                  type="number"
+                  :value="onboardingStore.draft.orderSqsExpireLockTime"
+                  @ionInput="onboardingStore.updateDraftField('orderSqsExpireLockTime', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Lock timeout minutes") }}</div>
+                </ion-input>
+              </ion-item>
               <ion-item v-for="requirement in orderJobRequirements" :key="requirement.id">
                 <ion-label>
                   {{ translate(requirement.label) }}
@@ -737,6 +773,7 @@ const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
 const isSettingUpOrderJobs = ref(false)
+const isSettingUpRealtimeOrderJobs = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isLoadingSetupData = ref(false)
@@ -763,6 +800,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
     || isSettingUpOrderJobs.value
+    || isSettingUpRealtimeOrderJobs.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
 })
@@ -796,6 +834,7 @@ const orderJobRequirements = computed(() => {
     return ["job.orderImport", "job.orderHistory", "job.realtimeOrderImport", "dataManager.orderConfigs"].includes(requirement.id)
   })
 })
+const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
 const facilityCount = computed(() => utilStore.facilities.length)
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
@@ -917,7 +956,9 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "orders") {
-    return !selectedProductStoreId.value || !linkedShopifyShopId.value
+    return !selectedProductStoreId.value
+      || !linkedShopifyShopId.value
+      || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
   }
 
   if (currentStep.value.id === "routing") {
@@ -1216,6 +1257,9 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "orders") {
     const orderJobsConfigured = await setupOrderImportJobs()
     if (!orderJobsConfigured) return
+
+    const realtimeOrderJobsConfigured = await setupRealtimeOrderImportJobs()
+    if (!realtimeOrderJobsConfigured) return
   }
 
   if (currentStep.value.id === "routing") {
@@ -1390,6 +1434,46 @@ async function setupOrderImportJobs() {
   } finally {
     emitter.emit("dismissLoader")
     isSettingUpOrderJobs.value = false
+  }
+}
+
+async function setupRealtimeOrderImportJobs() {
+  if (!shouldConfigureRealtimeOrderImport.value) return true
+
+  if (!selectedProductStoreId.value || !onboardingStore.draft.orderSqsQueueName.trim()) {
+    commonUtil.showToast(translate("Enter the SQS queue before configuring realtime order import."))
+    return false
+  }
+
+  isSettingUpRealtimeOrderJobs.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreShopifyRealtimeOrderImport({
+      productStoreId: selectedProductStoreId.value,
+      queueName: onboardingStore.draft.orderSqsQueueName.trim(),
+      awsRemoteId: onboardingStore.draft.orderSqsAwsRemoteId.trim() || "AWS_CONFIG",
+      expireLockTime: Number(onboardingStore.draft.orderSqsExpireLockTime || 10),
+      activateJobs: false
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.shopifyJobsStatus) {
+      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    } else {
+      await refreshShopifyJobStatus()
+    }
+
+    commonUtil.showToast(translate("Realtime order import configured successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to configure realtime order import."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpRealtimeOrderJobs.value = false
   }
 }
 

@@ -37,6 +37,9 @@ export interface ProductStoreOnboardingDraft {
   customerPickupUpdate: string
   customerCancelBeforeFulfillment: string
   orderImportMode: string
+  orderSqsQueueName: string
+  orderSqsAwsRemoteId: string
+  orderSqsExpireLockTime: string
   selectedWorkflows: string[]
 }
 
@@ -77,6 +80,9 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   customerPickupUpdate: "false",
   customerCancelBeforeFulfillment: "false",
   orderImportMode: "Realtime and fallback batch",
+  orderSqsQueueName: "",
+  orderSqsAwsRemoteId: "AWS_CONFIG",
+  orderSqsExpireLockTime: "10",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }
 
