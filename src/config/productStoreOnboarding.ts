@@ -144,13 +144,13 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "workflows",
     label: "Order routing and fulfillment",
     summary: "Decide whether HotWax should broker, split, reserve, and route online orders.",
-    capability: "preview",
+    capability: "existing-api",
     questions: [
       "Which locations can fulfill online orders?",
       "Can orders split across locations?",
       "What should happen when a facility rejects an order?"
     ],
-    outputs: ["Brokering defaults", "Routing setup task", "Fulfillment permissions"]
+    outputs: ["Brokering policy", "Split policy", "Fulfillment notifications", "Cancellation threshold"]
   },
   {
     id: "pickup",

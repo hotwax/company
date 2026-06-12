@@ -25,6 +25,11 @@ export interface ProductStoreOnboardingDraft {
   showSystemicInventory: string
   holdPreorderPhysicalInventory: string
   preorderFacilityGroupId: string
+  enableBrokering: string
+  allowSplit: string
+  sendFulfillmentNotification: string
+  autoCancelOrders: string
+  daysToCancelNonPay: string
   orderImportMode: string
   selectedWorkflows: string[]
 }
@@ -54,6 +59,11 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   showSystemicInventory: "true",
   holdPreorderPhysicalInventory: "false",
   preorderFacilityGroupId: "",
+  enableBrokering: "Y",
+  allowSplit: "N",
+  sendFulfillmentNotification: "Y",
+  autoCancelOrders: "N",
+  daysToCancelNonPay: "",
   orderImportMode: "Realtime and fallback batch",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }

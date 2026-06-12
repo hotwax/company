@@ -451,6 +451,56 @@
               </ion-item>
             </ion-list>
 
+            <ion-list v-else-if="currentStep.id === 'routing'" lines="full">
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.enableBrokering === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('enableBrokering', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Order brokering") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.allowSplit === 'Y'"
+                  :disabled="onboardingStore.draft.enableBrokering !== 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('allowSplit', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Order splitting") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.sendFulfillmentNotification === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('sendFulfillmentNotification', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Send notification to Shopify") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Cancellations") }}</ion-label>
+              </ion-list-header>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.autoCancelOrders === 'Y'"
+                  @ionChange="onboardingStore.updateDraftField('autoCancelOrders', $event.detail.checked ? 'Y' : 'N')"
+                >
+                  {{ translate("Auto order cancellation") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  :label="translate('Auto cancellations days')"
+                  :placeholder="translate('days count')"
+                  type="number"
+                  min="0"
+                  :disabled="onboardingStore.draft.autoCancelOrders !== 'Y'"
+                  :value="onboardingStore.draft.daysToCancelNonPay"
+                  @ionInput="onboardingStore.updateDraftField('daysToCancelNonPay', String($event.detail.value || ''))"
+                />
+              </ion-item>
+            </ion-list>
+
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -567,6 +617,7 @@ const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
+const isSavingRoutingDefaults = ref(false)
 const isLoadingSetupData = ref(false)
 const shopifyLocationMappings = ref<any[]>([])
 
@@ -589,6 +640,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
+    || isSavingRoutingDefaults.value
 })
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
@@ -654,6 +706,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
+  if (currentStep.value.id === "routing") return translate("Save routing defaults")
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
@@ -678,6 +731,10 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "inventory") {
+    return !selectedProductStoreId.value
+  }
+
+  if (currentStep.value.id === "routing") {
     return !selectedProductStoreId.value
   }
 
@@ -814,6 +871,22 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("reserveInventory", productStoreStore.current.reserveInventory)
   }
 
+  if (productStoreStore.current?.enableBrokering) {
+    onboardingStore.updateDraftField("enableBrokering", productStoreStore.current.enableBrokering)
+  }
+
+  if (productStoreStore.current?.allowSplit) {
+    onboardingStore.updateDraftField("allowSplit", productStoreStore.current.allowSplit)
+  }
+
+  if (Number(productStoreStore.current?.daysToCancelNonPay || 0) > 0) {
+    onboardingStore.updateDraftField("autoCancelOrders", "Y")
+    onboardingStore.updateDraftField("daysToCancelNonPay", String(productStoreStore.current.daysToCancelNonPay))
+  } else {
+    onboardingStore.updateDraftField("autoCancelOrders", "N")
+    onboardingStore.updateDraftField("daysToCancelNonPay", "")
+  }
+
   if (typeof productStoreStore.current?.orderNumberPrefix === "string") {
     onboardingStore.updateDraftField("orderNumberPrefix", productStoreStore.current.orderNumberPrefix)
   }
@@ -832,6 +905,10 @@ async function loadSelectedProductStoreSetup() {
 
   if (productStoreStore.currentStoreSettings?.PRE_ORDER_GROUP_ID?.settingValue) {
     onboardingStore.updateDraftField("preorderFacilityGroupId", productStoreStore.currentStoreSettings.PRE_ORDER_GROUP_ID.settingValue)
+  }
+
+  if (productStoreStore.currentStoreSettings?.FULFILL_NOTIF?.settingValue) {
+    onboardingStore.updateDraftField("sendFulfillmentNotification", productStoreStore.currentStoreSettings.FULFILL_NOTIF.settingValue)
   }
 
   if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
@@ -869,6 +946,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "inventory") {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
+  }
+
+  if (currentStep.value.id === "routing") {
+    const routingDefaultsSaved = await saveRoutingDefaults()
+    if (!routingDefaultsSaved) return
   }
 
   onboardingStore.goNext()
@@ -990,6 +1072,72 @@ async function saveInventorySettings() {
 }
 
 function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: string) {
+  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
+  return {
+    ...(existingSetting || {}),
+    fromDate: existingSetting?.fromDate || Date.now(),
+    productStoreId: selectedProductStoreId.value,
+    settingTypeEnumId,
+    settingValue
+  }
+}
+
+async function saveRoutingDefaults() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before saving routing defaults."))
+    return false
+  }
+
+  isSavingRoutingDefaults.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
+      ? productStoreStore.current
+      : { productStoreId: selectedProductStoreId.value }
+    const brokeringEnabled = onboardingStore.draft.enableBrokering === "Y"
+    const daysToCancelNonPay = onboardingStore.draft.autoCancelOrders === "Y"
+      ? Number(onboardingStore.draft.daysToCancelNonPay || 0)
+      : 0
+    const productStorePayload = {
+      ...currentStore,
+      productStoreId: selectedProductStoreId.value,
+      enableBrokering: brokeringEnabled ? "Y" : "N",
+      allowSplit: brokeringEnabled && onboardingStore.draft.allowSplit === "Y" ? "Y" : "N",
+      daysToCancelNonPay
+    }
+    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+
+    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
+
+    productStoreStore.updateCurrent(productStorePayload)
+
+    const notificationPayload = buildRoutingSettingPayload(
+      "FULFILL_NOTIF",
+      onboardingStore.draft.sendFulfillmentNotification === "Y" ? "Y" : "N"
+    )
+    const notificationResp = await productStoreStore.saveCurrentStoreSettings(notificationPayload)
+
+    if (commonUtil.hasError(notificationResp)) throw notificationResp.data
+
+    productStoreStore.updateCurrentStoreSettings({
+      ...productStoreStore.currentStoreSettings,
+      FULFILL_NOTIF: notificationPayload
+    })
+
+    commonUtil.showToast(translate("Routing defaults saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save routing defaults."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingRoutingDefaults.value = false
+  }
+}
+
+function buildRoutingSettingPayload(settingTypeEnumId: string, settingValue: string) {
   const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
   return {
     ...(existingSetting || {}),
