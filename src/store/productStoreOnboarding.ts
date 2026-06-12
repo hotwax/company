@@ -13,6 +13,9 @@ export interface ProductStoreOnboardingDraft {
   shopifyConnectionMode: string
   selectedShopifyShopId: string
   linkedShopifyShopId: string
+  shopifyTokenSubjectUserLoginId: string
+  shopifyTokenPurpose: string
+  shopifyTokenExpireIn: string
   facilityMode: string
   autoApproveOrder: string
   orderNumberPrefix: string
@@ -62,6 +65,9 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   shopifyConnectionMode: "Prepare Shopify connection",
   selectedShopifyShopId: "",
   linkedShopifyShopId: "",
+  shopifyTokenSubjectUserLoginId: "nifi",
+  shopifyTokenPurpose: "SHOPIFY_APP_HANDOFF",
+  shopifyTokenExpireIn: "2592000",
   facilityMode: "One store",
   autoApproveOrder: "N",
   orderNumberPrefix: "HC",

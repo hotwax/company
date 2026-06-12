@@ -194,9 +194,88 @@
               <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
                 <ion-label>
                   {{ translate("Connection handoff") }}
-                  <p>{{ translate("Generating an integration token and app handoff remains a backend setup gap.") }}</p>
+                  <p>{{ shopifyTokenHandoffDescription }}</p>
                 </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
+                <ion-badge :color="shopifyHandoffToken ? 'success' : 'primary'" slot="end">
+                  {{ shopifyHandoffToken ? translate("Ready") : translate("Generate") }}
+                </ion-badge>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-input
+                  :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
+                  :label="translate('Integration user')"
+                  label-placement="stacked"
+                  :clear-input="true"
+                  @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
+                />
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-select
+                  interface="popover"
+                  :value="onboardingStore.draft.shopifyTokenExpireIn"
+                  @ionChange="updateShopifyTokenDraftField('shopifyTokenExpireIn', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Token expiry") }}</div>
+                  <ion-select-option value="2592000">{{ translate("30 days") }}</ion-select-option>
+                  <ion-select-option value="15552000">{{ translate("6 months") }}</ion-select-option>
+                  <ion-select-option value="31536000">{{ translate("1 year") }}</ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-input
+                  :value="onboardingStore.draft.shopifyTokenPurpose"
+                  :label="translate('Token purpose')"
+                  label-placement="stacked"
+                  :clear-input="true"
+                  @ionInput="updateShopifyTokenDraftField('shopifyTokenPurpose', String($event.detail.value || ''))"
+                />
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Generate JWT token')"
+                  :disabled="!canGenerateShopifyToken || isGeneratingShopifyToken"
+                  @click="generateShopifyHandoffToken()"
+                >
+                  <ion-spinner v-if="isGeneratingShopifyToken" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="keyOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-label>
+                  {{ translate("OMS URL") }}
+                  <p>{{ shopifyHandoffOmsUrl }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Copy OMS URL')"
+                  @click="copyShopifyHandoffValue(shopifyHandoffOmsUrl, 'OMS URL copied.')"
+                >
+                  <ion-icon slot="icon-only" :icon="copyOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffToken">
+                <ion-textarea
+                  :value="shopifyHandoffToken"
+                  :label="translate('JWT token')"
+                  label-placement="stacked"
+                  readonly
+                  auto-grow
+                />
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :aria-label="translate('Copy JWT token')"
+                  @click="copyShopifyHandoffValue(shopifyHandoffToken, 'JWT token copied.')"
+                >
+                  <ion-icon slot="icon-only" :icon="copyOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffTokenExpirationLabel">
+                <ion-label>
+                  {{ translate("Token expires") }}
+                  <p>{{ shopifyHandoffTokenExpirationLabel }}</p>
+                </ion-label>
               </ion-item>
               <ion-item v-if="selectedProductStoreId">
                 <ion-label>
@@ -888,6 +967,7 @@ import {
   IonSelectOption,
   IonSpinner,
   IonText,
+  IonTextarea,
   IonTitle,
   IonToggle,
   IonToolbar,
@@ -896,7 +976,7 @@ import {
 } from "@ionic/vue"
 import { computed, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, gitNetworkOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
+import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
@@ -916,6 +996,7 @@ const route = useRoute()
 const router = useRouter()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
+const isGeneratingShopifyToken = ref(false)
 const isImportingShopifyFacilities = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
@@ -931,6 +1012,8 @@ const isLoadingShopifyJobStatus = ref(false)
 const isLoadingAccessPackageStatus = ref(false)
 const accessTemporaryPassword = ref("")
 const accessTemporaryPasswordVerify = ref("")
+const shopifyHandoffToken = ref("")
+const shopifyHandoffTokenExpirationTime = ref(0)
 const shopifyLocationMappings = ref<any[]>([])
 
 const currentStep = computed(() => onboardingStore.currentStep)
@@ -948,6 +1031,7 @@ const organizationPartyId = computed(() => utilStore.organizationPartyId)
 const isPrimaryActionLoading = computed(() => {
   return isSavingProductStore.value
     || isLinkingShopifyShop.value
+    || isGeneratingShopifyToken.value
     || isImportingShopifyFacilities.value
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
@@ -1021,6 +1105,20 @@ const shopifyConnectionStatusLabel = computed(() => {
 const shopifyConnectionBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
+})
+const shopifyHandoffOmsUrl = computed(() => commonUtil.getMaargURL())
+const canGenerateShopifyToken = computed(() => {
+  return !!onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
+    && !!onboardingStore.draft.shopifyTokenPurpose.trim()
+    && !!Number(onboardingStore.draft.shopifyTokenExpireIn || 0)
+})
+const shopifyTokenHandoffDescription = computed(() => {
+  if (shopifyHandoffToken.value) return translate("Copy the OMS URL and JWT token into the Shopify app connection form.")
+  return translate("Generate a one-time integration token for the Shopify app connection form.")
+})
+const shopifyHandoffTokenExpirationLabel = computed(() => {
+  if (!shopifyHandoffTokenExpirationTime.value) return ""
+  return new Date(shopifyHandoffTokenExpirationTime.value).toLocaleString()
 })
 const shouldSetupShopifyInventoryReset = computed(() => onboardingStore.draft.inventorySource === "Shopify")
 const inventoryResetDescription = computed(() => {
@@ -1255,6 +1353,57 @@ function getAccessPackageDetail(accessPackage: any) {
     return accessPackage.securityGroupId
   }
   return translate("No security group required.")
+}
+
+function updateShopifyTokenDraftField(field: "shopifyTokenSubjectUserLoginId" | "shopifyTokenPurpose" | "shopifyTokenExpireIn", value: string) {
+  onboardingStore.updateDraftField(field, value)
+  shopifyHandoffToken.value = ""
+  shopifyHandoffTokenExpirationTime.value = 0
+}
+
+async function generateShopifyHandoffToken() {
+  if (!canGenerateShopifyToken.value) {
+    commonUtil.showToast(translate("Enter an integration user, token purpose, and expiry."))
+    return
+  }
+
+  isGeneratingShopifyToken.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.createJwtToken({
+      subjectUserLoginId: onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim(),
+      category: "INTEGRATION",
+      purpose: onboardingStore.draft.shopifyTokenPurpose.trim(),
+      expireIn: Number(onboardingStore.draft.shopifyTokenExpireIn)
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    shopifyHandoffToken.value = resp.data?.token || ""
+    shopifyHandoffTokenExpirationTime.value = Number(resp.data?.expirationTime || 0)
+    commonUtil.showToast(translate("JWT token generated."))
+  } catch (error: any) {
+    logger.error(error)
+    shopifyHandoffToken.value = ""
+    shopifyHandoffTokenExpirationTime.value = 0
+    commonUtil.showToast(translate("Failed to generate JWT token."))
+  } finally {
+    emitter.emit("dismissLoader")
+    isGeneratingShopifyToken.value = false
+  }
+}
+
+async function copyShopifyHandoffValue(value: string, message: string) {
+  if (!value) return
+
+  try {
+    await navigator.clipboard.writeText(value)
+    commonUtil.showToast(translate(message))
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to copy value."))
+  }
 }
 
 function updateAccessEmailAddress(value: string) {

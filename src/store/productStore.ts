@@ -226,6 +226,19 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async createJwtToken(payload: {
+      subjectUserLoginId: string
+      category?: string
+      purpose: string
+      expireIn?: number
+    }) {
+      return api({
+        url: "admin/jwtTokens",
+        method: "post",
+        data: payload
+      })
+    },
+
     async setupProductStoreShopifyInventoryReset(payload: {
       productStoreId: string
       shopId?: string
