@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-menu-button slot="start" />
+        <ion-menu-button slot="start" menu="company-menu" />
         <ion-title>{{ translate("NetSuite") }}</ion-title>
         <ion-button slot="end" fill="clear">
           <ion-icon slot="icon-only" :icon="search" color="medium"/>

@@ -4,7 +4,7 @@
 
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-menu-button slot="start" />
+        <ion-menu-button slot="start" menu="company-menu" />
         <ion-title>{{ translate("Shopify connections") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button slot="icon-only">

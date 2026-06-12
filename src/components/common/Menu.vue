@@ -1,5 +1,5 @@
 <template>
-  <ion-menu content-id="main-content" type="overlay" :disabled="!isUserAuthenticated">
+  <ion-menu id="company-menu" content-id="main-content" type="overlay" :disabled="!isUserAuthenticated">
     <ion-header>
       <ion-toolbar>
         <ion-title>{{ translate("Company") }}</ion-title>

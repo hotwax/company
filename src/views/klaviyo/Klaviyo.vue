@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-menu-button slot="start" />
+        <ion-menu-button slot="start" menu="company-menu" />
         <ion-title>{{ translate("Klaviyo") }}</ion-title>
         <ion-buttons slot="end" v-if="hasUnigateConfig">
           <ion-button @click="openUnigateConfigModal()" :aria-label="translate('Unigate tenant')">
