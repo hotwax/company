@@ -23,10 +23,12 @@ function toChatItems(detail: any): ChatItem[] {
       items.push({ id: `msg-${msg.messageSeqId}`, type: 'message', userName, content: msg.content })
     } else if (msg.role === 'assistant') {
       if (msg.toolCalls?.length) {
-        for (const toolCall of msg.toolCalls) {
-          items.push({ id: `tc-${msg.messageSeqId}-${toolCall.id}`, type: 'toolCall', toolName: toolCall.name,
+        // Key by position, not toolCall.id: the id is provider-supplied and not guaranteed present, so two
+        // calls on one message could otherwise collapse to duplicate Vue keys (`tc-5-undefined`).
+        msg.toolCalls.forEach((toolCall: any, index: number) => {
+          items.push({ id: `tc-${msg.messageSeqId}-${index}`, type: 'toolCall', toolName: toolCall.name,
             args: JSON.stringify(toolCall.arguments ?? {}, null, 2) })
-        }
+        })
       }
       if (msg.content) {
         items.push({ id: `agent-${msg.messageSeqId}`, type: 'agentMessage', content: msg.content })
@@ -73,6 +75,9 @@ export const useWorkforceStore = defineStore('workforce', {
       if (!id || this.sending || this.deciding) return
       try {
         const resp = await api({ url: `ai/conversations/${encodeURIComponent(id)}`, method: 'get' }) as any
+        // The user may have switched conversations while this was in flight; drop the stale response so a
+        // slow fetch for the previous thread can't clobber the now-selected one.
+        if (id !== this.selectedConversationId) return
         if (hasError(resp)) throw resp.data
         this.detail = resp.data
         this.chatItems = toChatItems(resp.data)
