@@ -80,9 +80,6 @@ export default defineConfig({
     }
   },
   build: {
-    rollupOptions: {
-      // resolveCommonDeps plugin handles externals for both dev + build
-      external: (id) => COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))
-    }
+    rollupOptions: {}
   }
 })
