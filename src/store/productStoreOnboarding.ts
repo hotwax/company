@@ -41,6 +41,7 @@ export interface ProductStoreOnboardingDraft {
   customerCancelBeforeFulfillment: string
   orderImportMode: string
   orderHistoryStartDate: string
+  orderLaunchDate: string
   orderSqsQueueName: string
   orderSqsAwsRemoteId: string
   orderSqsExpireLockTime: string
@@ -94,6 +95,7 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   customerCancelBeforeFulfillment: "false",
   orderImportMode: "Realtime and fallback batch",
   orderHistoryStartDate: "",
+  orderLaunchDate: "",
   orderSqsQueueName: "",
   orderSqsAwsRemoteId: "AWS_CONFIG",
   orderSqsExpireLockTime: "10",

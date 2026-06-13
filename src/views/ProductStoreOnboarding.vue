@@ -739,9 +739,22 @@
                 <ion-input
                   type="date"
                   :value="preferredOrderHistoryStartDate"
+                  label-placement="stacked"
+                  :helper-text="translate('Start of the Shopify bulk query window')"
                   @ionInput="onboardingStore.updateDraftField('orderHistoryStartDate', String($event.detail.value || ''))"
                 >
-                  <div slot="label">{{ translate("Open orders updated since") }}</div>
+                  <div slot="label">{{ translate("Load Shopify orders updated since") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  type="date"
+                  :value="preferredOrderLaunchDate"
+                  label-placement="stacked"
+                  :helper-text="translate('Orders created before this date stay historical and bypass live fulfillment inventory')"
+                  @ionInput="onboardingStore.updateDraftField('orderLaunchDate', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("HotWax go-live date") }}</div>
                 </ion-input>
               </ion-item>
               <ion-item>
@@ -755,7 +768,7 @@
                   fill="clear"
                   data-testid="onboarding-run-order-history-import"
                   :aria-label="translate('Queue Shopify order history')"
-                  :disabled="!linkedShopifyShopId || !preferredOrderHistoryStartDate || isQueueingOrderHistoryImport"
+                  :disabled="!linkedShopifyShopId || !preferredOrderHistoryStartDate || !preferredOrderLaunchDate || isQueueingOrderHistoryImport"
                   @click="queueInitialOrderHistoryImport()"
                 >
                   <ion-spinner v-if="isQueueingOrderHistoryImport" name="crescent" />
@@ -1335,8 +1348,11 @@ const defaultOrderHistoryStartDate = computed(() => {
   date.setDate(date.getDate() - 7)
   return formatDateInputValue(date)
 })
+const defaultOrderLaunchDate = computed(() => formatDateInputValue(new Date()))
 const preferredOrderHistoryStartDate = computed(() => onboardingStore.draft.orderHistoryStartDate || defaultOrderHistoryStartDate.value)
+const preferredOrderLaunchDate = computed(() => onboardingStore.draft.orderLaunchDate || defaultOrderLaunchDate.value)
 const orderHistoryStartDateTime = computed(() => preferredOrderHistoryStartDate.value ? `${preferredOrderHistoryStartDate.value} 00:00:00` : "")
+const orderLaunchDateTime = computed(() => preferredOrderLaunchDate.value ? `${preferredOrderLaunchDate.value} 00:00:00` : "")
 const facilityCount = computed(() => productStoreStore.currentFacilities.length)
 const shouldCreateStarterFacility = computed(() =>
   currentStep.value.id === "facilities"
@@ -1631,7 +1647,8 @@ const orderImportBadgeColor = computed(() => {
 const initialOrderHistoryImportDescription = computed(() => {
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading orders.")
   if (!preferredOrderHistoryStartDate.value) return translate("Choose how far back to load Shopify order history.")
-  return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}.`
+  if (!preferredOrderLaunchDate.value) return translate("Choose the HotWax go-live date for order import.")
+  return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}. ${translate("Orders created before")} ${preferredOrderLaunchDate.value} ${translate("stay historical.")}`
 })
 const accessPackageStatus = computed(() => productStoreStore.currentAccessPackageStatus)
 const hasAccessPackageStatus = computed(() => !!accessPackageStatus.value?.packages)
@@ -3060,6 +3077,11 @@ async function queueInitialOrderHistoryImport() {
     return false
   }
 
+  if (!orderLaunchDateTime.value) {
+    commonUtil.showToast(translate("Choose the HotWax go-live date for order import."))
+    return false
+  }
+
   isQueueingOrderHistoryImport.value = true
   emitter.emit("presentLoader")
 
@@ -3067,6 +3089,7 @@ async function queueInitialOrderHistoryImport() {
     const resp = await productStoreStore.runProductStoreShopifyOrderHistoryImport({
       shopId: linkedShopifyShopId.value,
       fromDate: orderHistoryStartDateTime.value,
+      launchDate: orderLaunchDateTime.value,
       windowDays: 7
     })
 

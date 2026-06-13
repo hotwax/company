@@ -395,6 +395,8 @@ export const useProductStore = defineStore('productStore', {
     async runProductStoreShopifyOrderHistoryImport(payload: {
       shopId: string
       fromDate: string
+      launchDate: string
+      thruDate?: string
       windowDays?: number
     }) {
       return api({
