@@ -1060,6 +1060,7 @@ import {
 import { computed, ref } from "vue"
 import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
+import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
@@ -1495,6 +1496,7 @@ const nextLabel = computed(() => {
 const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
   if (currentStep.value.id === "general") return translate("Save order defaults")
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) return translate("Create Shopify connection")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save inventory setup")
@@ -1519,6 +1521,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
     return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
+  }
+
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
+    return !selectedProductStoreId.value
   }
 
   if (currentStep.value.id === "general") {
@@ -2012,6 +2018,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
     const shopLinked = await linkExistingShopifyShop()
     if (!shopLinked) return
+  }
+
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
+    const shopCreated = await createShopifyConnectionForProductStore()
+    if (!shopCreated) return
   }
 
   if (currentStep.value.id === "general") {
@@ -2593,6 +2604,33 @@ async function linkExistingShopifyShop() {
     emitter.emit("dismissLoader")
     isLinkingShopifyShop.value = false
   }
+}
+
+async function createShopifyConnectionForProductStore() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before connecting Shopify."))
+    return false
+  }
+
+  const modal = await modalController.create({
+    component: CreateShopifyConnectionModal,
+    componentProps: {
+      productStoreId: selectedProductStoreId.value,
+      initialDomain: onboardingStore.draft.shopifyDomain
+    }
+  })
+  await modal.present()
+  const { data } = await modal.onWillDismiss()
+  if (!data?.shopId) return false
+
+  await shopifyStore.fetchShopifyShops()
+  const createdShop = shopifyStore.getShopById(data.shopId)
+  onboardingStore.updateDraftField("linkedShopifyShopId", data.shopId)
+  onboardingStore.updateDraftField("selectedShopifyShopId", data.shopId)
+  onboardingStore.updateDraftField("shopifyDomain", createdShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
+  await refreshShopifyJobStatus()
+  await refreshShopifyMappingStatus()
+  return true
 }
 
 async function refreshShopifyLocationMappings() {
