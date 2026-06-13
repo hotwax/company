@@ -54,7 +54,7 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "Shopify",
     summary: "Connect or reserve the Shopify shop that will feed products, orders, inventory, and locations.",
-    capability: "backend-gap",
+    capability: "existing-api",
     questions: [
       "Is this Product Store connected to an existing Shopify shop?",
       "Which myshopify domain should this setup use?",
@@ -119,7 +119,7 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "Orders",
     summary: "Prepare order import, order updates, and realtime Shopify order flow before activation.",
-    capability: "backend-gap",
+    capability: "existing-api",
     questions: [
       "Should orders import in realtime, scheduled batches, or both?",
       "Which tags or order types should be included?",
@@ -132,7 +132,7 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     group: "setup",
     label: "Users",
     summary: "Map the people who will operate the store into app roles, security groups, and facility scope.",
-    capability: "backend-gap",
+    capability: "existing-api",
     questions: [
       "Which teams need access: stores, inventory, fulfillment, routing, or admins?",
       "Which users should be associated with each facility?",
