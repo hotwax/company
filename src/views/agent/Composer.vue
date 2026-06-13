@@ -77,8 +77,15 @@
               <ion-item v-if="!composer.selectedTools.length">
                 <ion-label>
                   {{ translate("No tools selected") }}
-                  <p>{{ translate("Add tools this agent can use") }}</p>
+                  <p v-if="composer.toolCatalog.length">
+                    {{ composer.toolCatalog.length }} {{ translate("tools available") }}:
+                    {{ composer.toolCatalog.slice(0, 4).map((tool) => tool.toolName).join(", ") }}
+                  </p>
+                  <p>{{ translate("Select tools this agent can use") }}</p>
                 </ion-label>
+                <ion-button slot="end" fill="clear" @click="openToolsModal">
+                  {{ translate("Select") }}
+                </ion-button>
               </ion-item>
 
               <ion-item v-for="tool in composer.selectedTools" :key="tool.toolId">
