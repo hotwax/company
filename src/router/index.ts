@@ -40,6 +40,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/shopify-connection-details/:id/product-sync', name: 'ShopifyProductSync', component: () => import('@/views/ShopifyProductSync.vue'), props: true, beforeEnter: authGuard },
   { path: '/shopify-connection-details/:id/product-sync/history', name: 'ShopifyProductSyncHistory', component: () => import('@/views/ShopifyProductSyncHistory.vue'), props: true, beforeEnter: authGuard },
   { path: '/shopify-connection-details/:id/product-sync/upgrade-assistant', name: 'ShopifyProductSyncUpgradeAssistant', component: () => import('@/views/ShopifyProductSyncUpgradeAssistant.vue'), props: true, beforeEnter: authGuard },
+  { path: '/shopify-connection-details/:id/order-sync', name: 'ShopifyOrderSync', component: () => import('@/views/ShopifyOrderSync.vue'), props: true, beforeEnter: authGuard },
   { path: '/shopify-connection-details/:id/instance-details', name: 'ShopifyInstanceDetails', component: () => import('@/views/ShopifyShopDetails.vue'), props: true, beforeEnter: authGuard },
   { path: '/klaviyo', name: 'Klaviyo', component: Klaviyo, beforeEnter: authGuard },
   { path: '/klaviyo/:id', name: 'KlaviyoConnectionDetails', component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },

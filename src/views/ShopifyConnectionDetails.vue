@@ -189,6 +189,12 @@
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
           <section>
+            <ion-item detail class="item-box" lines="none" button @click="openOrderSync()">
+              <ion-label>
+                {{ translate("Order sync") }}
+                <p>{{ translate("Realtime, fallback, and historical Shopify order imports") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
             </ion-item>
@@ -725,6 +731,10 @@ function openShopDetails() {
 
 function openShopifyLocations() {
   router.push(`/shopify-connection-details/${props.id}/locations`);
+}
+
+function openOrderSync() {
+  router.push(`/shopify-connection-details/${props.id}/order-sync`);
 }
 
 function openShipmentMethods() {
