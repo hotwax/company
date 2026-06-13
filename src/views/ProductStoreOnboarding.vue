@@ -655,6 +655,33 @@
                   <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
                 </ion-select>
               </ion-item>
+              <ion-item>
+                <ion-input
+                  type="date"
+                  :value="preferredOrderHistoryStartDate"
+                  @ionInput="onboardingStore.updateDraftField('orderHistoryStartDate', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Open orders updated since") }}</div>
+                </ion-input>
+              </ion-item>
+              <ion-item>
+                <ion-icon slot="start" :icon="cloudDownloadOutline" />
+                <ion-label>
+                  {{ translate("Initial order history") }}
+                  <p>{{ initialOrderHistoryImportDescription }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-run-order-history-import"
+                  :aria-label="translate('Queue Shopify order history')"
+                  :disabled="!linkedShopifyShopId || !preferredOrderHistoryStartDate || isQueueingOrderHistoryImport"
+                  @click="queueInitialOrderHistoryImport()"
+                >
+                  <ion-spinner v-if="isQueueingOrderHistoryImport" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
+                </ion-button>
+              </ion-item>
               <ion-item v-if="shouldConfigureRealtimeOrderImport">
                 <ion-input
                   :value="onboardingStore.draft.orderSqsQueueName"
@@ -1122,6 +1149,7 @@ const isSavingInventorySettings = ref(false)
 const isSettingUpInventoryResetJob = ref(false)
 const isQueueingInventoryImport = ref(false)
 const isSettingUpOrderJobs = ref(false)
+const isQueueingOrderHistoryImport = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
 const isSettingUpAccessPackage = ref(false)
 const isSavingRoutingDefaults = ref(false)
@@ -1161,6 +1189,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSettingUpInventoryResetJob.value
     || isQueueingInventoryImport.value
     || isSettingUpOrderJobs.value
+    || isQueueingOrderHistoryImport.value
     || isSettingUpRealtimeOrderJobs.value
     || isSettingUpAccessPackage.value
     || isSavingRoutingDefaults.value
@@ -1197,6 +1226,19 @@ const orderJobRequirements = computed(() => {
   })
 })
 const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
+function formatDateInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+const defaultOrderHistoryStartDate = computed(() => {
+  const date = new Date()
+  date.setDate(date.getDate() - 7)
+  return formatDateInputValue(date)
+})
+const preferredOrderHistoryStartDate = computed(() => onboardingStore.draft.orderHistoryStartDate || defaultOrderHistoryStartDate.value)
+const orderHistoryStartDateTime = computed(() => preferredOrderHistoryStartDate.value ? `${preferredOrderHistoryStartDate.value} 00:00:00` : "")
 const facilityCount = computed(() => productStoreStore.currentFacilities.length)
 const shouldCreateStarterFacility = computed(() =>
   currentStep.value.id === "facilities"
@@ -1341,6 +1383,11 @@ const orderImportStatusLabel = computed(() => {
 const orderImportBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
+})
+const initialOrderHistoryImportDescription = computed(() => {
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading orders.")
+  if (!preferredOrderHistoryStartDate.value) return translate("Choose how far back to load Shopify order history.")
+  return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}.`
 })
 const accessPackageStatus = computed(() => productStoreStore.currentAccessPackageStatus)
 const hasAccessPackageStatus = computed(() => !!accessPackageStatus.value?.packages)
@@ -1557,7 +1604,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save and load inventory")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
-  if (currentStep.value.id === "orders") return translate("Configure order jobs")
+  if (currentStep.value.id === "orders") return translate("Configure and load orders")
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
     return onboardingStore.draft.accessUserMode === "create" ? translate("Create user access") : translate("Apply access package")
   }
@@ -1602,6 +1649,7 @@ const isPrimaryActionDisabled = computed(() => {
   if (currentStep.value.id === "orders") {
     return !selectedProductStoreId.value
       || !linkedShopifyShopId.value
+      || !preferredOrderHistoryStartDate.value
       || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
   }
 
@@ -2121,6 +2169,9 @@ async function handlePrimaryAction() {
 
     const realtimeOrderJobsConfigured = await setupRealtimeOrderImportJobs()
     if (!realtimeOrderJobsConfigured) return
+
+    const initialOrderHistoryQueued = await queueInitialOrderHistoryImport()
+    if (!initialOrderHistoryQueued) return
   }
 
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
@@ -2485,6 +2536,41 @@ async function setupRealtimeOrderImportJobs() {
   } finally {
     emitter.emit("dismissLoader")
     isSettingUpRealtimeOrderJobs.value = false
+  }
+}
+
+async function queueInitialOrderHistoryImport() {
+  if (!linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before loading orders."))
+    return false
+  }
+
+  if (!orderHistoryStartDateTime.value) {
+    commonUtil.showToast(translate("Choose how far back to load Shopify order history."))
+    return false
+  }
+
+  isQueueingOrderHistoryImport.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.runProductStoreShopifyOrderHistoryImport({
+      shopId: linkedShopifyShopId.value,
+      fromDate: orderHistoryStartDateTime.value,
+      windowDays: 7
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    commonUtil.showToast(translate("Initial order history import queued."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to queue initial order history import."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isQueueingOrderHistoryImport.value = false
   }
 }
 

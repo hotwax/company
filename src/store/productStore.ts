@@ -308,6 +308,18 @@ export const useProductStore = defineStore('productStore', {
       })
     },
 
+    async runProductStoreShopifyOrderHistoryImport(payload: {
+      shopId: string
+      fromDate: string
+      windowDays?: number
+    }) {
+      return api({
+        url: "sob/shopify/orderHistory",
+        method: "post",
+        data: payload
+      })
+    },
+
     async setupProductStoreShopifyOrderImport(payload: {
       productStoreId: string
       shopId?: string
