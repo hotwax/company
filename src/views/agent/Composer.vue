@@ -157,11 +157,11 @@
         <ion-content>
           <ion-list>
             <ion-item v-for="tool in filteredTools" :key="tool.toolId" @click="toggleToolSelection(tool.toolId)">
-              <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="space-between">
-                <ion-label>
-                  <p>{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</p>
+              <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="start">
+                <ion-label class="tool-picker-label">
+                  <ion-note>{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</ion-note>
                   <h2>{{ tool.toolName }}</h2>
-                  <p>{{ tool.description }}</p>
+                  <ion-note>{{ tool.description }}</ion-note>
                 </ion-label>
               </ion-checkbox>
             </ion-item>
@@ -198,6 +198,7 @@ import {
   IonListHeader,
   IonMenuButton,
   IonModal,
+  IonNote,
   IonPage,
   IonSearchbar,
   IonSelect,
@@ -390,9 +391,18 @@ ion-modal ion-label {
 }
 
 ion-modal ion-label h2,
-ion-modal ion-label p {
+ion-modal ion-note {
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.tool-picker-label {
+  display: flex;
+  flex-direction: column;
+}
+
+ion-modal ion-note {
+  display: block;
 }
 
 </style>
