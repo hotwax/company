@@ -3,6 +3,17 @@ import { api, commonUtil, logger } from '@common'
 
 let inflightMaargFetch: Promise<any> | null = null
 
+const DEFAULT_COMPANY_ROLE_TYPE_IDS = [
+  'BILL_FROM_VENDOR',
+  'SHIP_FROM_VENDOR',
+  'BILL_TO_CUSTOMER',
+  'INTERNAL_ORGANIZATIO',
+  'SUPPLIER',
+  'VENDOR',
+  'CONTACT',
+  '_NA_'
+]
+
 export const useUtilStore = defineStore('util', {
   state: () => ({
     facilityGroups: [] as any[],
@@ -246,14 +257,55 @@ export const useUtilStore = defineStore('util', {
       this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'pending' }
 
       try {
-        const resp = await api({ url: "admin/organizations/bootstrap", method: "post", data: payload })
-        if (!commonUtil.hasError(resp)) {
-          this.organizationPartyId = resp.data?.partyId || payload.partyId || this.organizationPartyId
-          this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'success', lastFetched: Date.now() }
-          return resp.data
-        } else {
-          throw resp.data
+        const partyId = payload.partyId?.trim() || 'COMPANY'
+        const groupName = payload.groupName?.trim() || 'Default Company'
+
+        const existingOrganizationResp = await api({
+          url: `admin/organizations/${partyId}`,
+          method: "get",
+          params: { partyId }
+        })
+
+        if (commonUtil.hasError(existingOrganizationResp)) {
+          const partyResp = await api({
+            url: "admin/organizations",
+            method: "post",
+            data: { partyId, partyTypeId: 'PARTY_GROUP' }
+          })
+          if (commonUtil.hasError(partyResp)) throw partyResp.data
         }
+
+        const partyGroupResp = await api({
+          url: `admin/organizations/${partyId}`,
+          method: "post",
+          data: { partyId, groupName }
+        })
+        if (commonUtil.hasError(partyGroupResp)) throw partyGroupResp.data
+
+        for (const roleTypeId of DEFAULT_COMPANY_ROLE_TYPE_IDS) {
+          const roleResp = await api({
+            url: `admin/organizations/${partyId}/roles`,
+            method: "put",
+            data: { partyId, roleTypeId }
+          })
+          if (commonUtil.hasError(roleResp)) throw roleResp.data
+        }
+
+        const systemPropertyResp = await api({
+          url: "admin/systemProperties",
+          method: "put",
+          data: {
+            systemResourceId: 'general',
+            systemPropertyId: 'ORGANIZATION_PARTY',
+            systemPropertyValue: partyId,
+            description: 'The default organizationPartyId for setup, dropdowns, and reports'
+          }
+        })
+        if (commonUtil.hasError(systemPropertyResp)) throw systemPropertyResp.data
+
+        this.organizationPartyId = partyId
+        this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'success', lastFetched: Date.now() }
+        return { partyId, groupName, roleTypeIds: DEFAULT_COMPANY_ROLE_TYPE_IDS }
       } catch (error) {
         logger.error(error)
         this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'error' }
