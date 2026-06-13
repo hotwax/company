@@ -20,6 +20,12 @@
               <ion-button fill="outline" @click="renameProductStore()">{{ translate("Edit") }}</ion-button>
             </ion-item>
 
+            <ion-item button @click="openSetupGuide()">
+              <ion-icon :icon="listCircleOutline" slot="start"/>
+              <ion-label>{{ translate("Setup guide") }}</ion-label>
+              <ion-note slot="end">{{ translate("Resume") }}</ion-note>
+            </ion-item>
+
             <div class="ion-margin-top">
               <ion-item>
                 <ion-icon :icon="mapOutline" slot="start"/>
@@ -351,13 +357,14 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
-import { addCircleOutline, closeCircleOutline, compassOutline, mapOutline, wineOutline } from "ionicons/icons";
+import { IonBackButton, IonButton, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonChip, IonHeader, IonIcon, IonInput, IonItem, IonItemDivider, IonLabel, IonList, IonNote, IonPage, IonSelect, IonSelectOption, IonTitle, IonToggle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
+import { addCircleOutline, closeCircleOutline, compassOutline, listCircleOutline, mapOutline, wineOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common'
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, defineProps, ref } from "vue";
 import { DateTime } from "luxon";
+import router from "@/router";
 
 const props = defineProps(["productStoreId"]);
 const productStoreStore = useProductStore();
@@ -380,6 +387,10 @@ onIonViewWillEnter(async() => {
   if(productStore.value.daysToCancelNonPay) autoCancellationActive.value = true;
   emitter.emit("dismissLoader");
 })
+
+function openSetupGuide() {
+  router.push(`/product-store-onboarding/${encodeURIComponent(props.productStoreId)}`)
+}
 
 
 
