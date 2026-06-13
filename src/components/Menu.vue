@@ -25,6 +25,17 @@
             <ion-label>{{ translate(p.title) }}</ion-label>
           </ion-item>
         </ion-menu-toggle>
+
+        <ion-item-divider color="light">
+          <ion-label>{{ translate("Settings") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in settingsPages" :key="'settings-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedSettingsIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
       </ion-list>
     </ion-content>
   </ion-menu>
@@ -79,12 +90,6 @@ const appPages = [
     childRoutes: ["/netsuite/"],
     iosIcon: walletOutline,
     mdIcon: walletOutline
-  },
-  {
-    title: "Settings",
-    url: "/settings",
-    iosIcon: settingsOutline,
-    mdIcon: settingsOutline,
   }
 ];
 
@@ -103,6 +108,15 @@ const agentPages = [
   }
 ];
 
+const settingsPages = [
+  {
+    title: "Settings",
+    url: "/settings",
+    iosIcon: settingsOutline,
+    mdIcon: settingsOutline,
+  }
+];
+
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
@@ -111,6 +125,11 @@ const selectedIndex = computed(() => {
 const selectedAgentIndex = computed(() => {
   const path = router.currentRoute.value.path
   return agentPages.findIndex((screen) => screen.url === path)
+})
+
+const selectedSettingsIndex = computed(() => {
+  const path = router.currentRoute.value.path
+  return settingsPages.findIndex((screen) => screen.url === path)
 })
 </script>
 
