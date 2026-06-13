@@ -1158,7 +1158,7 @@ const orderJobRequirements = computed(() => {
   })
 })
 const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
-const facilityCount = computed(() => utilStore.facilities.length)
+const facilityCount = computed(() => productStoreStore.currentFacilities.length)
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
@@ -1805,6 +1805,7 @@ onIonViewWillEnter(async () => {
     onboardingStore.resetDraft()
     productStoreStore.current = {}
     productStoreStore.currentStoreSettings = {}
+    productStoreStore.currentFacilities = []
     productStoreStore.currentShopifyJobStatus = null
     productStoreStore.currentAccessPackageStatus = null
   }
@@ -1918,6 +1919,7 @@ async function loadSelectedProductStoreSetup() {
   await Promise.allSettled([
     productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
     productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
+    productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
     refreshShopifyJobStatus(),
     refreshAccessPackageStatus()
   ])
@@ -2663,15 +2665,22 @@ async function openShopifyLocationImport() {
   try {
     const modal = await modalController.create({
       component: ImportShopifyLocationsModal,
-      componentProps: { shopId: linkedShopifyShopId.value }
+      componentProps: {
+        shopId: linkedShopifyShopId.value,
+        productStoreId: selectedProductStoreId.value
+      }
     })
 
     await modal.present()
     const { data } = await modal.onDidDismiss()
 
     if (data?.imported) {
-      await utilStore.fetchFacilities()
+      await Promise.allSettled([
+        utilStore.fetchFacilities(),
+        productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
+      ])
       await refreshShopifyMappingStatus()
+      onboardingStore.markCurrentStepComplete()
     }
   } catch (error: any) {
     logger.error(error)

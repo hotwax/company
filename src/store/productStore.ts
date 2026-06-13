@@ -6,6 +6,7 @@ export const useProductStore = defineStore('productStore', {
   state: () => ({
     current: {} as any,
     currentStoreSettings: {} as any,
+    currentFacilities: [] as any[],
     currentShopifyJobStatus: null as any,
     currentAccessPackageStatus: null as any,
     productStores: [] as any[],
@@ -22,6 +23,7 @@ export const useProductStore = defineStore('productStore', {
   getters: {
     getCurrent: (state) => state.current ? JSON.parse(JSON.stringify(state.current)) : {},
     getCurrentStoreSettings: (state) => state.currentStoreSettings,
+    getCurrentFacilities: (state) => state.currentFacilities,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
     getCurrentAccessPackageStatus: (state) => state.currentAccessPackageStatus,
     getProductStores: (state) => state.productStores,
@@ -124,6 +126,42 @@ export const useProductStore = defineStore('productStore', {
         logger.error(error)
       }
       this.currentStoreSettings = storeSettings
+    },
+
+    async fetchProductStoreFacilities(productStoreId: string) {
+      let facilities: any[] = []
+      try {
+        const resp = await api({
+          url: `admin/productStores/${productStoreId}/facilities`,
+          method: "get",
+          params: { pageSize: 200 }
+        })
+        if (!commonUtil.hasError(resp)) {
+          facilities = resp.data || []
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+      }
+      this.currentFacilities = facilities
+      return facilities
+    },
+
+    async associateProductStoreFacility(payload: {
+      productStoreId: string
+      facilityId: string
+      fromDate?: number
+    }) {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/facilities/${payload.facilityId}/association`,
+        method: "post",
+        data: {
+          productStoreId: payload.productStoreId,
+          facilityId: payload.facilityId,
+          fromDate: payload.fromDate || Date.now()
+        }
+      })
     },
 
     async fetchProductStoreShopifyJobStatus(productStoreId: string) {
