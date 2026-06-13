@@ -1068,6 +1068,7 @@ import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
 import { useUtilStore } from "@/store/util"
 import { generateInternalId } from "@/utils"
+import router from "@/router"
 
 const onboardingStore = useProductStoreOnboardingStore()
 const productStoreStore = useProductStore()
@@ -1108,8 +1109,8 @@ const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
 const routeProductStoreId = computed(() => props.productStoreId || "")
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
-const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
+const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0 || !organizationPartyId.value)
 const isPrimaryActionLoading = computed(() => {
   return isSavingProductStore.value
     || isLinkingShopifyShop.value
@@ -1851,19 +1852,25 @@ async function createProductStoreFromDraft() {
     return ""
   }
 
-  if (!organizationPartyId.value) {
-    commonUtil.showToast(translate("Unable to find company organization."))
-    return ""
-  }
-
   isSavingProductStore.value = true
   emitter.emit("presentLoader")
 
   try {
+    if (!organizationPartyId.value) {
+      const bootstrapCompanyName = onboardingStore.draft.companyName.trim() || productStoreStore.company.companyName || storeName
+      await utilStore.bootstrapOrganization({ groupName: bootstrapCompanyName })
+      if (organizationPartyId.value) await productStoreStore.fetchCompany()
+    }
+
+    if (!organizationPartyId.value) {
+      commonUtil.showToast(translate("Unable to find company organization."))
+      return ""
+    }
+
     const payload = {
       storeName,
       productStoreId,
-      companyName: productStoreStore.company.companyName,
+      companyName: productStoreStore.company.companyName || onboardingStore.draft.companyName.trim() || storeName,
       payToPartyId: organizationPartyId.value,
       defaultCurrencyUomId: onboardingStore.draft.defaultCurrencyUomId
     } as any

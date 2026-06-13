@@ -225,6 +225,27 @@ export const useUtilStore = defineStore('util', {
         this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'error' }
       }
       this.organizationPartyId = partyId
+      return partyId
+    },
+
+    async bootstrapOrganization(payload: { partyId?: string, groupName?: string } = {}) {
+      this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'pending' }
+
+      try {
+        const resp = await api({ url: "admin/organizations/bootstrap", method: "post", data: payload })
+        if (!commonUtil.hasError(resp)) {
+          this.organizationPartyId = resp.data?.partyId || payload.partyId || this.organizationPartyId
+          this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'success', lastFetched: Date.now() }
+          return resp.data
+        } else {
+          throw resp.data
+        }
+      } catch (error) {
+        logger.error(error)
+        this.fetchStatus = { ...this.fetchStatus, organizationPartyId: 'error' }
+      }
+
+      return null
     },
 
     async fetchStatusItems() {
