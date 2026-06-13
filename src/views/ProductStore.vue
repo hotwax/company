@@ -71,7 +71,7 @@ async function viewProductStoreDetails(productStoreId: string) {
 }
 
 function createStore() {
-  router.push("/create-product-store")
+  router.push("/product-store-onboarding")
 }
 
 function cloneStoreSettings() {

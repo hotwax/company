@@ -1794,6 +1794,12 @@ async function refreshAccessPackageStatus() {
 onIonViewWillEnter(async () => {
   if (routeProductStoreId.value) {
     onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
+  } else {
+    onboardingStore.resetDraft()
+    productStoreStore.current = {}
+    productStoreStore.currentStoreSettings = {}
+    productStoreStore.currentShopifyJobStatus = null
+    productStoreStore.currentAccessPackageStatus = null
   }
 
   await loadSetupData()
