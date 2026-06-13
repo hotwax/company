@@ -45,10 +45,6 @@ export interface ProductStoreOnboardingDraft {
   orderSqsQueueName: string
   orderSqsAwsRemoteId: string
   orderSqsExpireLockTime: string
-  accessUserMode: string
-  accessFirstName: string
-  accessLastName: string
-  accessEmailAddress: string
   accessUserLoginId: string
   accessPartyId: string
   accessPackageId: string
@@ -100,10 +96,6 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   orderSqsQueueName: "",
   orderSqsAwsRemoteId: "AWS_CONFIG",
   orderSqsExpireLockTime: "10",
-  accessUserMode: "create",
-  accessFirstName: "",
-  accessLastName: "",
-  accessEmailAddress: "",
   accessUserLoginId: "",
   accessPartyId: "",
   accessPackageId: "FULFILLMENT_MANAGER",
