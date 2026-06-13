@@ -163,7 +163,7 @@ export const useShopifyStore = defineStore('shopify', {
       })
     },
 
-    async fetchLocationsFromShopify(payload: any) {
+    async fetchShopifyLocations(payload: any) {
       return api({
         url: `shopify/shops/${payload.shopId}/shopify-locations`,
         method: 'get'
@@ -178,11 +178,11 @@ export const useShopifyStore = defineStore('shopify', {
       })
     },
 
-    async importShopifyFacilities(payload: any) {
+    async storeShopifyFacilities(payload: any) {
       return api({
         url: `shopify/shops/${payload.shopId}/shopify-locations`,
         method: 'post',
-        data: payload.locations
+        data: payload.facilities
       })
     },
 

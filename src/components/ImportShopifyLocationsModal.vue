@@ -116,7 +116,7 @@ async function fetchData() {
   fetchError.value = ''
   try {
     const [shopifyResp, omsResp] = await Promise.all([
-      shopifyStore.fetchLocationsFromShopify({ shopId: props.shopId }),
+      shopifyStore.fetchShopifyLocations({ shopId: props.shopId }),
       shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.shopId })
     ])
 
@@ -171,9 +171,9 @@ async function importSelected() {
 
   isImporting.value = true
   try {
-    const resp = await shopifyStore.importShopifyFacilities({
+    const resp = await shopifyStore.storeShopifyFacilities({
       shopId: props.shopId,
-      locations: selectedForImport.value.map(loc => ({
+      facilities: selectedForImport.value.map(loc => ({
         shopifyLocationId: loc.shopifyLocationId,
         name:              loc.name,
         facilityTypeId:    facilityTypes.value[loc.shopifyLocationId],

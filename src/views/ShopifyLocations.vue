@@ -261,7 +261,7 @@ async function runAudit() {
   isAuditing.value = true
   try {
     const [shopifyResp, omsResp] = await Promise.all([
-      shopifyStore.fetchLocationsFromShopify({ shopId: props.id }),
+      shopifyStore.fetchShopifyLocations({ shopId: props.id }),
       shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.id })
     ])
     const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
