@@ -1392,7 +1392,7 @@ const initialProductImportDescription = computed(() => {
 const shopifySetupStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before checking Shopify setup.")
   if (isLoadingShopifyJobStatus.value) return translate("Checking Shopify setup status.")
-  if (!hasShopifyJobStatus.value) return translate("The backend status endpoint is not available in this OMS yet.")
+  if (!hasShopifyJobStatus.value) return translate("The setup flow could not read Shopify readiness from the existing remote, ServiceJob, and DataManager records.")
 
   const missingCount = shopifyJobRequirements.value.filter((requirement: any) => !requirement.complete).length
   if (!missingCount) return translate("Shopify remotes and onboarding jobs are ready.")
@@ -1448,7 +1448,7 @@ const inventoryResetBadgeColor = computed(() => {
 })
 const orderImportStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before checking order import jobs.")
-  if (!hasShopifyJobStatus.value) return translate("The backend status endpoint is required before onboarding can verify order import readiness.")
+  if (!hasShopifyJobStatus.value) return translate("The setup flow could not read order import readiness from the existing ServiceJob and DataManager records.")
 
   const missingOrderItems = orderJobRequirements.value.filter((requirement: any) => !requirement.complete)
   if (!missingOrderItems.length) return translate("Order import jobs and DataManager configs are ready.")
@@ -1694,9 +1694,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "orders") {
     return !selectedProductStoreId.value
-      || !linkedShopifyShopId.value
-      || !preferredOrderHistoryStartDate.value
-      || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
+      || (!!linkedShopifyShopId.value && (
+        !preferredOrderHistoryStartDate.value
+        || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
+      ))
   }
 
   if (currentStep.value.id === "routing") {
@@ -2216,7 +2217,7 @@ async function handlePrimaryAction() {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
 
-    if (shouldSetupShopifyInventoryReset.value && !isProductImportInProgress.value) {
+    if (shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) {
       const inventoryResetConfigured = await setupInventoryResetJob()
       if (!inventoryResetConfigured) return
 
@@ -2224,10 +2225,12 @@ async function handlePrimaryAction() {
       if (!initialInventoryImportQueued) return
     } else if (shouldSetupShopifyInventoryReset.value && isProductImportInProgress.value) {
       commonUtil.showToast(translate("Inventory import will be available after products finish importing."))
+    } else if (shouldSetupShopifyInventoryReset.value && !linkedShopifyShopId.value) {
+      commonUtil.showToast(translate("Inventory import will be available after Shopify is linked."))
     }
   }
 
-  if (currentStep.value.id === "orders") {
+  if (currentStep.value.id === "orders" && linkedShopifyShopId.value) {
     const orderJobsConfigured = await setupOrderImportJobs()
     if (!orderJobsConfigured) return
 
@@ -2236,6 +2239,8 @@ async function handlePrimaryAction() {
 
     const initialOrderHistoryQueued = await queueInitialOrderHistoryImport()
     if (!initialOrderHistoryQueued) return
+  } else if (currentStep.value.id === "orders") {
+    commonUtil.showToast(translate("Order import will be available after Shopify is linked."))
   }
 
   if (currentStep.value.id === "routing") {
