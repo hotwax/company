@@ -62,7 +62,7 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   productStoreId: "",
   defaultCurrencyUomId: "USD",
   locale: "America / English",
-  timezone: "America / English",
+  timezone: "America/New_York",
   shopifyDomain: "",
   shopifyConnectionMode: "Prepare Shopify connection",
   selectedShopifyShopId: "",

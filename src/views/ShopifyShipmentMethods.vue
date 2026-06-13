@@ -90,6 +90,7 @@ import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 
 const props = defineProps(['id']);
 const utilStore = useUtilStore();
@@ -306,11 +307,12 @@ async function confirmLeaveWithDirtyMappings() {
   });
 }
 
-async function navigateBack() {
-  const canLeave = await confirmLeaveWithDirtyMappings();
-  if (canLeave) {
-    window.location.href = backHref.value;
-  }
+const router = useRouter();
+
+onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
+
+function navigateBack() {
+  router.push(backHref.value);
 }
 </script>
 
