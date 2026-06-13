@@ -9,6 +9,7 @@ export const useProductStore = defineStore('productStore', {
     currentFacilities: [] as any[],
     currentShopifyJobStatus: null as any,
     currentAccessPackageStatus: null as any,
+    currentJwtTokenSubjects: null as any,
     productStores: [] as any[],
     company: {} as any,
     netSuiteProductStore: null as any,
@@ -16,6 +17,7 @@ export const useProductStore = defineStore('productStore', {
       productStores: 'none',
       shopifyJobStatus: 'none',
       accessPackageStatus: 'none',
+      jwtTokenSubjects: 'none',
       lastFetched: 0
     }
   }),
@@ -26,6 +28,7 @@ export const useProductStore = defineStore('productStore', {
     getCurrentFacilities: (state) => state.currentFacilities,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
     getCurrentAccessPackageStatus: (state) => state.currentAccessPackageStatus,
+    getCurrentJwtTokenSubjects: (state) => state.currentJwtTokenSubjects,
     getProductStores: (state) => state.productStores,
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
@@ -164,6 +167,24 @@ export const useProductStore = defineStore('productStore', {
       })
     },
 
+    async createProductStoreShipmentMethod(payload: {
+      productStoreId: string
+      productStoreShipMethId: string
+      shipmentMethodTypeId: string
+      partyId: string
+      roleTypeId?: string
+      sequenceNumber?: number
+    }) {
+      return api({
+        url: `oms/productStores/${payload.productStoreId}/shipmentMethods`,
+        method: "post",
+        data: {
+          ...payload,
+          roleTypeId: payload.roleTypeId || "CARRIER"
+        }
+      })
+    },
+
     async fetchProductStoreShopifyJobStatus(productStoreId: string) {
       this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'pending' }
       let shopifyJobStatus = null as any
@@ -218,6 +239,31 @@ export const useProductStore = defineStore('productStore', {
 
       this.currentAccessPackageStatus = accessPackageStatus
       return accessPackageStatus
+    },
+
+    async fetchJwtTokenSubjects(payload: { category?: string } = { category: "INTEGRATION" }) {
+      this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'pending' }
+      let jwtTokenSubjects = null as any
+
+      try {
+        const resp = await api({
+          url: "admin/jwtTokens/subjects",
+          method: "get",
+          params: { category: payload.category || "INTEGRATION" }
+        })
+        if (!commonUtil.hasError(resp)) {
+          jwtTokenSubjects = resp.data
+          this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'success', lastFetched: Date.now() }
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.warn('Failed to fetch JWT token subjects', error)
+        this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'error' }
+      }
+
+      this.currentJwtTokenSubjects = jwtTokenSubjects
+      return jwtTokenSubjects
     },
 
     async setupProductStoreAccessPackage(payload: {

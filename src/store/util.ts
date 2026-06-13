@@ -329,7 +329,7 @@ export const useUtilStore = defineStore('util', {
 
       try {
         do {
-          resp = await api({ url: 'oms/productTypes', method: 'get', params: { pageSize: 200, pageIndex } })
+          resp = await api({ url: 'pim/productTypes', method: 'get', params: { pageSize: 200, pageIndex } })
           if (!commonUtil.hasError(resp) && resp.data?.length) {
             productTypes = productTypes.concat(resp.data)
             pageIndex++

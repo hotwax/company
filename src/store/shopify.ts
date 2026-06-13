@@ -194,7 +194,9 @@ export const useShopifyStore = defineStore('shopify', {
       return api({
         url: `shopify/shops/${payload.shopId}/shopify-locations`,
         method: 'post',
-        data: payload.locations
+        data: {
+          locations: payload.locations
+        }
       })
     },
 
@@ -223,6 +225,7 @@ export const useShopifyStore = defineStore('shopify', {
           remoteIdType: 'SHOPIFY_SHOP_ID',
           internalId: payload.shopId,
           internalIdType: 'HOTWAX_SHOP_ID',
+          accessScopeEnumId: 'SHOP_RW_ACCESS',
           authHeaderName: 'X-Shopify-Access-Token',
           description: payload.name || payload.myshopifyDomain
         }

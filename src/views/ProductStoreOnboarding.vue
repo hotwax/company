@@ -201,13 +201,36 @@
                 </ion-badge>
               </ion-item>
               <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+                <ion-select
+                  v-if="eligibleJwtTokenSubjects.length"
+                  interface="popover"
+                  :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
+                  @ionChange="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Integration user") }}</div>
+                  <ion-select-option
+                    v-for="subject in eligibleJwtTokenSubjects"
+                    :key="subject.userLoginId"
+                    :value="subject.userLoginId"
+                  >
+                    {{ getJwtTokenSubjectLabel(subject) }}
+                  </ion-select-option>
+                </ion-select>
                 <ion-input
+                  v-else
                   :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
                   :label="translate('Integration user')"
                   label-placement="stacked"
                   :clear-input="true"
                   @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
                 />
+              </ion-item>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && hasJwtTokenSubjectStatus && !eligibleJwtTokenSubjects.length">
+                <ion-label>
+                  {{ translate("Integration user required") }}
+                  <p>{{ translate("Create or assign an Integration access user before generating a Shopify handoff token.") }}</p>
+                </ion-label>
+                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
               <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
                 <ion-select
@@ -315,6 +338,24 @@
                   @click="refreshShopifyMappingStatus()"
                 >
                   <ion-spinner v-if="isLoadingShopifyMappingStatus" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="linkedShopifyShop && hasShopifyMappingGaps">
+                <ion-icon slot="start" :icon="gitNetworkOutline" />
+                <ion-label>
+                  {{ translate("Starter mapping package") }}
+                  <p>{{ starterShopifyMappingDescription }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-create-starter-shopify-mappings"
+                  :aria-label="translate('Create starter Shopify mappings')"
+                  :disabled="isSavingShopifyStarterMappings"
+                  @click="setupStarterShopifyMappings()"
+                >
+                  <ion-spinner v-if="isSavingShopifyStarterMappings" name="crescent" />
                   <ion-icon v-else slot="icon-only" :icon="syncOutline" />
                 </ion-button>
               </ion-item>
@@ -1148,6 +1189,7 @@ import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
 import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
 import { useUtilStore } from "@/store/util"
+import { useNetSuiteStore } from "@/store/netSuite"
 import { generateInternalId } from "@/utils"
 import router from "@/router"
 
@@ -1155,6 +1197,7 @@ const onboardingStore = useProductStoreOnboardingStore()
 const productStoreStore = useProductStore()
 const shopifyStore = useShopifyStore()
 const utilStore = useUtilStore()
+const netSuiteStore = useNetSuiteStore()
 const props = defineProps<{ productStoreId?: string }>()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
@@ -1174,6 +1217,7 @@ const isSettingUpRealtimeOrderJobs = ref(false)
 const isSettingUpAccessPackage = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
+const isSavingShopifyStarterMappings = ref(false)
 const isLoadingSetupData = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
 const isLoadingShopifyMappingStatus = ref(false)
@@ -1216,6 +1260,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSettingUpAccessPackage.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
+    || isSavingShopifyStarterMappings.value
 })
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
@@ -1274,6 +1319,16 @@ const starterFacilityDescription = computed(() => {
 })
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
+const productTypes = computed(() => utilStore.productTypes)
+const salesChannels = computed(() => netSuiteStore.salesChannel)
+const paymentMethods = computed(() => netSuiteStore.paymentMethods)
+const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
+const activeProductStoreShipmentMethods = computed(() => {
+  const now = Date.now()
+  return productStoreShipmentMethods.value.filter((method: any) => {
+    return (!method.fromDate || method.fromDate <= now) && (!method.thruDate || method.thruDate > now)
+  })
+})
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
 const shopifyMappingAreas = computed(() => [
@@ -1316,6 +1371,9 @@ const shopifyMappingAreas = computed(() => [
 const readyShopifyMappingAreaCount = computed(() => {
   return shopifyMappingAreas.value.filter((mapping) => mapping.count > 0).length
 })
+const hasShopifyMappingGaps = computed(() => {
+  return !!linkedShopifyShopId.value && readyShopifyMappingAreaCount.value < shopifyMappingAreas.value.length
+})
 const shopifyMappingReadinessDescription = computed(() => {
   if (isLoadingShopifyMappingStatus.value) return translate("Checking Shopify mapping readiness.")
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before configuring mappings.")
@@ -1326,6 +1384,38 @@ const shopifyMappingStatusLabel = computed(() => {
 })
 const shopifyMappingBadgeColor = computed(() => {
   return readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length ? "success" : "warning"
+})
+const starterProductTypeId = computed(() => {
+  return productTypes.value.find((productType: any) => productType.productTypeId === "FINISHED_GOOD")?.productTypeId
+    || productTypes.value.find((productType: any) => productType.parentTypeId === "GOOD")?.productTypeId
+    || productTypes.value[0]?.productTypeId
+    || "FINISHED_GOOD"
+})
+const starterSalesChannelEnumId = computed(() => {
+  return salesChannels.value.find((salesChannel: any) => salesChannel.enumId === "WEB_SALES_CHANNEL")?.enumId
+    || salesChannels.value[0]?.enumId
+    || "WEB_SALES_CHANNEL"
+})
+const starterPaymentMethodTypeId = computed(() => {
+  return paymentMethods.value.find((paymentMethod: any) => paymentMethod.paymentMethodTypeId === "EXT_SHOP_OTHR_GTWAY")?.paymentMethodTypeId
+    || paymentMethods.value.find((paymentMethod: any) => paymentMethod.paymentMethodTypeId?.startsWith("EXT_SHOP_"))?.paymentMethodTypeId
+    || paymentMethods.value[0]?.paymentMethodTypeId
+    || "EXT_SHOP_OTHR_GTWAY"
+})
+const starterShipmentMethodTypeId = computed(() => {
+  return shipmentMethodTypes.value.find((shipmentMethod: any) => shipmentMethod.shipmentMethodTypeId === "STANDARD")?.shipmentMethodTypeId
+    || shipmentMethodTypes.value[0]?.shipmentMethodTypeId
+    || "STANDARD"
+})
+const starterShippingMethod = computed(() => {
+  return activeProductStoreShipmentMethods.value[0]
+    || {
+      shipmentMethodTypeId: starterShipmentMethodTypeId.value,
+      partyId: "_NA_"
+    }
+})
+const starterShopifyMappingDescription = computed(() => {
+  return translate("Creates first-pass product type, web sales channel, payment, shipping, and location-ready mappings for this Shopify shop.")
 })
 const canOpenShopifyProductSync = computed(() => {
   return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
@@ -1360,11 +1450,19 @@ const shopifyConnectionBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
 })
+const jwtTokenSubjectStatus = computed(() => productStoreStore.currentJwtTokenSubjects)
+const hasJwtTokenSubjectStatus = computed(() => !!jwtTokenSubjectStatus.value?.tokenSubjects)
+const jwtTokenSubjects = computed(() => Array.isArray(jwtTokenSubjectStatus.value?.tokenSubjects) ? jwtTokenSubjectStatus.value.tokenSubjects : [])
+const eligibleJwtTokenSubjects = computed(() => jwtTokenSubjects.value.filter((subject: any) => subject.canIssueToken))
+const selectedJwtTokenSubject = computed(() => {
+  return jwtTokenSubjects.value.find((subject: any) => subject.userLoginId === onboardingStore.draft.shopifyTokenSubjectUserLoginId) || null
+})
 const shopifyHandoffOmsUrl = computed(() => commonUtil.getMaargURL())
 const canGenerateShopifyToken = computed(() => {
   return !!onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
     && !!onboardingStore.draft.shopifyTokenPurpose.trim()
     && !!Number(onboardingStore.draft.shopifyTokenExpireIn || 0)
+    && (!hasJwtTokenSubjectStatus.value || (!!jwtTokenSubjectStatus.value?.canCreateToken && !!selectedJwtTokenSubject.value?.canIssueToken))
 })
 const shopifyTokenHandoffDescription = computed(() => {
   if (shopifyHandoffToken.value) return translate("Copy the OMS URL and JWT token into the Shopify app connection form.")
@@ -1546,6 +1644,16 @@ const workflowReadinessItems = computed(() => [
 const nextReadinessActions = computed(() => {
   const actions = []
 
+  if (hasShopifyMappingGaps.value) {
+    actions.push({
+      id: "shopifyMappings",
+      label: translate("Create starter Shopify mappings"),
+      detail: starterShopifyMappingDescription.value,
+      status: translate("Action"),
+      color: "primary"
+    })
+  }
+
   if (canOpenShopifyProductSync.value) {
     actions.push({
       id: "productSync",
@@ -1643,7 +1751,8 @@ const primaryActionLabel = computed(() => {
   return nextLabel.value
 })
 const isPrimaryActionDisabled = computed(() => {
-  if (isLastStep.value || isLoadingSetupData.value || isPrimaryActionLoading.value) return true
+  if (isLoadingSetupData.value || isPrimaryActionLoading.value) return true
+  if (isLastStep.value && currentStep.value.id !== "readiness") return true
 
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
     return !onboardingStore.draft.storeName.trim()
@@ -1805,6 +1914,17 @@ function updateShopifyTokenDraftField(field: "shopifyTokenSubjectUserLoginId" | 
   shopifyHandoffTokenExpirationTime.value = 0
 }
 
+function syncShopifyTokenSubjectDefault() {
+  const defaultSubject = jwtTokenSubjectStatus.value?.defaultSubjectUserLoginId || ""
+  if (!defaultSubject) return
+
+  const currentSubject = onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
+  const currentSubjectIsEligible = eligibleJwtTokenSubjects.value.some((subject: any) => subject.userLoginId === currentSubject)
+  if (!currentSubject || currentSubject === "nifi" || !currentSubjectIsEligible) {
+    onboardingStore.updateDraftField("shopifyTokenSubjectUserLoginId", defaultSubject)
+  }
+}
+
 async function generateShopifyHandoffToken() {
   if (!canGenerateShopifyToken.value) {
     commonUtil.showToast(translate("Enter an integration user, token purpose, and expiry."))
@@ -1962,11 +2082,16 @@ async function loadSetupData() {
       utilStore.fetchFacilities(),
       utilStore.fetchFacilityGroups(),
       utilStore.fetchProductIdentifiers(),
+      utilStore.fetchProductTypes(),
       utilStore.fetchShipmentMethodTypes(),
+      netSuiteStore.fetchSalesChannel(),
+      netSuiteStore.fetchPaymentMethods(),
       productStoreStore.fetchProductStores(),
+      productStoreStore.fetchJwtTokenSubjects({ category: "INTEGRATION" }),
       shopifyStore.fetchShopifyShops()
     ])
 
+    syncShopifyTokenSubjectDefault()
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
     await loadSelectedProductStoreSetup()
     await refreshShopifyMappingStatus()
@@ -2057,6 +2182,7 @@ async function loadSelectedProductStoreSetup() {
     productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
     productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
     productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
+    netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value }),
     refreshShopifyJobStatus(),
     refreshAccessPackageStatus()
   ])
@@ -2223,11 +2349,156 @@ async function handlePrimaryAction() {
     if (!pickupSettingsSaved) return
   }
 
+  if (currentStep.value.id === "readiness") {
+    if (requiredReadinessGapCount.value) {
+      const gapsResolved = await resolveReadinessGaps()
+      if (!gapsResolved) return
+    }
+
+    onboardingStore.markCurrentStepComplete()
+    commonUtil.showToast(translate("Product Store setup is ready."))
+    return
+  }
+
   onboardingStore.goNext()
+  window.setTimeout(() => emitter.emit("dismissLoader"), 0)
 
   if (productStoreId) {
     replaceRouteForProductStore(productStoreId)
   }
+}
+
+async function resolveReadinessGaps() {
+  if (hasShopifyMappingGaps.value) {
+    const mappingsCreated = await setupStarterShopifyMappings()
+    if (!mappingsCreated) return false
+  }
+
+  await loadSelectedProductStoreSetup()
+  await refreshShopifyMappingStatus()
+
+  if (requiredReadinessGapCount.value) {
+    const firstGap = requiredReadinessItems.value.find((item) => item.color === "warning")
+    const stepIdByGap: Record<string, string> = {
+      productStore: "name",
+      shopifyShop: "shopify",
+      shopifyMappings: "shopify",
+      productIdentity: "products",
+      facilities: "facilities",
+      locationMappings: "locations",
+      inventory: "inventory",
+      orders: "orders",
+      users: "users"
+    }
+    const nextStepId = firstGap ? stepIdByGap[firstGap.id] : ""
+    if (nextStepId) onboardingStore.selectStep(nextStepId)
+    commonUtil.showToast(translate("Some setup gaps still need attention."))
+    return false
+  }
+
+  return true
+}
+
+async function setupStarterShopifyMappings() {
+  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Create the Product Store and link Shopify first."))
+    return false
+  }
+
+  isSavingShopifyStarterMappings.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    await Promise.allSettled([
+      utilStore.fetchProductTypes(),
+      utilStore.fetchShipmentMethodTypes(),
+      netSuiteStore.fetchSalesChannel(),
+      netSuiteStore.fetchPaymentMethods(),
+      netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value })
+    ])
+
+    if (!activeProductStoreShipmentMethods.value.length) {
+      const shipmentMethodResp = await productStoreStore.createProductStoreShipmentMethod({
+        productStoreId: selectedProductStoreId.value,
+        productStoreShipMethId: buildStarterShipmentMethodId(selectedProductStoreId.value, starterShipmentMethodTypeId.value),
+        shipmentMethodTypeId: starterShipmentMethodTypeId.value,
+        partyId: "_NA_",
+        roleTypeId: "CARRIER",
+        sequenceNumber: 10
+      })
+      if (commonUtil.hasError(shipmentMethodResp)) throw shipmentMethodResp.data
+      await netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value })
+    }
+
+    const shopId = linkedShopifyShopId.value
+    const [
+      productTypeMappings,
+      orderSourceMappings,
+      paymentMethodMappings,
+      shippingMethodMappings
+    ] = await Promise.all([
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PRODUCT_TYPE" }),
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_ORDER_SOURCE" }),
+      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PAYMENT_TYPE" }),
+      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId })
+    ])
+
+    if (!productTypeMappings.length) {
+      const resp = await shopifyStore.createShopifyShopTypeMapping({
+        shopId,
+        mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
+        mappedKey: "Default",
+        mappedValue: starterProductTypeId.value
+      })
+      if (commonUtil.hasError(resp)) throw resp.data
+    }
+
+    if (!orderSourceMappings.length) {
+      const resp = await shopifyStore.createShopifyShopTypeMapping({
+        shopId,
+        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
+        mappedKey: "web",
+        mappedValue: starterSalesChannelEnumId.value
+      })
+      if (commonUtil.hasError(resp)) throw resp.data
+    }
+
+    if (!paymentMethodMappings.length) {
+      const resp = await shopifyStore.createShopifyShopTypeMapping({
+        shopId,
+        mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
+        mappedKey: "manual",
+        mappedValue: starterPaymentMethodTypeId.value
+      })
+      if (commonUtil.hasError(resp)) throw resp.data
+    }
+
+    if (!shippingMethodMappings.length) {
+      const shippingMethod = starterShippingMethod.value
+      const resp = await shopifyStore.createShopifyShopCarrierShipment({
+        shopId,
+        shipmentMethodTypeId: shippingMethod.shipmentMethodTypeId,
+        shopifyShippingMethod: "Standard",
+        carrierPartyId: shippingMethod.partyId || "_NA_"
+      })
+      if (commonUtil.hasError(resp)) throw resp.data
+    }
+
+    await refreshShopifyMappingStatus()
+    commonUtil.showToast(translate("Starter Shopify mappings created."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to create starter Shopify mappings."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingShopifyStarterMappings.value = false
+  }
+}
+
+function buildStarterShipmentMethodId(productStoreId: string, shipmentMethodTypeId: string) {
+  return `${productStoreId}_${shipmentMethodTypeId}`.slice(0, 40)
 }
 
 async function setupAccessPackage() {
@@ -3083,6 +3354,10 @@ async function openShopifyProductSync() {
 function getShopifyShopLabel(shop: any) {
   const name = shop.name || shop.myshopifyDomain || shop.shopId
   return shop.productStoreId ? `${name} (${shop.productStoreId})` : name
+}
+
+function getJwtTokenSubjectLabel(subject: any) {
+  return subject.userFullName ? `${subject.userFullName} (${subject.userLoginId})` : subject.userLoginId
 }
 
 function replaceRouteForProductStore(productStoreId: string) {
