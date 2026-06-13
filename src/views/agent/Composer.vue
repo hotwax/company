@@ -380,4 +380,19 @@ main {
   margin-block-start: var(--spacer-base);
 }
 
+ion-modal ion-checkbox {
+  width: 100%;
+}
+
+ion-modal ion-label {
+  min-width: 0;
+  white-space: normal;
+}
+
+ion-modal ion-label h2,
+ion-modal ion-label p {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 </style>
