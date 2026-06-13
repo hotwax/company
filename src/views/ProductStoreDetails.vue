@@ -17,10 +17,7 @@
                 {{ productStore.storeName || productStore.productStoreId || "Product store" }}
                 <p>{{ productStore.productStoreId }}</p>
               </ion-label>
-            </ion-item>
-            <ion-item button class="item-box" lines="none" @click="openSetupGuide()">
-              <ion-label class="ion-text-wrap">{{ translate("Setup guide") }}</ion-label>
-              <ion-note slot="end">{{ translate("Resume") }}</ion-note>
+              <ion-button slot="end" fill="outline" @click="openSetupGuide()">{{ translate("Resume setup") }}</ion-button>
             </ion-item>
           </section>
         </div>
@@ -114,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonNote, IonPage, IonTextarea, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonPage, IonTextarea, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from '@common'
 import { useProductStore } from '@/store/productStore';
 import { computed, defineProps } from "vue";
