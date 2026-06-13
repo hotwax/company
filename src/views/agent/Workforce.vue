@@ -225,10 +225,6 @@ async function startConversation(agentId: string) {
   padding: 8px;
 }
 
-.workforce__conversation--active {
-  --background: var(--ion-color-light, #f4f5f8);
-}
-
 .workforce__thread {
   flex: 1;
   min-width: 0;
