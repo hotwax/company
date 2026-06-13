@@ -489,6 +489,27 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
+              <ion-item v-if="productImportProgressVisible">
+                <ion-label>
+                  {{ translate("Catalog import progress") }}
+                  <p>{{ productImportProgressDescription }}</p>
+                </ion-label>
+                <ion-badge :color="productImportProgressBadgeColor" slot="end">
+                  {{ productImportProgressLabel }}
+                </ion-badge>
+              </ion-item>
+              <template v-if="linkedShopifyShop">
+                <ion-list-header>
+                  <ion-label>{{ translate("Product import jobs") }}</ion-label>
+                </ion-list-header>
+                <ion-item v-for="job in productImportJobDetails" :key="job.key">
+                  <ion-label>
+                    {{ job.label }}
+                    <p>{{ job.detail }}</p>
+                  </ion-label>
+                  <ion-badge :color="job.color" slot="end">{{ job.status }}</ion-badge>
+                </ion-item>
+              </template>
             </ion-list>
 
             <ion-list v-else-if="currentStep.id === 'facilities'" lines="full">
@@ -686,7 +707,7 @@
                   fill="clear"
                   data-testid="onboarding-run-inventory-import"
                   :aria-label="translate('Queue Shopify inventory import')"
-                  :disabled="!linkedShopifyShopId || !mappedShopifyLocationCount || isQueueingInventoryImport"
+                  :disabled="!canQueueInventoryImport || isQueueingInventoryImport"
                   @click="queueInitialInventoryImport()"
                 >
                   <ion-spinner v-if="isQueueingInventoryImport" name="crescent" />
@@ -1176,6 +1197,7 @@ import {
   IonToggle,
   IonToolbar,
   modalController,
+  onIonViewDidLeave,
   onIonViewWillEnter
 } from "@ionic/vue"
 import { computed, ref } from "vue"
@@ -1188,16 +1210,21 @@ import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from 
 import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
 import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync"
 import { useUtilStore } from "@/store/util"
 import { useNetSuiteStore } from "@/store/netSuite"
+import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun"
+import { normalizeProductSyncStatus } from "@/utils/shopifyProductSyncWizard"
 import { generateInternalId } from "@/utils"
 import router from "@/router"
 
 const onboardingStore = useProductStoreOnboardingStore()
 const productStoreStore = useProductStore()
 const shopifyStore = useShopifyStore()
+const shopifyProductSyncStore = useShopifyProductSyncStore()
 const utilStore = useUtilStore()
 const netSuiteStore = useNetSuiteStore()
+const { fetchSyncRun: fetchProductImportSyncRun } = useShopifyProductSyncRun()
 const props = defineProps<{ productStoreId?: string }>()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
@@ -1219,6 +1246,7 @@ const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isSavingShopifyStarterMappings = ref(false)
 const isLoadingSetupData = ref(false)
+const isLoadingProductImportProgress = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
 const isLoadingShopifyMappingStatus = ref(false)
 const isLoadingAccessPackageStatus = ref(false)
@@ -1226,6 +1254,8 @@ const accessTemporaryPassword = ref("")
 const accessTemporaryPasswordVerify = ref("")
 const shopifyHandoffToken = ref("")
 const shopifyHandoffTokenExpirationTime = ref(0)
+const productImportProgressState = ref<any>({})
+const productImportRun = ref<any>(null)
 const shopifyLocationMappings = ref<any[]>([])
 const shopifyMappingCounts = ref<Record<string, number>>({
   productTypes: 0,
@@ -1279,6 +1309,7 @@ const linkedShopifyShop = computed(() => {
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
 const shopifyJobStatus = computed(() => productStoreStore.currentShopifyJobStatus)
 const hasShopifyJobStatus = computed(() => !!shopifyJobStatus.value?.requirements)
+let productImportProgressPoll: number | undefined
 const shopifyJobRequirements = computed(() => {
   return Array.isArray(shopifyJobStatus.value?.requirements) ? shopifyJobStatus.value.requirements : []
 })
@@ -1421,6 +1452,89 @@ const canOpenShopifyProductSync = computed(() => {
   return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
 })
 const canRunProductImport = computed(() => canOpenShopifyProductSync.value)
+const productImportJobDetails = computed(() => {
+  return [
+    {
+      key: "productSync",
+      fallbackLabel: translate("Queue product import"),
+      fallbackDetail: translate("Creates the product import system message for this Shopify shop.")
+    },
+    {
+      key: "productBulkSend",
+      fallbackLabel: translate("Send bulk operation"),
+      fallbackDetail: translate("Sends produced Shopify bulk query messages.")
+    },
+    {
+      key: "productBulkPoll",
+      fallbackLabel: translate("Poll bulk operation"),
+      fallbackDetail: translate("Polls Shopify until the bulk catalog result is ready.")
+    }
+  ].map((definition) => {
+    const job = getShopifyJobStatus(definition.key)
+    return {
+      key: definition.key,
+      label: job?.label ? translate(job.label) : definition.fallbackLabel,
+      detail: getShopifyJobDetail(job, definition.fallbackDetail),
+      status: getShopifyJobStatusLabel(definition.key),
+      color: getShopifyJobBadgeColor(definition.key)
+    }
+  })
+})
+const productImportProgressStatus = computed(() => {
+  if (!productImportProgressState.value?.systemMessageId && !productImportRun.value?.systemMessageId) return ""
+
+  return normalizeProductSyncStatus({
+    status: productImportProgressState.value?.status,
+    systemMessageState: productImportProgressState.value?.systemMessageState || productImportRun.value?.systemMessage?.statusId,
+    logStatusId: productImportProgressState.value?.logStatusId || productImportRun.value?.mdmLog?.statusId,
+    logId: productImportProgressState.value?.logId || productImportRun.value?.mdmLog?.id
+  })
+})
+const productImportProgressVisible = computed(() => {
+  return !!linkedShopifyShopId.value && (!!productImportProgressState.value?.systemMessageId || !!productImportRun.value?.systemMessageId || isLoadingProductImportProgress.value)
+})
+const productImportProgressLabel = computed(() => {
+  if (isLoadingProductImportProgress.value && !productImportProgressStatus.value) return translate("Checking")
+
+  switch (productImportProgressStatus.value) {
+    case "completed": return translate("Complete")
+    case "error": return translate("Error")
+    case "cancelled": return translate("Canceled")
+    case "importing": return translate("Importing")
+    case "running": return translate("Running")
+    case "sent": return translate("Sent")
+    case "queued": return translate("Queued")
+    default: return translate("Pending")
+  }
+})
+const productImportProgressBadgeColor = computed(() => {
+  switch (productImportProgressStatus.value) {
+    case "completed": return "success"
+    case "error":
+    case "cancelled": return "danger"
+    case "queued": return "warning"
+    case "running":
+    case "importing":
+    case "sent": return "primary"
+    default: return isLoadingProductImportProgress.value ? "primary" : "medium"
+  }
+})
+const productImportProgressDescription = computed(() => {
+  const run = productImportRun.value || {}
+  const systemMessageId = productImportProgressState.value?.systemMessageId || run.systemMessageId
+  if (!systemMessageId) return translate("No catalog import has been queued yet.")
+
+  const details = [`${translate("System message")} ${systemMessageId}`]
+  const bulkOperationId = run.bulkOperation?.id || productImportProgressState.value?.bulkOperationId
+  if (bulkOperationId) details.push(`${translate("Bulk operation")} ${bulkOperationId}`)
+  if (run.bulkOperation?.objectCount) details.push(`${run.bulkOperation.objectCount} ${translate("objects")}`)
+  if (run.mdmLog?.id) details.push(`${translate("DataManager log")} ${run.mdmLog.id}`)
+  if (run.mdmLog?.totalRecordCount) details.push(`${run.mdmLog.totalRecordCount} ${translate("records")}`)
+  return details.join(" | ")
+})
+const isProductImportInProgress = computed(() => {
+  return ["queued", "sent", "running", "importing", "waiting"].includes(productImportProgressStatus.value)
+})
 const productSyncHandoffDescription = computed(() => {
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
   if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
@@ -1486,7 +1600,11 @@ const initialInventoryImportDescription = computed(() => {
   if (!shouldSetupShopifyInventoryReset.value) return translate("Skipped for this inventory source.")
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading inventory.")
   if (!mappedShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
+  if (isProductImportInProgress.value) return translate("Finish the Shopify product import before loading inventory.")
   return translate("Queue a Shopify bulk import that resets OMS facility inventory from current on-hand quantities.")
+})
+const canQueueInventoryImport = computed(() => {
+  return !!linkedShopifyShopId.value && !!mappedShopifyLocationCount.value && !isProductImportInProgress.value
 })
 const inventoryResetStatusLabel = computed(() => {
   return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
@@ -1739,7 +1857,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
   if (currentStep.value.id === "products" && linkedShopifyShopId.value) return translate("Save and import products")
   if (currentStep.value.id === "products") return translate("Save product identity")
-  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save and load inventory")
+  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) return translate("Save and load inventory")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure and load orders")
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
@@ -1865,16 +1983,26 @@ function getShopifyJobStatus(jobKey: string) {
   return jobs.find((job: any) => job.key === jobKey)
 }
 
+function getShopifyJobDetail(job: any, fallbackDetail: string) {
+  if (!job) return fallbackDetail
+  if (job.selectedJobName) return job.selectedJobName
+  if (job.expectedJobName) return job.expectedJobName
+  if (job.templateJobName) return job.templateJobName
+  return fallbackDetail
+}
+
 function getShopifyJobBadgeColor(jobKey: string) {
   const job = getShopifyJobStatus(jobKey)
-  if (job?.configured) return "success"
+  if (job?.ready || job?.enabled) return "success"
+  if (job?.configured) return "warning"
   if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return "success"
   return "warning"
 }
 
 function getShopifyJobStatusLabel(jobKey: string) {
   const job = getShopifyJobStatus(jobKey)
-  if (job?.configured) return translate("Ready")
+  if (job?.ready || job?.enabled) return translate("Ready")
+  if (job?.configured) return translate("Paused")
   if (job?.status === "template-ready") return translate("Template")
   if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return translate("Ready")
   return translate("Gap")
@@ -1993,6 +2121,70 @@ async function refreshShopifyJobStatus() {
   }
 }
 
+async function refreshProductImportProgress() {
+  if (!linkedShopifyShopId.value) {
+    productImportProgressState.value = {}
+    productImportRun.value = null
+    stopProductImportProgressPolling()
+    return false
+  }
+
+  if (isLoadingProductImportProgress.value) return false
+
+  isLoadingProductImportProgress.value = true
+  try {
+    const trackedSystemMessageId = productImportProgressState.value?.systemMessageId || ""
+    const syncRunState = await shopifyProductSyncStore.fetchProductUpdateSyncRunState({
+      shopId: linkedShopifyShopId.value,
+      systemMessageId: trackedSystemMessageId
+    })
+    const latestMessage = trackedSystemMessageId
+      ? syncRunState.systemMessages?.find((message: any) => message.systemMessageId === trackedSystemMessageId) || syncRunState.latestSystemMessage
+      : syncRunState.latestSystemMessage
+
+    if (!latestMessage?.systemMessageId) {
+      productImportRun.value = null
+      return false
+    }
+
+    const status = normalizeProductSyncStatus({
+      systemMessageState: latestMessage.statusId,
+      logStatusId: latestMessage.logStatusId,
+      logId: latestMessage.logId
+    })
+    productImportProgressState.value = {
+      ...productImportProgressState.value,
+      ...latestMessage,
+      systemMessageId: latestMessage.systemMessageId,
+      systemMessageState: latestMessage.statusId,
+      logStatusId: latestMessage.logStatusId,
+      logId: latestMessage.logId,
+      status,
+      completed: ["completed", "error", "cancelled"].includes(status)
+    }
+    productImportRun.value = await fetchProductImportSyncRun(latestMessage.systemMessageId, latestMessage)
+
+    if (productImportProgressState.value.completed) stopProductImportProgressPolling()
+    return true
+  } catch (error: any) {
+    logger.warn("Failed to refresh product import progress", error)
+    return false
+  } finally {
+    isLoadingProductImportProgress.value = false
+  }
+}
+
+function startProductImportProgressPolling() {
+  stopProductImportProgressPolling()
+  productImportProgressPoll = window.setInterval(refreshProductImportProgress, 5000)
+}
+
+function stopProductImportProgressPolling() {
+  if (!productImportProgressPoll) return
+  window.clearInterval(productImportProgressPoll)
+  productImportProgressPoll = undefined
+}
+
 async function refreshShopifyMappingStatus() {
   shopifyMappingCounts.value = {
     productTypes: 0,
@@ -2070,6 +2262,10 @@ onIonViewWillEnter(async () => {
   await loadSetupData()
 })
 
+onIonViewDidLeave(() => {
+  stopProductImportProgressPolling()
+})
+
 async function loadSetupData() {
   isLoadingSetupData.value = true
 
@@ -2095,6 +2291,8 @@ async function loadSetupData() {
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
     await loadSelectedProductStoreSetup()
     await refreshShopifyMappingStatus()
+    const loadedProductImportProgress = await refreshProductImportProgress()
+    if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
   } catch (error: any) {
     logger.error(error)
   }
@@ -2314,12 +2512,14 @@ async function handlePrimaryAction() {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
 
-    if (shouldSetupShopifyInventoryReset.value) {
+    if (shouldSetupShopifyInventoryReset.value && !isProductImportInProgress.value) {
       const inventoryResetConfigured = await setupInventoryResetJob()
       if (!inventoryResetConfigured) return
 
       const initialInventoryImportQueued = await queueInitialInventoryImport()
       if (!initialInventoryImportQueued) return
+    } else if (shouldSetupShopifyInventoryReset.value && isProductImportInProgress.value) {
+      commonUtil.showToast(translate("Inventory import will be available after products finish importing."))
     }
   }
 
@@ -2741,6 +2941,11 @@ async function queueInitialInventoryImport() {
     return false
   }
 
+  if (isProductImportInProgress.value) {
+    commonUtil.showToast(translate("Finish the Shopify product import before loading inventory."))
+    return false
+  }
+
   if (!mappedShopifyLocationCount.value) {
     commonUtil.showToast(translate("Map Shopify inventory locations before loading inventory."))
     return false
@@ -3071,7 +3276,7 @@ async function setupProductImportJob() {
       productStoreId: selectedProductStoreId.value,
       shopId: linkedShopifyShopId.value,
       productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId,
-      activateJobs: false
+      activateJobs: true
     })
 
     if (commonUtil.hasError(resp)) throw resp.data
@@ -3110,6 +3315,22 @@ async function queueInitialProductImport() {
     })
 
     if (commonUtil.hasError(resp)) throw resp.data
+
+    const systemMessageId = resp.data?.systemMessageId || resp.data?.progress?.systemMessageId || resp.data?.syncJobId || ""
+    if (systemMessageId) {
+      productImportProgressState.value = {
+        systemMessageId,
+        systemMessageState: "SmsgProduced",
+        status: "queued",
+        completed: false
+      }
+      productImportRun.value = null
+      await refreshProductImportProgress()
+      startProductImportProgressPolling()
+    } else {
+      const loadedProductImportProgress = await refreshProductImportProgress()
+      if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
+    }
 
     await refreshShopifyJobStatus()
     commonUtil.showToast(translate("Initial product import queued."))

@@ -55,6 +55,26 @@
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
         </ion-card>
+        <ion-card v-if="isLocalDevResetAvailable">
+          <ion-card-header>
+            <ion-card-subtitle>{{ translate("Local development only") }}</ion-card-subtitle>
+            <ion-card-title>{{ translate("Reset local Moqui database") }}</ion-card-title>
+          </ion-card-header>
+          <ion-card-content>
+            {{ translate("This drops the isolated localhost:8081 H2 database, restarts the local Moqui stack, and starts from a fresh development database. Do not use this while you need the current local data.") }}
+            <p>{{ translate("Confirmation phrase:") }} {{ localMoquiResetConfirmation }}</p>
+          </ion-card-content>
+          <ion-button color="danger" :disabled="isResettingLocalMoqui" @click="confirmResetLocalMoqui()">
+            <ion-spinner v-if="isResettingLocalMoqui" slot="start" name="crescent" />
+            {{ translate("Drop local DB and restart Moqui") }}
+          </ion-button>
+          <ion-item v-if="localMoquiResetResult" lines="none">
+            <ion-label>
+              {{ translate("Reset request started") }}
+              <p>{{ localMoquiResetResult }}</p>
+            </ion-label>
+          </ion-item>
+        </ion-card>
       </section>
       <hr />
       <DxpAppVersionInfo />
@@ -117,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, alertController, modalController } from "@ionic/vue";
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
@@ -169,6 +189,12 @@ const oldestSyncTime = computed(() => {
   if (!timestamps.length) return '';
   const oldest = Math.min(...timestamps);
   return DateTime.fromMillis(oldest).toLocaleString(DateTime.DATETIME_MED);
+})
+const localMoquiResetConfirmation = "DROP LOCAL MOQUI DB"
+const isResettingLocalMoqui = ref(false)
+const localMoquiResetResult = ref("")
+const isLocalDevResetAvailable = computed(() => {
+  return import.meta.env.DEV && ["localhost", "127.0.0.1"].includes(window.location.hostname)
 })
 
 const harmonizedFetchStatus = computed(() => [
@@ -298,6 +324,67 @@ function refreshCache() {
   productStoreStore.fetchProductStores();
   shopifyStore.fetchShopifyShops();
   fetchJobs();
+}
+
+async function confirmResetLocalMoqui() {
+  const alert = await alertController.create({
+    header: translate("Drop local Moqui database?"),
+    message: translate("This only affects the isolated local development stack on localhost:8081. Type the confirmation phrase exactly to continue."),
+    inputs: [
+      {
+        name: "confirmation",
+        type: "text",
+        placeholder: localMoquiResetConfirmation
+      }
+    ],
+    buttons: [
+      {
+        text: translate("Cancel"),
+        role: "cancel"
+      },
+      {
+        text: translate("Drop database"),
+        role: "destructive",
+        handler: (data) => {
+          if (String(data?.confirmation || "").trim() !== localMoquiResetConfirmation) {
+            commonUtil.showToast(translate("Confirmation phrase did not match."))
+            return false
+          }
+
+          resetLocalMoqui()
+          return true
+        }
+      }
+    ]
+  })
+  await alert.present()
+}
+
+async function resetLocalMoqui() {
+  isResettingLocalMoqui.value = true
+  localMoquiResetResult.value = ""
+
+  try {
+    const resp = await fetch("/__local-dev/moqui/reset", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        confirmation: localMoquiResetConfirmation
+      })
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(data?.error || translate("Failed to start local Moqui reset."))
+
+    localMoquiResetResult.value = data?.logPath || data?.message || translate("Moqui reset is running.")
+    commonUtil.showToast(translate("Local Moqui reset started."))
+  } catch (error: any) {
+    localMoquiResetResult.value = error?.message || translate("Failed to start local Moqui reset.")
+    commonUtil.showToast(localMoquiResetResult.value)
+  } finally {
+    isResettingLocalMoqui.value = false
+  }
 }
 
 defineProps({
