@@ -18,6 +18,7 @@ const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.
 const Klaviyo = () => import('@/views/Klaviyo.vue')
 const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
 const CloneProductStore = () => import('@/views/CloneProductStore.vue')
+const QuickBox = () => import('@/views/QuickBox.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -48,6 +49,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/netsuite/payment-methods', name: 'PaymentMethods', component: PaymentMethods, beforeEnter: authGuard },
   { path: '/netsuite/sales-channel', name: 'SalesChannel', component: SalesChannel, beforeEnter: authGuard },
   { path: '/netsuite/departments', name: 'Departments', component: Departments, beforeEnter: authGuard },
+  { path: '/quickbox', name: 'QuickBox', component: QuickBox, beforeEnter: authGuard },
   { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore, beforeEnter: authGuard },
   {
     path: '/add-configurations/:productStoreId',
