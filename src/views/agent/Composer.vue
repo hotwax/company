@@ -110,11 +110,11 @@
             />
           </div>
           <div class="actions">
-            <ion-button size="large" fill="outline" :disabled="composer.saving || !composer.agentName.trim()" @click="save">
+            <ion-button fill="outline" :disabled="composer.saving || !composer.agentName.trim()" @click="save">
               {{ translate("Save") }}
               <ion-icon slot="end" :icon="saveOutline" />
             </ion-button>
-            <ion-button size="large" :disabled="!composer.canActivate" @click="activate">
+            <ion-button :disabled="!composer.canActivate" @click="activate">
               {{ translate("Activate") }}
               <ion-icon slot="end" :icon="rocketOutline" />
             </ion-button>
@@ -343,6 +343,10 @@ main {
 .conversation {
   border: 1px solid var(--ion-color-medium);
   border-radius: 16px;
+  box-sizing: border-box;
+  height: clamp(500px, 70vh, 70vh);
+  max-height: 70vh;
+  min-height: 500px;
   overflow: hidden;
 }
 
