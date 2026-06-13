@@ -128,19 +128,6 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
     outputs: ["Order import jobs", "Webhook/SQS readiness", "Fallback sync jobs"]
   },
   {
-    id: "users",
-    group: "setup",
-    label: "Users",
-    summary: "Map the people who will operate the store into app roles, security groups, and facility scope.",
-    capability: "existing-api",
-    questions: [
-      "Which teams need access: stores, inventory, fulfillment, routing, or admins?",
-      "Which users should be associated with each facility?",
-      "Which order edit actions should customer service manage?"
-    ],
-    outputs: ["Users", "Security groups", "Facility and ProductStore scope"]
-  },
-  {
     id: "routing",
     group: "workflows",
     label: "Order routing and fulfillment",

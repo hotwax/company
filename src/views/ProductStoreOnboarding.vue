@@ -201,36 +201,13 @@
                 </ion-badge>
               </ion-item>
               <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-select
-                  v-if="eligibleJwtTokenSubjects.length"
-                  interface="popover"
-                  :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
-                  @ionChange="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Integration user") }}</div>
-                  <ion-select-option
-                    v-for="subject in eligibleJwtTokenSubjects"
-                    :key="subject.userLoginId"
-                    :value="subject.userLoginId"
-                  >
-                    {{ getJwtTokenSubjectLabel(subject) }}
-                  </ion-select-option>
-                </ion-select>
                 <ion-input
-                  v-else
                   :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
                   :label="translate('Integration user')"
                   label-placement="stacked"
                   :clear-input="true"
                   @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
                 />
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && hasJwtTokenSubjectStatus && !eligibleJwtTokenSubjects.length">
-                <ion-label>
-                  {{ translate("Integration user required") }}
-                  <p>{{ translate("Create or assign an Integration access user before generating a Shopify handoff token.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
               <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
                 <ion-select
@@ -818,101 +795,6 @@
               </ion-item>
             </ion-list>
 
-            <ion-list v-else-if="currentStep.id === 'users'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Access packages") }}
-                  <p>{{ accessPackageStatusDescription }}</p>
-                </ion-label>
-                <ion-badge :color="hasAccessPackageStatus ? 'success' : 'warning'" slot="end">
-                  {{ hasAccessPackageStatus ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Refresh access package status')"
-                  :disabled="isLoadingAccessPackageStatus"
-                  @click="refreshAccessPackageStatus()"
-                >
-                  <ion-spinner v-if="isLoadingAccessPackageStatus" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.accessUserLoginId"
-                  label-placement="stacked"
-                  :helper-text="accessUserLoginHelperText"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('accessUserLoginId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("User login ID") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="selectedAccessPackageNeedsParty">
-                <ion-input
-                  :value="onboardingStore.draft.accessPartyId"
-                  label-placement="stacked"
-                  :helper-text="translate('Needed for Product Store and facility-scoped access')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('accessPartyId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Party ID") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="accessPackages.length">
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.accessPackageId"
-                  @ionChange="onboardingStore.updateDraftField('accessPackageId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Access package") }}</div>
-                  <ion-select-option v-for="accessPackage in accessPackages" :key="accessPackage.packageId" :value="accessPackage.packageId">
-                    {{ accessPackage.packageName || accessPackage.packageId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-if="selectedAccessPackage">
-                <ion-label>
-                  {{ selectedAccessPackage.packageName || selectedAccessPackage.packageId }}
-                  <p>{{ selectedAccessPackage.description }}</p>
-                </ion-label>
-                <ion-badge :color="getAccessPackageBadgeColor(selectedAccessPackage)" slot="end">
-                  {{ getAccessPackageStatusLabel(selectedAccessPackage) }}
-                </ion-badge>
-              </ion-item>
-              <ion-item v-if="selectedAccessPackage?.requiresFacilities">
-                <ion-label>
-                  {{ translate("Facility scope") }}
-                  <p>{{ translate("Applies to every facility currently associated with this Product Store.") }}</p>
-                </ion-label>
-                <ion-note slot="end">
-                  {{ selectedAccessPackage.assignedFacilityCount || 0 }} / {{ selectedAccessPackage.facilityCount || facilityCount }}
-                </ion-note>
-              </ion-item>
-              <ion-item v-for="requirement in accessPackageRequirements" :key="requirement.id">
-                <ion-label>
-                  {{ translate(requirement.label) }}
-                  <p>{{ requirement.message }}</p>
-                </ion-label>
-                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
-                  {{ getRequirementStatusLabel(requirement) }}
-                </ion-badge>
-              </ion-item>
-              <ion-list-header v-if="accessPackages.length">
-                <ion-label>{{ translate("Package readiness") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-for="accessPackage in accessPackages" :key="accessPackage.packageId">
-                <ion-label>
-                  {{ accessPackage.packageName || accessPackage.packageId }}
-                  <p>{{ getAccessPackageDetail(accessPackage) }}</p>
-                </ion-label>
-                <ion-badge :color="getAccessPackageBadgeColor(accessPackage)" slot="end">
-                  {{ getAccessPackageStatusLabel(accessPackage) }}
-                </ion-badge>
-              </ion-item>
-            </ion-list>
-
             <ion-list v-else-if="currentStep.id === 'routing'" lines="full">
               <ion-item>
                 <ion-toggle
@@ -1203,7 +1085,6 @@ const isQueueingInventoryImport = ref(false)
 const isSettingUpOrderJobs = ref(false)
 const isQueueingOrderHistoryImport = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
-const isSettingUpAccessPackage = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
 const isSavingShopifyStarterMappings = ref(false)
@@ -1211,7 +1092,6 @@ const isLoadingSetupData = ref(false)
 const isLoadingProductImportProgress = ref(false)
 const isLoadingShopifyJobStatus = ref(false)
 const isLoadingShopifyMappingStatus = ref(false)
-const isLoadingAccessPackageStatus = ref(false)
 const shopifyHandoffToken = ref("")
 const shopifyHandoffTokenExpirationTime = ref(0)
 const productImportProgressState = ref<any>({})
@@ -1247,7 +1127,6 @@ const isPrimaryActionLoading = computed(() => {
     || isSettingUpOrderJobs.value
     || isQueueingOrderHistoryImport.value
     || isSettingUpRealtimeOrderJobs.value
-    || isSettingUpAccessPackage.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
     || isSavingShopifyStarterMappings.value
@@ -1527,19 +1406,11 @@ const shopifyConnectionBadgeColor = computed(() => {
   if (!hasShopifyJobStatus.value) return "warning"
   return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
 })
-const jwtTokenSubjectStatus = computed(() => productStoreStore.currentJwtTokenSubjects)
-const hasJwtTokenSubjectStatus = computed(() => !!jwtTokenSubjectStatus.value?.tokenSubjects)
-const jwtTokenSubjects = computed(() => Array.isArray(jwtTokenSubjectStatus.value?.tokenSubjects) ? jwtTokenSubjectStatus.value.tokenSubjects : [])
-const eligibleJwtTokenSubjects = computed(() => jwtTokenSubjects.value.filter((subject: any) => subject.canIssueToken))
-const selectedJwtTokenSubject = computed(() => {
-  return jwtTokenSubjects.value.find((subject: any) => subject.userLoginId === onboardingStore.draft.shopifyTokenSubjectUserLoginId) || null
-})
 const shopifyHandoffOmsUrl = computed(() => commonUtil.getMaargURL())
 const canGenerateShopifyToken = computed(() => {
   return !!onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
     && !!onboardingStore.draft.shopifyTokenPurpose.trim()
     && !!Number(onboardingStore.draft.shopifyTokenExpireIn || 0)
-    && (!hasJwtTokenSubjectStatus.value || (!!jwtTokenSubjectStatus.value?.canCreateToken && !!selectedJwtTokenSubject.value?.canIssueToken))
 })
 const shopifyTokenHandoffDescription = computed(() => {
   if (shopifyHandoffToken.value) return translate("Copy the OMS URL and JWT token into the Shopify app connection form.")
@@ -1596,34 +1467,6 @@ const initialOrderHistoryImportDescription = computed(() => {
   if (!preferredOrderHistoryStartDate.value) return translate("Choose how far back to load Shopify order history.")
   if (!preferredOrderLaunchDate.value) return translate("Choose the HotWax go-live date for order import.")
   return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}. ${translate("Orders created before")} ${preferredOrderLaunchDate.value} ${translate("stay historical.")}`
-})
-const accessPackageStatus = computed(() => productStoreStore.currentAccessPackageStatus)
-const hasAccessPackageStatus = computed(() => !!accessPackageStatus.value?.packages)
-const accessPackages = computed(() => {
-  return Array.isArray(accessPackageStatus.value?.packages) ? accessPackageStatus.value.packages : []
-})
-const accessPackageRequirements = computed(() => {
-  return Array.isArray(accessPackageStatus.value?.requirements) ? accessPackageStatus.value.requirements : []
-})
-const selectedAccessPackage = computed(() => {
-  return accessPackages.value.find((accessPackage: any) => accessPackage.packageId === onboardingStore.draft.accessPackageId)
-    || accessPackages.value[0]
-    || null
-})
-const selectedAccessPackageNeedsParty = computed(() => {
-  return !!selectedAccessPackage.value?.requiresProductStore || !!selectedAccessPackage.value?.requiresFacilities
-})
-const accessUserLoginHelperText = computed(() => {
-  return translate("Apply setup to an existing OMS login")
-})
-const accessPackageStatusDescription = computed(() => {
-  if (!selectedProductStoreId.value) return translate("Create the Product Store before assigning user access.")
-  if (isLoadingAccessPackageStatus.value) return translate("Checking user access package readiness.")
-  if (!hasAccessPackageStatus.value) return translate("The backend access package endpoint is not available in this OMS yet.")
-
-  const gapCount = accessPackages.value.filter((accessPackage: any) => !accessPackage.configured).length
-  if (!gapCount) return translate("Access packages are ready to create or assign users.")
-  return `${gapCount} ${translate("access packages need security or permission setup.")}`
 })
 const requiredReadinessItems = computed(() => [
   buildReadinessItem({
@@ -1683,13 +1526,6 @@ const requiredReadinessItems = computed(() => [
     ready: orderImportStatusLabel.value === translate("Ready"),
     readyDetail: orderImportStatusDescription.value,
     gapDetail: orderImportStatusDescription.value
-  }),
-  buildReadinessItem({
-    id: "users",
-    label: translate("User access"),
-    ready: !!selectedAccessPackage.value?.assignedToUser,
-    readyDetail: selectedAccessPackage.value?.packageName || selectedAccessPackage.value?.packageId || translate("User access assigned."),
-    gapDetail: accessPackageStatusDescription.value
   })
 ])
 const workflowReadinessItems = computed(() => [
@@ -1765,14 +1601,6 @@ const nextReadinessActions = computed(() => {
     color: orderImportBadgeColor.value
   })
 
-  actions.push({
-    id: "userAccess",
-    label: translate("Assign store users"),
-    detail: accessPackageStatusDescription.value,
-    status: selectedAccessPackage.value?.assignedToUser ? translate("Assigned") : translate("Action"),
-    color: selectedAccessPackage.value?.assignedToUser ? "success" : "primary"
-  })
-
   return actions
 })
 const requiredReadinessGapCount = computed(() => requiredReadinessItems.value.filter((item) => item.color === "warning").length)
@@ -1825,9 +1653,6 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) return translate("Save and load inventory")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure and load orders")
-  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
-    return translate("Apply access package")
-  }
   if (currentStep.value.id === "routing") return translate("Save routing defaults")
   if (currentStep.value.id === "pickup") return translate("Save pickup settings")
   if (currentStep.value.id === "readiness") return requiredReadinessGapCount.value ? translate("Resolve gaps") : translate("Finish setup")
@@ -1872,13 +1697,6 @@ const isPrimaryActionDisabled = computed(() => {
       || !linkedShopifyShopId.value
       || !preferredOrderHistoryStartDate.value
       || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
-  }
-
-  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
-    return !selectedProductStoreId.value
-      || !onboardingStore.draft.accessUserLoginId.trim()
-      || (selectedAccessPackageNeedsParty.value && !onboardingStore.draft.accessPartyId.trim())
-      || !onboardingStore.draft.accessPackageId
   }
 
   if (currentStep.value.id === "routing") {
@@ -1962,49 +1780,10 @@ function getShopifyJobStatusLabel(jobKey: string) {
   return translate("Gap")
 }
 
-function getAccessPackageBadgeColor(accessPackage: any) {
-  if (accessPackage?.assignedToUser) return "success"
-  if (accessPackage?.configured) return "primary"
-  return "warning"
-}
-
-function getAccessPackageStatusLabel(accessPackage: any) {
-  if (accessPackage?.assignedToUser) return translate("Assigned")
-  if (accessPackage?.configured) return translate("Ready")
-  return translate("Gap")
-}
-
-function getAccessPackageDetail(accessPackage: any) {
-  if (accessPackage?.assignedToUser) return translate("Assigned to selected user.")
-  const missingPermissions = accessPackage?.missingPermissions?.length || 0
-  const missingDefinitions = accessPackage?.missingPermissionDefinitions?.length || 0
-  if (missingPermissions || missingDefinitions) {
-    return `${missingPermissions + missingDefinitions} ${translate("permission items need setup.")}`
-  }
-  if (accessPackage?.requiresFacilities) {
-    return translate("Uses facility scope for Product Store facilities.")
-  }
-  if (accessPackage?.securityGroupId) {
-    return accessPackage.securityGroupId
-  }
-  return translate("No security group required.")
-}
-
 function updateShopifyTokenDraftField(field: "shopifyTokenSubjectUserLoginId" | "shopifyTokenPurpose" | "shopifyTokenExpireIn", value: string) {
   onboardingStore.updateDraftField(field, value)
   shopifyHandoffToken.value = ""
   shopifyHandoffTokenExpirationTime.value = 0
-}
-
-function syncShopifyTokenSubjectDefault() {
-  const defaultSubject = jwtTokenSubjectStatus.value?.defaultSubjectUserLoginId || ""
-  if (!defaultSubject) return
-
-  const currentSubject = onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
-  const currentSubjectIsEligible = eligibleJwtTokenSubjects.value.some((subject: any) => subject.userLoginId === currentSubject)
-  if (!currentSubject || currentSubject === "nifi" || !currentSubjectIsEligible) {
-    onboardingStore.updateDraftField("shopifyTokenSubjectUserLoginId", defaultSubject)
-  }
 }
 
 async function generateShopifyHandoffToken() {
@@ -2175,27 +1954,6 @@ async function refreshShopifyMappingStatus() {
   }
 }
 
-async function refreshAccessPackageStatus() {
-  if (!selectedProductStoreId.value) {
-    productStoreStore.currentAccessPackageStatus = null
-    return
-  }
-
-  isLoadingAccessPackageStatus.value = true
-  try {
-    await productStoreStore.fetchProductStoreAccessPackageStatus({
-      productStoreId: selectedProductStoreId.value,
-      userLoginId: onboardingStore.draft.accessUserLoginId.trim(),
-      partyId: onboardingStore.draft.accessPartyId.trim(),
-      packageId: onboardingStore.draft.accessPackageId
-    })
-  } catch (error: any) {
-    logger.warn("Failed to refresh access package status", error)
-  } finally {
-    isLoadingAccessPackageStatus.value = false
-  }
-}
-
 onIonViewWillEnter(async () => {
   if (routeProductStoreId.value) {
     onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
@@ -2205,7 +1963,6 @@ onIonViewWillEnter(async () => {
     productStoreStore.currentStoreSettings = {}
     productStoreStore.currentFacilities = []
     productStoreStore.currentShopifyJobStatus = null
-    productStoreStore.currentAccessPackageStatus = null
   }
 
   await loadSetupData()
@@ -2232,11 +1989,9 @@ async function loadSetupData() {
       netSuiteStore.fetchSalesChannel(),
       netSuiteStore.fetchPaymentMethods(),
       productStoreStore.fetchProductStores(),
-      productStoreStore.fetchJwtTokenSubjects({ category: "INTEGRATION" }),
       shopifyStore.fetchShopifyShops()
     ])
 
-    syncShopifyTokenSubjectDefault()
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
     await loadSelectedProductStoreSetup()
     await refreshShopifyMappingStatus()
@@ -2483,11 +2238,6 @@ async function handlePrimaryAction() {
     if (!initialOrderHistoryQueued) return
   }
 
-  if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
-    const accessPackageApplied = await setupAccessPackage()
-    if (!accessPackageApplied) return
-  }
-
   if (currentStep.value.id === "routing") {
     const routingDefaultsSaved = await saveRoutingDefaults()
     if (!routingDefaultsSaved) return
@@ -2536,8 +2286,7 @@ async function resolveReadinessGaps() {
       facilities: "facilities",
       locationMappings: "locations",
       inventory: "inventory",
-      orders: "orders",
-      users: "users"
+      orders: "orders"
     }
     const nextStepId = firstGap ? stepIdByGap[firstGap.id] : ""
     if (nextStepId) onboardingStore.selectStep(nextStepId)
@@ -2648,49 +2397,6 @@ async function setupStarterShopifyMappings() {
 
 function buildStarterShipmentMethodId(productStoreId: string, shipmentMethodTypeId: string) {
   return `${productStoreId}_${shipmentMethodTypeId}`.slice(0, 40)
-}
-
-async function setupAccessPackage() {
-  const userLoginId = onboardingStore.draft.accessUserLoginId.trim()
-  if (!selectedProductStoreId.value || !userLoginId || !onboardingStore.draft.accessPackageId) {
-    commonUtil.showToast(translate("Enter a user login ID and access package."))
-    return false
-  }
-
-  if (selectedAccessPackageNeedsParty.value && !onboardingStore.draft.accessPartyId.trim()) {
-    commonUtil.showToast(translate("Enter the Party ID for Product Store or facility scoped access."))
-    return false
-  }
-
-  isSettingUpAccessPackage.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.setupProductStoreAccessPackage({
-      productStoreId: selectedProductStoreId.value,
-      userLoginId,
-      partyId: onboardingStore.draft.accessPartyId.trim(),
-      packageId: onboardingStore.draft.accessPackageId
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    if (resp.data?.accessPackageStatus) {
-      productStoreStore.currentAccessPackageStatus = resp.data.accessPackageStatus
-    } else {
-      await refreshAccessPackageStatus()
-    }
-
-    commonUtil.showToast(translate("Access package applied successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to apply access package."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSettingUpAccessPackage.value = false
-  }
 }
 
 async function saveOrderDefaults() {

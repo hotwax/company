@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { api, commonUtil, logger } from '@common'
 import { useUtilStore } from './util'
-import { useUserStore } from './user'
 
 const SHOPIFY_JOB_SPECS = [
   { key: "productSync", label: "Queue product import", templateJobName: "sync_ShopifyProductUpdates", perShop: true, requiresEnabled: true },
@@ -15,91 +14,6 @@ const SHOPIFY_JOB_SPECS = [
 
 const ORDER_DATA_MANAGER_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "BULK_ORDER_HISTORY"]
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS = ["SHOP_READ_WRITE_ACCESS", "SHOP_RW_ACCESS"]
-const ACCESS_PACKAGES = [
-  {
-    packageId: "ADMIN",
-    packageName: "Admin",
-    description: "Owns company setup, app access, permissions, service jobs, and integration setup.",
-    securityGroupId: "COMMERCE_SUPER",
-    permissionIds: [
-      "COMMON_ADMIN", "COMPANY_APP_VIEW", "USERS_APP_VIEW", "APP_USER_CREATE",
-      "APP_SECURITY_GROUP_CREATE", "APP_PERMISSION_VIEW", "APP_PERMISSION_CREATE",
-      "APP_PERMISSION_UPDATE", "APP_UPDT_PRODUCT_STORE_CONFG", "APP_UPDT_FULFILLMENT_FACILITY",
-      "JOB_MANAGER_APP_VIEW", "JWT_TOKEN_CREATE"
-    ],
-    productStoreRoleTypeId: "APPLICATION_USER",
-    facilityRoleTypeId: "",
-    requiresProductStore: true,
-    requiresFacilities: false
-  },
-  {
-    packageId: "MERCHANDISING_MANAGER",
-    packageName: "Merchandising manager",
-    description: "Manages product and catalog setup for the Product Store.",
-    securityGroupId: "MERCHANDISE_MGR",
-    permissionIds: [
-      "COMPANY_APP_VIEW", "APP_PRODUCTS_VIEW", "APP_PRDT_DTLS_VIEW",
-      "APP_PRODUCT_IDENTIFIER_UPDATE"
-    ],
-    productStoreRoleTypeId: "APPLICATION_USER",
-    facilityRoleTypeId: "",
-    requiresProductStore: true,
-    requiresFacilities: false
-  },
-  {
-    packageId: "CSR",
-    packageName: "CSR",
-    description: "Handles customer service order actions such as pickup and cancellation flows.",
-    securityGroupId: "CSR",
-    permissionIds: [
-      "ORDERMGR_VIEW", "BOPIS_APP_VIEW", "BOPIS_POD_UPDATE",
-      "ORD_SALES_ORDER_CNCL", "APP_SHPGRP_DLVRADR_UPDATE",
-      "APP_SHPGRP_DLVRMTHD_UPDATE", "APP_SHPGRP_PCKUP_UPDATE"
-    ],
-    productStoreRoleTypeId: "",
-    facilityRoleTypeId: "",
-    requiresProductStore: false,
-    requiresFacilities: false
-  },
-  {
-    packageId: "FULFILLMENT_MANAGER",
-    packageName: "Fulfillment manager",
-    description: "Runs store fulfillment, BOPIS, transfers, and store inventory workflows for selected facilities.",
-    securityGroupId: "STORE_MANAGER",
-    permissionIds: [
-      "FULFILLMENT_APP_VIEW", "STOREFULFILLMENT_ADMIN", "BOPIS_APP_VIEW",
-      "BOPIS_POD_UPDATE", "BOPIS_REQUEST_TRANSFER_UPDATE", "INVCOUNT_APP_VIEW",
-      "INV_COUNT_ADMIN", "RECEIVING_APP_VIEW", "RECEIVING_ADMIN",
-      "TRANSFERS_APP_VIEW", "ORD_TRANSFER_ORDER_VIEW", "ORD_TRANSFER_ORDER_ADMIN"
-    ],
-    productStoreRoleTypeId: "",
-    facilityRoleTypeId: "WAREHOUSE_PICKER",
-    requiresProductStore: false,
-    requiresFacilities: true
-  },
-  {
-    packageId: "FULFILLMENT_ASSOCIATE",
-    packageName: "Fulfillment associate",
-    description: "Works in assigned stores or warehouses without administrator-level app permissions.",
-    securityGroupId: "",
-    permissionIds: [],
-    productStoreRoleTypeId: "",
-    facilityRoleTypeId: "WAREHOUSE_PICKER",
-    requiresProductStore: false,
-    requiresFacilities: true
-  },
-  {
-    packageId: "INTEGRATION",
-    packageName: "Integration",
-    description: "Connects and monitors integration jobs without store operation facility scope.",
-    securityGroupId: "INTEGRATION",
-    permissionIds: ["JOB_MANAGER_APP_VIEW", "COMPANY_APP_VIEW", "FACILITIES_APP_VIEW", "ORDER_ROUTING_APP_VIEW"],
-    productStoreRoleTypeId: "",
-    facilityRoleTypeId: "",
-    requiresProductStore: false,
-    requiresFacilities: false
-  }
-]
 
 function valueText(value: any) {
   return value == null ? "" : String(value).trim()
@@ -107,26 +21,6 @@ function valueText(value: any) {
 
 function splitValues(value: any) {
   return valueText(value).split(",").map((item) => item.trim()).filter(Boolean)
-}
-
-function toTime(value: any) {
-  if (!value) return 0
-  if (typeof value === "number") return value
-
-  const parsed = Date.parse(String(value))
-  return Number.isNaN(parsed) ? 0 : parsed
-}
-
-function isActiveDateRange(record: any = {}) {
-  const now = Date.now()
-  const fromDate = toTime(record.fromDate)
-  const thruDate = toTime(record.thruDate)
-
-  return (!fromDate || fromDate <= now) && (!thruDate || thruDate > now)
-}
-
-function uniqueValues(values: any[]) {
-  return Array.from(new Set(values.map(valueText).filter(Boolean))).sort()
 }
 
 function isTruthy(value: any) {
@@ -248,14 +142,27 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
 }
 
 async function storeServiceJobParameter(jobName: string, parameterName: string, parameterValue: any) {
-  return requireApiResponse({
-    url: `admin/serviceJobs/${jobName}/parameters`,
-    method: "put",
-    data: {
+  const job = await fetchServiceJob(jobName)
+  if (!job?.jobName) throw new Error(`Service job ${jobName} was not found.`)
+
+  const serviceJobParameters = Array.isArray(job.serviceJobParameters)
+    ? job.serviceJobParameters.map((parameter: any) => ({ ...parameter, jobName }))
+    : []
+  const existingParameter = serviceJobParameters.find((parameter: any) => parameter.parameterName === parameterName)
+  const parameterText = valueText(parameterValue)
+
+  if (existingParameter) {
+    existingParameter.parameterValue = parameterText
+  } else {
+    serviceJobParameters.push({
       jobName,
       parameterName,
-      parameterValue: valueText(parameterValue)
-    }
+      parameterValue: parameterText
+    })
+  }
+
+  return updateServiceJob(jobName, {
+    serviceJobParameters
   })
 }
 
@@ -507,152 +414,18 @@ function buildShopifyJobStatusFromRecords(payload: {
   }
 }
 
-function buildAccessPackageStatusFromRecords(payload: {
-  productStoreId: string
-  productStore: any
-  userLoginId?: string
-  partyId?: string
-  packageId?: string
-  facilities: any[]
-  securityGroups: any[]
-  permissions: any[]
-  userSecurityGroups: any[]
-  productStoreRoles: any[]
-  facilityParties: any[]
-}) {
-  const userLoginId = valueText(payload.userLoginId)
-  const partyId = valueText(payload.partyId)
-  const productStoreFacilities = payload.facilities || []
-  const groupRows = payload.securityGroups || []
-  const permissionRows = payload.permissions || []
-  const userSecurityGroups = (payload.userSecurityGroups || []).filter(isActiveDateRange)
-  const productStoreRoles = (payload.productStoreRoles || []).filter(isActiveDateRange)
-  const facilityParties = (payload.facilityParties || []).filter(isActiveDateRange)
-  const groupIds = uniqueValues(groupRows.map((row: any) => row.groupId))
-  const permissionIds = uniqueValues(permissionRows.map((row: any) => row.permissionId))
-
-  const packages = ACCESS_PACKAGES.map((accessPackage: any) => {
-    const securityGroupId = valueText(accessPackage.securityGroupId)
-    const productStoreRoleTypeId = valueText(accessPackage.productStoreRoleTypeId)
-    const facilityRoleTypeId = valueText(accessPackage.facilityRoleTypeId)
-    const securityGroupReady = !securityGroupId || groupIds.includes(securityGroupId)
-    const groupPermissionIds = uniqueValues(groupRows
-      .filter((row: any) => valueText(row.groupId) === securityGroupId)
-      .map((row: any) => row.permissionId))
-    const missingPermissions = securityGroupId
-      ? accessPackage.permissionIds.filter((permissionId: string) => !groupPermissionIds.includes(permissionId))
-      : []
-    const missingPermissionDefinitions = accessPackage.permissionIds.filter((permissionId: string) => !permissionIds.includes(permissionId))
-    const assignedSecurityGroup = !!securityGroupId && !!userLoginId && userSecurityGroups.some((row: any) => {
-      return valueText(row.userLoginId) === userLoginId && valueText(row.groupId) === securityGroupId
-    })
-    const assignedProductStoreRole = !!partyId && !!productStoreRoleTypeId && productStoreRoles.some((row: any) => {
-      return valueText(row.partyId) === partyId
-        && valueText(row.productStoreId) === payload.productStoreId
-        && valueText(row.roleTypeId) === productStoreRoleTypeId
-    })
-    const assignedFacilityIds = partyId && facilityRoleTypeId
-      ? productStoreFacilities.filter((facility: any) => facilityParties.some((row: any) => {
-        return valueText(row.partyId) === partyId
-          && valueText(row.facilityId) === valueText(facility.facilityId)
-          && valueText(row.roleTypeId) === facilityRoleTypeId
-      })).map((facility: any) => valueText(facility.facilityId))
-      : []
-    const assignedFacilityCount = assignedFacilityIds.length
-    const configured = securityGroupReady && !missingPermissions.length && !missingPermissionDefinitions.length
-    const assignedToUser = (!securityGroupId || assignedSecurityGroup)
-      && (!accessPackage.requiresProductStore || assignedProductStoreRole)
-      && (!accessPackage.requiresFacilities || (!!productStoreFacilities.length && assignedFacilityCount === productStoreFacilities.length))
-
-    return {
-      ...accessPackage,
-      missingPermissions,
-      missingPermissionDefinitions,
-      configured,
-      assignedToUser: userLoginId ? assignedToUser : false,
-      assignedSecurityGroup,
-      assignedProductStoreRole,
-      assignedFacilityIds,
-      assignedFacilityCount,
-      facilityCount: productStoreFacilities.length
-    }
-  })
-
-  const selectedPackageId = valueText(payload.packageId)
-  const requirementPackages = selectedPackageId
-    ? packages.filter((accessPackage: any) => valueText(accessPackage.packageId) === selectedPackageId)
-    : packages
-  const needsPartyScope = requirementPackages.some((accessPackage: any) => {
-    return accessPackage.requiresProductStore || accessPackage.requiresFacilities
-  })
-  const requirements = [
-    {
-      id: "productStore",
-      label: "Product Store",
-      complete: !!payload.productStore,
-      message: payload.productStore ? `Product Store ${payload.productStoreId} exists.` : "Create the Product Store before assigning access."
-    },
-    {
-      id: "facilities",
-      label: "Facilities",
-      complete: !requirementPackages.some((accessPackage: any) => accessPackage.requiresFacilities) || !!productStoreFacilities.length,
-      message: productStoreFacilities.length
-        ? `${productStoreFacilities.length} facilities are associated with this Product Store.`
-        : "Facility-scoped packages need Product Store facilities."
-    },
-    {
-      id: "userLogin",
-      label: "User login",
-      complete: !!userLoginId,
-      message: userLoginId
-        ? "Existing login will be validated by OMS when access is applied."
-        : "Select an existing user login before applying a package."
-    },
-    {
-      id: "partyScope",
-      label: "Party scope",
-      complete: !userLoginId || !needsPartyScope || !!partyId,
-      message: partyId
-        ? `Assignments will use party ${partyId}.`
-        : "Product Store and facility scope need the party ID for the selected login."
-    },
-    {
-      id: "userCreation",
-      label: "User creation",
-      complete: true,
-      message: "Existing-user access is applied from the app; new user creation still uses the OMS user API."
-    }
-  ]
-  let ready = !!payload.productStore && packages.some((accessPackage: any) => accessPackage.configured)
-  if (userLoginId) ready = ready && packages.some((accessPackage: any) => accessPackage.assignedToUser)
-
-  return {
-    productStoreId: payload.productStoreId,
-    userLoginId,
-    partyId,
-    facilities: productStoreFacilities,
-    packages,
-    requirements,
-    ready
-  }
-}
-
 export const useProductStore = defineStore('productStore', {
   state: () => ({
     current: {} as any,
     currentStoreSettings: {} as any,
     currentFacilities: [] as any[],
     currentShopifyJobStatus: null as any,
-    currentAccessPackageStatus: null as any,
-    currentJwtTokenSubjects: null as any,
     productStores: [] as any[],
     company: {} as any,
     netSuiteProductStore: null as any,
     fetchStatus: {
       productStores: 'none',
       shopifyJobStatus: 'none',
-      accessPackageStatus: 'none',
-      jwtTokenSubjects: 'none',
       lastFetched: 0
     }
   }),
@@ -662,8 +435,6 @@ export const useProductStore = defineStore('productStore', {
     getCurrentStoreSettings: (state) => state.currentStoreSettings,
     getCurrentFacilities: (state) => state.currentFacilities,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
-    getCurrentAccessPackageStatus: (state) => state.currentAccessPackageStatus,
-    getCurrentJwtTokenSubjects: (state) => state.currentJwtTokenSubjects,
     getProductStores: (state) => state.productStores,
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
@@ -863,282 +634,6 @@ export const useProductStore = defineStore('productStore', {
 
       this.currentShopifyJobStatus = shopifyJobStatus
       return shopifyJobStatus
-    },
-
-    async fetchProductStoreAccessPackageStatus(payload: {
-      productStoreId: string
-      userLoginId?: string
-      partyId?: string
-      packageId?: string
-    }) {
-      this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'pending' }
-      let accessPackageStatus = null as any
-
-      try {
-        const userLoginId = valueText(payload.userLoginId)
-        const partyId = valueText(payload.partyId)
-        const [productStoreResp, facilitiesResp, groupsResp, permissionsResp, userGroupsResp, productStoreRolesResp, facilityPartiesResp] = await Promise.all([
-          api({ url: `admin/productStores/${payload.productStoreId}`, method: "get" }),
-          api({ url: `admin/productStores/${payload.productStoreId}/facilities`, method: "get", params: { pageSize: 500 } }),
-          api({ url: "admin/groups", method: "get", params: { pageSize: 1000 } }),
-          api({ url: "admin/permissions", method: "get", params: { pageSize: 1000 } }),
-          userLoginId
-            ? api({ url: "admin/userSecurityGroups", method: "get", params: { userLoginId, pageSize: 1000 } })
-            : Promise.resolve({ data: [] }),
-          partyId
-            ? api({ url: `admin/productStores/${payload.productStoreId}/roles`, method: "get", params: { partyId, pageSize: 1000 } })
-            : Promise.resolve({ data: [] }),
-          partyId
-            ? api({ url: `admin/user/${partyId}/facilities`, method: "get", params: { partyId, pageSize: 1000 } })
-            : Promise.resolve({ data: [] })
-        ])
-
-        const failedResponse = [groupsResp, permissionsResp, facilitiesResp, userGroupsResp, productStoreRolesResp, facilityPartiesResp]
-          .find((resp: any) => commonUtil.hasError(resp))
-        if (failedResponse) throw failedResponse.data
-
-        accessPackageStatus = buildAccessPackageStatusFromRecords({
-          productStoreId: payload.productStoreId,
-          productStore: commonUtil.hasError(productStoreResp) ? null : productStoreResp.data,
-          userLoginId,
-          partyId,
-          packageId: payload.packageId,
-          facilities: getResponseList(facilitiesResp.data),
-          securityGroups: getResponseList(groupsResp.data),
-          permissions: getResponseList(permissionsResp.data),
-          userSecurityGroups: getResponseList(userGroupsResp.data),
-          productStoreRoles: getResponseList(productStoreRolesResp.data),
-          facilityParties: getResponseList(facilityPartiesResp.data)
-        })
-        this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'success', lastFetched: Date.now() }
-      } catch (error: any) {
-        logger.warn('Failed to fetch product store access package status', error)
-        this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'error' }
-      }
-
-      this.currentAccessPackageStatus = accessPackageStatus
-      return accessPackageStatus
-    },
-
-    async fetchJwtTokenSubjects(payload: { category?: string } = { category: "INTEGRATION" }) {
-      this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'pending' }
-      let jwtTokenSubjects = null as any
-
-      try {
-        const category = payload.category || "INTEGRATION"
-        const userStore = useUserStore()
-        const resp = await api({
-          url: "admin/userSecurityGroups",
-          method: "get",
-          params: { groupId: category, pageSize: 100 }
-        })
-        if (!commonUtil.hasError(resp)) {
-          const tokenSubjects = getResponseList(resp.data)
-            .filter((groupAssignment: any) => valueText(groupAssignment.userLoginId))
-            .filter(isActiveDateRange)
-            .map((groupAssignment: any) => ({
-              userLoginId: valueText(groupAssignment.userLoginId),
-              userId: valueText(groupAssignment.userLoginId),
-              userFullName: valueText(groupAssignment.userLoginId),
-              emailAddress: "",
-              partyId: "",
-              category,
-              inIntegrationGroup: category === "INTEGRATION",
-              canIssueToken: true,
-              gaps: []
-            }))
-            .sort((a: any, b: any) => a.userLoginId.localeCompare(b.userLoginId))
-
-          const defaultSubjectUserLoginId = tokenSubjects.find((subject: any) => subject.userLoginId === "nifi")?.userLoginId
-            || tokenSubjects[0]?.userLoginId
-            || ""
-
-          jwtTokenSubjects = {
-            tokenSubjects,
-            defaultSubjectUserLoginId,
-            canCreateToken: userStore.hasPermission("JWT_TOKEN_CREATE"),
-            category
-          }
-          this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'success', lastFetched: Date.now() }
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.warn('Failed to fetch JWT token subjects', error)
-        this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'error' }
-      }
-
-      this.currentJwtTokenSubjects = jwtTokenSubjects
-      return jwtTokenSubjects
-    },
-
-    async setupProductStoreAccessPackage(payload: {
-      productStoreId: string
-      userLoginId: string
-      partyId?: string
-      packageId?: string
-      packageIds?: string[]
-      facilityIds?: string[]
-    }) {
-      const packageIds = payload.packageIds?.length ? payload.packageIds : (payload.packageId ? [payload.packageId] : [])
-      const userLoginId = valueText(payload.userLoginId)
-      const partyId = valueText(payload.partyId)
-      if (!userLoginId) throw new Error("User login ID is required before assigning access.")
-      if (!packageIds.length) throw new Error("Select an access package before assigning access.")
-
-      const status = await this.fetchProductStoreAccessPackageStatus({
-        productStoreId: payload.productStoreId,
-        userLoginId,
-        partyId,
-        packageId: packageIds[0]
-      })
-      if (!status?.packages?.length) {
-        throw new Error("Could not load access package status. Check the generic access endpoints before applying access.")
-      }
-
-      const selectedPackages = [] as any[]
-      const setupGaps = [] as string[]
-      packageIds.forEach((packageId) => {
-        const accessPackage = status.packages.find((item: any) => valueText(item.packageId) === valueText(packageId))
-        if (!accessPackage) {
-          setupGaps.push(`Unknown access package ${packageId}.`)
-          return
-        }
-
-        selectedPackages.push(accessPackage)
-        if (accessPackage.securityGroupId && !accessPackage.configured) {
-          const missingPermissions = accessPackage.missingPermissions?.length
-            ? ` Missing permissions: ${accessPackage.missingPermissions.join(", ")}.`
-            : ""
-          const missingDefinitions = accessPackage.missingPermissionDefinitions?.length
-            ? ` Missing permission definitions: ${accessPackage.missingPermissionDefinitions.join(", ")}.`
-            : ""
-          setupGaps.push(`Security group ${accessPackage.securityGroupId} is not ready.${missingPermissions}${missingDefinitions}`)
-        }
-
-        if (accessPackage.requiresProductStore && accessPackage.productStoreRoleTypeId && !partyId) {
-          setupGaps.push(`Party ID is required for Product Store role ${accessPackage.productStoreRoleTypeId}.`)
-        }
-
-        if (accessPackage.requiresFacilities && accessPackage.facilityRoleTypeId) {
-          if (!partyId) {
-            setupGaps.push(`Party ID is required for facility role ${accessPackage.facilityRoleTypeId}.`)
-          } else if (!status.facilities?.length) {
-            setupGaps.push("No Product Store facilities are available for facility-scoped access.")
-          }
-        }
-      })
-
-      if (setupGaps.length) {
-        throw new Error(setupGaps.join(" "))
-      }
-
-      const appliedPackages = [] as any[]
-      const skipped = [] as any[]
-      const now = Date.now()
-
-      for (const accessPackage of selectedPackages) {
-        const actions = [] as string[]
-        const gaps = [] as string[]
-        if (accessPackage.securityGroupId) {
-          if (!accessPackage.assignedSecurityGroup) {
-            const securityGroupResp = await api({
-              url: "admin/userSecurityGroups",
-              method: "post",
-              data: {
-                userLoginId,
-                groupId: accessPackage.securityGroupId,
-                fromDate: now
-              }
-            })
-            if (commonUtil.hasError(securityGroupResp)) throw securityGroupResp.data
-            actions.push(`Assigned security group ${accessPackage.securityGroupId}.`)
-          }
-        }
-
-        if (accessPackage.requiresProductStore && accessPackage.productStoreRoleTypeId) {
-          if (!partyId) {
-            gaps.push(`Party ID is required for Product Store role ${accessPackage.productStoreRoleTypeId}.`)
-          } else {
-            const partyRoleResp = await api({
-              url: `admin/organizations/${partyId}/roles`,
-              method: "put",
-              data: { partyId, roleTypeId: accessPackage.productStoreRoleTypeId }
-            })
-            if (commonUtil.hasError(partyRoleResp)) throw partyRoleResp.data
-
-            if (!accessPackage.assignedProductStoreRole) {
-              const productStoreRoleResp = await api({
-                url: `admin/productStores/${payload.productStoreId}/roles`,
-                method: "put",
-                data: {
-                  productStoreId: payload.productStoreId,
-                  partyId,
-                  roleTypeId: accessPackage.productStoreRoleTypeId,
-                  fromDate: now
-                }
-              })
-              if (commonUtil.hasError(productStoreRoleResp)) throw productStoreRoleResp.data
-              actions.push(`Assigned Product Store role ${accessPackage.productStoreRoleTypeId}.`)
-            }
-          }
-        }
-
-        if (accessPackage.requiresFacilities && accessPackage.facilityRoleTypeId) {
-          if (!partyId) {
-            gaps.push(`Party ID is required for facility role ${accessPackage.facilityRoleTypeId}.`)
-          } else if (!status?.facilities?.length) {
-            gaps.push("No Product Store facilities are available for facility-scoped access.")
-          } else {
-            const partyRoleResp = await api({
-              url: `admin/organizations/${partyId}/roles`,
-              method: "put",
-              data: { partyId, roleTypeId: accessPackage.facilityRoleTypeId }
-            })
-            if (commonUtil.hasError(partyRoleResp)) throw partyRoleResp.data
-
-            const requestedFacilityIds = payload.facilityIds?.length ? payload.facilityIds : status.facilities.map((facility: any) => facility.facilityId)
-            const assignedFacilityIds = new Set(accessPackage.assignedFacilityIds || [])
-            for (const facilityId of requestedFacilityIds) {
-              if (assignedFacilityIds.has(facilityId)) continue
-              const facilityResp = await api({
-                url: `admin/user/${partyId}/facilities`,
-                method: "put",
-                data: {
-                  partyId,
-                  facilityId,
-                  roleTypeId: accessPackage.facilityRoleTypeId,
-                  fromDate: now
-                }
-              })
-              if (commonUtil.hasError(facilityResp)) throw facilityResp.data
-              actions.push(`Assigned facility ${facilityId}.`)
-            }
-          }
-        }
-
-        if (gaps.length) throw new Error(gaps.join(" "))
-        appliedPackages.push({ packageId: accessPackage.packageId, actions, gaps })
-      }
-
-      const accessPackageStatus = await this.fetchProductStoreAccessPackageStatus({
-        productStoreId: payload.productStoreId,
-        userLoginId,
-        partyId,
-        packageId: packageIds[0]
-      })
-      if (!accessPackageStatus?.packages?.length) {
-        throw new Error("Access was applied, but the updated access package status could not be refreshed.")
-      }
-
-      return {
-        status: 200,
-        data: {
-          accessPackageStatus,
-          appliedPackages,
-          skipped
-        }
-      }
     },
 
     async createJwtToken(payload: {
