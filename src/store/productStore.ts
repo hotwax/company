@@ -512,6 +512,7 @@ function buildAccessPackageStatusFromRecords(payload: {
   productStore: any
   userLoginId?: string
   partyId?: string
+  packageId?: string
   facilities: any[]
   securityGroups: any[]
   permissions: any[]
@@ -577,7 +578,11 @@ function buildAccessPackageStatusFromRecords(payload: {
     }
   })
 
-  const needsPartyScope = packages.some((accessPackage: any) => {
+  const selectedPackageId = valueText(payload.packageId)
+  const requirementPackages = selectedPackageId
+    ? packages.filter((accessPackage: any) => valueText(accessPackage.packageId) === selectedPackageId)
+    : packages
+  const needsPartyScope = requirementPackages.some((accessPackage: any) => {
     return accessPackage.requiresProductStore || accessPackage.requiresFacilities
   })
   const requirements = [
@@ -590,7 +595,7 @@ function buildAccessPackageStatusFromRecords(payload: {
     {
       id: "facilities",
       label: "Facilities",
-      complete: !packages.some((accessPackage: any) => accessPackage.requiresFacilities) || !!productStoreFacilities.length,
+      complete: !requirementPackages.some((accessPackage: any) => accessPackage.requiresFacilities) || !!productStoreFacilities.length,
       message: productStoreFacilities.length
         ? `${productStoreFacilities.length} facilities are associated with this Product Store.`
         : "Facility-scoped packages need Product Store facilities."
@@ -598,7 +603,7 @@ function buildAccessPackageStatusFromRecords(payload: {
     {
       id: "userLogin",
       label: "User login",
-      complete: !userLoginId || !!userLoginId,
+      complete: !!userLoginId,
       message: userLoginId
         ? "Existing login will be validated by OMS when access is applied."
         : "Select an existing user login before applying a package."
@@ -864,6 +869,7 @@ export const useProductStore = defineStore('productStore', {
       productStoreId: string
       userLoginId?: string
       partyId?: string
+      packageId?: string
     }) {
       this.fetchStatus = { ...this.fetchStatus, accessPackageStatus: 'pending' }
       let accessPackageStatus = null as any
@@ -896,6 +902,7 @@ export const useProductStore = defineStore('productStore', {
           productStore: commonUtil.hasError(productStoreResp) ? null : productStoreResp.data,
           userLoginId,
           partyId,
+          packageId: payload.packageId,
           facilities: getResponseList(facilitiesResp.data),
           securityGroups: getResponseList(groupsResp.data),
           permissions: getResponseList(permissionsResp.data),
@@ -976,28 +983,65 @@ export const useProductStore = defineStore('productStore', {
       const packageIds = payload.packageIds?.length ? payload.packageIds : (payload.packageId ? [payload.packageId] : [])
       const userLoginId = valueText(payload.userLoginId)
       const partyId = valueText(payload.partyId)
+      if (!userLoginId) throw new Error("User login ID is required before assigning access.")
+      if (!packageIds.length) throw new Error("Select an access package before assigning access.")
+
       const status = await this.fetchProductStoreAccessPackageStatus({
         productStoreId: payload.productStoreId,
         userLoginId,
-        partyId
+        partyId,
+        packageId: packageIds[0]
       })
+      if (!status?.packages?.length) {
+        throw new Error("Could not load access package status. Check the generic access endpoints before applying access.")
+      }
+
+      const selectedPackages = [] as any[]
+      const setupGaps = [] as string[]
+      packageIds.forEach((packageId) => {
+        const accessPackage = status.packages.find((item: any) => valueText(item.packageId) === valueText(packageId))
+        if (!accessPackage) {
+          setupGaps.push(`Unknown access package ${packageId}.`)
+          return
+        }
+
+        selectedPackages.push(accessPackage)
+        if (accessPackage.securityGroupId && !accessPackage.configured) {
+          const missingPermissions = accessPackage.missingPermissions?.length
+            ? ` Missing permissions: ${accessPackage.missingPermissions.join(", ")}.`
+            : ""
+          const missingDefinitions = accessPackage.missingPermissionDefinitions?.length
+            ? ` Missing permission definitions: ${accessPackage.missingPermissionDefinitions.join(", ")}.`
+            : ""
+          setupGaps.push(`Security group ${accessPackage.securityGroupId} is not ready.${missingPermissions}${missingDefinitions}`)
+        }
+
+        if (accessPackage.requiresProductStore && accessPackage.productStoreRoleTypeId && !partyId) {
+          setupGaps.push(`Party ID is required for Product Store role ${accessPackage.productStoreRoleTypeId}.`)
+        }
+
+        if (accessPackage.requiresFacilities && accessPackage.facilityRoleTypeId) {
+          if (!partyId) {
+            setupGaps.push(`Party ID is required for facility role ${accessPackage.facilityRoleTypeId}.`)
+          } else if (!status.facilities?.length) {
+            setupGaps.push("No Product Store facilities are available for facility-scoped access.")
+          }
+        }
+      })
+
+      if (setupGaps.length) {
+        throw new Error(setupGaps.join(" "))
+      }
+
       const appliedPackages = [] as any[]
       const skipped = [] as any[]
       const now = Date.now()
 
-      for (const packageId of packageIds) {
-        const accessPackage = status?.packages?.find((item: any) => item.packageId === packageId)
-        if (!accessPackage) {
-          skipped.push({ packageId, reason: "Unknown access package." })
-          continue
-        }
-
+      for (const accessPackage of selectedPackages) {
         const actions = [] as string[]
         const gaps = [] as string[]
         if (accessPackage.securityGroupId) {
-          if (!accessPackage.configured) {
-            gaps.push(`Security group ${accessPackage.securityGroupId} is not ready.`)
-          } else if (!accessPackage.assignedSecurityGroup) {
+          if (!accessPackage.assignedSecurityGroup) {
             const securityGroupResp = await api({
               url: "admin/userSecurityGroups",
               method: "post",
@@ -1073,14 +1117,20 @@ export const useProductStore = defineStore('productStore', {
           }
         }
 
-        appliedPackages.push({ packageId, actions, gaps })
+        if (gaps.length) throw new Error(gaps.join(" "))
+        appliedPackages.push({ packageId: accessPackage.packageId, actions, gaps })
       }
 
       const accessPackageStatus = await this.fetchProductStoreAccessPackageStatus({
         productStoreId: payload.productStoreId,
         userLoginId,
-        partyId
+        partyId,
+        packageId: packageIds[0]
       })
+      if (!accessPackageStatus?.packages?.length) {
+        throw new Error("Access was applied, but the updated access package status could not be refreshed.")
+      }
+
       return {
         status: 200,
         data: {

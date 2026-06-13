@@ -2271,7 +2271,8 @@ async function refreshAccessPackageStatus() {
     await productStoreStore.fetchProductStoreAccessPackageStatus({
       productStoreId: selectedProductStoreId.value,
       userLoginId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessUserLoginId.trim() : "",
-      partyId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessPartyId.trim() : ""
+      partyId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessPartyId.trim() : "",
+      packageId: onboardingStore.draft.accessPackageId
     })
   } catch (error: any) {
     logger.warn("Failed to refresh access package status", error)
