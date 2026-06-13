@@ -788,8 +788,8 @@
               </ion-item>
               <ion-item v-if="!hasShopifyJobStatus">
                 <ion-label>
-                  {{ translate("Backend status endpoint") }}
-                  <p>{{ translate("The setup flow can show job readiness after the maarg-util onboarding status endpoint is deployed.") }}</p>
+                  {{ translate("Shopify setup status") }}
+                  <p>{{ translate("The setup flow could not read Shopify readiness from the existing ProductStore, ShopifyShop, SystemMessageRemote, ServiceJob, and DataManager records.") }}</p>
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>

@@ -491,15 +491,15 @@ Add this candidate contract list to `docs/product-store-onboarding-rest-endpoint
 
 These are not ProductStoreSetting endpoints.
 
-| Action | Candidate endpoint | Purpose |
+| Action | Current direction | Purpose |
 | --- | --- | --- |
 | Status | `GET /rest/s1/admin/productStores/{productStoreId}/onboarding/status` | Read readiness across product store, shop, facilities, DataManager, users, and jobs. |
 | User setup | `POST /rest/s1/admin/users/setup` | Create one user and associate selected security groups/facilities/product stores. |
 | Inventory reset from Shopify | `POST /rest/s1/shopify/shops/{shopId}/inventory/reset-file-from-shopify` | Run Shopify bulk inventory query, transform `on_hand`, and create a DataManager reset log. |
-| Shopify jobs | `GET /rest/s1/admin/productStores/{productStoreId}/shopifyJobs/status` | Read draft job, cloned job, webhook, SQS, and access-scope readiness. |
-| Shopify order sync jobs | `PUT /rest/s1/admin/productStores/{productStoreId}/shopifyJobs/orderImport` | Configure fallback/history order sync jobs. |
-| Shopify inventory sync jobs | `PUT /rest/s1/admin/productStores/{productStoreId}/shopifyJobs/inventoryToShopify` | Configure outbound inventory sync and `SHOPIFY_INV_SYNC`. |
-| Realtime order import | `PUT /rest/s1/admin/productStores/{productStoreId}/shopifyJobs/realtimeOrders/awsSqs` | Store/validate AWS SQS connection and webhook EventBridge ARN. |
+| Shopify jobs | Company-side composition from existing ProductStore, ShopifyShop, SystemMessageRemote, ServiceJob, and DataManagerConfig records | Read draft job, cloned job, SQS, and access-scope readiness without a ProductStore-specific wrapper endpoint. |
+| Shopify order sync jobs | Existing `admin/serviceJobs` clone/update APIs | Configure fallback/history order sync jobs. |
+| Shopify inventory sync jobs | Existing `admin/serviceJobs` clone/update APIs plus ProductStoreSetting writes where needed | Configure outbound inventory sync and `SHOPIFY_INV_SYNC`. |
+| Realtime order import | Existing `admin/serviceJobs` update APIs for the selected SQS consumer | Store/validate AWS SQS connection details and consumer-job parameters; AWS provisioning remains a separate setup decision. |
 ```
 ````
 
@@ -510,11 +510,11 @@ In `docs/product-store-onboarding-cold-start-research.md`, add:
 ```markdown
 ## Backend Issue List
 
-1. Add onboarding status endpoint.
+1. Compose onboarding readiness in Company from existing ProductStore, ShopifyShop, SystemMessageRemote, ServiceJob, and DataManager records.
 2. Add generic inventory reset DataManager config and QOH-only reset service.
 3. Add Shopify bulk inventory reset orchestration.
 4. Add setup-safe user creation and security group association endpoint.
-5. Add Shopify job status/setup wrappers for order sync, inventory sync, and realtime SQS.
+5. Configure Shopify job setup from existing service-job clone/update APIs for order sync, inventory sync, and realtime SQS.
 6. Decide whether realtime SQS uses one instance-wide consumer or per-shop cloned consumers.
 7. Keep AWS EventBridge/SQS resource provisioning out of v1 unless least-privilege IAM and rollback are designed.
 ```
