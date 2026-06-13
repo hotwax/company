@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { api, commonUtil, logger } from '@common'
 import { useUtilStore } from './util'
+import { useUserStore } from './user'
 
 const SHOPIFY_JOB_SPECS = [
   { key: "productSync", label: "Product import", templateJobName: "sync_ShopifyProductUpdates", perShop: true },
@@ -19,6 +20,22 @@ function valueText(value: any) {
 
 function splitValues(value: any) {
   return valueText(value).split(",").map((item) => item.trim()).filter(Boolean)
+}
+
+function toTime(value: any) {
+  if (!value) return 0
+  if (typeof value === "number") return value
+
+  const parsed = Date.parse(String(value))
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function isActiveDateRange(record: any = {}) {
+  const now = Date.now()
+  const fromDate = toTime(record.fromDate)
+  const thruDate = toTime(record.thruDate)
+
+  return (!fromDate || fromDate <= now) && (!thruDate || thruDate > now)
 }
 
 function getResponseList(payload: any, keys: string[] = []) {
@@ -486,13 +503,40 @@ export const useProductStore = defineStore('productStore', {
       let jwtTokenSubjects = null as any
 
       try {
+        const category = payload.category || "INTEGRATION"
+        const userStore = useUserStore()
         const resp = await api({
-          url: "admin/jwtTokens/subjects",
+          url: "admin/userSecurityGroups",
           method: "get",
-          params: { category: payload.category || "INTEGRATION" }
+          params: { groupId: category, pageSize: 100 }
         })
         if (!commonUtil.hasError(resp)) {
-          jwtTokenSubjects = resp.data
+          const tokenSubjects = getResponseList(resp.data)
+            .filter((groupAssignment: any) => valueText(groupAssignment.userLoginId))
+            .filter(isActiveDateRange)
+            .map((groupAssignment: any) => ({
+              userLoginId: valueText(groupAssignment.userLoginId),
+              userId: valueText(groupAssignment.userLoginId),
+              userFullName: valueText(groupAssignment.userLoginId),
+              emailAddress: "",
+              partyId: "",
+              category,
+              inIntegrationGroup: category === "INTEGRATION",
+              canIssueToken: true,
+              gaps: []
+            }))
+            .sort((a: any, b: any) => a.userLoginId.localeCompare(b.userLoginId))
+
+          const defaultSubjectUserLoginId = tokenSubjects.find((subject: any) => subject.userLoginId === "nifi")?.userLoginId
+            || tokenSubjects[0]?.userLoginId
+            || ""
+
+          jwtTokenSubjects = {
+            tokenSubjects,
+            defaultSubjectUserLoginId,
+            canCreateToken: userStore.hasPermission("JWT_TOKEN_CREATE"),
+            category
+          }
           this.fetchStatus = { ...this.fetchStatus, jwtTokenSubjects: 'success', lastFetched: Date.now() }
         } else {
           throw resp.data
