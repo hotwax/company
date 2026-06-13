@@ -616,6 +616,24 @@
                   {{ inventoryResetStatusLabel }}
                 </ion-badge>
               </ion-item>
+              <ion-item v-if="shouldSetupShopifyInventoryReset">
+                <ion-icon slot="start" :icon="cloudDownloadOutline" />
+                <ion-label>
+                  {{ translate("Queue Shopify inventory import") }}
+                  <p>{{ initialInventoryImportDescription }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-run-inventory-import"
+                  :aria-label="translate('Queue Shopify inventory import')"
+                  :disabled="!linkedShopifyShopId || !mappedShopifyLocationCount || isQueueingInventoryImport"
+                  @click="queueInitialInventoryImport()"
+                >
+                  <ion-spinner v-if="isQueueingInventoryImport" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
+                </ion-button>
+              </ion-item>
             </ion-list>
 
             <ion-list v-else-if="currentStep.id === 'orders'" lines="full">
@@ -1102,6 +1120,7 @@ const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
 const isSettingUpInventoryResetJob = ref(false)
+const isQueueingInventoryImport = ref(false)
 const isSettingUpOrderJobs = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
 const isSettingUpAccessPackage = ref(false)
@@ -1140,6 +1159,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
     || isSettingUpInventoryResetJob.value
+    || isQueueingInventoryImport.value
     || isSettingUpOrderJobs.value
     || isSettingUpRealtimeOrderJobs.value
     || isSettingUpAccessPackage.value
@@ -1292,7 +1312,13 @@ const inventoryResetDescription = computed(() => {
 
   const inventoryRequirement = findShopifyRequirement("job.inventoryReset")
   if (inventoryRequirement?.message) return inventoryRequirement.message
-  return translate("Configure the Shopify inventory reset job after products and locations are mapped.")
+  return translate("Configure the Shopify inventory reset job and queue the initial on-hand inventory import after products and locations are mapped.")
+})
+const initialInventoryImportDescription = computed(() => {
+  if (!shouldSetupShopifyInventoryReset.value) return translate("Skipped for this inventory source.")
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading inventory.")
+  if (!mappedShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
+  return translate("Queue a Shopify bulk import that resets OMS facility inventory from current on-hand quantities.")
 })
 const inventoryResetStatusLabel = computed(() => {
   return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
@@ -1529,7 +1555,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
   if (currentStep.value.id === "products") return translate("Save product identity")
-  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save inventory setup")
+  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save and load inventory")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
   if (currentStep.value.id === "orders") return translate("Configure order jobs")
   if (currentStep.value.id === "users" && hasAccessPackageStatus.value) {
@@ -2083,6 +2109,9 @@ async function handlePrimaryAction() {
     if (shouldSetupShopifyInventoryReset.value) {
       const inventoryResetConfigured = await setupInventoryResetJob()
       if (!inventoryResetConfigured) return
+
+      const initialInventoryImportQueued = await queueInitialInventoryImport()
+      if (!initialInventoryImportQueued) return
     }
   }
 
@@ -2347,6 +2376,39 @@ async function setupInventoryResetJob() {
   } finally {
     emitter.emit("dismissLoader")
     isSettingUpInventoryResetJob.value = false
+  }
+}
+
+async function queueInitialInventoryImport() {
+  if (!linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before loading inventory."))
+    return false
+  }
+
+  if (!mappedShopifyLocationCount.value) {
+    commonUtil.showToast(translate("Map Shopify inventory locations before loading inventory."))
+    return false
+  }
+
+  isQueueingInventoryImport.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.runProductStoreShopifyInventoryReset({
+      shopId: linkedShopifyShopId.value
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    commonUtil.showToast(translate("Initial inventory import queued."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to queue initial inventory import."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isQueueingInventoryImport.value = false
   }
 }
 

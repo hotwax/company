@@ -298,6 +298,16 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async runProductStoreShopifyInventoryReset(payload: {
+      shopId: string
+    }) {
+      return api({
+        url: "sob/shopify/inventoryReset",
+        method: "post",
+        data: payload
+      })
+    },
+
     async setupProductStoreShopifyOrderImport(payload: {
       productStoreId: string
       shopId?: string
