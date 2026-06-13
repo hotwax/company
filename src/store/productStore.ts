@@ -298,6 +298,44 @@ export const useProductStore = defineStore('productStore', {
       return resp
     },
 
+    async setupProductStoreShopifyProductImport(payload: {
+      productStoreId: string
+      shopId?: string
+      productIdentifierEnumId?: string
+      activateJobs?: boolean
+    }) {
+      const resp = await api({
+        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/productImport`,
+        method: "post",
+        data: payload
+      })
+      if (!commonUtil.hasError(resp)) {
+        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+      }
+      return resp
+    },
+
+    async runProductStoreShopifyProductImport(payload: {
+      shopId: string
+      includeAll?: boolean
+      fromDate?: string
+      thruDate?: string
+    }) {
+      const data: any = {
+        shopId: payload.shopId,
+        includeAll: payload.includeAll !== false
+      }
+
+      if (payload.fromDate) data.fromDate = payload.fromDate
+      if (payload.thruDate) data.thruDate = payload.thruDate
+
+      return api({
+        url: "shopify/products/sync",
+        method: "post",
+        data
+      })
+    },
+
     async runProductStoreShopifyInventoryReset(payload: {
       shopId: string
     }) {

@@ -409,7 +409,7 @@
                 <ion-icon slot="start" :icon="syncOutline" />
                 <ion-label>
                   {{ translate("Product import workspace") }}
-                  <p>{{ translate("Review live Shopify catalog counts before starting the first import.") }}</p>
+                  <p>{{ translate("Review live Shopify catalog counts or troubleshoot product import history.") }}</p>
                 </ion-label>
                 <ion-button
                   slot="end"
@@ -421,6 +421,24 @@
                 >
                   <ion-spinner v-if="isSavingProductIdentity" name="crescent" />
                   <ion-icon v-else slot="icon-only" :icon="openOutline" />
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="linkedShopifyShop">
+                <ion-icon slot="start" :icon="cloudDownloadOutline" />
+                <ion-label>
+                  {{ translate("Initial product import") }}
+                  <p>{{ initialProductImportDescription }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-run-product-import"
+                  :aria-label="translate('Queue Shopify product import')"
+                  :disabled="!canRunProductImport || isSettingUpProductImportJob || isQueueingProductImport"
+                  @click="setupAndQueueInitialProductImport()"
+                >
+                  <ion-spinner v-if="isSettingUpProductImportJob || isQueueingProductImport" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
                 </ion-button>
               </ion-item>
               <ion-item v-else>
@@ -1144,6 +1162,8 @@ const isGeneratingShopifyToken = ref(false)
 const isImportingShopifyFacilities = ref(false)
 const isCreatingStarterFacility = ref(false)
 const isSavingProductIdentity = ref(false)
+const isSettingUpProductImportJob = ref(false)
+const isQueueingProductImport = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
 const isSettingUpInventoryResetJob = ref(false)
@@ -1184,6 +1204,8 @@ const isPrimaryActionLoading = computed(() => {
     || isImportingShopifyFacilities.value
     || isCreatingStarterFacility.value
     || isSavingProductIdentity.value
+    || isSettingUpProductImportJob.value
+    || isQueueingProductImport.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
     || isSettingUpInventoryResetJob.value
@@ -1308,12 +1330,18 @@ const shopifyMappingBadgeColor = computed(() => {
 const canOpenShopifyProductSync = computed(() => {
   return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
 })
+const canRunProductImport = computed(() => canOpenShopifyProductSync.value)
 const productSyncHandoffDescription = computed(() => {
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
   if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
   const productSyncRequirement = findShopifyRequirement("job.productSync")
   if (productSyncRequirement?.message) return productSyncRequirement.message
-  return translate("Open the existing first-time product sync wizard with this Product Store and identifier preselected.")
+  return translate("Configure recurring Shopify product import and queue the first catalog sync.")
+})
+const initialProductImportDescription = computed(() => {
+  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
+  if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
+  return translate("Configure the product sync job, then queue a Shopify import for the full catalog.")
 })
 const shopifySetupStatusDescription = computed(() => {
   if (!selectedProductStoreId.value) return translate("Create the Product Store before checking Shopify setup.")
@@ -1601,6 +1629,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) return translate("Create Shopify connection")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
+  if (currentStep.value.id === "products" && linkedShopifyShopId.value) return translate("Save and import products")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save and load inventory")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
@@ -2143,6 +2172,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "products") {
     const productIdentitySaved = await saveProductIdentity()
     if (!productIdentitySaved) return
+
+    if (linkedShopifyShopId.value) {
+      const productImportStarted = await setupAndQueueInitialProductImport(false)
+      if (!productImportStarted) return
+    }
   }
 
   if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) {
@@ -2737,6 +2771,85 @@ async function saveProductIdentity() {
   } finally {
     emitter.emit("dismissLoader")
     isSavingProductIdentity.value = false
+  }
+}
+
+async function setupAndQueueInitialProductImport(shouldSaveIdentity = true) {
+  if (shouldSaveIdentity) {
+    const productIdentitySaved = await saveProductIdentity()
+    if (!productIdentitySaved) return false
+  }
+
+  const productImportJobConfigured = await setupProductImportJob()
+  if (!productImportJobConfigured) return false
+
+  return queueInitialProductImport()
+}
+
+async function setupProductImportJob() {
+  if (!selectedProductStoreId.value || !linkedShopifyShopId.value || !onboardingStore.draft.productIdentifierEnumId) {
+    commonUtil.showToast(translate("Link a Shopify shop and choose a product identifier before configuring product import."))
+    return false
+  }
+
+  isSettingUpProductImportJob.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.setupProductStoreShopifyProductImport({
+      productStoreId: selectedProductStoreId.value,
+      shopId: linkedShopifyShopId.value,
+      productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId,
+      activateJobs: false
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    if (resp.data?.shopifyJobsStatus) {
+      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    } else {
+      await refreshShopifyJobStatus()
+    }
+
+    commonUtil.showToast(translate("Product import job configured successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to configure product import."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSettingUpProductImportJob.value = false
+  }
+}
+
+async function queueInitialProductImport() {
+  if (!linkedShopifyShopId.value) {
+    commonUtil.showToast(translate("Link a Shopify shop before importing products."))
+    return false
+  }
+
+  isQueueingProductImport.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const resp = await productStoreStore.runProductStoreShopifyProductImport({
+      shopId: linkedShopifyShopId.value,
+      includeAll: true
+    })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
+    await refreshShopifyJobStatus()
+    commonUtil.showToast(translate("Initial product import queued."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to queue initial product import."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isQueueingProductImport.value = false
   }
 }
 
