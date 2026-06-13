@@ -891,6 +891,17 @@
                   <div slot="label">{{ translate("User login ID") }}</div>
                 </ion-input>
               </ion-item>
+              <ion-item v-if="onboardingStore.draft.accessUserMode === 'existing' && selectedAccessPackageNeedsParty">
+                <ion-input
+                  :value="onboardingStore.draft.accessPartyId"
+                  label-placement="stacked"
+                  :helper-text="translate('Needed for Product Store and facility-scoped access')"
+                  :clear-input="true"
+                  @ionInput="onboardingStore.updateDraftField('accessPartyId', String($event.detail.value || ''))"
+                >
+                  <div slot="label">{{ translate("Party ID") }}</div>
+                </ion-input>
+              </ion-item>
               <ion-item v-if="onboardingStore.draft.accessUserMode === 'create'">
                 <ion-input
                   type="password"
@@ -1663,6 +1674,9 @@ const selectedAccessPackage = computed(() => {
     || accessPackages.value[0]
     || null
 })
+const selectedAccessPackageNeedsParty = computed(() => {
+  return !!selectedAccessPackage.value?.requiresProductStore || !!selectedAccessPackage.value?.requiresFacilities
+})
 const accessUserLoginHelperText = computed(() => {
   return onboardingStore.draft.accessUserMode === "create"
     ? translate("New user will use this login ID")
@@ -1941,6 +1955,7 @@ const isPrimaryActionDisabled = computed(() => {
 
     return !selectedProductStoreId.value
       || !onboardingStore.draft.accessUserLoginId.trim()
+      || (selectedAccessPackageNeedsParty.value && !onboardingStore.draft.accessPartyId.trim())
       || !onboardingStore.draft.accessPackageId
   }
 
@@ -2255,7 +2270,8 @@ async function refreshAccessPackageStatus() {
   try {
     await productStoreStore.fetchProductStoreAccessPackageStatus({
       productStoreId: selectedProductStoreId.value,
-      userLoginId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessUserLoginId.trim() : ""
+      userLoginId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessUserLoginId.trim() : "",
+      partyId: onboardingStore.draft.accessUserMode === "existing" ? onboardingStore.draft.accessPartyId.trim() : ""
     })
   } catch (error: any) {
     logger.warn("Failed to refresh access package status", error)
@@ -2740,6 +2756,9 @@ async function setupAccessPackage() {
       commonUtil.showToast(translate("Temporary passwords do not match."))
       return false
     }
+  } else if (selectedAccessPackageNeedsParty.value && !onboardingStore.draft.accessPartyId.trim()) {
+    commonUtil.showToast(translate("Enter the Party ID for Product Store or facility scoped access."))
+    return false
   }
 
   isSettingUpAccessPackage.value = true
@@ -2761,6 +2780,7 @@ async function setupAccessPackage() {
       : await productStoreStore.setupProductStoreAccessPackage({
         productStoreId: selectedProductStoreId.value,
         userLoginId,
+        partyId: onboardingStore.draft.accessPartyId.trim(),
         packageId: onboardingStore.draft.accessPackageId
       })
 

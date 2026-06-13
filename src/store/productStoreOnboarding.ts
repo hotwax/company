@@ -50,6 +50,7 @@ export interface ProductStoreOnboardingDraft {
   accessLastName: string
   accessEmailAddress: string
   accessUserLoginId: string
+  accessPartyId: string
   accessPackageId: string
   selectedWorkflows: string[]
 }
@@ -104,6 +105,7 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   accessLastName: "",
   accessEmailAddress: "",
   accessUserLoginId: "",
+  accessPartyId: "",
   accessPackageId: "FULFILLMENT_MANAGER",
   selectedWorkflows: ["routing", "pickup", "storeInventory"]
 }
