@@ -173,12 +173,14 @@ export const useUserStore = defineStore('user', {
       const { useNetSuiteStore } = await import('./netSuite')
       const { useShopifyStore } = await import('./shopify')
       const { useKlaviyoStore } = await import('./klaviyo')
+      const { useTikTokStore } = await import('./tiktok')
 
       useProductStore().clearProductStoreState()
       useUtilStore().clearUtilState()
       useNetSuiteStore().clearNetSuiteState()
       useShopifyStore().clearShopifyState()
       useKlaviyoStore().clear()
+      useTikTokStore().clearTikTokState()
     }
   },
 

@@ -33,7 +33,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { businessOutline, cartOutline, logoTiktok, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -53,6 +53,13 @@ const appPages = [
     childRoutes: ["/shopify-connection-details"],
     iosIcon: cartOutline,
     mdIcon: cartOutline,
+  },
+  {
+    title: "TikTok",
+    url: "/tiktok",
+    childRoutes: ["/tiktok-connection-details"],
+    iosIcon: logoTiktok,
+    mdIcon: logoTiktok,
   },
   {
     title: "Klaviyo",
