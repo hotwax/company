@@ -5,6 +5,7 @@ import { createRequire } from 'module'
 import { defineConfig } from 'vite'
 import { versionInfoUtil } from '../accxui/common/utils/versionInfoUtil'
 import { localApiServerDiscoveryPlugin } from '../accxui/common/vite/localApiServerDiscoveryPlugin'
+import { ideTraceVue } from 'chrome-ide-trace/vite'
 import pkg from './package.json'
 
 const require = createRequire(import.meta.url)
@@ -57,6 +58,7 @@ export default defineConfig({
     port: 8100
   },
   plugins: [
+    ideTraceVue(),
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
     vue(),
