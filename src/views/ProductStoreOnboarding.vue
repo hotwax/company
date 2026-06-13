@@ -467,6 +467,23 @@
                 </ion-label>
                 <ion-note slot="end">{{ facilityCount }}</ion-note>
               </ion-item>
+              <ion-item v-if="shouldCreateStarterFacility">
+                <ion-icon slot="start" :icon="storefrontOutline" />
+                <ion-label>
+                  {{ translate("Starter store") }}
+                  <p>{{ starterFacilityDescription }}</p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  :disabled="isCreatingStarterFacility"
+                  @click="createStarterFacility()"
+                >
+                  <ion-spinner v-if="isCreatingStarterFacility" name="crescent" />
+                  <ion-icon v-else slot="start" :icon="storefrontOutline" />
+                  {{ translate("Create store") }}
+                </ion-button>
+              </ion-item>
               <ion-item v-if="linkedShopifyShop">
                 <ion-icon slot="start" :icon="cloudDownloadOutline" />
                 <ion-label>
@@ -1080,6 +1097,7 @@ const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
 const isGeneratingShopifyToken = ref(false)
 const isImportingShopifyFacilities = ref(false)
+const isCreatingStarterFacility = ref(false)
 const isSavingProductIdentity = ref(false)
 const isSavingOrderDefaults = ref(false)
 const isSavingInventorySettings = ref(false)
@@ -1117,6 +1135,7 @@ const isPrimaryActionLoading = computed(() => {
     || isLinkingShopifyShop.value
     || isGeneratingShopifyToken.value
     || isImportingShopifyFacilities.value
+    || isCreatingStarterFacility.value
     || isSavingProductIdentity.value
     || isSavingOrderDefaults.value
     || isSavingInventorySettings.value
@@ -1159,6 +1178,16 @@ const orderJobRequirements = computed(() => {
 })
 const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
 const facilityCount = computed(() => productStoreStore.currentFacilities.length)
+const shouldCreateStarterFacility = computed(() =>
+  currentStep.value.id === "facilities"
+    && onboardingStore.draft.facilityMode === "One store"
+    && selectedProductStoreId.value
+    && facilityCount.value === 0
+)
+const starterFacilityDescription = computed(() => {
+  const storeName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
+  return `${translate("Create one Retail Store facility for")} ${storeName}.`
+})
 const facilityGroups = computed(() => utilStore.facilityGroups)
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
@@ -1498,6 +1527,7 @@ const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "general") return translate("Save order defaults")
   if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) return translate("Create Shopify connection")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
+  if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value) return translate("Save inventory setup")
   if (currentStep.value.id === "inventory") return translate("Save inventory settings")
@@ -1533,6 +1563,10 @@ const isPrimaryActionDisabled = computed(() => {
 
   if (currentStep.value.id === "products") {
     return !selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId
+  }
+
+  if (currentStep.value.id === "facilities") {
+    return !selectedProductStoreId.value
   }
 
   if (currentStep.value.id === "inventory") {
@@ -2035,6 +2069,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "products") {
     const productIdentitySaved = await saveProductIdentity()
     if (!productIdentitySaved) return
+  }
+
+  if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) {
+    const starterFacilityCreated = await createStarterFacility()
+    if (!starterFacilityCreated) return
   }
 
   if (currentStep.value.id === "inventory") {
@@ -2687,6 +2726,54 @@ async function openShopifyLocationImport() {
     commonUtil.showToast(translate("Failed to open facility import"))
   } finally {
     isImportingShopifyFacilities.value = false
+  }
+}
+
+async function createStarterFacility() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before creating a facility."))
+    return false
+  }
+
+  isCreatingStarterFacility.value = true
+  emitter.emit("presentLoader")
+
+  try {
+    const facilityId = generateInternalId(`${selectedProductStoreId.value}_STORE`).slice(0, 20)
+    const facilityName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
+    const existingFacility = utilStore.facilities.find((facility: any) => facility.facilityId === facilityId)
+
+    if (!existingFacility) {
+      const facilityResp = await utilStore.createFacility({
+        facilityId,
+        facilityName,
+        externalId: facilityId,
+        facilityTypeId: "RETAIL_STORE",
+        defaultInventoryItemTypeId: "NON_SERIAL_INV_ITEM"
+      })
+      if (commonUtil.hasError(facilityResp)) throw facilityResp.data
+    }
+
+    const associationResp = await productStoreStore.associateProductStoreFacility({
+      productStoreId: selectedProductStoreId.value,
+      facilityId
+    })
+    if (commonUtil.hasError(associationResp)) throw associationResp.data
+
+    await Promise.allSettled([
+      utilStore.fetchFacilities(),
+      productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
+    ])
+    onboardingStore.markCurrentStepComplete()
+    commonUtil.showToast(translate("Store facility created successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to create store facility."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isCreatingStarterFacility.value = false
   }
 }
 

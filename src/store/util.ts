@@ -106,6 +106,20 @@ export const useUtilStore = defineStore('util', {
       this.facilities = facilities
     },
 
+    async createFacility(payload: {
+      facilityId: string
+      facilityName: string
+      externalId?: string
+      facilityTypeId: string
+      defaultInventoryItemTypeId?: string
+    }) {
+      return api({
+        url: "admin/facilities",
+        method: "post",
+        data: payload
+      })
+    },
+
     async fetchDBICCountries() {
       this.fetchStatus = { ...this.fetchStatus, dbicCountries: 'pending' }
       let countries: any[] = []
