@@ -138,20 +138,32 @@
             </ion-buttons>
             <ion-title>{{ translate("Select tools") }}</ion-title>
           </ion-toolbar>
+          <ion-toolbar>
+            <ion-searchbar :placeholder="translate('Search tools')" v-model="toolQueryString" />
+          </ion-toolbar>
+          <ion-toolbar>
+            <ion-chip :outline="toolEffectFilter !== 'all'" @click="toolEffectFilter = 'all'">
+              {{ translate("All") }}
+            </ion-chip>
+            <ion-chip :outline="toolEffectFilter !== 'AI_TOOL_READ_ONLY'" @click="toolEffectFilter = 'AI_TOOL_READ_ONLY'">
+              {{ translate("Read only") }}
+            </ion-chip>
+            <ion-chip :outline="toolEffectFilter !== 'AI_TOOL_MUTATING'" @click="toolEffectFilter = 'AI_TOOL_MUTATING'">
+              {{ translate("Mutating") }}
+            </ion-chip>
+          </ion-toolbar>
         </ion-header>
 
         <ion-content>
-          <ion-searchbar :placeholder="translate('Search tools')" v-model="toolQueryString" />
-
           <ion-list>
             <ion-item v-for="tool in filteredTools" :key="tool.toolId" @click="toggleToolSelection(tool.toolId)">
               <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="space-between">
                 <ion-label>
-                  {{ tool.toolName }}
+                  <p>{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</p>
+                  <h2>{{ tool.toolName }}</h2>
                   <p>{{ tool.description }}</p>
                 </ion-label>
               </ion-checkbox>
-              <ion-note slot="end">{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</ion-note>
             </ion-item>
           </ion-list>
 
@@ -171,6 +183,7 @@ import {
   IonButton,
   IonButtons,
   IonCard,
+  IonChip,
   IonCheckbox,
   IonContent,
   IonFab,
@@ -185,7 +198,6 @@ import {
   IonListHeader,
   IonMenuButton,
   IonModal,
-  IonNote,
   IonPage,
   IonSearchbar,
   IonSelect,
@@ -208,6 +220,7 @@ const composer = useComposerStore();
 
 const showToolsModal = ref(false);
 const toolQueryString = ref("");
+const toolEffectFilter = ref("all");
 const draftToolIds = ref([] as string[]);
 
 const selectedModel = computed({
@@ -221,9 +234,12 @@ const selectedModel = computed({
 
 const filteredTools = computed(() => {
   const query = toolQueryString.value.trim().toLowerCase();
-  if(!query) return composer.toolCatalog;
-  return composer.toolCatalog.filter((tool) =>
-    [tool.toolName, tool.description, tool.toolId].some((value) => (value || "").toLowerCase().includes(query)));
+  return composer.toolCatalog.filter((tool) => {
+    const matchesEffect = toolEffectFilter.value === "all" || tool.effectEnumId === toolEffectFilter.value;
+    if(!matchesEffect) return false;
+    if(!query) return true;
+    return [tool.toolName, tool.description, tool.toolId].some((value) => (value || "").toLowerCase().includes(query));
+  });
 });
 
 onIonViewWillEnter(async () => {
@@ -233,6 +249,7 @@ onIonViewWillEnter(async () => {
 function openToolsModal() {
   draftToolIds.value = composer.selectedTools.map((tool) => tool.toolId);
   toolQueryString.value = "";
+  toolEffectFilter.value = "all";
   showToolsModal.value = true;
 }
 
