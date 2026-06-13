@@ -2,7 +2,11 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :defaultHref="backHref" />
+        <ion-buttons slot="start">
+          <ion-button aria-label="Back" @click="navigateBack">
+            <ion-icon slot="icon-only" :icon="arrowBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>{{ translate("Inventory locations") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="runAudit" :disabled="isAuditing">
@@ -110,14 +114,13 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, arrowBackOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
 const utilStore = useUtilStore();
@@ -284,12 +287,12 @@ async function runAudit() {
   }
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmLeaveWithDirtyMappings() {
   if (!isDirty.value) {
     return true;
   }
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     alertController.create({
       header: translate("Unsaved changes"),
       message: translate("You have unsaved changes. Would you like to save them before leaving?"),
@@ -318,7 +321,14 @@ onBeforeRouteLeave(async () => {
       ]
     }).then(alert => alert.present());
   });
-});
+}
+
+async function navigateBack() {
+  const canLeave = await confirmLeaveWithDirtyMappings();
+  if (canLeave) {
+    window.location.href = backHref.value;
+  }
+}
 </script>
 
 <style scoped>

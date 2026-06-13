@@ -1058,7 +1058,6 @@ import {
   onIonViewWillEnter
 } from "@ionic/vue"
 import { computed, ref } from "vue"
-import { useRoute, useRouter } from "vue-router"
 import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
@@ -1075,8 +1074,6 @@ const productStoreStore = useProductStore()
 const shopifyStore = useShopifyStore()
 const utilStore = useUtilStore()
 const props = defineProps<{ productStoreId?: string }>()
-const route = useRoute()
-const router = useRouter()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
 const isGeneratingShopifyToken = ref(false)
@@ -1109,13 +1106,7 @@ const shopifyMappingCounts = ref<Record<string, number>>({
 
 const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
-const routeProductStoreId = computed(() => {
-  if (props.productStoreId) return props.productStoreId
-
-  const productStoreId = (route as any)?.params?.productStoreId
-  if (Array.isArray(productStoreId)) return productStoreId[0] || ""
-  return productStoreId ? String(productStoreId) : ""
-})
+const routeProductStoreId = computed(() => props.productStoreId || "")
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
@@ -2653,11 +2644,6 @@ function openShopifyMappingPath(pathSegment: string) {
   const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
   const fallbackUrl = `${path}?returnTo=${encodeURIComponent(returnTo)}`
 
-  if ((router as any)?.push) {
-    router.push({ path, query: { returnTo } }).catch((error: any) => logger.error(error))
-    return
-  }
-
   window.location.href = fallbackUrl
 }
 
@@ -2682,11 +2668,6 @@ async function openShopifyProductSync() {
     returnTo
   }
   const fallbackQuery = new URLSearchParams(query).toString()
-
-  if ((router as any)?.push) {
-    router.push({ path, query }).catch((error: any) => logger.error(error))
-    return
-  }
 
   window.location.href = `${path}?${fallbackQuery}`
 }

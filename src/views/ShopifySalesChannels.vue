@@ -2,7 +2,11 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="backHref" />
+        <ion-buttons slot="start">
+          <ion-button aria-label="Back" @click="navigateBack">
+            <ion-icon slot="icon-only" :icon="arrowBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>{{ translate("Sales channels") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -64,13 +68,12 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
 
 const props = defineProps(['id']);
 const netSuiteStore = useNetSuiteStore();
@@ -211,12 +214,12 @@ async function saveAllDirtyMappings() {
   emitter.emit("dismissLoader");
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmLeaveWithDirtyMappings() {
   if (!isDirty.value) {
     return true;
   }
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     alertController.create({
       header: translate("Unsaved changes"),
       message: translate("You have unsaved changes. Would you like to save them before leaving?"),
@@ -245,7 +248,14 @@ onBeforeRouteLeave(async () => {
       ]
     }).then(alert => alert.present());
   });
-});
+}
+
+async function navigateBack() {
+  const canLeave = await confirmLeaveWithDirtyMappings();
+  if (canLeave) {
+    window.location.href = backHref.value;
+  }
+}
 </script>
 
 <style scoped>
