@@ -4,7 +4,9 @@ import { useUtilStore } from './util'
 import { useUserStore } from './user'
 
 const SHOPIFY_JOB_SPECS = [
-  { key: "productSync", label: "Product import", templateJobName: "sync_ShopifyProductUpdates", perShop: true },
+  { key: "productSync", label: "Queue product import", templateJobName: "sync_ShopifyProductUpdates", perShop: true, requiresEnabled: true },
+  { key: "productBulkSend", label: "Send product bulk operation", templateJobName: "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery", perShop: false, requiresEnabled: true },
+  { key: "productBulkPoll", label: "Poll product bulk operation", templateJobName: "poll_ShopifyBulkOperationResult", perShop: false, requiresEnabled: true },
   { key: "orderImport", label: "Order import", templateJobName: "queue_ShopifyOrderSync", perShop: true, requiresRemote: true, requiredType: "ShopifyOrderSync" },
   { key: "orderHistory", label: "Historic order import", templateJobName: "sync_ShopifyOrderHistory", perShop: true, requiresRemote: true, requiredType: "BulkOrderHistoryQuery" },
   { key: "realtimeOrderImport", label: "Real-time order SQS", templateJobName: "consume_ShopifyOrders_SQS", perShop: false },
@@ -127,6 +129,10 @@ function uniqueValues(values: any[]) {
   return Array.from(new Set(values.map(valueText).filter(Boolean))).sort()
 }
 
+function isTruthy(value: any) {
+  return value === true || ["true", "y", "yes", "1"].includes(valueText(value).toLowerCase())
+}
+
 function getResponseList(payload: any, keys: string[] = []) {
   if (Array.isArray(payload)) return payload
   for (const key of keys) {
@@ -171,6 +177,174 @@ function buildRequirement(id: string, label: string, complete: boolean, message:
     complete,
     message
   }
+}
+
+function buildSuccessResponse(data: any) {
+  return {
+    status: 200,
+    data
+  }
+}
+
+async function requireApiResponse(config: any) {
+  const resp = await api(config)
+  if (commonUtil.hasError(resp)) throw resp.data
+  return resp
+}
+
+async function fetchServiceJob(jobName: string) {
+  try {
+    const resp = await api({
+      url: `admin/serviceJobs/${jobName}`,
+      method: "get",
+      params: { pageSize: 1000 }
+    })
+    if (commonUtil.hasError(resp)) return null
+    return resp.data?.jobDetail || resp.data || null
+  } catch (error: any) {
+    logger.warn(`Failed to fetch service job ${jobName}`, error)
+    return null
+  }
+}
+
+async function updateServiceJob(jobName: string, data: Record<string, any>) {
+  return requireApiResponse({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "put",
+    data: {
+      jobName,
+      ...data
+    }
+  })
+}
+
+async function ensureServiceJobFromTemplate(templateJobName: string, newJobName: string, activateJob?: boolean) {
+  let serviceJob = await fetchServiceJob(newJobName)
+  let created = false
+
+  if (!serviceJob?.jobName) {
+    await requireApiResponse({
+      url: `admin/serviceJobs/${templateJobName}/clone`,
+      method: "post",
+      data: {
+        newJobName,
+        copyParameters: true
+      }
+    })
+    serviceJob = await fetchServiceJob(newJobName)
+    created = true
+  }
+
+  if (isTruthy(activateJob)) {
+    await updateServiceJob(newJobName, { paused: "N" })
+  }
+
+  return {
+    jobName: newJobName,
+    templateJobName,
+    created,
+    activated: isTruthy(activateJob)
+  }
+}
+
+async function storeServiceJobParameter(jobName: string, parameterName: string, parameterValue: any) {
+  return requireApiResponse({
+    url: `admin/serviceJobs/${jobName}/parameters`,
+    method: "put",
+    data: {
+      jobName,
+      parameterName,
+      parameterValue: valueText(parameterValue)
+    }
+  })
+}
+
+function selectLinkedShop(linkedShops: any[], productStoreId: string, shopId?: string) {
+  const resolvedShopId = valueText(shopId)
+  if (resolvedShopId) {
+    const shop = linkedShops.find((item: any) => valueText(item.shopId) === resolvedShopId)
+    if (!shop) throw new Error(`ShopifyShop [${resolvedShopId}] is not linked to ProductStore [${productStoreId}].`)
+    return shop
+  }
+
+  const enabledShops = linkedShops.filter((shop: any) => shop.isEnabled !== "N")
+  return enabledShops[0] || linkedShops[0] || null
+}
+
+function selectShopRemote(systemMessageRemotes: any[], shop: any, systemMessageRemoteId?: string) {
+  const requestedRemoteId = valueText(systemMessageRemoteId)
+  if (requestedRemoteId) {
+    const remote = systemMessageRemotes.find((item: any) => valueText(item.systemMessageRemoteId) === requestedRemoteId)
+    if (!remote) throw new Error(`SystemMessageRemote [${requestedRemoteId}] not found.`)
+    return remote
+  }
+
+  const shopId = valueText(shop?.shopId)
+  const shopifyShopId = valueText(shop?.shopifyShopId)
+  const remoteById = systemMessageRemotes.reduce((remotes: Record<string, any>, remote: any) => {
+    const remoteId = valueText(remote.systemMessageRemoteId)
+    if (!remoteId) return remotes
+
+    if (
+      valueText(remote.internalId) === shopId
+      || (shopifyShopId && valueText(remote.remoteId) === shopifyShopId)
+      || remoteId === shopId
+    ) {
+      remotes[remoteId] = remote
+    }
+    return remotes
+  }, {})
+
+  return Object.values(remoteById).sort((a: any, b: any) => {
+    return valueText(a.systemMessageRemoteId).localeCompare(valueText(b.systemMessageRemoteId))
+  })[0] || null
+}
+
+async function fetchShopifySetupContext(payload: {
+  productStoreId: string
+  shopId?: string
+  systemMessageRemoteId?: string
+  requireRemote?: boolean
+}) {
+  const [productStoreResp, shopifyShopsResp, remotesResp] = await Promise.all([
+    requireApiResponse({ url: `admin/productStores/${payload.productStoreId}`, method: "get" }),
+    requireApiResponse({ url: "oms/shopifyShops/shops", method: "get", params: { productStoreId: payload.productStoreId, pageSize: 100 } }),
+    requireApiResponse({ url: "oms/systemMessageRemotes", method: "get", params: { pageSize: 500 } })
+  ])
+
+  const productStore = productStoreResp.data
+  if (!productStore?.productStoreId) throw new Error(`ProductStore [${payload.productStoreId}] not found.`)
+
+  const linkedShops = getResponseList(shopifyShopsResp.data).filter((shop: any) => {
+    return valueText(shop.productStoreId) === payload.productStoreId
+  })
+  const shop = selectLinkedShop(linkedShops, payload.productStoreId, payload.shopId)
+  if (!shop?.shopId) throw new Error(`No ShopifyShop is linked to ProductStore [${payload.productStoreId}].`)
+
+  const systemMessageRemotes = getResponseList(remotesResp.data, ["systemMessageRemoteList"])
+  const remote = selectShopRemote(systemMessageRemotes, shop, payload.systemMessageRemoteId)
+  if (payload.requireRemote && !remote?.systemMessageRemoteId) {
+    throw new Error(`No Shopify SystemMessageRemote is available for shop [${shop.shopId}].`)
+  }
+
+  return {
+    productStore,
+    shop,
+    remote
+  }
+}
+
+function normalizeJsonObjectText(value: any, fallback: Record<string, any> = {}) {
+  if (value == null || valueText(value) === "") return JSON.stringify(fallback)
+  if (typeof value === "string") {
+    const parsed = JSON.parse(value)
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      throw new Error("Expected a JSON object.")
+    }
+    return JSON.stringify(parsed)
+  }
+  if (typeof value === "object" && !Array.isArray(value)) return JSON.stringify(value)
+  throw new Error("Expected a JSON object.")
 }
 
 function buildShopifyJobStatusFromRecords(payload: {
@@ -255,6 +429,10 @@ function buildShopifyJobStatusFromRecords(payload: {
       return !!job
     })
     const configured = !!configuredJobs.length
+    const enabledJobs = configuredJobs.filter((job: any) => job.paused !== "Y")
+    const enabled = !!enabledJobs.length
+    const requiresEnabled = spec.requiresEnabled === true
+    const ready = requiresEnabled ? enabled : configured
     const templateJob = sanitizedCandidates.find((job: any) => job.jobName === spec.templateJobName) || null
     const expectedJob = sanitizedCandidates.find((job: any) => job.jobName === expectedJobName) || null
 
@@ -264,8 +442,10 @@ function buildShopifyJobStatusFromRecords(payload: {
       templateJobName: spec.templateJobName,
       expectedJobName,
       configured,
-      status: configured ? "configured" : (templateJob ? "template-ready" : "missing-template"),
-      selectedJobName: configuredJobs[0]?.jobName || null,
+      enabled,
+      ready,
+      status: ready ? (requiresEnabled ? "enabled" : "configured") : (configured ? "paused" : (templateJob ? "template-ready" : "missing-template")),
+      selectedJobName: enabledJobs[0]?.jobName || configuredJobs[0]?.jobName || null,
       templateJob,
       expectedJob,
       jobs: sanitizedCandidates
@@ -276,8 +456,8 @@ function buildShopifyJobStatusFromRecords(payload: {
     requirements.push(buildRequirement(
       `job.${jobStatus.key}`,
       `${jobStatus.label} job`,
-      jobStatus.configured,
-      jobStatus.configured ? `Configured by job ${jobStatus.selectedJobName}.` : `Configure ${jobStatus.expectedJobName || jobStatus.templateJobName}.`
+      jobStatus.ready,
+      jobStatus.ready ? `Ready through job ${jobStatus.selectedJobName}.` : `Configure ${jobStatus.expectedJobName || jobStatus.templateJobName}.`
     ))
   })
 
@@ -952,6 +1132,7 @@ export const useProductStore = defineStore('productStore', {
     async setupProductStoreShopifyInventoryReset(payload: {
       productStoreId: string
       shopId?: string
+      systemMessageRemoteId?: string
       activateJobs?: boolean
       inventoryResetAdditionalParameters?: Record<string, any>
       facilityGroupId?: string
@@ -959,15 +1140,35 @@ export const useProductStore = defineStore('productStore', {
       parentTypeId?: string
       productId?: string
     }) {
-      const resp = await api({
-        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/inventoryReset`,
-        method: "post",
-        data: payload
+      const context = await fetchShopifySetupContext({
+        productStoreId: payload.productStoreId,
+        shopId: payload.shopId,
+        systemMessageRemoteId: payload.systemMessageRemoteId,
+        requireRemote: true
       })
-      if (!commonUtil.hasError(resp)) {
-        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+
+      const additionalParameters = JSON.parse(normalizeJsonObjectText(payload.inventoryResetAdditionalParameters, {}))
+      ;(["facilityGroupId", "facilityTypeId", "parentTypeId", "productId"] as const).forEach((parameterName) => {
+        const parameterValue = valueText(payload[parameterName])
+        if (parameterValue) additionalParameters[parameterName] = parameterValue
+      })
+
+      const resolvedShopId = valueText(context.shop.shopId)
+      const inventoryResetJobName = `resetShopifyInventoryQoh_${resolvedShopId}`
+      const configuredJobs = [
+        await ensureServiceJobFromTemplate("resetShopifyInventoryQoh", inventoryResetJobName, payload.activateJobs)
+      ]
+
+      await storeServiceJobParameter(inventoryResetJobName, "systemMessageTypeId", "ResetInventoryQoh")
+      await storeServiceJobParameter(inventoryResetJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
+      await storeServiceJobParameter(inventoryResetJobName, "runAsBatch", "true")
+      await storeServiceJobParameter(inventoryResetJobName, "additionalParameters", JSON.stringify(additionalParameters))
+
+      const shopifyJobsStatus = await this.fetchProductStoreShopifyJobStatus(payload.productStoreId)
+      if (shopifyJobsStatus) {
+        this.currentShopifyJobStatus = shopifyJobsStatus
       }
-      return resp
+      return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
     },
 
     async setupProductStoreShopifyProductImport(payload: {
@@ -976,15 +1177,33 @@ export const useProductStore = defineStore('productStore', {
       productIdentifierEnumId?: string
       activateJobs?: boolean
     }) {
-      const resp = await api({
-        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/productImport`,
-        method: "post",
-        data: payload
+      const context = await fetchShopifySetupContext({
+        productStoreId: payload.productStoreId,
+        shopId: payload.shopId
       })
-      if (!commonUtil.hasError(resp)) {
-        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+
+      const resolvedShopId = valueText(context.shop.shopId)
+      const resolvedIdentifier = valueText(payload.productIdentifierEnumId || context.productStore.productIdentifierEnumId)
+      if (!resolvedIdentifier) {
+        throw new Error(`ProductStore [${payload.productStoreId}] must have productIdentifierEnumId before configuring Shopify product import.`)
       }
-      return resp
+
+      const productImportJobName = `sync_ShopifyProductUpdates_${resolvedShopId}`
+      const configuredJobs = [
+        await ensureServiceJobFromTemplate("sync_ShopifyProductUpdates", productImportJobName, payload.activateJobs),
+        await ensureServiceJobFromTemplate("send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery", "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery", payload.activateJobs),
+        await ensureServiceJobFromTemplate("poll_ShopifyBulkOperationResult", "poll_ShopifyBulkOperationResult", payload.activateJobs)
+      ]
+
+      await storeServiceJobParameter(productImportJobName, "shopId", resolvedShopId)
+      await storeServiceJobParameter(productImportJobName, "productStoreIds", payload.productStoreId)
+      await storeServiceJobParameter(productImportJobName, "shopifyProductIdentifier", resolvedIdentifier)
+
+      const shopifyJobsStatus = await this.fetchProductStoreShopifyJobStatus(payload.productStoreId)
+      if (shopifyJobsStatus) {
+        this.currentShopifyJobStatus = shopifyJobsStatus
+      }
+      return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
     },
 
     async runProductStoreShopifyProductImport(payload: {
@@ -1035,17 +1254,42 @@ export const useProductStore = defineStore('productStore', {
     async setupProductStoreShopifyOrderImport(payload: {
       productStoreId: string
       shopId?: string
+      systemMessageRemoteId?: string
       activateJobs?: boolean
+      orderImportAdditionalParameters?: Record<string, any> | string
+      windowDays?: number
     }) {
-      const resp = await api({
-        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/orderImport`,
-        method: "post",
-        data: payload
+      const context = await fetchShopifySetupContext({
+        productStoreId: payload.productStoreId,
+        shopId: payload.shopId,
+        systemMessageRemoteId: payload.systemMessageRemoteId,
+        requireRemote: true
       })
-      if (!commonUtil.hasError(resp)) {
-        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+
+      const resolvedShopId = valueText(context.shop.shopId)
+      const orderImportJobName = `queue_ShopifyOrderSync_${resolvedShopId}`
+      const orderHistoryJobName = `sync_ShopifyOrderHistory_${resolvedShopId}`
+      const additionalParameters = normalizeJsonObjectText(payload.orderImportAdditionalParameters, { thruDateBuffer: 1 })
+      const windowDays = payload.windowDays || 7
+      const configuredJobs = [
+        await ensureServiceJobFromTemplate("queue_ShopifyOrderSync", orderImportJobName, payload.activateJobs),
+        await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", orderHistoryJobName, payload.activateJobs)
+      ]
+
+      await storeServiceJobParameter(orderImportJobName, "systemMessageTypeId", "ShopifyOrderSync")
+      await storeServiceJobParameter(orderImportJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
+      await storeServiceJobParameter(orderImportJobName, "runAsBatch", "true")
+      await storeServiceJobParameter(orderImportJobName, "additionalParameters", additionalParameters)
+
+      await storeServiceJobParameter(orderHistoryJobName, "systemMessageTypeId", "BulkOrderHistoryQuery")
+      await storeServiceJobParameter(orderHistoryJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
+      await storeServiceJobParameter(orderHistoryJobName, "windowDays", windowDays)
+
+      const shopifyJobsStatus = await this.fetchProductStoreShopifyJobStatus(payload.productStoreId)
+      if (shopifyJobsStatus) {
+        this.currentShopifyJobStatus = shopifyJobsStatus
       }
-      return resp
+      return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
     },
 
     async setupProductStoreShopifyRealtimeOrderImport(payload: {
@@ -1055,15 +1299,53 @@ export const useProductStore = defineStore('productStore', {
       expireLockTime?: number
       activateJobs?: boolean
     }) {
-      const resp = await api({
-        url: `admin/productStores/${payload.productStoreId}/shopifyJobs/realtimeOrderImport`,
-        method: "post",
-        data: payload
+      const productStoreResp = await requireApiResponse({
+        url: `admin/productStores/${payload.productStoreId}`,
+        method: "get"
       })
-      if (!commonUtil.hasError(resp)) {
-        this.currentShopifyJobStatus = resp.data?.shopifyJobsStatus || this.currentShopifyJobStatus
+      if (!productStoreResp.data?.productStoreId) {
+        throw new Error(`ProductStore [${payload.productStoreId}] not found.`)
       }
-      return resp
+
+      const queueName = valueText(payload.queueName)
+      if (!queueName) throw new Error("queueName is required.")
+
+      const awsRemoteId = valueText(payload.awsRemoteId) || "AWS_CONFIG"
+      const remotesResp = await requireApiResponse({
+        url: "oms/systemMessageRemotes",
+        method: "get",
+        params: { pageSize: 500 }
+      })
+      const awsRemote = getResponseList(remotesResp.data, ["systemMessageRemoteList"]).find((remote: any) => {
+        return valueText(remote.systemMessageRemoteId) === awsRemoteId
+      })
+      if (!awsRemote) {
+        throw new Error(`SystemMessageRemote [${awsRemoteId}] not found. Configure the AWS SQS remote before enabling realtime order import.`)
+      }
+
+      const realtimeJobName = "consume_ShopifyOrders_SQS"
+      const realtimeJob = await fetchServiceJob(realtimeJobName)
+      if (!realtimeJob?.jobName) throw new Error(`ServiceJob [${realtimeJobName}] not found.`)
+
+      const jobUpdateParameters: Record<string, any> = {
+        expireLockTime: payload.expireLockTime || 10
+      }
+      if (isTruthy(payload.activateJobs)) jobUpdateParameters.paused = "N"
+      await updateServiceJob(realtimeJobName, jobUpdateParameters)
+      await storeServiceJobParameter(realtimeJobName, "queueName", queueName)
+      await storeServiceJobParameter(realtimeJobName, "systemMessageRemoteId", awsRemoteId)
+
+      const configuredJobs = [{
+        jobName: realtimeJobName,
+        templateJobName: realtimeJobName,
+        created: false,
+        activated: isTruthy(payload.activateJobs)
+      }]
+      const shopifyJobsStatus = await this.fetchProductStoreShopifyJobStatus(payload.productStoreId)
+      if (shopifyJobsStatus) {
+        this.currentShopifyJobStatus = shopifyJobsStatus
+      }
+      return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
     },
 
     async fetchCompany() {
