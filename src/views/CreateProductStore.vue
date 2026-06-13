@@ -47,6 +47,11 @@
           {{ translate("Manage configurations") }}
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
+
+        <ion-button class="ion-margin-top" fill="outline" router-link="/product-store-onboarding">
+          {{ translate("Preview guided setup") }}
+          <ion-icon slot="end" :icon="arrowForwardOutline"/>
+        </ion-button>
       </main>
     </ion-content>
   </ion-page>

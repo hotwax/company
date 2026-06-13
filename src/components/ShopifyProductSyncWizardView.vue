@@ -160,7 +160,7 @@
     <ion-item lines="none" class="circuit" button :disabled="!reviewReady" @click="$emit('open-mistake-modal')" v-if="currentStep === 'review'"
       data-testid="mistake-check">
       <ion-label>
-        <ion-icon slot="start" :icon="chipOutline" />
+        <ion-icon slot="start" :icon="hardwareChipOutline" />
         {{ translate("Am I making a mistake?") }}
       </ion-label>
     </ion-item>
@@ -618,7 +618,8 @@ import {
   checkmarkCircleOutline,
   shirtOutline,
   timeOutline,
-  alertCircleOutline
+  alertCircleOutline,
+  hardwareChipOutline
 } from "ionicons/icons";
 import { translate } from '@common';
 import { computed, defineEmits, defineProps } from "vue";

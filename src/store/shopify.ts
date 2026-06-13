@@ -50,6 +50,7 @@ export const useShopifyStore = defineStore('shopify', {
 
     async fetchShopifyShopsCarrierShipments(payload: any = {}) {
       let shopifyShopsCarrierShipments: any = {}, pageIndex = 0, resp: any
+      let shipments: any[] = []
       try {
         do {
           resp = await api({
@@ -58,6 +59,7 @@ export const useShopifyStore = defineStore('shopify', {
             params: { ...payload, pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp)) {
+            shipments = [...shipments, ...resp.data]
             const newShipments = resp.data.reduce((acc: any, item: any) => {
               acc[`${item.carrierPartyId}_${item.shipmentMethodTypeId}`] = {
                 carrierPartyId: item.carrierPartyId,
@@ -75,13 +77,14 @@ export const useShopifyStore = defineStore('shopify', {
         logger.error(error)
       }
       this.shopifyShopsCarrierShipments = shopifyShopsCarrierShipments
+      return shipments
     },
 
-    async fetchShopifyShopLocations() {
+    async fetchShopifyShopLocations(payload: any = {}) {
       let shopifyShopLocations: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await api({ url: "oms/shopifyShops/locations", method: "get", params: { pageSize: 100, pageIndex } })
+          resp = await api({ url: "oms/shopifyShops/locations", method: "get", params: { ...payload, pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             const newLocations = resp.data.reduce((acc: any, item: any) => {
               acc[item.facilityId] = item.shopifyLocationId
@@ -97,13 +100,16 @@ export const useShopifyStore = defineStore('shopify', {
         logger.error(error)
       }
       this.shopifyShopsLocations = shopifyShopLocations
+      return shopifyShopLocations
     },
 
-    async fetchShopifyTypeMappings(mappedTypeId: string) {
-      let shopifyTypeMappings: any = {}, pageIndex = 0, resp: any
+    async fetchShopifyTypeMappings(payload: string | { mappedTypeId: string, shopId?: string }) {
+      const mappedTypeId = typeof payload === "string" ? payload : payload.mappedTypeId
+      const params = typeof payload === "string" ? {} : { shopId: payload.shopId }
+      let shopifyTypeMappings: any = { [mappedTypeId]: [] }, pageIndex = 0, resp: any
       try {
         do {
-          resp = await api({ url: "oms/shopifyShops/typeMappings", method: "get", params: { mappedTypeId, pageSize: 100, pageIndex } })
+          resp = await api({ url: "oms/shopifyShops/typeMappings", method: "get", params: { ...params, mappedTypeId, pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newMappings = resp.data.reduce((acc: any, item: any) => {
               const typeId = item.mappedTypeId
@@ -111,7 +117,12 @@ export const useShopifyStore = defineStore('shopify', {
               acc[typeId].push(item)
               return acc
             }, {})
-            shopifyTypeMappings = { ...shopifyTypeMappings, ...newMappings }
+            Object.keys(newMappings).forEach((typeId) => {
+              shopifyTypeMappings[typeId] = [
+                ...(shopifyTypeMappings[typeId] || []),
+                ...newMappings[typeId]
+              ]
+            })
           } else {
             throw resp.data
           }
@@ -121,6 +132,7 @@ export const useShopifyStore = defineStore('shopify', {
         logger.error(error)
       }
       this.shopifyTypeMappings = { ...this.shopifyTypeMappings, ...shopifyTypeMappings }
+      return shopifyTypeMappings[mappedTypeId] || []
     },
 
     async updateShopifyShop(payload: any) {

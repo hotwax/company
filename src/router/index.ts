@@ -4,6 +4,7 @@ import { Login, logger } from '@common/index'
 import { useAuth } from '@common/composables/useAuth'
 
 const CreateProductStore = () => import('@/views/CreateProductStore.vue')
+const ProductStoreOnboarding = () => import('@/views/ProductStoreOnboarding.vue')
 const AddConfigurations = () => import('@/views/AddConfigurations.vue')
 const ProductStoreDetails = () => import('@/views/ProductStoreDetails.vue')
 const ProductStore = () => import('@/views/ProductStore.vue')
@@ -18,6 +19,8 @@ const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.
 const Klaviyo = () => import('@/views/Klaviyo.vue')
 const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
 const CloneProductStore = () => import('@/views/CloneProductStore.vue')
+const Composer = () => import('@/views/agent/Composer.vue')
+const Workforce = () => import('@/views/agent/Workforce.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -49,6 +52,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/netsuite/sales-channel', name: 'SalesChannel', component: SalesChannel, beforeEnter: authGuard },
   { path: '/netsuite/departments', name: 'Departments', component: Departments, beforeEnter: authGuard },
   { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore, beforeEnter: authGuard },
+  { path: '/product-store-onboarding', name: 'ProductStoreOnboarding', component: ProductStoreOnboarding, beforeEnter: authGuard },
+  { path: '/product-store-onboarding/:productStoreId', name: 'ProductStoreOnboardingForStore', component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },
   {
     path: '/add-configurations/:productStoreId',
     name: 'AddConfigurations',
@@ -64,6 +69,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
   { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
+  { path: '/composer', name: 'Composer', component: Composer, beforeEnter: authGuard },
+  { path: '/workforce', name: 'Workforce', component: Workforce, beforeEnter: authGuard },
 ]
 
 const router = createRouter({

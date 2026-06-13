@@ -14,6 +14,28 @@
             <ion-label>{{ p.title }}</ion-label>
           </ion-item>
         </ion-menu-toggle>
+
+        <ion-item-divider color="light">
+          <ion-label>{{ translate("Agents") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in agentPages" :key="'agent-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedAgentIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <ion-item-divider color="light">
+          <ion-label>{{ translate("Settings") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in settingsPages" :key="'settings-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedSettingsIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
       </ion-list>
     </ion-content>
   </ion-menu>
@@ -25,6 +47,7 @@ import {
   IonIcon,
   IonHeader,
   IonItem,
+  IonItemDivider,
   IonLabel,
   IonList,
   IonTitle,
@@ -33,7 +56,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { businessOutline, cartOutline, mailOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -67,7 +90,25 @@ const appPages = [
     childRoutes: ["/netsuite/"],
     iosIcon: walletOutline,
     mdIcon: walletOutline
+  }
+];
+
+const agentPages = [
+  {
+    title: "Composer",
+    url: "/composer",
+    iosIcon: schoolOutline,
+    mdIcon: schoolOutline,
   },
+  {
+    title: "Workforce",
+    url: "/workforce",
+    iosIcon: briefcaseOutline,
+    mdIcon: briefcaseOutline,
+  }
+];
+
+const settingsPages = [
   {
     title: "Settings",
     url: "/settings",
@@ -79,6 +120,16 @@ const appPages = [
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+})
+
+const selectedAgentIndex = computed(() => {
+  const path = router.currentRoute.value.path
+  return agentPages.findIndex((screen) => screen.url === path)
+})
+
+const selectedSettingsIndex = computed(() => {
+  const path = router.currentRoute.value.path
+  return settingsPages.findIndex((screen) => screen.url === path)
 })
 </script>
 

@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button :default-href="'/shopify-connection-details/' + id" />
+          <ion-back-button :default-href="productSyncBackHref" />
         </ion-buttons>
         <ion-title>{{ translate("Product sync") }}</ion-title>
         <ion-buttons slot="end">
@@ -765,6 +765,7 @@ import {
   nextProductSyncStep,
   normalizeProductSyncStatus,
   previousProductSyncStep,
+  productSyncWizardSteps,
   ProductSyncExperienceMode,
   ProductSyncWizardStep,
   requiresPreflightConfirmation,
@@ -928,6 +929,9 @@ const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
 const statusItems = computed(() => utilStore.statusItems || {});
 const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const productSyncBackHref = computed(() => {
+  return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
+});
 
 function getStatusDescription(statusId: string) {
   return statusItems.value[statusId]?.description || statusId;
@@ -1694,6 +1698,7 @@ async function loadWizard() {
       syncStarted: !!setupState.value.syncJobId,
       startConfirmed: false
     });
+    applyProductSyncRouteContext();
 
     syncJobId.value = setupState.value.syncJobId || "";
     if (setupState.value.completed) {
@@ -1715,9 +1720,12 @@ async function loadWizard() {
 
     await loadWebhookSubscriptions();
 
-    // Dev override to land on a specific step
-    if (router.currentRoute.value.query.step) {
-      currentStep.value = router.currentRoute.value.query.step as ProductSyncWizardStep;
+    const requestedStep = getQueryProductSyncWizardStep(router.currentRoute.value.query.step);
+    if (requestedStep) {
+      currentStep.value = requestedStep;
+      if (currentStep.value === "review") {
+        await loadReviewStats();
+      }
       if (currentStep.value === "progress") {
         const loadedProgress = await loadProgress();
         if (loadedProgress) startProgressPolling();
@@ -1736,6 +1744,48 @@ async function loadWizard() {
     stopProgressPolling();
   } finally {
     isLoading.value = false;
+  }
+}
+
+function getQueryValue(value: any) {
+  if (Array.isArray(value)) return String(value[0] || "");
+  return value ? String(value) : "";
+}
+
+function getSafeProductSyncReturnPath(value: string) {
+  const path = value.trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//") || path.includes("://")) return "";
+  return path;
+}
+
+function getQueryProductSyncExperienceMode(value: any): ProductSyncExperienceMode | "" {
+  const mode = getQueryValue(value);
+  if (mode === "first-time" || mode === "returning" || mode === "auto") return mode;
+  return "";
+}
+
+function getQueryProductSyncWizardStep(value: any): ProductSyncWizardStep | "" {
+  const step = getQueryValue(value);
+  return productSyncWizardSteps.includes(step as ProductSyncWizardStep) ? step as ProductSyncWizardStep : "";
+}
+
+function applyProductSyncRouteContext() {
+  const query = router.currentRoute.value.query;
+  const mode = getQueryProductSyncExperienceMode(query.mode);
+  if (mode) experienceMode.value = mode;
+
+  const productStoreId = getQueryValue(query.productStoreId);
+  if (productStoreId && !productStoreLocked.value) {
+    draft.value = selectProductStore(draft.value, productStoreId);
+  }
+
+  if (productStoreId && shop.value.productStoreId === productStoreId) {
+    draft.value.productStoreVerified = true;
+  }
+
+  const identifierEnumId = getQueryValue(query.identifierEnumId);
+  if (identifierEnumId && !identifierLocked.value) {
+    draft.value.selectedIdentifierEnumId = identifierEnumId;
   }
 }
 
