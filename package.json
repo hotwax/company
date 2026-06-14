@@ -31,7 +31,6 @@
     "pinia": "catalog:",
     "pinia-plugin-persistedstate": "catalog:",
     "qs": "catalog:",
-    "semver": "^7.7.4",
     "terser": "^5.48.0",
     "vue": "catalog:",
     "vue-i18n": "catalog:",

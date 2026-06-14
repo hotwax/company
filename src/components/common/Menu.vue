@@ -56,7 +56,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { briefcaseOutline, businessOutline, cartOutline, mailOutline, rocketOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -94,6 +94,12 @@ const appPages = [
 ];
 
 const agentPages = [
+  {
+    title: "Setup Agent",
+    url: "/setup-agent",
+    iosIcon: rocketOutline,
+    mdIcon: rocketOutline,
+  },
   {
     title: "Composer",
     url: "/composer",

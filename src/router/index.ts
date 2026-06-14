@@ -20,6 +20,8 @@ const KlaviyoConnectionDetails = () => import('@/views/klaviyo/KlaviyoConnection
 const CloneProductStore = () => import('@/views/product-store/CloneProductStore.vue')
 const Composer = () => import('@/views/agent/Composer.vue')
 const Workforce = () => import('@/views/agent/Workforce.vue')
+const SetupAgent = () => import('@/views/agent/SetupAgent.vue')
+const Onboarding = () => import('@/views/agent/Onboarding.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -68,6 +70,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
   { path: '/composer', name: 'Composer', component: Composer, beforeEnter: authGuard },
   { path: '/workforce', name: 'Workforce', component: Workforce, beforeEnter: authGuard },
+  { path: '/setup-agent', name: 'SetupAgent', component: SetupAgent, beforeEnter: authGuard },
+  { path: '/onboarding', name: 'Onboarding', component: Onboarding, beforeEnter: authGuard },
 ]
 
 const router = createRouter({

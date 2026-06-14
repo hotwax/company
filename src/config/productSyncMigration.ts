@@ -1,5 +1,3 @@
-import semver from 'semver';
-
 export const PRODUCT_SYNC_MIGRATION_CONFIG = {
   minimumComponentRelease: "v5.1.0",
   eligibleComponentReleases: [
@@ -70,6 +68,26 @@ export const PRODUCT_SYNC_MIGRATION_CONFIG = {
   }
 } as const;
 
+function parseReleaseVersion(release: string) {
+  const match = String(release || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+
+  return match.slice(1).map((part) => Number(part));
+}
+
+function isReleaseAtLeast(release: string, minimumRelease: string) {
+  const parsedRelease = parseReleaseVersion(release);
+  const parsedMinimum = parseReleaseVersion(minimumRelease);
+  if (!parsedRelease || !parsedMinimum) return false;
+
+  for (let index = 0; index < parsedRelease.length; index += 1) {
+    if (parsedRelease[index] > parsedMinimum[index]) return true;
+    if (parsedRelease[index] < parsedMinimum[index]) return false;
+  }
+
+  return true;
+}
+
 export function isProductSyncMigrationEligibleRelease(componentRelease: string) {
   const normalizedRelease = String(componentRelease || "").trim();
   
@@ -78,11 +96,5 @@ export function isProductSyncMigrationEligibleRelease(componentRelease: string) 
     return true;
   }
   
-  // 2. Check if it's a valid semver and >= minimumComponentRelease
-  const minRelease = PRODUCT_SYNC_MIGRATION_CONFIG.minimumComponentRelease;
-  if (semver.valid(normalizedRelease) && semver.valid(minRelease)) {
-    return semver.gte(normalizedRelease, minRelease);
-  }
-  
-  return false;
+  return isReleaseAtLeast(normalizedRelease, PRODUCT_SYNC_MIGRATION_CONFIG.minimumComponentRelease);
 }
