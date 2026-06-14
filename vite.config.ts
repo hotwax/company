@@ -53,12 +53,12 @@ function resolveCommonDeps() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command }) => ({
+export default defineConfig({
   server: {
     port: 8100
   },
   plugins: [
-    ...(command === 'serve' ? [ideTraceVue()] : []),
+    ideTraceVue(),
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
     vue(),
@@ -84,4 +84,4 @@ export default defineConfig(({ command }) => ({
   build: {
     rollupOptions: {}
   }
-}))
+})
