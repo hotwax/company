@@ -5,6 +5,7 @@ import { createRequire } from 'module'
 import { defineConfig } from 'vite'
 import { versionInfoUtil } from '../../common/utils/versionInfoUtil'
 import { localApiServerDiscoveryPlugin } from '../../common/vite/localApiServerDiscoveryPlugin'
+import { ideTraceVue } from 'chrome-ide-trace/vite'
 import pkg from './package.json'
 
 const require = createRequire(import.meta.url)
@@ -52,11 +53,12 @@ function resolveCommonDeps() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   server: {
     port: 8100
   },
   plugins: [
+    ...(command === 'serve' ? [ideTraceVue()] : []),
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
     vue(),
@@ -82,4 +84,4 @@ export default defineConfig({
   build: {
     rollupOptions: {}
   }
-})
+}))
