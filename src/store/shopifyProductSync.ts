@@ -235,8 +235,10 @@ interface SystemMessageRemotesResponse {
 
 const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
 const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
-const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
-const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
+// SHOP_RW_ACCESS is the official read-write access scope. SHOP_READ_WRITE_ACCESS is the
+// deprecated full-form enum and requires updating (it is being phased out / force-replaced).
+const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -532,8 +534,8 @@ function getShopRemoteCandidates(systemMessageRemoteList: any[], payload: any) {
 
 function sortShopRemoteCandidates(candidates: any[]) {
   return [...candidates].sort((first: any, second: any) => {
-    const firstReadWrite = String(first.accessScopeEnumId || "").includes("READ_WRITE") ? 1 : 0;
-    const secondReadWrite = String(second.accessScopeEnumId || "").includes("READ_WRITE") ? 1 : 0;
+    const firstReadWrite = hasShopifyWriteAccess(first.accessScopeEnumId) ? 1 : 0;
+    const secondReadWrite = hasShopifyWriteAccess(second.accessScopeEnumId) ? 1 : 0;
     return secondReadWrite - firstReadWrite;
   });
 }
