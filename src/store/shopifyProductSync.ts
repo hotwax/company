@@ -533,10 +533,17 @@ function getShopRemoteCandidates(systemMessageRemoteList: any[], payload: any) {
 }
 
 function sortShopRemoteCandidates(candidates: any[]) {
+  // Prioritize the best access scope so the selected candidate surfaces the right state:
+  // canonical write > deprecated/legacy write (still surfaces "update required") > read-only > no-access.
+  const accessScopeRank = (scope: string) => {
+    const normalized = String(scope || "").trim().toUpperCase();
+    if (normalized === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 3;
+    if (normalized === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 2;
+    if (normalized === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID) return 0;
+    return 1;
+  };
   return [...candidates].sort((first: any, second: any) => {
-    const firstReadWrite = hasShopifyWriteAccess(first.accessScopeEnumId) ? 1 : 0;
-    const secondReadWrite = hasShopifyWriteAccess(second.accessScopeEnumId) ? 1 : 0;
-    return secondReadWrite - firstReadWrite;
+    return accessScopeRank(second.accessScopeEnumId) - accessScopeRank(first.accessScopeEnumId);
   });
 }
 
