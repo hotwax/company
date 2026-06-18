@@ -1,6 +1,19 @@
 /* Ionic Variables and Theming. For more info, please see:
 http://ionicframework.com/docs/theming/ */
 
+/* Flat radio groups: ion-radio rendered directly inside ion-radio-group with no ion-item
+   wrapper, so the whole row is clickable and there are no orphaned item separator lines.
+   Pairs with <ion-radio class="radio-option" justify="start" label-placement="end" ...>. */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-xs, 8px);
+}
+
+ion-radio.radio-option {
+  width: 100%;
+}
+
 /** Ionic CSS Variables **/
 :root {
   /** primary **/

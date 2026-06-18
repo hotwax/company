@@ -55,10 +55,18 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   storeName: "",
   productStoreId: "",
   defaultCurrencyUomId: "USD",
-  locale: "America / English",
-  timezone: "America/New_York",
+  locale: "en_US",
+  // Default to the user's browser timezone so a new product store starts with the right zone;
+  // falls back to America/New_York if detection fails. (Existing stores load their saved zone.)
+  timezone: (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"
+    } catch {
+      return "America/New_York"
+    }
+  })(),
   shopifyDomain: "",
-  shopifyConnectionMode: "Prepare Shopify connection",
+  shopifyConnectionMode: "Use existing Shopify shop",
   selectedShopifyShopId: "",
   linkedShopifyShopId: "",
   shopifyTokenSubjectUserLoginId: "nifi",
@@ -69,8 +77,8 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   orderNumberPrefix: "HC",
   saveBillingInformation: "Y",
   productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
-  primaryProductIdentification: "",
-  secondaryProductIdentification: "",
+  primaryProductIdentification: "SKU",
+  secondaryProductIdentification: "UPCA",
   inventorySource: "Shopify",
   reserveInventory: "Y",
   showSystemicInventory: "true",
@@ -101,6 +109,9 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
     currentStepId: "name",
     createdProductStoreId: "",
     completedStepIds: [] as string[],
+    // Tracks whether the user has hand-edited the product store ID. Until they do, the ID
+    // mirrors the store name; once edited we stop overwriting their choice.
+    productStoreIdEdited: false,
     draft: { ...DEFAULT_DRAFT } as ProductStoreOnboardingDraft
   }),
 
@@ -124,8 +135,13 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
     updateDraftField(field: ProductStoreOnboardingStringField, value: string) {
       this.draft[field] = value
 
-      if (field === "storeName" && value && !this.draft.productStoreId) {
-        this.draft.productStoreId = generateInternalId(value).slice(0, 20)
+      if (field === "productStoreId") {
+        // A non-empty manual value locks the ID; clearing it resumes auto-derivation.
+        this.productStoreIdEdited = value.trim().length > 0
+      }
+
+      if (field === "storeName" && !this.productStoreIdEdited) {
+        this.draft.productStoreId = value ? generateInternalId(value).slice(0, 20) : ""
       }
     },
 
@@ -160,9 +176,20 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
       this.currentStepId = "name"
       this.createdProductStoreId = ""
       this.completedStepIds = []
+      this.productStoreIdEdited = false
       this.draft = { ...DEFAULT_DRAFT }
     }
   },
 
-  persist: true
+  // Connection modes were reduced to two ("Use existing Shopify shop" / "Authenticate new shop").
+  // Coerce any persisted value from a removed mode (e.g. the old "Prepare Shopify connection"
+  // default or "Connect now") so returning users don't hydrate into a mode with no valid radio.
+  persist: {
+    afterHydrate: (ctx: any) => {
+      const mode = ctx.store.draft?.shopifyConnectionMode
+      if (mode !== "Use existing Shopify shop" && mode !== "Authenticate new shop") {
+        ctx.store.draft.shopifyConnectionMode = "Use existing Shopify shop"
+      }
+    }
+  }
 })

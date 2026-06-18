@@ -16,7 +16,14 @@
         <ion-badge v-if="step.capability === 'backend-gap'" slot="end" color="warning">
           {{ translate("Gap") }}
         </ion-badge>
+        <ion-spinner
+          v-if="!completedStepIds.includes(step.id) && inProgressStepIds.includes(step.id)"
+          slot="end"
+          name="crescent"
+          color="primary"
+        />
         <ion-icon
+          v-else
           slot="end"
           :color="completedStepIds.includes(step.id) ? 'success' : 'medium'"
           :icon="completedStepIds.includes(step.id) ? checkmarkCircleOutline : radioButtonOffOutline"
@@ -27,8 +34,9 @@
 </template>
 
 <script setup lang="ts">
-import { IonBadge, IonIcon, IonItem, IonLabel, IonList, IonListHeader } from "@ionic/vue"
+import { IonBadge, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonSpinner } from "@ionic/vue"
 import { checkmarkCircleOutline, radioButtonOffOutline } from "ionicons/icons"
+import { computed } from "vue"
 import { translate } from "@common"
 import type { ProductStoreOnboardingGroup, ProductStoreOnboardingStep } from "@/config/productStoreOnboarding"
 
@@ -37,11 +45,14 @@ const props = defineProps<{
   steps: ProductStoreOnboardingStep[]
   currentStepId: string
   completedStepIds: string[]
+  inProgressStepIds?: string[]
 }>()
 
 defineEmits<{
   (event: "select-step", stepId: string): void
 }>()
+
+const inProgressStepIds = computed<string[]>(() => props.inProgressStepIds ?? [])
 
 function stepsByGroup(groupId: string) {
   return props.steps.filter((step) => step.group === groupId)

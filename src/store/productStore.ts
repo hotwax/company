@@ -13,7 +13,10 @@ const SHOPIFY_JOB_SPECS = [
 ]
 
 const ORDER_DATA_MANAGER_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "BULK_ORDER_HISTORY"]
-const SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS = ["SHOP_READ_WRITE_ACCESS", "SHOP_RW_ACCESS"]
+// SHOP_RW_ACCESS is the official read-write access scope. The full-form SHOP_READ_WRITE_ACCESS
+// is deprecated and not enforced — a remote still on it is treated as needing a fix (force-replace
+// to SHOP_RW_ACCESS via the scope-fix action), not as already having read-write access.
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS = ["SHOP_RW_ACCESS"]
 
 function valueText(value: any) {
   return value == null ? "" : String(value).trim()
@@ -63,13 +66,14 @@ function sanitizeJob(job: any) {
   }
 }
 
-function buildRequirement(id: string, label: string, complete: boolean, message: string) {
+function buildRequirement(id: string, label: string, complete: boolean, message: string, extra?: Record<string, any>) {
   return {
     id,
     label,
     status: complete ? "complete" : "missing",
     complete,
-    message
+    message,
+    ...(extra || {})
   }
 }
 
@@ -261,6 +265,7 @@ function buildShopifyJobStatusFromRecords(payload: {
   systemMessageRemotes: any[]
   jobs: any[]
   dataManagerConfigs: any[]
+  candidateShop?: any
 }) {
   const linkedShops = payload.linkedShops || []
   const enabledShops = linkedShops.filter((shop: any) => shop.isEnabled !== "N")
@@ -268,11 +273,19 @@ function buildShopifyJobStatusFromRecords(payload: {
   const shopId = valueText(selectedShop?.shopId)
   const shopifyShopId = valueText(selectedShop?.shopifyShopId)
 
+  // The remote check should reflect the shop the user is actually working with, which during
+  // onboarding may be selected ("Use existing Shopify shop") but not yet linked to the product
+  // store. Fall back to that candidate so an existing read-write remote is recognized pre-link
+  // (otherwise the remote shows a false "Gap" purely because the shop link isn't set yet).
+  const remoteShop = selectedShop || payload.candidateShop || null
+  const remoteShopId = valueText(remoteShop?.shopId)
+  const remoteShopifyShopId = valueText(remoteShop?.shopifyShopId)
+
   const remoteCandidates = (payload.systemMessageRemotes || []).filter((remote: any) => {
-    return selectedShop && (
-      valueText(remote.internalId) === shopId
-      || (shopifyShopId && valueText(remote.remoteId) === shopifyShopId)
-      || valueText(remote.systemMessageRemoteId) === shopId
+    return remoteShop && (
+      valueText(remote.internalId) === remoteShopId
+      || (remoteShopifyShopId && valueText(remote.remoteId) === remoteShopifyShopId)
+      || valueText(remote.systemMessageRemoteId) === remoteShopId
     )
   })
   const remoteById = remoteCandidates.reduce((remotes: Record<string, any>, remote: any) => {
@@ -288,11 +301,16 @@ function buildShopifyJobStatusFromRecords(payload: {
     .filter((remote: any) => SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS.includes(valueText(remote.accessScopeEnumId)))
     .map((remote: any) => valueText(remote.systemMessageRemoteId))
     .filter(Boolean)
+  // A remote that exists for the shop but lacks read-write scope can be fixed in place (a metadata
+  // update on accessScopeEnumId) rather than re-created — surface it so the UI can offer that action.
+  const fixableRemote = !readWriteRemoteIds.length
+    ? systemMessageRemotes.find((remote: any) => !SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS.includes(valueText(remote.accessScopeEnumId)))
+    : null
 
   const requirements = [
     buildRequirement(
       "shopifyShop",
-      "Shopify shop linked",
+      "Linked to Product Store",
       !!selectedShop,
       selectedShop ? `Shopify shop ${shopId} is linked to ${payload.productStoreId}.` : "Link a Shopify shop to this product store before configuring jobs."
     ),
@@ -300,7 +318,12 @@ function buildShopifyJobStatusFromRecords(payload: {
       "shopifyRemote",
       "Shopify read-write remote",
       !!readWriteRemoteIds.length,
-      readWriteRemoteIds.length ? `Read-write remote ${readWriteRemoteIds[0]} is available.` : "Create or select a Shopify SystemMessageRemote with read-write access for this shop."
+      readWriteRemoteIds.length
+        ? `Read-write remote ${readWriteRemoteIds[0]} is available.`
+        : fixableRemote
+          ? `Remote ${valueText(fixableRemote.systemMessageRemoteId)} exists but does not have read-write access.`
+          : "Create or select a Shopify SystemMessageRemote with read-write access for this shop.",
+      fixableRemote ? { fixableRemoteId: valueText(fixableRemote.systemMessageRemoteId) } : undefined
     )
   ]
 
@@ -591,7 +614,7 @@ export const useProductStore = defineStore('productStore', {
       })
     },
 
-    async fetchProductStoreShopifyJobStatus(productStoreId: string) {
+    async fetchProductStoreShopifyJobStatus(productStoreId: string, candidateShop?: any) {
       this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'pending' }
       let shopifyJobStatus = null as any
 
@@ -624,7 +647,8 @@ export const useProductStore = defineStore('productStore', {
           linkedShops: getResponseList(shopifyShopsResp.data).filter((shop: any) => shop.productStoreId === productStoreId),
           systemMessageRemotes: getResponseList(remotesResp.data, ["systemMessageRemoteList"]),
           jobs: getResponseList(jobsResp.data, ["serviceJobs", "serviceJobList", "jobs", "jobList"]),
-          dataManagerConfigs
+          dataManagerConfigs,
+          candidateShop
         })
         this.fetchStatus = { ...this.fetchStatus, shopifyJobStatus: 'success', lastFetched: Date.now() }
       } catch (error: any) {
@@ -634,6 +658,17 @@ export const useProductStore = defineStore('productStore', {
 
       this.currentShopifyJobStatus = shopifyJobStatus
       return shopifyJobStatus
+    },
+
+    // Grant read-write access to an existing Shopify SystemMessageRemote. This is a pure metadata
+    // update on accessScopeEnumId (entity store) — it authorizes writes inside OMS's scope guard and
+    // does NOT touch the Shopify access token itself (token scopes are a separate concern).
+    async setSystemMessageRemoteReadWriteAccess(systemMessageRemoteId: string) {
+      return api({
+        url: `oms/systemMessageRemotes/${systemMessageRemoteId}`,
+        method: "put",
+        data: { systemMessageRemoteId, accessScopeEnumId: "SHOP_RW_ACCESS" }
+      })
     },
 
     async createJwtToken(payload: {
@@ -726,6 +761,31 @@ export const useProductStore = defineStore('productStore', {
       return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
     },
 
+    // Count products imported into OMS for a product store, via the existing aggregate
+    // PRODUCT_STORE_PRODUCT DataDocument (returns a productCount, not an unbounded row list).
+    // Used to gate the inventory step: inventory can't be loaded until >=1 product exists.
+    async fetchProductStoreProductCount(productStoreId: string): Promise<number> {
+      if (!productStoreId) return 0
+      try {
+        const resp = await api({
+          url: "oms/dataDocumentView",
+          method: "post",
+          data: {
+            dataDocumentId: "PRODUCT_STORE_PRODUCT",
+            pageIndex: 0,
+            pageSize: 1,
+            customParametersMap: { productStoreId, isVirtual: "Y" },
+            fieldsToSelect: "productCount,productStoreId"
+          }
+        })
+        if (commonUtil.hasError(resp)) return 0
+        return Number(resp.data?.entityValueList?.[0]?.productCount || 0)
+      } catch (error: any) {
+        logger.error(error)
+        return 0
+      }
+    },
+
     async runProductStoreShopifyProductImport(payload: {
       shopId: string
       includeAll?: boolean
@@ -750,10 +810,15 @@ export const useProductStore = defineStore('productStore', {
     async runProductStoreShopifyInventoryReset(payload: {
       shopId: string
     }) {
+      // runNow only uses a job's *stored* parameters, so (mirroring the product-import setup)
+      // clone the shared inventory-reset template into a per-shop job, set shopId, then run it.
+      // No new API: reuses the existing clone + update + runNow service-job endpoints.
+      const jobName = `sync_ShopifyInventoryReset_${payload.shopId}`
+      await ensureServiceJobFromTemplate("sync_ShopifyInventoryReset", jobName)
+      await storeServiceJobParameter(jobName, "shopId", payload.shopId)
       return api({
-        url: "sob/shopify/inventoryReset",
-        method: "post",
-        data: payload
+        url: `admin/serviceJobs/${jobName}/runNow`,
+        method: "post"
       })
     },
 
@@ -764,10 +829,17 @@ export const useProductStore = defineStore('productStore', {
       thruDate?: string
       windowDays?: number
     }) {
+      // Clone the shared order-history template per shop, set the historical window
+      // [fromDate, launchDate), then run it. runNow uses the job's stored parameters.
+      const jobName = `sync_ShopifyOrderHistory_${payload.shopId}`
+      await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", jobName)
+      await storeServiceJobParameter(jobName, "systemMessageRemoteId", payload.shopId)
+      await storeServiceJobParameter(jobName, "fromDate", payload.fromDate)
+      await storeServiceJobParameter(jobName, "thruDate", payload.thruDate || payload.launchDate)
+      await storeServiceJobParameter(jobName, "windowDays", String(payload.windowDays || 7))
       return api({
-        url: "sob/shopify/orderHistory",
-        method: "post",
-        data: payload
+        url: `admin/serviceJobs/${jobName}/runNow`,
+        method: "post"
       })
     },
 
@@ -898,6 +970,21 @@ export const useProductStore = defineStore('productStore', {
         url: "admin/productStores",
         method: "post",
         data: payload
+      })
+    },
+
+    // Link a product store to a catalog (ProductStoreCatalog). A store needs at least one catalog
+    // association or product operations fail with "Could not find ProductStoreCatalog" — so the
+    // onboarding flow creates this for new stores. Uses the generic store/catalogs entity endpoint.
+    async associateProductStoreCatalog(payload: { productStoreId: string, prodCatalogId: string }): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/catalogs`,
+        method: "post",
+        data: {
+          productStoreId: payload.productStoreId,
+          prodCatalogId: payload.prodCatalogId,
+          fromDate: Date.now()
+        }
       })
     },
 

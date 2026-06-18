@@ -398,10 +398,9 @@
                         <ion-note slot="end">{{ syncJobDraftNextRunTimeLabel }}</ion-note>
                       </ion-item>
                       <ion-list-header>{{ translate("Schedule Options") }}</ion-list-header>
-                      <ion-radio-group v-model="syncJobDraftCronExpression">
-                        <ion-item v-for="option in syncJobScheduleOptions" :key="option.expression">
-                          <ion-radio label-placement="end" justify="start" :value="option.expression">{{ translate(option.label) }}</ion-radio>
-                        </ion-item>
+                      <ion-radio-group class="radio-group" v-model="syncJobDraftCronExpression">
+                        <ion-radio class="radio-option" label-placement="end" justify="start"
+                          v-for="option in syncJobScheduleOptions" :key="option.expression" :value="option.expression">{{ translate(option.label) }}</ion-radio>
                       </ion-radio-group>
                     </ion-list>
                   </ion-accordion>
@@ -1014,7 +1013,7 @@ const shopifyAccessDetail = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (shopifyAccessState.value.status === "read-only") {
@@ -1031,7 +1030,7 @@ const shopifyAccessBlockingMessage = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses deprecated access scope SHOP_RW_ACCESS. Update it to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses deprecated access scope SHOP_READ_WRITE_ACCESS. Update it to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (!hasShopifyWriteAccess.value) {

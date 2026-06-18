@@ -32,7 +32,7 @@
           </div>
         </div>
 
-        <div class="ion-text-center ion-margin">
+        <div v-if="productStores.length" class="ion-text-center ion-margin">
           <ion-button fill="outline" @click="createStore()">
             <ion-icon slot="start" :icon="addOutline"/>
             {{ translate("Create new product store") }}
@@ -64,6 +64,13 @@ const productStores = computed(() => productStoreStore.productStores)
 
 onIonViewWillEnter(async () => {
   await productStoreStore.fetchProductStores({ fetchCounts: true });
+  // First-run cold start: with no product stores there is only one sensible next action,
+  // so skip the empty chooser (Clone has nothing to clone from) and drop the user
+  // straight into the guided setup. replace() keeps it out of history so the wizard's
+  // back button returns to where they came from rather than looping here.
+  if (!productStoreStore.productStores.length) {
+    router.replace("/product-store-onboarding")
+  }
 })
 
 async function viewProductStoreDetails(productStoreId: string) {
