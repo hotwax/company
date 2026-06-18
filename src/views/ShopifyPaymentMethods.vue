@@ -2,7 +2,11 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-buttons slot="start">
+          <ion-button aria-label="Back" @click="navigateBack">
+            <ion-icon slot="icon-only" :icon="arrowBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>{{ translate("Payment methods") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -64,13 +68,13 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 
 const props = defineProps(['id']);
 const netSuiteStore = useNetSuiteStore();
@@ -81,6 +85,10 @@ const localMappings = ref<any>({});
 
 const paymentMethods = computed(() => netSuiteStore.paymentMethods)
 const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -94,7 +102,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     netSuiteStore.fetchPaymentMethods(),
-    shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE")
+    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -162,7 +170,7 @@ async function saveMapping(paymentMethodTypeId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
+      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -198,7 +206,7 @@ async function saveAllDirtyMappings() {
         mappedValue: id
       });
     }
-    await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE");
+    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -207,12 +215,12 @@ async function saveAllDirtyMappings() {
   emitter.emit("dismissLoader");
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmLeaveWithDirtyMappings() {
   if (!isDirty.value) {
     return true;
   }
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     alertController.create({
       header: translate("Unsaved changes"),
       message: translate("You have unsaved changes. Would you like to save them before leaving?"),
@@ -241,7 +249,15 @@ onBeforeRouteLeave(async () => {
       ]
     }).then(alert => alert.present());
   });
-});
+}
+
+const router = useRouter();
+
+onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
+
+function navigateBack() {
+  router.push(backHref.value);
+}
 </script>
 
 <style scoped>

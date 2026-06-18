@@ -90,12 +90,14 @@ import {
   modalController
 } from '@ionic/vue'
 import { close, downloadOutline } from 'ionicons/icons'
-import { commonUtil, translate } from '@common'
+import { commonUtil, logger, translate } from '@common'
 import { useShopifyStore } from '@/store/shopify'
+import { useProductStore } from '@/store/productStore'
 import { computed, ref, onMounted } from 'vue'
 
-const props = defineProps(['shopId'])
+const props = defineProps<{ shopId: string, productStoreId?: string }>()
 const shopifyStore = useShopifyStore()
+const productStoreStore = useProductStore()
 
 const isLoading    = ref(true)
 const isImporting  = ref(false)
@@ -188,14 +190,85 @@ async function importSelected() {
         longitude:   loc.longitude
       }))
     })
+
+    if (commonUtil.hasError(resp)) throw resp.data
+
     const count = Array.isArray(resp.data) ? resp.data.length : selectedForImport.value.length
+    const importedShopifyLocationIds = selectedForImport.value.map(loc => String(loc.shopifyLocationId))
+    const facilityIds = await resolveImportedFacilityIds(resp.data, importedShopifyLocationIds)
+    let associated = 0
+
+    try {
+      associated = await associateImportedFacilities(facilityIds)
+    } catch (error: any) {
+      logger.error(error)
+      commonUtil.showToast(translate('Locations imported, but Product Store association failed'))
+      modalController.dismiss({ imported: count, associated, facilityIds, associationFailed: true })
+      return
+    }
+
     commonUtil.showToast(translate('{count} locations imported', { count }))
-    modalController.dismiss({ imported: count })
+    modalController.dismiss({ imported: count, associated, facilityIds })
   } catch (e: any) {
+    logger.error(e)
     commonUtil.showToast(translate('Import failed'))
   } finally {
     isImporting.value = false
   }
+}
+
+async function resolveImportedFacilityIds(importResponse: any, shopifyLocationIds: string[]) {
+  const importedFacilityIds = collectFacilityIds(importResponse)
+  if (importedFacilityIds.length) return importedFacilityIds
+
+  try {
+    const mappingResp = await shopifyStore.fetchShopifyShopLocationsRaw({
+      shopId: props.shopId,
+      pageSize: 200
+    })
+    if (commonUtil.hasError(mappingResp)) throw mappingResp.data
+
+    const selectedShopifyLocationIds = new Set(shopifyLocationIds)
+    const mappedRows = (mappingResp.data || []).filter((mapping: any) =>
+      selectedShopifyLocationIds.has(String(mapping.shopifyLocationId))
+    )
+    return collectFacilityIds(mappedRows)
+  } catch (error: any) {
+    logger.warn('Failed to resolve imported Shopify facility IDs', error)
+    return []
+  }
+}
+
+function collectFacilityIds(data: any) {
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.facilities)
+      ? data.facilities
+      : Array.isArray(data?.locations)
+        ? data.locations
+        : Array.isArray(data?.facilityIds)
+          ? data.facilityIds
+          : []
+
+  return Array.from(new Set(rows
+    .map((row: any) => typeof row === 'string' ? row : row?.facilityId || row?.facility?.facilityId || row?.Facility?.facilityId)
+    .filter(Boolean)
+    .map(String)))
+}
+
+async function associateImportedFacilities(facilityIds: string[]) {
+  if (!props.productStoreId || !facilityIds.length) return 0
+
+  let associated = 0
+  for (const facilityId of facilityIds) {
+    const resp = await productStoreStore.associateProductStoreFacility({
+      productStoreId: props.productStoreId,
+      facilityId
+    })
+    if (commonUtil.hasError(resp)) throw resp.data
+    associated += 1
+  }
+  return associated
 }
 
 function closeModal() {

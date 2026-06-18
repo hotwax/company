@@ -2,7 +2,11 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-buttons slot="start">
+          <ion-button aria-label="Back" @click="navigateBack">
+            <ion-icon slot="icon-only" :icon="arrowBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>{{ translate("Inventory locations") }}</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="runAudit" :disabled="isAuditing">
@@ -110,14 +114,14 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonBackButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, arrowBackOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 
 const props = defineProps(['id']);
 const utilStore = useUtilStore();
@@ -130,6 +134,10 @@ const isAuditing = ref(false)
 
 const facilities = computed(() => utilStore.facilities)
 const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const isDirty = computed(() => {
   return Object.keys(localMappings.value).some(id => {
@@ -143,7 +151,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     utilStore.fetchFacilities(),
-    shopifyStore.fetchShopifyShopLocations()
+    shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
   ]);
   initializeLocalMappings();
   isLoading.value = false;
@@ -200,7 +208,7 @@ async function saveMapping(facilityId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopLocations();
+      await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -224,7 +232,7 @@ async function saveAllDirtyMappings() {
         shopifyLocationId: localMappings.value[id]
       });
     }
-    await shopifyStore.fetchShopifyShopLocations();
+    await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -244,7 +252,7 @@ async function openImportModal() {
     isLoading.value = true
     await Promise.all([
       utilStore.fetchFacilities(),
-      shopifyStore.fetchShopifyShopLocations()
+      shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
     ])
     initializeLocalMappings()
     isLoading.value = false
@@ -280,12 +288,12 @@ async function runAudit() {
   }
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmLeaveWithDirtyMappings() {
   if (!isDirty.value) {
     return true;
   }
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     alertController.create({
       header: translate("Unsaved changes"),
       message: translate("You have unsaved changes. Would you like to save them before leaving?"),
@@ -314,7 +322,15 @@ onBeforeRouteLeave(async () => {
       ]
     }).then(alert => alert.present());
   });
-});
+}
+
+const router = useRouter();
+
+onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
+
+function navigateBack() {
+  router.push(backHref.value);
+}
 </script>
 
 <style scoped>

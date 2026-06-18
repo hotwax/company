@@ -100,9 +100,10 @@ import { useShopifyStore } from '@/store/shopify'
 import { computed, reactive } from 'vue'
 
 const shopifyStore = useShopifyStore()
+const props = defineProps<{ productStoreId?: string, initialDomain?: string }>()
 
 const form = reactive({
-  myshopifyDomain: '',
+  myshopifyDomain: props.initialDomain || '',
   shopifyShopId: '',
   shopId: '',
   name: '',
@@ -147,7 +148,8 @@ async function saveConnection() {
       shopAccessToken: form.shopAccessToken.trim(),
       clientId: form.clientId.trim(),
       clientSecret: form.clientSecret.trim(),
-      name: form.name.trim() || undefined
+      name: form.name.trim() || undefined,
+      productStoreId: props.productStoreId
     })
 
     commonUtil.showToast(translate('Shopify connection created'))

@@ -1,7 +1,7 @@
 <template>
   <ion-app>
     <ion-split-pane content-id="main-content" when="lg">
-      <Menu />
+      <Menu v-if="router.currentRoute.value.name !== 'Login'" />
       <ion-router-outlet id="main-content"></ion-router-outlet>
     </ion-split-pane>
   </ion-app>
@@ -14,6 +14,7 @@ import Menu from '@/components/Menu.vue'
 import { emitter, translate } from '@common'
 import { Settings } from 'luxon'
 import { useUserStore } from '@/store/user'
+import router from "@/router"
 
 const userStore = useUserStore()
 

@@ -19,8 +19,8 @@
           </ion-item>
 
           <div class="tablet" @click.stop="">
-            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="!store.facilityCount">
-              <ion-label>{{ translate(store.facilityCount > 1 ? "facilities" : "facility", { count: store.facilityCount }) }}</ion-label>
+            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="store.facilityCount == null">
+              <ion-label>{{ translate((store.facilityCount ?? 0) === 1 ? "facility" : "facilities", { count: store.facilityCount ?? 0 }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
           </div>
@@ -71,7 +71,7 @@ async function viewProductStoreDetails(productStoreId: string) {
 }
 
 function createStore() {
-  router.push("/create-product-store")
+  router.push("/product-store-onboarding")
 }
 
 function cloneStoreSettings() {
