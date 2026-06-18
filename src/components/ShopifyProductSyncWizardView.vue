@@ -60,20 +60,17 @@
           </ion-label>
         </ion-item>
       </ion-list>
-      <ion-list v-else lines="full">
-        <ion-radio-group :value="draft.selectedProductStoreId"
-          @ionChange="$emit('product-store-change', $event.detail.value)">
-          <ion-item v-for="productStore in productStores" :key="productStore.productStoreId">
-            <ion-radio label-placement="end" justify="start" slot="start" :value="productStore.productStoreId"> 
-              <ion-label>
-                {{ getProductStoreName(productStore) }}
-                <p>{{ productStore.productStoreId }}</p>
-                <p>{{ getConnectedShopLabel(productStore.productStoreId) }}</p>
-              </ion-label>
-            </ion-radio>
-          </ion-item>
-        </ion-radio-group>
-      </ion-list>
+      <ion-radio-group v-else class="radio-group ion-margin-top" :value="draft.selectedProductStoreId"
+        @ionChange="$emit('product-store-change', $event.detail.value)">
+        <ion-radio class="radio-option" label-placement="end" justify="start"
+          v-for="productStore in productStores" :key="productStore.productStoreId" :value="productStore.productStoreId">
+          <ion-label>
+            {{ getProductStoreName(productStore) }}
+            <p>{{ productStore.productStoreId }}</p>
+            <p>{{ getConnectedShopLabel(productStore.productStoreId) }}</p>
+          </ion-label>
+        </ion-radio>
+      </ion-radio-group>
       <ion-list v-if="hasRelatedShops && !productStoreLocked" lines="full">
         <ion-item>
           <ion-label>
@@ -127,18 +124,16 @@
           </ion-label>
         </ion-item>
       </ion-list>
-      <ion-list v-else lines="full">
-        <ion-radio-group :value="draft.selectedIdentifierEnumId"
-          @ionChange="$emit('identifier-change', $event.detail.value)">
-          <ion-item v-for="identifier in identifierOptions" :key="identifier.enumId">
-            <ion-radio slot="start" :value="identifier.enumId" />
-            <ion-label>
-              {{ identifier.description || identifier.enumId }}
-              <p v-if="identifier.enumId === recommendedIdentifierEnumId">{{ translate("Recommended") }}</p>
-            </ion-label>
-          </ion-item>
-        </ion-radio-group>
-      </ion-list>
+      <ion-radio-group v-else class="radio-group ion-margin-top" :value="draft.selectedIdentifierEnumId"
+        @ionChange="$emit('identifier-change', $event.detail.value)">
+        <ion-radio class="radio-option" label-placement="end" justify="start"
+          v-for="identifier in identifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+          <ion-label>
+            {{ identifier.description || identifier.enumId }}
+            <p v-if="identifier.enumId === recommendedIdentifierEnumId">{{ translate("Recommended") }}</p>
+          </ion-label>
+        </ion-radio>
+      </ion-radio-group>
       <ion-list v-if="hasRelatedShops && !identifierLocked" lines="full">
         <ion-item v-for="relatedShop in relatedShops" :key="relatedShop.shopId">
           <ion-label>

@@ -25,6 +25,7 @@
             :steps="PRODUCT_STORE_ONBOARDING_STEPS"
             :current-step-id="onboardingStore.currentStepId"
             :completed-step-ids="onboardingStore.completedStepIds"
+            :in-progress-step-ids="inProgressStepIds"
             @select-step="onboardingStore.selectStep"
           />
         </section>
@@ -36,62 +37,58 @@
               <ion-card-subtitle>{{ translate(currentStep.summary) }}</ion-card-subtitle>
             </ion-card-header>
 
-            <ion-list v-if="currentStep.id === 'name'" lines="full">
-              <ion-item v-if="shouldCollectCompanyName">
-                <ion-input
-                  :value="onboardingStore.draft.companyName"
-                  label-placement="stacked"
-                  :helper-text="translate('The parent organization that owns this first Product Store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('companyName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Company name") }} <ion-text color="danger">*</ion-text></div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.storeName"
-                  label-placement="stacked"
-                  :helper-text="translate('Product store represents a brand in OMS')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('storeName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.productStoreId"
-                  label-placement="stacked"
-                  :label="translate('ID')"
-                  :helper-text="translate('Product store ID represents an unique ID for your product store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('productStoreId', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.defaultCurrencyUomId"
-                  @ionChange="onboardingStore.updateDraftField('defaultCurrencyUomId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="currency in currencyOptions" :key="currency.uomId" :value="currency.uomId">
-                    {{ currency.label }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-label>{{ translate("Locale") }}</ion-label>
-                <ion-note slot="end">{{ onboardingStore.draft.locale }}</ion-note>
-              </ion-item>
-              <ion-item>
-                <ion-label>{{ translate("Timezone") }}</ion-label>
-                <ion-note slot="end">{{ onboardingStore.draft.timezone }}</ion-note>
-              </ion-item>
-            </ion-list>
+            <ion-card-content v-if="currentStep.id === 'name'">
+              <ion-input class="form-field" fill="outline"
+                :value="onboardingStore.draft.storeName"
+                label-placement="stacked"
+                :helper-text="translate('Product store represents a brand in OMS')"
+                :clear-input="true"
+                @ionInput="onboardingStore.updateDraftField('storeName', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
+              </ion-input>
+              <ion-input class="form-field" fill="outline"
+                :value="onboardingStore.draft.productStoreId"
+                label-placement="stacked"
+                :label="translate('ID')"
+                :helper-text="selectedProductStoreId ? translate('The ID is permanent once the product store is created') : translate('Product store ID represents an unique ID for your product store')"
+                :clear-input="!selectedProductStoreId"
+                :readonly="!!selectedProductStoreId"
+                @ionInput="onboardingStore.updateDraftField('productStoreId', String($event.detail.value || ''))"
+              />
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.defaultCurrencyUomId"
+                @ionChange="onboardingStore.updateDraftField('defaultCurrencyUomId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
+                <ion-select-option v-for="currency in currencyOptions" :key="currency.uomId" :value="currency.uomId">
+                  {{ currency.label }}
+                </ion-select-option>
+              </ion-select>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.locale"
+                @ionChange="onboardingStore.updateDraftField('locale', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Locale") }}</div>
+                <ion-select-option v-for="loc in localeOptions" :key="loc.value" :value="loc.value">
+                  {{ loc.label }}
+                </ion-select-option>
+              </ion-select>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.timezone"
+                @ionChange="onboardingStore.updateDraftField('timezone', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Timezone") }}</div>
+                <ion-select-option v-for="tz in timezoneOptions" :key="tz.id" :value="tz.id">
+                  {{ tz.label }}
+                </ion-select-option>
+              </ion-select>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'general'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'general'">
               <ion-item>
                 <ion-label>
                   {{ translate("Order import defaults") }}
@@ -101,16 +98,14 @@
                   {{ selectedProductStoreId ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.orderNumberPrefix"
-                  label-placement="stacked"
-                  :label="translate('Sales order ID prefix')"
-                  :helper-text="translate('Added to HotWax sales order IDs generated for this Product Store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('orderNumberPrefix', String($event.detail.value || ''))"
-                />
-              </ion-item>
+              <ion-input class="form-field" fill="outline"
+                :value="onboardingStore.draft.orderNumberPrefix"
+                label-placement="stacked"
+                :label="translate('Sales order ID prefix')"
+                :helper-text="translate('Added to HotWax sales order IDs generated for this Product Store')"
+                :clear-input="true"
+                @ionInput="onboardingStore.updateDraftField('orderNumberPrefix', String($event.detail.value || ''))"
+              />
               <ion-item>
                 <ion-toggle
                   :checked="onboardingStore.draft.autoApproveOrder === 'Y'"
@@ -127,9 +122,9 @@
                   {{ translate("Save billing information") }}
                 </ion-toggle>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'shopify'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'shopify'">
               <ion-item>
                 <ion-label>
                   {{ translate("Connect a Shopify store") }}
@@ -139,22 +134,12 @@
                   {{ linkedShopifyShop ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
-              <ion-radio-group
+              <ion-radio-group class="radio-group"
                 :value="onboardingStore.draft.shopifyConnectionMode"
                 @ionChange="onboardingStore.updateDraftField('shopifyConnectionMode', String($event.detail.value || ''))"
               >
-                <ion-item>
-                  <ion-radio slot="start" value="Connect now" />
-                  <ion-label>{{ translate("Connect now") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Use existing Shopify shop" />
-                  <ion-label>{{ translate("Use existing Shopify shop") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Prepare Shopify connection" />
-                  <ion-label>{{ translate("Prepare Shopify connection") }}</ion-label>
-                </ion-item>
+                <ion-radio class="radio-option" justify="start" label-placement="end" value="Use existing Shopify shop">{{ translate("Use existing Shopify shop") }}</ion-radio>
+                <ion-radio class="radio-option" justify="start" label-placement="end" value="Authenticate new shop" :disabled="true">{{ translate("Authenticate new shop") }}</ion-radio>
               </ion-radio-group>
               <ion-item v-if="isExistingShopifyMode && linkedShopifyShop">
                 <ion-label>
@@ -163,18 +148,17 @@
                 </ion-label>
                 <ion-badge color="success" slot="end">{{ translate("Ready") }}</ion-badge>
               </ion-item>
-              <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && availableShopifyShops.length">
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.selectedShopifyShopId"
-                  @ionChange="onboardingStore.updateDraftField('selectedShopifyShopId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Existing Shopify shop") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="shop in availableShopifyShops" :key="shop.shopId" :value="shop.shopId">
-                    {{ getShopifyShopLabel(shop) }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
+              <ion-select v-if="isExistingShopifyMode && !linkedShopifyShop && availableShopifyShops.length"
+                class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.selectedShopifyShopId"
+                @ionChange="onboardingStore.updateDraftField('selectedShopifyShopId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Existing Shopify shop") }} <ion-text color="danger">*</ion-text></div>
+                <ion-select-option v-for="shop in availableShopifyShops" :key="shop.shopId" :value="shop.shopId">
+                  {{ getShopifyShopLabel(shop) }}
+                </ion-select-option>
+              </ion-select>
               <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && !availableShopifyShops.length">
                 <ion-label>
                   {{ translate("No available Shopify connection") }}
@@ -182,16 +166,15 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
-              <ion-item v-if="!isExistingShopifyMode">
-                <ion-input
-                  :value="onboardingStore.draft.shopifyDomain"
-                  label-placement="stacked"
-                  :label="translate('Shopify domain')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('shopifyDomain', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+              <ion-input v-if="!isExistingShopifyMode"
+                class="form-field" fill="outline"
+                :value="onboardingStore.draft.shopifyDomain"
+                label-placement="stacked"
+                :label="translate('Shopify domain')"
+                :clear-input="true"
+                @ionInput="onboardingStore.updateDraftField('shopifyDomain', String($event.detail.value || ''))"
+              />
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop'">
                 <ion-label>
                   {{ translate("Connection handoff") }}
                   <p>{{ shopifyTokenHandoffDescription }}</p>
@@ -200,29 +183,27 @@
                   {{ shopifyHandoffToken ? translate("Ready") : translate("Generate") }}
                 </ion-badge>
               </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-input
-                  :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
-                  :label="translate('Integration user')"
-                  label-placement="stacked"
-                  :clear-input="true"
-                  @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.shopifyTokenExpireIn"
-                  @ionChange="updateShopifyTokenDraftField('shopifyTokenExpireIn', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Token expiry") }}</div>
-                  <ion-select-option value="2592000">{{ translate("30 days") }}</ion-select-option>
-                  <ion-select-option value="15552000">{{ translate("6 months") }}</ion-select-option>
-                  <ion-select-option value="31536000">{{ translate("1 year") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-input
+              <ion-input v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop'"
+                class="form-field" fill="outline"
+                :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
+                :label="translate('Integration user')"
+                label-placement="stacked"
+                :clear-input="true"
+                @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
+              />
+              <ion-select v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop'"
+                class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.shopifyTokenExpireIn"
+                @ionChange="updateShopifyTokenDraftField('shopifyTokenExpireIn', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Token expiry") }}</div>
+                <ion-select-option value="2592000">{{ translate("30 days") }}</ion-select-option>
+                <ion-select-option value="15552000">{{ translate("6 months") }}</ion-select-option>
+                <ion-select-option value="31536000">{{ translate("1 year") }}</ion-select-option>
+              </ion-select>
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop'">
+                <ion-input fill="outline"
                   :value="onboardingStore.draft.shopifyTokenPurpose"
                   :label="translate('Token purpose')"
                   label-placement="stacked"
@@ -240,7 +221,7 @@
                   <ion-icon v-else slot="icon-only" :icon="keyOutline" />
                 </ion-button>
               </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop'">
                 <ion-label>
                   {{ translate("OMS URL") }}
                   <p>{{ shopifyHandoffOmsUrl }}</p>
@@ -254,8 +235,8 @@
                   <ion-icon slot="icon-only" :icon="copyOutline" />
                 </ion-button>
               </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffToken">
-                <ion-textarea
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop' && shopifyHandoffToken">
+                <ion-textarea fill="outline"
                   :value="shopifyHandoffToken"
                   :label="translate('JWT token')"
                   label-placement="stacked"
@@ -271,7 +252,7 @@
                   <ion-icon slot="icon-only" :icon="copyOutline" />
                 </ion-button>
               </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffTokenExpirationLabel">
+              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Authenticate new shop' && shopifyHandoffTokenExpirationLabel">
                 <ion-label>
                   {{ translate("Token expires") }}
                   <p>{{ shopifyHandoffTokenExpirationLabel }}</p>
@@ -360,13 +341,18 @@
                   {{ translate(requirement.label) }}
                   <p>{{ requirement.message }}</p>
                 </ion-label>
+                <ion-button v-if="requirement.fixableRemoteId" slot="end" size="small" fill="outline"
+                  @click="fixRemoteAccessScope(requirement.fixableRemoteId)"
+                >
+                  {{ translate("Enable read-write") }}
+                </ion-button>
                 <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
                   {{ getRequirementStatusLabel(requirement) }}
                 </ion-badge>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'products'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'products'">
               <ion-item>
                 <ion-label>
                   {{ translate("Product matching") }}
@@ -376,44 +362,38 @@
                   {{ onboardingStore.draft.productIdentifierEnumId ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.productIdentifierEnumId"
-                  @ionChange="onboardingStore.updateDraftField('productIdentifierEnumId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Global identifier") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="preferredPrimaryProductIdentification"
-                  @ionChange="onboardingStore.updateDraftField('primaryProductIdentification', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Primary identifier") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="preferredSecondaryProductIdentification"
-                  @ionChange="onboardingStore.updateDraftField('secondaryProductIdentification', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Secondary identifier") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.productIdentifierEnumId"
+                @ionChange="onboardingStore.updateDraftField('productIdentifierEnumId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Global identifier") }} <ion-text color="danger">*</ion-text></div>
+                <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                  {{ identifier.description || identifier.enumId }}
+                </ion-select-option>
+              </ion-select>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="preferredPrimaryProductIdentification"
+                @ionChange="onboardingStore.updateDraftField('primaryProductIdentification', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Primary identifier") }}</div>
+                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                <ion-select-option v-for="identifier in goodIdentificationTypeOptions" :key="identifier.id" :value="identifier.id">
+                  {{ identifier.label }}
+                </ion-select-option>
+              </ion-select>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="preferredSecondaryProductIdentification"
+                @ionChange="onboardingStore.updateDraftField('secondaryProductIdentification', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Secondary identifier") }}</div>
+                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                <ion-select-option v-for="identifier in goodIdentificationTypeOptions" :key="identifier.id" :value="identifier.id">
+                  {{ identifier.label }}
+                </ion-select-option>
+              </ion-select>
               <ion-item>
                 <ion-label>
                   {{ translate("Shopify product import") }}
@@ -466,20 +446,31 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
-              <ion-item v-if="productImportProgressVisible">
+              <ion-item v-if="productImportProgressVisible" lines="none">
+                <ion-icon slot="start" :icon="productImportStatusIcon(productImportProgressBadgeColor)" :color="productImportProgressBadgeColor" />
                 <ion-label>
                   {{ translate("Catalog import progress") }}
-                  <p>{{ productImportProgressDescription }}</p>
+                  <p>{{ productImportHeadline }}</p>
                 </ion-label>
-                <ion-badge :color="productImportProgressBadgeColor" slot="end">
-                  {{ productImportProgressLabel }}
-                </ion-badge>
+                <ion-badge slot="end" :color="productImportProgressBadgeColor">{{ productImportProgressLabel }}</ion-badge>
               </ion-item>
+              <ion-progress-bar v-if="productImportProgressVisible && isProductImportInProgress" :value="productImportBulkProgressValue" />
+              <!-- After a failed/partial run let the user retry in place, or open the sync page to troubleshoot. -->
+              <div v-if="productImportProgressVisible && (canRetryProductImport || canOpenShopifyProductSync)" class="ion-padding-start ion-padding-top">
+                <ion-button v-if="canRetryProductImport" size="small" @click="retryProductImport()">
+                  <ion-icon slot="start" :icon="syncOutline" />
+                  {{ translate("Retry import") }}
+                </ion-button>
+                <ion-button size="small" fill="clear" :disabled="!canOpenShopifyProductSync" @click="openShopifyProductSync()">
+                  <ion-icon slot="start" :icon="openOutline" />
+                  {{ translate("View details") }}
+                </ion-button>
+              </div>
               <template v-if="linkedShopifyShop">
                 <ion-list-header>
                   <ion-label>{{ translate("Product import jobs") }}</ion-label>
                 </ion-list-header>
-                <ion-item v-for="job in productImportJobDetails" :key="job.key">
+                <ion-item v-for="job in productImportJobDetails" :key="job.key" class="job-status-row">
                   <ion-label>
                     {{ job.label }}
                     <p>{{ job.detail }}</p>
@@ -487,9 +478,9 @@
                   <ion-badge :color="job.color" slot="end">{{ job.status }}</ion-badge>
                 </ion-item>
               </template>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'facilities'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'facilities'">
               <ion-item>
                 <ion-label>
                   {{ translate("Business locations") }}
@@ -499,22 +490,13 @@
                   {{ facilityCount ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
-              <ion-radio-group
+              <ion-radio-group class="radio-group"
                 :value="onboardingStore.draft.facilityMode"
                 @ionChange="onboardingStore.updateDraftField('facilityMode', String($event.detail.value || ''))"
               >
-                <ion-item>
-                  <ion-radio slot="start" value="One store" />
-                  <ion-label>{{ translate("One store") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Stores and warehouses" />
-                  <ion-label>{{ translate("Stores and warehouses") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Not sure yet" />
-                  <ion-label>{{ translate("Not sure yet") }}</ion-label>
-                </ion-item>
+                <ion-radio class="radio-option" justify="start" label-placement="end" value="One store">{{ translate("One store") }}</ion-radio>
+                <ion-radio class="radio-option" justify="start" label-placement="end" value="Stores and warehouses">{{ translate("Stores and warehouses") }}</ion-radio>
+                <ion-radio class="radio-option" justify="start" label-placement="end" value="Not sure yet">{{ translate("Not sure yet") }}</ion-radio>
               </ion-radio-group>
               <ion-item>
                 <ion-icon slot="start" :icon="storefrontOutline" />
@@ -566,9 +548,9 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'locations'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'locations'">
               <ion-item>
                 <ion-label>
                   {{ translate("Shopify location mapping") }}
@@ -608,22 +590,20 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'inventory'" lines="full">
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.inventorySource"
-                  @ionChange="onboardingStore.updateDraftField('inventorySource', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Inventory source") }}</div>
-                  <ion-select-option value="Shopify">{{ translate("Shopify") }}</ion-select-option>
-                  <ion-select-option value="ERP or WMS">{{ translate("ERP or WMS") }}</ion-select-option>
-                  <ion-select-option value="HotWax file reset">{{ translate("HotWax file reset") }}</ion-select-option>
-                  <ion-select-option value="Not sure yet">{{ translate("Not sure yet") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
+            <ion-card-content v-else-if="currentStep.id === 'inventory'">
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.inventorySource"
+                @ionChange="onboardingStore.updateDraftField('inventorySource', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Inventory source") }}</div>
+                <ion-select-option value="Shopify">{{ translate("Shopify") }}</ion-select-option>
+                <ion-select-option value="ERP or WMS">{{ translate("ERP or WMS") }}</ion-select-option>
+                <ion-select-option value="HotWax file reset">{{ translate("HotWax file reset") }}</ion-select-option>
+                <ion-select-option value="Not sure yet">{{ translate("Not sure yet") }}</ion-select-option>
+              </ion-select>
               <ion-item>
                 <ion-toggle
                   :checked="onboardingStore.draft.reserveInventory === 'Y'"
@@ -651,19 +631,17 @@
                   {{ translate("Hold pre-order physical inventory") }}
                 </ion-toggle>
               </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.preorderFacilityGroupId"
-                  @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Pre-order group") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
-                    {{ group.facilityGroupName || group.facilityGroupId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.preorderFacilityGroupId"
+                @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Pre-order group") }}</div>
+                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
+                  {{ group.facilityGroupName || group.facilityGroupId }}
+                </ion-select-option>
+              </ion-select>
               <ion-item>
                 <ion-label>
                   {{ translate("Initial inventory load") }}
@@ -691,9 +669,9 @@
                   <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
                 </ion-button>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'orders'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'orders'">
               <ion-item>
                 <ion-label>
                   {{ translate("Order import readiness") }}
@@ -701,39 +679,33 @@
                 </ion-label>
                 <ion-badge :color="orderImportBadgeColor" slot="end">{{ orderImportStatusLabel }}</ion-badge>
               </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.orderImportMode"
-                  @ionChange="onboardingStore.updateDraftField('orderImportMode', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Order import mode") }}</div>
-                  <ion-select-option value="Realtime and fallback batch">{{ translate("Realtime and fallback batch") }}</ion-select-option>
-                  <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  type="date"
-                  :value="preferredOrderHistoryStartDate"
-                  label-placement="stacked"
-                  :helper-text="translate('Start of the Shopify bulk query window')"
-                  @ionInput="onboardingStore.updateDraftField('orderHistoryStartDate', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Load Shopify orders updated since") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  type="date"
-                  :value="preferredOrderLaunchDate"
-                  label-placement="stacked"
-                  :helper-text="translate('Orders created before this date stay historical and bypass live fulfillment inventory')"
-                  @ionInput="onboardingStore.updateDraftField('orderLaunchDate', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("HotWax go-live date") }}</div>
-                </ion-input>
-              </ion-item>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.orderImportMode"
+                @ionChange="onboardingStore.updateDraftField('orderImportMode', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Order import mode") }}</div>
+                <ion-select-option value="Realtime and fallback batch">{{ translate("Realtime and fallback batch") }}</ion-select-option>
+                <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
+              </ion-select>
+              <ion-input class="form-field" fill="outline"
+                type="date"
+                :value="preferredOrderHistoryStartDate"
+                label-placement="stacked"
+                :helper-text="translate('Start of the Shopify bulk query window')"
+                @ionInput="onboardingStore.updateDraftField('orderHistoryStartDate', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Load Shopify orders updated since") }}</div>
+              </ion-input>
+              <ion-input class="form-field" fill="outline"
+                type="date"
+                :value="preferredOrderLaunchDate"
+                label-placement="stacked"
+                :helper-text="translate('Orders created before this date stay historical and bypass live fulfillment inventory')"
+                @ionInput="onboardingStore.updateDraftField('orderLaunchDate', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("HotWax go-live date") }}</div>
+              </ion-input>
               <ion-item>
                 <ion-icon slot="start" :icon="cloudDownloadOutline" />
                 <ion-label>
@@ -752,31 +724,25 @@
                   <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
                 </ion-button>
               </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  :value="onboardingStore.draft.orderSqsQueueName"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsQueueName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Realtime SQS queue") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  :value="onboardingStore.draft.orderSqsAwsRemoteId"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsAwsRemoteId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("AWS remote ID") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  type="number"
-                  :value="onboardingStore.draft.orderSqsExpireLockTime"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsExpireLockTime', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Lock timeout minutes") }}</div>
-                </ion-input>
-              </ion-item>
+              <ion-input v-if="shouldConfigureRealtimeOrderImport" class="form-field" fill="outline"
+                :value="onboardingStore.draft.orderSqsQueueName"
+                @ionInput="onboardingStore.updateDraftField('orderSqsQueueName', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Realtime SQS queue") }}</div>
+              </ion-input>
+              <ion-input v-if="shouldConfigureRealtimeOrderImport" class="form-field" fill="outline"
+                :value="onboardingStore.draft.orderSqsAwsRemoteId"
+                @ionInput="onboardingStore.updateDraftField('orderSqsAwsRemoteId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("AWS remote ID") }}</div>
+              </ion-input>
+              <ion-input v-if="shouldConfigureRealtimeOrderImport" class="form-field" fill="outline"
+                type="number"
+                :value="onboardingStore.draft.orderSqsExpireLockTime"
+                @ionInput="onboardingStore.updateDraftField('orderSqsExpireLockTime', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Lock timeout minutes") }}</div>
+              </ion-input>
               <ion-item v-for="requirement in orderJobRequirements" :key="requirement.id">
                 <ion-label>
                   {{ translate(requirement.label) }}
@@ -793,9 +759,9 @@
                 </ion-label>
                 <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'routing'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'routing'">
               <ion-item>
                 <ion-toggle
                   :checked="onboardingStore.draft.enableBrokering === 'Y'"
@@ -832,20 +798,18 @@
                   {{ translate("Auto order cancellation") }}
                 </ion-toggle>
               </ion-item>
-              <ion-item>
-                <ion-input
-                  :label="translate('Auto cancellations days')"
-                  :placeholder="translate('days count')"
-                  type="number"
-                  min="0"
-                  :disabled="onboardingStore.draft.autoCancelOrders !== 'Y'"
-                  :value="onboardingStore.draft.daysToCancelNonPay"
-                  @ionInput="onboardingStore.updateDraftField('daysToCancelNonPay', String($event.detail.value || ''))"
-                />
-              </ion-item>
-            </ion-list>
+              <ion-input class="form-field" fill="outline"
+                :label="translate('Auto cancellations days')"
+                :placeholder="translate('days count')"
+                type="number"
+                min="0"
+                :disabled="onboardingStore.draft.autoCancelOrders !== 'Y'"
+                :value="onboardingStore.draft.daysToCancelNonPay"
+                @ionInput="onboardingStore.updateDraftField('daysToCancelNonPay', String($event.detail.value || ''))"
+              />
+            </ion-card-content>
 
-            <ion-list v-else-if="currentStep.id === 'pickup'" lines="full">
+            <ion-card-content v-else-if="currentStep.id === 'pickup'">
               <ion-item>
                 <ion-toggle
                   :checked="onboardingStore.draft.bopisPartialRejection === 'true'"
@@ -865,23 +829,21 @@
                   {{ translate("Delivery method") }}
                 </ion-toggle>
               </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.rerouteShippingMethodId"
-                  @ionChange="onboardingStore.updateDraftField('rerouteShippingMethodId', String($event.detail.value || ''))"
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.rerouteShippingMethodId"
+                @ionChange="onboardingStore.updateDraftField('rerouteShippingMethodId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Shipment method") }}</div>
+                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                <ion-select-option
+                  v-for="shipmentMethod in shipmentMethodTypes"
+                  :key="shipmentMethod.shipmentMethodTypeId"
+                  :value="shipmentMethod.shipmentMethodTypeId"
                 >
-                  <div slot="label">{{ translate("Shipment method") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option
-                    v-for="shipmentMethod in shipmentMethodTypes"
-                    :key="shipmentMethod.shipmentMethodTypeId"
-                    :value="shipmentMethod.shipmentMethodTypeId"
-                  >
-                    {{ shipmentMethod.description || shipmentMethod.shipmentMethodTypeId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
+                  {{ shipmentMethod.description || shipmentMethod.shipmentMethodTypeId }}
+                </ion-select-option>
+              </ion-select>
               <ion-item>
                 <ion-toggle
                   :checked="onboardingStore.draft.customerDeliveryAddressUpdate === 'true'"
@@ -906,7 +868,7 @@
                   {{ translate("Cancel order before fulfillment") }}
                 </ion-toggle>
               </ion-item>
-            </ion-list>
+            </ion-card-content>
 
             <ion-list v-else-if="currentStep.id === 'readiness'" lines="full">
               <ion-item>
@@ -1044,8 +1006,8 @@ import {
   onIonViewDidLeave,
   onIonViewWillEnter
 } from "@ionic/vue"
-import { computed, ref } from "vue"
-import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
+import { computed, ref, watch } from "vue"
+import { alertCircleOutline, arrowBackOutline, arrowForwardOutline, checkmarkCircleOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, pulseOutline, radioButtonOffOutline, storefrontOutline, syncOutline, timeOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
 import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
@@ -1056,9 +1018,11 @@ import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync"
 import { useUtilStore } from "@/store/util"
+import { useUserStore } from "@/store/user"
 import { useNetSuiteStore } from "@/store/netSuite"
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun"
-import { normalizeProductSyncStatus } from "@/utils/shopifyProductSyncWizard"
+import useServiceJob from "@/composables/useServiceJob"
+import { normalizeProductSyncStatus, getProductSyncBulkOperationProgress } from "@/utils/shopifyProductSyncWizard"
 import { generateInternalId } from "@/utils"
 import router from "@/router"
 
@@ -1067,8 +1031,10 @@ const productStoreStore = useProductStore()
 const shopifyStore = useShopifyStore()
 const shopifyProductSyncStore = useShopifyProductSyncStore()
 const utilStore = useUtilStore()
+const userStore = useUserStore()
 const netSuiteStore = useNetSuiteStore()
 const { fetchSyncRun: fetchProductImportSyncRun } = useShopifyProductSyncRun()
+const { runNow: runServiceJobNow } = useServiceJob()
 const props = defineProps<{ productStoreId?: string }>()
 const isSavingProductStore = ref(false)
 const isLinkingShopifyShop = ref(false)
@@ -1095,6 +1061,15 @@ const isLoadingShopifyMappingStatus = ref(false)
 const shopifyHandoffToken = ref("")
 const shopifyHandoffTokenExpirationTime = ref(0)
 const productImportProgressState = ref<any>({})
+const omsProductCount = ref(0)
+// Bounds how many extra polls we keep running after the sync reports "completed" while waiting
+// for imported products to land in OMS (the catalog write can lag the sync's completed state).
+let productImportPostCompletePolls = 0
+// After a retry we run the per-shop job, which produces a NEW message asynchronously. While we wait
+// for it, show a "queued" placeholder and keep polling without snapping back to the old (failed) run.
+const awaitingProductImportRerun = ref(false)
+let productImportRetryBaselineId = ""
+let productImportRerunWaitPolls = 0
 const productImportRun = ref<any>(null)
 const shopifyLocationMappings = ref<any[]>([])
 const shopifyMappingCounts = ref<Record<string, number>>({
@@ -1110,7 +1085,6 @@ const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_S
 const routeProductStoreId = computed(() => props.productStoreId || "")
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
-const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0 || !organizationPartyId.value)
 const isPrimaryActionLoading = computed(() => {
   return isSavingProductStore.value
     || isLinkingShopifyShop.value
@@ -1146,6 +1120,22 @@ const linkedShopifyShop = computed(() => {
   return shopifyStore.shops.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
 })
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
+// In "Use existing" mode, preselect the first available (unlinked) shop so the user isn't
+// forced to open the dropdown when there's an obvious default. Also re-runs if the current
+// selection falls out of the available list (e.g. it gets linked elsewhere).
+watch(
+  [isExistingShopifyMode, availableShopifyShops, linkedShopifyShop],
+  ([existingMode, shops, linked]) => {
+    if (!existingMode || linked) return
+    const list = (shops as any[]) || []
+    if (!list.length) return
+    const current = onboardingStore.draft.selectedShopifyShopId
+    if (!current || !list.some((shop: any) => shop.shopId === current)) {
+      onboardingStore.updateDraftField("selectedShopifyShopId", list[0].shopId)
+    }
+  },
+  { immediate: true }
+)
 const shopifyJobStatus = computed(() => productStoreStore.currentShopifyJobStatus)
 const hasShopifyJobStatus = computed(() => !!shopifyJobStatus.value?.requirements)
 let productImportProgressPoll: number | undefined
@@ -1204,6 +1194,14 @@ const activeProductStoreShipmentMethods = computed(() => {
 })
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
+// Primary/Secondary identifiers are OMS GoodIdentificationType ids (e.g. SKU, UPCA) — a different
+// source from the Global (Shopify) identifier above, which uses SHOP_PROD_IDENTITY enums.
+const goodIdentificationTypeOptions = computed(() => {
+  return (utilStore.goodIdentificationTypes || []).map((type: any) => {
+    const id = String(type.goodIdentificationTypeId || "").trim()
+    return { id, label: String(type.description || "").trim() || id }
+  }).filter((type: any) => type.id)
+})
 const shopifyMappingAreas = computed(() => [
   {
     id: "productTypes",
@@ -1323,6 +1321,8 @@ const productImportJobDetails = computed(() => {
   })
 })
 const productImportProgressStatus = computed(() => {
+  // While awaiting the retried run's new message, present a "queued" state (no message id yet).
+  if (awaitingProductImportRerun.value && !productImportProgressState.value?.systemMessageId) return "queued"
   if (!productImportProgressState.value?.systemMessageId && !productImportRun.value?.systemMessageId) return ""
 
   return normalizeProductSyncStatus({
@@ -1333,13 +1333,23 @@ const productImportProgressStatus = computed(() => {
   })
 })
 const productImportProgressVisible = computed(() => {
-  return !!linkedShopifyShopId.value && (!!productImportProgressState.value?.systemMessageId || !!productImportRun.value?.systemMessageId || isLoadingProductImportProgress.value)
+  return !!linkedShopifyShopId.value && (awaitingProductImportRerun.value || !!productImportProgressState.value?.systemMessageId || !!productImportRun.value?.systemMessageId || isLoadingProductImportProgress.value)
+})
+// Grade a terminally-completed import by its record failure rate: 0 failed = Complete (pass);
+// up to 80% failed = Partial failure; over 80% failed does not qualify as a pass = Failed.
+const productImportCompletedOutcome = computed(() => {
+  const mdm = productImportRun.value?.mdmLog || {}
+  const total = Number(mdm.totalRecordCount || 0)
+  const failed = Number(mdm.failedRecordCount || 0)
+  if (failed === 0) return { key: "complete", label: translate("Complete"), color: "success" }
+  if (total > 0 && failed / total > 0.8) return { key: "failed", label: translate("Failed"), color: "danger" }
+  return { key: "partial", label: translate("Partial failure"), color: "warning" }
 })
 const productImportProgressLabel = computed(() => {
   if (isLoadingProductImportProgress.value && !productImportProgressStatus.value) return translate("Checking")
 
   switch (productImportProgressStatus.value) {
-    case "completed": return translate("Complete")
+    case "completed": return productImportCompletedOutcome.value.label
     case "error": return translate("Error")
     case "cancelled": return translate("Canceled")
     case "importing": return translate("Importing")
@@ -1351,7 +1361,7 @@ const productImportProgressLabel = computed(() => {
 })
 const productImportProgressBadgeColor = computed(() => {
   switch (productImportProgressStatus.value) {
-    case "completed": return "success"
+    case "completed": return productImportCompletedOutcome.value.color
     case "error":
     case "cancelled": return "danger"
     case "queued": return "warning"
@@ -1359,6 +1369,68 @@ const productImportProgressBadgeColor = computed(() => {
     case "importing":
     case "sent": return "primary"
     default: return isLoadingProductImportProgress.value ? "primary" : "medium"
+  }
+})
+// Allow an in-place retry from the onboarding page once a run has terminally failed (error/cancelled)
+// or completed with record failures — so the user doesn't have to leave for the sync page after a big failure.
+const canRetryProductImport = computed(() => {
+  if (!linkedShopifyShopId.value || isProductImportInProgress.value) return false
+  const status = productImportProgressStatus.value
+  if (status === "error" || status === "cancelled") return true
+  if (status === "completed") return Number(productImportRun.value?.mdmLog?.failedRecordCount || 0) > 0
+  return false
+})
+const productImportBulkProgress = computed(() => {
+  const objectCount = productImportRun.value?.bulkOperation?.objectCount ?? productImportProgressState.value?.objectCount ?? 0
+  // No catalog total is known during onboarding, so total resolves to 0 -> hasTotalCount false (degrades to "N objects processed").
+  return getProductSyncBulkOperationProgress(objectCount, 0)
+})
+const productImportBulkProgressValue = computed(() => {
+  const status = String(productImportRun.value?.bulkOperation?.status || "").toLowerCase()
+  if (status === "complete" || status === "completed") return 1
+  return productImportBulkProgress.value.value
+})
+function productImportStatusIcon(color: string) {
+  switch (color) {
+    case "success": return checkmarkCircleOutline
+    case "primary": return pulseOutline
+    case "danger": return alertCircleOutline
+    default: return timeOutline
+  }
+}
+// Single, status-driven line for the catalog import — shows only the one fact that matters at the
+// current stage (request -> Shopify export -> HotWax import -> outcome) instead of every id/count.
+const productImportHeadline = computed(() => {
+  const mdm = productImportRun.value?.mdmLog || {}
+  const failed = Number(mdm.failedRecordCount || 0)
+  const totalRecords = Number(mdm.totalRecordCount || 0)
+  const objects = productImportBulkProgress.value.processedCount
+  // Build the number with JS interpolation and translate only the static text: translate() does not
+  // substitute named params unless the key exists in the locale, so "{count}" would render literally.
+  switch (productImportProgressStatus.value) {
+    case "queued":
+    case "sent":
+    case "waiting":
+      return translate("Requesting catalog export from Shopify…")
+    case "running":
+      return objects > 0
+        ? `${objects} ${translate("objects exported from Shopify so far…")}`
+        : translate("Exporting catalog from Shopify…")
+    case "importing":
+      return totalRecords > 0
+        ? `${translate("Importing")} ${totalRecords} ${translate("products into HotWax…")}`
+        : translate("Importing products into HotWax…")
+    case "completed":
+      if (failed > 0) return `${failed} ${translate("of")} ${totalRecords} ${translate("records failed to import")}`
+      return totalRecords > 0
+        ? `${totalRecords} ${translate("products imported")}`
+        : translate("Catalog import complete.")
+    case "error":
+      return String(productImportRun.value?.systemMessage?.errorText || "").trim() || translate("Catalog import failed.")
+    case "cancelled":
+      return translate("Catalog import was cancelled.")
+    default:
+      return translate("Checking import status…")
   }
 })
 const productImportProgressDescription = computed(() => {
@@ -1421,6 +1493,22 @@ const shopifyHandoffTokenExpirationLabel = computed(() => {
   return new Date(shopifyHandoffTokenExpirationTime.value).toLocaleString()
 })
 const shouldSetupShopifyInventoryReset = computed(() => onboardingStore.draft.inventorySource === "Shopify")
+// Product sync is "started" once a system message exists (or it's in-flight / already completed) —
+// used so re-entering the Products step doesn't re-queue the import.
+const isProductSyncStarted = computed(() => {
+  return !!productImportProgressState.value?.systemMessageId || isProductImportInProgress.value || productImportProgressStatus.value === "completed"
+})
+// Product sync has actually RUN to a successful terminal state (SmsgConsumed / DataManager finished).
+const isProductSyncRun = computed(() => productImportProgressStatus.value === "completed")
+// Inventory hard blocker: only Shopify-sourced inventory waits on the Shopify catalog; other
+// sources (ERP/WMS/file) have no Shopify products to gate on. When it applies, require the sync
+// to have run AND at least one product to exist in OMS for the store.
+const isInventoryProductPrerequisiteMet = computed(() => {
+  if (!shouldSetupShopifyInventoryReset.value || !linkedShopifyShopId.value) return true
+  return isProductSyncRun.value && omsProductCount.value > 0
+})
+// Steps showing a loading spinner in the step rail (product import in flight -> Products step).
+const inProgressStepIds = computed<string[]>(() => (isProductImportInProgress.value ? ["products"] : []))
 const inventoryResetDescription = computed(() => {
   if (!shouldSetupShopifyInventoryReset.value) return translate("This inventory source does not need a Shopify inventory reset job.")
   if (!selectedProductStoreId.value) return translate("Create the Product Store before configuring inventory reset.")
@@ -1435,10 +1523,12 @@ const initialInventoryImportDescription = computed(() => {
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading inventory.")
   if (!mappedShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
   if (isProductImportInProgress.value) return translate("Finish the Shopify product import before loading inventory.")
+  if (!isProductSyncRun.value) return translate("Run the product catalog sync on the Products step before loading inventory.")
+  if (!omsProductCount.value) return translate("Waiting for products to import into OMS — at least one product must exist before loading inventory.")
   return translate("Queue a Shopify bulk import that resets OMS facility inventory from current on-hand quantities.")
 })
 const canQueueInventoryImport = computed(() => {
-  return !!linkedShopifyShopId.value && !!mappedShopifyLocationCount.value && !isProductImportInProgress.value
+  return !!linkedShopifyShopId.value && !!mappedShopifyLocationCount.value && !isProductImportInProgress.value && isInventoryProductPrerequisiteMet.value
 })
 const inventoryResetStatusLabel = computed(() => {
   return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
@@ -1638,6 +1728,30 @@ const currencyOptions = computed(() => {
     { uomId: "GBP", label: translate("GBP") }
   ]
 })
+const localeOptions = [
+  { value: "en_US", label: "English (United States)" },
+  { value: "en_CA", label: "English (Canada)" },
+  { value: "en_GB", label: "English (United Kingdom)" },
+  { value: "en_AU", label: "English (Australia)" },
+  { value: "fr_FR", label: "French (France)" },
+  { value: "fr_CA", label: "French (Canada)" },
+  { value: "es_ES", label: "Spanish (Spain)" },
+  { value: "es_MX", label: "Spanish (Mexico)" },
+  { value: "de_DE", label: "German (Germany)" },
+  { value: "it_IT", label: "Italian (Italy)" },
+  { value: "pt_BR", label: "Portuguese (Brazil)" },
+  { value: "nl_NL", label: "Dutch (Netherlands)" },
+  { value: "ja_JP", label: "Japanese (Japan)" }
+]
+const timezoneOptions = computed(() => {
+  const zones = Array.isArray(userStore.availableTimeZones) ? userStore.availableTimeZones : []
+  const current = onboardingStore.draft.timezone
+  // Keep the current value selectable even before the (async) timezone list has loaded.
+  if (current && !zones.some((zone: any) => zone.id === current)) {
+    return [{ id: current, label: current }, ...zones]
+  }
+  return zones
+})
 const nextLabel = computed(() => {
   const nextStep = PRODUCT_STORE_ONBOARDING_STEPS[onboardingStore.currentStepIndex + 1]
   return nextStep ? translate(nextStep.label) : translate("Review")
@@ -1645,9 +1759,10 @@ const nextLabel = computed(() => {
 const primaryActionLabel = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
   if (currentStep.value.id === "general") return translate("Save order defaults")
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) return translate("Create Shopify connection")
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Authenticate new shop" && !linkedShopifyShop.value) return translate("Create Shopify connection")
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
   if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
+  if (currentStep.value.id === "products" && linkedShopifyShopId.value && isProductSyncStarted.value) return nextLabel.value
   if (currentStep.value.id === "products" && linkedShopifyShopId.value) return translate("Save and import products")
   if (currentStep.value.id === "products") return translate("Save product identity")
   if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) return translate("Save and load inventory")
@@ -1665,14 +1780,13 @@ const isPrimaryActionDisabled = computed(() => {
   if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
     return !onboardingStore.draft.storeName.trim()
       || !onboardingStore.draft.defaultCurrencyUomId
-      || (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim())
   }
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
     return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
   }
 
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Authenticate new shop" && !linkedShopifyShop.value) {
     return !selectedProductStoreId.value
   }
 
@@ -1689,7 +1803,7 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "inventory") {
-    return !selectedProductStoreId.value
+    return !selectedProductStoreId.value || !isInventoryProductPrerequisiteMet.value
   }
 
   if (currentStep.value.id === "orders") {
@@ -1840,12 +1954,32 @@ async function refreshShopifyJobStatus() {
 
   isLoadingShopifyJobStatus.value = true
   try {
-    await productStoreStore.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value)
+    // When using an existing shop that isn't linked yet, pass it as a candidate so the read-write
+    // remote check evaluates the selected shop (not just shops already linked to the product store).
+    const candidateShop = isExistingShopifyMode.value && onboardingStore.draft.selectedShopifyShopId
+      ? shopifyStore.getShopById(onboardingStore.draft.selectedShopifyShopId)
+      : null
+    await productStoreStore.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value, candidateShop)
   } catch (error: any) {
     logger.warn("Failed to refresh Shopify job status", error)
   } finally {
     isLoadingShopifyJobStatus.value = false
   }
+}
+
+async function fixRemoteAccessScope(systemMessageRemoteId: string) {
+  if (!systemMessageRemoteId) return
+  emitter.emit("presentLoader")
+  try {
+    const resp = await productStoreStore.setSystemMessageRemoteReadWriteAccess(systemMessageRemoteId)
+    if (commonUtil.hasError(resp)) throw resp.data
+    commonUtil.showToast(translate("Read-write access enabled for this connection"))
+    await refreshShopifyJobStatus()
+  } catch (error: any) {
+    logger.error("Failed to enable read-write access", error)
+    commonUtil.showToast(translate("Failed to enable read-write access"))
+  }
+  emitter.emit("dismissLoader")
 }
 
 async function refreshProductImportProgress() {
@@ -1869,6 +2003,20 @@ async function refreshProductImportProgress() {
       ? syncRunState.systemMessages?.find((message: any) => message.systemMessageId === trackedSystemMessageId) || syncRunState.latestSystemMessage
       : syncRunState.latestSystemMessage
 
+    // After a retry, hold the "queued" placeholder (and keep polling) until the job produces a NEW
+    // message — don't snap back to the old failed run. Switch to the new run as soon as it appears.
+    if (awaitingProductImportRerun.value) {
+      const newRunId = latestMessage?.systemMessageId
+      if (newRunId && newRunId !== productImportRetryBaselineId) {
+        awaitingProductImportRerun.value = false
+      } else if (productImportRerunWaitPolls < 24) {
+        productImportRerunWaitPolls++
+        return true
+      } else {
+        awaitingProductImportRerun.value = false
+      }
+    }
+
     if (!latestMessage?.systemMessageId) {
       productImportRun.value = null
       return false
@@ -1891,7 +2039,23 @@ async function refreshProductImportProgress() {
     }
     productImportRun.value = await fetchProductImportSyncRun(latestMessage.systemMessageId, latestMessage)
 
-    if (productImportProgressState.value.completed) stopProductImportProgressPolling()
+    if (productImportProgressState.value.completed) {
+      // For Shopify-sourced inventory, the imported products can land in OMS a little after the
+      // sync reports "completed". Keep refreshing the OMS product count for a bounded number of
+      // extra polls so the inventory step unblocks as soon as products exist (and doesn't require
+      // the user to leave and re-enter the wizard). Failed/cancelled syncs stop immediately.
+      const waitForProducts = status === "completed"
+        && shouldSetupShopifyInventoryReset.value
+        && !!linkedShopifyShopId.value
+        && !!selectedProductStoreId.value
+      if (waitForProducts && omsProductCount.value === 0 && productImportPostCompletePolls < 12) {
+        omsProductCount.value = await productStoreStore.fetchProductStoreProductCount(selectedProductStoreId.value)
+        productImportPostCompletePolls++
+      }
+      if (!waitForProducts || omsProductCount.value > 0 || productImportPostCompletePolls >= 12) {
+        stopProductImportProgressPolling()
+      }
+    }
     return true
   } catch (error: any) {
     logger.warn("Failed to refresh product import progress", error)
@@ -1903,6 +2067,7 @@ async function refreshProductImportProgress() {
 
 function startProductImportProgressPolling() {
   stopProductImportProgressPolling()
+  productImportPostCompletePolls = 0
   productImportProgressPoll = window.setInterval(refreshProductImportProgress, 5000)
 }
 
@@ -1956,6 +2121,7 @@ async function refreshShopifyMappingStatus() {
 }
 
 onIonViewWillEnter(async () => {
+  awaitingProductImportRerun.value = false
   if (routeProductStoreId.value) {
     onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
   } else {
@@ -1985,12 +2151,14 @@ async function loadSetupData() {
       utilStore.fetchFacilities(),
       utilStore.fetchFacilityGroups(),
       utilStore.fetchProductIdentifiers(),
+      utilStore.fetchGoodIdentificationTypes(),
       utilStore.fetchProductTypes(),
       utilStore.fetchShipmentMethodTypes(),
       netSuiteStore.fetchSalesChannel(),
       netSuiteStore.fetchPaymentMethods(),
       productStoreStore.fetchProductStores(),
-      shopifyStore.fetchShopifyShops()
+      shopifyStore.fetchShopifyShops(),
+      userStore.availableTimeZones.length ? Promise.resolve() : userStore.fetchAvailableTimeZones()
     ])
 
     if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
@@ -1998,6 +2166,11 @@ async function loadSetupData() {
     await refreshShopifyMappingStatus()
     const loadedProductImportProgress = await refreshProductImportProgress()
     if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
+    // Seed the OMS product count on (re-)entry when the sync already shows completed, so the
+    // inventory step gates correctly without waiting for the next poll cycle.
+    if (shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && selectedProductStoreId.value && isProductSyncRun.value) {
+      omsProductCount.value = await productStoreStore.fetchProductStoreProductCount(selectedProductStoreId.value)
+    }
   } catch (error: any) {
     logger.error(error)
   }
@@ -2014,11 +2187,6 @@ async function createProductStoreFromDraft() {
     return ""
   }
 
-  if (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim()) {
-    commonUtil.showToast(translate("Please fill all the required fields"))
-    return ""
-  }
-
   if (productStoreId.length > 20) {
     commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
     return ""
@@ -2029,7 +2197,8 @@ async function createProductStoreFromDraft() {
 
   try {
     if (!organizationPartyId.value) {
-      const bootstrapCompanyName = onboardingStore.draft.companyName.trim() || productStoreStore.company.companyName || storeName
+      // No company name is collected; default the bootstrapped organization to the store name.
+      const bootstrapCompanyName = productStoreStore.company.companyName || storeName
       await utilStore.bootstrapOrganization({ groupName: bootstrapCompanyName })
       if (organizationPartyId.value) await productStoreStore.fetchCompany()
     }
@@ -2042,12 +2211,12 @@ async function createProductStoreFromDraft() {
     const payload = {
       storeName,
       productStoreId,
-      companyName: productStoreStore.company.companyName || onboardingStore.draft.companyName.trim() || storeName,
+      companyName: productStoreStore.company.companyName || storeName,
       payToPartyId: organizationPartyId.value,
-      defaultCurrencyUomId: onboardingStore.draft.defaultCurrencyUomId
+      defaultCurrencyUomId: onboardingStore.draft.defaultCurrencyUomId,
+      defaultLocaleString: onboardingStore.draft.locale,
+      defaultTimeZone: onboardingStore.draft.timezone
     } as any
-
-    if (shouldCollectCompanyName.value) payload.companyName = onboardingStore.draft.companyName.trim()
 
     const resp = await productStoreStore.createProductStore(payload)
 
@@ -2057,11 +2226,15 @@ async function createProductStoreFromDraft() {
     onboardingStore.setCreatedProductStoreId(createdProductStoreId)
     onboardingStore.updateDraftField("productStoreId", createdProductStoreId)
 
-    if (shouldCollectCompanyName.value && onboardingStore.draft.companyName.trim()) {
-      await productStoreStore.updateCompany({
-        ...productStoreStore.company,
-        groupName: onboardingStore.draft.companyName.trim()
-      })
+    // A new store must be linked to a catalog, otherwise product import fails with
+    // "Could not find ProductStoreCatalog for ProductStore". Link it to the default seeded
+    // catalog ("CATALOG", which carries the browse-root category). Non-fatal: if it fails the
+    // store still exists and the product step surfaces the import error with a re-run link.
+    try {
+      const catalogResp = await productStoreStore.associateProductStoreCatalog({ productStoreId: createdProductStoreId, prodCatalogId: "CATALOG" })
+      if (commonUtil.hasError(catalogResp)) throw catalogResp.data
+    } catch (error: any) {
+      logger.error("Failed to link product store to catalog", error)
     }
 
     await productStoreStore.fetchProductStores()
@@ -2165,12 +2338,21 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("customerCancelBeforeFulfillment", productStoreStore.currentStoreSettings.CUST_ALLOW_CNCL.settingValue)
   }
 
-  if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
-    onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId)
+  // Prefer the store's saved identification preference; otherwise fall back to the SKU/UPCA
+  // defaults so an existing store with no saved preference still shows (and persists) sensible
+  // defaults rather than "Not selected". Mirrors DEFAULT_DRAFT for freshly created stores.
+  if (!onboardingStore.draft.primaryProductIdentification) {
+    onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId || "SKU")
   }
 
-  if (!onboardingStore.draft.secondaryProductIdentification && productIdentityPreferences.value.secondaryId) {
-    onboardingStore.updateDraftField("secondaryProductIdentification", productIdentityPreferences.value.secondaryId)
+  if (!onboardingStore.draft.secondaryProductIdentification) {
+    onboardingStore.updateDraftField("secondaryProductIdentification", productIdentityPreferences.value.secondaryId || "UPCA")
+  }
+
+  // A stale/unrecognized persisted locale (e.g. a pre-migration value) won't match any option and
+  // renders blank — fall back to the default so the select always shows a valid selection.
+  if (!localeOptions.some((option) => option.value === onboardingStore.draft.locale)) {
+    onboardingStore.updateDraftField("locale", "en_US")
   }
 }
 
@@ -2187,7 +2369,7 @@ async function handlePrimaryAction() {
     if (!shopLinked) return
   }
 
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
+  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Authenticate new shop" && !linkedShopifyShop.value) {
     const shopCreated = await createShopifyConnectionForProductStore()
     if (!shopCreated) return
   }
@@ -2201,7 +2383,7 @@ async function handlePrimaryAction() {
     const productIdentitySaved = await saveProductIdentity()
     if (!productIdentitySaved) return
 
-    if (linkedShopifyShopId.value) {
+    if (linkedShopifyShopId.value && !isProductSyncStarted.value) {
       const productImportStarted = await setupAndQueueInitialProductImport(false)
       if (!productImportStarted) return
     }
@@ -2895,6 +3077,35 @@ async function setupAndQueueInitialProductImport(shouldSaveIdentity = true) {
   return queueInitialProductImport()
 }
 
+// Re-run the catalog import in place from the onboarding page (used after a failed/partial run).
+// Runs the per-shop product-sync service job (system context) rather than the on-demand
+// shopify/products/sync endpoint — the on-demand path creates the bulk-query SystemMessage in the
+// user's authz context (403 for framework messages), whereas the job produces it as the system user.
+async function retryProductImport() {
+  if (!canRetryProductImport.value || !linkedShopifyShopId.value) return
+  const jobName = `sync_ShopifyProductUpdates_${linkedShopifyShopId.value}`
+  emitter.emit("presentLoader")
+  try {
+    const resp = await runServiceJobNow(jobName)
+    if (commonUtil.hasError(resp)) throw resp.data
+    commonUtil.showToast(translate("Product import re-run started."))
+    // Switch the card to a live "queued" placeholder and watch for the job's new message, without
+    // snapping back to the old failed run. The poller swaps to the new run as soon as it appears.
+    productImportRetryBaselineId = productImportProgressState.value?.systemMessageId || ""
+    productImportRerunWaitPolls = 0
+    productImportPostCompletePolls = 0
+    awaitingProductImportRerun.value = true
+    productImportProgressState.value = { status: "queued", completed: false, systemMessageId: "" }
+    productImportRun.value = null
+    startProductImportProgressPolling()
+  } catch (error: any) {
+    logger.error("Failed to re-run product import job", error)
+    commonUtil.showToast(translate("Failed to re-run product import."))
+  } finally {
+    emitter.emit("dismissLoader")
+  }
+}
+
 async function setupProductImportJob() {
   if (!selectedProductStoreId.value || !linkedShopifyShopId.value || !onboardingStore.draft.productIdentifierEnumId) {
     commonUtil.showToast(translate("Link a Shopify shop and choose a product identifier before configuring product import."))
@@ -3235,6 +3446,64 @@ function replaceRouteForProductStore(productStoreId: string) {
   padding: 24px 16px 48px;
 }
 
+/* Standalone outline fields inside ion-card-content: card padding handles the edge inset,
+   so the fields only need vertical rhythm between each box (incl. its helper text). */
+.form-field {
+  display: block;
+  margin-bottom: var(--spacer-sm);
+}
+
+.form-field:last-child {
+  margin-bottom: 0;
+}
+
+/* Radio options render as flat rows (no ion-item) so the whole row is clickable and there
+   are no orphaned item separators. Stack them with consistent vertical rhythm. */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-xs);
+  margin: var(--spacer-2xs) 0 var(--spacer-sm);
+}
+
+.radio-option {
+  width: 100%;
+}
+
+/* Read-only key/value rows (e.g. Locale, Timezone) shown alongside the form fields. */
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacer-xs) var(--spacer-2xs);
+}
+
+.meta-row .meta-value {
+  color: var(--ion-color-medium);
+}
+
+/* Form steps render inside ion-card-content. The remaining ion-item rows (those carrying a
+   slot="start"/"end" control — badges, action buttons, radios, nav rows) are flattened so
+   they read as form rows, not list rows: drop the list background and side insets so content
+   aligns to the card padding, and let the outline notch label overflow (items clip by
+   default). card-content padding supplies the edge inset that ion-item used to. */
+.onboarding-task ion-card-content ion-item {
+  --background: transparent;
+  --padding-start: 0;
+  --inner-padding-end: 0;
+  --padding-top: var(--spacer-2xs);
+  --padding-bottom: var(--spacer-2xs);
+  overflow: visible;
+}
+
+/* Input-bearing rows get a little more vertical room (box + helper text). */
+.onboarding-task ion-card-content ion-item:has(ion-input),
+.onboarding-task ion-card-content ion-item:has(ion-select),
+.onboarding-task ion-card-content ion-item:has(ion-textarea) {
+  --padding-top: var(--spacer-xs);
+  --padding-bottom: var(--spacer-xs);
+}
+
 .onboarding-steps {
   flex: 0 0 375px;
   max-width: 375px;
@@ -3267,5 +3536,15 @@ function replaceRouteForProductStore(productStoreId: string) {
   .onboarding-steps {
     order: 2;
   }
+}
+
+/* Product-import job rows show raw service / system-message names (e.g.
+   send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery) that have no spaces and
+   would otherwise clip. Force the label text and its detail <p> to wrap. */
+.onboarding-task ion-card-content ion-item.job-status-row ion-label,
+.onboarding-task ion-card-content ion-item.job-status-row ion-label p {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>

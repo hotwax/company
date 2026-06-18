@@ -21,6 +21,7 @@ export const useUtilStore = defineStore('util', {
     operatingCountries: [] as any[],
     dbicCountries: { list: [] as any[], total: 0 },
     productIdentifiers: [] as any[],
+    goodIdentificationTypes: [] as any[],
     productTypes: [] as any[],
     shipmentMethodTypes: [] as any[],
     emailTypes: [] as any[],
@@ -36,6 +37,7 @@ export const useUtilStore = defineStore('util', {
       dbicCountries: 'none',
       operatingCountries: 'none',
       productIdentifiers: 'none',
+      goodIdentificationTypes: 'none',
       productTypes: 'none',
       shipmentMethodTypes: 'none',
       emailTypes: 'none',
@@ -51,6 +53,7 @@ export const useUtilStore = defineStore('util', {
     getOperatingCountries: (state) => state.operatingCountries,
     getDBICCountriesCount: (state) => state.dbicCountries.total,
     getProductIdentifiers: (state) => state.productIdentifiers,
+    getGoodIdentificationTypes: (state) => state.goodIdentificationTypes,
     getProductTypes: (state) => state.productTypes,
     getShipmentMethodTypes: (state) => state.shipmentMethodTypes,
     getEmailTypes: (state) => state.emailTypes,
@@ -188,6 +191,28 @@ export const useUtilStore = defineStore('util', {
         this.fetchStatus = { ...this.fetchStatus, productIdentifiers: 'error' }
       }
       this.productIdentifiers = productIdentifiers
+    },
+
+    async fetchGoodIdentificationTypes() {
+      if (this.goodIdentificationTypes.length) return
+      this.fetchStatus = { ...this.fetchStatus, goodIdentificationTypes: 'pending' }
+      let goodIdentificationTypes: any[] = []
+
+      try {
+        const resp = await api({ url: "oms/goodIdentificationTypes", method: "get", params: { pageSize: 200 } })
+        if (!commonUtil.hasError(resp)) {
+          goodIdentificationTypes = Array.isArray(resp.data)
+            ? resp.data
+            : (resp.data?.goodIdentificationTypeList ?? resp.data?.goodIdentificationTypes ?? [])
+          this.fetchStatus = { ...this.fetchStatus, goodIdentificationTypes: 'success', lastFetched: Date.now() }
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+        this.fetchStatus = { ...this.fetchStatus, goodIdentificationTypes: 'error' }
+      }
+      this.goodIdentificationTypes = goodIdentificationTypes
     },
 
     async fetchEmailTypes() {
@@ -381,7 +406,7 @@ export const useUtilStore = defineStore('util', {
 
       try {
         do {
-          resp = await api({ url: 'oms/productTypes', method: 'get', params: { pageSize: 200, pageIndex } })
+          resp = await api({ url: 'oms/products/productTypes', method: 'get', params: { pageSize: 200, pageIndex } })
           if (!commonUtil.hasError(resp) && resp.data?.length) {
             productTypes = productTypes.concat(resp.data)
             pageIndex++
