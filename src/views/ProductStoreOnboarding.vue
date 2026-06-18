@@ -2086,8 +2086,7 @@ async function loadSelectedProductStoreSetup() {
     productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
     productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
     netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value }),
-    refreshShopifyJobStatus(),
-    refreshAccessPackageStatus()
+    refreshShopifyJobStatus()
   ])
 
   if (productStoreStore.current?.productIdentifierEnumId) {
