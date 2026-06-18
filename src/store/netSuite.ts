@@ -145,7 +145,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
         const productStoreId = params.productStoreId || netSuiteProductStore?.productStoreId
         do {
           resp = await api({
-            url: `oms/productStores/${productStoreId}/shipmentMethods`,
+            url: `admin/productStores/${productStoreId}/shippingMethods`,
             method: "get",
             params: { productStoreId, pageSize: 100, pageIndex }
           })
