@@ -235,8 +235,10 @@ interface SystemMessageRemotesResponse {
 
 const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
 const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
-const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
-const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
+// SHOP_RW_ACCESS is the official read-write access scope. SHOP_READ_WRITE_ACCESS is the
+// deprecated full-form enum and requires updating (it is being phased out / force-replaced).
+const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -531,10 +533,17 @@ function getShopRemoteCandidates(systemMessageRemoteList: any[], payload: any) {
 }
 
 function sortShopRemoteCandidates(candidates: any[]) {
+  // Prioritize the best access scope so the selected candidate surfaces the right state:
+  // canonical write > deprecated/legacy write (still surfaces "update required") > read-only > no-access.
+  const accessScopeRank = (scope: string) => {
+    const normalized = String(scope || "").trim().toUpperCase();
+    if (normalized === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 3;
+    if (normalized === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 2;
+    if (normalized === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID) return 0;
+    return 1;
+  };
   return [...candidates].sort((first: any, second: any) => {
-    const firstReadWrite = String(first.accessScopeEnumId || "").includes("READ_WRITE") ? 1 : 0;
-    const secondReadWrite = String(second.accessScopeEnumId || "").includes("READ_WRITE") ? 1 : 0;
-    return secondReadWrite - firstReadWrite;
+    return accessScopeRank(second.accessScopeEnumId) - accessScopeRank(first.accessScopeEnumId);
   });
 }
 
