@@ -1,6 +1,5 @@
 import { reactive, toRefs } from 'vue';
-import { api } from '@common';
-import logger from '@/logger';
+import { api, logger } from '@common'
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,

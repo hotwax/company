@@ -95,19 +95,14 @@
           <p>{{ productStoreContextError }}</p>
         </ion-label>
       </ion-item>
+      <ion-item v-if="!productStoreLocked" lines="full" button :disabled="!draft.selectedProductStoreId"
+        @click="$emit('toggle-product-store-verification')">
+        <ion-checkbox :checked="draft.productStoreVerified"
+          :disabled="!draft.selectedProductStoreId" data-testid="product-store-verification">
+          {{ translate("I have verified that these Shopify stores are part of the selected Product Store.") }}
+        </ion-checkbox>
+      </ion-item>
       <ion-card-content>
-        <ion-button
-          v-if="!productStoreLocked"
-          :key="draft.productStoreVerified ? 'product-store-verified' : 'product-store-unverified'"
-          expand="block"
-          :fill="draft.productStoreVerified ? 'solid' : 'outline'"
-          :disabled="!draft.selectedProductStoreId"
-          @click="emitProductStoreVerification(!draft.productStoreVerified)"
-          data-testid="product-store-verification"
-        >
-          <ion-icon v-if="draft.productStoreVerified" slot="start" :icon="checkmarkCircleOutline" />
-          {{ draft.productStoreVerified ? translate("Product store verified") : translate("Verify product store") }}
-        </ion-button>
         <ion-button expand="block" fill="clear" @click="$emit('go-back')">{{ translate("Back") }}</ion-button>
         <ion-button
           expand="block"
@@ -185,7 +180,7 @@
     <ion-item lines="none" class="circuit" button :disabled="!reviewReady" @click="$emit('open-mistake-modal')" v-if="currentStep === 'review'"
       data-testid="mistake-check">
       <ion-label>
-        <ion-icon slot="start" :icon="chipOutline" />
+        <ion-icon slot="start" :icon="hardwareChipOutline" />
         {{ translate("Am I making a mistake?") }}
       </ion-label>
     </ion-item>
@@ -497,16 +492,14 @@
             <ion-badge slot="end" :color="getPreflightBadgeColor(item.status)">{{ item.status }}</ion-badge>
           </ion-item>
         </ion-list>
+        <ion-item v-if="preflightRequiresConfirmation" lines="full" button
+          @click="$emit('toggle-preflight-warning-confirmation')">
+          <ion-checkbox :checked="preflightWarningConfirmed" label-placement="start"
+            data-testid="preflight-warning-confirmation">
+            {{ translate("I reviewed the warning and want to continue.") }}
+          </ion-checkbox>
+        </ion-item>
         <div class="ion-padding" v-if="preflightRequiresConfirmation">
-          <ion-button
-            expand="block"
-            :fill="preflightWarningConfirmed ? 'solid' : 'outline'"
-            @click="emitPreflightWarningConfirmation(!preflightWarningConfirmed)"
-            data-testid="preflight-warning-confirmation"
-          >
-            <ion-icon v-if="preflightWarningConfirmed" slot="start" :icon="checkmarkCircleOutline" />
-            {{ preflightWarningConfirmed ? translate("Warning reviewed") : translate("Review warning") }}
-          </ion-button>
           <ion-button expand="block" :disabled="!preflightWarningConfirmed"
             @click="$emit('accept-preflight-and-open-start-sync')" data-testid="accept-preflight-warning">
             {{ translate("Continue to import") }}
@@ -583,16 +576,12 @@
               <ion-badge slot="end" :color="shopifyAccessBadgeColor">{{ shopifyAccessLabel }}</ion-badge>
             </ion-item>
           </ion-list>
+          <ion-item lines="full" button @click="$emit('toggle-start-confirmation')">
+            <ion-checkbox :checked="draft.startConfirmed" label-placement="start" data-testid="start-sync-confirmation">
+              {{ translate("I understand and want to start the first product sync.") }}
+            </ion-checkbox>
+          </ion-item>
           <ion-card-content>
-            <ion-button
-              expand="block"
-              :fill="draft.startConfirmed ? 'solid' : 'outline'"
-              @click="emitStartConfirmation(!draft.startConfirmed)"
-              data-testid="start-sync-confirmation"
-            >
-              <ion-icon v-if="draft.startConfirmed" slot="start" :icon="checkmarkCircleOutline" />
-              {{ draft.startConfirmed ? translate("First sync confirmed") : translate("Confirm first sync") }}
-            </ion-button>
             <ion-item v-if="shopifyAccessBlockingMessage" lines="none">
               <ion-label>
                 <p>{{ shopifyAccessBlockingMessage }}</p>
@@ -612,7 +601,7 @@
 <script setup lang="ts">
 import AnimatedNumber from "@/components/AnimatedNumber.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import type { ShopifyProductSyncRun } from "@/services/ShopifyProductSyncService";
+import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";
 import type { ProductSyncFsmState } from "@/utils/shopifyProductSyncFsm";
 import {
   IonAccordion,
@@ -625,6 +614,7 @@ import {
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
   IonHeader,
   IonIcon,
@@ -648,7 +638,8 @@ import {
   checkmarkCircleOutline,
   shirtOutline,
   timeOutline,
-  alertCircleOutline
+  alertCircleOutline,
+  hardwareChipOutline
 } from "ionicons/icons";
 import { translate } from '@common';
 import { computed } from "vue";
@@ -733,18 +724,6 @@ const emit = defineEmits([
   "toggle-start-confirmation",
 ]);
 let lastGoNextAt = 0;
-
-function emitProductStoreVerification(checked: boolean) {
-  emit("toggle-product-store-verification", checked);
-}
-
-function emitPreflightWarningConfirmation(checked: boolean) {
-  emit("toggle-preflight-warning-confirmation", checked);
-}
-
-function emitStartConfirmation(checked: boolean) {
-  emit("toggle-start-confirmation", checked);
-}
 
 function emitGoNext() {
   const now = Date.now();

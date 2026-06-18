@@ -59,14 +59,10 @@
 <script setup lang="ts">
 import { IonBackButton, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToggle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { cloudUploadOutline, saveOutline } from "ionicons/icons";
-import { translate } from '@common';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { computed, defineProps, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common';
 import TimezoneModal from "@/components/TimezoneModal.vue";
-import emitter from "@/event-bus";
-import logger from "@/logger";
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
@@ -128,7 +124,7 @@ function updateRefundProcessing(event: any) {
 async function saveShopDetails() {
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.id,
       ...shopDetails.value
     });

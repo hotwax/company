@@ -2,7 +2,11 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" :default-href="'/shopify-connection-details/' + id" />
+        <ion-buttons slot="start">
+          <ion-button aria-label="Back" @click="navigateBack">
+            <ion-icon slot="icon-only" :icon="arrowBackOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-title>{{ translate("Shipment methods") }}</ion-title>
         <ion-buttons slot="primary">
           <ion-button :disabled="!isDirty" @click="saveAllDirtyMappings()">
@@ -79,18 +83,14 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonButtons, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, airplaneOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { translate } from '@common'
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, airplaneOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common';
-import emitter from "@/event-bus";
-import logger from "@/logger";
-import { onBeforeRouteLeave } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 
 const props = defineProps(['id']);
 const utilStore = useUtilStore();
@@ -105,6 +105,10 @@ const selectedCarrierPartyId = ref("");
 const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
 const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
 const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
+const backHref = computed(() => {
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo")
+  return returnTo || `/shopify-connection-details/${props.id}`
+})
 
 const carriers = computed(() => {
   const carrierMap: any = {};
@@ -217,7 +221,7 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.createShopifyShopCarrierShipment({
+    const resp = await shopifyStore.createShopifyShopCarrierShipment({
       shopId: props.id,
       shipmentMethodTypeId,
       shopifyShippingMethod: mapping.shopifyShippingMethod,
@@ -226,7 +230,7 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopsCarrierShipments({});
+      await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
       editingItemKey.value = "";
     } else {
       throw resp.data;
@@ -251,14 +255,14 @@ async function saveAllDirtyMappings() {
     for (const key of dirtyKeys) {
       const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
-      await ShopifyService.createShopifyShopCarrierShipment({
+      await shopifyStore.createShopifyShopCarrierShipment({
         shopId: props.id,
         shipmentMethodTypeId,
         shopifyShippingMethod: mapping.shopifyShippingMethod,
         carrierPartyId: carrierPartyId
       });
     }
-    await shopifyStore.fetchShopifyShopsCarrierShipments({});
+    await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -267,12 +271,12 @@ async function saveAllDirtyMappings() {
   emitter.emit("dismissLoader");
 }
 
-onBeforeRouteLeave(async () => {
+async function confirmLeaveWithDirtyMappings() {
   if (!isDirty.value) {
     return true;
   }
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     alertController.create({
       header: translate("Unsaved changes"),
       message: translate("You have unsaved changes. Would you like to save them before leaving?"),
@@ -301,7 +305,15 @@ onBeforeRouteLeave(async () => {
       ]
     }).then(alert => alert.present());
   });
-});
+}
+
+const router = useRouter();
+
+onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
+
+function navigateBack() {
+  router.push(backHref.value);
+}
 </script>
 
 <style scoped>

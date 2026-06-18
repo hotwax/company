@@ -25,7 +25,7 @@
           <ion-button color="danger" @click="logout()">{{ translate("Logout") }}</ion-button>
           <!-- Commenting this code as we currently do not have reset password functionality -->
           <!-- <ion-button fill="outline" color="medium">{{ "Reset password") }}</ion-button> -->
-          <ion-button :standalone-hidden="!userStore.hasPermission('APP_PWA_STANDALONE_ACCESS')" fill="outline" @click="goToLaunchpad()">
+          <ion-button :standalone-hidden="!userStore.hasPermission('COMMON_ADMIN')" fill="outline" @click="goToLaunchpad()">
             {{ translate("Go to Launchpad") }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
@@ -50,20 +50,14 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button :disabled="!userStore.hasPermission('APP_COMMERCE_VIEW')" @click="window.open(commonUtil.getMaargURL(), '_blank')" fill="clear">
+          <ion-button :disabled="!userStore.hasPermission('COMMERCEUSER_VIEW')" @click="openOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
         </ion-card>
       </section>
       <hr />
-      <div class="section-header">
-        <h1>
-          {{ translate("App") }}
-          <p class="overline" >{{ translate("Version:", { appVersion }) }}</p>
-        </h1>
-        <p class="overline">{{ translate("Built:", { builtTime:  getDateTime(appInfo.builtTime)}) }}</p>
-      </div>
+      <DxpAppVersionInfo />
       <section>
         <ion-card>
           <ion-card-header>
@@ -127,33 +121,33 @@ import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSu
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/TimezoneModal.vue";
 import Image from "@/components/Image.vue"
+import DxpAppVersionInfo from "@/components/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
-import { cookieHelper, translate } from '@common'
-import { useRouter } from 'vue-router'
+import { translate, commonUtil, cookieHelper } from '@common'
+import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
 import useServiceJob from "@/composables/useServiceJob";
 const userStore = useUserStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
-const router = useRouter();
 const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
-const appVersion = ref("")
 const maargInfo = computed(() => utilStore.maargInfo)
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
-const appInfo = (import.meta.env.VITE_APP_VERSION_INFO ? JSON.parse(import.meta.env.VITE_APP_VERSION_INFO) : {}) as any
 
 const userProfile = computed(() => userStore.getUserProfile)
 const oms = computed(() => cookieHelper().get("oms") || userStore.oms || translate("Not set"))
+
+const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
@@ -321,7 +315,6 @@ defineProps({
   }
 })
 onMounted(() => {
-  appVersion.value = appInfo.branch ? (appInfo.branch + "-" + appInfo.revision) : appInfo.tag;
   // maargInfo is fetched once on login via util/fetchMaargInfo. Dispatch
   // again here as a safety net for sessions that pre-date that wiring or
   // where the initial dispatch failed; the action itself is idempotent.
@@ -345,10 +338,6 @@ async function changeTimeZone() {
 async function logout() {
   await userStore.postLogout();
   router.push('/login');
-}
-
-function getDateTime(time: any) {
-  return time ? DateTime.fromMillis(time).toLocaleString({ ...DateTime.DATETIME_MED, hourCycle: "h12" }) : "";
 }
 
 function goToLaunchpad() {

@@ -53,7 +53,7 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Products and Inventory") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
           <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
@@ -67,22 +67,22 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Orders and fulfillment") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openShipmentMethod()">
             <ion-label>{{ translate("Shipping methods") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openPaymentMethods()">
             <ion-label>{{ translate("Payment method") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openPriceLevelModal()">
             <ion-label>{{ translate("Price level") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openDiscountsModal()">
             <ion-label>{{ translate("Discounts") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openDepartments()">
             <ion-label>{{ translate("Departments") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openSalesChannel()">
             <ion-label>{{ translate("Sales Channel") }}</ion-label>
           </ion-item>
         </section>
@@ -108,16 +108,15 @@
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { search } from "ionicons/icons";
 import { translate } from '@common';
-import { useRouter } from "vue-router";
-import { useProductStoreStore } from '@/store/productStore';
+import router from "@/router";
+import { useProductStore } from '@/store/productStore';
 import { computed } from "vue";
 import SftpModal from "@/components/SftpModal.vue";
 import ProductStoreModal from "@/components/ProductStoreModal.vue";
 import PriceLevelModal from "@/components/PriceLevelModal.vue";
 import DiscountsModal from "@/components/DiscountsModal.vue";
 
-const productStoreStore = useProductStoreStore();
-const router = useRouter();
+const productStoreStore = useProductStore();
 
 const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore)
 

@@ -20,8 +20,10 @@ export const PRODUCT_SYNC_IDS = {
   },
   shopifyAccessScope: {
     none: "SHOP_NO_ACCESS",
-    legacyReadWrite: "SHOP_RW_ACCESS",
-    readWrite: "SHOP_READ_WRITE_ACCESS"
+    // SHOP_RW_ACCESS is the official read-write scope. SHOP_READ_WRITE_ACCESS is the
+    // deprecated full-form enum that still requires updating (phased out / force-replaced).
+    legacyReadWrite: "SHOP_READ_WRITE_ACCESS",
+    readWrite: "SHOP_RW_ACCESS"
   },
   webhookTopic: {
     bulkOperationsFinish: "BULK_OPERATIONS_FINISH"

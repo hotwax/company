@@ -241,15 +241,13 @@ import {
 } from "@ionic/vue";
 import { closeOutline, createOutline, trashOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
-import { useProductStoreStore } from '@/store/productStore';
+import { maskApiKey } from '@/store/klaviyo';
+import type { ProductStoreEmailSetting } from '@/store/klaviyo';
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
-import { useRouter } from "vue-router";
-import { translate } from '@common';
-import { KlaviyoService, ProductStoreEmailSetting } from "@/services/KlaviyoService";
+import router from "@/router";
+import { commonUtil, logger, translate } from '@common'
 import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
-import { showToast } from '@common'
-import { getResponseErrorMessage } from '@/utils';
-import logger from "@/logger";
 import {
   getDefaultKlaviyoProductStoreId,
   getKlaviyoEventLabel,
@@ -258,9 +256,8 @@ import {
 
 const props = defineProps<{ id: string }>();
 const klaviyoStore = useKlaviyoStore();
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const isLoading = ref(false);
 const showDeleteModal = ref(false);
@@ -280,7 +277,7 @@ const connection = computed(() => klaviyoStore.getConnectionById(decodedId.value
 const eventsForThisConnection = computed(() => {
   return klaviyoStore.getEmailSettingsForGateway(decodedId.value) || [];
 });
-const maskedKey = computed(() => KlaviyoService.maskApiKey(connection.value?.publicKey) || translate("Not set"));
+const maskedKey = computed(() => maskApiKey(connection.value?.publicKey) || translate("Not set"));
 
 const canConfirmDelete = computed(() => {
   if (!eventsForThisConnection.value.length) return true;
@@ -391,13 +388,13 @@ async function commitSubjectIfChanged(evt: any) {
       gatewayAuthId: connection.value.commGatewayAuthId,
       fromAddress: evt.setting.fromAddress,
     };
-    await KlaviyoService.upsertEmailSetting(payload);
+    await klaviyoStore.upsertEmailSetting(payload);
     await klaviyoStore.fetchAllEmailSettings();
     commonUtil.showToast(translate("Subject updated"));
     delete subjectDrafts.value[evt.emailType];
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update subject")));
+    commonUtil.showToast(translate("Failed to update subject"));
   } finally {
     busyEvent.value = null;
   }
@@ -416,16 +413,16 @@ async function toggleEvent(evt: any, enabled: boolean) {
         systemMessageRemoteId: "UNIGATE_CONFIG",
         gatewayAuthId: connection.value.commGatewayAuthId,
       };
-      await KlaviyoService.upsertEmailSetting(payload);
+      await klaviyoStore.upsertEmailSetting(payload);
       commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));
     } else {
-      await KlaviyoService.deleteEmailSetting(selectedStoreId.value, evt.emailType);
+      await klaviyoStore.deleteEmailSetting(selectedStoreId.value, evt.emailType);
       commonUtil.showToast(translate("{label} turned off", { label: getEventLabel(evt.emailType) }));
     }
     await klaviyoStore.fetchAllEmailSettings();
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update email event")));
+    commonUtil.showToast(translate("Failed to update email event"));
   } finally {
     busyEvent.value = null;
   }
@@ -458,14 +455,14 @@ async function performDelete() {
   if (!canConfirmDelete.value) return;
   isDeleting.value = true;
   try {
-    await KlaviyoService.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
+    await klaviyoStore.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
     commonUtil.showToast(translate("Klaviyo connection disconnected"));
     showDeleteModal.value = false;
     await klaviyoStore.hydrate();
     router.replace("/klaviyo");
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to disconnect Klaviyo")));
+    commonUtil.showToast(translate("Failed to disconnect Klaviyo"));
   } finally {
     isDeleting.value = false;
   }

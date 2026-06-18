@@ -83,9 +83,7 @@ import { computed, onBeforeMount, ref ,defineProps} from "vue";
 import { close, save } from "ionicons/icons";
 import { useUserStore } from '@/store/user';
 import { getCurrentTime } from '@/utils'
-import { translate } from '@common'
-import { UserService } from "@/services/UserService";
-import logger from "@/logger";
+import { logger, translate } from '@common'
 
 const userStore = useUserStore();
 let queryString = ref("")
@@ -118,12 +116,8 @@ const props = defineProps({
 onBeforeMount(async() => {
   isLoading.value = true;
   try {
-    const resp = await UserService.getAvailableTimeZones();
-    if(resp.data && resp.data.timeZones) {
-      timeZones.value = resp.data.timeZones;
-    } else if (resp.data && Array.isArray(resp.data)) {
-      timeZones.value = resp.data;
-    }
+    await userStore.fetchAvailableTimeZones();
+    timeZones.value = userStore.availableTimeZones;
   } catch(error) {
     logger.error(error);
   }

@@ -1,9 +1,6 @@
 import { defineStore } from 'pinia'
-import { commonUtil } from '@common'
-import logger from '@/logger'
-import { NetSuiteService } from '@/services/NetSuiteService'
-import { UtilService } from '@/services/UtilService'
-import { useProductStoreStore } from './productStore'
+import { api, commonUtil, logger } from '@common'
+import { useProductStore } from './productStore'
 
 export const useNetSuiteStore = defineStore('netSuite', {
   state: () => ({
@@ -13,6 +10,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
     salesChannel: [] as any[],
     integrationTypeMappings: {} as any,
     facilitiesIdentifications: [] as any[],
+    shopifyShopLocations: [] as any[],
     enumsInEnumGroup: {} as any
   }),
 
@@ -22,6 +20,8 @@ export const useNetSuiteStore = defineStore('netSuite', {
     getPaymentMehtods: (state) => state.paymentMethods,
     getSalesChannel: (state) => state.salesChannel,
     getFacilitiesIdentifications: (state) => state.facilitiesIdentifications,
+    getShopifyShopLocation: (state) => (facilityId: string) =>
+      state.shopifyShopLocations.find((l: any) => l.facilityId === facilityId)?.shopifyLocationId,
     getEnumGroups: (state) => (enumId: any) => state.enumsInEnumGroup[enumId],
     getIntegrationTypeMappings: (state) => (typeId: any) =>
       state.integrationTypeMappings[typeId] ?? []
@@ -32,7 +32,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let inventoryVariances: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnums({ enumTypeId: 'IID_REASON', pageSize: 100, pageIndex })
+          resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'IID_REASON', pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             inventoryVariances = inventoryVariances.concat(resp.data)
           } else {
@@ -50,10 +50,10 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let enumsInEnumGroup: any = {}, pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnumGroupMember({
-            enumerationGroupId: 'NETSUITE_IIV_REASON',
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: `admin/enumGroups/NETSUITE_IIV_REASON/members`,
+            method: "get",
+            params: { enumerationGroupId: 'NETSUITE_IIV_REASON', pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newEnums = resp.data
@@ -78,10 +78,10 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let facilitiesIdentifications: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await NetSuiteService.fetchfacilitiesIdentifications({
-            facilityIdenTypeId: 'ORDR_ORGN_DPT',
-            pageSize: 100,
-            pageIndex
+          resp = await api({
+            url: "oms/facilities/identifications",
+            method: "get",
+            params: { facilityIdenTypeId: 'ORDR_ORGN_DPT', pageSize: 100, pageIndex }
           })
           if (!commonUtil.hasError(resp)) {
             facilitiesIdentifications = facilitiesIdentifications.concat(
@@ -102,7 +102,7 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let salesChannel: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await UtilService.fetchEnums({ enumTypeId: 'ORDER_SALES_CHANNEL', pageSize: 100, pageIndex })
+          resp = await api({ url: "admin/enums", method: "get", params: { enumTypeId: 'ORDER_SALES_CHANNEL', pageSize: 100, pageIndex } })
           if (!commonUtil.hasError(resp)) {
             salesChannel = salesChannel.concat(resp.data)
           } else {
@@ -120,7 +120,11 @@ export const useNetSuiteStore = defineStore('netSuite', {
       let paymentMethods: any[] = [], pageIndex = 0, resp: any
       try {
         do {
-          resp = await NetSuiteService.fetchPaymentMethods({ pageSize: 100, pageIndex })
+          resp = await api({
+            url: "admin/paymentMethodTypes",
+            method: "get",
+            params: { pageSize: 100, pageIndex }
+          })
           if (!commonUtil.hasError(resp)) {
             paymentMethods = paymentMethods.concat(resp.data)
           } else {
@@ -137,10 +141,14 @@ export const useNetSuiteStore = defineStore('netSuite', {
     async fetchProductStoreShipmentMethods(params: any = {}) {
       let productStoreShipmentMethods: any[] = [], pageIndex = 0, resp: any
       try {
-        const netSuiteProductStore = useProductStoreStore().getNetSuiteProductStore
+        const netSuiteProductStore = useProductStore().getNetSuiteProductStore
         const productStoreId = params.productStoreId || netSuiteProductStore?.productStoreId
         do {
-          resp = await NetSuiteService.fetchProductStoreShipmentMethods({ productStoreId, pageSize: 100, pageIndex })
+          resp = await api({
+            url: `admin/productStores/${productStoreId}/shippingMethods`,
+            method: "get",
+            params: { productStoreId, pageSize: 100, pageIndex }
+          })
           if (!commonUtil.hasError(resp) && resp.data) {
             productStoreShipmentMethods = productStoreShipmentMethods.concat(resp.data)
           } else {
@@ -165,7 +173,11 @@ export const useNetSuiteStore = defineStore('netSuite', {
           }
           if (params.mappingKey) payload.mappingKey = params.mappingKey
 
-          resp = await NetSuiteService.fetchIntegrationTypeMappings(payload)
+          resp = await api({
+            url: "admin/integrationTypeMappings",
+            method: "get",
+            params: payload
+          })
           if (!commonUtil.hasError(resp) && resp.data) {
             const newMappings = resp.data.reduce((acc: any, item: any) => {
               const typeId = item.integrationTypeId
@@ -183,6 +195,66 @@ export const useNetSuiteStore = defineStore('netSuite', {
         logger.error(error)
       }
       this.integrationTypeMappings = integrationTypeMappings
+    },
+
+    async updateFacilityIdentification(payload: any): Promise<any> {
+      return api({
+        url: `oms/facilities/${payload.facilityId}/identifications`,
+        method: "post",
+        data: payload
+      })
+    },
+
+    async addIntegrationTypeMappings(payload: any): Promise<any> {
+      return api({
+        url: "admin/integrationTypeMappings",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateIntegrationTypeMappings(payload: any, integrationMappingId: any): Promise<any> {
+      return api({
+        url: `admin/integrationTypeMappings/${integrationMappingId}`,
+        method: "post",
+        data: payload
+      })
+    },
+
+    async removeIntegrationMappingValue(integrationMappingId: any): Promise<any> {
+      return api({
+        url: `admin/integrationTypeMappings/${integrationMappingId}`,
+        method: "delete"
+      })
+    },
+
+    async updateSftpConfig(payload: any): Promise<any> {
+      return api({
+        url: "updateSftp",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async updateEnumCode(payload: any): Promise<any> {
+      return api({
+        url: `admin/enums/${payload.enumId}`,
+        method: "put",
+        data: payload
+      })
+    },
+
+    async fetchShopifyShopLocation() {
+      const productStoreId = useProductStore().current?.productStoreId
+      if (!productStoreId) return
+      try {
+        const resp = await api({ url: 'oms/shopifyShops/locations', method: 'get', params: { pageSize: 200 } })
+        if (!commonUtil.hasError(resp) && Array.isArray(resp.data)) {
+          this.shopifyShopLocations = resp.data
+        }
+      } catch (err) {
+        logger.error('fetchShopifyShopLocation', err)
+      }
     },
 
     clearNetSuiteState() {

@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { Settings } from 'luxon'
-import { api, commonUtil, translate } from '@common'
+import { api, commonUtil, logger, translate } from '@common'
 import { useAuth } from '@common/composables/useAuth'
-import logger from '@/logger'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -10,6 +9,13 @@ export const useUserStore = defineStore('user', {
     permissions: [] as string[],
     oms: '',
     instanceUrl: '',
+    availableTimeZones: [] as any[],
+    userAccount: null as any,
+    fetchStatus: {
+      profile: '' as string,
+      permissions: '' as string,
+      lastFetched: 0 as number
+    }
   }),
 
   getters: {
@@ -31,19 +37,23 @@ export const useUserStore = defineStore('user', {
 
   actions: {
     async fetchUserProfile() {
+      this.fetchStatus.profile = 'pending'
       try {
         const resp = await api({
           url: 'admin/user/profile',
           method: 'get',
           baseURL: commonUtil.getMaargURL()
         })
-        if (commonUtil.hasError(resp)) throw resp.data._ERROR_MESSAGE_
+        if (commonUtil.hasError(resp)) throw resp
         this.current = resp.data
         useAuth().updateUserId(this.current.userId)
         if (this.current.timeZone) {
           Settings.defaultZone = this.current.timeZone
         }
+        this.fetchStatus.profile = 'success'
+        this.fetchStatus.lastFetched = Date.now()
       } catch (error: any) {
+        this.fetchStatus.profile = 'error'
         commonUtil.showToast(translate('Failed to fetch user profile'))
         logger.error('fetchUserProfile', error)
         useAuth().clearAuth()
@@ -52,6 +62,7 @@ export const useUserStore = defineStore('user', {
     },
 
     async fetchPermissions() {
+      this.fetchStatus.permissions = 'pending'
       const permissionId = import.meta.env.VITE_APP_PERMISSION_ID
       const serverPermissions: string[] = []
       const viewSize = 200
@@ -76,11 +87,14 @@ export const useUserStore = defineStore('user', {
         if (permissionId && !serverPermissions.includes(permissionId)) {
           const msg = 'You do not have permission to access the app.'
           commonUtil.showToast(translate(msg))
+          this.fetchStatus.permissions = 'error'
           return Promise.reject(new Error(msg))
         }
 
         this.permissions = serverPermissions
+        this.fetchStatus.permissions = 'success'
       } catch (error: any) {
+        this.fetchStatus.permissions = 'error'
         return Promise.reject(error)
       }
     },
@@ -91,7 +105,7 @@ export const useUserStore = defineStore('user', {
         const resp: any = await api({
           url: 'admin/user/profile',
           method: 'POST',
-          data: { userId: this.current.userId, tzId }
+          data: { userId: this.current.userId, timeZone: tzId }
         })
         if (resp?.status === 200) {
           this.current.timeZone = tzId
@@ -104,6 +118,37 @@ export const useUserStore = defineStore('user', {
         logger.error('setUserTimeZone', err)
         commonUtil.showToast(translate('Failed to update time zone'))
         return Promise.reject('')
+      }
+    },
+
+    async fetchAvailableTimeZones() {
+      try {
+        const resp = await api({
+          url: 'admin/user/getAvailableTimeZones',
+          method: 'get',
+          cache: true
+        })
+        if (resp?.data) {
+          this.availableTimeZones = resp.data.timeZones ?? (Array.isArray(resp.data) ? resp.data : [])
+        }
+        return resp
+      } catch (error: any) {
+        logger.error('fetchAvailableTimeZones', error)
+        return Promise.reject(error)
+      }
+    },
+
+    async fetchUserAccount(userId: string) {
+      try {
+        const resp = await api({
+          url: `admin/users/${encodeURIComponent(userId)}`,
+          method: 'GET'
+        })
+        this.userAccount = resp?.data ?? null
+        return resp
+      } catch (error: any) {
+        logger.error('fetchUserAccount', error)
+        return Promise.reject(error)
       }
     },
 
@@ -120,6 +165,24 @@ export const useUserStore = defineStore('user', {
     // Called by @common's initialiseConfig after logout
     async postLogout() {
       this.$reset()
+      useAuth().clearAuth()
+
+      // Reset all other persisted stores so no data leaks across sessions
+      const { useProductStore } = await import('./productStore')
+      const { useUtilStore } = await import('./util')
+      const { useNetSuiteStore } = await import('./netSuite')
+      const { useShopifyStore } = await import('./shopify')
+      const { useKlaviyoStore } = await import('./klaviyo')
+      const { useComposerStore } = await import('./composer')
+      const { useWorkforceStore } = await import('./workforce')
+
+      useProductStore().clearProductStoreState()
+      useUtilStore().clearUtilState()
+      useNetSuiteStore().clearNetSuiteState()
+      useShopifyStore().clearShopifyState()
+      useKlaviyoStore().clear()
+      useComposerStore().clearComposerState()
+      useWorkforceStore().clearWorkforceState()
     }
   },
 

@@ -47,6 +47,11 @@
           {{ translate("Manage configurations") }}
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
+
+        <ion-button class="ion-margin-top" fill="outline" router-link="/product-store-onboarding">
+          {{ translate("Preview guided setup") }}
+          <ion-icon slot="end" :icon="arrowForwardOutline"/>
+        </ion-button>
       </main>
     </ion-content>
   </ion-page>
@@ -55,22 +60,16 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
-import { translate } from '@common';
-import { useRouter } from "vue-router";
-import { useProductStoreStore } from '@/store/productStore';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import router from "@/router";
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
 import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
-import { hasError, showToast } from '@common'
 import { generateInternalId } from '@/utils';
-import logger from "@/logger";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import { UtilService } from "@/services/UtilService";
-import emitter from "@/event-bus";
 
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
-const router = useRouter();
 
 const formData = ref({
   companyName: "",
@@ -80,10 +79,10 @@ const formData = ref({
 }) as any;
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
-const currencies = ref([]) as any;
+const currencies = computed(() => utilStore.currencies)
 
 const productStores = computed(() => productStoreStore.productStores)
-const dbicCountriesCount = computed(() => utilStore.dbicCountriesCount)
+const dbicCountriesCount = computed(() => utilStore.getDBICCountriesCount)
 const company = computed(() => productStoreStore.company)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
 
@@ -91,19 +90,8 @@ onIonViewWillEnter(async () => {
   await utilStore.fetchDBICCountries();
   productStoreStore.fetchCompany();
   if(!dbicCountriesCount.value) await utilStore.fetchOperatingCountries();
-  await fetchCurrencies();
+  await utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
 })
-
-async function fetchCurrencies() {
-  try {
-    const resp = await UtilService.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
-    if(resp.data?.length) {
-      currencies.value = resp.data;
-    }
-  } catch(err) {
-    logger.error("Failed to fetch currencies", err)
-  }
-}
 
 async function manageConfigurations() {
   if (!formData.value.storeName?.trim() || !formData.value.defaultCurrencyUomId) {
@@ -137,13 +125,13 @@ async function manageConfigurations() {
       payload["companyName"] = formData.value.companyName
     }
 
-    resp = await ProductStoreService.createProductStore(payload);
+    resp = await productStoreStore.createProductStore(payload);
 
     if(!commonUtil.hasError(resp)) {
       const productStoreId = resp.data.productStoreId;
       
       if(!dbicCountriesCount.value) {
-        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => ProductStoreService.addDBICCountries({
+        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => productStoreStore.addDBICCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
             geoAssocTypeEnumId: "GROUP_MEMBER"
@@ -157,12 +145,12 @@ async function manageConfigurations() {
       }
       
       if(!productStores.value.length && formData.value.companyName) {
-        await ProductStoreService.updateCompany({ ...company.value, groupName: formData.value.companyName });
+        await productStoreStore.updateCompany({ ...company.value, groupName: formData.value.companyName });
       }
 
       commonUtil.showToast(translate("Product store created successfully."))
       emitter.emit("dismissLoader");
-      router.replace(`add-configurations/${productStoreId}`);
+      router.replace(`/product-store-onboarding/${productStoreId}`);
     } else {
       throw resp.data;
     }

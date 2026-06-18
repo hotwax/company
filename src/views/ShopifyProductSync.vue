@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button :default-href="'/shopify-connection-details/' + id" />
+          <ion-back-button :default-href="productSyncBackHref" />
         </ion-buttons>
         <ion-title>{{ translate("Product sync") }}</ion-title>
         <ion-buttons slot="end">
@@ -717,6 +717,8 @@ import {
   IonHeader,
   IonDatetime,
   IonDatetimeButton,
+  IonPopover,
+  IonProgressBar,
   IonIcon,
   IonInput,
   IonItem,
@@ -741,21 +743,19 @@ import {
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
-import { translate } from '@common';
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { commonUtil, hasError, logger, translate } from '@common'
+import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUserStore } from '@/store/user';
-import { useProductStoreStore } from '@/store/productStore';
+import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
-import { useRoute, useRouter } from "vue-router";
+import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import { ShopifyService } from "@/services/ShopifyService";
-import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
-import { UserService } from "@/services/UserService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {
   canAdvanceProductSyncStep,
   canStartProductSync,
@@ -766,15 +766,14 @@ import {
   nextProductSyncStep,
   normalizeProductSyncStatus,
   previousProductSyncStep,
+  productSyncWizardSteps,
   ProductSyncExperienceMode,
   ProductSyncWizardStep,
   requiresPreflightConfirmation,
   resolveProductSyncExperienceMode,
   selectProductStore
 } from "@/utils/shopifyProductSyncWizard";
-import { hasError, showToast } from '@common'
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
-import logger from "@/logger";
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useLiveDashboard } from "@/composables/useLiveDashboard";
@@ -790,10 +789,10 @@ import {
 
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
-const productStoreStore = useProductStoreStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
-const router = useRouter();
-const route = useRoute();
+const userStore = useUserStore();
 const {
   jobs,
   products,
@@ -937,6 +936,9 @@ const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
 const statusItems = computed(() => utilStore.statusItems || {});
 const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const productSyncBackHref = computed(() => {
+  return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
+});
 
 function getStatusDescription(statusId: string) {
   return statusItems.value[statusId]?.description || statusId;
@@ -1026,7 +1028,7 @@ const shopifyAccessDetail = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (shopifyAccessState.value.status === "read-only") {
@@ -1043,7 +1045,7 @@ const shopifyAccessBlockingMessage = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses deprecated access scope SHOP_RW_ACCESS. Update it to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses deprecated access scope SHOP_READ_WRITE_ACCESS. Update it to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (!hasShopifyWriteAccess.value) {
@@ -1723,7 +1725,7 @@ async function loadWizard() {
     }
     await loadSelectedShopSystemMessageRemoteId();
 
-    setupState.value = await ShopifyProductSyncService.fetchSetupState({
+    setupState.value = await shopifyProductSyncStore.fetchSetupState({
       shopId: props.id,
       shop: shop.value,
       productStore: selectedProductStore.value
@@ -1738,6 +1740,7 @@ async function loadWizard() {
       syncStarted: !!setupState.value.syncJobId,
       startConfirmed: false
     });
+    applyProductSyncRouteContext();
 
     syncJobId.value = setupState.value.syncJobId || "";
     if (setupState.value.completed) {
@@ -1759,9 +1762,12 @@ async function loadWizard() {
 
     await loadWebhookSubscriptions();
 
-    // Dev override to land on a specific step
-    if (route.query.step) {
-      currentStep.value = route.query.step as ProductSyncWizardStep;
+    const requestedStep = getQueryProductSyncWizardStep(router.currentRoute.value.query.step);
+    if (requestedStep) {
+      currentStep.value = requestedStep;
+      if (currentStep.value === "review") {
+        await loadReviewStats();
+      }
       if (currentStep.value === "progress") {
         const loadedProgress = await loadProgress();
         if (loadedProgress) startProgressPolling();
@@ -1783,6 +1789,48 @@ async function loadWizard() {
   }
 }
 
+function getQueryValue(value: any) {
+  if (Array.isArray(value)) return String(value[0] || "");
+  return value ? String(value) : "";
+}
+
+function getSafeProductSyncReturnPath(value: string) {
+  const path = value.trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//") || path.includes("://")) return "";
+  return path;
+}
+
+function getQueryProductSyncExperienceMode(value: any): ProductSyncExperienceMode | "" {
+  const mode = getQueryValue(value);
+  if (mode === "first-time" || mode === "returning" || mode === "auto") return mode;
+  return "";
+}
+
+function getQueryProductSyncWizardStep(value: any): ProductSyncWizardStep | "" {
+  const step = getQueryValue(value);
+  return productSyncWizardSteps.includes(step as ProductSyncWizardStep) ? step as ProductSyncWizardStep : "";
+}
+
+function applyProductSyncRouteContext() {
+  const query = router.currentRoute.value.query;
+  const mode = getQueryProductSyncExperienceMode(query.mode);
+  if (mode) experienceMode.value = mode;
+
+  const productStoreId = getQueryValue(query.productStoreId);
+  if (productStoreId && !productStoreLocked.value) {
+    draft.value = selectProductStore(draft.value, productStoreId);
+  }
+
+  if (productStoreId && shop.value.productStoreId === productStoreId) {
+    draft.value.productStoreVerified = true;
+  }
+
+  const identifierEnumId = getQueryValue(query.identifierEnumId);
+  if (identifierEnumId && !identifierLocked.value) {
+    draft.value.selectedIdentifierEnumId = identifierEnumId;
+  }
+}
+
 async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   // On cold start we surface skeletons via isSecondaryLoading. Every subsequent
   // refresh keeps the last-known-good data visible — the subtle indicator driven
@@ -1793,7 +1841,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
   latestPauseAuditByJobName.value = {};
   try {
-    const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+    const summary = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       shop: shop.value
@@ -1915,7 +1963,7 @@ async function loadBulkOperationPollJobLatestRun() {
 
 async function loadSelectedShopSystemMessageRemoteId() {
   try {
-    selectedShopSystemMessageRemoteId.value = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+    selectedShopSystemMessageRemoteId.value = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
       shopId: props.id,
       shop: shop.value
     });
@@ -2009,7 +2057,7 @@ async function handleSelectedProductsForSync(data: any) {
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: shopifyProductIds
     });
@@ -2047,7 +2095,7 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+  const summary = await shopifyProductSyncStore.fetchDashboardSummary({
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     shop: shop.value
@@ -2121,7 +2169,7 @@ async function resyncProduct(record: any) {
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
     });
@@ -2139,7 +2187,7 @@ async function resyncProduct(record: any) {
 async function loadProductStoreContext(productStoreId: string) {
   try {
     assertShopifyShopsLoaded();
-    const context = await ShopifyProductSyncService.fetchProductStoreContext({
+    const context = await shopifyProductSyncStore.fetchProductStoreContext({
       shopId: props.id,
       productStoreId,
       shops: shopifyStore.shops || []
@@ -2662,7 +2710,7 @@ async function persistProductStoreSelection() {
   if (shop.value.productStoreId === draft.value.selectedProductStoreId) return true;
   isSaving.value = true;
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId
     });
@@ -2694,7 +2742,7 @@ async function persistIdentifierSelection() {
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: identifierEnumId
     };
-    const resp = await ProductStoreService.updateProductStore(payload);
+    const resp = await productStoreStore.updateProductStore(payload);
 
     if (!commonUtil.hasError(resp)) {
       productStoreStore.updateCurrent(payload);
@@ -2714,7 +2762,7 @@ async function persistIdentifierSelection() {
 async function loadReviewStats() {
   isReviewLoading.value = true;
   try {
-    reviewStats.value = await ShopifyProductSyncService.fetchReviewStats({
+    reviewStats.value = await shopifyProductSyncStore.fetchReviewStats({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId,
       linkedShopCount: relatedShops.value.length,
@@ -2759,7 +2807,7 @@ function toggleStartConfirmation(checked?: boolean) {
 }
 
 async function loadPreflight() {
-  const rawItems = await ShopifyProductSyncService.fetchPreflight({
+  const rawItems = await shopifyProductSyncStore.fetchPreflight({
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     productStoreId: draft.value.selectedProductStoreId,
     productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2836,7 +2884,7 @@ async function checkSyncJobConfig() {
   isSyncJobConfigLoaded.value = false;
   try {
     const shopId = props.id; 
-    const result = await ShopifyProductSyncService.fetchSyncJobConfig({ shopId });
+    const result = await shopifyProductSyncStore.fetchSyncJobConfig({ shopId });
     
     syncJobConfigured.value = result.isConfigured;
     if (result.isConfigured) {
@@ -2855,7 +2903,7 @@ async function configureSyncJob() {
     const shopId = shop.value?.shopId;
     if (!shopId) throw new Error("Shop ID not available");
 
-    await ShopifyProductSyncService.configureSyncJob({
+    await shopifyProductSyncStore.configureSyncJob({
       shopId,
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2890,7 +2938,7 @@ async function startProductSync() {
       await loadSelectedShopSystemMessageRemoteId();
     }
 
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({ 
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({ 
       shopId: props.id,
       includeAll: true 
     });
@@ -2991,7 +3039,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    await ShopifyProductSyncService.cancelSystemMessage(systemMessageId);
+    await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
     commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
@@ -3007,7 +3055,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
   try {
     currentSyncRun.value = {} as any;
     const job = syncJobObj.value;
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({
       shopId: props.id,
       ...params
     });
@@ -3064,7 +3112,7 @@ async function loadProgress() {
   let loadedRunState = false;
   try {
     const [syncRunStateResult, sendJobResult, pollJobResult, sendJobRunsResult, pollJobRunsResult] = await Promise.allSettled([
-      ShopifyProductSyncService.fetchProductUpdateSyncRunState({
+      shopifyProductSyncStore.fetchProductUpdateSyncRunState({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         shopId: props.id,
         systemMessageId: progressState.value?.systemMessageId
@@ -3426,7 +3474,7 @@ async function loadSyncJobAuditUsers(auditLogs: any[]) {
   if (!missingUserIds.length) return;
 
   const responses = await Promise.allSettled(missingUserIds.map(async (userId) => {
-    const resp = await UserService.getUserAccount(userId);
+    const resp = await userStore.fetchUserAccount(userId);
     return { userId, data: resp?.data || {} };
   }));
 
@@ -3617,7 +3665,7 @@ async function loadWebhookSubscriptions() {
   if (!selectedShopSystemMessageRemoteId.value) return;
   isWebhookLoading.value = true;
   try {
-    webhookSubscriptions.value = await ShopifyProductSyncService.fetchWebhookSubscriptions({
+    webhookSubscriptions.value = await shopifyProductSyncStore.fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       topic: PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC
     });
@@ -3638,7 +3686,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
   isWebhookLoading.value = true;
   try {
     if (subscribe) {
-      await ShopifyProductSyncService.subscribeWebhook({
+      await shopifyProductSyncStore.subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC,
       });
@@ -3646,7 +3694,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === PRODUCT_SYNC_BULK_OPERATION_WEBHOOK_TOPIC);
       if (subscription) {
-        await ShopifyProductSyncService.unsubscribeWebhook({
+        await shopifyProductSyncStore.unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });

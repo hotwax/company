@@ -67,15 +67,11 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
-import { commonUtil } from '@common';
 import { DateTime } from "luxon";
-import emitter from "@/event-bus";
-import logger from '@/logger';
-import { NetSuiteService } from '@/services/NetSuiteService';
 
 const utilStore = useUtilStore();
 const netSuiteStore = useNetSuiteStore();
@@ -134,7 +130,7 @@ async function editNetSuiteId(facility: any) {
               fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
             };
             
-            resp = await NetSuiteService.updateFacilityIdentification(payload);
+            resp = await netSuiteStore.updateFacilityIdentification(payload);
             if(!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("NetSuite department Id updated successfully"))
               await netSuiteStore.fetchFacilitiesIdentifications()
@@ -163,7 +159,7 @@ async function removeNetSuiteId(facility: any) {
       thruDate: DateTime.now().toMillis()
     };
 
-    const resp = await NetSuiteService.updateFacilityIdentification(payload);
+    const resp = await netSuiteStore.updateFacilityIdentification(payload);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("NetSuite department Id removed successfully"));
       await netSuiteStore.fetchFacilitiesIdentifications();

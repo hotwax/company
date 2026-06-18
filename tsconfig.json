@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
-    "strict": false,
+    "strict": true,
     "jsx": "preserve",
     "importHelpers": true,
     "moduleResolution": "bundler",
@@ -10,12 +10,11 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "sourceMap": true,
-    "baseUrl": ".",
     "resolveJsonModule": true,
     "paths": {
-      "@/*": ["src/*"],
-      "@common/*": ["../accxui/common/*"],
-      "@common": ["../accxui/common/index.ts"]
+      "@/*": ["./src/*"],
+      "@common/*": ["../../common/*"],
+      "@common": ["../../common/index.ts"]
     },
     "lib": [
       "esnext",
@@ -28,7 +27,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.vue",
-    "vite.config.js"
+    "vite.config.ts"
   ],
   "exclude": [
     "node_modules"

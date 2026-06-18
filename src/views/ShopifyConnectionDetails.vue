@@ -5,6 +5,12 @@
         <ion-back-button slot="start" default-href="/shopify"/>
         <ion-title v-if="isLoading"><ion-skeleton-text animated style="width: 100px" /></ion-title>
         <ion-title v-else>{{ shop.name || id }}</ion-title>
+        <ion-buttons slot="end" v-if="!isLoading">
+          <ion-button @click="openCloneSettingsModal()">
+            <ion-icon slot="start" :icon="copyOutline" />
+            {{ translate("Clone settings") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -37,6 +43,12 @@
               <ion-label>
                 {{ shop.productStoreId || translate("Not linked") }}
                 <p>{{ translate("Product Store") }}</p>
+              </ion-label>
+            </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openCredentialsModal()">
+              <ion-label>
+                {{ translate("API credentials") }}
+                <p>{{ translate("Access token and secrets") }}</p>
               </ion-label>
             </ion-item>
           </section>
@@ -215,24 +227,27 @@
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { translate } from '@common';
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
+import { copyOutline } from "ionicons/icons";
+import { logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, ref } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import { useProductStoreStore } from '@/store/productStore';
-import { useRouter } from "vue-router";
+import { useProductStore } from '@/store/productStore';
+import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import { ShopifyProductSyncMigrationService } from "@/services/ShopifyProductSyncMigrationService";
+import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
+import CloneShopifySettingsModal from "@/components/CloneShopifySettingsModal.vue";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
-import logger from "@/logger";
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
-const productStoreStore = useProductStoreStore();
-const router = useRouter();
+const productStoreStore = useProductStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
 const PRODUCT_SYNC_ACTIVITY_HOUR_COUNT = 24;
@@ -349,7 +364,7 @@ const productSyncMigrationNotice = computed(() => {
     return {
       state: "access-scope-update-required",
       label: translate("Update Shopify access scope"),
-      detail: translate("This Shopify connection still uses SHOP_RW_ACCESS. Update the remote configuration to SHOP_READ_WRITE_ACCESS before starting the new product sync."),
+      detail: translate("This Shopify connection still uses the deprecated SHOP_READ_WRITE_ACCESS scope. Update the remote configuration to SHOP_RW_ACCESS before starting the new product sync."),
       badge: translate("Update required"),
       color: "warning",
       action: "setup"
@@ -594,10 +609,10 @@ async function loadProductsInventorySummary() {
   }
 
   const [eligibilityResult, accessStateResult, legacyTeardownStateResult, systemMessageRemoteIdResult] = await Promise.allSettled([
-    ShopifyProductSyncMigrationService.fetchEligibility(),
-    ShopifyProductSyncService.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncMigrationService.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
-    ShopifyProductSyncService.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
+    shopifyProductSyncMigrationStore.fetchEligibility(),
+    shopifyProductSyncStore.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
+    shopifyProductSyncStore.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -628,7 +643,7 @@ async function loadProductsInventorySummary() {
   }
 
   try {
-    productSyncSummary.value = await ShopifyProductSyncService.fetchDashboardSummary({
+    productSyncSummary.value = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId,
       shop: shop.value
@@ -657,6 +672,14 @@ async function loadTrackProgressDetails() {
   }
 }
 
+async function openCredentialsModal() {
+  const modal = await modalController.create({
+    component: EditShopifyCredentialsModal,
+    componentProps: { shop: shop.value }
+  })
+  await modal.present()
+}
+
 async function openProductStoreModal() {
   const modal = await modalController.create({
     component: ShopifyProductStoreModal,
@@ -666,6 +689,17 @@ async function openProductStoreModal() {
     await shopifyStore.fetchShopifyShops();
   });
   modal.present();
+}
+
+async function openCloneSettingsModal() {
+  const modal = await modalController.create({
+    component: CloneShopifySettingsModal,
+    componentProps: { targetShop: shop.value }
+  });
+  modal.onDidDismiss().then(async () => {
+    await loadProductsInventorySummary();
+  });
+  await modal.present();
 }
 
 function openProductSyncEntry() {

@@ -121,16 +121,14 @@ import {
   IonTitle,
   IonToolbar
 } from "@ionic/vue";
-import { translate } from '@common';
+import { commonUtil, logger, translate } from '@common'
 import { computed, defineProps, reactive, ref } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
-import logger from "@/logger";
 import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistoryView.vue";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
-import { showToast } from '@common'
 import { downloadTextFile, getDownloadFileContent, parseDateTimeValue } from '@/utils';
 import {
   getSystemMessageTime,
@@ -144,6 +142,7 @@ import { getRawShopifyFileName } from "@/utils/shopifyProductSyncWizard";
 const props = defineProps(["id"]);
 const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
 const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
 const { downloadDataManagerFile, fetchLogDetails } = useDataManagerLog();
 
@@ -229,7 +228,7 @@ async function loadHistory() {
 
     if (isStaleHistoryLoad(loadToken)) return;
 
-    const resolvedSystemMessageRemoteIds = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+    const resolvedSystemMessageRemoteIds = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
       shopId: props.id,
       shopifyShopId: shop.value.shopifyShopId,
       shop: shop.value,

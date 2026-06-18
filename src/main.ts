@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import logger from './logger'
+import { createDxpI18n, initialiseConfig, logger } from '@common'
 
 import { IonicVue } from '@ionic/vue'
 
@@ -26,7 +26,6 @@ import '@common/css/theme.css'
 
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
-import { createDxpI18n, initialiseConfig } from '@common'
 import { useUserStore } from './store/user'
 import localeMessages from './locales'
 import { DateTime } from 'luxon'

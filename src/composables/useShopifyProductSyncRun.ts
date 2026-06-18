@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs } from 'vue';
 import { useSystemMessage } from './useSystemMessage';
 import { useDataManagerLog } from './useDataManagerLog';
-import { ShopifyProductSyncRun } from '@/services/ShopifyProductSyncService';
+import type { ShopifyProductSyncRun } from '@/store/shopifyProductSync';
 import { translate } from '@common';
 import { useUtilStore } from '@/store/util';
 

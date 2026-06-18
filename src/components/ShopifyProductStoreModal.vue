@@ -40,18 +40,13 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline } from 'ionicons/icons'
-import { translate } from '@common'
-import { useProductStoreStore } from '@/store/productStore';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, onMounted, ref } from "vue";
-import { ShopifyService } from "@/services/ShopifyService";
-import { hasError, showToast } from '@common'
-import { getResponseErrorMessage } from '@/utils';
-import emitter from "@/event-bus";
-import logger from "@/logger";
 
 const props = defineProps(['shop']);
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 const shopifyStore = useShopifyStore();
 
 const productStores = computed(() => productStoreStore.productStores)
@@ -70,7 +65,7 @@ function closeModal() {
 async function updateProductStoreMapping() {
   emitter.emit("presentLoader");
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.shop.shopId,
       productStoreId: selectedProductStoreId.value
     });
@@ -84,7 +79,7 @@ async function updateProductStoreMapping() {
     }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(translate("Failed to link product store"));
   }
   emitter.emit("dismissLoader");
 }

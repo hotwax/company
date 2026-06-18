@@ -6,7 +6,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import { IonSkeletonText } from '@ionic/vue'
-import logger from "@/logger";
+import { logger } from '@common';
 
 export default defineComponent({
   name: "Image",

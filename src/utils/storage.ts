@@ -1,5 +1,19 @@
 import Dexie, { Table } from 'dexie';
-import logger from "@/logger";
+import { logger } from '@common';
+
+// Strip non-serializable values (Error instances, functions, circular refs)
+// so the structured clone algorithm used by IndexedDB can store the object.
+const toPlain = (value: any): any => {
+  try {
+    return JSON.parse(JSON.stringify(value, (_key, val) => {
+      if (val instanceof Error) return { name: val.name, message: val.message, stack: val.stack }
+      if (typeof val === 'function') return undefined
+      return val
+    }))
+  } catch {
+    return {}
+  }
+}
 
 const EXPIRATION_TIME = 2 * 60 * 60 * 1000; // 2 hour in milliseconds
 
@@ -50,7 +64,7 @@ export const setErrorRecords = async (logContentId: string, records: any[]): Pro
         sku: record.sku || (product.variants?.[0]?.sku) || '',
         error: record.error || record._ERROR_MESSAGE_ || record.message || record.errorMessage || '',
         createdAt: timestamp,
-        raw: record.raw || record
+        raw: toPlain(record.raw || record)
       };
     });
 

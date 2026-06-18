@@ -1,32 +1,30 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import { RouteRecordRaw } from 'vue-router'
-import { Login } from '@common'
+import { Login, logger } from '@common/index'
 import { useAuth } from '@common/composables/useAuth'
 
-import CreateProductStore from '@/views/CreateProductStore.vue'
-import AddConfigurations from '@/views/AddConfigurations.vue'
-import ProductStoreDetails from '@/views/ProductStoreDetails.vue'
-import ProductStore from '@/views/ProductStore.vue'
-import NetSuite from '@/views/NetSuite.vue'
-import Settings from '@/views/Settings.vue'
-import ShipmentMethods from '@/views/ShipmentMethods.vue'
-import InventoryVariances from '@/views/InventoryVariances.vue'
-import PaymentMethods from '@/views/PaymentMethods.vue'
-import SalesChannel from '@/views/SalesChannel.vue'
-import Departments from '@/views/Departments.vue'
-import ShopifyConnectionDetails from '@/views/ShopifyConnectionDetails.vue'
-import Klaviyo from '@/views/Klaviyo.vue'
-import KlaviyoConnectionDetails from '@/views/KlaviyoConnectionDetails.vue'
+const CreateProductStore = () => import('@/views/CreateProductStore.vue')
+const ProductStoreOnboarding = () => import('@/views/ProductStoreOnboarding.vue')
+const AddConfigurations = () => import('@/views/AddConfigurations.vue')
+const ProductStoreDetails = () => import('@/views/ProductStoreDetails.vue')
+const ProductStore = () => import('@/views/ProductStore.vue')
+const NetSuite = () => import('@/views/NetSuite.vue')
+const Settings = () => import('@/views/Settings.vue')
+const ShipmentMethods = () => import('@/views/ShipmentMethods.vue')
+const InventoryVariances = () => import('@/views/InventoryVariances.vue')
+const PaymentMethods = () => import('@/views/PaymentMethods.vue')
+const SalesChannel = () => import('@/views/SalesChannel.vue')
+const Departments = () => import('@/views/Departments.vue')
+const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.vue')
+const Klaviyo = () => import('@/views/Klaviyo.vue')
+const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
+const CloneProductStore = () => import('@/views/CloneProductStore.vue')
+const Composer = () => import('@/views/agent/Composer.vue')
+const Workforce = () => import('@/views/agent/Workforce.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
     return { path: '/login' }
-  }
-}
-
-const loginGuard = () => {
-  if (useAuth().isAuthenticated.value) {
-    return { path: '/' }
   }
 }
 
@@ -53,18 +51,26 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/netsuite/payment-methods', name: 'PaymentMethods', component: PaymentMethods, beforeEnter: authGuard },
   { path: '/netsuite/sales-channel', name: 'SalesChannel', component: SalesChannel, beforeEnter: authGuard },
   { path: '/netsuite/departments', name: 'Departments', component: Departments, beforeEnter: authGuard },
-  { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore },
+  { path: '/create-product-store', name: 'CreateProductStore', component: CreateProductStore, beforeEnter: authGuard },
+  { path: '/product-store-onboarding', name: 'ProductStoreOnboarding', component: ProductStoreOnboarding, beforeEnter: authGuard },
+  { path: '/product-store-onboarding/:productStoreId', name: 'ProductStoreOnboardingForStore', component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },
   {
     path: '/add-configurations/:productStoreId',
     name: 'AddConfigurations',
     component: AddConfigurations,
     props: true,
     beforeEnter: (to, from) => {
-      if (from.path !== '/create-product-store') return { path: from.path }
+      logger.info("AddConfigurations beforeEnter guard", { to: to.path, from: from.path, fromName: from.name });
+      if (from.path !== '/create-product-store' && from.name !== 'CreateProductStore') {
+        return { path: from.path || '/product-store' }
+      }
     }
   },
-  { path: '/login', name: 'Login', component: Login, beforeEnter: loginGuard },
+  { path: '/login', name: 'Login', component: Login },
   { path: '/settings', name: 'Settings', component: Settings, beforeEnter: authGuard },
+  { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
+  { path: '/composer', name: 'Composer', component: Composer, beforeEnter: authGuard },
+  { path: '/workforce', name: 'Workforce', component: Workforce, beforeEnter: authGuard },
 ]
 
 const router = createRouter({

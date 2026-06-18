@@ -44,15 +44,11 @@
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonSelect, IonSelectOption, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons'
-import { translate } from '@common'
-import { hasError, showToast } from '@common';
-import { useProductStoreStore } from '@/store/productStore';
+import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { useProductStore } from '@/store/productStore';
 import { computed, onMounted, ref } from "vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import emitter from "@/event-bus";
-import logger from "@/logger";
 
-const productStoreStore = useProductStoreStore();
+const productStoreStore = useProductStore();
 
 const productStores = computed(() => productStoreStore.productStores)
 const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore);
@@ -85,7 +81,7 @@ async function updateSubsidiaryId() {
       productStoreId: selectedProductStoreId.value
     };
 
-    const resp = await ProductStoreService.updateProductStore(updatedStore);
+    const resp = await productStoreStore.updateProductStore(updatedStore);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
       await productStoreStore.updateSelectedProductStore({

@@ -155,15 +155,15 @@ import {
 import { closeOutline, refreshOutline } from "ionicons/icons";
 import { computed, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { translate } from '@common';
-import { showToast } from '@common'
+import { commonUtil, logger, translate } from '@common'
 import { formatDateTime } from '@/utils';
-import logger from "@/logger";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import type { ShopifyProductSyncProductSearchResult } from "@/services/ShopifyProductSyncService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncProductSearchResult } from "@/store/shopifyProductSync";
 
 type ProductPickerMode = "search" | "unsynced";
 const SEARCH_DEBOUNCE_MS = 600;
+
+const shopifyProductSyncStore = useShopifyProductSyncStore();
 
 const props = defineProps<{
   mode?: ProductPickerMode
@@ -231,12 +231,12 @@ async function loadProducts() {
   const requestId = ++productSearchRequestId;
   try {
     const response = isSearchMode.value
-      ? await ShopifyProductSyncService.fetchRecentlyUpdatedShopifyProducts({
+      ? await shopifyProductSyncStore.fetchRecentlyUpdatedShopifyProducts({
           systemMessageRemoteId: props.systemMessageRemoteId,
           pageSize: 15
         })
       : {
-          products: await ShopifyProductSyncService.fetchUnsyncedProductUpdates({
+          products: await shopifyProductSyncStore.fetchUnsyncedProductUpdates({
             systemMessageRemoteId: props.systemMessageRemoteId,
             shopId: props.shopId,
             lastSyncedAt: props.lastSyncedAt,
@@ -268,7 +268,7 @@ async function searchProducts(after?: string) {
   isLoading.value = true;
   const requestId = ++productSearchRequestId;
   try {
-    const response = await ShopifyProductSyncService.searchShopifyProducts({
+    const response = await shopifyProductSyncStore.searchShopifyProducts({
       systemMessageRemoteId: props.systemMessageRemoteId,
       queryString: queryString.value.trim(),
       pageSize: 20,

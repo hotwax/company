@@ -45,9 +45,8 @@
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { businessOutline, closeOutline, informationCircleOutline, openOutline, saveOutline } from 'ionicons/icons';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
-import { translate } from '@common'
+import { commonUtil, translate } from '@common'
 import { defineProps, onMounted, ref } from 'vue';
-import { commonUtil } from '@common';
 
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 const { addNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
