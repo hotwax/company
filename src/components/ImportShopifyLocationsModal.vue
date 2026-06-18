@@ -43,7 +43,8 @@
           <ion-label>
             <p class="overline">{{ loc.shopifyLocationId }}</p>
             {{ loc.name }}
-            <p>{{ [loc.city, loc.provinceCode, loc.countryCode].filter(Boolean).join(', ') }}</p>
+            <p v-if="loc.address1">{{ [loc.address1, loc.address2].filter(Boolean).join(', ') }}</p>
+            <p>{{ [loc.city, loc.provinceCode, loc.zip, loc.countryCode].filter(Boolean).join(', ') }}</p>
             <ion-note v-if="loc.isFulfillmentService" color="warning">
               {{ loc.fulfillmentServiceName || translate("Fulfillment Service") }}
             </ion-note>
@@ -51,7 +52,11 @@
               {{ translate("Pickup enabled") }}
             </ion-note>
             <ion-note v-if="loc.alreadyInOms" color="medium">
-              {{ translate("Already in OMS") }}
+              {{ loc.omsFacilityName
+                ? translate("Mapped to {name} ({id})", { name: loc.omsFacilityName, id: loc.omsFacilityId })
+                : loc.omsFacilityId
+                  ? translate("Mapped to facility {id}", { id: loc.omsFacilityId })
+                  : translate("Already in OMS") }}
             </ion-note>
           </ion-label>
 
@@ -93,11 +98,13 @@ import { close, downloadOutline } from 'ionicons/icons'
 import { commonUtil, logger, translate } from '@common'
 import { useShopifyStore } from '@/store/shopify'
 import { useProductStore } from '@/store/productStore'
+import { useUtilStore } from '@/store/util'
 import { computed, ref, onMounted } from 'vue'
 
 const props = defineProps<{ shopId: string, productStoreId?: string }>()
 const shopifyStore = useShopifyStore()
 const productStoreStore = useProductStore()
+const utilStore = useUtilStore()
 
 const isLoading    = ref(true)
 const isImporting  = ref(false)
@@ -119,12 +126,23 @@ async function fetchData() {
   try {
     const [shopifyResp, omsResp] = await Promise.all([
       shopifyStore.fetchLocationsFromShopify({ shopId: props.shopId }),
-      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.shopId })
+      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.shopId }),
+      utilStore.fetchFacilities()
     ])
 
-    const alreadyMapped = new Set(
-      (omsResp.data || []).map((m: any) => String(m.shopifyLocationId))
+    // Build shopifyLocationId -> { facilityId, facilityName } from the OMS mapping rows.
+    // "Already in OMS" means a ShopifyShopLocation mapping row exists for that Shopify
+    // location id — i.e. it is mapped to an OMS facility for this shop.
+    const facilityNameById = new Map(
+      (utilStore.facilities || []).map((f: any) => [String(f.facilityId), f.facilityName])
     )
+    const omsMappingById = new Map<string, { facilityId: string, facilityName: string }>(
+      (omsResp.data || []).map((m: any) => [String(m.shopifyLocationId), {
+        facilityId: m.facilityId ? String(m.facilityId) : '',
+        facilityName: m.facilityName || facilityNameById.get(String(m.facilityId)) || ''
+      }])
+    )
+    const alreadyMapped = new Set(omsMappingById.keys())
 
     const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
     locations.value = nodes.map((node: any) => {
@@ -144,12 +162,19 @@ async function fetchData() {
         phone:               node.address?.phone,
         latitude:            node.address?.latitude,
         longitude:           node.address?.longitude,
-        alreadyInOms:        alreadyMapped.has(shopifyLocationId)
+        alreadyInOms:        alreadyMapped.has(shopifyLocationId),
+        omsFacilityId:       omsMappingById.get(shopifyLocationId)?.facilityId || '',
+        omsFacilityName:     omsMappingById.get(shopifyLocationId)?.facilityName || ''
       }
     })
 
     locations.value.forEach(loc => {
-      if (!loc.alreadyInOms) selectedIds.value.add(loc.shopifyLocationId)
+      if (!loc.alreadyInOms) {
+        selectedIds.value.add(loc.shopifyLocationId)
+        facilityTypes.value[loc.shopifyLocationId] = /warehouse/i.test(loc.name || '')
+          ? 'WAREHOUSE'
+          : 'RETAIL_STORE'
+      }
     })
   } catch (e: any) {
     fetchError.value = e?.message || translate('Failed to fetch locations')

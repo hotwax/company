@@ -11,9 +11,9 @@
   </ion-header>
 
   <ion-content>
-    <ion-list>
+    <ion-list lines="none">
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.myshopifyDomain"
           :label="translate('Shopify domain') + ' *'"
           label-placement="stacked"
@@ -23,7 +23,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.shopifyShopId"
           :label="translate('Shopify shop ID') + ' *'"
           label-placement="stacked"
@@ -33,7 +33,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.shopId"
           :label="translate('Internal shop ID') + ' *'"
           label-placement="stacked"
@@ -42,7 +42,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.name"
           :label="translate('Shop name')"
           label-placement="stacked"
@@ -50,7 +50,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.shopAccessToken"
           :label="translate('Access token') + ' *'"
           label-placement="stacked"
@@ -60,7 +60,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.clientId"
           :label="translate('Client ID') + ' *'"
           label-placement="stacked"
@@ -68,7 +68,7 @@
         />
       </ion-item>
       <ion-item>
-        <ion-input
+        <ion-input fill="outline"
           v-model="form.clientSecret"
           :label="translate('Client secret') + ' *'"
           label-placement="stacked"
@@ -161,3 +161,14 @@ async function saveConnection() {
   emitter.emit('dismissLoader')
 }
 </script>
+
+<style scoped>
+/* Outline inputs: the floating notch label rides the box's top border, so the item must
+   not clip it (default overflow hidden) and needs vertical room between stacked boxes. */
+ion-item:has(ion-input) {
+  --padding-top: var(--spacer-xs);
+  --padding-bottom: var(--spacer-2xs);
+  --inner-padding-end: 0;
+  overflow: visible;
+}
+</style>

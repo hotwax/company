@@ -4,8 +4,9 @@
     {
       "name": "company-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "serve"],
-      "port": 8100
+      "runtimeArgs": ["run", "serve", "--", "--port", "8112"],
+      "port": 8112,
+      "autoPort": false
     }
   ]
 }
