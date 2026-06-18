@@ -500,7 +500,7 @@ export const useProductStore = defineStore('productStore', {
       const counts: Record<string, number> = {}
       try {
         const resp = await api({
-          url: "admin/productStores/shipmentMethods/counts",
+          url: "oms/productStores/shipmentMethods/counts",
           method: "get",
           params: { pageSize: 100 }
         })
@@ -582,7 +582,7 @@ export const useProductStore = defineStore('productStore', {
       sequenceNumber?: number
     }) {
       return api({
-        url: `admin/productStores/${payload.productStoreId}/shipmentMethods`,
+        url: `oms/productStores/${payload.productStoreId}/shipmentMethods`,
         method: "post",
         data: {
           ...payload,
