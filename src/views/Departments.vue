@@ -67,25 +67,23 @@
 <script setup lang="ts">
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import { translate } from "@/i18n"
-import { useStore } from "vuex";
+import { commonUtil, emitter, logger, translate } from '@common'
+import { useUtilStore } from '@/store/util';
+import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
-import { showToast, hasError } from '@/utils';
 import { DateTime } from "luxon";
-import emitter from "@/event-bus";
-import logger from '@/logger';
-import { NetSuiteService } from '@/services/NetSuiteService';
 
-const store = useStore();
+const utilStore = useUtilStore();
+const netSuiteStore = useNetSuiteStore();
 
-const facilities = computed(() => store.getters["util/getFacilities"])
-const facilitiesIdentifications = computed(() => store.getters["netSuite/getFacilitiesIdentifications"])
-const getShopifyShopLocation = computed(() => store.getters["netSuite/getShopifyShopLocation"])
+const facilities = computed(() => utilStore.facilities)
+const facilitiesIdentifications = computed(() => netSuiteStore.facilitiesIdentifications)
+const getShopifyShopLocation = computed(() => netSuiteStore.getShopifyShopLocation)
 
 onIonViewDidEnter(async () => {
-  await store.dispatch("util/fetchFacilities")
-  await store.dispatch("netSuite/fetchFacilitiesIdentifications")
-  await store.dispatch("netSuite/fetchShopifyShopLocation")
+  await utilStore.fetchFacilities()
+  await netSuiteStore.fetchFacilitiesIdentifications()
+  await netSuiteStore.fetchShopifyShopLocation()
 })
 
 function getFacilityInFacilityIdentification(facility: any) {
@@ -113,12 +111,12 @@ async function editNetSuiteId(facility: any) {
           const netSuiteId = data.netSuiteId.trim();
           
           if(!netSuiteId) {
-            showToast(translate("Please enter a valid NetSuite ID"));
+            commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
             return false;
           }
           
           if(facilityIdentification?.idValue === netSuiteId) {
-            showToast(translate("Please update the NetSuite ID"));
+            commonUtil.showToast(translate("Please update the NetSuite ID"));
             return false;
           }
           
@@ -132,10 +130,10 @@ async function editNetSuiteId(facility: any) {
               fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
             };
             
-            resp = await NetSuiteService.updateFacilityIdentification(payload);
-            if(!hasError(resp)) {
-              showToast(translate("NetSuite department Id updated successfully"))
-              await store.dispatch("netSuite/fetchFacilitiesIdentifications")
+            resp = await netSuiteStore.updateFacilityIdentification(payload);
+            if(!commonUtil.hasError(resp)) {
+              commonUtil.showToast(translate("NetSuite department Id updated successfully"))
+              await netSuiteStore.fetchFacilitiesIdentifications()
             } else {
               throw resp.data;
             }
@@ -161,10 +159,10 @@ async function removeNetSuiteId(facility: any) {
       thruDate: DateTime.now().toMillis()
     };
 
-    const resp = await NetSuiteService.updateFacilityIdentification(payload);
-    if(!hasError(resp)) {
-      showToast(translate("NetSuite department Id removed successfully"));
-      await store.dispatch("netSuite/fetchFacilitiesIdentifications");
+    const resp = await netSuiteStore.updateFacilityIdentification(payload);
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("NetSuite department Id removed successfully"));
+      await netSuiteStore.fetchFacilitiesIdentifications();
     } else {
       throw resp.data;
     }

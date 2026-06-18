@@ -153,18 +153,18 @@ import {
   modalController,
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
-import { KlaviyoService } from "@/services/KlaviyoService";
-import { getResponseErrorMessage, showToast } from "@/utils";
-import logger from "@/logger";
+import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey } from '@/store/klaviyo';
+import { useUtilStore } from '@/store/util';
+import { commonUtil, logger, translate } from '@common'
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
-const store = useStore();
-const config = computed(() => store.getters["klaviyo/getUnigateConfig"]);
+const klaviyoStore = useKlaviyoStore();
+const utilStore = useUtilStore();
+const config = computed(() => klaviyoStore.getUnigateConfig);
 // maargInfo is fetched once at login (user/login → util/fetchMaargInfo).
 // Read from the store instead of refetching per modal open.
-const maargInfo = computed(() => store.getters["util/getMaargInfo"]);
+const maargInfo = computed(() => utilStore.maargInfo);
 
 const form = reactive({
   internalId: config.value?.internalId || "",
@@ -179,7 +179,7 @@ const confirmedKeyReplacement = ref(false);
 const isSaving = ref(false);
 
 const existingMaskedKey = computed(() => {
-  const masked = KlaviyoService.maskApiKey(config.value?.publicKey);
+  const masked = maskApiKey(config.value?.publicKey);
   return masked || translate("Saved on the server (not visible)");
 });
 
@@ -226,13 +226,13 @@ async function save() {
     if (isReplacingKey.value && form.newApiKey.trim()) {
       payload.publicKey = form.newApiKey.trim();
     }
-    await KlaviyoService.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
-    await store.dispatch("klaviyo/fetchUnigateConfig");
-    showToast(translate("Unigate tenant updated"));
+    await klaviyoStore.updateSystemMessageRemote(config.value.systemMessageRemoteId, payload);
+    await klaviyoStore.fetchUnigateConfig();
+    commonUtil.showToast(translate("Unigate tenant updated"));
     closeModal();
   } catch (error: any) {
     logger.error(error);
-    showToast(getResponseErrorMessage(error, translate("Failed to update Unigate tenant")));
+    commonUtil.showToast(translate("Failed to update Unigate tenant"));
   } finally {
     isSaving.value = false;
   }

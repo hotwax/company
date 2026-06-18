@@ -1,13 +1,13 @@
 import { computed, reactive, toRefs } from 'vue';
-import { useStore } from 'vuex';
 import { useSystemMessage } from './useSystemMessage';
 import { useDataManagerLog } from './useDataManagerLog';
-import { ShopifyProductSyncRun } from '@/services/ShopifyProductSyncService';
-import { translate } from '@/i18n';
+import type { ShopifyProductSyncRun } from '@/store/shopifyProductSync';
+import { translate } from '@common';
+import { useUtilStore } from '@/store/util';
 
 export function useShopifyProductSyncRun() {
-  const store = useStore();
-  const statusItems = computed(() => store.getters['util/getStatusItems']);
+  const utilStore = useUtilStore();
+  const statusItems = computed(() => utilStore.statusItems);
   const { fetchShopifyBulkOperationBySystemMessageId } = useSystemMessage();
   const { fetchMdmLogBySystemMessageIds } = useDataManagerLog();
 

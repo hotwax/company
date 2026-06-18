@@ -186,6 +186,15 @@
                     {{ translate("Only unfinished legacy messages appear here. Cancel them so the old sync cannot keep processing.") }}
                     {{ legacySystemMessagesSummary }}
                   </p>
+                  <div v-if="assistantState.legacySystemMessagesTotalCount >= 50" class="ion-margin-top ion-padding" style="background: var(--ion-color-warning-tiny, #fff9e6); border: 1px solid var(--ion-color-warning, #ffc409); border-radius: 8px; display: flex; align-items: start; gap: 8px;">
+                    <ion-icon :icon="warningOutline" color="warning" style="font-size: 20px; flex-shrink: 0;" />
+                    <ion-label style="margin: 0; font-size: 14px;">
+                      <strong style="color: var(--ion-color-warning-shade, #e0a800);">{{ translate("High volume of pending messages") }}</strong>
+                      <p style="margin: 4px 0 0 0; color: var(--ion-color-step-600, #666666);">
+                        {{ translate("Canceling 50 or more messages from here will trigger a large number of API requests, which may slow down the app or cause timeout errors. We recommend canceling them manually in the database or background instead.") }}
+                      </p>
+                    </ion-label>
+                  </div>
                 </ion-card-content>
                 <ion-item v-for="message in assistantState.legacySystemMessages" :key="message.id" class="hover-action">
                   <ion-label>
@@ -356,11 +365,11 @@ import {
   alertController,
   onIonViewWillEnter
 } from "@ionic/vue";
-import { arrowForwardOutline, checkmarkCircleOutline } from "ionicons/icons";
+import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
 import { computed, defineProps, ref } from "vue";
-import { useRouter } from "vue-router";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
+import router from "@/router";
+import { useShopifyStore } from '@/store/shopify';
+import { commonUtil, logger, translate } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
 import {
   type ProductSyncMigrationAssistantState,
@@ -368,15 +377,14 @@ import {
   type ProductSyncMigrationLegacyItem,
   type ProductSyncMigrationTeardownStep,
   isActionableLegacyItem,
-  ShopifyProductSyncMigrationService
-} from "@/services/ShopifyProductSyncMigrationService";
-import { ShopifyProductSyncService } from "@/services/ShopifyProductSyncService";
-import { showToast } from "@/utils";
-import logger from "@/logger";
+  useShopifyProductSyncMigrationStore
+} from "@/store/shopifyProductSyncMigration";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 
 const props = defineProps(["id"]);
-const router = useRouter();
-const store = useStore();
+const shopifyStore = useShopifyStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const migrationConfig = PRODUCT_SYNC_MIGRATION_CONFIG;
 const isLoading = ref(true);
 const loadErrorMessage = ref("");
@@ -407,9 +415,9 @@ const assistantState = ref<ProductSyncMigrationAssistantState>({
   legacySystemMessages: []
 });
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
 const entryAction = computed<ProductSyncMigrationEntryAction>(() => {
-  return ShopifyProductSyncMigrationService.resolveEntryAction(assistantState.value);
+  return shopifyProductSyncMigrationStore.resolveEntryAction(assistantState.value);
 });
 const assistantTitle = computed(() => {
   if (entryAction.value === "current") {
@@ -568,12 +576,12 @@ async function loadAssistant() {
 
   try {
     if (!shop.value.shopId) {
-      await store.dispatch("shopify/fetchShopifyShops");
+      await shopifyStore.fetchShopifyShops();
     }
 
-    const currentShop = store.getters["shopify/getShopById"](props.id) || {};
+    const currentShop = shopifyStore.getShopById(props.id) || {};
 
-    await ShopifyProductSyncMigrationService.fetchAssistantState(
+    await shopifyProductSyncMigrationStore.fetchAssistantState(
       { shopId: props.id, shop: currentShop },
       (partialState) => {
         assistantState.value = { ...assistantState.value, ...partialState };
@@ -703,17 +711,17 @@ async function configureSyncJobForShop() {
   isConfiguringSyncJob.value = true;
   try {
     const shopId = props.id;
-    await ShopifyProductSyncService.configureSyncJob({
+    await shopifyProductSyncStore.configureSyncJob({
       shopId,
       productStoreId: shop.value.productStore?.productStoreId || shop.value.productStoreId,
       productIdentifierEnumId: shop.value.productStore?.productIdentifierEnumId || shop.value.productIdentifierEnumId
     });
 
-    await showToast(translate("Product sync job scheduled successfully."));
+    await commonUtil.showToast(translate("Product sync job scheduled successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error("Failed to configure sync job", error);
-    await showToast(translate("Failed to schedule job."));
+    await commonUtil.showToast(translate("Failed to schedule job."));
   } finally {
     isConfiguringSyncJob.value = false;
   }
@@ -722,12 +730,12 @@ async function configureSyncJobForShop() {
 async function enableJob(artifactCheck: any) {
   isEnablingJob.value[artifactCheck.id] = true;
   try {
-    await ShopifyProductSyncMigrationService.enableServiceJob(artifactCheck.id, artifactCheck.jobDetail);
-    await showToast(translate("Job enabled successfully."));
+    await shopifyProductSyncMigrationStore.enableServiceJob(artifactCheck.id, artifactCheck.jobDetail);
+    await commonUtil.showToast(translate("Job enabled successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error("Failed to enable job", error);
-    await showToast(translate("Failed to enable job."));
+    await commonUtil.showToast(translate("Failed to enable job."));
   } finally {
     isEnablingJob.value[artifactCheck.id] = false;
   }
@@ -751,7 +759,7 @@ async function copyArtifactCheckToClipboard(artifactCheck: any) {
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text);
-    await showToast(translate("Details copied to clipboard."));
+    await commonUtil.showToast(translate("Details copied to clipboard."));
   } catch (err) {
     logger.error("Failed to copy to clipboard", err);
   }
@@ -790,8 +798,8 @@ async function teardownLegacySync() {
   teardownFailedSteps.value = [];
 
   try {
-    const currentShop = store.getters["shopify/getShopById"](props.id) || {};
-    const result = await ShopifyProductSyncMigrationService.teardownLegacySync(
+    const currentShop = shopifyStore.getShopById(props.id) || {};
+    const result = await shopifyProductSyncMigrationStore.teardownLegacySync(
       { shopId: props.id, shop: currentShop },
       (step: ProductSyncMigrationTeardownStep) => {
         // Update or append this step in the log
@@ -818,14 +826,14 @@ async function teardownLegacySync() {
 
     if (result.failedSteps.length > 0) {
       teardownSuccessMessage.value = translate("Teardown completed with {count} step(s) that could not be completed. See details below.", { count: result.failedSteps.length });
-      await showToast(translate("Teardown completed. {count} step(s) failed.", { count: result.failedSteps.length }));
+      await commonUtil.showToast(translate("Teardown completed. {count} step(s) failed.", { count: result.failedSteps.length }));
     } else {
       teardownSuccessMessage.value = translate("Legacy product sync teardown completed successfully for all artifacts on this shop.");
-      await showToast(translate("Legacy product sync teardown completed."));
+      await commonUtil.showToast(translate("Legacy product sync teardown completed."));
     }
   } catch (error: any) {
     teardownErrorMessage.value = error?.message || translate("Failed to deactivate the legacy product sync.");
-    await showToast(teardownErrorMessage.value);
+    await commonUtil.showToast(teardownErrorMessage.value);
   } finally {
     isTeardownRunning.value = false;
   }
@@ -835,11 +843,11 @@ async function teardownItem(item: ProductSyncMigrationLegacyItem, kind: "type" |
   isTeardownItemRunning.value[item.id] = true;
   try {
     await runTeardownAction(item, kind);
-    await showToast(translate("Artifact deactivated successfully."));
+    await commonUtil.showToast(translate("Artifact deactivated successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error(`Failed to teardown legacy ${kind} ${item.id}`, error);
-    await showToast(translate("Failed to deactivate artifact."));
+    await commonUtil.showToast(translate("Failed to deactivate artifact."));
   } finally {
     isTeardownItemRunning.value[item.id] = false;
   }
@@ -863,11 +871,11 @@ async function teardownSection(kind: "type" | "job" | "message") {
       await runTeardownAction(item, kind);
     }
 
-    await showToast(translate("Section deactivated successfully."));
+    await commonUtil.showToast(translate("Section deactivated successfully."));
     await loadAssistant();
   } catch (error) {
     logger.error(`Failed to teardown legacy section ${kind}`, error);
-    await showToast(translate("Failed to deactivate section."));
+    await commonUtil.showToast(translate("Failed to deactivate section."));
   } finally {
     isTeardownSectionRunning.value[kind] = false;
   }
@@ -875,16 +883,16 @@ async function teardownSection(kind: "type" | "job" | "message") {
 
 async function runTeardownAction(item: ProductSyncMigrationLegacyItem, kind: "type" | "job" | "message") {
   if (kind === "type") {
-    await ShopifyProductSyncMigrationService.deprecateLegacySystemMessageType(item.id);
+    await shopifyProductSyncMigrationStore.deprecateLegacySystemMessageType(item.id);
     return;
   }
 
   if (kind === "job") {
-    await ShopifyProductSyncMigrationService.deactivateLegacyServiceJob(item.id);
+    await shopifyProductSyncMigrationStore.deactivateLegacyServiceJob(item.id);
     return;
   }
 
-  await ShopifyProductSyncMigrationService.cancelLegacySystemMessage(item.id);
+  await shopifyProductSyncMigrationStore.cancelLegacySystemMessage(item);
 }
 </script>
 

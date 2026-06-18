@@ -26,5 +26,5 @@
 <script setup lang="ts">
 import { IonContent, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup } from "@ionic/vue";
 import { addCircleOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
+import { translate } from '@common';
 </script>

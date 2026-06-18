@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button :default-href="'/shopify-connection-details/' + id" />
+          <ion-back-button :default-href="productSyncBackHref" />
         </ion-buttons>
         <ion-title>{{ translate("Product sync") }}</ion-title>
         <ion-buttons slot="end">
@@ -716,6 +716,8 @@ import {
   IonHeader,
   IonDatetime,
   IonDatetimeButton,
+  IonPopover,
+  IonProgressBar,
   IonIcon,
   IonInput,
   IonItem,
@@ -740,18 +742,19 @@ import {
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
 
-import { translate } from "@/i18n";
+import { commonUtil, hasError, logger, translate } from '@common'
 import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
-import { useStore } from "vuex";
-import { useRoute, useRouter } from "vue-router";
+import { useShopifyStore } from '@/store/shopify';
+import { useUserStore } from '@/store/user';
+import { useProductStore } from '@/store/productStore';
+import { useUtilStore } from '@/store/util';
+import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import { ProductStoreService } from "@/services/ProductStoreService";
-import { ShopifyService } from "@/services/ShopifyService";
-import { ShopifyProductSyncService, type ShopifyProductSyncDashboardSummary } from "@/services/ShopifyProductSyncService";
-import { UserService } from "@/services/UserService";
+import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {
   canAdvanceProductSyncStep,
 
@@ -762,14 +765,14 @@ import {
   nextProductSyncStep,
   normalizeProductSyncStatus,
   previousProductSyncStep,
+  productSyncWizardSteps,
   ProductSyncExperienceMode,
   ProductSyncWizardStep,
   requiresPreflightConfirmation,
   resolveProductSyncExperienceMode,
   selectProductStore
 } from "@/utils/shopifyProductSyncWizard";
-import { downloadTextFile, formatDateTime, getDownloadFileContent, hasError, parseDateTimeValue, showToast } from "@/utils";
-import logger from "@/logger";
+import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
 import useServiceJob from "@/composables/useServiceJob";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useLiveDashboard } from "@/composables/useLiveDashboard";
@@ -779,9 +782,11 @@ import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
 
 const props = defineProps(["id"]);
-const store = useStore();
-const router = useRouter();
-const route = useRoute();
+const shopifyStore = useShopifyStore();
+const shopifyProductSyncStore = useShopifyProductSyncStore();
+const productStoreStore = useProductStore();
+const utilStore = useUtilStore();
+const userStore = useUserStore();
 const {
   jobs,
   products,
@@ -920,15 +925,18 @@ const liveDashboard = useLiveDashboard({
 });
 const { currentTimeMs, isRefreshInFlight } = liveDashboard;
 
-const shop = computed(() => store.getters["shopify/getShopById"](props.id) || {});
-const userProfile = computed(() => store.getters["user/getUserProfile"] || {});
-const statusItems = computed(() => store.state.util.statusItems || {});
+const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const userProfile = computed(() => useUserStore().getUserProfile || {});
+const statusItems = computed(() => utilStore.statusItems || {});
 const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const productSyncBackHref = computed(() => {
+  return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
+});
 
 function getStatusDescription(statusId: string) {
   return statusItems.value[statusId]?.description || statusId;
 }
-const productStores = computed(() => store.getters["productStore/getProductStores"] || []);
+const productStores = computed(() => productStoreStore.productStores || []);
 const selectedProductStore = computed(() => {
   return productStores.value.find((productStore: any) => productStore.productStoreId === draft.value.selectedProductStoreId) || {};
 });
@@ -1665,17 +1673,17 @@ async function loadWizard() {
   isLoading.value = true;
   loadErrorMessage.value = "";
   try {
-    await store.dispatch("shopify/fetchShopifyShops");
+    await shopifyStore.fetchShopifyShops();
     assertShopifyShopsLoaded();
 
-    await store.dispatch("productStore/fetchProductStores");
+    await productStoreStore.fetchProductStores();
 
     if (shop.value.productStoreId) {
-      await store.dispatch("productStore/fetchProductStoreDetails", shop.value.productStoreId);
+      await productStoreStore.fetchProductStoreDetails(shop.value.productStoreId);
     }
     await loadSelectedShopSystemMessageRemoteId();
 
-    setupState.value = await ShopifyProductSyncService.fetchSetupState({
+    setupState.value = await shopifyProductSyncStore.fetchSetupState({
       shopId: props.id,
       shop: shop.value,
       productStore: selectedProductStore.value
@@ -1690,6 +1698,7 @@ async function loadWizard() {
       syncStarted: !!setupState.value.syncJobId,
       startConfirmed: false
     });
+    applyProductSyncRouteContext();
 
     syncJobId.value = setupState.value.syncJobId || "";
     if (setupState.value.completed) {
@@ -1711,9 +1720,12 @@ async function loadWizard() {
 
     await loadWebhookSubscriptions();
 
-    // Dev override to land on a specific step
-    if (route.query.step) {
-      currentStep.value = route.query.step as ProductSyncWizardStep;
+    const requestedStep = getQueryProductSyncWizardStep(router.currentRoute.value.query.step);
+    if (requestedStep) {
+      currentStep.value = requestedStep;
+      if (currentStep.value === "review") {
+        await loadReviewStats();
+      }
       if (currentStep.value === "progress") {
         const loadedProgress = await loadProgress();
         if (loadedProgress) startProgressPolling();
@@ -1728,10 +1740,52 @@ async function loadWizard() {
   } catch (error: any) {
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
-    showToast(translate("Failed to load product sync"));
+    commonUtil.showToast(translate("Failed to load product sync"));
     stopProgressPolling();
   } finally {
     isLoading.value = false;
+  }
+}
+
+function getQueryValue(value: any) {
+  if (Array.isArray(value)) return String(value[0] || "");
+  return value ? String(value) : "";
+}
+
+function getSafeProductSyncReturnPath(value: string) {
+  const path = value.trim();
+  if (!path || !path.startsWith("/") || path.startsWith("//") || path.includes("://")) return "";
+  return path;
+}
+
+function getQueryProductSyncExperienceMode(value: any): ProductSyncExperienceMode | "" {
+  const mode = getQueryValue(value);
+  if (mode === "first-time" || mode === "returning" || mode === "auto") return mode;
+  return "";
+}
+
+function getQueryProductSyncWizardStep(value: any): ProductSyncWizardStep | "" {
+  const step = getQueryValue(value);
+  return productSyncWizardSteps.includes(step as ProductSyncWizardStep) ? step as ProductSyncWizardStep : "";
+}
+
+function applyProductSyncRouteContext() {
+  const query = router.currentRoute.value.query;
+  const mode = getQueryProductSyncExperienceMode(query.mode);
+  if (mode) experienceMode.value = mode;
+
+  const productStoreId = getQueryValue(query.productStoreId);
+  if (productStoreId && !productStoreLocked.value) {
+    draft.value = selectProductStore(draft.value, productStoreId);
+  }
+
+  if (productStoreId && shop.value.productStoreId === productStoreId) {
+    draft.value.productStoreVerified = true;
+  }
+
+  const identifierEnumId = getQueryValue(query.identifierEnumId);
+  if (identifierEnumId && !identifierLocked.value) {
+    draft.value.selectedIdentifierEnumId = identifierEnumId;
   }
 }
 
@@ -1745,7 +1799,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
   latestPauseAuditByJobName.value = {};
   try {
-    const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+    const summary = await shopifyProductSyncStore.fetchDashboardSummary({
       shopId: props.id,
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       shop: shop.value
@@ -1866,7 +1920,7 @@ async function loadBulkOperationPollJobLatestRun() {
 }
 
 async function loadSelectedShopSystemMessageRemoteId() {
-  selectedShopSystemMessageRemoteId.value = await ShopifyProductSyncService.fetchShopSystemMessageRemoteId({
+  selectedShopSystemMessageRemoteId.value = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
     shopId: props.id,
     shop: shop.value
   });
@@ -1882,7 +1936,7 @@ async function openStepDetails(step: any) {
       await fetchLogDetails(step.id);
     } catch (error: any) {
       logger.error(error);
-      showToast(translate("Failed to load sync step details."));
+      commonUtil.showToast(translate("Failed to load sync step details."));
     } finally {
       isStepDetailsLoading.value = false;
     }
@@ -1891,7 +1945,7 @@ async function openStepDetails(step: any) {
 
 async function openUnsyncedUpdatesModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    showToast(translate("Shopify product search is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
@@ -1915,7 +1969,7 @@ async function openUnsyncedUpdatesModal() {
 
 async function openSpecificProductsSyncModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    showToast(translate("Shopify product search is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
@@ -1936,7 +1990,7 @@ async function openSpecificProductsSyncModal() {
 
 async function openResyncEntireCatalogModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    showToast(translate("Shopify product sync is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
     return;
   }
 
@@ -1952,16 +2006,16 @@ async function handleSelectedProductsForSync(data: any) {
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: shopifyProductIds
     });
 
-    showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
+    commonUtil.showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
     await loadLatestSystemMessage();
   } catch (error: any) {
     logger.error(error);
-    showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
   } finally {
     isSaving.value = false;
   }
@@ -1990,7 +2044,7 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const summary = await ShopifyProductSyncService.fetchDashboardSummary({
+  const summary = await shopifyProductSyncStore.fetchDashboardSummary({
     shopId: props.id,
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     shop: shop.value
@@ -2019,7 +2073,7 @@ async function downloadRawFile(item: any) {
     const logContentId = item.logContentId;
 
     if (!configId || !logContentId) {
-      showToast(translate("Raw file is not available"));
+      commonUtil.showToast(translate("Raw file is not available"));
       return;
     }
 
@@ -2031,10 +2085,10 @@ async function downloadRawFile(item: any) {
     }
 
     downloadTextFile(fileContent, getRawShopifyFileName(item));
-    showToast(translate("File downloaded successfully"));
+    commonUtil.showToast(translate("File downloaded successfully"));
   } catch (error) {
     logger.error(`Failed to download raw file for ${item.id}`, error);
-    showToast(translate("Failed to download raw file"));
+    commonUtil.showToast(translate("Failed to download raw file"));
   }
 }
 
@@ -2058,22 +2112,22 @@ async function refreshErrorRecords() {
 async function resyncProduct(record: any) {
   const shopifyProductId = record.numericId;
   if (!shopifyProductId) {
-    showToast(translate("Shopify product ID not available for resync."));
+    commonUtil.showToast(translate("Shopify product ID not available for resync."));
     return;
   }
 
   isSaving.value = true;
   try {
-    const result = await ShopifyProductSyncService.syncShopifyProductsOnDemand({
+    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
     });
 
-    showToast(getSelectedProductSyncResultMessage(result, 1));
+    commonUtil.showToast(getSelectedProductSyncResultMessage(result, 1));
     await loadLatestSystemMessage();
   } catch (error: any) {
     logger.error(error);
-    showToast(getErrorMessage(error, translate("Failed to resync product.")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to resync product.")));
   } finally {
     isSaving.value = false;
   }
@@ -2082,10 +2136,10 @@ async function resyncProduct(record: any) {
 async function loadProductStoreContext(productStoreId: string) {
   try {
     assertShopifyShopsLoaded();
-    const context = await ShopifyProductSyncService.fetchProductStoreContext({
+    const context = await shopifyProductSyncStore.fetchProductStoreContext({
       shopId: props.id,
       productStoreId,
-      shops: store.getters["shopify/getShops"] || []
+      shops: shopifyStore.shops || []
     });
     assertBackendDataAvailable(context, translate("Product store sync context is unavailable."));
     relatedShops.value = context.relatedShops || [];
@@ -2094,7 +2148,7 @@ async function loadProductStoreContext(productStoreId: string) {
     logger.error(error);
     relatedShops.value = [];
     productStoreContextError.value = getErrorMessage(error, translate("Failed to load product store sync context."));
-    showToast(translate("Failed to load product store sync context."));
+    commonUtil.showToast(translate("Failed to load product store sync context."));
   }
 }
 
@@ -2104,14 +2158,14 @@ function getProductStoreName(productStore: any) {
 }
 
 function assertShopifyShopsLoaded() {
-  const status = store.getters["shopify/getFetchStatus"];
+  const status = shopifyStore.fetchStatus;
   if (status?.shops !== "success") {
     throw new Error(translate("Shopify shop list is unavailable."));
   }
 }
 
 function getConnectedShopLabel(productStoreId: string) {
-  const count = (store.getters["shopify/getShops"] || []).filter((shopifyShop: any) => {
+  const count = (shopifyStore.shops || []).filter((shopifyShop: any) => {
     return shopifyShop.productStoreId === productStoreId;
   }).length;
   return translate("{count} Shopify stores connected", { count });
@@ -2264,11 +2318,11 @@ async function runSyncJob(job: any) {
 async function executeRunSyncJob(job: any) {
   try {
     await runNow(job.jobName);
-    showToast(translate("Job has been scheduled to run now"));
+    commonUtil.showToast(translate("Job has been scheduled to run now"));
     await refreshAfterRunNow(job);
   } catch (err) {
     logger.error("Failed to run job now", err);
-    showToast(translate("Failed to run job"));
+    commonUtil.showToast(translate("Failed to run job"));
   } finally {
     if (syncJobRunNowJobName.value === job.jobName) {
       syncJobRunNowJobName.value = "";
@@ -2311,7 +2365,7 @@ async function completeSetupAndOpenReturningView() {
 
   const jobName = syncJobObj.value?.jobName || scheduledJobName.value;
   if (!jobName) {
-    showToast(translate("Product sync job not found for this shop."));
+    commonUtil.showToast(translate("Product sync job not found for this shop."));
     return;
   }
 
@@ -2351,7 +2405,7 @@ async function togglePauseSyncJob(shouldPause: boolean) {
 async function updateSyncJob(payload: any, successMessage: string) {
   try {
     const response = await updateJob(payload);
-    if (hasError(response)) {
+    if (commonUtil.hasError(response)) {
       throw response.data;
     }
 
@@ -2373,11 +2427,11 @@ async function updateSyncJob(payload: any, successMessage: string) {
       await loadPausedJobAuditSummaries();
     }
 
-    showToast(successMessage);
+    commonUtil.showToast(successMessage);
     return true;
   } catch (error: any) {
     logger.error(error);
-    showToast(translate("Failed to update sync job."));
+    commonUtil.showToast(translate("Failed to update sync job."));
     return false;
   }
 }
@@ -2469,7 +2523,7 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
       syncJobAuditHistory.value = [];
       syncJobAuditHistoryError.value = "";
       resetSyncJobDetailsDraft();
-      showToast(translate("Failed to load sync job details."));
+      commonUtil.showToast(translate("Failed to load sync job details."));
     }
   } finally {
     if (!opts.silent) {
@@ -2596,13 +2650,13 @@ async function persistProductStoreSelection() {
   if (shop.value.productStoreId === draft.value.selectedProductStoreId) return true;
   isSaving.value = true;
   try {
-    const resp = await ShopifyService.updateShopifyShop({
+    const resp = await shopifyStore.updateShopifyShop({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId
     });
 
-    if (!hasError(resp)) {
-      await store.dispatch("shopify/fetchShopifyShops");
+    if (!commonUtil.hasError(resp)) {
+      await shopifyStore.fetchShopifyShops();
       isSaving.value = false;
       return true;
     } else {
@@ -2610,7 +2664,7 @@ async function persistProductStoreSelection() {
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(getErrorMessage(error, translate("Failed to link product store")));
+    commonUtil.showToast(getErrorMessage(error, translate("Failed to link product store")));
   }
   isSaving.value = false;
   return false;
@@ -2625,10 +2679,10 @@ async function persistIdentifierSelection() {
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
     };
-    const resp = await ProductStoreService.updateProductStore(payload);
+    const resp = await productStoreStore.updateProductStore(payload);
 
-    if (!hasError(resp)) {
-      store.dispatch("productStore/updateCurrent", payload);
+    if (!commonUtil.hasError(resp)) {
+      productStoreStore.updateCurrent(payload);
       isSaving.value = false;
       return true;
     } else {
@@ -2636,7 +2690,7 @@ async function persistIdentifierSelection() {
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(translate("Failed to update product store settings."));
+    commonUtil.showToast(translate("Failed to update product store settings."));
   }
   isSaving.value = false;
   return false;
@@ -2645,7 +2699,7 @@ async function persistIdentifierSelection() {
 async function loadReviewStats() {
   isReviewLoading.value = true;
   try {
-    reviewStats.value = await ShopifyProductSyncService.fetchReviewStats({
+    reviewStats.value = await shopifyProductSyncStore.fetchReviewStats({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId,
       linkedShopCount: relatedShops.value.length,
@@ -2663,7 +2717,7 @@ async function loadReviewStats() {
       linkedShopCount: relatedShops.value.length,
       loaded: false
     };
-    showToast(translate("Failed to load Shopify product counts."));
+    commonUtil.showToast(translate("Failed to load Shopify product counts."));
     return false;
   } finally {
     isReviewLoading.value = false;
@@ -2684,7 +2738,7 @@ function toggleStartConfirmation() {
 }
 
 async function loadPreflight() {
-  const rawItems = await ShopifyProductSyncService.fetchPreflight({
+  const rawItems = await shopifyProductSyncStore.fetchPreflight({
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     productStoreId: draft.value.selectedProductStoreId,
     productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2713,7 +2767,7 @@ async function openMistakeModal() {
     await loadPreflight();
   } catch (error: any) {
     logger.error(error);
-    showToast(translate("Failed to load preflight review."));
+    commonUtil.showToast(translate("Failed to load preflight review."));
   } finally {
     isPreflightLoading.value = false;
   }
@@ -2722,7 +2776,7 @@ async function openMistakeModal() {
 async function openStartSyncModal() {
   try {
     if (!hasShopifyWriteAccess.value) {
-      showToast(shopifyAccessBlockingMessage.value);
+      commonUtil.showToast(shopifyAccessBlockingMessage.value);
       return;
     }
 
@@ -2750,7 +2804,7 @@ async function openStartSyncModal() {
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(translate("Failed to prepare product sync."));
+    commonUtil.showToast(translate("Failed to prepare product sync."));
   }
 }
 
@@ -2758,7 +2812,7 @@ async function checkSyncJobConfig() {
   isSyncJobConfigLoaded.value = false;
   try {
     const shopId = props.id; 
-    const result = await ShopifyProductSyncService.fetchSyncJobConfig({ shopId });
+    const result = await shopifyProductSyncStore.fetchSyncJobConfig({ shopId });
     
     syncJobConfigured.value = result.isConfigured;
     if (result.isConfigured) {
@@ -2777,19 +2831,19 @@ async function configureSyncJob() {
     const shopId = shop.value?.shopId;
     if (!shopId) throw new Error("Shop ID not available");
 
-    await ShopifyProductSyncService.configureSyncJob({
+    await shopifyProductSyncStore.configureSyncJob({
       shopId,
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
     });
     
     syncJobConfigured.value = true;
-    showToast(translate("Product sync job scheduled successfully."));
+    commonUtil.showToast(translate("Product sync job scheduled successfully."));
     await fetchJobs(); // Refresh job list
     await checkSyncJobConfig(); // Refresh state
   } catch (error) {
     logger.error("Failed to configure sync job", error);
-    showToast(translate("Failed to schedule job."));
+    commonUtil.showToast(translate("Failed to schedule job."));
   }
   isSyncJobConfiguring.value = false;
 }
@@ -2803,7 +2857,7 @@ function acceptPreflightAndOpenStartSync() {
 
 async function startProductSync() {
   if (!canStartProductSync(draft.value.startConfirmed) || !hasShopifyWriteAccess.value) {
-    showToast(shopifyAccessBlockingMessage.value);
+    commonUtil.showToast(shopifyAccessBlockingMessage.value);
     return;
   }
   isSaving.value = true;
@@ -2812,7 +2866,7 @@ async function startProductSync() {
       await loadSelectedShopSystemMessageRemoteId();
     }
 
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({ 
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({ 
       shopId: props.id,
       includeAll: true 
     });
@@ -2822,7 +2876,7 @@ async function startProductSync() {
 
     draft.value.syncStarted = true;
     showStartSyncModal.value = false;
-    showToast(translate("Product sync started."));
+    commonUtil.showToast(translate("Product sync started."));
 
     // Keep the selected shop remote id stable. The sync endpoint returns a system message id,
     // which is useful for progress state but cannot replace the shop-level remote id used by
@@ -2846,7 +2900,7 @@ async function startProductSync() {
       if (loadedProgress) startProgressPolling();
     }
   } catch (err) {
-    showToast(getErrorMessage(err, translate("Failed to start product sync.")));
+    commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
     logger.error(err);
   } finally {
     isSaving.value = false;
@@ -2901,7 +2955,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   // Cancel is a system-message-level discard with no corresponding job.
   const systemMessageId = currentSyncRun.value?.systemMessageId || progressState.value?.systemMessageId;
   if (!systemMessageId) {
-    showToast(translate("System message is not available."));
+    commonUtil.showToast(translate("System message is not available."));
     return;
   }
 
@@ -2910,11 +2964,11 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    await ShopifyProductSyncService.cancelSystemMessage(systemMessageId);
-    showToast(translate("Product sync run cancelled."));
+    await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
+    commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
-    showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
+    commonUtil.showToast(getErrorMessage(err, translate("Failed to {actionLabel}.", { actionLabel: translate("cancel the product sync run") })));
     logger.error(err);
   } finally {
     systemMessageActionLoadingId.value = "";
@@ -2926,7 +2980,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
   try {
     currentSyncRun.value = {} as any;
     const job = syncJobObj.value;
-    const resp: any = await ShopifyProductSyncService.syncShopifyProducts({
+    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({
       shopId: props.id,
       ...params
     });
@@ -2947,10 +3001,10 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
     if (loadedProgress) startProgressPolling();
 
     modalRef.value = false;
-    showToast(translate(successMsg));
+    commonUtil.showToast(translate(successMsg));
   } catch (error: any) {
     logger.error(error);
-    showToast(translate("Failed to start product sync"));
+    commonUtil.showToast(translate("Failed to start product sync"));
   } finally {
     loadingRef.value = false;
   }
@@ -2958,7 +3012,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
 
 async function startResyncEntireCatalog() {
   if (!selectedShopSystemMessageRemoteId.value) {
-    showToast(translate("Shopify product sync is unavailable for this shop."));
+    commonUtil.showToast(translate("Shopify product sync is unavailable for this shop."));
     return;
   }
   await performSync({ includeAll: true }, "Full catalog re-sync started.", showResyncEntireCatalogModal, isResyncEntireCatalogStarting);
@@ -2971,7 +3025,7 @@ function openReplaySyncModal() {
 
 async function startReplaySync() {
   if (!replaySyncFromDate.value) {
-    showToast(translate("Please select a date to start the sync from."));
+    commonUtil.showToast(translate("Please select a date to start the sync from."));
     return;
   }
   await performSync({ fromDate: formatDateTime(replaySyncFromDate.value, "yyyy-MM-dd HH:mm:ss") }, "Product sync replay started.", showReplaySyncModal, isReplaySyncStarting);
@@ -2983,7 +3037,7 @@ async function loadProgress() {
   let loadedRunState = false;
   try {
     const [syncRunStateResult, sendJobResult, pollJobResult, sendJobRunsResult, pollJobRunsResult] = await Promise.allSettled([
-      ShopifyProductSyncService.fetchProductUpdateSyncRunState({
+      shopifyProductSyncStore.fetchProductUpdateSyncRunState({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         shopId: props.id,
         systemMessageId: progressState.value?.systemMessageId
@@ -3345,7 +3399,7 @@ async function loadSyncJobAuditUsers(auditLogs: any[]) {
   if (!missingUserIds.length) return;
 
   const responses = await Promise.allSettled(missingUserIds.map(async (userId) => {
-    const resp = await UserService.getUserAccount(userId);
+    const resp = await userStore.fetchUserAccount(userId);
     return { userId, data: resp?.data || {} };
   }));
 
@@ -3536,7 +3590,7 @@ async function loadWebhookSubscriptions() {
   if (!selectedShopSystemMessageRemoteId.value) return;
   isWebhookLoading.value = true;
   try {
-    webhookSubscriptions.value = await ShopifyProductSyncService.fetchWebhookSubscriptions({
+    webhookSubscriptions.value = await shopifyProductSyncStore.fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       topic: "BULK_OPERATIONS_FINISH"
     });
@@ -3551,31 +3605,31 @@ async function loadWebhookSubscriptions() {
 
 async function toggleWebhookSubscription(subscribe: boolean) {
   if (!selectedShopSystemMessageRemoteId.value) {
-    showToast(translate("Shop connection details not fully loaded."));
+    commonUtil.showToast(translate("Shop connection details not fully loaded."));
     return;
   }
   isWebhookLoading.value = true;
   try {
     if (subscribe) {
-      await ShopifyProductSyncService.subscribeWebhook({
+      await shopifyProductSyncStore.subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
       });
-      showToast(translate("Subscribed to bulk operations finish webhook."));
+      commonUtil.showToast(translate("Subscribed to bulk operations finish webhook."));
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
       if (subscription) {
-        await ShopifyProductSyncService.unsubscribeWebhook({
+        await shopifyProductSyncStore.unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });
-        showToast(translate("Unsubscribed from bulk operations finish webhook."));
+        commonUtil.showToast(translate("Unsubscribed from bulk operations finish webhook."));
       }
     }
     await loadWebhookSubscriptions();
   } catch (error) {
     logger.error("Failed to toggle webhook subscription", error);
-    showToast(translate("Failed to update webhook subscription."));
+    commonUtil.showToast(translate("Failed to update webhook subscription."));
   } finally {
     isWebhookLoading.value = false;
   }

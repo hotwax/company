@@ -154,15 +154,13 @@ import {
   modalController,
 } from "@ionic/vue";
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
-import { useStore } from "vuex";
-import { translate } from "@/i18n";
-import { KlaviyoService } from "@/services/KlaviyoService";
-import { getResponseErrorMessage, hasError, showToast } from "@/utils";
-import logger from "@/logger";
+import { useKlaviyoStore } from '@/store/klaviyo';
+import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
+import { commonUtil, hasError, logger, translate } from '@common'
 
 const props = defineProps<{ connection?: any | null }>();
 
-const store = useStore();
+const klaviyoStore = useKlaviyoStore();
 const isEdit = computed(() => !!props.connection?.commGatewayAuthId);
 
 const form = ref({
@@ -179,11 +177,11 @@ const isSaving = ref(false);
 
 const previewAuthId = computed(() => {
   if (!form.value.description.trim()) return translate("(generated when you enter a name)");
-  return KlaviyoService.generateAuthId(form.value.description).slice(0, 60);
+  return generateAuthId(form.value.description).slice(0, 60);
 });
 
 const maskedExistingKey = computed(() => {
-  const masked = KlaviyoService.maskApiKey(props.connection?.publicKey);
+  const masked = maskApiKey(props.connection?.publicKey);
   return masked || translate("Not set");
 });
 
@@ -239,33 +237,33 @@ async function save() {
         description: form.value.description.trim(),
       };
       if (isReplacingKey.value && form.value.privateApiKey.trim()) {
-        payload.publicKey = KlaviyoService.ensureKeyPrefix(form.value.privateApiKey.trim());
+        payload.publicKey = ensureKeyPrefix(form.value.privateApiKey.trim());
         payload.authHeaderName = form.value.authHeaderName || "Authorization";
         payload.baseUrl = form.value.baseUrl;
       }
-      const updated = await KlaviyoService.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
-      await store.dispatch("klaviyo/fetchConnections");
-      showToast(translate("Klaviyo connection updated"));
+      const updated = await klaviyoStore.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
+      await klaviyoStore.fetchConnections();
+      commonUtil.showToast(translate("Klaviyo connection updated"));
       closeModal({ dismissed: false, connection: updated });
     } else {
-      const id = KlaviyoService.generateAuthId(form.value.description.trim());
+      const id = generateAuthId(form.value.description.trim());
       const payload = {
         commGatewayAuthId: id,
         commGatewayConfigId: "KLAVIYO",
         description: form.value.description.trim(),
         baseUrl: form.value.baseUrl,
         authHeaderName: form.value.authHeaderName,
-        publicKey: KlaviyoService.ensureKeyPrefix(form.value.privateApiKey.trim()),
+        publicKey: ensureKeyPrefix(form.value.privateApiKey.trim()),
       };
-      const created: any = await KlaviyoService.createCommGatewayAuth(payload);
-      if (hasError({ data: created })) throw created;
-      await store.dispatch("klaviyo/fetchConnections");
-      showToast(translate("Klaviyo connected"));
+      const created: any = await klaviyoStore.createCommGatewayAuth(payload);
+      if (commonUtil.hasError({ data: created })) throw created;
+      await klaviyoStore.fetchConnections();
+      commonUtil.showToast(translate("Klaviyo connected"));
       closeModal({ dismissed: false, connection: created || payload });
     }
   } catch (error: any) {
     logger.error(error);
-    showToast(getResponseErrorMessage(error, translate("Failed to save Klaviyo connection")));
+    commonUtil.showToast(translate("Failed to save Klaviyo connection"));
   } finally {
     isSaving.value = false;
   }

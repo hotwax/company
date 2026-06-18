@@ -19,8 +19,8 @@
           </ion-item>
 
           <div class="tablet" @click.stop="">
-            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="!store.facilityCount">
-              <ion-label>{{ translate(store.facilityCount > 1 ? "facilities" : "facility", { count: store.facilityCount }) }}</ion-label>
+            <ion-chip outline @click.stop="viewFacilities(store.productStoreId)" :disabled="store.facilityCount == null">
+              <ion-label>{{ translate((store.facilityCount ?? 0) === 1 ? "facility" : "facilities", { count: store.facilityCount ?? 0 }) }}</ion-label>
               <ion-icon :icon="openOutline" color="primary"/>
             </ion-chip>
           </div>
@@ -37,6 +37,10 @@
             <ion-icon slot="start" :icon="addOutline"/>
             {{ translate("Create new product store") }}
           </ion-button>
+          <ion-button fill="outline" @click="cloneStoreSettings()">
+            <ion-icon slot="start" :icon="copyOutline"/>
+            {{ translate("Clone store settings") }}
+          </ion-button>
         </div>
       </main>
     </ion-content>
@@ -45,22 +49,21 @@
 
 <script setup lang="ts">
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, openOutline, storefrontOutline } from "ionicons/icons";
-import { translate } from "@/i18n";
-import { useRouter } from "vue-router";
+import { addOutline, copyOutline, openOutline, storefrontOutline } from "ionicons/icons";
+import { translate, commonUtil } from '@common';
+import router from "@/router";
 import { computed } from "vue";
-import { useStore } from "vuex";
-import { useAuthStore } from '@hotwax/dxp-components'
+import { useProductStore } from '@/store/productStore';
+import { useAuth } from '@common/composables/useAuth'
 
-const store = useStore();
-const router = useRouter();
-const authStore = useAuthStore();
+const productStoreStore = useProductStore();
+const { isAuthenticated } = useAuth();
 
-const productStores = computed(() => store.getters["productStore/getProductStores"])
-const omsRedirectionInfo = computed(() => store.getters["user/getOmsRedirectionInfo"])
+const productStores = computed(() => productStoreStore.productStores)
+
 
 onIonViewWillEnter(async () => {
-  await store.dispatch("productStore/fetchProductStores", { fetchCounts: true });
+  await productStoreStore.fetchProductStores({ fetchCounts: true });
 })
 
 async function viewProductStoreDetails(productStoreId: string) {
@@ -68,11 +71,20 @@ async function viewProductStoreDetails(productStoreId: string) {
 }
 
 function createStore() {
-  router.push("/create-product-store")
+  router.push("/product-store-onboarding")
+}
+
+function cloneStoreSettings() {
+  router.push("/clone-product-store")
 }
 
 function viewFacilities(productStoreId: string) {
-  const facilitiesListUrl = `${process.env.VUE_APP_FACILITIES_LOGIN_URL}?oms=${omsRedirectionInfo.value.url}&token=${authStore.token.value}&expirationTime=${authStore.token.expiration}&productStoreId=${productStoreId}`
+  // Pass OMS + auth context so the external Facilities app lands in the right
+  // authenticated instance (parity with the pre-migration deep link).
+  const oms = commonUtil.getMaargURL()
+  const token = commonUtil.getToken()
+  const expirationTime = commonUtil.getTokenExpiration()
+  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${oms}&token=${token}&expirationTime=${expirationTime}&productStoreId=${productStoreId}`
   window.open(facilitiesListUrl, "_blank")
 }
 </script>

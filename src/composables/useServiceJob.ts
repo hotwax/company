@@ -1,8 +1,7 @@
 import { reactive, toRefs } from 'vue';
-import api from '@/api';
-import logger from '@/logger';
+import { api, logger } from '@common'
 import cronstrue from 'cronstrue';
-import store from '@/store';
+import { useProductStore } from '@/store/productStore';
 
 const getCronString = (cronExpression: any) => {
   try {
@@ -167,7 +166,7 @@ export default function useServiceJob() {
         if (isJobProductStoreDependent()) {
           const jobProductStore = job.serviceJobParameters.find((param: any) => param.parameterName === "productStoreIds");
           // get productStoreId from store
-          const currentProductStoreId = store.getters["productStore/getCurrent"]?.productStoreId; 
+          const currentProductStoreId = useProductStore().getCurrent?.productStoreId;
           
           if (jobProductStore?.parameterName && jobProductStore.parameterValue === currentProductStoreId) {
             jobDetails = job;
