@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { api, logger } from '@common'
 import { parseDateTimeValue } from "@/utils";
+import {
+  getProductSyncJobName,
+  getProductSyncRunStatus,
+  hasProductSyncWriteAccess,
+  PRODUCT_SYNC_IDS
+} from "@/utils/shopifyProductSyncState";
 
 export interface ShopifyProductSyncSetupState {
   hasLinkedOmsProducts: boolean;
@@ -233,12 +239,10 @@ interface SystemMessageRemotesResponse {
   systemMessageRemoteList?: any[];
 }
 
-const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
-const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
-// SHOP_RW_ACCESS is the official read-write access scope. SHOP_READ_WRITE_ACCESS is the
-// deprecated full-form enum and requires updating (it is being phased out / force-replaced).
-const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
-const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = PRODUCT_SYNC_IDS.systemMessageType.productUpdates;
+const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = PRODUCT_SYNC_IDS.shopifyAccessScope.none;
+const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = PRODUCT_SYNC_IDS.shopifyAccessScope.legacyReadWrite;
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = PRODUCT_SYNC_IDS.shopifyAccessScope.readWrite;
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -548,8 +552,7 @@ function sortShopRemoteCandidates(candidates: any[]) {
 }
 
 function hasShopifyWriteAccess(accessScopeEnumId: string) {
-  const normalizedScope = String(accessScopeEnumId || "").trim().toUpperCase();
-  return normalizedScope === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID;
+  return hasProductSyncWriteAccess(accessScopeEnumId);
 }
 
 function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncAccessState {
@@ -664,28 +667,26 @@ const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProductSync
 
 
 const getSystemMessageRank = (systemMessage: any) => {
+  const runStatus = getProductSyncRunStatus({
+    systemMessageState: systemMessage?.statusId,
+    logStatusId: systemMessage?.logStatusId,
+    logId: systemMessage?.logId
+  });
+
   const statusId = String(systemMessage?.statusId || "").toLowerCase();
   const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
-  const logId = systemMessage?.logId;
 
-  // Terminal status:
-  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
-  // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
-                     (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
+  // Terminal runs (completed / cancelled / error) rank lowest among "latest" candidates.
+  if (runStatus === "completed" || runStatus === "cancelled" || runStatus === "error") return 1;
 
-  if (isTerminal) {
-    return 1;
-  }
-
-  // Any other case is considered "In Progress" and gets a higher rank (>= 2)
+  // In-progress tiers preserve the finer run-ranking tuning from main.
   if (logStatusId === "dmlsrunning") return 5;
   if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
   if (statusId === "smsgreceived") return 3.5;
   if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
   if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
 
-  // Default for any unknown in-progress status
+  // Default for any unknown status
   return 0;
 };
 
@@ -727,10 +728,10 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
     url: "oms/dataDocumentView",
     method: "post",
     data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.systemMessageDataManagerLog,
       customParametersMap: {
         systemMessageId,
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
         remoteInternalId: shopId,
         remoteInternalIdType: "HOTWAX_SHOP_ID",
         orderByField: "-lastUpdatedStamp"
@@ -773,9 +774,9 @@ const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyP
     url: "oms/dataDocumentView",
     method: "post",
     data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.systemMessageDataManagerLog,
       customParametersMap: {
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
         remoteInternalId: shopId,
         remoteInternalIdType: "HOTWAX_SHOP_ID",
         statusId: "SmsgProduced"
@@ -1149,7 +1150,7 @@ const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewS
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.productStoreProduct,
         pageIndex: 0,
         pageSize: 1,
         customParametersMap: {
@@ -1164,7 +1165,7 @@ const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewS
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.productStoreProduct,
         pageIndex: 0,
         pageSize: 1,
         customParametersMap: {
@@ -1221,7 +1222,7 @@ const fetchPreflight = async (payload: any): Promise<any[]> => {
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.productStoreProduct,
         customParametersMap: {
           productStoreId,
           shopifyProductId: shopifyVariantIds
@@ -1271,13 +1272,13 @@ export const fetchSyncJobConfigInternal = async (payload: any): Promise<{ isConf
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "SERVICE_JOB_PARAMETER",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.serviceJobParameter,
         pageIndex: 0,
         pageSize: 1,
         customParametersMap: {
           parameterName: "shopId",
           parameterValue: shopId,
-          parentJobName: "sync_ShopifyProductUpdates"
+          parentJobName: PRODUCT_SYNC_IDS.serviceJob.productUpdates
         }
       }
     }) as any;
@@ -1295,10 +1296,10 @@ export const fetchSyncJobConfigInternal = async (payload: any): Promise<{ isConf
 
 const configureSyncJob = async (payload: any): Promise<any> => {
   const { shopId, productStoreId, productIdentifierEnumId } = payload;
-  const newJobName = `sync_ShopifyProductUpdates_${shopId}`;
+  const newJobName = getProductSyncJobName(shopId);
 
   await api({
-    url: "admin/serviceJobs/sync_ShopifyProductUpdates/clone",
+    url: `admin/serviceJobs/${PRODUCT_SYNC_IDS.serviceJob.productUpdates}/clone`,
     method: "POST",
     data: { newJobName }
   });
@@ -1342,9 +1343,9 @@ const fetchErrorRecordCount = async (payload: any): Promise<number> => {
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.dataManagerLogAndParameter,
         customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
+          configId: configId || PRODUCT_SYNC_IDS.dataManagerConfig.productSync,
           parameterName: "shopId",
           parameterValue: shopId,
           failedRecordCount: 0,
@@ -1370,11 +1371,11 @@ const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => 
       url: "oms/dataDocumentView",
       method: "post",
       data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
+        dataDocumentId: PRODUCT_SYNC_IDS.dataDocument.dataManagerLogAndParameter,
         pageSize: 1,
         pageIndex: 0,
         customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
+          configId: configId || PRODUCT_SYNC_IDS.dataManagerConfig.productSync,
           parameterName: "shopId",
           parameterValue: shopId,
           statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
