@@ -16,6 +16,17 @@
         </ion-menu-toggle>
 
         <ion-item-divider color="light">
+          <ion-label>{{ translate("Facilities") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in facilitiesPages" :key="'facilities-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedFacilitiesIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <ion-item-divider color="light">
           <ion-label>{{ translate("Agents") }}</ion-label>
         </ion-item-divider>
 
@@ -56,7 +67,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -93,6 +104,15 @@ const appPages = [
   }
 ];
 
+const facilitiesPages = [
+  {
+    title: "Find Facilities",
+    url: "/facilities/find",
+    iosIcon: storefrontOutline,
+    mdIcon: storefrontOutline,
+  }
+];
+
 const agentPages = [
   {
     title: "Composer",
@@ -120,6 +140,11 @@ const settingsPages = [
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+})
+
+const selectedFacilitiesIndex = computed(() => {
+  const path = router.currentRoute.value.path
+  return facilitiesPages.findIndex((screen) => screen.url === path)
 })
 
 const selectedAgentIndex = computed(() => {
