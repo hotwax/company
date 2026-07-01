@@ -3,6 +3,8 @@ import { RouteRecordRaw } from 'vue-router'
 import { Login, logger } from '@common/index'
 import { useAuth } from '@common/composables/useAuth'
 
+const FindFacilities = () => import('@/views/FindFacilities.vue')
+const FacilityDetails = () => import('@/views/FacilityDetails.vue')
 const CreateProductStore = () => import('@/views/CreateProductStore.vue')
 const ProductStoreOnboarding = () => import('@/views/ProductStoreOnboarding.vue')
 const AddConfigurations = () => import('@/views/AddConfigurations.vue')
@@ -31,6 +33,8 @@ const authGuard = async () => {
 const routes: Array<RouteRecordRaw> = [
   { path: '/', redirect: '/product-store' },
   { path: '/product-store', name: 'ProductStore', component: ProductStore, beforeEnter: authGuard },
+  { path: '/facilities/find', name: 'FindFacilities', component: FindFacilities, beforeEnter: authGuard },
+  { path: '/facility-details/:facilityId', name: 'FacilityDetails', component: FacilityDetails, props: true, beforeEnter: authGuard },
   { path: '/product-store-details/:productStoreId', name: 'ProductStoreDetails', component: ProductStoreDetails, props: true, beforeEnter: authGuard },
   { path: '/shopify', name: 'ShopifyConnections', component: () => import('@/views/ShopifyConnections.vue'), beforeEnter: authGuard },
   { path: '/shopify-connection-details/:id', name: 'ShopifyConnectionDetails', component: ShopifyConnectionDetails, props: true, beforeEnter: authGuard },

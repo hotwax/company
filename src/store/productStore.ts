@@ -439,6 +439,7 @@ export const useProductStore = defineStore('productStore', {
     getCurrentFacilities: (state) => state.currentFacilities,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
     getProductStores: (state) => state.productStores,
+    getProductStoreById: (state) => (productStoreId: string) => state.productStores.find((s: any) => s.productStoreId === productStoreId),
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
     getFetchStatus: (state) => state.fetchStatus

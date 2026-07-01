@@ -21,6 +21,7 @@ export const useUserStore = defineStore('user', {
   getters: {
     isAuthenticated: () => useAuth().isAuthenticated.value,
     getUserProfile: (state) => state.current,
+    getTimeZones: (state) => state.availableTimeZones,
     getUserPermissions: (state) => state.permissions,
     getInstanceUrl: (state) => state.instanceUrl,
     hasPermission: (state) => (permissionId: string): boolean => {

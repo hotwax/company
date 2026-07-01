@@ -266,6 +266,7 @@
   "Failed to sync selected products.": "Failed to sync selected products.",
   "Failed to update credentials": "Failed to update credentials",
   "Failed to update email event": "Failed to update email event",
+  "Failed to update fulfillment capacity for ": "Failed to update fulfillment capacity for {facilityName}",
   "Failed to update netSuite id": "Failed to update netSuite id",
   "Failed to update product store name.": "Failed to update product store name.",
   "Failed to update product store settings": "Failed to update product store settings",
@@ -299,6 +300,7 @@
   "From OMS Admin, open Unigate → Communication Gateway, then click Setup Tenant. You'll need a Tenant ID, the Unigate base URL, and a Unigate API key.": "From OMS Admin, open Unigate → Communication Gateway, then click Setup Tenant. You'll need a Tenant ID, the Unigate base URL, and a Unigate API key.",
   "From the most recent completed import run.": "From the most recent completed import run.",
   "Fulfillment": "Fulfillment",
+  "Fulfillment capacity updated successfully for ": "Fulfillment capacity updated successfully for {facilityName}",
   "Full catalog re-sync started.": "Full catalog re-sync started.",
   "Generated automatically from the connection name. Cannot be changed later.": "Generated automatically from the connection name. Cannot be changed later.",
   "Gift card": "Gift card",
@@ -986,5 +988,8 @@
   "{failed} failed of {total} records.": "{failed} failed of {total} records.",
   "{label} turned off": "{label} turned off",
   "{label} turned on": "{label} turned on",
-  "{processed} objects processed / {total} products requested": "{processed} objects processed / {total} products requested"
+  "{processed} objects processed / {total} products requested": "{processed} objects processed / {total} products requested",
+  "is now selling on": "{facilityName} is now selling on {facilityGroupId}.",
+  "no longer sells on": "{facilityName} no longer sells on {facilityGroupId}.",
+  "Failed to update sell inventory online setting": "Failed to update sell inventory online setting"
 }

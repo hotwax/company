@@ -7,6 +7,7 @@
 import { defineComponent } from "vue";
 import { IonSkeletonText } from '@ionic/vue'
 import { logger } from '@common';
+import defaultImage from '@/assets/images/defaultImage.png';
 
 export default defineComponent({
   name: "Image",
@@ -54,7 +55,7 @@ export default defineComponent({
           this.checkIfImageExists(this.src).then(() => {
             this.imageUrl = this.src;
           }).catch(() => {
-            this.imageUrl = require("@/assets/images/defaultImage.png") ;
+            this.imageUrl = defaultImage;
             logger.error("Image doesn't exist");
           })
         } else {

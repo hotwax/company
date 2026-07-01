@@ -28,6 +28,8 @@ export const useUtilStore = defineStore('util', {
     statusItems: {} as any,
     maargInfo: null as any,
     currencies: [] as any[],
+    states: {} as any,
+    shopifyShopForProductStore: {} as any,
     fetchStatus: {
       facilities: 'none',
       statuses: 'none',
@@ -47,6 +49,7 @@ export const useUtilStore = defineStore('util', {
 
   getters: {
     getFacilityGroups: (state) => state.facilityGroups,
+    getInventoryGroups: (state) => state.facilityGroups.filter((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"),
     getFacilities: (state) => state.facilities,
     getOperatingCountries: (state) => state.operatingCountries,
     getDBICCountriesCount: (state) => state.dbicCountries.total,
@@ -58,6 +61,8 @@ export const useUtilStore = defineStore('util', {
     getStatusItems: (state) => state.statusItems,
     getMaargInfo: (state) => state.maargInfo,
     getCurrencies: (state) => state.currencies,
+    getStates: (state) => state.states,
+    getShopifyShopIdForProductStore: (state) => (productStoreId: string) => state.shopifyShopForProductStore[productStoreId] || '',
     getFetchStatus: (state) => state.fetchStatus
   },
 
@@ -410,6 +415,83 @@ export const useUtilStore = defineStore('util', {
       } catch (error: any) {
         logger.error('fetchCurrencies', error)
         this.fetchStatus = { ...this.fetchStatus, currencies: 'error' }
+      }
+    },
+
+    async fetchShopifyShopForProductStores(productStoreIds: string[]) {
+      let shopifyShopId = ''
+      try {
+        const resp = await api({
+          url: 'oms/shopifyShops/shops',
+          method: 'get',
+          params: { productStoreId: productStoreIds, productStoreId_op: 'in', pageSize: productStoreIds.length }
+        })
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          const shops = resp.data
+          this.shopifyShopForProductStore = {
+            ...this.shopifyShopForProductStore,
+            ...shops.reduce((acc: any, shop: any) => { acc[shop.productStoreId] = shop.shopifyShopId; return acc; }, {})
+          }
+          shopifyShopId = shops[0]?.shopifyShopId || ''
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+      }
+      return shopifyShopId
+    },
+
+    async fetchStates(payload: { geoId: string }) {
+      if (payload.geoId in this.states) return
+      let states: any[] = []
+
+      try {
+        const resp = await api({
+          url: "admin/geos/assocs/assocTo",
+          method: "get",
+          params: { geoId: payload.geoId, geoAssocTypeEnumId: "GAT_REGIONS", pageNoLimit: true }
+        })
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          states = resp.data
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+      }
+      this.states[payload.geoId] = states
+    },
+
+    async generateLatLong(payload: any) {
+      try {
+        const resp = await api({
+          url: "api/geocode",
+          method: "POST",
+          data: payload,
+        });
+        if (resp.data) {
+          return Promise.resolve(resp.data);
+        } else {
+          throw resp.data;
+        }
+      } catch (error) {
+        logger.error(error);
+        return Promise.reject(error);
+      }
+    },
+
+    async fetchShopifyShops() {
+      try {
+        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageNoLimit: true }, cache: true });
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          return Promise.resolve(resp.data);
+        } else {
+          throw resp.data;
+        }
+      } catch (error) {
+        logger.error(error);
+        return Promise.reject(error);
       }
     },
 
