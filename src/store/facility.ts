@@ -192,7 +192,7 @@ export const useFacilityStore = defineStore("facility", {
     async fetchFacilityLogins(payload: { facilityId: string }) {
       let facilityLogins = [] as any[];
       try {
-        const resp = await api({ url: `oms/facilities/${payload.facilityId}/logins`, method: "get" });
+        const resp = await api({ url: `oms/facilities/${payload.facilityId}/parties`, method: "get", params: { roleTypeId: "FAC_LOGIN" } });
         if (!commonUtil.hasError(resp) && resp.data?.facilityLogins?.length) {
           facilityLogins = resp.data.facilityLogins;
         }
@@ -322,6 +322,12 @@ export const useFacilityStore = defineStore("facility", {
             ...party,
             fullName: party.groupName || [party.firstName, party.lastName].filter(Boolean).join(" ") || party.partyId
           }));
+          const partyIds = parties.map((p: any) => p.partyId);
+          const usersResp = await api({ url: "oms/users", method: "get", params: { partyId: partyIds, pageNoLimit: true } });
+          if (!commonUtil.hasError(usersResp) && usersResp.data?.length) {
+            const userLoginByPartyId = Object.fromEntries(usersResp.data.map((u: any) => [u.partyId, u.userLoginId]));
+            parties = parties.map((party: any) => ({ ...party, userLoginId: userLoginByPartyId[party.partyId] }));
+          }
         }
       } catch (err) {
         logger.error("Failed to fetch facility parties", err);
@@ -624,6 +630,13 @@ export const useFacilityStore = defineStore("facility", {
     },
     async fetchFacilityPartyRoles(payload: any) {
       return api({ url: `oms/facilities/${payload.facilityId}/parties`, method: "get", params: { partyId: payload.partyId, filterByDate: true } });
+    },
+    // TODO: Migrate to maarg admin/users/sendResetPasswordMail once backend support is available
+    async sendResetPasswordEmail(payload: any) {
+      return api({ url: "sendResetPasswordMail", method: "post", data: { userName: payload.userLoginId }, baseURL: commonUtil.getOmsURL() });
+    },
+    async updateUserLoginStatus(payload: any) {
+      return api({ url: "service/updateUserLoginStatus", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
     }
   },
   persist: true
