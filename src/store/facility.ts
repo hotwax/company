@@ -20,7 +20,9 @@ export const useFacilityStore = defineStore("facility", {
     locationTypes: {} as any,
     facilityGroupTypes: [] as any[],
     calendars: [] as any[],
-    partyRoles: {} as any
+    partyRoles: {} as any,
+    groups: [] as any[],
+    groupQuery: { queryString: "" }
   }),
   getters: {
     getFacilities: (state) => (state.facilities.list ? JSON.parse(JSON.stringify(state.facilities.list)) : []),
@@ -36,7 +38,9 @@ export const useFacilityStore = defineStore("facility", {
     getFacilityCalendar: (state) => state.current.calendar || {},
     getPartyRoles: (state) => state.partyRoles,
     getPostalAddress: (state) => (state.current?.postalAddress ? JSON.parse(JSON.stringify(state.current.postalAddress)) : {}),
-    getTelecomAndEmailAddress: (state) => state.current?.contactDetails
+    getTelecomAndEmailAddress: (state) => state.current?.contactDetails,
+    getGroups: (state) => state.groups ? JSON.parse(JSON.stringify(state.groups)) : [],
+    getGroupQuery: (state) => JSON.parse(JSON.stringify(state.groupQuery))
   },
   actions: {
     async fetchFacilities(payload: any) {
@@ -410,7 +414,7 @@ export const useFacilityStore = defineStore("facility", {
             parentTypeId_not: 'Y',
             facilityTypeId: 'VIRTUAL_FACILITY',
             facilityTypeId_not: 'Y',
-            pageSize: 200
+            pageNoLimit: true
           }
         });
         if (!commonUtil.hasError(resp)) {
@@ -637,6 +641,76 @@ export const useFacilityStore = defineStore("facility", {
     // },
     async updateUserLoginStatus(payload: any) {
       return api({ url: "service/updateUserLoginStatus", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
+    },
+    async fetchFacilityGroupsWithSearch() {
+      const params: any = { pageNoLimit: true };
+      if (this.groupQuery.queryString) {
+        params.facilityGroupName = this.groupQuery.queryString;
+        params.facilityGroupName_op = "contains";
+        params.facilityGroupName_ic = "Y";
+      }
+      let groups: any[] = [];
+      let pageIndex = 0, resp: any;
+      try {
+        do {
+          resp = await api({ url: "admin/facilityGroups", method: "get", params: { ...params, pageIndex } });
+          if (!commonUtil.hasError(resp) && resp.data?.length) {
+            groups = groups.concat(resp.data);
+            pageIndex++;
+          } else {
+            break;
+          }
+        } while (resp.data?.length >= 200);
+      } catch (err) {
+        logger.error("Failed to fetch facility groups", err);
+      }
+      this.groups = groups;
+      if (groups.length) await (this as any).enrichGroupsWithCounts();
+    },
+    async enrichGroupsWithCounts() {
+      try {
+        const [facilityCountsResp, storeCountsResp] = await Promise.all([
+          api({ url: "oms/groupFacilities", method: "get", params: { pageNoLimit: true } }),
+          api({ url: "oms/groupProductStores", method: "get", params: { pageNoLimit: true } })
+        ]);
+        const facilityCounts: Record<string, number> = {};
+        const storeCounts: Record<string, number> = {};
+        if (!commonUtil.hasError(facilityCountsResp) && facilityCountsResp.data?.length) {
+          facilityCountsResp.data.forEach((item: any) => {
+            facilityCounts[item.facilityGroupId] = (facilityCounts[item.facilityGroupId] || 0) + 1;
+          });
+        }
+        if (!commonUtil.hasError(storeCountsResp) && storeCountsResp.data?.length) {
+          storeCountsResp.data.forEach((item: any) => {
+            storeCounts[item.facilityGroupId] = (storeCounts[item.facilityGroupId] || 0) + 1;
+          });
+        }
+        this.groups = this.groups.map((g: any) => ({
+          ...g,
+          facilityCount: facilityCounts[g.facilityGroupId] || 0,
+          productStoreCount: storeCounts[g.facilityGroupId] || 0
+        }));
+      } catch (err) {
+        logger.error("Failed to enrich group counts", err);
+      }
+    },
+    async updateFacilityGroup(payload: any) {
+      return api({ url: `admin/facilityGroups/${payload.facilityGroupId}`, method: "put", data: payload });
+    },
+    async fetchGroupFacilities(facilityGroupId: string) {
+      let facilities: any[] = [];
+      try {
+        const resp = await api({ url: `admin/facilityGroups/${facilityGroupId}/facilities`, method: "get", params: { pageNoLimit: true } });
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          facilities = resp.data;
+        }
+      } catch (err) {
+        logger.error("Failed to fetch group facilities", err);
+      }
+      return facilities;
+    },
+    updateGroupQuery(query: any) {
+      this.groupQuery = query;
     }
   },
   persist: true
