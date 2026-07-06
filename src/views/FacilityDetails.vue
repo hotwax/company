@@ -73,7 +73,7 @@
                     <h3>{{ postalAddress.address1 }}</h3>
                     <h3>{{ postalAddress.address2 }}</h3>
                     <p class="ion-text-wrap">{{ postalAddress.postalCode ? `${postalAddress.city}, ${postalAddress.postalCode}` : postalAddress.city }}</p>
-                    <p class="ion-text-wrap">{{ postalAddress.countryGeoId ? `${postalAddress.stateProvinceGeoId}, ${postalAddress.countryGeoId}` : postalAddress.stateProvinceGeoId }}</p>
+                    <p class="ion-text-wrap">{{ postalAddress.countryGeoName ? `${postalAddress.stateGeoName}, ${postalAddress.countryGeoName}` : postalAddress.stateGeoName }}</p>
                     <p class="ion-text-wrap" v-if="contactDetails?.telecomNumber?.contactNumber">{{ [contactDetails.telecomNumber.countryCode, contactDetails.telecomNumber.contactNumber].filter(Boolean).join('-') }}</p>
                     <p class="ion-text-wrap" v-if="contactDetails?.emailAddress">{{ contactDetails.emailAddress?.infoString }}</p>
                   </ion-label>
@@ -685,8 +685,9 @@ onIonViewWillEnter(async () => {
   initialParentFacilityTypeId.value = parentFacilityTypeId.value;
   facilityTypeId.value = current.value.facilityTypeId;
   getFacilityTypesByParentTypeId();
-  console.log('=-=-=-=-=-=-=-=-=-=- current.value.defaultDaysToShip', current.value.defaultDaysToShip)
-  defaultDaysToShip.value = current.value.defaultDaysToShip;  isLoading.value = false;
+  defaultDaysToShip.value = current.value.defaultDaysToShip;
+  if (postalAddress.value.latitude) await fetchPostalCodeByGeoPoints();
+  isLoading.value = false;
 });
 
 function getFacilityTypesByParentTypeId() {

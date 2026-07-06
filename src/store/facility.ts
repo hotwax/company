@@ -632,9 +632,9 @@ export const useFacilityStore = defineStore("facility", {
       return api({ url: `oms/facilities/${payload.facilityId}/parties`, method: "get", params: { partyId: payload.partyId, filterByDate: true } });
     },
     // TODO: Migrate to maarg admin/users/sendResetPasswordMail once backend support is available
-    async sendResetPasswordEmail(payload: any) {
-      return api({ url: "sendResetPasswordMail", method: "post", data: { userName: payload.userLoginId }, baseURL: commonUtil.getOmsURL() });
-    },
+    // async sendResetPasswordEmail(payload: any) {
+    //   return api({ url: "sendResetPasswordMail", method: "post", data: { userName: payload.userLoginId }, baseURL: commonUtil.getOmsURL() });
+    // },
     async updateUserLoginStatus(payload: any) {
       return api({ url: "service/updateUserLoginStatus", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
     }
