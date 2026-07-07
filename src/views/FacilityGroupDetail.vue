@@ -246,41 +246,28 @@ async function saveFacilityMemberships() {
 
   const now = DateTime.now().toMillis();
 
-  // POST admin/facilityGroups/{id}/facilities/{facilityId}/association uses operation="store":
-  // - add: new fromDate + sequenceNum
-  // - remove: existing fromDate + thruDate
-  // - resequence: existing fromDate + new sequenceNum
-  const requests: Promise<any>[] = [];
-
-  selectedFacilities.value
+  // new members to add
+  const toCreate = selectedFacilities.value
     .filter((f: any) => !memberIds.has(f.facilityId))
-    .forEach((f: any) => {
-      requests.push(api({
-        url: `admin/facilityGroups/${props.facilityGroupId}/facilities/${f.facilityId}/association`,
-        method: "post",
-        data: { fromDate: now, sequenceNum: f.sequenceNum }
-      }));
-    });
+    .map((f: any) => ({ facilityId: f.facilityId, fromDate: now, sequenceNum: f.sequenceNum }));
 
-  memberFacilities.value
-    .filter((f: any) => !selectedIds.has(f.facilityId))
-    .forEach((f: any) => {
-      requests.push(api({
-        url: `admin/facilityGroups/${props.facilityGroupId}/facilities/${f.facilityId}/association`,
-        method: "post",
-        data: { fromDate: memberByFacilityId[f.facilityId].fromDate, thruDate: now }
-      }));
-    });
+  // existing members to expire (removed) or resequence (reordered)
+  const toStore = [
+    ...memberFacilities.value
+      .filter((f: any) => !selectedIds.has(f.facilityId))
+      .map((f: any) => ({ facilityId: f.facilityId, fromDate: f.fromDate, thruDate: now })),
+    ...selectedFacilities.value
+      .filter((f: any) => memberIds.has(f.facilityId) && memberByFacilityId[f.facilityId]?.sequenceNum !== f.sequenceNum)
+      .map((f: any) => ({ facilityId: f.facilityId, fromDate: memberByFacilityId[f.facilityId].fromDate, sequenceNum: f.sequenceNum }))
+  ];
 
-  selectedFacilities.value
-    .filter((f: any) => memberIds.has(f.facilityId) && memberByFacilityId[f.facilityId]?.sequenceNum !== f.sequenceNum)
-    .forEach((f: any) => {
-      requests.push(api({
-        url: `admin/facilityGroups/${props.facilityGroupId}/facilities/${f.facilityId}/association`,
-        method: "post",
-        data: { fromDate: memberByFacilityId[f.facilityId].fromDate, sequenceNum: f.sequenceNum }
-      }));
-    });
+  const requests: Promise<any>[] = [];
+  if (toCreate.length) {
+    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "post", data: toCreate }));
+  }
+  if (toStore.length) {
+    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "put", data: toStore }));
+  }
 
   const results = await Promise.allSettled(requests);
   const anyFailed = results.some((r) => r.status === "rejected");
