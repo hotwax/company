@@ -22,7 +22,9 @@ export const useFacilityStore = defineStore("facility", {
     calendars: [] as any[],
     partyRoles: {} as any,
     groups: [] as any[],
-    groupQuery: { queryString: "" }
+    groupQuery: { queryString: "" },
+    virtualFacilities: { list: [] as any[], total: 0 },
+    archivedFacilities: [] as any[]
   }),
   getters: {
     getFacilities: (state) => (state.facilities.list ? JSON.parse(JSON.stringify(state.facilities.list)) : []),
@@ -40,7 +42,10 @@ export const useFacilityStore = defineStore("facility", {
     getPostalAddress: (state) => (state.current?.postalAddress ? JSON.parse(JSON.stringify(state.current.postalAddress)) : {}),
     getTelecomAndEmailAddress: (state) => state.current?.contactDetails,
     getGroups: (state) => state.groups ? JSON.parse(JSON.stringify(state.groups)) : [],
-    getGroupQuery: (state) => JSON.parse(JSON.stringify(state.groupQuery))
+    getGroupQuery: (state) => JSON.parse(JSON.stringify(state.groupQuery)),
+    getVirtualFacilities: (state) => state.virtualFacilities.list ? JSON.parse(JSON.stringify(state.virtualFacilities.list)) : [],
+    isVirtualFacilitiesScrollable: (state) => state.virtualFacilities.list.length > 0 && state.virtualFacilities.list.length < state.virtualFacilities.total,
+    getArchivedFacilities: (state) => state.archivedFacilities
   },
   actions: {
     async fetchFacilities(payload: any) {
@@ -711,6 +716,122 @@ export const useFacilityStore = defineStore("facility", {
     },
     updateGroupQuery(query: any) {
       this.groupQuery = query;
+    },
+    async fetchArchivedFacilities() {
+      let archived: any[] = [];
+      try {
+        const resp = await api({ url: "oms/groupFacilities", method: "get", params: { facilityGroupId: "ARCHIVE", filterByDate: "Y", pageNoLimit: true } });
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          archived = resp.data;
+        }
+      } catch (err) {
+        logger.error("Failed to fetch archived facilities", err);
+      }
+      this.archivedFacilities = archived;
+    },
+    updateArchivedFacilities(list: any[]) {
+      this.archivedFacilities = list;
+    },
+    async fetchVirtualFacilities(payload: { viewSize: number; viewIndex: number }) {
+      const { viewSize, viewIndex } = payload;
+      const archivedIds = new Set(this.archivedFacilities.map((f: any) => f.facilityId));
+
+      let facilities: any[] = [];
+      let total = 0;
+      try {
+        // two calls: plain VIRTUAL_FACILITY type + subtypes (BACKORDER, PRE_ORDER etc.)
+        const [baseResp, subResp] = await Promise.all([
+          api({ url: "oms/facilities", method: "get", params: { facilityTypeId: "VIRTUAL_FACILITY", pageSize: viewSize, pageIndex: viewIndex } }),
+          api({ url: "oms/facilities", method: "get", params: { parentTypeId: "VIRTUAL_FACILITY", pageSize: viewSize, pageIndex: viewIndex } })
+        ]);
+
+        const baseList = (!commonUtil.hasError(baseResp) && baseResp.data) ? baseResp.data : [];
+        const subList = (!commonUtil.hasError(subResp) && subResp.data) ? subResp.data : [];
+        const baseTotal = baseList.length;
+        const subTotal = subList.length;
+
+        const seen = new Set<string>();
+        const merged: any[] = [];
+        for (const f of [...baseList, ...subList]) {
+          if (!seen.has(f.facilityId) && !archivedIds.has(f.facilityId)) {
+            seen.add(f.facilityId);
+            merged.push(f);
+          }
+        }
+        facilities = merged;
+        total = baseTotal + subTotal;
+      } catch (err) {
+        logger.error("Failed to fetch virtual facilities", err);
+      }
+
+      if (viewIndex === 0) {
+        this.virtualFacilities = { list: facilities, total };
+      } else {
+        this.virtualFacilities = { list: [...this.virtualFacilities.list, ...facilities], total };
+      }
+
+      if (facilities.length) {
+        await (this as any).enrichVirtualFacilitiesDetail(facilities.map((f: any) => f.facilityId));
+      }
+    },
+    async enrichVirtualFacilitiesDetail(facilityIds: string[]) {
+      try {
+        const [orderCountResp, jobData] = await Promise.all([
+          api({ url: "admin/facilities/orderCount", method: "get", params: { facilityId: facilityIds, facilityId_op: "in", pageNoLimit: true } }),
+          (this as any).fetchJobData()
+        ]);
+
+        const orderCounts: Record<string, number> = {};
+        if (!commonUtil.hasError(orderCountResp) && orderCountResp.data?.length) {
+          orderCountResp.data.forEach((item: any) => { orderCounts[item.facilityId] = item.orderCount; });
+        }
+
+        this.virtualFacilities.list = this.virtualFacilities.list.map((f: any) => {
+          if (!facilityIds.includes(f.facilityId)) return f;
+          const enriched = { ...f, orderCount: orderCounts[f.facilityId] ?? 0 };
+          if (f.facilityId === '_NA_') {
+            enriched.brokeringJob = jobData?.brokeringJob;
+          } else if (['BACKORDER', 'PRE_ORDER'].includes(f.facilityTypeId)) {
+            enriched.autoReleaseJob = jobData?.autoReleaseJob;
+          }
+          return enriched;
+        });
+      } catch (err) {
+        logger.error("Failed to enrich virtual facilities", err);
+      }
+    },
+    async fetchJobData(): Promise<any> {
+      // TODO: migrate to maarg jobs endpoint when available
+      const payload = {
+        inputFields: {
+          statusId: "SERVICE_PENDING",
+          systemJobEnumId: ["JOB_RLS_ORD_DTE", "JOB_BKR_ORD"],
+          systemJobEnumId_op: "in"
+        },
+        orderBy: "runTime ASC",
+        entityName: "JobSandbox",
+        fieldList: ["jobId", "statusId", "serviceName", "systemJobEnumId", "runTime"],
+        viewSize: 10
+      };
+      try {
+        const resp = await api({ url: "performFind", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
+        if (!commonUtil.hasError(resp) && resp.data?.count > 0) {
+          const jobs = resp.data.docs;
+          return {
+            brokeringJob: jobs.find((j: any) => j.systemJobEnumId === "JOB_BKR_ORD"),
+            autoReleaseJob: jobs.find((j: any) => j.systemJobEnumId === "JOB_RLS_ORD_DTE")
+          };
+        }
+      } catch (err) {
+        logger.error("Failed to fetch job data", err);
+      }
+      return {};
+    },
+    async createVirtualFacility(payload: any) {
+      return api({ url: "oms/facilities", method: "post", data: payload });
+    },
+    updateVirtualFacilities(list: any[]) {
+      this.virtualFacilities.list = list;
     }
   },
   persist: true

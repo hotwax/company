@@ -7,6 +7,7 @@ const FindFacilities = () => import('@/views/FindFacilities.vue')
 const FacilityDetails = () => import('@/views/FacilityDetails.vue')
 const FindGroups = () => import('@/views/FindGroups.vue')
 const FacilityGroupDetail = () => import('@/views/FacilityGroupDetail.vue')
+const Parking = () => import('@/views/Parking.vue')
 const CreateProductStore = () => import('@/views/CreateProductStore.vue')
 const ProductStoreOnboarding = () => import('@/views/ProductStoreOnboarding.vue')
 const AddConfigurations = () => import('@/views/AddConfigurations.vue')
@@ -39,6 +40,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/facility-details/:facilityId', name: 'FacilityDetails', component: FacilityDetails, props: true, beforeEnter: authGuard },
   { path: '/facilities/groups', name: 'FindGroups', component: FindGroups, beforeEnter: authGuard },
   { path: '/facility-group-detail/:facilityGroupId', name: 'FacilityGroupDetail', component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
+  { path: '/parking', name: 'Parking', component: Parking, beforeEnter: authGuard },
   { path: '/product-store-details/:productStoreId', name: 'ProductStoreDetails', component: ProductStoreDetails, props: true, beforeEnter: authGuard },
   { path: '/shopify', name: 'ShopifyConnections', component: () => import('@/views/ShopifyConnections.vue'), beforeEnter: authGuard },
   { path: '/shopify-connection-details/:id', name: 'ShopifyConnectionDetails', component: ShopifyConnectionDetails, props: true, beforeEnter: authGuard },

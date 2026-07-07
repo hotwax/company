@@ -67,7 +67,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { albumsOutline, briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -116,6 +116,12 @@ const facilitiesPages = [
     url: "/facilities/groups",
     iosIcon: albumsOutline,
     mdIcon: albumsOutline,
+  },
+  {
+    title: "Parking",
+    url: "/parking",
+    iosIcon: carOutline,
+    mdIcon: carOutline,
   }
 ];
 
