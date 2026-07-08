@@ -217,7 +217,7 @@ export const useFacilityStore = defineStore("facility", {
       return api({ url: `oms/facilities/${payload.facilityId}/groups/${payload.facilityGroupId}`, method: "put", data: payload });
     },
     updateFacilities(facilities: any[]) {
-      this.facilities = { list: facilities, total: facilities.length };
+      this.facilities = { list: facilities, total: this.facilities.total };
     },
     async updateFacilityGroupAssociation(currentFacility: any, facilityGroup: any, isChecked: boolean) {
       try {
@@ -225,7 +225,8 @@ export const useFacilityStore = defineStore("facility", {
         if (isChecked) {
           resp = await this.addFacilityToGroup({
             facilityId: currentFacility.facilityId,
-            facilityGroupId: facilityGroup.facilityGroupId
+            facilityGroupId: facilityGroup.facilityGroupId,
+            fromDate: DateTime.now().toMillis()
           });
           successMessage = translate("is now selling on", { facilityName: currentFacility.facilityName, facilityGroupId: facilityGroup.facilityGroupName });
         } else {
