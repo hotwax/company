@@ -118,6 +118,12 @@
           :loading-text="translate('Loading')"
         />
       </ion-infinite-scroll>
+
+      <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+        <ion-fab-button @click="createFacility()">
+          <ion-icon :icon="addOutline" />
+        </ion-fab-button>
+      </ion-fab>
     </ion-content>
   </ion-page>
 </template>
@@ -127,6 +133,8 @@ import {
   IonCheckbox,
   IonChip,
   IonContent,
+  IonFab,
+  IonFabButton,
   IonHeader,
   IonIcon,
   IonInfiniteScroll,
@@ -148,7 +156,7 @@ import {
   onIonViewWillEnter,
   popoverController
 } from '@ionic/vue';
-import { albumsOutline, businessOutline, globeOutline, lockClosedOutline, lockOpenOutline, shareOutline } from 'ionicons/icons';
+import { addOutline, albumsOutline, businessOutline, globeOutline, lockClosedOutline, lockOpenOutline, shareOutline } from 'ionicons/icons';
 import { computed } from 'vue';
 import { commonUtil, logger, translate } from "@common"
 import { useFacilityStore } from '@/store/facility';
@@ -200,6 +208,10 @@ async function loadMoreFacilities(event: any) {
 
 function viewFacilityDetails(facilityId: string) {
   router.push({ path: `/facility-details/${facilityId}` });
+}
+
+function createFacility() {
+  router.push({ path: '/create-facility' });
 }
 
 function getAssociatedInventoryGroups(facility: any) {

@@ -320,6 +320,8 @@
             </ion-item>
           </ion-card>
 
+          <!-- TODO: implement facility login flows (create/manage facility user logins) once backend has support.
+               Original creates a new user login via raw OFBiz service calls with no REST equivalent wired up in this app yet.
           <ion-card>
             <ion-card-header>
               <ion-card-title>
@@ -339,6 +341,7 @@
               </ion-button>
             </ion-item>
           </ion-card>
+          -->
         </section>
 
         <ion-segment scrollable v-model="segment">
