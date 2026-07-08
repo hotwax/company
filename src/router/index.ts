@@ -5,6 +5,12 @@ import { useAuth } from '@common/composables/useAuth'
 
 const FindFacilities = () => import('@/views/FindFacilities.vue')
 const FacilityDetails = () => import('@/views/FacilityDetails.vue')
+const CreateFacility = () => import('@/views/CreateFacility.vue')
+const AddFacilityAddress = () => import('@/views/AddFacilityAddress.vue')
+const AddFacilityConfig = () => import('@/views/AddFacilityConfig.vue')
+const FindGroups = () => import('@/views/FindGroups.vue')
+const FacilityGroupDetail = () => import('@/views/FacilityGroupDetail.vue')
+const Parking = () => import('@/views/Parking.vue')
 const FindGroups = () => import('@/views/FindGroups.vue')
 const FacilityGroupDetail = () => import('@/views/FacilityGroupDetail.vue')
 const Parking = () => import('@/views/Parking.vue')
@@ -41,6 +47,12 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/facility-group-detail/:facilityGroupId', name: 'FacilityGroupDetail', component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
   { path: '/parking', name: 'Parking', component: Parking, beforeEnter: authGuard },
   { path: '/facility-details/:facilityId', name: 'FacilityDetails', component: FacilityDetails, props: true, beforeEnter: authGuard },
+  { path: '/create-facility', name: 'CreateFacility', component: CreateFacility, beforeEnter: authGuard },
+  { path: '/create-facility/address/:facilityId', name: 'AddFacilityAddress', component: AddFacilityAddress, props: true, beforeEnter: authGuard },
+  { path: '/create-facility/config/:facilityId', name: 'AddFacilityConfig', component: AddFacilityConfig, props: true, beforeEnter: authGuard },
+  { path: '/facilities/groups', name: 'FindGroups', component: FindGroups, beforeEnter: authGuard },
+  { path: '/facility-group-detail/:facilityGroupId', name: 'FacilityGroupDetail', component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
+  { path: '/parking', name: 'Parking', component: Parking, beforeEnter: authGuard },
   { path: '/facilities/groups', name: 'FindGroups', component: FindGroups, beforeEnter: authGuard },
   { path: '/facility-group-detail/:facilityGroupId', name: 'FacilityGroupDetail', component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
   { path: '/parking', name: 'Parking', component: Parking, beforeEnter: authGuard },

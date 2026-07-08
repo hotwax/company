@@ -58,9 +58,11 @@ import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
 import { useFacilityStore } from "@/store/facility";
+import { useUtilStore } from "@/store/util";
 import { ref, computed, onMounted } from "vue";
 
 const facilityStore = useFacilityStore();
+const utilStore = useUtilStore();
 
 const current = computed(() => facilityStore.getCurrent);
 const facilityGroupTypes = computed(() => facilityStore.getFacilityGroupTypes);
@@ -165,22 +167,19 @@ async function removeFacilityFromGroup(facilityGroupId: string) {
 
 async function fetchFacilityGroups() {
   try {
-    const resp = await facilityStore.fetchFacilityGroups({ orderByField: "facilityGroupTypeId ASC", pageNoLimit: true });
-    if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
-      const newFacilityGroups = resp.data.reduce((groupsByType: any, group: any) => {
-        const groupTypeId = !group.facilityGroupTypeId ? "Others" : group.facilityGroupTypeId;
-        if (groupsByType[groupTypeId]) {
-          groupsByType[groupTypeId].push(group);
-        } else {
-          groupsByType[groupTypeId] = [group];
-        }
-        return groupsByType;
-      }, {});
-      facilityGroupsByType.value = newFacilityGroups;
-      filteredFacilityGroupsByType.value = facilityGroupsByType.value;
-    } else {
-      throw resp.data;
-    }
+    await utilStore.fetchFacilityGroups();
+    const groups = utilStore.getFacilityGroups;
+    const newFacilityGroups = groups.reduce((groupsByType: any, group: any) => {
+      const groupTypeId = !group.facilityGroupTypeId ? "Others" : group.facilityGroupTypeId;
+      if (groupsByType[groupTypeId]) {
+        groupsByType[groupTypeId].push(group);
+      } else {
+        groupsByType[groupTypeId] = [group];
+      }
+      return groupsByType;
+    }, {});
+    facilityGroupsByType.value = newFacilityGroups;
+    filteredFacilityGroupsByType.value = facilityGroupsByType.value;
   } catch (err) {
     logger.error('Failed to find facility groups', err);
   }

@@ -161,7 +161,7 @@ export const useUtilStore = defineStore('util', {
       let operatingCountries: any[] = []
 
       try {
-        const resp = await api({ url: "admin/geos", method: "get", params: { pageSize: 300, geoTypeEnumId: 'GEOT_COUNTRY' } })
+        const resp = await api({ url: "admin/geos", method: "get", params: { pageNoLimit: true, geoTypeEnumId: 'GEOT_COUNTRY' } })
         if (!commonUtil.hasError(resp)) {
           operatingCountries = resp.data
           this.fetchStatus = { ...this.fetchStatus, operatingCountries: 'success', lastFetched: Date.now() }
