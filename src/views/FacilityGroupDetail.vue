@@ -185,10 +185,10 @@ async function loadAllFacilities() {
 async function loadMemberFacilities() {
   try {
     const members = await (facilityStore as any).fetchGroupFacilities(props.facilityGroupId);
-    const facilityById = Object.fromEntries(allFacilities.value.map((f: any) => [f.facilityId, f]));
-    memberFacilities.value = members.map((m: any) => ({
-      ...m,
-      facilityName: facilityById[m.facilityId]?.facilityName || m.facilityId
+    const facilityById = Object.fromEntries(allFacilities.value.map((facility: any) => [facility.facilityId, facility]));
+    memberFacilities.value = members.map((member: any) => ({
+      ...member,
+      facilityName: facilityById[member.facilityId]?.facilityName || member.facilityId
     }));
     selectedFacilities.value = JSON.parse(JSON.stringify(memberFacilities.value));
   } catch (err) {
@@ -197,12 +197,12 @@ async function loadMemberFacilities() {
 }
 
 function filterAvailableFacilities() {
-  const selectedIds = new Set(selectedFacilities.value.map((f: any) => f.facilityId));
-  let available = allFacilities.value.filter((f: any) => !selectedIds.has(f.facilityId));
+  const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
+  let available = allFacilities.value.filter((facility: any) => !selectedIds.has(facility.facilityId));
   if (facilitySearch.value) {
     const q = facilitySearch.value.toLowerCase();
-    available = available.filter((f: any) =>
-      f.facilityId?.toLowerCase().includes(q) || f.facilityName?.toLowerCase().includes(q)
+    available = available.filter((facility: any) =>
+      facility.facilityId?.toLowerCase().includes(q) || facility.facilityName?.toLowerCase().includes(q)
     );
   }
   filteredAvailableFacilities.value = available;
@@ -217,14 +217,14 @@ function addFacility(facility: any) {
 
 function addAll() {
   const lastSeq = selectedFacilities.value.at(-1)?.sequenceNum || 0;
-  const toAdd = filteredAvailableFacilities.value.map((f, i) => ({ ...f, sequenceNum: lastSeq + i + 1 }));
+  const toAdd = filteredAvailableFacilities.value.map((facility, index) => ({ ...facility, sequenceNum: lastSeq + index + 1 }));
   selectedFacilities.value = [...selectedFacilities.value, ...toAdd];
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
 }
 
 function removeFacility(facility: any) {
-  selectedFacilities.value = selectedFacilities.value.filter((f: any) => f.facilityId !== facility.facilityId);
+  selectedFacilities.value = selectedFacilities.value.filter((item: any) => item.facilityId !== facility.facilityId);
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
 }
@@ -232,33 +232,33 @@ function removeFacility(facility: any) {
 function doReorder(event: CustomEvent) {
   const prev = JSON.parse(JSON.stringify(selectedFacilities.value));
   const updated = event.detail.complete(JSON.parse(JSON.stringify(selectedFacilities.value)));
-  const prevSeqNums = prev.map((f: any) => f.sequenceNum);
-  updated.forEach((f: any, i: number) => { f.sequenceNum = prevSeqNums[i]; });
+  const prevSeqNums = prev.map((facility: any) => facility.sequenceNum);
+  updated.forEach((facility: any, index: number) => { facility.sequenceNum = prevSeqNums[index]; });
   selectedFacilities.value = updated;
   isFacilitiesModified.value = true;
 }
 
 async function saveFacilityMemberships() {
   isSaving.value = true;
-  const memberIds = new Set(memberFacilities.value.map((f: any) => f.facilityId));
-  const selectedIds = new Set(selectedFacilities.value.map((f: any) => f.facilityId));
-  const memberByFacilityId = Object.fromEntries(memberFacilities.value.map((f: any) => [f.facilityId, f]));
+  const memberIds = new Set(memberFacilities.value.map((facility: any) => facility.facilityId));
+  const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
+  const memberByFacilityId = Object.fromEntries(memberFacilities.value.map((facility: any) => [facility.facilityId, facility]));
 
   const now = DateTime.now().toMillis();
 
   // new members to add
   const toCreate = selectedFacilities.value
-    .filter((f: any) => !memberIds.has(f.facilityId))
-    .map((f: any) => ({ facilityId: f.facilityId, fromDate: now, sequenceNum: f.sequenceNum }));
+    .filter((facility: any) => !memberIds.has(facility.facilityId))
+    .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: now, sequenceNum: facility.sequenceNum }));
 
   // existing members to expire (removed) or resequence (reordered)
   const toStore = [
     ...memberFacilities.value
-      .filter((f: any) => !selectedIds.has(f.facilityId))
-      .map((f: any) => ({ facilityId: f.facilityId, fromDate: f.fromDate, thruDate: now })),
+      .filter((facility: any) => !selectedIds.has(facility.facilityId))
+      .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: facility.fromDate, thruDate: now })),
     ...selectedFacilities.value
-      .filter((f: any) => memberIds.has(f.facilityId) && memberByFacilityId[f.facilityId]?.sequenceNum !== f.sequenceNum)
-      .map((f: any) => ({ facilityId: f.facilityId, fromDate: memberByFacilityId[f.facilityId].fromDate, sequenceNum: f.sequenceNum }))
+      .filter((facility: any) => memberIds.has(facility.facilityId) && memberByFacilityId[facility.facilityId]?.sequenceNum !== facility.sequenceNum)
+      .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: memberByFacilityId[facility.facilityId].fromDate, sequenceNum: facility.sequenceNum }))
   ];
 
   const requests: Promise<any>[] = [];
@@ -270,7 +270,7 @@ async function saveFacilityMemberships() {
   }
 
   const results = await Promise.allSettled(requests);
-  const anyFailed = results.some((r) => r.status === "rejected");
+  const anyFailed = results.some((result) => result.status === "rejected");
 
   if (anyFailed) {
     commonUtil.showToast(translate("Failed to update some facilities"));

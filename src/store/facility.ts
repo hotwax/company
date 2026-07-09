@@ -332,10 +332,10 @@ export const useFacilityStore = defineStore("facility", {
             ...party,
             fullName: party.groupName || [party.firstName, party.lastName].filter(Boolean).join(" ") || party.partyId
           }));
-          const partyIds = parties.map((p: any) => p.partyId);
+          const partyIds = parties.map((party: any) => party.partyId);
           const usersResp = await api({ url: "oms/users", method: "get", params: { partyId: partyIds, pageNoLimit: true } });
           if (!commonUtil.hasError(usersResp) && usersResp.data?.length) {
-            const userLoginByPartyId = Object.fromEntries(usersResp.data.map((u: any) => [u.partyId, u.userLoginId]));
+            const userLoginByPartyId = Object.fromEntries(usersResp.data.map((user: any) => [user.partyId, user.userLoginId]));
             parties = parties.map((party: any) => ({ ...party, userLoginId: userLoginByPartyId[party.partyId] }));
           }
         }
@@ -691,10 +691,10 @@ export const useFacilityStore = defineStore("facility", {
             storeCounts[item.facilityGroupId] = (storeCounts[item.facilityGroupId] || 0) + 1;
           });
         }
-        this.groups = this.groups.map((g: any) => ({
-          ...g,
-          facilityCount: facilityCounts[g.facilityGroupId] || 0,
-          productStoreCount: storeCounts[g.facilityGroupId] || 0
+        this.groups = this.groups.map((group: any) => ({
+          ...group,
+          facilityCount: facilityCounts[group.facilityGroupId] || 0,
+          productStoreCount: storeCounts[group.facilityGroupId] || 0
         }));
       } catch (err) {
         logger.error("Failed to enrich group counts", err);
@@ -735,7 +735,7 @@ export const useFacilityStore = defineStore("facility", {
     },
     async fetchVirtualFacilities(payload: { viewSize: number; viewIndex: number }) {
       const { viewSize, viewIndex } = payload;
-      const archivedIds = new Set(this.archivedFacilities.map((f: any) => f.facilityId));
+      const archivedIds = new Set(this.archivedFacilities.map((facility: any) => facility.facilityId));
 
       let facilities: any[] = [];
       let total = 0;
@@ -772,7 +772,7 @@ export const useFacilityStore = defineStore("facility", {
       }
 
       if (facilities.length) {
-        await (this as any).enrichVirtualFacilitiesDetail(facilities.map((f: any) => f.facilityId));
+        await (this as any).enrichVirtualFacilitiesDetail(facilities.map((facility: any) => facility.facilityId));
       }
     },
     async enrichVirtualFacilitiesDetail(facilityIds: string[]) {
@@ -787,12 +787,12 @@ export const useFacilityStore = defineStore("facility", {
           orderCountResp.data.forEach((item: any) => { orderCounts[item.facilityId] = item.orderCount; });
         }
 
-        this.virtualFacilities.list = this.virtualFacilities.list.map((f: any) => {
-          if (!facilityIds.includes(f.facilityId)) return f;
-          const enriched = { ...f, orderCount: orderCounts[f.facilityId] ?? 0 };
-          if (f.facilityId === '_NA_') {
+        this.virtualFacilities.list = this.virtualFacilities.list.map((facility: any) => {
+          if (!facilityIds.includes(facility.facilityId)) return facility;
+          const enriched = { ...facility, orderCount: orderCounts[facility.facilityId] ?? 0 };
+          if (facility.facilityId === '_NA_') {
             enriched.brokeringJob = jobData?.brokeringJob;
-          } else if (['BACKORDER', 'PRE_ORDER'].includes(f.facilityTypeId)) {
+          } else if (['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) {
             enriched.autoReleaseJob = jobData?.autoReleaseJob;
           }
           return enriched;
@@ -819,8 +819,8 @@ export const useFacilityStore = defineStore("facility", {
         if (!commonUtil.hasError(resp) && resp.data?.count > 0) {
           const jobs = resp.data.docs;
           return {
-            brokeringJob: jobs.find((j: any) => j.systemJobEnumId === "JOB_BKR_ORD"),
-            autoReleaseJob: jobs.find((j: any) => j.systemJobEnumId === "JOB_RLS_ORD_DTE")
+            brokeringJob: jobs.find((job: any) => job.systemJobEnumId === "JOB_BKR_ORD"),
+            autoReleaseJob: jobs.find((job: any) => job.systemJobEnumId === "JOB_RLS_ORD_DTE")
           };
         }
       } catch (err) {

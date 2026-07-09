@@ -67,7 +67,7 @@ async function unarchiveFacility(archivedFacility: any) {
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Parking unarchived successfully."));
       (facilityStore as any).updateArchivedFacilities(
-        archivedFacilities.value.filter((f: any) => f.facilityId !== archivedFacility.facilityId)
+        archivedFacilities.value.filter((facility: any) => facility.facilityId !== archivedFacility.facilityId)
       );
     } else {
       throw resp.data;

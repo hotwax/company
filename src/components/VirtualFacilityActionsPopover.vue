@@ -60,7 +60,7 @@ async function archiveVirtualFacility() {
     });
     if (!commonUtil.hasError(resp)) {
       (facilityStore as any).updateVirtualFacilities(
-        (facilityStore as any).getVirtualFacilities.filter((f: any) => f.facilityId !== props.facility.facilityId)
+        (facilityStore as any).getVirtualFacilities.filter((facility: any) => facility.facilityId !== props.facility.facilityId)
       );
       await (facilityStore as any).fetchArchivedFacilities();
       commonUtil.showToast(translate("Parking archived successfully."));

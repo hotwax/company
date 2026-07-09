@@ -138,7 +138,7 @@ function updatePrimary(productStoreId: string) {
 }
 
 function removeProductStore(productStoreId: string) {
-  selectedProductStores.value = selectedProductStores.value.filter((s: any) => s.productStoreId !== productStoreId);
+  selectedProductStores.value = selectedProductStores.value.filter((productStore: any) => productStore.productStoreId !== productStoreId);
   if (primaryProductStoreId.value === productStoreId) primaryProductStoreId.value = "";
 }
 
@@ -169,7 +169,7 @@ async function saveFulfillmentSettings() {
       })
     )
   );
-  if (results.some((r) => r.status === "rejected")) {
+  if (results.some((result) => result.status === "rejected")) {
     throw new Error(translate("Failed to update some fulfillment settings."));
   }
 }
@@ -184,7 +184,7 @@ async function addProductStoresToFacility() {
       })
     )
   );
-  if (results.some((r) => r.status === "rejected")) {
+  if (results.some((result) => result.status === "rejected")) {
     throw new Error(translate("Failed to add some product stores to the facility."));
   }
 }
@@ -198,7 +198,7 @@ async function makeProductStorePrimary() {
   try {
     const checkResp = await api({ url: `oms/facilityGroups/${shopifyShopId}`, method: "get" });
     if (commonUtil.hasError(checkResp) || !checkResp.data?.facilityGroupId) {
-      const storeName = selectedProductStores.value.find((s: any) => s.productStoreId === primaryProductStoreId.value)?.storeName || primaryProductStoreId.value;
+      const storeName = selectedProductStores.value.find((productStore: any) => productStore.productStoreId === primaryProductStoreId.value)?.storeName || primaryProductStoreId.value;
       await api({
         url: "oms/facilityGroups",
         method: "post",

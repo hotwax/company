@@ -194,7 +194,7 @@ function inputValidation(event: any) {
 async function onCountryChange(event: CustomEvent) {
   const geoId = event.detail.value;
   await utilStore.fetchStates({ geoId });
-  const country = countries.value.find((c: any) => c.geoId === geoId);
+  const country = countries.value.find((country: any) => country.geoId === geoId);
   countryCode.value = country ? (commonUtil.getTelecomCountryCode(country.geoCodeAlpha2) || commonUtil.getTelecomCountryCode(country.geoCode) || "") : "";
 }
 

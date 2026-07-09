@@ -626,8 +626,8 @@ const contactDetails = computed(() => current.value.contactDetails || {});
 const facilityCalendar = computed(() => current.value.calendar || {});
 const facilityProductStores = computed(() => current.value.productStores || []);
 const facilityParties = computed(() => current.value.parties || []);
-const facilityLogins = computed(() => facilityParties.value.filter((p: any) => p.roleTypeId === 'FAC_LOGIN'));
-const staffParties = computed(() => facilityParties.value.filter((p: any) => p.roleTypeId !== 'FAC_LOGIN'));
+const facilityLogins = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId === 'FAC_LOGIN'));
+const staffParties = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId !== 'FAC_LOGIN'));
 const calendars = computed(() => facilityStore.getCalendars);
 const externalMappingTypes = computed(() => facilityStore.getExternalMappingTypes);
 const locationTypes = computed(() => facilityStore.getLocationTypes);
@@ -887,7 +887,7 @@ async function selectProductStores() {
         facilityStore.updateProductStoreFacility({
           facilityId: props.facilityId,
           productStoreId: payload.productStoreId,
-          fromDate: facilityProductStores.value.find((s: any) => s.productStoreId === payload.productStoreId)?.fromDate,
+          fromDate: facilityProductStores.value.find((productStore: any) => productStore.productStoreId === payload.productStoreId)?.fromDate,
           thruDate: DateTime.now().toMillis()
         })
       );
@@ -901,7 +901,7 @@ async function selectProductStores() {
       );
 
       const responses = await Promise.allSettled([...removePromises, ...createPromises]);
-      if (responses.some((r: any) => r.status === 'rejected')) {
+      if (responses.some((response: any) => response.status === 'rejected')) {
         commonUtil.showToast(translate('Failed to update some product stores'));
       } else {
         commonUtil.showToast(translate('Product stores updated successfully.'));
@@ -1126,7 +1126,7 @@ async function updateSellInventoryOnlineSetting(event: any, facilityGroup: any) 
         facilityGroupId: facilityGroup.facilityGroupId
       });
     } else {
-      const groupInfo = current.value.groupInformation.find((g: any) => g.facilityGroupId === facilityGroup.facilityGroupId);
+      const groupInfo = current.value.groupInformation.find((group: any) => group.facilityGroupId === facilityGroup.facilityGroupId);
       resp = await facilityStore.updateFacilityToGroup({
         facilityId: current.value.facilityId,
         facilityGroupId: facilityGroup.facilityGroupId,

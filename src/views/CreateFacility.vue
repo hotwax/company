@@ -98,7 +98,7 @@ const selectedFacilityTypeId = ref("");
 const formData = ref({ facilityName: "", facilityId: "", externalId: "" });
 
 const facilityTypeMap = computed<Record<string, any>>(() =>
-  Object.fromEntries(facilityStore.facilityTypes.map((t: any) => [t.facilityTypeId, t]))
+  Object.fromEntries(facilityStore.facilityTypes.map((facilityType: any) => [facilityType.facilityTypeId, facilityType]))
 );
 
 const facilityTypeOptions = computed(() => facilityStore.facilityTypes);
@@ -108,8 +108,8 @@ onIonViewWillEnter(async () => {
   isAutoGenerateId.value = true;
   await facilityStore.fetchFacilityTypes();
   const types = facilityStore.facilityTypes;
-  selectedFacilityTypeId.value = types.find((t: any) => t.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
-    ?? types.find((t: any) => t.facilityTypeId === "WAREHOUSE")?.facilityTypeId
+  selectedFacilityTypeId.value = types.find((facilityType: any) => facilityType.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
+    ?? types.find((facilityType: any) => facilityType.facilityTypeId === "WAREHOUSE")?.facilityTypeId
     ?? types[0]?.facilityTypeId
     ?? "";
 });
