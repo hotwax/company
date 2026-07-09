@@ -23,7 +23,7 @@
       </div>
       <template v-if="segment === 'facility-groups'">
         <main v-if="groups?.length">
-          <ion-card v-for="group in groups" :key="group.facilityGroupId">
+          <ion-card v-for="group in customSort(groups, ['OMS_FULFILLMENT', 'PICKUP'], 'facilityGroupId')" :key="group.facilityGroupId">
             <ion-item lines="full">
               <ion-label class="ion-text-wrap">
                 <p>{{ group.facilityGroupId }}</p>
@@ -155,6 +155,7 @@ import GroupTypeModal from '@/components/GroupTypeModal.vue';
 import AddProductStoreToGroupModal from '@/components/AddProductStoreToGroupModal.vue';
 import CreateFacilityGroupModal from '@/components/CreateFacilityGroupModal.vue';
 import router from '@/router';
+import { customSort } from '@/utils';
 import { addOutline } from 'ionicons/icons';
 
 const facilityStore = useFacilityStore();

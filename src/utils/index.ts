@@ -51,6 +51,14 @@ const getResponseErrorMessage = (error: any, defaultMessage: string) => {
 
   return defaultMessage;
 }
+const customSort = (list: any[], customValues: string[], sortParameter: string) => {
+  return [...list].sort((first: any, second: any) => {
+    const firstVal = customValues.indexOf(first[sortParameter]);
+    const secondVal = customValues.indexOf(second[sortParameter]);
+    return secondVal - firstVal;
+  });
+}
+
 const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
@@ -126,4 +134,4 @@ const parseDateTimeValue = (value: string | number) => {
   return candidates.find((candidate) => candidate.isValid) || null;
 }
 
-export { generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue, isValidEmail, isValidPassword }
+export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue, isValidEmail, isValidPassword }
