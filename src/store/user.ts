@@ -126,8 +126,7 @@ export const useUserStore = defineStore('user', {
       try {
         const resp = await api({
           url: 'admin/user/getAvailableTimeZones',
-          method: 'get',
-          cache: true
+          method: 'get'
         })
         if (resp?.data) {
           this.availableTimeZones = resp.data.timeZones ?? (Array.isArray(resp.data) ? resp.data : [])

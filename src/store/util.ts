@@ -483,7 +483,7 @@ export const useUtilStore = defineStore('util', {
 
     async fetchShopifyShops() {
       try {
-        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageNoLimit: true }, cache: true });
+        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageNoLimit: true } });
         if (!commonUtil.hasError(resp) && resp.data?.length) {
           return Promise.resolve(resp.data);
         } else {
