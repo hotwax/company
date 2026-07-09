@@ -23,8 +23,7 @@ import {
   alertController,
   popoverController
 } from "@ionic/vue";
-import { commonUtil, logger, translate } from "@common";
-import { api } from "@common";
+import { api, commonUtil, logger, translate } from "@common";
 import { DateTime } from "luxon";
 import { useFacilityStore } from "@/store/facility";
 

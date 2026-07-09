@@ -1,6 +1,6 @@
 <template>
   <ion-page>
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
         <ion-back-button default-href="/facilities/groups" slot="start" />
         <ion-title>{{ group.facilityGroupName || facilityGroupId }}</ion-title>

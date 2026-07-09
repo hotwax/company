@@ -33,7 +33,7 @@
               <ion-note slot="end">{{ facility?.brokeringJob?.runTime ? getDateTime(facility?.brokeringJob?.runTime) : translate("Not scheduled") }}</ion-note>
             </ion-item>
           </template>
-          <ion-item v-else :lines="(isFacilityDescriptionAvailable(facility) || ['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) ? '' : 'none'">
+          <ion-item v-else :lines="(isFacilityDescriptionAvailable(facility) || ['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) ? 'inset' : 'none'">
             <ion-label>{{ translate('Orders') }}</ion-label>
             <ion-note slot="end">{{ facility.orderCount }}</ion-note>
           </ion-item>
@@ -90,15 +90,12 @@ import {
 } from '@ionic/vue';
 import { computed } from 'vue';
 import { addOutline, archiveOutline, ellipsisVerticalOutline } from 'ionicons/icons';
-import { commonUtil, logger, translate } from '@common';
-import { api } from '@common';
+import { api, commonUtil, logger, translate } from '@common';
 import { DateTime } from 'luxon';
 import { useFacilityStore } from '@/store/facility';
 import CreateVirtualFacilityModal from '@/components/CreateVirtualFacilityModal.vue';
 import VirtualFacilityActionsPopover from '@/components/VirtualFacilityActionsPopover.vue';
 import ArchivedFacilityModal from '@/components/ArchivedFacilityModal.vue';
-
-const VIEW_SIZE = 20;
 
 const facilityStore = useFacilityStore();
 
@@ -117,7 +114,7 @@ const sortedFacilities = computed(() => {
 
 onIonViewWillEnter(async () => {
   await (facilityStore as any).fetchArchivedFacilities();
-  await fetchFacilities(VIEW_SIZE, 0);
+  await (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: 0 });
 });
 
 function getDateTime(time: any) {
@@ -128,13 +125,9 @@ function isFacilityDescriptionAvailable(facility: any) {
   return facility.description && !['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId) && facility.facilityId !== '_NA_';
 }
 
-async function fetchFacilities(viewSize: number, viewIndex: number) {
-  await (facilityStore as any).fetchVirtualFacilities({ viewSize, viewIndex });
-}
-
 async function loadMoreFacilities(event: any) {
-  const nextIndex = Math.ceil(virtualFacilities.value.length / VIEW_SIZE);
-  await fetchFacilities(VIEW_SIZE, nextIndex);
+  const nextIndex = Math.ceil(virtualFacilities.value.length / import.meta.env.VITE_VIEW_SIZE);
+  await (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: nextIndex });
   event.target.complete();
 }
 
@@ -180,7 +173,7 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
 
 async function openArchivedFacilityModal() {
   const modal = await modalController.create({ component: ArchivedFacilityModal });
-  modal.onDidDismiss().then(() => fetchFacilities(VIEW_SIZE, 0));
+  modal.onDidDismiss().then(() => (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: 0 }));
   modal.present();
 }
 </script>

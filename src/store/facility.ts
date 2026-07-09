@@ -88,7 +88,7 @@ export const useFacilityStore = defineStore("facility", {
 
       try {
         const resp = await api({
-          url: "oms/facilities/facilityView",
+          url: "oms/facilities/search",
           method: "get",
           params
         });

@@ -43,8 +43,7 @@ import {
 } from "@ionic/vue";
 import { computed } from "vue";
 import { closeOutline, gitPullRequestOutline } from 'ionicons/icons';
-import { commonUtil, logger, translate } from "@common";
-import { api } from "@common";
+import { api, commonUtil, logger, translate } from "@common";
 import { DateTime } from "luxon";
 import { useFacilityStore } from "@/store/facility";
 
