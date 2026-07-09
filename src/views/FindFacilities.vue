@@ -5,10 +5,11 @@
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Find Facilities") }}</ion-title>
       </ion-toolbar>
-      <ion-toolbar>
+    </ion-header>
+
+    <ion-content>
+      <ion-card>
         <ion-searchbar :placeholder="translate('Search facilities')" v-model="query.queryString" @keyup.enter="updateQuery()" />
-      </ion-toolbar>
-      <ion-toolbar>
         <div class="filters">
           <ion-item lines="none">
             <ion-icon :icon="globeOutline" slot="start" />
@@ -32,10 +33,7 @@
             </ion-select>
           </ion-item>
         </div>
-      </ion-toolbar>
-    </ion-header>
-
-    <ion-content>
+      </ion-card>
       <main v-if="facilities?.length">
         <div class="list-item" v-for="facility in facilities" :key="facility.facilityId" @click="viewFacilityDetails(facility.facilityId)">
           <ion-item lines="none">
@@ -138,6 +136,7 @@
 
 <script setup lang="ts">
 import {
+  IonCard,
   IonCheckbox,
   IonChip,
   IonContent,

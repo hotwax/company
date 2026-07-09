@@ -13,12 +13,14 @@
           </ion-segment-button>
         </ion-segment>
       </ion-toolbar>
-      <ion-toolbar v-if="segment === 'facility-groups'">
-        <ion-searchbar :placeholder="translate('Search groups')" v-model="query.queryString" @keyup.enter="updateQuery()" />
-      </ion-toolbar>
     </ion-header>
 
     <ion-content>
+      <div v-if="segment === 'facility-groups'" class="find">
+        <section class="search">
+          <ion-searchbar :placeholder="translate('Search groups')" v-model="query.queryString" @keyup.enter="updateQuery()" />
+        </section>
+      </div>
       <template v-if="segment === 'facility-groups'">
         <main v-if="groups?.length">
           <ion-card v-for="group in groups" :key="group.facilityGroupId">
@@ -321,6 +323,10 @@ async function createFacilityGroup() {
 <style scoped>
 ion-content {
   --padding-bottom: 80px;
+}
+
+.find {
+  max-width: 50%;
 }
 
 main:has(ion-card) {
