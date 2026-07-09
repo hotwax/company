@@ -108,7 +108,9 @@ onIonViewWillEnter(async () => {
   isAutoGenerateId.value = true;
   await facilityStore.fetchFacilityTypes();
   const types = facilityStore.facilityTypes;
-  selectedFacilityTypeId.value = types.find((facilityType: any) => facilityType.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
+  const queryType = router.currentRoute.value.query.type as string | undefined;
+  selectedFacilityTypeId.value = (queryType && types.find((facilityType: any) => facilityType.facilityTypeId === queryType)?.facilityTypeId)
+    ?? types.find((facilityType: any) => facilityType.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
     ?? types.find((facilityType: any) => facilityType.facilityTypeId === "WAREHOUSE")?.facilityTypeId
     ?? types[0]?.facilityTypeId
     ?? "";

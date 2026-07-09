@@ -120,9 +120,17 @@
       </ion-infinite-scroll>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="createFacility()">
+        <ion-fab-button>
           <ion-icon :icon="addOutline" />
         </ion-fab-button>
+        <ion-fab-list side="top">
+          <ion-fab-button @click="router.push('/create-facility?type=RETAIL_STORE')">
+            <ion-icon :icon="storefrontOutline" />
+          </ion-fab-button>
+          <ion-fab-button @click="router.push('/create-facility?type=WAREHOUSE')">
+            <ion-icon :icon="businessOutline" />
+          </ion-fab-button>
+        </ion-fab-list>
       </ion-fab>
     </ion-content>
   </ion-page>
@@ -135,6 +143,7 @@ import {
   IonContent,
   IonFab,
   IonFabButton,
+  IonFabList,
   IonHeader,
   IonIcon,
   IonInfiniteScroll,
@@ -156,7 +165,7 @@ import {
   onIonViewWillEnter,
   popoverController
 } from '@ionic/vue';
-import { addOutline, albumsOutline, businessOutline, globeOutline, lockClosedOutline, lockOpenOutline, shareOutline } from 'ionicons/icons';
+import { addOutline, albumsOutline, businessOutline, globeOutline, lockClosedOutline, lockOpenOutline, shareOutline, storefrontOutline } from 'ionicons/icons';
 import { computed } from 'vue';
 import { commonUtil, logger, translate } from "@common"
 import { useFacilityStore } from '@/store/facility';
@@ -210,9 +219,6 @@ function viewFacilityDetails(facilityId: string) {
   router.push({ path: `/facility-details/${facilityId}` });
 }
 
-function createFacility() {
-  router.push({ path: '/create-facility' });
-}
 
 function getAssociatedInventoryGroups(facility: any) {
   return inventoryGroups.value.map((group: any) => ({
