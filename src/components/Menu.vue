@@ -106,13 +106,13 @@ const appPages = [
 
 const facilitiesPages = [
   {
-    title: "Find Facilities",
+    title: "Find",
     url: "/facilities/find",
     iosIcon: storefrontOutline,
     mdIcon: storefrontOutline,
   },
   {
-    title: "Find Facility Groups",
+    title: "Groups",
     url: "/facilities/groups",
     iosIcon: albumsOutline,
     mdIcon: albumsOutline,
