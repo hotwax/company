@@ -325,7 +325,7 @@ const confirmRemoveAuthorization = async (authorization: any) => {
 <style scoped>
 ion-segment {
   margin-bottom: 16px;
-}
+
 
 .section-header {
   align-items: center;

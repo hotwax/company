@@ -524,11 +524,12 @@ const userProfile = computed(() => userStore.getUserProfile);
 const shopifyShops = computed(() => utilStore.getShopifyShops);
 const organizationPartyId = computed(() => utilStore.getOrganizationPartyId);
 const redirectedFromUrl = computed(() => userStore.getRedirectedFromUrl);
+// Bumped on successful upload so the <img> URL changes and the browser doesn't keep showing the old cached image.
+const imageVersion = ref(0);
 const imageUrl = computed(() => {
-  const partyImageUrl = selectedUser.value.partyImageUrl;
-  if(!partyImageUrl) {return "";}
+  const versionParam = imageVersion.value ? `?v=${imageVersion.value}` : "";
 
-  return (commonUtil.getMaargBaseURL().startsWith("http") ? commonUtil.getMaargBaseURL().replace(/api\/?/, "") : `https://${commonUtil.getMaargBaseURL()}.hotwax.io/`) + partyImageUrl;
+  return `${commonUtil.getMaargURL()}admin/users/${selectedUser.value.userLoginId}/profileImage${versionParam}`;
 });
 
 onIonViewWillLeave(async () => {
@@ -1218,7 +1219,7 @@ const uploadImage = async (event: any) => {
     const resp = await userStore.uploadPartyImage({ userId: selectedUser.value.userLoginId, formData });
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Image uploaded successfully."));
-      userStore.updateSelectedUser({ ...selectedUser.value, partyImageUrl: resp.data.partyImageUrl });
+      imageVersion.value = resp.data.contentId ?? Date.now();
     } else {
       throw resp.data;
     }
