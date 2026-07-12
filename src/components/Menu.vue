@@ -87,7 +87,7 @@ const appPages = [
   {
     title: "Carriers",
     url: "/carriers",
-    childRoutes: [],
+    childRoutes: ["/carriers/"],
     iosIcon: airplaneOutline,
     mdIcon: airplaneOutline,
   },

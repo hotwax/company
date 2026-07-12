@@ -1,6 +1,11 @@
 # Carrier credential readiness and API gap
 
-Company's `/carriers` page is designed around the carrier path used by automatic sales-order address validation.
+Company now uses the same carrier domain model as Fulfillment in a master/detail flow:
+
+- `/carriers` lists every carrier party returned by the OMS carrier-shipment-method counts resource. The request is paginated so the UI is not limited to the first server page.
+- `/carriers/:partyId` opens the carrier's shipment methods, facilities, product-store setup, and Unigate readiness.
+
+The detail route is stable and can be linked directly from operational applications such as Order Manager.
 
 ## Current address-validation contract
 
@@ -20,9 +25,11 @@ Address validation is ready only when all of these prerequisites exist:
 
 ## Current frontend behavior
 
-Company can currently read `UNIGATE_CONFIG` and product stores. The page reports those values from the authenticated backend and treats every unobservable prerequisite as `Verification unavailable`. It never interprets unavailable data as disconnected or ready.
+The migrated Fulfillment flow uses the existing OMS carrier resources to manage carrier identity, shipment methods, facility availability, and product-store shipment methods. Company can also read `UNIGATE_CONFIG` and product stores. The carrier-scoped Unigate section reports those values from the authenticated backend and treats every unobservable prerequisite as `Verification unavailable`. It never interprets unavailable data as disconnected or ready.
 
 Tenant details and API-key rotation reuse the existing Unigate tenant modal. Carrier credential creation, masking, rotation, disconnect confirmation, and product-store linking remain in OMS Admin until the missing APIs are available.
+
+The legacy shipment-gateway configuration endpoint used by Fulfillment is handled separately. If it is unavailable, Company still renders the carrier and product-store method setup and shows a scoped warning instead of failing the entire detail page.
 
 ## Missing OMS REST resources
 
@@ -37,6 +44,10 @@ The OMS Shipping Gateway screen also reads and writes `ShippingCarrierConfig` di
 | --- | --- |
 | `admin/productStores` | 200 |
 | `oms/systemMessageRemotes` | 200 |
+| `oms/shippingGateways/carrierShipmentMethods/counts` | 200 |
+| `oms/shippingGateways/carrierShipmentMethods` | 200 |
+| `oms/shippingGateways/shipmentMethodTypes` | 200 |
+| `oms/shippingGateways/config` | 404 |
 | `oms/shippingGatewayAuths` | 404 |
 | `oms/shippingGatewayConfigs` | 404 |
 | `oms/shippingCarrierConfigs` | 404 |
@@ -45,6 +56,6 @@ The recommended backend follow-up is to expose list/create/update/delete resourc
 
 ## Authenticated UI evidence
 
-The screenshot below shows the stable route using the real `test-maarg` product-store and Unigate responses. No mocked API data is used.
+The screenshot below shows the FEDEX detail route using real `test-maarg` carrier, product-store, and Unigate responses. No mocked API data is used. Read-only validation also covered the carrier master list plus the Methods, Facilities, Product stores, and Unigate sections without changing backend configuration.
 
-![Carrier readiness on test-maarg](images/carrier-readiness-test-maarg.jpg)
+![FEDEX carrier detail on test-maarg](images/carrier-detail-fedex-test-maarg.png)

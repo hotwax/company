@@ -173,6 +173,7 @@ export const useUserStore = defineStore('user', {
       const { useNetSuiteStore } = await import('./netSuite')
       const { useShopifyStore } = await import('./shopify')
       const { useKlaviyoStore } = await import('./klaviyo')
+      const { useCarrierStore } = await import('./carrier')
       const { useComposerStore } = await import('./composer')
       const { useWorkforceStore } = await import('./workforce')
 
@@ -181,6 +182,7 @@ export const useUserStore = defineStore('user', {
       useNetSuiteStore().clearNetSuiteState()
       useShopifyStore().clearShopifyState()
       useKlaviyoStore().clear()
+      useCarrierStore().clear()
       useComposerStore().clearComposerState()
       useWorkforceStore().clearWorkforceState()
     }
