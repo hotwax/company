@@ -18,6 +18,7 @@ const Departments = () => import('@/views/Departments.vue')
 const ShopifyConnectionDetails = () => import('@/views/ShopifyConnectionDetails.vue')
 const Klaviyo = () => import('@/views/Klaviyo.vue')
 const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.vue')
+const Carriers = () => import('@/views/Carriers.vue')
 const CloneProductStore = () => import('@/views/CloneProductStore.vue')
 const Composer = () => import('@/views/agent/Composer.vue')
 const Workforce = () => import('@/views/agent/Workforce.vue')
@@ -45,6 +46,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/shopify-connection-details/:id/instance-details', name: 'ShopifyInstanceDetails', component: () => import('@/views/ShopifyShopDetails.vue'), props: true, beforeEnter: authGuard },
   { path: '/klaviyo', name: 'Klaviyo', component: Klaviyo, beforeEnter: authGuard },
   { path: '/klaviyo/:id', name: 'KlaviyoConnectionDetails', component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
+  { path: '/carriers', name: 'Carriers', component: Carriers, beforeEnter: authGuard },
   { path: '/netsuite', name: 'NetSuite', component: NetSuite, beforeEnter: authGuard },
   { path: '/netsuite/shipment-methods', name: 'ShipmentMethods', component: ShipmentMethods, beforeEnter: authGuard },
   { path: '/netsuite/inventory-variances', name: 'InventoryVariances', component: InventoryVariances, beforeEnter: authGuard },

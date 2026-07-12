@@ -14,8 +14,14 @@
     <ion-list inset>
       <ion-item lines="none">
         <ion-label>
-          {{ translate("This is the OMS-side connection that proxies every Klaviyo call.") }}
-          <p>{{ translate("All Klaviyo connections you add here are sent through this tenant. Edit only when the Unigate URL, tenant ID, or API key actually changes.") }}</p>
+          {{ isShippingContext
+            ? translate("This is the OMS-side connection that proxies carrier requests.")
+            : translate("This is the OMS-side connection that proxies every Klaviyo call.")
+          }}
+          <p>{{ isShippingContext
+            ? translate("Carrier credentials and address-validation requests use this tenant. Edit only when the Unigate URL, tenant ID, or API key actually changes.")
+            : translate("All Klaviyo connections you add here are sent through this tenant. Edit only when the Unigate URL, tenant ID, or API key actually changes.")
+          }}</p>
         </ion-label>
       </ion-item>
     </ion-list>
@@ -79,7 +85,10 @@
         <ion-item color="danger">
           <ion-label>
             {{ translate("This will stop your current key from working") }}
-            <p>{{ translate("As soon as you save, every Klaviyo connection routed through this tenant will start using the new key. If the new key is wrong or missing, customers will stop receiving emails until you fix it.") }}</p>
+            <p>{{ isShippingContext
+              ? translate("As soon as you save, carrier requests routed through this tenant will use the new key. If the new key is wrong or missing, address validation and other shipping services can stop working until you fix it.")
+              : translate("As soon as you save, every Klaviyo connection routed through this tenant will start using the new key. If the new key is wrong or missing, customers will stop receiving emails until you fix it.")
+            }}</p>
           </ion-label>
         </ion-item>
         <ion-item>
@@ -159,9 +168,14 @@ import { useUtilStore } from '@/store/util';
 import { commonUtil, logger, translate } from '@common'
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
+const props = withDefaults(defineProps<{ context?: "klaviyo" | "shipping" }>(), {
+  context: "klaviyo",
+});
+
 const klaviyoStore = useKlaviyoStore();
 const utilStore = useUtilStore();
 const config = computed(() => klaviyoStore.getUnigateConfig);
+const isShippingContext = computed(() => props.context === "shipping");
 // maargInfo is fetched once at login (user/login → util/fetchMaargInfo).
 // Read from the store instead of refetching per modal open.
 const maargInfo = computed(() => utilStore.maargInfo);
