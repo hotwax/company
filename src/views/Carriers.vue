@@ -1,90 +1,46 @@
 <template>
   <ion-page>
-    <ion-header>
+    <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-menu-button slot="start" />
         <ion-title>{{ translate("Carriers") }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button :disabled="isLoading" @click="loadCarriers" :aria-label="translate('Refresh carriers')">
-            <ion-icon slot="icon-only" :icon="refreshOutline" />
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
-      <ion-card>
-        <ion-card-content>
-          <ion-searchbar
-            v-model="query"
-            :placeholder="translate('Search carriers')"
-            :debounce="200"
-          />
-        </ion-card-content>
-      </ion-card>
-
-      <ion-list v-if="isLoading" inset>
-        <ion-item v-for="item in 4" :key="item">
-          <ion-label>
-            <ion-skeleton-text animated />
-            <p><ion-skeleton-text animated /></p>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list v-else-if="hasError" inset>
-        <ion-item color="danger">
-          <ion-icon slot="start" :icon="alertCircleOutline" />
-          <ion-label>
-            {{ translate("Carriers could not be loaded") }}
-            <p>{{ translate("Check your OMS connection and try again.") }}</p>
-          </ion-label>
-          <ion-button slot="end" fill="outline" @click="loadCarriers">{{ translate("Try again") }}</ion-button>
-        </ion-item>
-      </ion-list>
-
-      <ion-list v-else inset>
-        <ion-list-header>
-          <ion-label>{{ carrierCountLabel }}</ion-label>
-        </ion-list-header>
-        <ion-item
-          v-for="carrier in filteredCarriers"
-          :key="carrier.partyId"
-          button
-          detail
-          @click="openCarrier(carrier.partyId)"
-        >
-          <ion-icon slot="start" :icon="airplaneOutline" />
-          <ion-label>
-            {{ carrier.groupName || carrier.partyId }}
-            <p>{{ carrier.partyId }}</p>
-          </ion-label>
-          <ion-note slot="end">{{ methodCountLabel(carrier.shipmentMethodCount || 0) }}</ion-note>
-        </ion-item>
-        <ion-item v-if="!filteredCarriers.length" lines="none">
-          <ion-label>
-            {{ query ? translate("No carriers match your search") : translate("No carriers found") }}
-            <p>{{ query ? translate("Try a different carrier name or ID.") : translate("Create a carrier to begin configuring shipment methods and Unigate.") }}</p>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="createCarrier" :aria-label="translate('Create carrier')">
-          <ion-icon :icon="addOutline" />
-        </ion-fab-button>
-      </ion-fab>
+      <template v-if="carriers.length">
+        <div class="results">
+          <ion-list>
+            <ion-item v-for="carrier in carriers" :key="carrier.partyId" @click="viewCarrierDetail(carrier)" button detail>
+              <ion-label>
+                <p class="overline">{{ carrier.partyId }}</p>
+                {{ carrier.groupName }}
+              </ion-label>
+              <ion-note slot="end">{{ carrier.shipmentMethodCount }} {{ translate("methods") }}</ion-note>
+            </ion-item>
+          </ion-list>
+        </div>
+      </template>
+      <div v-else-if="hasError" class="empty-state">
+        <p>{{ translate("Carriers could not be loaded") }}</p>
+        <ion-button fill="outline" @click="loadCarriers">{{ translate("Try again") }}</ion-button>
+      </div>
+      <div v-else-if="!isLoading" class="empty-state">
+        <p>{{ translate("No carrier found.") }}</p>
+      </div>
     </ion-content>
+
+    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button @click="createCarrier">
+        <ion-icon :icon="addOutline" />
+      </ion-fab-button>
+    </ion-fab>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import {
   IonButton,
-  IonButtons,
-  IonCard,
-  IonCardContent,
   IonContent,
   IonFab,
   IonFabButton,
@@ -93,40 +49,22 @@ import {
   IonItem,
   IonLabel,
   IonList,
-  IonListHeader,
-  IonMenuButton,
   IonNote,
   IonPage,
-  IonSearchbar,
-  IonSkeletonText,
   IonTitle,
   IonToolbar,
   alertController,
   onIonViewWillEnter,
 } from "@ionic/vue";
-import { addOutline, airplaneOutline, alertCircleOutline, refreshOutline } from "ionicons/icons";
+import { addOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import router from "@/router";
-import { useCarrierStore } from "@/store/carrier";
+import { useCarrierStore, type CarrierRecord } from "@/store/carrier";
 
 const carrierStore = useCarrierStore();
-const query = ref("");
-
 const carriers = computed(() => carrierStore.getCarriers || []);
 const isLoading = computed(() => carrierStore.fetchStatus.carriers === "pending");
 const hasError = computed(() => carrierStore.fetchStatus.carriers === "error");
-const filteredCarriers = computed(() => {
-  const normalized = query.value.trim().toLowerCase();
-  if (!normalized) return carriers.value;
-  return carriers.value.filter((carrier) => (
-    carrier.partyId.toLowerCase().includes(normalized)
-    || String(carrier.groupName || "").toLowerCase().includes(normalized)
-  ));
-});
-const carrierCountLabel = computed(() => {
-  const count = filteredCarriers.value.length;
-  return count === 1 ? translate("1 carrier") : translate("{count} carriers", { count });
-});
 
 onIonViewWillEnter(loadCarriers);
 
@@ -134,12 +72,8 @@ async function loadCarriers() {
   await carrierStore.fetchCarriers();
 }
 
-function methodCountLabel(count: number) {
-  return count === 1 ? translate("1 method") : translate("{count} methods", { count });
-}
-
-function openCarrier(partyId: string) {
-  router.push(`/carriers/${encodeURIComponent(partyId)}`);
+function viewCarrierDetail(carrier: CarrierRecord) {
+  router.push(`/carriers/${encodeURIComponent(carrier.partyId)}`);
 }
 
 async function createCarrier() {
@@ -156,17 +90,14 @@ async function createCarrier() {
         handler: async (data: any) => {
           const partyId = String(data.partyId || "").trim().toUpperCase();
           const groupName = String(data.groupName || "").trim();
-          if (!partyId || !groupName) {
-            commonUtil.showToast(translate("Carrier ID and name are required."));
-            return false;
-          }
+          if (!partyId || !groupName) return false;
           try {
-            await carrierStore.createCarrier(partyId, groupName);
-            commonUtil.showToast(translate("Carrier created"));
+            const response = await carrierStore.createCarrier(partyId, groupName);
+            if (commonUtil.hasError(response)) throw response.data;
             await loadCarriers();
-            openCarrier(partyId);
+            viewCarrierDetail({ partyId, groupName });
           } catch (error) {
-            logger.error(error);
+            logger.error("Failed to create carrier", error);
             commonUtil.showToast(translate("Failed to create carrier"));
           }
         },
@@ -176,3 +107,10 @@ async function createCarrier() {
   await alert.present();
 }
 </script>
+
+<style scoped>
+ion-note {
+  align-self: center;
+  padding: 0;
+}
+</style>

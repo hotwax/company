@@ -200,6 +200,35 @@ export const useCarrierStore = defineStore("carrier", {
       });
     },
 
+    async createShipmentMethod(shipmentMethod: any) {
+      return api({
+        url: "oms/shippingGateways/shipmentMethodTypes",
+        method: "post",
+        data: shipmentMethod,
+      });
+    },
+
+    async renameShipmentMethod(shipmentMethodTypeId: string, description: string) {
+      return api({
+        url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
+        method: "put",
+        data: { shipmentMethodTypeId, description },
+      });
+    },
+
+    async saveShipmentMethodsOrder(partyId: string, shipmentMethods: any[]) {
+      return Promise.all(shipmentMethods.map((shipmentMethod, index) => api({
+        url: "oms/shippingGateways/carrierShipmentMethods",
+        method: "put",
+        data: {
+          partyId,
+          roleTypeId: "CARRIER",
+          shipmentMethodTypeId: shipmentMethod.shipmentMethodTypeId,
+          sequenceNumber: index + 1,
+        },
+      })));
+    },
+
     async setFacilityAssociation(partyId: string, facility: any, enabled: boolean) {
       const existing = this.facilityAssociations.find((item: any) => item.facilityId === facility.facilityId);
       return api({
