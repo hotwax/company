@@ -39,9 +39,9 @@
               </ion-label>
             </ion-item>
 
-            <div class="tablet" @click.stop="">
-              <ion-chip outline :href="'https://' + shop.myshopifyDomain + '/admin'" target="_blank">
-                <ion-label>{{ translate("Shopify link") }}</ion-label>
+            <div class="tablet">
+              <ion-chip outline @click.stop="openShopifyLink(shop.myshopifyDomain)">
+                <ion-label>{{ shop.myshopifyDomain }}</ion-label>
                 <ion-icon :icon="openOutline" color="primary" />
               </ion-chip>
             </div>
@@ -104,6 +104,12 @@ async function openCreateModal() {
     const newShop = shopifyStore.getShopById(data.shopId)
     if (newShop) shopifyStore.updateCurrentShop(newShop)
     router.push({ path: `/shopify-connection-details/${data.shopId}` })
+  }
+}
+
+function openShopifyLink(domain: string) {
+  if (domain) {
+    window.open(`https://${domain}/admin`, '_blank', 'noopener, noreferrer');
   }
 }
 </script>
