@@ -8,6 +8,7 @@ export const useShopifyStore = defineStore('shopify', {
     shopifyTypeMappings: {} as any,
     shopifyShopsCarrierShipments: {} as any,
     shopifyShopsLocations: {} as any,
+    accessScopes: {} as Record<string, { scopes: string[]; lastRefreshed: number }>,
     fetchStatus: {
       shops: 'none',
       lastFetched: 0
@@ -22,7 +23,8 @@ export const useShopifyStore = defineStore('shopify', {
       state.shopifyTypeMappings[mappedTypeId] ?? [],
     getShopifyShopsCarrierShipments: (state) => state.shopifyShopsCarrierShipments,
     getShopifyShopsLocations: (state) => state.shopifyShopsLocations,
-    getFetchStatus: (state) => state.fetchStatus
+    getFetchStatus: (state) => state.fetchStatus,
+    getAccessScopes: (state) => (systemMessageRemoteId: string) => state.accessScopes[systemMessageRemoteId] ?? null
   },
 
   actions: {
@@ -276,6 +278,20 @@ export const useShopifyStore = defineStore('shopify', {
       if (commonUtil.hasError(resp)) throw resp
       const list: any[] = resp.data?.systemMessageRemoteList ?? []
       return list.find((r: any) => r.internalId === shopId && r.internalIdType === 'HOTWAX_SHOP_ID') ?? null
+    },
+
+    // Refresh (fetch from Shopify + replace stored) the granted access scopes for a shop remote.
+    // Stored per systemMessageRemoteId and persisted, so the config UI can show the last-known scopes
+    // without hitting Shopify on every page load.
+    async refreshAccessScopes(systemMessageRemoteId: string) {
+      const resp = await api({
+        url: `sob/shop/remote/${systemMessageRemoteId}/accessScopes`,
+        method: "post"
+      })
+      if (commonUtil.hasError(resp)) throw resp
+      const scopes: string[] = resp.data?.accessScopes ?? []
+      this.accessScopes = { ...this.accessScopes, [systemMessageRemoteId]: { scopes, lastRefreshed: Date.now() } }
+      return scopes
     },
 
     clearShopifyState() {
