@@ -40,7 +40,7 @@
             </ion-item>
 
             <div class="tablet">
-              <ion-chip outline @click.stop="openShopifyLink(shop.myshopifyDomain)">
+              <ion-chip v-if="shop.myshopifyDomain" outline @click.stop="openShopifyLink(shop.myshopifyDomain)">
                 <ion-label>{{ shop.myshopifyDomain }}</ion-label>
                 <ion-icon :icon="openOutline" color="primary" />
               </ion-chip>
@@ -108,9 +108,7 @@ async function openCreateModal() {
 }
 
 function openShopifyLink(domain: string) {
-  if (domain) {
-    window.open(`https://${domain}/admin`, '_blank', 'noopener, noreferrer');
-  }
+  window.open(`https://${domain}/admin`, '_blank', 'noopener, noreferrer');
 }
 </script>
 
