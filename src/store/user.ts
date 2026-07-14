@@ -378,8 +378,9 @@ export const useUserStore = defineStore("user", {
 
       try {
         const resp = await api({
-          url: `admin/user/${partyId}/productStores`,
-          method: "GET"
+          url: `admin/users/productStores`,
+          method: "GET",
+          params: { partyId }
         }) as any
 
         const utilStore = useUtilStore()
@@ -497,9 +498,9 @@ export const useUserStore = defineStore("user", {
     updateProductStoreRole(payload: { partyId: string; productStoreId: string; roleTypeId: string; fromDate: any; thruDate: any }): Promise<any> {
       // Soft-expire: ProductStoreRole history is preserved, so this updates thruDate on the existing record rather than deleting it.
       return api({
-        url: `admin/user/${payload.partyId}/productStore`,
+        url: `admin/users/productStore`,
         method: "put",
-        data: { productStoreId: payload.productStoreId, roleTypeId: payload.roleTypeId, fromDate: payload.fromDate, thruDate: payload.thruDate }
+        data: { productStoreId: payload.productStoreId, partyId: payload.partyId, roleTypeId: payload.roleTypeId, fromDate: payload.fromDate, thruDate: payload.thruDate }
       })
     },
 
