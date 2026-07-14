@@ -460,14 +460,14 @@ export const useProductStore = defineStore('productStore', {
           productStores = resp.data
           if (payload?.fetchCounts) {
               const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
-              productStores = productStores.map((s: any) => ({
-                ...s,
-                facilityCount: s.facilityCount ?? 0
+              productStores = productStores.map((productStore: any) => ({
+                ...productStore,
+                facilityCount: productStore.facilityCount ?? 0
               }))
               if (Object.keys(shipmentMethodCount).length) {
-                productStores = productStores.map((s: any) => ({
-                  ...s,
-                  shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
+                productStores = productStores.map((productStore: any) => ({
+                  ...productStore,
+                  shipmentMethodCount: shipmentMethodCount[productStore.productStoreId] ?? 0
                 }))
             }
           }
