@@ -30,7 +30,7 @@
             </ion-item>
             <ion-item lines="none">
               <ion-label>{{ translate('Next brokering') }}</ion-label>
-              <ion-note slot="end">{{ facility?.brokeringJob?.runTime ? getDateTime(facility?.brokeringJob?.runTime) : translate("Not scheduled") }}</ion-note>
+              <ion-note slot="end">{{ facility?.brokeringJob?.runTime ? commonUtil.getDateAndTime(facility?.brokeringJob?.runTime) : translate("Not scheduled") }}</ion-note>
             </ion-item>
           </template>
           <ion-item v-else :lines="(isFacilityDescriptionAvailable(facility) || ['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) ? 'inset' : 'none'">
@@ -91,7 +91,6 @@ import {
 import { computed } from 'vue';
 import { addOutline, archiveOutline, ellipsisVerticalOutline } from 'ionicons/icons';
 import { api, commonUtil, logger, translate } from '@common';
-import { DateTime } from 'luxon';
 import { useFacilityStore } from '@/store/facility';
 import CreateVirtualFacilityModal from '@/components/CreateVirtualFacilityModal.vue';
 import VirtualFacilityActionsPopover from '@/components/VirtualFacilityActionsPopover.vue';
@@ -116,10 +115,6 @@ onIonViewWillEnter(async () => {
   await (facilityStore as any).fetchArchivedFacilities();
   await (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: 0 });
 });
-
-function getDateTime(time: any) {
-  return DateTime.fromMillis(time).toLocaleString(DateTime.DATETIME_MED);
-}
 
 function isFacilityDescriptionAvailable(facility: any) {
   return facility.description && !['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId) && facility.facilityId !== '_NA_';
