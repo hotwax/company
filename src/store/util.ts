@@ -448,7 +448,7 @@ export const useUtilStore = defineStore('util', {
 
       try {
         const resp = await api({
-          url: "admin/geos/assocs/assocTo",
+          url: "admin/geos/assocs/to",
           method: "get",
           params: { geoId: payload.geoId, geoAssocTypeEnumId: "GAT_REGIONS", pageNoLimit: true }
         })
