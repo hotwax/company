@@ -1,6 +1,6 @@
 <template>
   <ion-page>
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
         <ion-back-button :default-href="`/create-facility`" slot="start" />
         <ion-title>{{ translate("Add Store Address") }}</ion-title>
