@@ -473,17 +473,17 @@ export const useUserStore = defineStore("user", {
 
     updatePartyPersonName(payload: { partyId: string; firstName: string; lastName: string }): Promise<any> {
       return api({
-        url: `oms/parties/${payload.partyId}/person`,
+        url: `oms/parties/${payload.partyId}`,
         method: "put",
-        data: { firstName: payload.firstName, lastName: payload.lastName }
+        data: { person: { firstName: payload.firstName, lastName: payload.lastName } }
       })
     },
 
     updatePartyGroupName(payload: { partyId: string; groupName: string }): Promise<any> {
       return api({
-        url: `oms/parties/${payload.partyId}/partyGroup`,
+        url: `oms/parties/${payload.partyId}`,
         method: "put",
-        data: { groupName: payload.groupName }
+        data: { partyGroup: { groupName: payload.groupName } }
       })
     },
 
