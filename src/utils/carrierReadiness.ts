@@ -21,7 +21,6 @@ export function hasCompleteUnigateConfig(config: any): boolean {
   return Boolean(
     String(config?.internalId || "").trim()
       && String(config?.sendUrl || "").trim()
-      && String(config?.publicKey || config?.password || "").trim()
   );
 }
 
