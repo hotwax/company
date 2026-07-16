@@ -431,6 +431,8 @@ export const useUtilStore = defineStore("util", {
       }
     },
 
+    // This app only ever manages login-capable groups, so this is scoped to groupTypeEnumId=UgtUserAccess
+    // (excludes framework/system groups like UgtMoquiAdmin, UgtRemoteSystems).
     async fetchUserGroups() {
       if(this.userGroups.length) {
         return
@@ -441,6 +443,7 @@ export const useUtilStore = defineStore("util", {
         const resp = await api({
           url: "admin/userGroups",
           method: "get",
+          params: { groupTypeEnumId: "UgtUserAccess", pageSize: 100 },
           cache: true
         }) as any
         if(!commonUtil.hasError(resp)) {

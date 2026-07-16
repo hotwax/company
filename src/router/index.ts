@@ -8,6 +8,9 @@ const Users = () => import("@/views/Users.vue")
 const SecurityGroups = () => import("@/views/SecurityGroups.vue")
 const SecurityGroupDetail = () => import("@/views/SecurityGroupDetail.vue")
 const UserDetails = () => import("@/views/UserDetails.vue")
+const CreateUser = () => import("@/views/CreateUser.vue")
+const UserConfirmation = () => import("@/views/UserConfirmation.vue")
+const UserQuickSetup = () => import("@/views/UserQuickSetup.vue")
 const CreateProductStore = () => import("@/views/CreateProductStore.vue")
 const ProductStoreOnboarding = () => import("@/views/ProductStoreOnboarding.vue")
 const AddConfigurations = () => import("@/views/AddConfigurations.vue")
@@ -51,6 +54,9 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
   { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
   { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
+  { path: "/create-user", name: "CreateUser", component: CreateUser, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
+  { path: "/user-confirmation/:partyId", name: "UserConfirmation", component: UserConfirmation, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
+  { path: "/user-quick-setup/:partyId", name: "UserQuickSetup", component: UserQuickSetup, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
   { path: "/product-store-details/:productStoreId", name: "ProductStoreDetails", component: ProductStoreDetails, props: true, beforeEnter: authGuard },
   { path: "/shopify", name: "ShopifyConnections", component: () => import("@/views/ShopifyConnections.vue"), beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id", name: "ShopifyConnectionDetails", component: ShopifyConnectionDetails, props: true, beforeEnter: authGuard },

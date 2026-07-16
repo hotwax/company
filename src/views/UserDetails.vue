@@ -522,7 +522,6 @@ const userSecurityGroups = computed(() => userStore.getSelectedUserSecurityGroup
 const getRoleTypeDesc = (roleTypeId: string) => utilStore.getRoleTypeDesc(roleTypeId);
 const userProfile = computed(() => userStore.getUserProfile);
 const shopifyShops = computed(() => utilStore.getShopifyShops);
-const organizationPartyId = computed(() => utilStore.getOrganizationPartyId);
 const redirectedFromUrl = computed(() => userStore.getRedirectedFromUrl);
 // Bumped on successful upload so the <img> URL changes and the browser doesn't keep showing the old cached image.
 const imageVersion = ref(0);
@@ -745,14 +744,11 @@ const createNewUserLogin = async () => {
   }
 
   try {
-    const resp = await userStore.createNewUserLogin({
+    const resp = await userStore.createUserAccount({
       partyId: selectedUser.value.partyId,
-      currentPassword: password.value,
-      currentPasswordVerify: password.value,
-      userLoginId: username.value,
-      enabled: "Y",
-      userPrefTypeId: "ORGANIZATION_PARTY",
-      userPrefValue: organizationPartyId.value,
+      username: username.value,
+      newPassword: password.value,
+      newPasswordVerify: password.value,
     });
     if(!commonUtil.hasError(resp)) {
       await userStore.getSelectedUserDetails({ partyId: selectedUser.value.partyId, isFetchRequired: true });
@@ -973,7 +969,8 @@ const selectSecurityGroup = async () => {
         const createResponses = await Promise.allSettled(securityGroupsToCreate
           .map(async (payload: any) => await userStore.addUserToSecurityGroup({
             userGroupId: payload.userGroupId,
-            userId: selectedUser.value.userId
+            userId: selectedUser.value.userId,
+            fromDate: DateTime.now().toMillis()
           })));
 
         const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");

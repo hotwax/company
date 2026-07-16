@@ -231,7 +231,8 @@ export const useAuthorizationStore = defineStore("authorization", {
       const params = {
         pageIndex: payload.pageIndex,
         pageSize: payload.pageSize,
-        orderByField: "description"
+        orderByField: "description",
+        groupTypeEnumId: "UgtUserAccess"
       } as any;
 
       if(this.userGroupListQuery.queryString) {

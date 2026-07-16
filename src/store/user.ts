@@ -1,5 +1,5 @@
 import { defineStore } from "pinia"
-import { Settings } from "luxon"
+import { DateTime, Settings } from "luxon"
 import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
@@ -284,18 +284,26 @@ export const useUserStore = defineStore("user", {
       })
     },
 
-    addUserToSecurityGroup(payload: { userId: string; userGroupId: string }): Promise<any> {
+    addUserToSecurityGroup(payload: { userId: string; userGroupId: string; fromDate?: any }): Promise<any> {
+      // fromDate is part of UserGroupMember's PK (userGroupId, userId, fromDate) with no entity default, so it must be supplied explicitly.
       return api({
         url: `admin/users/${payload.userId}/groups`,
         method: "post",
-        data: { userGroupId: payload.userGroupId }
+        data: { userGroupId: payload.userGroupId, fromDate: payload.fromDate || DateTime.now().toMillis() }
       })
     },
 
-    createNewUserLogin(payload: any): Promise<any> {
+    createUser(payload: { partyTypeId: string; person?: { firstName: string; lastName: string }; partyGroup?: { groupName: string }; externalId?: string }): Promise<any> {
       return api({
-        baseURL: commonUtil.getOmsURL(),
-        url: "service/createNewUserLoginAndSetUserPreference",
+        url: "oms/parties",
+        method: "post",
+        data: payload
+      })
+    },
+
+    createUserAccount(payload: { partyId: string; username: string; newPassword: string; newPasswordVerify: string; requirePasswordChange?: string; emailAddress?: string }): Promise<any> {
+      return api({
+        url: "moqui/users",
         method: "post",
         data: payload
       })
@@ -525,6 +533,128 @@ export const useUserStore = defineStore("user", {
         data: payload.formData,
         headers: { "Content-Type": "multipart/form-data" }
       })
+    },
+
+    async finishSetup(payload: any): Promise<any> {
+      try {
+        const selectedUser = payload.selectedUser
+        const selectedTemplate = payload.selectedTemplate
+        const partyId = selectedUser.partyId
+        const promises = []
+        let userId = selectedUser.userId
+
+        if(selectedTemplate.isUserLoginRequired || selectedUser.partyTypeId === "PARTY_GROUP") {
+          const resp = await this.createUserAccount({
+            partyId,
+            username: payload.formData.userLoginId,
+            newPassword: payload.formData.currentPassword,
+            newPasswordVerify: payload.formData.currentPassword,
+            requirePasswordChange: payload.formData.requirePasswordChange ? "Y" : "N",
+            emailAddress: payload.formData.emailAddress
+          })
+          if(commonUtil.hasError(resp)) {
+            throw resp.data
+          }
+          userId = resp.data.userId
+
+          await this.addUserToSecurityGroup({
+            userId,
+            userGroupId: payload.selectedTemplate.securityGroupId || "STORE_MANAGER",
+            fromDate: DateTime.now().toMillis()
+          })
+        }
+
+        if(selectedTemplate.isEmployeeIdRequired && payload.formData.externalId) {
+          promises.push(this.updatePartyExternalId({
+            partyId,
+            externalId: payload.formData.externalId
+          }))
+        }
+
+        if(payload.formData.emailAddress && payload.formData.emailAddress !== selectedUser.emailDetails?.email) {
+          promises.push(this.createUpdatePartyEmailAddress({
+            partyId,
+            contactMechId: selectedUser.emailDetails?.contactMechId ? selectedUser.emailDetails?.contactMechId : "",
+            emailAddress: payload.formData.emailAddress,
+            contactMechPurposeTypeId: "PRIMARY_EMAIL"
+          }))
+        }
+
+        const roleTypeIdSet = new Set<string>()
+        if(payload.selectedTemplate.roleTypeId) {roleTypeIdSet.add(payload.selectedTemplate.roleTypeId)}
+        if(payload.selectedTemplate.productStoreRoleTypeId && payload.productStores.length > 0 && selectedTemplate.isProductStoreRequired) {roleTypeIdSet.add(payload.selectedTemplate.productStoreRoleTypeId)}
+
+        if(payload.facilities.length > 0) {
+          roleTypeIdSet.add(payload.selectedTemplate.facilityRoleTypeId || "WAREHOUSE_PICKER")
+
+          if(selectedUser.partyTypeId === "PARTY_GROUP") {roleTypeIdSet.add("FAC_LOGIN")}
+        }
+
+        for(const roleTypeId of roleTypeIdSet) {
+          const result = await this.ensurePartyRole({partyId, roleTypeId})
+
+          if(commonUtil.hasError(result)) {
+            throw result.data
+          }
+        }
+
+        if(payload.productStores.length > 0 && selectedTemplate.isProductStoreRequired) {
+          payload.productStores?.forEach((store: any) => {
+            promises.push(this.createProductStoreRole({
+              partyId,
+              productStoreId: store.productStoreId,
+              roleTypeId: payload.selectedTemplate.productStoreRoleTypeId,
+              fromDate: DateTime.now().toMillis()
+            }))
+          })
+        }
+
+        if(payload.facilities.length > 0) {
+          const selectedFacilityIds = new Set(payload.facilities.map((facility: any) => facility.facilityId))
+          const facilitiesToAdd = payload.facilities.filter((facility: any) => !selectedUser.facilities?.some((fac: any) => fac.facilityId === facility.facilityId))
+          const facilitiesToDelete = selectedUser.facilities?.filter((facility: any) => !selectedFacilityIds.has(facility.facilityId))
+
+          facilitiesToDelete?.forEach((facility: any) => {
+            promises.push(this.removePartyFromFacility({
+              partyId,
+              facilityId: facility.facilityId,
+              roleTypeId: facility.roleTypeId,
+              fromDate: facility.fromDate,
+              thruDate: DateTime.now().toMillis()
+            }))
+          })
+
+          facilitiesToAdd?.forEach((facility: any) => {
+            promises.push(this.addPartyToFacility({
+              partyId,
+              facilityId: facility.facilityId,
+              roleTypeId: payload.selectedTemplate.facilityRoleTypeId ? payload.selectedTemplate.facilityRoleTypeId : "WAREHOUSE_PICKER"
+            }))
+          })
+
+          if(selectedUser.partyTypeId === "PARTY_GROUP") {
+            const facilityId = [...selectedFacilityIds][0]
+
+            promises.push(this.addPartyToFacility({
+              partyId,
+              facilityId,
+              roleTypeId: "FAC_LOGIN"
+            }))
+          }
+        }
+
+        await Promise.all(promises).then(responses => {
+          responses.forEach(response => {
+            if(commonUtil.hasError(response)) {
+              throw response.data
+            }
+          })
+        })
+
+        return userId
+      } catch(error: any) {
+        return Promise.reject(error)
+      }
     },
 
     async getSelectedUserDetails(payload: { partyId: string; isFetchRequired?: boolean }) {
