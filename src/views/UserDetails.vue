@@ -36,8 +36,8 @@
                   <h1 v-else>
                     {{ selectedUser.userFullName }}
                   </h1>
-                  <p>{{ selectedUser.userLoginId }}</p>
-                  <ion-badge v-if="selectedUser.userLoginId === userProfile.userLoginId">
+                  <p>{{ selectedUser.username }}</p>
+                  <ion-badge v-if="selectedUser.userId === userProfile.userId">
                     {{ translate("Your user") }}
                   </ion-badge>
                 </ion-label>
@@ -122,18 +122,18 @@
         </section>
 
         <section class="user-details">
-          <ion-card v-if="isUserFetched || selectedUser.userLoginId">
+          <ion-card v-if="isUserFetched || selectedUser.userId">
             <ion-card-header>
               <ion-card-title>
                 {{ translate('Login details') }}
               </ion-card-title>
             </ion-card-header>
-            <template v-if="selectedUser.userLoginId">
+            <template v-if="selectedUser.userId">
               <ion-list>
                 <ion-item>
                   <ion-label>{{ translate('Username') }}</ion-label>
                   <ion-label slot="end">
-                    {{ selectedUser.userLoginId }}
+                    {{ selectedUser.username }}
                   </ion-label>
                 </ion-item>
                 <ion-item :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') || selectedUser.statusId !== 'PARTY_ENABLED'">
@@ -143,7 +143,7 @@
                 </ion-item>
               </ion-list>
               <div class="login-detail-actions">
-                <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') && selectedUser.userLoginId !== userProfile.userLoginId" fill="outline" color="warning" @click="resetPassword()">
+                <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') && selectedUser.userId !== userProfile.userId" fill="outline" color="warning" @click="resetPassword()">
                   {{ translate('Reset password') }}
                 </ion-button>
                 <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') || selectedUser.hasLoggedOut === 'Y'" fill="outline" color="danger" @click="confirmForceLogout()">
@@ -295,16 +295,16 @@
             <ion-list>
               <ion-list-header color="light">
                 <ion-label>{{ translate('Security Group') }}</ion-label>
-                <ion-button v-if="userSecurityGroups.length" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN OR PARTY_SECURITY_ASSIGNMENT') || !selectedUser.userLoginId" @click="selectSecurityGroup()">
+                <ion-button v-if="userSecurityGroups.length" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN OR PARTY_SECURITY_ASSIGNMENT') || !selectedUser.userId" @click="selectSecurityGroup()">
                   {{ translate('Add') }}
                   <ion-icon slot="end" :icon="addCircleOutline" />
                 </ion-button>
               </ion-list-header>
-              <ion-button v-if="!userSecurityGroups.length" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN OR PARTY_SECURITY_ASSIGNMENT') || !selectedUser.userLoginId" fill="outline" expand="block" class="ion-margin" @click="selectSecurityGroup()">
+              <ion-button v-if="!userSecurityGroups.length" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN OR PARTY_SECURITY_ASSIGNMENT') || !selectedUser.userId" fill="outline" expand="block" class="ion-margin" @click="selectSecurityGroup()">
                 <ion-icon slot="start" :icon="addOutline" />
                 {{ translate('Add to security group') }}
               </ion-button>
-              <ion-item v-if="!selectedUser.userLoginId">
+              <ion-item v-if="!selectedUser.userId">
                 <ion-label>{{ translate('Security groups can only be assigned after a login is created. Please add login credentials for above.') }}</ion-label>
               </ion-item>
               <ion-item v-else>
@@ -421,7 +421,7 @@
             </ion-card-content>
             <ion-list>
               <ion-item>
-                <ion-select :label="translate('Product store')" interface="popover" :value="selectedUser.favoriteProductStorePref?.preferenceValue ? selectedUser.favoriteProductStorePref?.preferenceValue : ''" :disabled="!selectedUser?.userLoginId" @ion-change="updateFavoriteProductStore($event)">
+                <ion-select :label="translate('Product store')" interface="popover" :value="selectedUser.favoriteProductStorePref?.preferenceValue ? selectedUser.favoriteProductStorePref?.preferenceValue : ''" :disabled="!selectedUser?.userId" @ion-change="updateFavoriteProductStore($event)">
                   <ion-select-option v-for="productStore in userProductStores" :key="productStore.productStoreId" :value="productStore.productStoreId">
                     {{ productStore.storeName || productStore.productStoreId }}
                   </ion-select-option>
@@ -431,7 +431,7 @@
                 </ion-select>
               </ion-item>
               <ion-item lines="none">
-                <ion-select :label="translate('Shopify shop')" interface="popover" :value="selectedUser.favoriteShopifyShopPref?.preferenceValue ? selectedUser.favoriteShopifyShopPref?.preferenceValue : ''" :disabled="!selectedUser?.userLoginId" @ion-change="updateFavoriteShopifyShop($event)">
+                <ion-select :label="translate('Shopify shop')" interface="popover" :value="selectedUser.favoriteShopifyShopPref?.preferenceValue ? selectedUser.favoriteShopifyShopPref?.preferenceValue : ''" :disabled="!selectedUser?.userId" @ion-change="updateFavoriteShopifyShop($event)">
                   <ion-select-option v-for="shopifyShop in shopifyShopsForProductStore" :key="shopifyShop.shopId" :value="shopifyShop.shopId">
                     {{ shopifyShop.name || shopifyShop.shopId }}
                   </ion-select-option>
@@ -483,7 +483,7 @@ import { DateTime } from "luxon";
 import Image from "@/components/Image.vue";
 
 const props = defineProps({
-  userId: {
+  partyId: {
     type: String,
     required: true
   }
@@ -529,7 +529,7 @@ const imageVersion = ref(0);
 const imageUrl = computed(() => {
   const versionParam = imageVersion.value ? `?v=${imageVersion.value}` : "";
 
-  return `${commonUtil.getMaargURL()}admin/users/${selectedUser.value.userLoginId}/profileImage${versionParam}`;
+  return `${commonUtil.getMaargURL()}admin/users/${selectedUser.value.userId}/profileImage${versionParam}`;
 });
 
 onIonViewWillLeave(async () => {
@@ -538,7 +538,7 @@ onIonViewWillLeave(async () => {
 
 onIonViewWillEnter(async () => {
   isUserFetched.value = false;
-  await userStore.getSelectedUserDetails({ userId: props.userId, isFetchRequired: true });
+  await userStore.getSelectedUserDetails({ partyId: props.partyId, isFetchRequired: true });
   await Promise.all([utilStore.fetchUserGroups(), utilStore.fetchShopifyShopConfigs()]);
   const productStoreId = selectedUser.value.favoriteProductStorePref?.preferenceValue;
   if(productStoreId) {
@@ -560,7 +560,7 @@ const getShopifyShops = (productStoreId: string) => {
 const updateFavoriteProductStore = (event: any) => {
   const selectedProductStoreId = event.target.value;
   if(selectedProductStoreId && selectedProductStoreId !== selectedUser.value?.favoriteProductStorePref?.preferenceValue) {
-    userStore.setFavoriteProductStore({ "userId": selectedUser.value?.userLoginId, "productStoreId": selectedProductStoreId })
+    userStore.setFavoriteProductStore({ "userId": selectedUser.value?.userId, "productStoreId": selectedProductStoreId })
       .then(() => {
         getShopifyShops(selectedProductStoreId);
         commonUtil.showToast(translate("Favorite product store updated successfully."));
@@ -578,7 +578,7 @@ const goBack = ($event: any) => {
 const updateFavoriteShopifyShop = (event: any) => {
   const selectedShopId = event.target.value;
   if(selectedShopId && selectedShopId !== selectedUser.value?.favoriteShopifyShopPref?.preferenceValue) {
-    userStore.setFavoriteShopifyShop({ "userId": selectedUser.value?.userLoginId, "shopId": selectedShopId })
+    userStore.setFavoriteShopifyShop({ "userId": selectedUser.value?.userId, "shopId": selectedShopId })
       .then(() => {
         commonUtil.showToast(translate("Favorite shopify shop updated successfully."));
       }).catch(() => {
@@ -755,7 +755,7 @@ const createNewUserLogin = async () => {
       userPrefValue: organizationPartyId.value,
     });
     if(!commonUtil.hasError(resp)) {
-      await userStore.getSelectedUserDetails({ userId: username.value, isFetchRequired: true });
+      await userStore.getSelectedUserDetails({ partyId: selectedUser.value.partyId, isFetchRequired: true });
     } else {
       throw resp.data;
     }
@@ -770,7 +770,7 @@ const resetPassword = async () => {
     component: ResetPasswordModal,
     componentProps: {
       email: selectedUser.value.emailDetails?.email,
-      userLoginId: selectedUser.value.userLoginId
+      userLoginId: selectedUser.value.userId
     }
   });
 
@@ -801,12 +801,12 @@ const confirmForceLogout = async () => {
 const forceLogout = async () => {
   try {
     const resp = await userStore.forceLogout({
-      userId: selectedUser.value.userLoginId
+      userId: selectedUser.value.userId
     });
     if(commonUtil.hasError(resp)) {
       throw resp;
     }
-    await userStore.getSelectedUserDetails({ userId: props.userId, isFetchRequired: true });
+    await userStore.getSelectedUserDetails({ partyId: props.partyId, isFetchRequired: true });
     commonUtil.showToast(translate("User has been logged out."));
   } catch (error) {
     commonUtil.showToast(translate("Failed to perform force logout."));
@@ -833,7 +833,7 @@ const updateUserLoginStatus = async (event: any) => {
       handler: async () => {
         try {
           const resp = await userStore.updateUserLoginStatus({
-            userId: selectedUser.value.userLoginId,
+            userId: selectedUser.value.userId,
             disabled: isChecked ? "Y" : "N"
           });
           if(!commonUtil.hasError(resp)) {
@@ -953,6 +953,7 @@ const selectSecurityGroup = async () => {
     component: SelectSecurityGroupModal,
     componentProps: { selectedSecurityGroups: userSecurityGroups.value }
   });
+  console.log("======1==selectedUser.value.userId==", selectedUser.value.userId)
 
   selectSecurityGroupModal.onDidDismiss().then(async (result) => {
     if(result.data && result.data.value) {
@@ -960,10 +961,11 @@ const selectSecurityGroup = async () => {
       const securityGroupsToRemove = result.data.value.securityGroupsToRemove;
 
       try {
+        console.log("========selectedUser.value.userId==", selectedUser.value.userId)
         const updateResponses = await Promise.allSettled(securityGroupsToRemove
           .map(async (payload: any) => await userStore.removeUserSecurityGroup({
             userGroupId: payload.userGroupId,
-            userId: selectedUser.value.userLoginId,
+            userId: selectedUser.value.userId,
             fromDate: payload.fromDate,
             thruDate: DateTime.now().toMillis()
           })));
@@ -971,7 +973,7 @@ const selectSecurityGroup = async () => {
         const createResponses = await Promise.allSettled(securityGroupsToCreate
           .map(async (payload: any) => await userStore.addUserToSecurityGroup({
             userGroupId: payload.userGroupId,
-            userId: selectedUser.value.userLoginId
+            userId: selectedUser.value.userId
           })));
 
         const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");
@@ -980,7 +982,7 @@ const selectSecurityGroup = async () => {
         } else {
           commonUtil.showToast(translate("Security group(s) updated successfully."));
         }
-        const userGroups = await userStore.getUserGroups(selectedUser.value.userLoginId);
+        const userGroups = await userStore.getUserGroups(selectedUser.value.userId);
         const now = Date.now();
         const updatedUserSecurityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now);
         userStore.updateSelectedUser({ ...selectedUser.value, securityGroups: updatedUserSecurityGroups });
@@ -1153,9 +1155,9 @@ const updateUserStatus = async (event: any) => {
   emitter.emit("presentLoader");
 
   try {
-    if(isChecked && selectedUser.value.userLoginId) {
+    if(isChecked && selectedUser.value.userId) {
       await userStore.updateUserLoginStatus({
-        userId: selectedUser.value.userLoginId,
+        userId: selectedUser.value.userId,
         disabled: "Y"
       });
       selectedUser.value.disabled = "Y";
@@ -1216,7 +1218,7 @@ const uploadImage = async (event: any) => {
   const formData = new FormData();
   formData.append("uploadedFile", selectedFile, selectedFile?.name);
   try {
-    const resp = await userStore.uploadPartyImage({ userId: selectedUser.value.userLoginId, formData });
+    const resp = await userStore.uploadPartyImage({ userId: selectedUser.value.userId, formData });
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Image uploaded successfully."));
       imageVersion.value = resp.data.contentId ?? Date.now();

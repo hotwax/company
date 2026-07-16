@@ -75,15 +75,15 @@
             <div v-for="(user, index) in users" :key="index" class="list-item" @click="viewUserDetails(user)">
               <ion-item lines="none">
                 <ion-label>
-                  {{ user.userFullName || user.username }}
+                  {{ `${user.firstName} ${user.lastName ?? ''}`.trim() }}
                   <p>{{ user.username }}</p>
                   <p>{{ user.emailAddress }}</p>
                 </ion-label>
               </ion-item>
 
               <div class="tablet">
-                <ion-label v-if="user.createdStamp" class="ion-text-center">
-                  {{ getDate(user.createdStamp) }}
+                <ion-label v-if="user.createdDate" class="ion-text-center">
+                  {{ commonUtil.formatUtcDate(user.createdDate, currentTimeZoneId, 'dd LLL yyyy') }}
                   <p>{{ translate("created") }}</p>
                 </ion-label>
                 <ion-label v-else>
@@ -92,8 +92,8 @@
               </div>
 
               <div class="tablet">
-                <ion-chip v-if="user.groups?.length" outline>
-                  <ion-label>{{ user.groups.map((group: any) => group.description || group.userGroupId).join(', ') }}</ion-label>
+                <ion-chip v-if="user.userGroupIds?.length" outline>
+                  <ion-label>{{ user.userGroupIds.map((userGroupId: any) => getUserGroupDescription(userGroupId)).join(', ') }}</ion-label>
                 </ion-chip>
                 <ion-label v-else>
                   {{ '-' }}
@@ -133,7 +133,7 @@ import { IonBadge, IonCard, IonChip, IonContent, IonFab, IonFabButton, IonHeader
 import { addOutline, idCardOutline, optionsOutline, toggleOutline } from "ionicons/icons";
 import router from "@/router";
 import { DateTime } from "luxon";
-import { translate } from "@common";
+import { commonUtil, translate } from "@common";
 import FilterMenu from "@/components/FilterMenu.vue";
 import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
@@ -148,6 +148,8 @@ const currentUser = ref<any>({});
 const users = computed(() => userStore.getUsers);
 const userGroups = computed(() => utilStore.getUserGroups);
 const isScrollable = computed(() => userStore.isScrollable);
+const userProfile = computed(() => userStore.getUserProfile)
+const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 
 onIonViewWillEnter(async () => {
   await fetchUsers();
@@ -166,6 +168,11 @@ const getDate = (date: any) => {
   return DateTime.fromMillis(date).toFormat("dd LLL yyyy");
 };
 
+const getUserGroupDescription = (userGroupId: string) => {
+  const userGroup = userGroups.value.find((userGroup: any) => userGroup.userGroupId === userGroupId);
+  return userGroup?.description || userGroupId;
+};
+
 const updateQuery = async () => {
   await userStore.updateQuery(userStore.query);
   fetchUsers();
@@ -174,6 +181,7 @@ const updateQuery = async () => {
 const fetchUsers = async (pSize?: any, pIndex?: any) => {
   const pageSize = pSize || import.meta.env.VITE_VIEW_SIZE;
   const pageIndex = pIndex || 0;
+  console.log("=====userStore.query.queryString==", userStore.query.queryString)
 
   if(!userStore.query.queryString) {
     // Do not fetch the current user information again on infinite-scroll pages, as we already have it.
@@ -182,7 +190,7 @@ const fetchUsers = async (pSize?: any, pIndex?: any) => {
     currentUser.value = {};
   }
 
-  await userStore.fetchFilteredUsers({ pageSize, pageIndex });
+  await userStore.fetchUsers({ pageSize, pageIndex });
 };
 
 const fetchCurrentUser = async () => {
@@ -193,7 +201,7 @@ const fetchCurrentUser = async () => {
 
 const viewUserDetails = async (user: any) => {
   await userStore.updateSelectedUser(user);
-  router.push({ path: `/user-details/${user.userId}` });
+  router.push({ path: `/user-details/${user.partyId}` });
 };
 
 const loadMoreUsers = (event: any) => {

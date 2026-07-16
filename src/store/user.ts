@@ -2,6 +2,7 @@ import { defineStore } from "pinia"
 import { Settings } from "luxon"
 import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
+import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useUtilStore } from "@/store/util"
 
 export const useUserStore = defineStore("user", {
@@ -222,38 +223,43 @@ export const useUserStore = defineStore("user", {
       this.query = query
     },
 
-    async fetchFilteredUsers(payload: { pageIndex: number; pageSize: number }) {
-      if(payload.pageIndex === 0) {emitter.emit("presentLoader")}
+    async fetchUsers(payload: { pageIndex: number; pageSize: number }) {
+      if (payload.pageIndex === 0) {emitter.emit("presentLoader")}
 
-      const params = {
-        pageIndex: payload.pageIndex,
-        pageSize: payload.pageSize
+      const searchTerm = this.query.queryString?.trim()
+
+      const solrPayload = {
+        json: {
+          params: {
+            rows : payload.pageSize,
+            start: payload.pageIndex * payload.pageSize,
+            qf: "partyId^100 username^50 firstName^30 lastName^30 groupName^30",
+            defType: "edismax"
+          },
+          query: "*:*",
+          filter: ["docType:EMPLOYEE", `-partyId:${this.current.partyId}`]
+        }
       } as any
 
-      if(this.query.queryString) {params.keyword = this.query.queryString}
-      if(this.query.userGroupId) {params.userGroupId = this.query.userGroupId}
-      if(this.query.status) {
-        params.disabled = this.query.status === "Y" ? "N" : "Y"
+      if (searchTerm) {
+        const keywords = searchTerm.split(" ")
+        solrPayload.json.query = `(${keywords.map((keyword: string) => `*${keyword}*`).join(" OR ")}) OR "${searchTerm}"^100`
+      }
+      if (this.query.userGroupId) {solrPayload.json.filter += ` AND userGroupIds:${this.query.userGroupId}`}
+      if (this.query.status) {
+        solrPayload.json.filter += ` AND statusId:${this.query.status === "Y" ? "PARTY_ENABLED" : "PARTY_DISABLED"}`
       }
 
       let users = JSON.parse(JSON.stringify(this.users.list))
       let total = this.users.total
 
       try {
-        const resp = await api({
-          url: "admin/users",
-          method: "get",
-          params
-        }) as any
+        const resp = await useSolrSearch().runSolrQuery(solrPayload)
 
         if(!commonUtil.hasError(resp)) {
-          // The logged-in user is shown pinned separately at the top of the page, so exclude them from the general list.
-          const fetchedUsers = this.query.queryString
-            ? resp.data.users
-            : resp.data.users.filter((user: any) => user.userId !== this.current.userId)
-
-          users = payload.pageIndex > 0 ? users.concat(fetchedUsers) : fetchedUsers
-          total = resp.data.usersCount
+          const docs: any[] = resp.data?.response?.docs || []
+          users = payload.pageIndex > 0 ? users.concat(docs) : docs
+          total = resp.data?.response?.numFound || 0
         } else {
           throw resp.data
         }
@@ -297,9 +303,9 @@ export const useUserStore = defineStore("user", {
 
     createProductStoreRole(payload: { partyId: string; productStoreId: string; roleTypeId: string; fromDate?: any }): Promise<any> {
       return api({
-        url: `admin/user/${payload.partyId}/productStore`,
+        url: `admin/users/productStores`,
         method: "post",
-        data: { productStoreId: payload.productStoreId, roleTypeId: payload.roleTypeId, fromDate: payload.fromDate }
+        data: { productStoreId: payload.productStoreId, partyId: payload.partyId, roleTypeId: payload.roleTypeId, fromDate: payload.fromDate }
       })
     },
 
@@ -498,7 +504,7 @@ export const useUserStore = defineStore("user", {
     updateProductStoreRole(payload: { partyId: string; productStoreId: string; roleTypeId: string; fromDate: any; thruDate: any }): Promise<any> {
       // Soft-expire: ProductStoreRole history is preserved, so this updates thruDate on the existing record rather than deleting it.
       return api({
-        url: `admin/users/productStore`,
+        url: `admin/users/productStores`,
         method: "put",
         data: { productStoreId: payload.productStoreId, partyId: payload.partyId, roleTypeId: payload.roleTypeId, fromDate: payload.fromDate, thruDate: payload.thruDate }
       })
@@ -521,41 +527,41 @@ export const useUserStore = defineStore("user", {
       })
     },
 
-    async getSelectedUserDetails(payload: { userId?: string; partyId?: string; isFetchRequired?: boolean }) {
+    async getSelectedUserDetails(payload: { partyId: string; isFetchRequired?: boolean }) {
       const currentSelectedUser = JSON.parse(JSON.stringify(this.selectedUser))
-      const identifier = payload.userId || payload.partyId
-      if((currentSelectedUser.userLoginId === identifier || currentSelectedUser.partyId === identifier) && !payload.isFetchRequired) {
+      if(currentSelectedUser.partyId === payload.partyId && !payload.isFetchRequired) {
         return
       }
 
       let selectedUser = {} as any
 
       try {
-        const userResp = payload.userId
-          ? await api({ url: `admin/users/${payload.userId}`, method: "GET" }) as any
-          : await api({ url: "admin/users", method: "GET", params: { partyId: payload.partyId, pageSize: 1 } }) as any
+        const partyResp = await api({
+          url: `oms/parties/${payload.partyId}`,
+          method: "GET"
+        }) as any
 
-        const user = payload.userId ? userResp.data : userResp.data.users?.[0]
-        if(!commonUtil.hasError(userResp) && user) {
-          const partyId = user.partyId
+        if(!commonUtil.hasError(partyResp)) {
           selectedUser = {
-            ...user,
-            userLoginId: user.userId
+            partyId: payload.partyId,
+            partyTypeId: partyResp.data.partyTypeId,
+            firstName: partyResp.data.firstName,
+            lastName: partyResp.data.lastName,
+            groupName: partyResp.data.groupName,
+            externalId: partyResp.data.externalId,
+            statusId: partyResp.data.statusId,
+            userId: partyResp.data.userId
           }
 
-          const partyResp = await api({
-            url: `oms/parties/${partyId}`,
-            method: "GET"
-          }) as any
-          if(!commonUtil.hasError(partyResp)) {
-            selectedUser = {
-              ...selectedUser,
-              partyTypeId: partyResp.data.partyTypeId,
-              firstName: partyResp.data.firstName,
-              lastName: partyResp.data.lastName,
-              groupName: partyResp.data.groupName,
-              externalId: partyResp.data.externalId,
-              statusId: partyResp.data.statusId
+          if(partyResp.data.userId) {
+            const userResp = await api({ url: `admin/users/${selectedUser.userId}`, method: "GET" }) as any
+            if(!commonUtil.hasError(userResp) && userResp.data) {
+              selectedUser = {
+                ...userResp.data,
+                ...selectedUser
+              }
+            } else {
+              throw userResp.data
             }
           }
 
@@ -563,7 +569,7 @@ export const useUserStore = defineStore("user", {
             url: "oms/partyContactMechs",
             method: "GET",
             params: {
-              partyId,
+              partyId: payload.partyId,
               contactMechPurposeTypeId: "PRIMARY_EMAIL,PRIMARY_PHONE",
               contactMechPurposeTypeId_op: "in",
               thruDate_op: "empty",
@@ -598,7 +604,7 @@ export const useUserStore = defineStore("user", {
             throw contactResp.data
           }
         } else {
-          throw userResp.data
+          throw partyResp.data
         }
       } catch (error) {
         logger.error(error)
@@ -606,7 +612,7 @@ export const useUserStore = defineStore("user", {
 
       if(Object.keys(selectedUser).length) {
         selectedUser.facilities = await this.getUserFacilities(selectedUser.partyId)
-        const userGroups = await this.getUserGroups(selectedUser.userLoginId)
+        const userGroups = await this.getUserGroups(selectedUser.userId)
         const now = Date.now()
         selectedUser.securityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now)
         selectedUser.productStores = await this.getUserProductStores(selectedUser.partyId)

@@ -45,7 +45,7 @@ const removeUserSecurityGroup = async () => {
   try {
     const resp = await userStore.removeUserSecurityGroup({
       userGroupId: props.securityGroup.userGroupId,
-      userId: selectedUser.value.userLoginId,
+      userId: selectedUser.value.userId,
       fromDate: props.securityGroup.fromDate,
       thruDate: DateTime.now().toMillis()
     })
