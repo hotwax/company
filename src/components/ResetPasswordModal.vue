@@ -96,11 +96,13 @@ const closeModal = () => {
 const resetPassword = async () => {
   try {
     const resp = await userStore.resetPassword({
+      userId: props.userLoginId as string,
       newPassword: newPassword.value,
-      newPasswordVerify: confirmPassword.value,
-      userLoginId: props.userLoginId
+      newPasswordVerify: confirmPassword.value
     });
-    if(!commonUtil.hasError(resp)) {
+    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
+    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
+    if(!commonUtil.hasError(resp) && resp.data?.updateSuccessful) {
       commonUtil.showToast(translate("Password reset successful."));
     } else {
       throw resp.data;

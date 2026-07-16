@@ -459,12 +459,15 @@ export const useUserStore = defineStore("user", {
       })
     },
 
-    resetPassword(payload: any): Promise<any> {
+    resetPassword(payload: { userId: string; newPassword: string; newPasswordVerify: string }): Promise<any> {
+      // oldPassword is required="true" on update#Password's in-parameters, so the service rejects an empty
+      // value before its actions (and the "ignored if admin permission" exemption) ever run. Moqui's own
+      // admin screen (UserAccountDetail.xml) works around this by always sending the literal "ignored" for it.
       return api({
-        baseURL: commonUtil.getOmsURL(),
-        url: "service/resetPassword",
+        url: `moqui/users/${payload.userId}/password/update`,
         method: "post",
-        data: payload
+        //Pass a random string as oldPassword, since it is a required API parameter. If the user has the ADMIN_PASSWORD permission, the value of oldPassword is ignored.
+        data: { oldPassword: "IGNORED", newPassword: payload.newPassword, newPasswordVerify: payload.newPasswordVerify }
       })
     },
 
