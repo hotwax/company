@@ -178,6 +178,8 @@ const createUser = async () => {
         await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber: formData.value.contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
       }
 
+      await userStore.indexEmployee(partyId);
+
       commonUtil.showToast(translate("User created successfully"));
       router.replace({ path: `/user-confirmation/${partyId}` });
     } else {

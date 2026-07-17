@@ -418,6 +418,23 @@ export const useUserStore = defineStore("user", {
       return productStores
     },
 
+    // Rebuilds and reindexes the EMPLOYEE Solr document from live data, so call after any change
+    // to a user's name, group/role associations, login, or contact details.
+    async indexEmployee(partyId: string): Promise<any> {
+      try {
+        const resp = await api({
+          url: "oms/search/index/employee",
+          method: "post",
+          data: { partyId }
+        }) as any
+        if(commonUtil.hasError(resp)) {throw resp.data}
+
+        return resp
+      } catch (error) {
+        logger.error("indexEmployee", error)
+      }
+    },
+
     async isUserFulfillmentAdmin(groupIds: string): Promise<any> {
       //TODO: Need to write the implementation of it once moqui permission/artifacts security finalized
       return false;
@@ -654,6 +671,8 @@ export const useUserStore = defineStore("user", {
           })
         })
 
+        await this.indexEmployee(partyId)
+
         return userId
       } catch(error: any) {
         return Promise.reject(error)
@@ -749,14 +768,14 @@ export const useUserStore = defineStore("user", {
         const now = Date.now()
         selectedUser.securityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now)
         selectedUser.productStores = await this.getUserProductStores(selectedUser.partyId)
-        if(selectedUser.userLoginId) {
+        if(selectedUser.userId) {
           let userPreferences = [] as any
           try {
             const preferencesResp = await api({
               url: "admin/user/preferences",
               method: "GET",
               params: {
-                userId: selectedUser.userLoginId,
+                userId: selectedUser.userId,
                 preferenceKey: "FAVORITE_PRODUCT_STORE,FAVORITE_SHOPIFY_SHOP",
                 preferenceKey_op: "in",
                 pageSize: 2

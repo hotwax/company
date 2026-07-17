@@ -687,6 +687,9 @@ const addContactField = async (type: string) => {
             };
           }
           userStore.updateSelectedUser(updatedSelectedUser);
+          if(type === "email" || type === "phoneNumber") {
+            await userStore.indexEmployee(selectedUser.value.partyId);
+          }
           commonUtil.showToast(translate(`${OPTIONS[type as "email" | "phoneNumber" | "externalId"].placeholder} added successfully.`));
         } catch (error) {
           commonUtil.showToast(translate(`Failed to add ${type === "email" ? "email" : (type === "phoneNumber" ? "phone number" : "external ID")}.`));
@@ -752,6 +755,7 @@ const createNewUserLogin = async () => {
     });
     if(!commonUtil.hasError(resp)) {
       await userStore.getSelectedUserDetails({ partyId: selectedUser.value.partyId, isFetchRequired: true });
+      await userStore.indexEmployee(selectedUser.value.partyId);
     } else {
       throw resp.data;
     }
@@ -984,6 +988,7 @@ const selectSecurityGroup = async () => {
         const updatedUserSecurityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now);
         userStore.updateSelectedUser({ ...selectedUser.value, securityGroups: updatedUserSecurityGroups });
         isUserFulfillmentAdmin.value = updatedUserSecurityGroups.length ? await userStore.isUserFulfillmentAdmin(updatedUserSecurityGroups.map((group: any) => group.userGroupId)) : false;
+        await userStore.indexEmployee(selectedUser.value.partyId);
       } catch (error) {
         logger.error(error);
         commonUtil.showToast(translate("Failed to update some security group(s)."));
@@ -1123,6 +1128,7 @@ const editName = async () => {
             if(!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("User renamed successfully."));
               await userStore.updateSelectedUser({ ...selectedUser.value, ...data });
+              await userStore.indexEmployee(selectedUser.value.partyId);
             } else {
               throw resp.data;
             }

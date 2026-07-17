@@ -99,28 +99,30 @@ const updateContactField = async () => {
             const resp = await userStore.createUpdatePartyEmailAddress({
               contactMechId: props.contactMechId,
               emailAddress: input,
-              partyId: selectedUser.value.partyId
+              partyId: selectedUser.value.partyId,
+              contactMechPurposeTypeId: "PRIMARY_EMAIL"
             });
             if(commonUtil.hasError(resp)) {throw resp.data;}
             updatedSelectedUser = {
               ...updatedSelectedUser,
               emailDetails: {
                 email: input,
-                contactMechId: props.contactMechId
+                contactMechId: resp.data.contactMechId
               }
             };
           } else if(props.type === "phoneNumber") {
             const resp = await userStore.createUpdatePartyTelecomNumber({
               contactMechId: props.contactMechId,
               contactNumber: input,
-              partyId: selectedUser.value.partyId
+              partyId: selectedUser.value.partyId,
+              contactMechPurposeTypeId: "PRIMARY_PHONE"
             });
             if(commonUtil.hasError(resp)) {throw resp.data;}
             updatedSelectedUser = {
               ...updatedSelectedUser,
               phoneNumberDetails: {
                 contactNumber: input,
-                contactMechId: props.contactMechId
+                contactMechId: resp.data.contactMechId
               }
             };
           } else {
@@ -135,6 +137,9 @@ const updateContactField = async () => {
             };
           }
           userStore.updateSelectedUser(updatedSelectedUser);
+          if(props.type === "email" || props.type === "phoneNumber") {
+            await userStore.indexEmployee(selectedUser.value.partyId);
+          }
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} updated successfully.`));
         } catch (error) {
           commonUtil.showToast(translate(`Failed to update ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`));
@@ -187,6 +192,9 @@ const deleteContactField = async () => {
             delete updatedSelectedUser.externalId;
           }
           userStore.updateSelectedUser(updatedSelectedUser);
+          if(props.type === "email" || props.type === "phoneNumber") {
+            await userStore.indexEmployee(selectedUser.value.partyId);
+          }
           commonUtil.showToast(translate(`${OPTIONS[props.type].placeholder} removed successfully.`));
         } catch (error) {
           commonUtil.showToast(translate(`Failed to remove ${props.type === "email" ? "email" : (props.type === "phoneNumber" ? "phone number" : "external ID")}.`));

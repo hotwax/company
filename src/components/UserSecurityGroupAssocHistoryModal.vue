@@ -46,11 +46,11 @@ const closeModal = () => {
 };
 
 const fetchUserSecurityGroupAssoHistory = async () => {
-  if(!selectedUser.value.userLoginId) {return;}
+  if(!selectedUser.value.userId) {return;}
 
   let histories = [] as any;
   try {
-    histories = await userStore.getUserGroups(selectedUser.value.userLoginId);
+    histories = await userStore.getUserGroups(selectedUser.value.userId);
     const currentSecurityGroups = histories.filter((history: any) => !history.thruDate);
     const expiredSecurityGroups = histories.filter((history: any) => history.thruDate);
     histories = currentSecurityGroups.concat(expiredSecurityGroups);
