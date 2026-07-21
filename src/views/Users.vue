@@ -181,7 +181,6 @@ const updateQuery = async () => {
 const fetchUsers = async (pSize?: any, pIndex?: any) => {
   const pageSize = pSize || import.meta.env.VITE_VIEW_SIZE;
   const pageIndex = pIndex || 0;
-  console.log("=====userStore.query.queryString==", userStore.query.queryString)
 
   if(!userStore.query.queryString) {
     // Do not fetch the current user information again on infinite-scroll pages, as we already have it.
@@ -190,7 +189,7 @@ const fetchUsers = async (pSize?: any, pIndex?: any) => {
     currentUser.value = {};
   }
 
-  await userStore.fetchUsers({ pageSize, pageIndex });
+  await userStore.fetchUsers({ pageIndex, pageSize });
 };
 
 const fetchCurrentUser = async () => {

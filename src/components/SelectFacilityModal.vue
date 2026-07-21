@@ -79,7 +79,6 @@ const facilities = computed(() => utilStore.getFacilities);
 
 onMounted(async () => {
   await utilStore.fetchFacilities();
-  console.log("=====facilities.value===", facilities.value)
   filteredFacilities.value = facilities.value;
 });
 

@@ -232,7 +232,7 @@ export const useUserStore = defineStore("user", {
         json: {
           params: {
             rows : payload.pageSize,
-            start: payload.pageIndex * payload.pageSize,
+            start: payload.pageIndex ? payload.pageIndex * payload.pageSize : 0,
             qf: "partyId^100 username^50 firstName^30 lastName^30 groupName^30",
             defType: "edismax"
           },

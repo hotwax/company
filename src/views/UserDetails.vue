@@ -953,7 +953,6 @@ const selectSecurityGroup = async () => {
     component: SelectSecurityGroupModal,
     componentProps: { selectedSecurityGroups: userSecurityGroups.value }
   });
-  console.log("======1==selectedUser.value.userId==", selectedUser.value.userId)
 
   selectSecurityGroupModal.onDidDismiss().then(async (result) => {
     if(result.data && result.data.value) {
@@ -961,7 +960,6 @@ const selectSecurityGroup = async () => {
       const securityGroupsToRemove = result.data.value.securityGroupsToRemove;
 
       try {
-        console.log("========selectedUser.value.userId==", selectedUser.value.userId)
         const updateResponses = await Promise.allSettled(securityGroupsToRemove
           .map(async (payload: any) => await userStore.removeUserSecurityGroup({
             userGroupId: payload.userGroupId,
