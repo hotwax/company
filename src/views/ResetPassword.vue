@@ -61,7 +61,7 @@
             </ion-item>
 
             <div class="ion-padding">
-              <ion-button color="primary" expand="block" :disabled="isSubmitDisabled" @click="isSubmitting ? '' : submit()">
+              <ion-button color="primary" expand="block" :disabled="isSubmitDisabled" @click="submit()">
                 {{ translate("Reset password") }}
                 <ion-spinner v-if="isSubmitting" slot="end" name="crescent" />
                 <ion-icon v-else slot="end" :icon="arrowForwardOutline" />
@@ -101,24 +101,17 @@ const newPasswordVerifyInput = ref<any>(null);
 // requests here must not depend on cookies/auth state, so we build an explicit
 // baseURL and use the unauthenticated `client` instead of the app-wide `api()` helper.
 const getBaseURL = () => {
-  return maarg.startsWith("http")
-    ? (maarg.includes("/rest/s1") ? maarg : `${maarg}/rest/s1/`)
-    : `https://${maarg}.hotwax.io/rest/s1/`;
+  if (maarg.startsWith("http")) {
+    const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+    return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+  }
+  return `https://${maarg}.hotwax.io/rest/s1/`;
 };
 
 const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
 const markTouched = (inputRef: any) => {
   inputElement(inputRef)?.classList.add("ion-touched");
-};
-
-const validateNewPassword = () => {
-  const element = inputElement(newPasswordInput);
-  element?.classList.remove("ion-valid");
-  element?.classList.remove("ion-invalid");
-
-  if (newPassword.value === "") return;
-  element?.classList.add(commonUtil.isValidPassword(newPassword.value) ? "ion-valid" : "ion-invalid");
 };
 
 const validateNewPasswordVerify = () => {
@@ -130,8 +123,22 @@ const validateNewPasswordVerify = () => {
   element?.classList.add(newPassword.value === newPasswordVerify.value ? "ion-valid" : "ion-invalid");
 };
 
+const validateNewPassword = () => {
+  const element = inputElement(newPasswordInput);
+  element?.classList.remove("ion-valid");
+  element?.classList.remove("ion-invalid");
+
+  if (newPassword.value === "") return;
+  element?.classList.add(commonUtil.isValidPassword(newPassword.value) ? "ion-valid" : "ion-invalid");
+
+  if (newPasswordVerify.value !== "") {
+    validateNewPasswordVerify();
+  }
+};
+
 const isSubmitDisabled = computed(() => {
-  return !resetPassword.value ||
+  return isSubmitting.value ||
+    !resetPassword.value ||
     !newPassword.value ||
     !newPasswordVerify.value ||
     newPassword.value !== newPasswordVerify.value ||
