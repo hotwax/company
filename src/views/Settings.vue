@@ -50,7 +50,7 @@
           <ion-card-content>
             {{ $t('This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.') }}
           </ion-card-content>
-          <ion-button :disabled="!userStore.hasPermission('COMMERCEUSER_VIEW')" @click="openOms" fill="clear">
+          <ion-button v-if="!commonUtil.isMoqui()" :disabled="!userStore.hasPermission('COMMERCEUSER_VIEW')" @click="openOms" fill="clear">
             {{ $t('Go to OMS') }}
             <ion-icon slot="end" :icon="openOutline" />
           </ion-button>
