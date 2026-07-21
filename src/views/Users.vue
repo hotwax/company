@@ -40,72 +40,72 @@
     </ion-header>
 
     <ion-content id="filter-menu">
-          <ion-card v-if="currentUser.userId" class="list-item" @click="viewUserDetails(currentUser)">
-            <ion-item lines="none">
-              <ion-label>
-                {{ currentUser.userFullName }}
-                <p>{{ currentUser.username }}</p>
-                <p>{{ currentUser.emailAddress }}</p>
-                <ion-badge>{{ translate("Your user") }}</ion-badge>
-              </ion-label>
-            </ion-item>
+      <ion-card v-if="currentUser.userId" class="list-item" @click="viewUserDetails(currentUser)">
+        <ion-item lines="none">
+          <ion-label>
+            {{ currentUser.userFullName }}
+            <p>{{ currentUser.username }}</p>
+            <p>{{ currentUser.emailAddress }}</p>
+            <ion-badge>{{ translate("Your user") }}</ion-badge>
+          </ion-label>
+        </ion-item>
 
-            <div class="tablet">
-              <ion-label v-if="currentUser.createdStamp" class="ion-text-center">
-                {{ getDate(currentUser.createdStamp) }}
-                <p>{{ translate("created") }}</p>
-              </ion-label>
-              <ion-label v-else>
-                {{ '-' }}
-              </ion-label>
-            </div>
+        <div class="tablet">
+          <ion-label v-if="currentUser.createdStamp" class="ion-text-center">
+            {{ getDate(currentUser.createdStamp) }}
+            <p>{{ translate("created") }}</p>
+          </ion-label>
+          <ion-label v-else>
+            {{ '-' }}
+          </ion-label>
+        </div>
 
-            <ion-item lines="none">
-              <div slot="end" class="tablet">
-                <ion-chip v-if="currentUser.groups?.length" outline>
-                  <ion-label>{{ currentUser.groups.map((group: any) => group.description || group.userGroupId).join(', ') }}</ion-label>
-                </ion-chip>
-                <ion-label v-else>
-                  {{ '-' }}
-                </ion-label>
-              </div>
-            </ion-item>
-          </ion-card>
-          <div v-if="users?.length">
-            <div v-for="(user, index) in users" :key="index" class="list-item" @click="viewUserDetails(user)">
-              <ion-item lines="none">
-                <ion-label>
-                  {{ `${user.firstName} ${user.lastName ?? ''}`.trim() }}
-                  <p>{{ user.username }}</p>
-                  <p>{{ user.emailAddress }}</p>
-                </ion-label>
-              </ion-item>
-
-              <div class="tablet">
-                <ion-label v-if="user.createdDate" class="ion-text-center">
-                  {{ commonUtil.formatUtcDate(user.createdDate, currentTimeZoneId, 'dd LLL yyyy') }}
-                  <p>{{ translate("created") }}</p>
-                </ion-label>
-                <ion-label v-else>
-                  {{ '-' }}
-                </ion-label>
-              </div>
-
-              <div class="tablet">
-                <ion-chip v-if="user.userGroupIds?.length" outline>
-                  <ion-label>{{ user.userGroupIds.map((userGroupId: any) => getUserGroupDescription(userGroupId)).join(', ') }}</ion-label>
-                </ion-chip>
-                <ion-label v-else>
-                  {{ '-' }}
-                </ion-label>
-              </div>
-            </div>
+        <ion-item lines="none">
+          <div slot="end" class="tablet">
+            <ion-chip v-if="currentUser.groups?.length" outline>
+              <ion-label>{{ currentUser.groups.map((group: any) => group.description || group.userGroupId).join(', ') }}</ion-label>
+            </ion-chip>
+            <ion-label v-else>
+              {{ '-' }}
+            </ion-label>
           </div>
-          <div v-else>
-            <p class="ion-text-center">
-              {{ translate("No users found") }}
-            </p>
+        </ion-item>
+      </ion-card>
+      <div v-if="users?.length">
+        <div v-for="(user, index) in users" :key="index" class="list-item" @click="viewUserDetails(user)">
+          <ion-item lines="none">
+            <ion-label>
+              {{ `${user.firstName} ${user.lastName ?? ''}`.trim() }}
+              <p>{{ user.username }}</p>
+              <p>{{ user.emailAddress }}</p>
+            </ion-label>
+          </ion-item>
+
+          <div class="tablet">
+            <ion-label v-if="user.createdDate" class="ion-text-center">
+              {{ commonUtil.formatUtcDate(user.createdDate, currentTimeZoneId, 'dd LLL yyyy') }}
+              <p>{{ translate("created") }}</p>
+            </ion-label>
+            <ion-label v-else>
+              {{ '-' }}
+            </ion-label>
           </div>
+
+          <div class="tablet">
+            <ion-chip v-if="user.userGroupIds?.length" outline>
+              <ion-label>{{ user.userGroupIds.map((userGroupId: any) => getUserGroupDescription(userGroupId)).join(', ') }}</ion-label>
+            </ion-chip>
+            <ion-label v-else>
+              {{ '-' }}
+            </ion-label>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p class="ion-text-center">
+          {{ translate("No users found") }}
+        </p>
+      </div>
 
       <ion-fab slot="fixed" vertical="bottom" horizontal="end">
         <ion-fab-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN')" @click="createUser()">
