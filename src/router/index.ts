@@ -29,6 +29,7 @@ const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
 const Composer = () => import("@/views/agent/Composer.vue")
 const Workforce = () => import("@/views/agent/Workforce.vue")
+const ResetPassword = () => import("@/views/ResetPassword.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -93,6 +94,7 @@ const routes: Array<RouteRecordRaw> = [
     }
   },
   { path: "/login", name: "Login", component: Login },
+  { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },
