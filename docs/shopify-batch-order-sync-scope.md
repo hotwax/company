@@ -1,7 +1,7 @@
 # Shopify Batch Order Sync: Configuration and Monitoring Scope
 
 - Status: Draft for Expert User review
-- Version: 0.30
+- Version: 0.32
 - Date: 2026-07-22
 - Sign-off: Not signed off
 
@@ -322,6 +322,8 @@ These remain outside the current stated scope until explicitly added; they are n
 
 ## Change history
 
+- **0.32, 2026-07-22** — Added continuous localhost health checks and a mandatory dedicated subagent recovery lane for any required local service that goes down.
+- **0.31, 2026-07-22** — Required all Moqui changes to branch directly from the current main branch in each canonical component checkout, with no component worktrees.
 - **0.30, 2026-07-22** — Added mandatory HotWax Agency and code-review gates, Product Sync design-parity requirements, the intended local OMS environment, and a safe real-Shopify-plus-synthetic-order verification protocol.
 - **0.29, 2026-07-22** — Added a delivery-agent prompt with an evidence-driven implementation loop and a strict minimal-server-change gate.
 - **0.28, 2026-07-22** — Kept operators on the error list after retry submission and exposed the new SystemMessage ID as a link before refreshing monitoring.
@@ -373,7 +375,11 @@ Operating constraints
    - Do not restart or reconfigure an existing OMS without first proving it is necessary and coordinating with its owner.
    - Change Moqui components only. Never commit runtime files, credentials, generated data, databases, journals, logs, or environment configuration.
 
-2. Work in isolated, correctly based worktrees. Create a Company feature branch from the intended current base. Create a backend component worktree only after the server-change gate below proves that a backend change is required. Do not implement in a dirty canonical checkout.
+2. Use repository placement appropriate to each codebase:
+   - Company: use an isolated, correctly based Company worktree and create its feature branch from the intended current base.
+   - Moqui components: do **not** create or use component worktrees. For every affected component, use its canonical checkout under the active Moqui runtime, fetch origin, verify the latest `origin/main`, update the local `main` by fast-forward only, and create the feature branch directly from that current main in the canonical component checkout. Repeat this independently for each component repository touched.
+   - Before changing a canonical component, verify its branch, status, upstream, divergence, active runtime relationship, and HEAD. If it is dirty, diverged, or carrying someone else's active work, do not clean, stash, move, switch, or overwrite it and do not fall back to a worktree; coordinate with Aditya and resume only when the canonical checkout can safely branch from current main.
+   - Keep every component commit in its owning component repository. Never place component source changes in the parent Moqui framework repository or runtime configuration. The canonical component path and feature branch are the durable source of truth for this delivery.
 
 3. Do not use mocked or invented HotWax APIs as delivery proof. Focused unit tests may mock transport boundaries, but final behavior must be exercised through the real available Company app and real backend. Never expose secrets in logs, screenshots, fixtures, API responses, commits, issues, or PRs.
 
@@ -403,10 +409,19 @@ Execution environment
 - Host: Aditya's local macOS development machine.
 - Company checkout: `/Users/adityapatel/Documents/GitHub/ionic-apps/accxui/apps/company`; implementation must use an isolated Company worktree and a separately verified localhost port.
 - Moqui framework: `/Users/adityapatel/Documents/GitHub/moqui/maarg-oms/moqui-framework`.
-- Shopify connector component: `/Users/adityapatel/Documents/GitHub/moqui/maarg-oms/moqui-framework/runtime/component/shopify-connector`.
+- Shopify connector component: `/Users/adityapatel/Documents/GitHub/moqui/maarg-oms/moqui-framework/runtime/component/shopify-connector`. Use this canonical component checkout, branch directly from its freshly verified current main, and do not create a Shopify connector worktree. Apply the same rule to every additional Moqui component touched.
 - Intended local OMS REST base: `http://localhost:8080/rest/s1`. A known working local test account is available from Aditya at execution time. Authenticate through a secure session or runtime-only secret input; never copy its username/password into tracked files, prompts, shell history, logs, screenshots, issues, or PRs.
 - At task start, verify the port-8080 listener, `/admin/checkLoginOptions`, authenticated session, database, active component/worktree links, and selected Shopify shop/remote. A previously working environment is not proof that it is running now. If 8080 is unavailable, inspect and coordinate the intended local runtime; do not silently substitute a remote OMS, start a second conflicting runtime, bypass a Bitronix lock, or alter runtime configuration.
 - The current Product Sync experience is the visual/interaction reference. Verify which exact Company checkout serves it before relying on localhost evidence.
+
+Localhost recovery is an active responsibility throughout delivery, not a passive environmental blocker:
+
+1. Maintain a runtime register for every required local service, including expected checkout/branch, command, port, PID, backend/session, health URL, and last successful check. Health-check the Company app, OMS on 8080, and every other required local dependency before each vertical slice and during browser verification.
+2. If any required localhost stops listening, loses authentication/backend connectivity, serves the wrong checkout, or becomes unhealthy, immediately assign a dedicated runtime-recovery subagent. Give it the exact expected runtime register entry, current process/port evidence, recent logs, active work constraints, and the requirement to restore that specific local service.
+3. The recovery subagent must get hands-on: inspect the listener, owning process, checkout/branch, launch command, logs, environment, backend reachability, session, and dependency health; identify the cause; and restore the intended service. It must preserve dirty work and active runtimes, avoid duplicate listeners, never bypass locks, never substitute mocks or a remote environment, and never commit runtime/configuration/credential changes. If recovery requires destructive action, a restart that affects another task, new credentials, or broader authority, it must stop and request approval.
+4. The primary delivery agent should continue safe work that does not depend on the failed service while the recovery subagent works. Do not let runtime repair silently expand product scope or application/server code changes.
+5. A subagent's success report is not enough. The primary agent must independently verify the expected PID/listener, exact checkout and branch, health endpoint, authentication/backend session, browser reachability, and previously failing scenario. Then rerun the affected slice's tests and live verification before returning its ledger rows to Proven.
+6. Record every outage, cause, repair, verification, and elapsed delivery impact in the ledger and final handoff. If recovery cannot safely complete, document the concrete external blocker and the recovery attempts rather than claiming the feature is verified.
 
 Real-order and synthetic-variant verification
 
@@ -461,16 +476,17 @@ F. Permission enforcement, responsive/accessibility behavior, error states, and 
 For each slice, repeat this loop until its ledger rows are Proven:
 
 1. Establish the baseline and reproduce the missing behavior.
-2. Add or update a focused automated test that expresses the required behavior.
-3. Implement the smallest change at the lowest appropriate layer.
-4. Run focused tests, type checking, linting, and build checks relevant to the changed files.
-5. Start or reuse the correct Company worktree server and verify the slice in the browser against the real available backend.
-6. Inspect browser console and network activity. Reconcile displayed IDs, counts, states, and permissions with the underlying SystemMessage, ServiceJob, DataManager, Shopify mapping, and audit records.
-7. Exercise success, loading, empty, partial-failure, failure, retry, refresh, paused, unauthorized, and narrow/mobile states applicable to the slice.
-8. Run regression checks for Product Sync and Shopify connection navigation wherever shared code changed.
-9. Run the required HotWax Agency and code-review gates for the slice; add every actionable finding to the ledger and resolve it.
-10. Review the diff for accidental API expansion, credential exposure, cross-shop leakage, unbounded queries, duplicated code, Product Sync design drift, or unrelated edits.
-11. Update the ledger with concrete evidence. If any check fails, classify the failure as client logic, contract/data, permissions, environment, product alignment, review finding, or test defect; fix the smallest responsible layer and restart the loop at step 2.
+2. Verify every required localhost against the runtime register; if one is unhealthy, dispatch the dedicated recovery subagent and independently verify its repair before relying on that service.
+3. Add or update a focused automated test that expresses the required behavior.
+4. Implement the smallest change at the lowest appropriate layer.
+5. Run focused tests, type checking, linting, and build checks relevant to the changed files.
+6. Start or reuse the correct Company worktree server and verify the slice in the browser against the real available backend.
+7. Inspect browser console and network activity. Reconcile displayed IDs, counts, states, and permissions with the underlying SystemMessage, ServiceJob, DataManager, Shopify mapping, and audit records.
+8. Exercise success, loading, empty, partial-failure, failure, retry, refresh, paused, unauthorized, and narrow/mobile states applicable to the slice.
+9. Run regression checks for Product Sync and Shopify connection navigation wherever shared code changed.
+10. Run the required HotWax Agency and code-review gates for the slice; add every actionable finding to the ledger and resolve it.
+11. Review the diff for accidental API expansion, credential exposure, cross-shop leakage, unbounded queries, duplicated code, Product Sync design drift, or unrelated edits.
+12. Update the ledger with concrete evidence. If any check fails, classify the failure as client logic, contract/data, permissions, environment, product alignment, review finding, or test defect; fix the smallest responsible layer and restart the loop at step 2.
 
 Do not mark a ledger row Proven from source inspection, a build, or a mocked test when the behavior is visible in the UI. Do not claim a percentage-complete result. The loop ends only when every in-scope row is Proven or a specific external blocker is demonstrated with the exact failed command/request and the safe work already exhausted.
 
@@ -505,8 +521,9 @@ Report:
 - HotWax Agency product-alignment verdicts and code-review verdicts, including how every actionable finding was resolved;
 - Product Sync design-parity evidence, including the Shopify connection-details card;
 - real-order mega-query evidence and synthetic-variant local-import evidence, clearly separated;
+- runtime register, any localhost outages, recovery-subagent actions, and the primary agent's independent recovery proof;
 - remaining environmental blockers or uncertainty;
-- worktree paths, running localhost URLs, and cleanup that still requires authorization.
+- Company worktree path, canonical Moqui component paths and branches, running localhost URLs, and cleanup that still requires authorization.
 
 Stay in the delivery loop until all in-scope criteria are proven or a concrete external blocker makes further safe progress impossible.
 ```
