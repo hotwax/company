@@ -364,7 +364,7 @@ const productSyncMigrationNotice = computed(() => {
     return {
       state: "access-scope-update-required",
       label: translate("Update Shopify access scope"),
-      detail: translate("This Shopify connection still uses SHOP_RW_ACCESS. Update the remote configuration to SHOP_READ_WRITE_ACCESS before starting the new product sync."),
+      detail: translate("This Shopify connection still uses the deprecated SHOP_READ_WRITE_ACCESS scope. Update the remote configuration to SHOP_RW_ACCESS before starting the new product sync."),
       badge: translate("Update required"),
       color: "warning",
       action: "setup"

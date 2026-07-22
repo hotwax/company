@@ -1014,7 +1014,7 @@ const shopifyAccessDetail = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses a deprecated access scope enum. Update the remote configuration to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (shopifyAccessState.value.status === "read-only") {
@@ -1031,7 +1031,7 @@ const shopifyAccessBlockingMessage = computed(() => {
   }
 
   if (shopifyAccessState.value.status === "update-required") {
-    return translate("This Shopify connection uses deprecated access scope SHOP_RW_ACCESS. Update it to SHOP_READ_WRITE_ACCESS before starting product sync.");
+    return translate("This Shopify connection uses deprecated access scope SHOP_READ_WRITE_ACCESS. Update it to SHOP_RW_ACCESS before starting product sync.");
   }
 
   if (!hasShopifyWriteAccess.value) {

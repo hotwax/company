@@ -13,7 +13,10 @@ const SHOPIFY_JOB_SPECS = [
 ]
 
 const ORDER_DATA_MANAGER_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "BULK_ORDER_HISTORY"]
-const SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS = ["SHOP_READ_WRITE_ACCESS", "SHOP_RW_ACCESS"]
+// SHOP_RW_ACCESS is the official read-write access scope. The full-form SHOP_READ_WRITE_ACCESS
+// is deprecated and not enforced — a remote still on it is treated as needing a fix (force-replace
+// to SHOP_RW_ACCESS via the scope-fix action), not as already having read-write access.
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_IDS = ["SHOP_RW_ACCESS"]
 
 function valueText(value: any) {
   return value == null ? "" : String(value).trim()

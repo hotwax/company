@@ -252,7 +252,7 @@ shipping a parallel endpoint.
 
 ## 7. Product stores (existing endpoint, no change)
 
-### `GET /oms/productStores`
+### `GET /admin/productStores`
 
 Already used elsewhere in the app. The Klaviyo email events screen reuses the
 existing `productStore/getProductStores` Vuex getter and dispatches
