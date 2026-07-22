@@ -387,7 +387,7 @@ function buildShopifyJobStatusFromRecords(payload: {
       `job.${jobStatus.key}`,
       `${jobStatus.label} job`,
       jobStatus.ready,
-      jobStatus.ready ? `Ready through job ${jobStatus.selectedJobName}.` : `Configure ${jobStatus.expectedJobName || jobStatus.templateJobName}.`
+      jobStatus.ready ? jobStatus.selectedJobName : `Configure ${jobStatus.expectedJobName || jobStatus.templateJobName}.`
     ))
   })
 
@@ -578,6 +578,50 @@ export const useProductStore = defineStore('productStore', {
       }
       this.currentFacilities = facilities
       return facilities
+    },
+
+    // All non-virtual facilities in the instance (no externalId filter, unlike util.fetchFacilities),
+    // used to associate pre-existing facilities with a product store during onboarding. Returns the
+    // list without mutating store state.
+    async fetchAllFacilities() {
+      let facilities: any[] = [], pageIndex = 0, resp: any
+      try {
+        do {
+          resp = await api({
+            url: "admin/facilities",
+            method: "get",
+            params: {
+              facilityTypeId: "VIRTUAL_FACILITY",
+              facilityTypeId_not: "Y",
+              parentTypeId: "VIRTUAL_FACILITY",
+              parentTypeId_not: "Y",
+              pageSize: 100,
+              pageIndex
+            }
+          })
+          if (commonUtil.hasError(resp)) throw resp.data
+          facilities = facilities.concat(resp.data || [])
+          pageIndex++
+        } while ((resp.data?.length || 0) >= 100)
+      } catch (error: any) {
+        logger.error(error)
+      }
+      return facilities
+    },
+
+    // Bulk-create facilities from a CSV via the existing IMP_FACILITY DataManager config
+    // (importServiceName=facilityDataSetup). Runs asynchronously server-side; returns the
+    // DataManagerLog id. The created facilities are NOT auto-associated to a product store
+    // (facilityDataSetup has no productStoreId) — associate them afterwards.
+    async uploadFacilityImportCsv(file: File) {
+      const formData = new FormData()
+      formData.append("contentFile", file)
+      formData.append("configId", "IMP_FACILITY")
+      return api({
+        url: "admin/uploadDataManagerFile",
+        method: "post",
+        data: formData
+      })
     },
 
     async associateProductStoreFacility(payload: {

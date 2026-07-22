@@ -4,7 +4,7 @@
       <ion-toolbar>
         <ion-back-button default-href="/product-store" slot="start" />
         <ion-title>{{ translate("Create product store") }}</ion-title>
-        <ion-progress-bar :value="onboardingStore.progressValue" />
+        <ion-progress-bar :value="progressBarValue" />
       </ion-toolbar>
     </ion-header>
 
@@ -15,7 +15,7 @@
             <ion-list-header>
               <ion-label>
                 {{ translate("Progress") }}
-                <p>{{ onboardingStore.completedCount }} {{ translate("of") }} {{ onboardingStore.totalStepCount }} {{ translate("steps complete") }}</p>
+                <p>{{ progressCompletedCount }} {{ translate("of") }} {{ progressTotalCount }} {{ translate("steps complete") }}</p>
               </ion-label>
             </ion-list-header>
           </ion-list>
@@ -24,7 +24,7 @@
             :groups="PRODUCT_STORE_ONBOARDING_GROUPS"
             :steps="PRODUCT_STORE_ONBOARDING_STEPS"
             :current-step-id="onboardingStore.currentStepId"
-            :completed-step-ids="onboardingStore.completedStepIds"
+            :completed-step-ids="allCompletedStepIds"
             :in-progress-step-ids="inProgressStepIds"
             @select-step="onboardingStore.selectStep"
           />
@@ -330,7 +330,6 @@
                     {{ mapping.label }}
                     <p>{{ mapping.description }}</p>
                   </ion-label>
-                  <ion-note slot="end">{{ mapping.count }}</ion-note>
                   <ion-badge :color="mapping.count ? 'success' : 'warning'" slot="end">
                     {{ mapping.count ? translate("Ready") : translate("Gap") }}
                   </ion-badge>
@@ -490,22 +489,51 @@
                   {{ facilityCount ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
-              <ion-radio-group class="radio-group"
-                :value="onboardingStore.draft.facilityMode"
-                @ionChange="onboardingStore.updateDraftField('facilityMode', String($event.detail.value || ''))"
-              >
-                <ion-radio class="radio-option" justify="start" label-placement="end" value="One store">{{ translate("One store") }}</ion-radio>
-                <ion-radio class="radio-option" justify="start" label-placement="end" value="Stores and warehouses">{{ translate("Stores and warehouses") }}</ion-radio>
-                <ion-radio class="radio-option" justify="start" label-placement="end" value="Not sure yet">{{ translate("Not sure yet") }}</ion-radio>
-              </ion-radio-group>
-              <ion-item>
-                <ion-icon slot="start" :icon="storefrontOutline" />
+              <ion-item v-if="selectedProductStoreId">
+                <ion-icon slot="start" :icon="gitNetworkOutline" />
                 <ion-label>
-                  {{ translate("HotWax facilities") }}
-                  <p>{{ facilityCount }} {{ translate("facilities available for setup") }}</p>
+                  {{ translate("Add existing facilities") }}
+                  <p>{{ translate("Associate facilities that already exist in this instance with this product store.") }}</p>
                 </ion-label>
-                <ion-note slot="end">{{ facilityCount }}</ion-note>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-associate-existing-facilities"
+                  :aria-label="translate('Add existing facilities')"
+                  @click="openAssociateFacilities()"
+                >
+                  <ion-icon slot="icon-only" :icon="gitNetworkOutline" />
+                </ion-button>
               </ion-item>
+              <ion-item v-if="selectedProductStoreId">
+                <ion-icon slot="start" :icon="cloudUploadOutline" />
+                <ion-label>
+                  {{ translate("Import from CSV") }}
+                  <p>{{ translate("Bulk-create facilities by uploading a CSV file.") }}</p>
+                </ion-label>
+                <ion-button slot="end" fill="clear" @click="downloadFacilityCsvTemplate()">
+                  <ion-icon slot="start" :icon="documentTextOutline" />
+                  {{ translate("Template") }}
+                </ion-button>
+                <ion-button
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-import-facilities-csv"
+                  :aria-label="translate('Import from CSV')"
+                  :disabled="isUploadingFacilityCsv"
+                  @click="triggerFacilityCsvUpload()"
+                >
+                  <ion-spinner v-if="isUploadingFacilityCsv" name="crescent" />
+                  <ion-icon v-else slot="icon-only" :icon="cloudUploadOutline" />
+                </ion-button>
+              </ion-item>
+              <input
+                ref="facilityCsvInput"
+                type="file"
+                accept=".csv,text/csv"
+                style="display: none"
+                @change="handleFacilityCsvSelected"
+              />
               <ion-item v-if="shouldCreateStarterFacility">
                 <ion-icon slot="start" :icon="storefrontOutline" />
                 <ion-label>
@@ -556,17 +584,17 @@
                   {{ translate("Shopify location mapping") }}
                   <p>{{ translate("Each active Shopify inventory location should point to the matching HotWax facility.") }}</p>
                 </ion-label>
-                <ion-badge :color="mappedShopifyLocationCount ? 'success' : 'warning'" slot="end">
-                  {{ mappedShopifyLocationCount ? translate("Ready") : translate("Gap") }}
+                <ion-badge :color="facilitiesWithShopifyLocationCount ? 'success' : 'warning'" slot="end">
+                  {{ facilitiesWithShopifyLocationCount ? translate("Ready") : translate("Gap") }}
                 </ion-badge>
               </ion-item>
               <ion-item>
                 <ion-icon slot="start" :icon="gitNetworkOutline" />
                 <ion-label>
                   {{ translate("Mapped facilities") }}
-                  <p>{{ mappedShopifyLocationCount }} {{ translate("of") }} {{ facilityCount }} {{ translate("facilities have Shopify locations") }}</p>
+                  <p>{{ facilitiesWithShopifyLocationCount }} {{ translate("of") }} {{ facilityCount }} {{ translate("facilities have Shopify locations") }}</p>
                 </ion-label>
-                <ion-note slot="end">{{ mappedShopifyLocationCount }}</ion-note>
+                <ion-note slot="end">{{ facilitiesWithShopifyLocationCount }}</ion-note>
               </ion-item>
               <ion-item v-if="linkedShopifyShop">
                 <ion-label>
@@ -613,36 +641,6 @@
                 </ion-toggle>
               </ion-item>
               <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.showSystemicInventory === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('showSystemicInventory', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Show systemic inventory") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Pre-order computation") }}</ion-label>
-              </ion-list-header>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.holdPreorderPhysicalInventory === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('holdPreorderPhysicalInventory', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Hold pre-order physical inventory") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-select class="form-field" fill="outline" label-placement="stacked"
-                interface="popover"
-                :value="onboardingStore.draft.preorderFacilityGroupId"
-                @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
-              >
-                <div slot="label">{{ translate("Pre-order group") }}</div>
-                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
-                  {{ group.facilityGroupName || group.facilityGroupId }}
-                </ion-select-option>
-              </ion-select>
-              <ion-item>
                 <ion-label>
                   {{ translate("Initial inventory load") }}
                   <p>{{ inventoryResetDescription }}</p>
@@ -669,6 +667,14 @@
                   <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
                 </ion-button>
               </ion-item>
+              <ion-item v-if="shouldSetupShopifyInventoryReset && productCoveragePercent !== null && productCoveragePercent < PRODUCT_COVERAGE_THRESHOLD">
+                <ion-toggle
+                  :checked="inventoryRiskAcknowledged"
+                  @ionChange="inventoryRiskAcknowledged = $event.detail.checked"
+                >
+                  {{ translate("Load inventory despite low product coverage") }}
+                </ion-toggle>
+              </ion-item>
             </ion-card-content>
 
             <ion-card-content v-else-if="currentStep.id === 'orders'">
@@ -685,8 +691,7 @@
                 @ionChange="onboardingStore.updateDraftField('orderImportMode', String($event.detail.value || ''))"
               >
                 <div slot="label">{{ translate("Order import mode") }}</div>
-                <ion-select-option value="Realtime and fallback batch">{{ translate("Realtime and fallback batch") }}</ion-select-option>
-                <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
+                <ion-select-option value="Fallback batch only">{{ translate("Periodic sync") }}</ion-select-option>
               </ion-select>
               <ion-input class="form-field" fill="outline"
                 type="date"
@@ -724,6 +729,21 @@
                   <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
                 </ion-button>
               </ion-item>
+              <ion-item v-if="orderImportProgressVisible" lines="none">
+                <ion-icon slot="start" :icon="productImportStatusIcon(orderImportProgressBadgeColor)" :color="orderImportProgressBadgeColor" />
+                <ion-label>
+                  {{ translate("Order history import progress") }}
+                  <p>{{ orderImportHeadline }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="orderImportProgressBadgeColor">{{ orderImportProgressLabel }}</ion-badge>
+              </ion-item>
+              <ion-progress-bar v-if="orderImportProgressVisible && isOrderImportInProgress" :value="orderImportBulkProgressValue" />
+              <div v-if="orderImportProgressVisible && canRetryOrderImport" class="ion-padding-start ion-padding-top">
+                <ion-button size="small" @click="retryOrderImport()">
+                  <ion-icon slot="start" :icon="syncOutline" />
+                  {{ translate("Retry order import") }}
+                </ion-button>
+              </div>
               <ion-input v-if="shouldConfigureRealtimeOrderImport" class="form-field" fill="outline"
                 :value="onboardingStore.draft.orderSqsQueueName"
                 @ionInput="onboardingStore.updateDraftField('orderSqsQueueName', String($event.detail.value || ''))"
@@ -748,7 +768,18 @@
                   {{ translate(requirement.label) }}
                   <p>{{ requirement.message }}</p>
                 </ion-label>
-                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
+                <ion-button
+                  v-if="!requirement.complete && linkedShopifyShopId"
+                  slot="end"
+                  fill="clear"
+                  data-testid="onboarding-configure-order-jobs"
+                  :disabled="isSettingUpOrderJobs"
+                  @click="configureOrderImportJobs()"
+                >
+                  <ion-spinner v-if="isSettingUpOrderJobs" name="crescent" />
+                  <span v-else>{{ translate("Configure") }}</span>
+                </ion-button>
+                <ion-badge v-else :color="getRequirementBadgeColor(requirement)" slot="end">
                   {{ getRequirementStatusLabel(requirement) }}
                 </ion-badge>
               </ion-item>
@@ -883,17 +914,13 @@
               <ion-list-header>
                 <ion-label>{{ translate("Required setup") }}</ion-label>
               </ion-list-header>
-              <ion-item v-for="item in requiredReadinessItems" :key="item.id">
-                <ion-label>
-                  {{ item.label }}
-                  <p>{{ item.detail }}</p>
-                </ion-label>
-                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Workflow settings") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-for="item in workflowReadinessItems" :key="item.id">
+              <ion-item
+                v-for="item in requiredReadinessItems"
+                :key="item.id"
+                :button="!!READINESS_STEP_BY_ID[item.id]"
+                :detail="!!READINESS_STEP_BY_ID[item.id]"
+                @click="goToReadinessStep(item.id)"
+              >
                 <ion-label>
                   {{ item.label }}
                   <p>{{ item.detail }}</p>
@@ -911,6 +938,39 @@
                 <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
               </ion-item>
             </ion-list>
+
+            <ion-card-content v-else-if="currentStep.id === 'preorders'">
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.selectedWorkflows.includes('preorders')"
+                  @ionChange="onboardingStore.toggleWorkflow('preorders', $event.detail.checked)"
+                >
+                  {{ translate("Enable workflow") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-list-header>
+                <ion-label>{{ translate("Pre-order computation") }}</ion-label>
+              </ion-list-header>
+              <ion-item>
+                <ion-toggle
+                  :checked="onboardingStore.draft.holdPreorderPhysicalInventory === 'true'"
+                  @ionChange="onboardingStore.updateDraftField('holdPreorderPhysicalInventory', $event.detail.checked ? 'true' : 'false')"
+                >
+                  {{ translate("Hold pre-order physical inventory") }}
+                </ion-toggle>
+              </ion-item>
+              <ion-select class="form-field" fill="outline" label-placement="stacked"
+                interface="popover"
+                :value="onboardingStore.draft.preorderFacilityGroupId"
+                @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
+              >
+                <div slot="label">{{ translate("Pre-order group") }}</div>
+                <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
+                <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
+                  {{ group.facilityGroupName || group.facilityGroupId }}
+                </ion-select-option>
+              </ion-select>
+            </ion-card-content>
 
             <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
               <ion-item>
@@ -1007,12 +1067,13 @@ import {
   onIonViewWillEnter
 } from "@ionic/vue"
 import { computed, ref, watch } from "vue"
-import { alertCircleOutline, arrowBackOutline, arrowForwardOutline, checkmarkCircleOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, pulseOutline, radioButtonOffOutline, storefrontOutline, syncOutline, timeOutline } from "ionicons/icons"
+import { alertCircleOutline, arrowBackOutline, arrowForwardOutline, checkmarkCircleOutline, cloudDownloadOutline, cloudUploadOutline, copyOutline, documentTextOutline, gitNetworkOutline, keyOutline, openOutline, pulseOutline, radioButtonOffOutline, storefrontOutline, syncOutline, timeOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
 import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue"
 import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
+import AssociateExistingFacilitiesModal from "@/components/AssociateExistingFacilitiesModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
-import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
+import { PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS, PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
 import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
@@ -1053,6 +1114,9 @@ const isQueueingOrderHistoryImport = ref(false)
 const isSettingUpRealtimeOrderJobs = ref(false)
 const isSavingRoutingDefaults = ref(false)
 const isSavingPickupSettings = ref(false)
+const isSavingPreorderSettings = ref(false)
+const isUploadingFacilityCsv = ref(false)
+const facilityCsvInput = ref<HTMLInputElement | null>(null)
 const isSavingShopifyStarterMappings = ref(false)
 const isLoadingSetupData = ref(false)
 const isLoadingProductImportProgress = ref(false)
@@ -1062,6 +1126,13 @@ const shopifyHandoffToken = ref("")
 const shopifyHandoffTokenExpirationTime = ref(0)
 const productImportProgressState = ref<any>({})
 const omsProductCount = ref(0)
+// Inventory import is gated on product-reconciliation coverage (OMS products vs the live Shopify
+// catalog) rather than on the full product import finishing. shopifyCatalogProductCount/loaded are
+// populated from the live catalog count; inventoryRiskAcknowledged is the manual override.
+const shopifyCatalogProductCount = ref(0)
+const inventoryCoverageLoaded = ref(false)
+const inventoryRiskAcknowledged = ref(false)
+const PRODUCT_COVERAGE_THRESHOLD = 80
 // Bounds how many extra polls we keep running after the sync reports "completed" while waiting
 // for imported products to land in OMS (the catalog write can lag the sync's completed state).
 let productImportPostCompletePolls = 0
@@ -1071,6 +1142,114 @@ const awaitingProductImportRerun = ref(false)
 let productImportRetryBaselineId = ""
 let productImportRerunWaitPolls = 0
 const productImportRun = ref<any>(null)
+
+// Order-history import progress (mirrors the product-import progress). Targets the BulkOrderHistory
+// run the Orders step triggers via queueInitialOrderHistoryImport; realtime SQS sync has no run.
+const isLoadingOrderImportProgress = ref(false)
+const orderImportProgressState = ref<any>({})
+const orderImportRun = ref<any>(null)
+const awaitingOrderImportRerun = ref(false)
+let orderImportRetryBaselineId = ""
+let orderImportRerunWaitPolls = 0
+let orderImportProgressPoll: number | undefined
+const { fetchSyncRun: fetchOrderImportSyncRun } = useShopifyProductSyncRun()
+
+const orderImportProgressStatus = computed(() => {
+  if (awaitingOrderImportRerun.value && !orderImportProgressState.value?.systemMessageId) return "queued"
+  if (!orderImportProgressState.value?.systemMessageId && !orderImportRun.value?.systemMessageId) return ""
+  return normalizeProductSyncStatus({
+    status: orderImportProgressState.value?.status,
+    systemMessageState: orderImportProgressState.value?.systemMessageState || orderImportRun.value?.systemMessage?.statusId,
+    logStatusId: orderImportProgressState.value?.logStatusId || orderImportRun.value?.mdmLog?.statusId,
+    logId: orderImportProgressState.value?.logId || orderImportRun.value?.mdmLog?.id
+  })
+})
+const orderImportProgressVisible = computed(() => {
+  return !!linkedShopifyShopId.value && (awaitingOrderImportRerun.value
+    || !!orderImportProgressState.value?.systemMessageId
+    || !!orderImportRun.value?.systemMessageId
+    || isLoadingOrderImportProgress.value)
+})
+const isOrderImportInProgress = computed(() =>
+  ["queued", "sent", "running", "importing", "waiting"].includes(orderImportProgressStatus.value))
+const orderImportCompletedOutcome = computed(() => {
+  const mdm = orderImportRun.value?.mdmLog || {}
+  const total = Number(mdm.totalRecordCount || 0)
+  const failed = Number(mdm.failedRecordCount || 0)
+  if (failed === 0) return { key: "complete", label: translate("Complete"), color: "success" }
+  if (total > 0 && failed / total > 0.8) return { key: "failed", label: translate("Failed"), color: "danger" }
+  return { key: "partial", label: translate("Partial failure"), color: "warning" }
+})
+const orderImportProgressLabel = computed(() => {
+  if (isLoadingOrderImportProgress.value && !orderImportProgressStatus.value) return translate("Checking")
+  switch (orderImportProgressStatus.value) {
+    case "completed": return orderImportCompletedOutcome.value.label
+    case "error": return translate("Error")
+    case "cancelled": return translate("Canceled")
+    case "importing": return translate("Importing")
+    case "running": return translate("Running")
+    case "sent": return translate("Sent")
+    case "queued": return translate("Queued")
+    default: return translate("Pending")
+  }
+})
+const orderImportProgressBadgeColor = computed(() => {
+  switch (orderImportProgressStatus.value) {
+    case "completed": return orderImportCompletedOutcome.value.color
+    case "error":
+    case "cancelled": return "danger"
+    case "queued": return "warning"
+    case "running":
+    case "importing":
+    case "sent": return "primary"
+    default: return isLoadingOrderImportProgress.value ? "primary" : "medium"
+  }
+})
+const orderImportBulkProgress = computed(() =>
+  getProductSyncBulkOperationProgress(
+    orderImportRun.value?.bulkOperation?.objectCount ?? orderImportProgressState.value?.objectCount ?? 0, 0))
+const orderImportBulkProgressValue = computed(() => {
+  const status = String(orderImportRun.value?.bulkOperation?.status || "").toLowerCase()
+  if (status === "complete" || status === "completed") return 1
+  return orderImportBulkProgress.value.value
+})
+const orderImportHeadline = computed(() => {
+  const mdm = orderImportRun.value?.mdmLog || {}
+  const failed = Number(mdm.failedRecordCount || 0)
+  const totalRecords = Number(mdm.totalRecordCount || 0)
+  const objects = orderImportBulkProgress.value.processedCount
+  switch (orderImportProgressStatus.value) {
+    case "queued":
+    case "sent":
+      return translate("Requesting order history export from Shopify…")
+    case "running":
+      return objects > 0
+        ? `${objects} ${translate("orders exported from Shopify so far…")}`
+        : translate("Exporting order history from Shopify…")
+    case "importing":
+      return totalRecords > 0
+        ? `${translate("Importing")} ${totalRecords} ${translate("orders into HotWax…")}`
+        : translate("Importing orders into HotWax…")
+    case "completed":
+      if (failed > 0) return `${failed} ${translate("of")} ${totalRecords} ${translate("orders failed to import")}`
+      return totalRecords > 0
+        ? `${totalRecords} ${translate("orders imported")}`
+        : translate("Order history import complete.")
+    case "error":
+      return String(orderImportRun.value?.systemMessage?.errorText || "").trim() || translate("Order history import failed.")
+    case "cancelled":
+      return translate("Order history import was cancelled.")
+    default:
+      return translate("Checking order import status…")
+  }
+})
+const canRetryOrderImport = computed(() => {
+  if (!linkedShopifyShopId.value || isOrderImportInProgress.value) return false
+  const status = orderImportProgressStatus.value
+  if (status === "error" || status === "cancelled") return true
+  if (status === "completed") return Number(orderImportRun.value?.mdmLog?.failedRecordCount || 0) > 0
+  return false
+})
 const shopifyLocationMappings = ref<any[]>([])
 const shopifyMappingCounts = ref<Record<string, number>>({
   productTypes: 0,
@@ -1081,7 +1260,18 @@ const shopifyMappingCounts = ref<Record<string, number>>({
 })
 
 const currentStep = computed(() => onboardingStore.currentStep)
-const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
+const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.length - 1)
+// Progress reflects real (derived + clicked) completion over the active steps only — workflow
+// steps are deferred and excluded from the count.
+const progressTotalCount = computed(() => PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.length)
+const progressCompletedCount = computed(() =>
+  allCompletedStepIds.value.filter((id) => PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.includes(id)).length
+)
+// Header progress bar mirrors the "X of N steps complete" text (derived completion over active
+// steps), rather than the store's click-through-only count.
+const progressBarValue = computed(() =>
+  progressTotalCount.value ? progressCompletedCount.value / progressTotalCount.value : 0
+)
 const routeProductStoreId = computed(() => props.productStoreId || "")
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
@@ -1103,6 +1293,7 @@ const isPrimaryActionLoading = computed(() => {
     || isSettingUpRealtimeOrderJobs.value
     || isSavingRoutingDefaults.value
     || isSavingPickupSettings.value
+    || isSavingPreorderSettings.value
     || isSavingShopifyStarterMappings.value
 })
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
@@ -1148,9 +1339,11 @@ const shopifyConnectionRequirements = computed(() => {
   })
 })
 const orderJobRequirements = computed(() => {
-  return shopifyJobRequirements.value.filter((requirement: any) => {
-    return ["job.orderImport", "job.orderHistory", "job.realtimeOrderImport", "dataManager.orderConfigs"].includes(requirement.id)
-  })
+  const ids = ["job.orderImport", "job.orderHistory", "dataManager.orderConfigs"]
+  // The realtime SQS import only applies in realtime order mode; in periodic-sync mode it isn't
+  // configured, so excluding it keeps it from showing as an unresolvable order-import gap.
+  if (shouldConfigureRealtimeOrderImport.value) ids.push("job.realtimeOrderImport")
+  return shopifyJobRequirements.value.filter((requirement: any) => ids.includes(requirement.id))
 })
 const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
 function formatDateInputValue(date: Date) {
@@ -1192,7 +1385,15 @@ const activeProductStoreShipmentMethods = computed(() => {
     return (!method.fromDate || method.fromDate <= now) && (!method.thruDate || method.thruDate > now)
   })
 })
-const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
+const mappedFacilityIds = computed(() => new Set(
+  shopifyLocationMappings.value.map((m: any) => String(m.facilityId)).filter((id: string) => !!id && id !== "undefined")
+))
+// Facilities of THIS product store that point to a Shopify location. Scoped to the store's own
+// facilities so the count can never exceed facilityCount — the previous shop-wide mapping count
+// produced nonsense like "15 of 0" when the store had no associated facilities yet.
+const facilitiesWithShopifyLocationCount = computed(() =>
+  productStoreStore.currentFacilities.filter((f: any) => mappedFacilityIds.value.has(String(f.facilityId))).length
+)
 const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
 // Primary/Secondary identifiers are OMS GoodIdentificationType ids (e.g. SKU, UPCA) — a different
 // source from the Global (Shopify) identifier above, which uses SHOP_PROD_IDENTITY enums.
@@ -1503,12 +1704,42 @@ const isProductSyncRun = computed(() => productImportProgressStatus.value === "c
 // Inventory hard blocker: only Shopify-sourced inventory waits on the Shopify catalog; other
 // sources (ERP/WMS/file) have no Shopify products to gate on. When it applies, require the sync
 // to have run AND at least one product to exist in OMS for the store.
-const isInventoryProductPrerequisiteMet = computed(() => {
-  if (!shouldSetupShopifyInventoryReset.value || !linkedShopifyShopId.value) return true
-  return isProductSyncRun.value && omsProductCount.value > 0
+// Product reconciliation coverage: how much of the live Shopify catalog is present in OMS.
+// null when the Shopify catalog size isn't known (e.g. the live count fetch failed) — in that
+// case we don't hard-block, matching "only disable below 80%".
+const productCoveragePercent = computed<number | null>(() => {
+  if (!inventoryCoverageLoaded.value || shopifyCatalogProductCount.value <= 0) return null
+  return Math.round((omsProductCount.value / shopifyCatalogProductCount.value) * 100)
+})
+const isInventoryCoverageMet = computed(() => {
+  const pct = productCoveragePercent.value
+  return pct === null ? true : pct >= PRODUCT_COVERAGE_THRESHOLD
 })
 // Steps showing a loading spinner in the step rail (product import in flight -> Products step).
 const inProgressStepIds = computed<string[]>(() => (isProductImportInProgress.value ? ["products"] : []))
+// Step completion derived from real saved state (server), so a resumed store reflects what's
+// actually configured rather than only what was clicked through this session. A step is "complete"
+// when its server-side output exists: ProductStore entity (name), a linked shop (shopify), saved
+// ProductStoreSettings (general/inventory/routing/pickup), facilities/mappings, or imported products.
+// Preview/backend-gap steps with no server signal (orders, storeInventory, preorders, readiness)
+// stay click-through only. The rail uses the union of this with the session's completedStepIds.
+const derivedCompletedStepIds = computed<string[]>(() => {
+  const settings: any = productStoreStore.currentStoreSettings || {}
+  const ids: string[] = []
+  if (selectedProductStoreId.value) ids.push("name")
+  if (settings.SAVE_BILL_TO_INF?.settingValue) ids.push("general")
+  if (linkedShopifyShopId.value) ids.push("shopify")
+  if (settings.PRDT_IDEN_PREF?.settingValue || omsProductCount.value > 0) ids.push("products")
+  if (facilityCount.value > 0) ids.push("facilities")
+  if (facilitiesWithShopifyLocationCount.value > 0) ids.push("locations")
+  if (productStoreStore.current?.reserveInventory) ids.push("inventory")
+  if (settings.FULFILL_NOTIF?.settingValue) ids.push("routing")
+  if (settings.BOPIS_PART_ODR_REJ?.settingValue) ids.push("pickup")
+  return ids
+})
+const allCompletedStepIds = computed<string[]>(() =>
+  Array.from(new Set([...onboardingStore.completedStepIds, ...derivedCompletedStepIds.value]))
+)
 const inventoryResetDescription = computed(() => {
   if (!shouldSetupShopifyInventoryReset.value) return translate("This inventory source does not need a Shopify inventory reset job.")
   if (!selectedProductStoreId.value) return translate("Create the Product Store before configuring inventory reset.")
@@ -1521,14 +1752,18 @@ const inventoryResetDescription = computed(() => {
 const initialInventoryImportDescription = computed(() => {
   if (!shouldSetupShopifyInventoryReset.value) return translate("Skipped for this inventory source.")
   if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading inventory.")
-  if (!mappedShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
-  if (isProductImportInProgress.value) return translate("Finish the Shopify product import before loading inventory.")
-  if (!isProductSyncRun.value) return translate("Run the product catalog sync on the Products step before loading inventory.")
-  if (!omsProductCount.value) return translate("Waiting for products to import into OMS — at least one product must exist before loading inventory.")
+  if (!facilitiesWithShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
+  const pct = productCoveragePercent.value
+  if (pct !== null && pct < PRODUCT_COVERAGE_THRESHOLD && !inventoryRiskAcknowledged.value) {
+    return `${translate("Product coverage with Shopify is")} ${pct}% ${translate("(below 80%). Acknowledge the risk below to load inventory anyway.")}`
+  }
   return translate("Queue a Shopify bulk import that resets OMS facility inventory from current on-hand quantities.")
 })
+// Inventory import is blocked ONLY when reconciliation coverage is known to be below the threshold
+// and the user hasn't manually acknowledged the risk. Unknown coverage does not block.
 const canQueueInventoryImport = computed(() => {
-  return !!linkedShopifyShopId.value && !!mappedShopifyLocationCount.value && !isProductImportInProgress.value && isInventoryProductPrerequisiteMet.value
+  if (!linkedShopifyShopId.value || !facilitiesWithShopifyLocationCount.value) return false
+  return isInventoryCoverageMet.value || inventoryRiskAcknowledged.value
 })
 const inventoryResetStatusLabel = computed(() => {
   return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
@@ -1558,6 +1793,22 @@ const initialOrderHistoryImportDescription = computed(() => {
   if (!preferredOrderLaunchDate.value) return translate("Choose the HotWax go-live date for order import.")
   return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}. ${translate("Orders created before")} ${preferredOrderLaunchDate.value} ${translate("stay historical.")}`
 })
+// Each readiness item maps to the step that resolves it, so the review can deep-link back to finish
+// the remaining work (and to revisit completed areas).
+const READINESS_STEP_BY_ID: Record<string, string> = {
+  productStore: "name",
+  shopifyShop: "shopify",
+  shopifyMappings: "shopify",
+  productIdentity: "products",
+  facilities: "facilities",
+  locationMappings: "locations",
+  inventory: "inventory",
+  orders: "orders"
+}
+function goToReadinessStep(readinessItemId: string) {
+  const stepId = READINESS_STEP_BY_ID[readinessItemId]
+  if (stepId) onboardingStore.selectStep(stepId)
+}
 const requiredReadinessItems = computed(() => [
   buildReadinessItem({
     id: "productStore",
@@ -1591,14 +1842,14 @@ const requiredReadinessItems = computed(() => [
     id: "facilities",
     label: translate("Facilities"),
     ready: facilityCount.value > 0,
-    readyDetail: `${facilityCount.value} ${translate("facilities available for setup")}`,
+    readyDetail: `${facilityCount.value} ${translate("facilities associated")}`,
     gapDetail: translate("Import Shopify locations or create facilities for this Product Store.")
   }),
   buildReadinessItem({
     id: "locationMappings",
     label: translate("Inventory location mappings"),
-    ready: mappedShopifyLocationCount.value > 0,
-    readyDetail: `${mappedShopifyLocationCount.value} ${translate("Shopify location mappings")}`,
+    ready: facilitiesWithShopifyLocationCount.value > 0,
+    readyDetail: `${facilitiesWithShopifyLocationCount.value} ${translate("Shopify location mappings")}`,
     gapDetail: translate("Map Shopify inventory locations to HotWax facilities.")
   }),
   buildReadinessItem({
@@ -1617,38 +1868,6 @@ const requiredReadinessItems = computed(() => [
     readyDetail: orderImportStatusDescription.value,
     gapDetail: orderImportStatusDescription.value
   })
-])
-const workflowReadinessItems = computed(() => [
-  buildReadinessItem({
-    id: "routing",
-    label: translate("Order routing and fulfillment"),
-    ready: !!selectedProductStoreId.value,
-    readyDetail: translate("Routing defaults can be saved through existing ProductStore settings."),
-    gapDetail: translate("Create the Product Store before saving routing defaults.")
-  }),
-  buildReadinessItem({
-    id: "pickup",
-    label: translate("In store pickup"),
-    ready: !!selectedProductStoreId.value,
-    readyDetail: translate("Pickup permissions can be saved through ProductStoreSetting values."),
-    gapDetail: translate("Create the Product Store before saving pickup settings.")
-  }),
-  {
-    id: "storeInventory",
-    label: translate("Store inventory management"),
-    detail: translate("Inventory count and receiving app setup are represented as workflow tasks until app-specific package choices are confirmed."),
-    status: translate("Preview"),
-    color: "medium"
-  },
-  {
-    id: "preorders",
-    label: translate("Pre-orders"),
-    detail: onboardingStore.draft.preorderFacilityGroupId
-      ? translate("Preorder inventory group selected.")
-      : translate("Preorder release and routing setup still needs a dedicated task."),
-    status: onboardingStore.draft.preorderFacilityGroupId ? translate("Ready") : translate("Preview"),
-    color: onboardingStore.draft.preorderFacilityGroupId ? "success" : "medium"
-  }
 ])
 const nextReadinessActions = computed(() => {
   const actions = []
@@ -1753,7 +1972,8 @@ const timezoneOptions = computed(() => {
   return zones
 })
 const nextLabel = computed(() => {
-  const nextStep = PRODUCT_STORE_ONBOARDING_STEPS[onboardingStore.currentStepIndex + 1]
+  const nextId = PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS[onboardingStore.currentStepIndex + 1]
+  const nextStep = nextId ? PRODUCT_STORE_ONBOARDING_STEPS.find((step) => step.id === nextId) : null
   return nextStep ? translate(nextStep.label) : translate("Review")
 })
 const primaryActionLabel = computed(() => {
@@ -1803,7 +2023,7 @@ const isPrimaryActionDisabled = computed(() => {
   }
 
   if (currentStep.value.id === "inventory") {
-    return !selectedProductStoreId.value || !isInventoryProductPrerequisiteMet.value
+    return !selectedProductStoreId.value
   }
 
   if (currentStep.value.id === "orders") {
@@ -1982,6 +2202,32 @@ async function fixRemoteAccessScope(systemMessageRemoteId: string) {
   emitter.emit("dismissLoader")
 }
 
+// Determine product-reconciliation coverage by comparing OMS products against the live Shopify
+// catalog count. Best-effort: if the live count can't be read (e.g. the Shopify remote is
+// unavailable), coverage stays "unknown" and the inventory import is not coverage-gated.
+async function refreshInventoryCoverage() {
+  if (!shouldSetupShopifyInventoryReset.value || !linkedShopifyShopId.value || !selectedProductStoreId.value) {
+    inventoryCoverageLoaded.value = false
+    return
+  }
+  try {
+    const stats = await shopifyProductSyncStore.fetchReviewStats({
+      shopId: linkedShopifyShopId.value,
+      productStoreId: selectedProductStoreId.value
+    })
+    if (stats && Number(stats.shopifyProductCount) > 0) {
+      shopifyCatalogProductCount.value = Number(stats.shopifyProductCount)
+      if (Number(stats.omsProductCount) >= 0) omsProductCount.value = Number(stats.omsProductCount)
+      inventoryCoverageLoaded.value = true
+    } else {
+      inventoryCoverageLoaded.value = false
+    }
+  } catch (error: any) {
+    logger.warn("Could not read Shopify product coverage; inventory import will not be coverage-gated.", error)
+    inventoryCoverageLoaded.value = false
+  }
+}
+
 async function refreshProductImportProgress() {
   if (!linkedShopifyShopId.value) {
     productImportProgressState.value = {}
@@ -2077,6 +2323,105 @@ function stopProductImportProgressPolling() {
   productImportProgressPoll = undefined
 }
 
+async function refreshOrderImportProgress() {
+  if (!linkedShopifyShopId.value) {
+    orderImportProgressState.value = {}
+    orderImportRun.value = null
+    stopOrderImportProgressPolling()
+    return false
+  }
+  if (isLoadingOrderImportProgress.value) return false
+  isLoadingOrderImportProgress.value = true
+  try {
+    const trackedSystemMessageId = orderImportProgressState.value?.systemMessageId || ""
+    const syncRunState = await shopifyProductSyncStore.fetchOrderHistorySyncRunState({
+      shopId: linkedShopifyShopId.value,
+      systemMessageId: trackedSystemMessageId
+    })
+    const latestMessage = trackedSystemMessageId
+      ? syncRunState.systemMessages?.find((message: any) => message.systemMessageId === trackedSystemMessageId) || syncRunState.latestSystemMessage
+      : syncRunState.latestSystemMessage
+
+    // After a re-run, hold the "queued" placeholder until a NEW message appears.
+    if (awaitingOrderImportRerun.value) {
+      const newRunId = latestMessage?.systemMessageId
+      if (newRunId && newRunId !== orderImportRetryBaselineId) {
+        awaitingOrderImportRerun.value = false
+      } else if (orderImportRerunWaitPolls < 24) {
+        orderImportRerunWaitPolls++
+        return true
+      } else {
+        awaitingOrderImportRerun.value = false
+      }
+    }
+
+    if (!latestMessage?.systemMessageId) {
+      orderImportRun.value = null
+      return false
+    }
+
+    const status = normalizeProductSyncStatus({
+      systemMessageState: latestMessage.statusId,
+      logStatusId: latestMessage.logStatusId,
+      logId: latestMessage.logId
+    })
+    orderImportProgressState.value = {
+      ...orderImportProgressState.value,
+      ...latestMessage,
+      systemMessageId: latestMessage.systemMessageId,
+      systemMessageState: latestMessage.statusId,
+      logStatusId: latestMessage.logStatusId,
+      logId: latestMessage.logId,
+      status,
+      completed: ["completed", "error", "cancelled"].includes(status)
+    }
+    orderImportRun.value = await fetchOrderImportSyncRun(latestMessage.systemMessageId, latestMessage)
+
+    // Orders have no downstream gate (unlike products gating inventory), so stop on completion.
+    if (orderImportProgressState.value.completed) stopOrderImportProgressPolling()
+    return true
+  } catch (error: any) {
+    logger.warn("Failed to refresh order import progress", error)
+    return false
+  } finally {
+    isLoadingOrderImportProgress.value = false
+  }
+}
+
+function startOrderImportProgressPolling() {
+  stopOrderImportProgressPolling()
+  orderImportRerunWaitPolls = 0
+  orderImportProgressPoll = window.setInterval(refreshOrderImportProgress, 5000)
+}
+
+function stopOrderImportProgressPolling() {
+  if (!orderImportProgressPoll) return
+  window.clearInterval(orderImportProgressPoll)
+  orderImportProgressPoll = undefined
+}
+
+async function retryOrderImport() {
+  if (!canRetryOrderImport.value || !linkedShopifyShopId.value) return
+  const jobName = `sync_ShopifyOrderHistory_${linkedShopifyShopId.value}`
+  emitter.emit("presentLoader")
+  try {
+    const resp = await runServiceJobNow(jobName)
+    if (commonUtil.hasError(resp)) throw resp.data
+    commonUtil.showToast(translate("Order history re-run started."))
+    orderImportRetryBaselineId = orderImportProgressState.value?.systemMessageId || ""
+    orderImportRerunWaitPolls = 0
+    awaitingOrderImportRerun.value = true
+    orderImportProgressState.value = { status: "queued", completed: false, systemMessageId: "" }
+    orderImportRun.value = null
+    startOrderImportProgressPolling()
+  } catch (error: any) {
+    logger.error("Failed to re-run order history import job", error)
+    commonUtil.showToast(translate("Failed to re-run order history import."))
+  } finally {
+    emitter.emit("dismissLoader")
+  }
+}
+
 async function refreshShopifyMappingStatus() {
   shopifyMappingCounts.value = {
     productTypes: 0,
@@ -2122,8 +2467,13 @@ async function refreshShopifyMappingStatus() {
 
 onIonViewWillEnter(async () => {
   awaitingProductImportRerun.value = false
+  awaitingOrderImportRerun.value = false
   if (routeProductStoreId.value) {
     onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
+    // Resuming an existing store: clear the shared persisted draft to defaults so values from a
+    // previously-edited store can't bleed through, then let loadSelectedProductStoreSetup below
+    // hydrate every saved field from the server. Navigation state (step/progress) is preserved.
+    onboardingStore.resetDraftValues()
   } else {
     onboardingStore.resetDraft()
     productStoreStore.current = {}
@@ -2132,11 +2482,18 @@ onIonViewWillEnter(async () => {
     productStoreStore.currentShopifyJobStatus = null
   }
 
+  // Workflow steps are deferred and non-navigable; if a previously-persisted step lands on one,
+  // fall back to the first active step so the user isn't stranded on a hidden step.
+  if (!PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.includes(onboardingStore.currentStepId)) {
+    onboardingStore.selectStep("name")
+  }
+
   await loadSetupData()
 })
 
 onIonViewDidLeave(() => {
   stopProductImportProgressPolling()
+  stopOrderImportProgressPolling()
 })
 
 async function loadSetupData() {
@@ -2166,11 +2523,14 @@ async function loadSetupData() {
     await refreshShopifyMappingStatus()
     const loadedProductImportProgress = await refreshProductImportProgress()
     if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
+    const loadedOrderImportProgress = await refreshOrderImportProgress()
+    if (loadedOrderImportProgress && isOrderImportInProgress.value) startOrderImportProgressPolling()
     // Seed the OMS product count on (re-)entry when the sync already shows completed, so the
     // inventory step gates correctly without waiting for the next poll cycle.
     if (shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && selectedProductStoreId.value && isProductSyncRun.value) {
       omsProductCount.value = await productStoreStore.fetchProductStoreProductCount(selectedProductStoreId.value)
     }
+    await refreshInventoryCoverage()
   } catch (error: any) {
     logger.error(error)
   }
@@ -2262,6 +2622,34 @@ async function loadSelectedProductStoreSetup() {
     refreshShopifyJobStatus()
   ])
 
+  if (productStoreStore.current?.storeName) {
+    onboardingStore.updateDraftField("storeName", productStoreStore.current.storeName)
+  }
+
+  // Hydrate productStoreId after storeName: updateDraftField auto-derives the ID from the name
+  // unless it's been edited, so setting the server's real ID last keeps it from being overwritten.
+  if (productStoreStore.current?.productStoreId) {
+    onboardingStore.updateDraftField("productStoreId", productStoreStore.current.productStoreId)
+  }
+
+  if (productStoreStore.current?.defaultCurrencyUomId) {
+    onboardingStore.updateDraftField("defaultCurrencyUomId", productStoreStore.current.defaultCurrencyUomId)
+  }
+
+  if (productStoreStore.current?.companyName) {
+    onboardingStore.updateDraftField("companyName", productStoreStore.current.companyName)
+  }
+
+  if (productStoreStore.current?.defaultLocaleString) {
+    onboardingStore.updateDraftField("locale", productStoreStore.current.defaultLocaleString)
+  }
+
+  // The create payload sends "defaultTimeZone"; the entity reads back as "defaultTimeZoneString"
+  // (see ProductStoreDetails.vue). Accept either so the saved zone always rehydrates.
+  if (productStoreStore.current?.defaultTimeZoneString || productStoreStore.current?.defaultTimeZone) {
+    onboardingStore.updateDraftField("timezone", productStoreStore.current.defaultTimeZoneString || productStoreStore.current.defaultTimeZone)
+  }
+
   if (productStoreStore.current?.productIdentifierEnumId) {
     onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
   }
@@ -2296,10 +2684,6 @@ async function loadSelectedProductStoreSetup() {
 
   if (productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue) {
     onboardingStore.updateDraftField("saveBillingInformation", productStoreStore.currentStoreSettings.SAVE_BILL_TO_INF.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.INV_CNT_VIEW_QOH?.settingValue) {
-    onboardingStore.updateDraftField("showSystemicInventory", productStoreStore.currentStoreSettings.INV_CNT_VIEW_QOH.settingValue)
   }
 
   if (productStoreStore.currentStoreSettings?.HOLD_PRORD_PHYCL_INV?.settingValue) {
@@ -2398,16 +2782,16 @@ async function handlePrimaryAction() {
     const inventorySettingsSaved = await saveInventorySettings()
     if (!inventorySettingsSaved) return
 
-    if (shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) {
+    if (shouldSetupShopifyInventoryReset.value && canQueueInventoryImport.value) {
       const inventoryResetConfigured = await setupInventoryResetJob()
       if (!inventoryResetConfigured) return
 
       const initialInventoryImportQueued = await queueInitialInventoryImport()
       if (!initialInventoryImportQueued) return
-    } else if (shouldSetupShopifyInventoryReset.value && isProductImportInProgress.value) {
-      commonUtil.showToast(translate("Inventory import will be available after products finish importing."))
     } else if (shouldSetupShopifyInventoryReset.value && !linkedShopifyShopId.value) {
       commonUtil.showToast(translate("Inventory import will be available after Shopify is linked."))
+    } else if (shouldSetupShopifyInventoryReset.value && !isInventoryCoverageMet.value && !inventoryRiskAcknowledged.value) {
+      commonUtil.showToast(translate("Acknowledge the low product coverage to load inventory now, or load it later."))
     }
   }
 
@@ -2415,8 +2799,10 @@ async function handlePrimaryAction() {
     const orderJobsConfigured = await setupOrderImportJobs()
     if (!orderJobsConfigured) return
 
-    const realtimeOrderJobsConfigured = await setupRealtimeOrderImportJobs()
-    if (!realtimeOrderJobsConfigured) return
+    if (shouldConfigureRealtimeOrderImport.value) {
+      const realtimeOrderJobsConfigured = await setupRealtimeOrderImportJobs()
+      if (!realtimeOrderJobsConfigured) return
+    }
 
     const initialOrderHistoryQueued = await queueInitialOrderHistoryImport()
     if (!initialOrderHistoryQueued) return
@@ -2432,6 +2818,11 @@ async function handlePrimaryAction() {
   if (currentStep.value.id === "pickup") {
     const pickupSettingsSaved = await savePickupSettings()
     if (!pickupSettingsSaved) return
+  }
+
+  if (currentStep.value.id === "preorders") {
+    const preorderSettingsSaved = await savePreorderSettings()
+    if (!preorderSettingsSaved) return
   }
 
   if (currentStep.value.id === "readiness") {
@@ -2464,17 +2855,7 @@ async function resolveReadinessGaps() {
 
   if (requiredReadinessGapCount.value) {
     const firstGap = requiredReadinessItems.value.find((item) => item.color === "warning")
-    const stepIdByGap: Record<string, string> = {
-      productStore: "name",
-      shopifyShop: "shopify",
-      shopifyMappings: "shopify",
-      productIdentity: "products",
-      facilities: "facilities",
-      locationMappings: "locations",
-      inventory: "inventory",
-      orders: "orders"
-    }
-    const nextStepId = firstGap ? stepIdByGap[firstGap.id] : ""
+    const nextStepId = firstGap ? READINESS_STEP_BY_ID[firstGap.id] : ""
     if (nextStepId) onboardingStore.selectStep(nextStepId)
     commonUtil.showToast(translate("Some setup gaps still need attention."))
     return false
@@ -2667,8 +3048,26 @@ async function saveInventorySettings() {
 
     productStoreStore.updateCurrent(productStorePayload)
 
+    commonUtil.showToast(translate("Inventory settings saved successfully."))
+    return true
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to save inventory settings."))
+    return false
+  } finally {
+    emitter.emit("dismissLoader")
+    isSavingInventorySettings.value = false
+  }
+}
+
+async function savePreorderSettings() {
+  if (!selectedProductStoreId.value) return true
+
+  isSavingPreorderSettings.value = true
+  emitter.emit("presentLoader")
+
+  try {
     const settingPayloads = [
-      buildInventorySettingPayload("INV_CNT_VIEW_QOH", onboardingStore.draft.showSystemicInventory === "true" ? "true" : "false"),
       buildInventorySettingPayload("HOLD_PRORD_PHYCL_INV", onboardingStore.draft.holdPreorderPhysicalInventory === "true" ? "true" : "false")
     ]
 
@@ -2684,15 +3083,15 @@ async function saveInventorySettings() {
     }
 
     productStoreStore.updateCurrentStoreSettings(updatedSettings)
-    commonUtil.showToast(translate("Inventory settings saved successfully."))
+    commonUtil.showToast(translate("Pre-order settings saved successfully."))
     return true
   } catch (error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to save inventory settings."))
+    commonUtil.showToast(translate("Failed to save pre-order settings."))
     return false
   } finally {
     emitter.emit("dismissLoader")
-    isSavingInventorySettings.value = false
+    isSavingPreorderSettings.value = false
   }
 }
 
@@ -2755,7 +3154,7 @@ async function queueInitialInventoryImport() {
     return false
   }
 
-  if (!mappedShopifyLocationCount.value) {
+  if (!facilitiesWithShopifyLocationCount.value) {
     commonUtil.showToast(translate("Map Shopify inventory locations before loading inventory."))
     return false
   }
@@ -2780,6 +3179,14 @@ async function queueInitialInventoryImport() {
     emitter.emit("dismissLoader")
     isQueueingInventoryImport.value = false
   }
+}
+
+// Inline action for the order-import-job readiness row: configure the jobs on demand, then refresh
+// status so the Gap clears. setupOrderImportJobs runs the per-shop service job in the system context
+// using the linked shop + existing config, so no extra user input is required.
+async function configureOrderImportJobs() {
+  const configured = await setupOrderImportJobs()
+  if (configured) await refreshShopifyJobStatus()
 }
 
 async function setupOrderImportJobs() {
@@ -2888,6 +3295,13 @@ async function queueInitialOrderHistoryImport() {
     if (commonUtil.hasError(resp)) throw resp.data
 
     commonUtil.showToast(translate("Initial order history import queued."))
+    // Show a live "queued" placeholder and poll for the BulkOrderHistory run the job produces.
+    orderImportRetryBaselineId = orderImportProgressState.value?.systemMessageId || ""
+    orderImportRerunWaitPolls = 0
+    awaitingOrderImportRerun.value = true
+    orderImportProgressState.value = { status: "queued", completed: false, systemMessageId: "" }
+    orderImportRun.value = null
+    startOrderImportProgressPolling()
     return true
   } catch (error: any) {
     logger.error(error)
@@ -3290,6 +3704,90 @@ async function refreshShopifyLocationMappings() {
   }
 }
 
+// CSV columns map to the facilityDataSetup service params (kebab-case headers, normalized to
+// camelCase by the DataManager runner). facility-id/name/type are effectively required; Map-typed
+// params (identifications, attributes) are omitted as they can't be expressed in a flat CSV.
+const FACILITY_CSV_HEADERS = [
+  "facility-id", "external-id", "facility-name", "facility-type-id", "owner-party-id",
+  "default-inventory-item-type-id", "default-days-to-ship", "description", "do-picking",
+  "to-name", "address-line-1", "address-line-2", "city", "postal-code", "state", "country",
+  "latitude", "longitude", "phone-number", "groups", "primary-facility-group-id"
+]
+const FACILITY_CSV_SAMPLE_ROW = [
+  "STORE_001", "ext-store-001", "Downtown Store", "RETAIL_STORE", "COMPANY",
+  "NON_SERIAL_INV_ITEM", "2", "Flagship downtown retail store", "Y",
+  "Store Manager", "123 Main St", "Suite 100", "New York", "10001", "NY", "US",
+  "40.7128", "-74.0060", "212-555-0100", "", ""
+]
+
+function downloadFacilityCsvTemplate() {
+  const escapeCell = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)
+  const csv = [
+    FACILITY_CSV_HEADERS.join(","),
+    FACILITY_CSV_SAMPLE_ROW.map(escapeCell).join(",")
+  ].join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = "facility-import-template.csv"
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function triggerFacilityCsvUpload() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before importing facilities."))
+    return
+  }
+  facilityCsvInput.value?.click()
+}
+
+async function handleFacilityCsvSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  isUploadingFacilityCsv.value = true
+  emitter.emit("presentLoader")
+  try {
+    const resp = await productStoreStore.uploadFacilityImportCsv(file)
+    if (commonUtil.hasError(resp)) throw resp.data
+    // The import runs asynchronously; created facilities aren't associated to this store.
+    commonUtil.showToast(translate("Facility import started. Link the imported facilities from \"Add existing facilities\" once it finishes."))
+    await productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
+  } catch (error: any) {
+    logger.error(error)
+    commonUtil.showToast(translate("Failed to import facilities from CSV."))
+  } finally {
+    if (input) input.value = ""
+    emitter.emit("dismissLoader")
+    isUploadingFacilityCsv.value = false
+  }
+}
+
+async function openAssociateFacilities() {
+  if (!selectedProductStoreId.value) {
+    commonUtil.showToast(translate("Create the Product Store before associating facilities."))
+    return
+  }
+
+  const modal = await modalController.create({
+    component: AssociateExistingFacilitiesModal,
+    componentProps: { productStoreId: selectedProductStoreId.value }
+  })
+
+  await modal.present()
+  const { data } = await modal.onDidDismiss()
+
+  if (data?.associated) {
+    await Promise.allSettled([
+      productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
+      refreshShopifyLocationMappings()
+    ])
+  }
+}
+
 async function openShopifyLocationImport() {
   if (!linkedShopifyShopId.value) {
     commonUtil.showToast(translate("Link a Shopify shop before importing facilities."))
@@ -3508,6 +4006,13 @@ function replaceRouteForProductStore(productStoreId: string) {
   flex: 0 0 375px;
   max-width: 375px;
   width: 100%;
+  /* Keep the step rail in view while scrolling longer task forms. It sticks within the scrolling
+     ion-content and scrolls internally if the rail itself is taller than the viewport. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 
 .onboarding-task {
@@ -3535,6 +4040,9 @@ function replaceRouteForProductStore(productStoreId: string) {
 
   .onboarding-steps {
     order: 2;
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 }
 

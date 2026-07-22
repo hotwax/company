@@ -1,5 +1,5 @@
 import { defineStore } from "pinia"
-import { PRODUCT_STORE_ONBOARDING_STEP_IDS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
+import { PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { generateInternalId } from "@/utils"
 
 export interface ProductStoreOnboardingDraft {
@@ -25,7 +25,6 @@ export interface ProductStoreOnboardingDraft {
   secondaryProductIdentification: string
   inventorySource: string
   reserveInventory: string
-  showSystemicInventory: string
   holdPreorderPhysicalInventory: string
   preorderFacilityGroupId: string
   enableBrokering: string
@@ -72,7 +71,10 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   shopifyTokenSubjectUserLoginId: "nifi",
   shopifyTokenPurpose: "SHOPIFY_APP_HANDOFF",
   shopifyTokenExpireIn: "2592000",
-  facilityMode: "One store",
+  // The facility-mode picker was removed from the Facilities step; default to "Not sure yet" so
+  // the step renders that view (facilities list + Shopify import) without the One-store-only
+  // starter-facility prompt.
+  facilityMode: "Not sure yet",
   autoApproveOrder: "N",
   orderNumberPrefix: "HC",
   saveBillingInformation: "Y",
@@ -81,7 +83,6 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   secondaryProductIdentification: "UPCA",
   inventorySource: "Shopify",
   reserveInventory: "Y",
-  showSystemicInventory: "true",
   holdPreorderPhysicalInventory: "false",
   preorderFacilityGroupId: "",
   enableBrokering: "Y",
@@ -95,7 +96,7 @@ const DEFAULT_DRAFT: ProductStoreOnboardingDraft = {
   customerDeliveryAddressUpdate: "false",
   customerPickupUpdate: "false",
   customerCancelBeforeFulfillment: "false",
-  orderImportMode: "Realtime and fallback batch",
+  orderImportMode: "Fallback batch only",
   orderHistoryStartDate: "",
   orderLaunchDate: "",
   orderSqsQueueName: "",
@@ -117,9 +118,9 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
 
   getters: {
     currentStep: (state) => PRODUCT_STORE_ONBOARDING_STEPS.find((step) => step.id === state.currentStepId) || PRODUCT_STORE_ONBOARDING_STEPS[0],
-    currentStepIndex: (state) => PRODUCT_STORE_ONBOARDING_STEP_IDS.indexOf(state.currentStepId),
+    currentStepIndex: (state) => PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.indexOf(state.currentStepId),
     completedCount: (state) => state.completedStepIds.length,
-    totalStepCount: () => PRODUCT_STORE_ONBOARDING_STEPS.length,
+    totalStepCount: () => PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.length,
     progressValue(): number {
       return this.totalStepCount ? this.completedCount / this.totalStepCount : 0
     }
@@ -127,7 +128,8 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
 
   actions: {
     selectStep(stepId: string) {
-      if (PRODUCT_STORE_ONBOARDING_STEP_IDS.includes(stepId)) {
+      // Only active (non-workflow) steps are navigable; workflow steps are deferred.
+      if (PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS.includes(stepId)) {
         this.currentStepId = stepId
       }
     },
@@ -163,12 +165,12 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
 
     goNext() {
       this.markCurrentStepComplete()
-      const nextStepId = PRODUCT_STORE_ONBOARDING_STEP_IDS[this.currentStepIndex + 1]
+      const nextStepId = PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS[this.currentStepIndex + 1]
       if (nextStepId) this.currentStepId = nextStepId
     },
 
     goPrevious() {
-      const previousStepId = PRODUCT_STORE_ONBOARDING_STEP_IDS[this.currentStepIndex - 1]
+      const previousStepId = PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS[this.currentStepIndex - 1]
       if (previousStepId) this.currentStepId = previousStepId
     },
 
@@ -176,6 +178,16 @@ export const useProductStoreOnboardingStore = defineStore("productStoreOnboardin
       this.currentStepId = "name"
       this.createdProductStoreId = ""
       this.completedStepIds = []
+      this.productStoreIdEdited = false
+      this.draft = { ...DEFAULT_DRAFT }
+    },
+
+    // Reset only the editable draft values (and the ID-edited flag) to defaults while preserving
+    // navigation state (current step, completed steps, created store id). Used when resuming an
+    // existing store: the draft persists under a single shared localStorage key, so without this
+    // a previously-edited store's values bleed through. After this, loadSelectedProductStoreSetup
+    // hydrates every saved field from the server, so the user sees exactly what was saved.
+    resetDraftValues() {
       this.productStoreIdEdited = false
       this.draft = { ...DEFAULT_DRAFT }
     }

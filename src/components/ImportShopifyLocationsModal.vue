@@ -32,7 +32,12 @@
       </ion-item-divider>
 
       <ion-list>
-        <ion-item v-for="loc in locations" :key="loc.shopifyLocationId" lines="full">
+        <ion-item
+          v-for="loc in locations"
+          :key="loc.shopifyLocationId"
+          lines="full"
+          :class="{ 'mapped-facility': loc.alreadyInOms }"
+        >
           <ion-checkbox
             slot="start"
             :checked="selectedIds.has(loc.shopifyLocationId)"
@@ -51,13 +56,6 @@
             <ion-note v-else-if="loc.pickupEnabled" color="success">
               {{ translate("Pickup enabled") }}
             </ion-note>
-            <ion-note v-if="loc.alreadyInOms" color="medium">
-              {{ loc.omsFacilityName
-                ? translate("Mapped to {name} ({id})", { name: loc.omsFacilityName, id: loc.omsFacilityId })
-                : loc.omsFacilityId
-                  ? translate("Mapped to facility {id}", { id: loc.omsFacilityId })
-                  : translate("Already in OMS") }}
-            </ion-note>
           </ion-label>
 
           <ion-select
@@ -71,6 +69,13 @@
             <ion-select-option value="RETAIL_STORE">{{ translate("Retail Store") }}</ion-select-option>
             <ion-select-option value="WAREHOUSE">{{ translate("Warehouse") }}</ion-select-option>
           </ion-select>
+          <ion-note v-else slot="end" color="medium" class="mapped-facility-detail">
+            {{ loc.omsFacilityName
+              ? translate("Mapped to {name} ({id})", { name: loc.omsFacilityName, id: loc.omsFacilityId })
+              : loc.omsFacilityId
+                ? translate("Mapped to facility {id}", { id: loc.omsFacilityId })
+                : translate("Already in OMS") }}
+          </ion-note>
         </ion-item>
       </ion-list>
     </template>
@@ -306,5 +311,18 @@ onMounted(fetchData)
 <style scoped>
 ion-content {
   --padding-bottom: 80px;
+}
+/* Facilities already mapped to OMS are read-only: dim the row so it reads as disabled.
+   The checkbox is already :disabled and the type select is hidden for these rows. */
+.mapped-facility {
+  opacity: 0.55;
+  pointer-events: none;
+}
+/* The mapped-facility detail now sits in the end slot (where the type select is for unmapped
+   rows); keep it right-aligned and allow it to wrap so longer names/ids stay readable. */
+.mapped-facility-detail {
+  max-width: 45%;
+  text-align: end;
+  white-space: normal;
 }
 </style>

@@ -763,6 +763,58 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
   };
 };
 
+// Order-history run-state: identical shape/path to product update sync, but reads the
+// BulkOrderHistoryQuery SystemMessage + its DataManagerLog (the run the onboarding Orders step
+// triggers via queueInitialOrderHistoryImport). Realtime SQS order sync produces no such records.
+const fetchOrderHistorySyncRunState = async (payload: any): Promise<ShopifyProductUpdateSyncRunState> => {
+  const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
+  const shopId = payload.shopId || payload.shop?.shopId;
+  if (!shopId) {
+    throw new Error("Shop ID is required to find order history sync system messages.");
+  }
+
+  const systemMessageId = payload.systemMessageId;
+  const pageSize = systemMessageId ? 1 : 100;
+
+  const response = await requestBackend<any>({
+    url: "oms/dataDocumentView",
+    method: "post",
+    data: {
+      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+      customParametersMap: {
+        systemMessageId,
+        systemMessageTypeId: "BulkOrderHistoryQuery",
+        remoteInternalId: shopId,
+        remoteInternalIdType: "HOTWAX_SHOP_ID",
+        orderByField: "-lastUpdatedStamp"
+      },
+      pageSize,
+      pageIndex: 0
+    }
+  });
+
+  const systemMessages = getEntityValueList(response, "Order history sync system message history");
+
+  const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed" || systemMessage.statusId === "SmsgConsumed");
+  const consumedMessages = systemMessages.filter((systemMessage: any) => {
+    const statusId = String(systemMessage.statusId || "").toLowerCase();
+    const isConsumed = statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
+    return isConsumed && systemMessage.logId;
+  });
+  const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages);
+  const latestConsumedSystemMessage = getLatestSystemMessage(consumedMessages);
+  const latestSystemMessage = getLatestSystemMessage(systemMessages);
+
+  return {
+    latestSystemMessage,
+    latestConfirmedSystemMessage,
+    latestConsumedSystemMessage,
+    lastSyncedAt: getTimestampDate(latestConsumedSystemMessage?.initDate),
+    systemMessageRemoteId,
+    systemMessages
+  };
+};
+
 const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
   const shopId = payload.shopId || payload.shop?.shopId;
   if (!shopId) {
@@ -1471,6 +1523,9 @@ export const useShopifyProductSyncStore = defineStore('shopifyProductSync', {
     },
     async fetchProductUpdateSyncRunState(payload: any): Promise<ShopifyProductUpdateSyncRunState> {
       return fetchProductUpdateSyncRunState(payload);
+    },
+    async fetchOrderHistorySyncRunState(payload: any): Promise<ShopifyProductUpdateSyncRunState> {
+      return fetchOrderHistorySyncRunState(payload);
     },
     async fetchPendingProductUpdateRequests(payload: any): Promise<ShopifyPendingProductUpdateRequestsState> {
       return fetchPendingProductUpdateRequests(payload);

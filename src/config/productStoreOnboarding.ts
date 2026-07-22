@@ -195,3 +195,9 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
 ]
 
 export const PRODUCT_STORE_ONBOARDING_STEP_IDS = PRODUCT_STORE_ONBOARDING_STEPS.map((step) => step.id)
+
+// The workflow steps are deferred ("coming later") — not navigable and excluded from progress and
+// the readiness review. Navigation and progress operate over these active (setup + review) steps.
+export const PRODUCT_STORE_ONBOARDING_ACTIVE_STEP_IDS = PRODUCT_STORE_ONBOARDING_STEPS
+  .filter((step) => step.group !== "workflows")
+  .map((step) => step.id)
