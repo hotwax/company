@@ -312,7 +312,9 @@ const router = useRouter();
 onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
 
 function navigateBack() {
-  router.push(backHref.value);
+  const hasReturnTarget = Boolean(new URLSearchParams(window.location.search).get("returnTo"));
+  if (hasReturnTarget) router.replace(backHref.value);
+  else router.push(backHref.value);
 }
 </script>
 

@@ -188,6 +188,10 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
+          <ShopifyOrderSyncCard
+            :snapshot="orderSyncCardSnapshot"
+            @open="openOrderSyncEntry()"
+          />
           <section>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
@@ -239,6 +243,9 @@ import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
 import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
 import CloneShopifySettingsModal from "@/components/CloneShopifySettingsModal.vue";
+import ShopifyOrderSyncCard from "@/components/ShopifyOrderSyncCard.vue";
+import { useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
+import type { ShopifyOrderSyncCardSnapshot } from "@/store/shopifyOrderSync";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
@@ -246,10 +253,13 @@ import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
 const productStoreStore = useProductStore();
+const shopifyOrderSyncStore = useShopifyOrderSyncStore();
 const shopifyProductSyncStore = useShopifyProductSyncStore();
 const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
+const selectedShopLoadError = ref<string | null>(null);
+const lastKnownOrderSyncConfigurationState = ref<ShopifyOrderSyncCardSnapshot["configurationState"] | null>(null);
 const PRODUCT_SYNC_ACTIVITY_HOUR_COUNT = 24;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_WIDTH = 320;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_HEIGHT = 96;
@@ -291,6 +301,34 @@ const legacyProductSyncState = ref({
 });
 
 const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const selectedShopId = computed(() => String(shop.value.shopId || "").trim());
+const orderSyncCardSnapshot = computed<ShopifyOrderSyncCardSnapshot>(() => {
+  const snapshot = shopifyOrderSyncStore.cardSnapshot?.shopId === selectedShopId.value
+    ? shopifyOrderSyncStore.cardSnapshot
+    : null;
+  const error = selectedShopLoadError.value || shopifyOrderSyncStore.cardError || snapshot?.error || null;
+
+  return {
+    shopId: selectedShopId.value,
+    configurationState: snapshot?.configurationState || lastKnownOrderSyncConfigurationState.value || "missing",
+    subtitle: snapshot?.subtitle,
+    processedCount: snapshot?.processedCount ?? 0,
+    pendingCount: snapshot?.pendingCount ?? 0,
+    nextRunLabel: snapshot?.nextRunLabel,
+    lastCompletedLabel: snapshot?.lastCompletedLabel,
+    actionable: Boolean(
+      selectedShopId.value
+      && !shopifyOrderSyncStore.cardLoading
+      && (snapshot?.actionable || error)
+    ),
+    batchStatus: snapshot?.batchStatus || "Not started",
+    batchDetail: snapshot?.batchDetail || "",
+    importStatus: snapshot?.importStatus || "Not started",
+    importDetail: snapshot?.importDetail || "",
+    loading: !error && shopifyOrderSyncStore.cardLoading,
+    error,
+  };
+});
 const effectiveProductSyncMigrationEligibility = computed(() => {
   if (debugPageState.value === "incompatible") {
     return {
@@ -561,12 +599,69 @@ const activityGraphAriaLabel = computed(() => {
 
 onIonViewWillEnter(async () => {
   isLoading.value = true;
-  if (!shop.value.shopId) {
-    await shopifyStore.fetchShopifyShops()
+  selectedShopLoadError.value = null;
+  lastKnownOrderSyncConfigurationState.value = null;
+
+  try {
+    if (!shop.value.shopId) {
+      await shopifyStore.fetchShopifyShops();
+    }
+
+    const shopId = selectedShopId.value;
+    if (!shopId) {
+      throw new Error("The selected Shopify connection could not be resolved.");
+    }
+
+    const existingSnapshot = shopifyOrderSyncStore.cardSnapshot;
+    if (
+      existingSnapshot?.shopId === shopId
+      && (
+        !existingSnapshot.error
+        || existingSnapshot.configurationState === "configured-paused"
+        || existingSnapshot.configurationState === "configured-active"
+      )
+    ) {
+      lastKnownOrderSyncConfigurationState.value = existingSnapshot.configurationState;
+    }
+
+    isLoading.value = false;
+    await loadConnectionSummaries(shopId);
+  } catch {
+    logger.error("Failed to resolve the selected Shopify connection");
+    selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
+    isSyncSummaryLoading.value = false;
+    isLoading.value = false;
   }
-  isLoading.value = false;
-  await loadProductsInventorySummary();
 });
+
+async function loadConnectionSummaries(shopId = selectedShopId.value) {
+  if (!shopId) {
+    selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
+    return;
+  }
+
+  const [productSyncResult, orderSyncResult] = await Promise.allSettled([
+    loadProductsInventorySummary(),
+    loadOrderSyncCard(shopId),
+  ]);
+
+  if (productSyncResult.status === "rejected") {
+    logger.error("Failed to load Product Sync summary");
+    hasProductSyncSummaryError.value = true;
+    isSyncSummaryLoading.value = false;
+  }
+
+  if (orderSyncResult.status === "rejected") {
+    logger.warn("Failed to load Order Sync card status");
+  }
+}
+
+async function loadOrderSyncCard(shopId: string) {
+  const snapshot = await shopifyOrderSyncStore.loadCardSnapshot(shopId);
+  if (!snapshot.error) {
+    lastKnownOrderSyncConfigurationState.value = snapshot.configurationState;
+  }
+}
 
 async function loadProductsInventorySummary() {
   hasProductSyncSummaryError.value = false;
@@ -697,7 +792,7 @@ async function openCloneSettingsModal() {
     componentProps: { targetShop: shop.value }
   });
   modal.onDidDismiss().then(async () => {
-    await loadProductsInventorySummary();
+    await loadConnectionSummaries();
   });
   await modal.present();
 }
@@ -717,6 +812,30 @@ function openProductSyncMigrationNotice() {
   }
 
   router.push(`/shopify-connection-details/${props.id}/product-sync/upgrade-assistant`);
+}
+
+function openOrderSyncEntry() {
+  const shopId = selectedShopId.value;
+  if (!shopId) return;
+
+  const snapshot = orderSyncCardSnapshot.value;
+  if (!snapshot.actionable || snapshot.loading) return;
+  const configurationState = snapshot.configurationState;
+  const encodedShopId = encodeURIComponent(shopId);
+
+  if (snapshot.error) {
+    router.push(`/shopify-connection-details/${encodedShopId}/order-sync`);
+    return;
+  }
+
+  if (configurationState === "configured-paused" || configurationState === "configured-active") {
+    router.push(`/shopify-connection-details/${encodedShopId}/order-sync`);
+    return;
+  }
+
+  if (configurationState === "missing") {
+    router.push(`/shopify-connection-details/${encodedShopId}/order-sync/configure`);
+  }
 }
 
 function openShopDetails() {

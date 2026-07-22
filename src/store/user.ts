@@ -911,7 +911,9 @@ export const useUserStore = defineStore("user", {
       const { useComposerStore } = await import("./composer")
       const { useWorkforceStore } = await import("./workforce")
       const { useAuthorizationStore } = await import("./authorization")
+      const { useShopifyOrderSyncStore } = await import("./shopifyOrderSync")
 
+      useShopifyOrderSyncStore().clearShopifyOrderSyncState()
       useProductStore().clearProductStoreState()
       useUtilStore().clearUtilState()
       useNetSuiteStore().clearNetSuiteState()
