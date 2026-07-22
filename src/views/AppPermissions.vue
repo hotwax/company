@@ -68,7 +68,8 @@
 import { commonUtil, logger, translate } from "@common"
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonNote, IonPage, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue"
 import { shieldCheckmarkOutline } from "ionicons/icons"
-import { computed, onMounted, ref } from "vue"
+import { computed, ref, watch } from "vue"
+import { useRoute, useRouter } from "vue-router"
 import AppPermissionCard from "@/components/AppPermissionCard.vue"
 import AppPermissionGroupModal from "@/components/AppPermissionGroupModal.vue"
 import AppPermissionHistoryModal from "@/components/AppPermissionHistoryModal.vue"
@@ -80,10 +81,21 @@ import { useUserStore } from "@/store/user"
 
 const appPermissionsStore = useAppPermissionsStore()
 const userStore = useUserStore()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const loadError = ref(false)
 const query = ref("")
-const selectedAppId = ref<string>(appPermissionCatalogs[0]?.appId || "")
+
+const getAppId = (appId: unknown) => {
+  const requestedAppId = Array.isArray(appId) ? appId[0] : appId
+
+  return typeof requestedAppId === "string" && appPermissionCatalogs.some((app) => app.appId === requestedAppId)
+    ? requestedAppId
+    : appPermissionCatalogs[0]?.appId || ""
+}
+
+const selectedAppId = ref<string>(getAppId(route.params.appId))
 
 const canCreate = computed(() => userStore.hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
 const canUpdate = computed(() => userStore.hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
@@ -139,11 +151,13 @@ const loadSelectedApp = async () => {
   }
 }
 
-onMounted(loadSelectedApp)
+watch(() => route.params.appId, async (appId) => {
+  selectedAppId.value = getAppId(appId)
+  await loadSelectedApp()
+}, { immediate: true })
 
 const selectApp = async (appId: string) => {
-  selectedAppId.value = appId
-  await loadSelectedApp()
+  await router.push({ name: "AppPermissions", params: { appId } })
 }
 
 const openHistory = async (permission: AppPermissionDefinition) => {
