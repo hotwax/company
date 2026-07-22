@@ -5,6 +5,7 @@ import { useAuth } from "@common/composables/useAuth"
 import { useUserStore } from "@/store/user"
 
 const Users = () => import("@/views/Users.vue")
+const AppPermissions = () => import("@/views/AppPermissions.vue")
 const SecurityGroups = () => import("@/views/SecurityGroups.vue")
 const SecurityGroupDetail = () => import("@/views/SecurityGroupDetail.vue")
 const UserDetails = () => import("@/views/UserDetails.vue")
@@ -51,6 +52,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/", redirect: "/product-store" },
   { path: "/product-store", name: "ProductStore", component: ProductStore, beforeEnter: authGuard },
   { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
+  { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission("APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN") },
   { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
   { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
   { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
