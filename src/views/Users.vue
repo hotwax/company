@@ -1,45 +1,54 @@
 <template>
   <ion-page>
-    <FilterMenu content-id="filter-menu" />
-
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
+        <ion-menu-button slot="start" />
         <ion-title>{{ translate("Users") }}</ion-title>
-        <ion-menu-button slot="end" class="mobile-only">
-          <ion-icon :icon="optionsOutline" />
-        </ion-menu-button>
       </ion-toolbar>
-      <div>
-        <ion-searchbar class="searchbar" v-model="userStore.query.queryString" :placeholder="translate('Search users')" @keyup.enter="updateQuery()" />
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="idCardOutline" />
-          <ion-select v-model="userStore.query.userGroupId" :label="translate('Clearance')" interface="popover" @ion-change="updateQuery()">
-            <ion-select-option value="">
-              {{ translate("All") }}
-            </ion-select-option>
-            <ion-select-option v-for="(userGroup, index) in userGroups" :key="index" :value="userGroup.userGroupId">
-              {{ userGroup.description || userGroup.userGroupId }}
-            </ion-select-option>
-          </ion-select>
-        </ion-item>
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="toggleOutline" />
-          <ion-select v-model="userStore.query.status" :label="translate('Login')" interface="popover" @ion-change="updateQuery()">
-            <ion-select-option value="">
-              {{ translate("All") }}
-            </ion-select-option>
-            <ion-select-option value="Y">
-              {{ translate("Active") }}
-            </ion-select-option>
-            <ion-select-option value="N">
-              {{ translate("Inactive") }}
-            </ion-select-option>
-          </ion-select>
-        </ion-item>
-      </div>
     </ion-header>
 
-    <ion-content id="filter-menu">
+    <ion-content>
+      <ion-card class="filter-card">
+        <ion-card-content>
+          <ion-searchbar v-model="userStore.query.queryString" class="searchbar" :placeholder="translate('Search users')" @keyup.enter="updateQuery()" />
+          <div class="filter-row">
+            <ion-select
+              v-model="userStore.query.userGroupId"
+              :label="translate('Clearance')"
+              label-placement="stacked"
+              fill="outline"
+              interface="popover"
+              @ion-change="updateQuery()"
+            >
+              <ion-select-option value="">
+                {{ translate("All") }}
+              </ion-select-option>
+              <ion-select-option v-for="(userGroup, index) in userGroups" :key="index" :value="userGroup.userGroupId">
+                {{ userGroup.description || userGroup.userGroupId }}
+              </ion-select-option>
+            </ion-select>
+            <ion-select
+              v-model="userStore.query.status"
+              :label="translate('Login')"
+              label-placement="stacked"
+              fill="outline"
+              interface="popover"
+              @ion-change="updateQuery()"
+            >
+              <ion-select-option value="">
+                {{ translate("All") }}
+              </ion-select-option>
+              <ion-select-option value="Y">
+                {{ translate("Active") }}
+              </ion-select-option>
+              <ion-select-option value="N">
+                {{ translate("Inactive") }}
+              </ion-select-option>
+            </ion-select>
+          </div>
+        </ion-card-content>
+      </ion-card>
+
       <ion-card v-if="currentUser.userId" class="list-item" @click="viewUserDetails(currentUser)">
         <ion-item lines="none">
           <ion-label>
@@ -128,13 +137,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { IonBadge, IonCard, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, idCardOutline, optionsOutline, toggleOutline } from "ionicons/icons";
-import router from "@/router";
-import { DateTime } from "luxon";
 import { commonUtil, translate } from "@common";
-import FilterMenu from "@/components/FilterMenu.vue";
+import { IonBadge, IonCard, IonCardContent, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline } from "ionicons/icons";
+import { DateTime } from "luxon";
+import { computed, onMounted, ref } from "vue";
+import router from "@/router";
 import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
 
@@ -170,6 +178,7 @@ const getDate = (date: any) => {
 
 const getUserGroupDescription = (userGroupId: string) => {
   const userGroup = userGroups.value.find((userGroup: any) => userGroup.userGroupId === userGroupId);
+
   return userGroup?.description || userGroupId;
 };
 
@@ -214,9 +223,30 @@ const loadMoreUsers = (event: any) => {
 </script>
 
 <style scoped>
-@media (min-width: 991px) {
-  ion-header > div {
-    display: flex;
+.filter-card {
+  margin: var(--spacer-sm);
+}
+
+.filter-card ion-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-sm);
+  padding: var(--spacer-sm);
+}
+
+.filter-row {
+  display: flex;
+  gap: var(--spacer-sm);
+}
+
+.filter-row ion-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .filter-row {
+    flex-direction: column;
   }
 }
 

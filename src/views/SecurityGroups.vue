@@ -1,17 +1,17 @@
 <template>
   <ion-page>
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
+        <ion-menu-button slot="start" />
         <ion-title>{{ translate("Security Groups") }}</ion-title>
       </ion-toolbar>
-      <div>
-        <ion-searchbar v-model="query.queryString" :placeholder="translate('Search security groups')" @keyup.enter="updateQuery()" />
-      </div>
     </ion-header>
 
     <ion-content>
+      <ion-searchbar v-model="query.queryString" :placeholder="translate('Search security groups')" @keyup.enter="updateQuery()" />
+
       <div v-if="userGroups?.length">
-        <ion-item v-for="(group, index) in userGroups" :key="index" @click="viewGroupDetails(group)" detail class="pointer">
+        <ion-item v-for="(group, index) in userGroups" :key="index" detail class="pointer" @click="viewGroupDetails(group)">
           <ion-label>
             {{ group.description || group.userGroupId }}
             <p>{{ group.userGroupId }}</p>
@@ -39,9 +39,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { IonContent, IonHeader, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonPage, IonSearchbar, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { translate } from "@common";
+import { IonContent, IonHeader, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { computed, ref } from "vue";
 import router from "@/router";
 import { useAuthorizationStore } from "@/store/authorization";
 
