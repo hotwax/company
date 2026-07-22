@@ -16,7 +16,7 @@
             <ion-item v-for="app in filteredApps" :key="app.appId" button detail @click="selectApp(app.appId)">
               <ion-label :color="app.appId === selectedAppId ? 'primary' : undefined">
                 {{ app.appName }}
-                <p>{{ app.permissions.length }} {{ translate("Configured permissions") }}</p>
+                <p>{{ availablePermissions(app).length }} {{ translate("Configured permissions") }}</p>
               </ion-label>
             </ion-item>
           </ion-list>
@@ -28,26 +28,8 @@
             <ion-label>
               <ion-note>{{ selectedApp.appId }}</ion-note>
               <h1>{{ selectedApp.appName }}</h1>
-              <p class="ion-text-wrap">
-                {{ selectedApp.appDescription }}
-              </p>
             </ion-label>
           </ion-item>
-
-          <ion-list>
-            <ion-item>
-              <ion-label>{{ translate("App access") }}</ion-label>
-              <ion-note slot="end">
-                {{ selectedApp.appAccessPermissionIds.join(", ") }}
-              </ion-note>
-            </ion-item>
-            <ion-item>
-              <ion-label>{{ translate("Admin permissions") }}</ion-label>
-              <ion-note slot="end">
-                {{ selectedApp.adminPermissionIds.join(", ") }}
-              </ion-note>
-            </ion-item>
-          </ion-list>
 
           <div v-if="loading" class="loading-state">
             <ion-spinner name="crescent" />
@@ -91,8 +73,8 @@ import AppPermissionCard from "@/components/AppPermissionCard.vue"
 import AppPermissionGroupModal from "@/components/AppPermissionGroupModal.vue"
 import AppPermissionHistoryModal from "@/components/AppPermissionHistoryModal.vue"
 import AppPermissionUsersModal from "@/components/AppPermissionUsersModal.vue"
-import { appPermissionCatalogs } from "@/config/app-permissions"
-import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/app-permissions"
+import { appPermissionCatalogs } from "@/config/appPermissions"
+import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/appPermissions"
 import { useAppPermissionsStore } from "@/store/appPermissions"
 import { useUserStore } from "@/store/user"
 
@@ -109,8 +91,16 @@ const canManage = computed(() => canCreate.value || canUpdate.value)
 const selectedApp = computed<AppPermissionCatalog | undefined>(() => appPermissionCatalogs.find((app) => app.appId === selectedAppId.value) || appPermissionCatalogs[0])
 
 const matchesPermission = (permission: AppPermissionDefinition, queryString: string) => {
-  return [permission.permissionId, permission.title, permission.description, permission.category]
+  return [permission.permissionId, permission.description]
     .some((value) => value.toLowerCase().includes(queryString))
+}
+
+const availablePermissions = (app: AppPermissionCatalog): AppPermissionDefinition[] => {
+  return app.permissionIds.flatMap((permissionId) => {
+    const permission = appPermissionsStore.getPermissionById(permissionId)
+
+    return permission ? [permission] : []
+  })
 }
 
 const filteredApps = computed<readonly AppPermissionCatalog[]>(() => {
@@ -119,7 +109,8 @@ const filteredApps = computed<readonly AppPermissionCatalog[]>(() => {
 
   return appPermissionCatalogs.filter((app) => app.appName.toLowerCase().includes(queryString) ||
     app.appId.toLowerCase().includes(queryString) ||
-    app.permissions.some((permission) => matchesPermission(permission, queryString)))
+    app.permissionIds.some((permissionId) => permissionId.toLowerCase().includes(queryString)) ||
+    availablePermissions(app).some((permission) => matchesPermission(permission, queryString)))
 })
 
 const filteredPermissions = computed<readonly AppPermissionDefinition[]>(() => {
@@ -127,8 +118,8 @@ const filteredPermissions = computed<readonly AppPermissionDefinition[]>(() => {
   const queryString = query.value.trim().toLowerCase()
 
   return queryString
-    ? selectedApp.value.permissions.filter((permission) => matchesPermission(permission, queryString))
-    : selectedApp.value.permissions
+    ? availablePermissions(selectedApp.value).filter((permission) => matchesPermission(permission, queryString))
+    : availablePermissions(selectedApp.value)
 })
 
 const activeGroups = (permissionId: string) => appPermissionsStore.getActiveGroupsByPermission(permissionId)
@@ -138,7 +129,7 @@ const loadSelectedApp = async () => {
   loading.value = true
   loadError.value = false
   try {
-    await appPermissionsStore.fetchAssignmentsForPermissions(selectedApp.value.permissions.map((permission) => permission.permissionId))
+    await appPermissionsStore.fetchAssignments()
   } catch (error) {
     logger.error("Failed to load app permission assignments.", error instanceof Error ? error.message : String(error))
     loadError.value = true

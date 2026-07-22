@@ -7,7 +7,7 @@
             <ion-icon slot="icon-only" :icon="closeOutline" />
           </ion-button>
         </ion-buttons>
-        <ion-title>{{ permission.title }}</ion-title>
+        <ion-title>{{ permission.description }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -51,7 +51,7 @@ import { translate } from "@common"
 import { IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonNote, IonPage, IonSearchbar, IonTitle, IonToolbar, modalController } from "@ionic/vue"
 import { closeOutline } from "ionicons/icons"
 import { PropType, computed, ref } from "vue"
-import type { AppPermissionDefinition } from "@/config/app-permissions"
+import type { AppPermissionDefinition } from "@/config/appPermissions"
 import type { AppPermissionSecurityGroup } from "@/store/appPermissions"
 
 const props = defineProps({

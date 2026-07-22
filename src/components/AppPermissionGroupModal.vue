@@ -64,7 +64,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { PropType, computed, onMounted, ref } from "vue";
-import { AppPermissionDefinition } from "@/config/app-permissions";
+import { AppPermissionDefinition } from "@/config/appPermissions";
 
 const props = defineProps({
   permission: {

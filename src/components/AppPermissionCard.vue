@@ -1,13 +1,9 @@
 <template>
   <ion-card>
     <ion-card-header>
-      <ion-card-title>{{ permission.title }}</ion-card-title>
+      <ion-card-title>{{ permission.description }}</ion-card-title>
       <ion-card-subtitle>{{ permission.permissionId }}</ion-card-subtitle>
     </ion-card-header>
-
-    <ion-card-content>
-      <p>{{ permission.description }}</p>
-    </ion-card-content>
 
     <ion-list>
       <ion-item-divider color="light">
@@ -51,7 +47,6 @@ import { translate } from "@common";
 import {
   IonButton,
   IonCard,
-  IonCardContent,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
@@ -64,7 +59,7 @@ import {
 } from "@ionic/vue";
 import { peopleOutline, personOutline, timeOutline } from "ionicons/icons";
 import { PropType } from "vue";
-import { AppPermissionDefinition } from "@/config/app-permissions";
+import { AppPermissionDefinition } from "@/config/appPermissions";
 
 defineProps({
   permission: {

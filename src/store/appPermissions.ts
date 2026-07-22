@@ -1,5 +1,6 @@
 import { api, commonUtil, logger } from "@common"
 import { defineStore } from "pinia"
+import type { AppPermissionDefinition } from "@/config/appPermissions"
 import { useAuthorizationStore } from "@/store/authorization"
 import { toEpochMillis } from "@/utils/appPermissionTime"
 
@@ -21,6 +22,7 @@ const isActive = (record: { fromDate?: number | string; thruDate?: number | stri
 
 export const useAppPermissionsStore = defineStore("appPermissions", {
   state: () => ({
+    permissions: [] as AppPermissionDefinition[],
     securityGroups: [] as AppPermissionSecurityGroup[],
     permissionRecordsByGroup: {} as Record<string, any[]>,
     usersByGroup: {} as Record<string, any[]>,
@@ -28,6 +30,10 @@ export const useAppPermissionsStore = defineStore("appPermissions", {
   }),
 
   getters: {
+    getPermissionById: (state) => (permissionId: string): AppPermissionDefinition | undefined => {
+      return state.permissions.find((permission) => permission.permissionId === permissionId)
+    },
+
     getActiveGroupsByPermission: (state) => (permissionId: string): AppPermissionSecurityGroup[] => {
       return state.securityGroups.flatMap((group) => {
         const record = (state.permissionRecordsByGroup[group.groupId] || [])
@@ -52,6 +58,29 @@ export const useAppPermissionsStore = defineStore("appPermissions", {
   },
 
   actions: {
+    async fetchPermissions() {
+      if(this.permissions.length) {return}
+
+      try {
+        const resp = await api({
+          url: "admin/userPermissions",
+          method: "get",
+          params: { pageSize: 1000, orderByField: "userPermissionId" },
+          cache: true
+        }) as any
+
+        if(commonUtil.hasError(resp)) {throw resp.data}
+
+        this.permissions = (resp.data || []).map((permission: any) => ({
+          permissionId: permission.userPermissionId,
+          description: permission.description || permission.userPermissionId
+        }))
+      } catch (error) {
+        logger.error("Failed to fetch server permissions.", error instanceof Error ? error.message : String(error))
+        throw error
+      }
+    },
+
     async fetchSecurityGroups() {
       if(this.securityGroups.length) {return}
 
@@ -95,11 +124,9 @@ export const useAppPermissionsStore = defineStore("appPermissions", {
       }
     },
 
-    async fetchAssignmentsForPermissions(permissionIds: readonly string[]) {
-      await this.fetchSecurityGroups()
+    async fetchAssignments() {
+      await Promise.all([this.fetchPermissions(), this.fetchSecurityGroups()])
       await Promise.all(this.securityGroups.map((group) => this.fetchGroupPermissions(group.groupId)))
-
-      return permissionIds
     },
 
     async savePermissionGroups(permissionId: string, originalGroups: AppPermissionSecurityGroup[], selectedGroups: AppPermissionSecurityGroup[]) {
