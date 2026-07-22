@@ -673,6 +673,7 @@
   "Related Queries": "Related Queries",
   "Reload this page": "Reload this page",
   "Remove": "Remove",
+  "Removing this security group may limit 's access to certain features or data. Are you sure you want to continue?" : "Removing this security group may limit {username}'s access to certain features or data. Are you sure you want to continue?",
   "Replace API key": "Replace API key",
   "Replace your instructions with an improved version written by the model?": "Replace your instructions with an improved version written by the model?",
   "Request product export from Shopify": "Request product export from Shopify",

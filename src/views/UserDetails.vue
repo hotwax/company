@@ -545,7 +545,7 @@ onIonViewWillEnter(async () => {
   }
   isUserFulfillmentAdmin.value = selectedUser.value.securityGroups?.length ? await userStore.isUserFulfillmentAdmin(selectedUser.value.securityGroups.map((group: any) => group.userGroupId)) : false;
   isUserFetched.value = true;
-  username.value = selectedUser.value.groupName ? (selectedUser.value.groupName)?.toLowerCase() : (`${selectedUser.value.firstName}.${selectedUser.value.lastName}`?.toLowerCase()) || "";
+  username.value = selectedUser.value.groupName ? (selectedUser.value.groupName)?.toLowerCase() : [selectedUser.value.firstName, selectedUser.value.lastName].filter(Boolean).join(".").toLowerCase();
 });
 
 const checkUserAssociatedSecurityGroup = (securityGroupId: any) => {
