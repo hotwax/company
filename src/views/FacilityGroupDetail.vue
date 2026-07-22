@@ -13,6 +13,25 @@
     </ion-header>
 
     <ion-content>
+      <section class="group-meta">
+        <ion-card>
+          <ion-item lines="full">
+            <ion-label class="ion-text-wrap">
+              <p>{{ facilityGroupId }}</p>
+              <p v-if="group.description">{{ group.description }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item lines="full">
+            <ion-label>{{ translate("Group type") }}</ion-label>
+            <ion-note slot="end">{{ group.facilityGroupTypeId ? (getFacilityGroupTypeDescription(group.facilityGroupTypeId) || group.facilityGroupTypeId) : "-" }}</ion-note>
+          </ion-item>
+          <ion-item lines="none" button :detail="false" @click="openProductStoreModal()">
+            <ion-label>{{ translate("Product stores") }}</ion-label>
+            <ion-note slot="end">{{ productStoreCount ?? "-" }}</ion-note>
+          </ion-item>
+        </ion-card>
+      </section>
+
       <div class="find">
         <section class="ion-padding-end search">
           <ion-searchbar
@@ -86,6 +105,7 @@ import {
   IonBackButton,
   IonButton,
   IonButtons,
+  IonCard,
   IonContent,
   IonFab,
   IonFabButton,
@@ -95,6 +115,7 @@ import {
   IonLabel,
   IonList,
   IonListHeader,
+  IonNote,
   IonPage,
   IonReorder,
   IonReorderGroup,
@@ -104,19 +125,25 @@ import {
   modalController,
   onIonViewWillEnter
 } from '@ionic/vue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { commonUtil, logger, translate } from "@common";
 import { useFacilityStore } from '@/store/facility';
+import { useUtilStore } from '@/store/util';
 import { api } from '@common';
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
 import EditFacilityGroupModal from '@/components/EditFacilityGroupModal.vue';
+import AddProductStoreToGroupModal from '@/components/AddProductStoreToGroupModal.vue';
 
 const props = defineProps<{ facilityGroupId: string }>();
 
 const facilityStore = useFacilityStore();
+const utilStore = useUtilStore();
+
+const facilityGroupTypes = computed(() => facilityStore.getFacilityGroupTypes);
 
 const group = ref<any>({});
+const productStoreCount = ref<number | null>(null);
 const allFacilities = ref<any[]>([]);
 const memberFacilities = ref<any[]>([]);
 const selectedFacilities = ref<any[]>([]);
@@ -131,11 +158,42 @@ onIonViewWillEnter(async () => {
   await Promise.all([
     facilityStore.fetchFacilityGroupTypes(),
     loadGroup(),
-    loadAllFacilities()
+    loadAllFacilities(),
+    loadProductStoreCount()
   ]);
   await loadMemberFacilities();
   filterAvailableFacilities();
 });
+
+function getFacilityGroupTypeDescription(facilityGroupTypeId: string) {
+  return facilityGroupTypes.value.find((type: any) => type.facilityGroupTypeId === facilityGroupTypeId)?.description;
+}
+
+async function loadProductStoreCount() {
+  try {
+    const resp = await api({
+      url: "oms/groupProductStores",
+      method: "get",
+      params: { facilityGroupId: props.facilityGroupId, filterByDate: "Y", pageNoLimit: true }
+    });
+    productStoreCount.value = (!commonUtil.hasError(resp) && resp.data?.length) ? resp.data.length : 0;
+  } catch (err) {
+    logger.error("Failed to fetch group product stores", err);
+  }
+}
+
+async function openProductStoreModal() {
+  const modal = await modalController.create({
+    component: AddProductStoreToGroupModal,
+    componentProps: { facilityGroup: group.value }
+  });
+
+  modal.onDidDismiss().then(({ data }: any) => {
+    if (data?.updatedCount !== undefined) productStoreCount.value = data.updatedCount;
+  });
+
+  modal.present();
+}
 
 async function openEditModal() {
   const modal = await modalController.create({
@@ -146,6 +204,7 @@ async function openEditModal() {
   modal.onDidDismiss().then(({ data }: any) => {
     if (data?.updated) {
       group.value = { ...group.value, ...data.updated };
+      utilStore.patchFacilityGroup(props.facilityGroupId, data.updated);
     }
   });
 
@@ -164,22 +223,10 @@ async function loadGroup() {
 }
 
 async function loadAllFacilities() {
-  let facilities: any[] = [];
-  let pageIndex = 0, resp: any;
-  try {
-    do {
-      resp = await api({ url: "oms/facilities", method: "get", params: { fieldsToSelect: "facilityId,facilityName", pageSize: 200, pageIndex } });
-      if (!commonUtil.hasError(resp) && resp.data?.length) {
-        facilities = facilities.concat(resp.data);
-        pageIndex++;
-      } else {
-        break;
-      }
-    } while (resp.data?.length >= 200);
-  } catch (err) {
-    logger.error("Failed to load all facilities", err);
-  }
-  allFacilities.value = facilities;
+  // Physical facilities come from the shared, login-time cache instead of a
+  // paged oms/facilities sweep.
+  if (!utilStore.facilities.length) await utilStore.fetchFacilities();
+  allFacilities.value = utilStore.getFacilities;
 }
 
 async function loadMemberFacilities() {
