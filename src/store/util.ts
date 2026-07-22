@@ -108,7 +108,7 @@ export const useUtilStore = defineStore('util', {
             }
           })
           if (!commonUtil.hasError(resp) && resp.data) {
-            facilities = facilities.concat(resp.data.filter((f: any) => f.externalId))
+            facilities = facilities.concat(resp.data)
           } else {
             throw resp.data
           }
@@ -120,6 +120,14 @@ export const useUtilStore = defineStore('util', {
         this.fetchStatus = { ...this.fetchStatus, facilities: 'error' }
       }
       this.facilities = facilities
+    },
+
+    patchFacility(facilityId: string, patch: any) {
+      this.facilities = this.facilities.map((facility: any) => facility.facilityId === facilityId ? { ...facility, ...patch } : facility)
+    },
+
+    patchFacilityGroup(facilityGroupId: string, patch: any) {
+      this.facilityGroups = this.facilityGroups.map((group: any) => group.facilityGroupId === facilityGroupId ? { ...group, ...patch } : group)
     },
 
     async createFacility(payload: {

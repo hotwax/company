@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { api, commonUtil, logger, translate } from "@common";
 import { DateTime } from "luxon";
+import { useUtilStore } from "./util";
 
 export const useFacilityStore = defineStore("facility", {
   state: () => ({
@@ -9,10 +10,6 @@ export const useFacilityStore = defineStore("facility", {
       productStoreId: "",
       facilityTypeId: "",
       facilityGroupId: ""
-    },
-    facilities: {
-      list: [] as any[],
-      total: 0
     },
     current: {} as any,
     facilityTypes: [] as any[],
@@ -27,9 +24,7 @@ export const useFacilityStore = defineStore("facility", {
     archivedFacilities: [] as any[]
   }),
   getters: {
-    getFacilities: (state) => (state.facilities.list ? JSON.parse(JSON.stringify(state.facilities.list)) : []),
     getFacilityQuery: (state) => JSON.parse(JSON.stringify(state.facilityQuery)),
-    isFacilitiesScrollable: (state) => state.facilities.list?.length > 0 && state.facilities.list?.length < state.facilities.total,
     getCurrent: (state) => (state.current ? JSON.parse(JSON.stringify(state.current)) : {}),
     getFacilityTypes: (state) => state.facilityTypes,
     getParentFacilityTypeId: (state) => (facilityTypeId: string) => state.facilityTypes.find((type: any) => type.facilityTypeId === facilityTypeId)?.parentTypeId,
@@ -48,79 +43,6 @@ export const useFacilityStore = defineStore("facility", {
     getArchivedFacilities: (state) => state.archivedFacilities
   },
   actions: {
-    async fetchFacilities(payload: any) {
-      const filters = {
-        "parentFacilityTypeId": "VIRTUAL_FACILITY",
-        "parentFacilityTypeId_not": "Y",
-        "facilityTypeId": "VIRTUAL_FACILITY",
-        "facilityTypeId_not": "Y",
-      } as any;
-
-      if (this.facilityQuery.productStoreId) {
-        filters["productStoreId"] = this.facilityQuery.productStoreId;
-        filters["productStoreId_op"] = "equals";
-      }
-
-      if (this.facilityQuery.facilityTypeId) {
-        filters["facilityTypeId"] = this.facilityQuery.facilityTypeId;
-        filters["facilityTypeId_op"] = "equals";
-        delete filters["facilityTypeId_not"];
-      }
-
-      if (this.facilityQuery.queryString) {
-        filters["keyword"] = this.facilityQuery.queryString;
-      }
-
-      if (this.facilityQuery.facilityGroupId) {
-        filters["facilityGroupId"] = this.facilityQuery.facilityGroupId;
-        filters["facilityGroupId_op"] = "equals";
-      }
-
-      const params = {
-        ...filters,
-        fieldsToSelect: "facilityId,facilityName,facilityTypeId,maximumOrderLimit,defaultDaysToShip,externalId,primaryFacilityGroupId,parentFacilityTypeId,closedDate,facilityTimeZone",
-        ...payload
-      };
-
-      let facilities = this.facilities.list ? JSON.parse(JSON.stringify(this.facilities.list)) : [];
-      let total = 0;
-      let newFacilities: any[] = [];
-
-      try {
-        const resp = await api({
-          url: "oms/facilities/search",
-          method: "get",
-          params
-        });
-        if (!commonUtil.hasError(resp) && resp.data.count > 0) {
-          newFacilities = resp.data.facilities.map((facility: any) => ({
-            ...facility,
-            orderLimitType: facility.maximumOrderLimit === 0 ? "no-capacity" : (facility.maximumOrderLimit ? "custom" : "unlimited"),
-            isEnriched: false
-          }));
-          if (payload.pageIndex && payload.pageIndex > 0) {
-            facilities = facilities.concat(newFacilities);
-          } else {
-            facilities = newFacilities;
-          }
-          total = resp.data.count;
-        } else {
-          throw resp.data;
-        }
-      } catch (error) {
-        logger.error(error);
-        if (payload.pageIndex === 0) {
-          facilities = [];
-          total = 0;
-        }
-      }
-
-      this.facilities = { list: facilities, total };
-
-      if (newFacilities.length) {
-        await this.fetchFacilitiesAdditionalInformation(newFacilities);
-      }
-    },
     async fetchFacilityOrderCounts(facilityIds: string[]) {
       let orderCounts = {} as any;
       try {
@@ -162,30 +84,6 @@ export const useFacilityStore = defineStore("facility", {
       });
       return groupsByFacility;
     },
-    async fetchFacilitiesAdditionalInformation(facilities: any[]) {
-      const facilityIds = facilities.map((facility: any) => facility.facilityId);
-
-      const [orderCounts, groupsByFacility] = await Promise.all([
-        this.fetchFacilityOrderCounts(facilityIds),
-        this.fetchFacilityGroupMemberships(facilityIds)
-      ]);
-
-      const enrichedById = facilities.reduce((acc: any, facility: any) => {
-        const groupInformation = groupsByFacility[facility.facilityId] || [];
-        acc[facility.facilityId] = {
-          ...facility,
-          orderCount: orderCounts[facility.facilityId] || 0,
-          groupInformation,
-          sellOnline: groupInformation.some((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"),
-          isEnriched: true
-        };
-        return acc;
-      }, {});
-
-      const currentList = this.facilities.list ? JSON.parse(JSON.stringify(this.facilities.list)) : [];
-      const updatedList = currentList.map((facility: any) => enrichedById[facility.facilityId] || facility);
-      this.facilities = { list: updatedList, total: this.facilities.total };
-    },
     async updateFacility(payload: any) {
       return api({ url: `oms/facilities/${payload.facilityId}`, method: "put", data: payload });
     },
@@ -216,9 +114,9 @@ export const useFacilityStore = defineStore("facility", {
     async updateFacilityToGroup(payload: any) {
       return api({ url: `oms/facilities/${payload.facilityId}/groups/${payload.facilityGroupId}`, method: "put", data: payload });
     },
-    updateFacilities(facilities: any[]) {
-      this.facilities = { list: facilities, total: this.facilities.total };
-    },
+    // Returns the facility's updated groupInformation/sellOnline on success so
+    // callers can merge it into whatever list they render; this store no
+    // longer keeps its own facility list to patch.
     async updateFacilityGroupAssociation(currentFacility: any, facilityGroup: any, isChecked: boolean) {
       try {
         let resp, successMessage;
@@ -242,21 +140,18 @@ export const useFacilityStore = defineStore("facility", {
         if (!commonUtil.hasError(resp)) {
           commonUtil.showToast(successMessage);
           const groupsByFacility = await this.fetchFacilityGroupMemberships([currentFacility.facilityId]);
-          const updatedGroupInformation = groupsByFacility[currentFacility.facilityId] || [];
-          const updatedFacilities = this.getFacilities.map((facility: any) => {
-            if (facility.facilityId === currentFacility.facilityId) {
-              facility.groupInformation = updatedGroupInformation;
-              facility.sellOnline = updatedGroupInformation.some((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP");
-            }
-            return facility;
-          });
-          this.updateFacilities(updatedFacilities);
+          const groupInformation = groupsByFacility[currentFacility.facilityId] || [];
+          return {
+            groupInformation,
+            sellOnline: groupInformation.some((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP")
+          };
         } else {
           throw resp.data;
         }
       } catch (err) {
         commonUtil.showToast(translate("Failed to update sell inventory online setting"));
         logger.error("Failed to update sell inventory online setting", err);
+        return null;
       }
     },
     updateFacilityQuery(query: any) {
@@ -264,7 +159,6 @@ export const useFacilityStore = defineStore("facility", {
     },
     clearFacilityState() {
       this.facilityQuery = { queryString: "", productStoreId: "", facilityTypeId: "", facilityGroupId: "" };
-      this.facilities = { list: [], total: 0 };
       this.current = {};
     },
     async fetchCurrentFacility(payload: { facilityId: string }) {
@@ -648,28 +542,17 @@ export const useFacilityStore = defineStore("facility", {
     async updateUserLoginStatus(payload: any) {
       return api({ url: "service/updateUserLoginStatus", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
     },
+    // Base list comes from the shared, already-cached facility groups (fetched
+    // at login); only falls back to a live fetch if that cache hasn't loaded yet.
     async fetchFacilityGroupsWithSearch() {
-      const params: any = { pageNoLimit: true };
-      if (this.groupQuery.queryString) {
-        params.facilityGroupName = this.groupQuery.queryString;
-        params.facilityGroupName_op = "contains";
-        params.facilityGroupName_ic = "Y";
-      }
-      let groups: any[] = [];
-      let pageIndex = 0, resp: any;
-      try {
-        do {
-          resp = await api({ url: "admin/facilityGroups", method: "get", params: { ...params, pageIndex } });
-          if (!commonUtil.hasError(resp) && resp.data?.length) {
-            groups = groups.concat(resp.data);
-            pageIndex++;
-          } else {
-            break;
-          }
-        } while (resp.data?.length >= 200);
-      } catch (err) {
-        logger.error("Failed to fetch facility groups", err);
-      }
+      const utilStore = useUtilStore();
+      if (!utilStore.facilityGroups.length) await utilStore.fetchFacilityGroups();
+
+      const keyword = this.groupQuery.queryString?.trim().toLowerCase();
+      const groups = keyword
+        ? utilStore.getFacilityGroups.filter((group: any) => group.facilityGroupName?.toLowerCase().includes(keyword))
+        : utilStore.getFacilityGroups;
+
       this.groups = groups;
       if (groups.length) await (this as any).enrichGroupsWithCounts();
     },
@@ -792,8 +675,6 @@ export const useFacilityStore = defineStore("facility", {
           const enriched = { ...facility, orderCount: orderCounts[facility.facilityId] ?? 0 };
           if (facility.facilityId === '_NA_') {
             enriched.brokeringJob = jobData?.brokeringJob;
-          } else if (['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) {
-            enriched.autoReleaseJob = jobData?.autoReleaseJob;
           }
           return enriched;
         });
@@ -806,8 +687,7 @@ export const useFacilityStore = defineStore("facility", {
       const payload = {
         inputFields: {
           statusId: "SERVICE_PENDING",
-          systemJobEnumId: ["JOB_RLS_ORD_DTE", "JOB_BKR_ORD"],
-          systemJobEnumId_op: "in"
+          systemJobEnumId: "JOB_BKR_ORD"
         },
         orderBy: "runTime ASC",
         entityName: "JobSandbox",
@@ -817,11 +697,7 @@ export const useFacilityStore = defineStore("facility", {
       try {
         const resp = await api({ url: "performFind", method: "post", data: payload, baseURL: commonUtil.getOmsURL() });
         if (!commonUtil.hasError(resp) && resp.data?.count > 0) {
-          const jobs = resp.data.docs;
-          return {
-            brokeringJob: jobs.find((job: any) => job.systemJobEnumId === "JOB_BKR_ORD"),
-            autoReleaseJob: jobs.find((job: any) => job.systemJobEnumId === "JOB_RLS_ORD_DTE")
-          };
+          return { brokeringJob: resp.data.docs[0] };
         }
       } catch (err) {
         logger.error("Failed to fetch job data", err);

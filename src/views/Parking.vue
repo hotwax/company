@@ -33,12 +33,9 @@
               <ion-note slot="end">{{ facility?.brokeringJob?.runTime ? commonUtil.getDateAndTime(facility?.brokeringJob?.runTime) : translate("Not scheduled") }}</ion-note>
             </ion-item>
           </template>
-          <ion-item v-else :lines="(isFacilityDescriptionAvailable(facility) || ['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)) ? 'inset' : 'none'">
+          <ion-item v-else :lines="isFacilityDescriptionAvailable(facility) ? 'inset' : 'none'">
             <ion-label>{{ translate('Orders') }}</ion-label>
             <ion-note slot="end">{{ facility.orderCount }}</ion-note>
-          </ion-item>
-          <ion-item :lines="isFacilityDescriptionAvailable(facility) ? 'inset' : 'none'" v-if="['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId)">
-            <ion-toggle :checked="facility.autoReleaseJob" :disabled="true">{{ translate('Auto release') }}</ion-toggle>
           </ion-item>
           <ion-item lines="none" v-if="isFacilityDescriptionAvailable(facility)">
             <ion-label>{{ facility.description }}</ion-label>
@@ -82,7 +79,6 @@ import {
   IonNote,
   IonPage,
   IonTitle,
-  IonToggle,
   IonToolbar,
   modalController,
   onIonViewWillEnter,
@@ -101,13 +97,12 @@ const facilityStore = useFacilityStore();
 const virtualFacilities = computed(() => (facilityStore as any).getVirtualFacilities);
 const isScrollable = computed(() => (facilityStore as any).isVirtualFacilitiesScrollable);
 
-// custom sorting: keep BACKORDER_PARKING, PRE_ORDER_PARKING, _NA_ first
-const PRIORITY_IDS = ['BACKORDER_PARKING', 'PRE_ORDER_PARKING', '_NA_'];
+// keep _NA_ (pending allocation) pinned first; all other parkings flow in fetch order
 const sortedFacilities = computed(() => {
   return [...virtualFacilities.value].sort((a: any, b: any) => {
-    const ai = PRIORITY_IDS.indexOf(a.facilityId);
-    const bi = PRIORITY_IDS.indexOf(b.facilityId);
-    return bi - ai;
+    if (a.facilityId === '_NA_') return -1;
+    if (b.facilityId === '_NA_') return 1;
+    return 0;
   });
 });
 
@@ -117,7 +112,7 @@ onIonViewWillEnter(async () => {
 });
 
 function isFacilityDescriptionAvailable(facility: any) {
-  return facility.description && !['BACKORDER', 'PRE_ORDER'].includes(facility.facilityTypeId) && facility.facilityId !== '_NA_';
+  return facility.description && facility.facilityId !== '_NA_';
 }
 
 async function loadMoreFacilities(event: any) {

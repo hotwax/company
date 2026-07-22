@@ -661,7 +661,7 @@ onIonViewWillEnter(async () => {
   isLoading.value = true;
   await Promise.all([
     facilityStore.fetchFacilityGroupTypes(),
-    utilStore.fetchFacilityGroups(),
+    utilStore.facilityGroups.length ? Promise.resolve() : utilStore.fetchFacilityGroups(),
     (facilityStore as any).fetchPartyRoles()
   ]);
   await Promise.all([
@@ -677,7 +677,7 @@ onIonViewWillEnter(async () => {
     facilityStore.fetchFacilityIdentifications({ facilityId: props.facilityId }),
     facilityStore.fetchShopifyFacilityMappings({ facilityId: props.facilityId }),
     facilityStore.fetchCurrentFacilityProductStores({ facilityId: props.facilityId }),
-    productStoreStore.fetchProductStores(),
+    productStoreStore.productStores.length ? Promise.resolve() : productStoreStore.fetchProductStores(),
     facilityStore.fetchFacilityContactDetailsAndTelecom({ facilityId: props.facilityId }),
     facilityStore.fetchCalendars(),
     facilityStore.fetchFacilityCalendar({ facilityId: props.facilityId }),

@@ -160,6 +160,38 @@ export const useUserStore = defineStore('user', {
       } catch (error: any) {
         return Promise.reject(new Error(error))
       }
+
+      // Hydrate remaining reference data lazily in the background. Not
+      // awaited so login doesn't wait on it; each store tracks its own
+      // fetchStatus (see Settings.vue's Data Fetch Status panel) and
+      // swallows its own errors.
+      this.prefetchReferenceData()
+    },
+
+    async prefetchReferenceData() {
+      const { useProductStore } = await import('./productStore')
+      const { useUtilStore } = await import('./util')
+      const { useShopifyStore } = await import('./shopify')
+      const { useFacilityStore } = await import('./facility')
+      const { default: useServiceJob } = await import('@/composables/useServiceJob')
+
+      const utilStore = useUtilStore()
+      const { fetchJobs } = useServiceJob()
+
+      await Promise.allSettled([
+        useProductStore().fetchProductStores(),
+        useShopifyStore().fetchShopifyShops(),
+        useFacilityStore().fetchFacilityGroupTypes(),
+        utilStore.fetchStatusItems(),
+        utilStore.fetchFacilities(),
+        utilStore.fetchOrganizationPartyId(),
+        utilStore.fetchFacilityGroups(),
+        utilStore.fetchDBICCountries(),
+        utilStore.fetchOperatingCountries(),
+        utilStore.fetchProductIdentifiers(),
+        utilStore.fetchShipmentMethodTypes(),
+        fetchJobs()
+      ])
     },
 
     // Called by @common's initialiseConfig after logout

@@ -130,7 +130,7 @@ onIonViewWillEnter(async () => {
   selectedProductStores.value = [];
   primaryProductStoreId.value = "";
   fulfillmentSettings.value = { FAC_GRP: false, PICKUP: false, OMS_FULFILLMENT: false };
-  await productStoreStore.fetchProductStores();
+  if (!productStoreStore.productStores.length) await productStoreStore.fetchProductStores();
 });
 
 function updatePrimary(productStoreId: string) {

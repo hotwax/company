@@ -167,7 +167,7 @@ async function removeFacilityFromGroup(facilityGroupId: string) {
 
 async function fetchFacilityGroups() {
   try {
-    await utilStore.fetchFacilityGroups();
+    if (!utilStore.facilityGroups.length) await utilStore.fetchFacilityGroups();
     const groups = utilStore.getFacilityGroups;
     const newFacilityGroups = groups.reduce((groupsByType: any, group: any) => {
       const groupTypeId = !group.facilityGroupTypeId ? "Others" : group.facilityGroupTypeId;
