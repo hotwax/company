@@ -140,7 +140,6 @@ export const appPermissionCatalogs: readonly AppPermissionCatalog[] = [
     permissionIds: ["APP_SHPGRP_CNCL", "APP_SHPGRP_DLVRADR_UPDATE", "APP_SHPGRP_DLVRMTHD_UPDATE", "APP_SHPGRP_PCKUP_UPDATE"]
   },
   { appId: "returns", appName: "Returns", permissionIds: [] },
-  { appId: "shopify-bopis", appName: "Shopify BOPIS", permissionIds: [] },
   {
     appId: "transfers",
     appName: "Transfers",
