@@ -14,7 +14,7 @@
           <div class="filter-row">
             <ion-select
               v-model="userStore.query.userGroupId"
-              :label="translate('Clearance')"
+              :label="translate('Security groups')"
               label-placement="stacked"
               fill="outline"
               interface="popover"
@@ -29,7 +29,7 @@
             </ion-select>
             <ion-select
               v-model="userStore.query.status"
-              :label="translate('Login')"
+              :label="translate('Status')"
               label-placement="stacked"
               fill="outline"
               interface="popover"
