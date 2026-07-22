@@ -274,7 +274,11 @@ export const useShopifyStore = defineStore('shopify', {
     },
 
     async fetchSystemMessageRemote(shopId: string) {
-      const resp = await api({ url: 'oms/systemMessageRemotes', method: 'get' })
+      const resp = await api({
+        url: 'oms/systemMessageRemotes',
+        method: 'get',
+        params: { pageSize: 250 }
+      })
       if (commonUtil.hasError(resp)) throw resp
       const list: any[] = resp.data?.systemMessageRemoteList ?? []
       return list.find((r: any) => r.internalId === shopId && r.internalIdType === 'HOTWAX_SHOP_ID') ?? null
