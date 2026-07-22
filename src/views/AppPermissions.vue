@@ -69,19 +69,18 @@ import { commonUtil, logger, translate } from "@common"
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonNote, IonPage, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue"
 import { shieldCheckmarkOutline } from "ionicons/icons"
 import { computed, ref, watch } from "vue"
-import { useRoute } from "vue-router"
 import AppPermissionCard from "@/components/AppPermissionCard.vue"
 import AppPermissionGroupModal from "@/components/AppPermissionGroupModal.vue"
 import AppPermissionHistoryModal from "@/components/AppPermissionHistoryModal.vue"
 import AppPermissionUsersModal from "@/components/AppPermissionUsersModal.vue"
 import { appPermissionCatalogs } from "@/config/appPermissions"
 import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/appPermissions"
+import router from "@/router"
 import { useAppPermissionsStore } from "@/store/appPermissions"
 import { useUserStore } from "@/store/user"
 
 const appPermissionsStore = useAppPermissionsStore()
 const userStore = useUserStore()
-const route = useRoute()
 const loading = ref(false)
 const loadError = ref(false)
 const query = ref("")
@@ -94,7 +93,7 @@ const getAppId = (appId: unknown) => {
     : appPermissionCatalogs[0]?.appId || ""
 }
 
-const selectedAppId = ref<string>(getAppId(route.query.appId))
+const selectedAppId = ref<string>(getAppId(router.currentRoute.value.query.appId))
 
 const canCreate = computed(() => userStore.hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
 const canUpdate = computed(() => userStore.hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
@@ -150,19 +149,19 @@ const loadSelectedApp = async () => {
   }
 }
 
-watch(() => route.query.appId, async (appId) => {
+watch(() => router.currentRoute.value.query.appId, async (appId) => {
   selectedAppId.value = getAppId(appId)
   await loadSelectedApp()
 }, { immediate: true })
 
 const selectApp = async (appId: string) => {
-  selectedAppId.value = getAppId(appId)
-
-  const url = new URL(window.location.href)
-  url.searchParams.set("appId", selectedAppId.value)
-  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
-
-  await loadSelectedApp()
+  await router.replace({
+    name: "AppPermissions",
+    query: {
+      ...router.currentRoute.value.query,
+      appId: getAppId(appId)
+    }
+  })
 }
 
 const openHistory = async (permission: AppPermissionDefinition) => {
