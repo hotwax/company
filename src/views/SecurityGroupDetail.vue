@@ -3,7 +3,7 @@
     <ion-header :translucent="true">
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button default-href="/permissions" />
+          <ion-back-button default-href="/security-groups" />
         </ion-buttons>
         <ion-title>{{ currentUserGroup?.description || currentUserGroup?.userGroupId }}</ion-title>
       </ion-toolbar>

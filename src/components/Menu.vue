@@ -16,6 +16,28 @@
         </ion-menu-toggle>
 
         <ion-item-divider color="light">
+          <ion-label>{{ translate("Integrations") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle v-for="(p, i) in integrationPages" :key="'integration-' + i" :auto-hide="false">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIntegrationIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <ion-item-divider color="light">
+          <ion-label>{{ translate("Users") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle v-for="(p, i) in visibleUserPages" :key="'user-' + i" :auto-hide="false">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedUserIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <ion-item-divider color="light">
           <ion-label>{{ translate("Agents") }}</ion-label>
         </ion-item-divider>
 
@@ -42,6 +64,8 @@
 </template>
 
 <script setup lang="ts">
+import { translate } from "@common";
+import { useAuth } from "@common/composables/useAuth";
 import {
   IonContent,
   IonHeader,
@@ -55,13 +79,13 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
+import { briefcaseOutline, businessOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
-import { briefcaseOutline, businessOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
-import { useAuth } from "@common/composables/useAuth";
 import router from "@/router";
-import { translate } from "@common";
+import { useUserStore } from "@/store/user";
 
 const { isAuthenticated } = useAuth();
+const userStore = useUserStore();
 const appPages = [
   {
     title: "Product Store",
@@ -70,6 +94,9 @@ const appPages = [
     iosIcon: businessOutline,
     mdIcon: businessOutline,
   },
+];
+
+const integrationPages = [
   {
     title: "Shopify",
     url: "/shopify",
@@ -91,19 +118,36 @@ const appPages = [
     iosIcon: walletOutline,
     mdIcon: walletOutline
   },
+];
+
+const userPages = [
   {
     title: "Users",
     url: "/users",
+    childRoutes: ["/user-details/", "/create-user", "/user-confirmation/", "/user-quick-setup/"],
+    permission: "USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN",
     iosIcon: peopleOutline,
     mdIcon: peopleOutline,
   },
   {
     title: "Security Groups",
     url: "/security-groups",
+    childRoutes: ["/security-group-detail/"],
+    permission: "SECURITY_VIEW OR SECURITY_ADMIN",
     iosIcon: keyOutline,
     mdIcon: keyOutline,
+  },
+  {
+    title: "App Permissions",
+    url: "/app-permissions",
+    childRoutes: ["/app-permissions/"],
+    permission: "APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN",
+    iosIcon: shieldCheckmarkOutline,
+    mdIcon: shieldCheckmarkOutline,
   }
 ];
+
+const visibleUserPages = computed(() => userPages.filter((screen) => userStore.hasPermission(screen.permission)))
 
 const agentPages = [
   {
@@ -139,6 +183,18 @@ const selectedAgentIndex = computed(() => {
   const path = router.currentRoute.value.path
 
   return agentPages.findIndex((screen) => screen.url === path)
+})
+
+const selectedIntegrationIndex = computed(() => {
+  const path = router.currentRoute.value.path
+
+  return integrationPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+})
+
+const selectedUserIndex = computed(() => {
+  const path = router.currentRoute.value.path
+
+  return visibleUserPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
 })
 
 const selectedSettingsIndex = computed(() => {
