@@ -56,7 +56,7 @@ import {
   IonMenuToggle,
 } from "@ionic/vue";
 import { computed } from "vue";
-import { briefcaseOutline, businessOutline, cartOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
+import { briefcaseOutline, businessOutline, cartOutline, keyOutline, mailOutline, schoolOutline, settingsOutline, walletOutline } from "ionicons/icons";
 import { useAuth } from '@common/composables/useAuth';
 import router from "@/router";
 import { translate } from '@common';
@@ -105,6 +105,12 @@ const agentPages = [
     url: "/workforce",
     iosIcon: briefcaseOutline,
     mdIcon: briefcaseOutline,
+  },
+  {
+    title: "Artifact Access",
+    url: "/tool-access",
+    iosIcon: keyOutline,
+    mdIcon: keyOutline,
   }
 ];
 

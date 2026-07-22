@@ -21,6 +21,7 @@ const KlaviyoConnectionDetails = () => import('@/views/KlaviyoConnectionDetails.
 const CloneProductStore = () => import('@/views/CloneProductStore.vue')
 const Composer = () => import('@/views/agent/Composer.vue')
 const Workforce = () => import('@/views/agent/Workforce.vue')
+const ToolAccess = () => import('@/views/agent/ToolAccess.vue')
 
 const authGuard = async () => {
   if (!useAuth().isAuthenticated.value) {
@@ -71,6 +72,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/clone-product-store', name: 'CloneProductStore', component: CloneProductStore, beforeEnter: authGuard },
   { path: '/composer', name: 'Composer', component: Composer, beforeEnter: authGuard },
   { path: '/workforce', name: 'Workforce', component: Workforce, beforeEnter: authGuard },
+  { path: '/tool-access', name: 'ToolAccess', component: ToolAccess, beforeEnter: authGuard },
 ]
 
 const router = createRouter({

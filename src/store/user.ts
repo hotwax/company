@@ -175,6 +175,7 @@ export const useUserStore = defineStore('user', {
       const { useKlaviyoStore } = await import('./klaviyo')
       const { useComposerStore } = await import('./composer')
       const { useWorkforceStore } = await import('./workforce')
+      const { useToolAccessStore } = await import('./toolAccess')
 
       useProductStore().clearProductStoreState()
       useUtilStore().clearUtilState()
@@ -183,6 +184,7 @@ export const useUserStore = defineStore('user', {
       useKlaviyoStore().clear()
       useComposerStore().clearComposerState()
       useWorkforceStore().clearWorkforceState()
+      useToolAccessStore().clearToolAccessState()
     }
   },
 
