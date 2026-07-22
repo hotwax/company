@@ -43,10 +43,7 @@ export const useUserStore = defineStore("user", {
     getRedirectedFromUrl: (state): string => state.redirectedFrom,
     getUsers: (state): any[] => state.users.list,
     isScrollable: (state): boolean => {
-      return (
-        state.users.list?.length > 0 &&
-        (state.users.list?.length % Number(import.meta.env.VITE_VIEW_SIZE) === 0)
-      )
+      return state.users.list?.length > 0 && state.users.list.length < state.users.total
     },
     hasPermission: (state) => (permissionId: string): boolean => {
       const checkPermission = (id: string): boolean => {
