@@ -69,7 +69,7 @@ import { commonUtil, logger, translate } from "@common"
 import { IonButton, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonNote, IonPage, IonSearchbar, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue"
 import { shieldCheckmarkOutline } from "ionicons/icons"
 import { computed, ref, watch } from "vue"
-import { useRoute, useRouter } from "vue-router"
+import { useRoute } from "vue-router"
 import AppPermissionCard from "@/components/AppPermissionCard.vue"
 import AppPermissionGroupModal from "@/components/AppPermissionGroupModal.vue"
 import AppPermissionHistoryModal from "@/components/AppPermissionHistoryModal.vue"
@@ -82,7 +82,6 @@ import { useUserStore } from "@/store/user"
 const appPermissionsStore = useAppPermissionsStore()
 const userStore = useUserStore()
 const route = useRoute()
-const router = useRouter()
 const loading = ref(false)
 const loadError = ref(false)
 const query = ref("")
@@ -95,7 +94,7 @@ const getAppId = (appId: unknown) => {
     : appPermissionCatalogs[0]?.appId || ""
 }
 
-const selectedAppId = ref<string>(getAppId(route.params.appId))
+const selectedAppId = ref<string>(getAppId(route.query.appId))
 
 const canCreate = computed(() => userStore.hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
 const canUpdate = computed(() => userStore.hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
@@ -151,13 +150,19 @@ const loadSelectedApp = async () => {
   }
 }
 
-watch(() => route.params.appId, async (appId) => {
+watch(() => route.query.appId, async (appId) => {
   selectedAppId.value = getAppId(appId)
   await loadSelectedApp()
 }, { immediate: true })
 
 const selectApp = async (appId: string) => {
-  await router.push({ name: "AppPermissions", params: { appId } })
+  selectedAppId.value = getAppId(appId)
+
+  const url = new URL(window.location.href)
+  url.searchParams.set("appId", selectedAppId.value)
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
+
+  await loadSelectedApp()
 }
 
 const openHistory = async (permission: AppPermissionDefinition) => {
