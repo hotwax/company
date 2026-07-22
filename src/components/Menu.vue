@@ -140,7 +140,6 @@ const userPages = [
   {
     title: "App Permissions",
     url: "/app-permissions",
-    childRoutes: ["/app-permissions/"],
     permission: "APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN",
     iosIcon: shieldCheckmarkOutline,
     mdIcon: shieldCheckmarkOutline,
