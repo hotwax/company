@@ -103,9 +103,10 @@ export const useUserStore = defineStore("user", {
         let resp: any
         do {
           resp = await api({
-            url: "admin/user/permissions",
-            method: "get",
-            params: { viewIndex, viewSize }
+            url: commonUtil.isMoqui() ? "admin/user/permissions" : "getPermissions",
+            method: "GET",
+            params: { viewIndex, viewSize },
+            baseURL: commonUtil.isMoqui() ? commonUtil.getMaargURL() : commonUtil.getOmsURL()
           })
           if(resp.status === 200 && resp.data.docs?.length && !commonUtil.hasError(resp)) {
             serverPermissions.push(...resp.data.docs.map((p: any) => p.permissionId))
