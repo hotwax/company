@@ -724,14 +724,13 @@ export const useUserStore = defineStore("user", {
               partyId: payload.partyId,
               contactMechPurposeTypeId: "PRIMARY_EMAIL,PRIMARY_PHONE",
               contactMechPurposeTypeId_op: "in",
-              thruDate_op: "empty",
-              pageSize: 2
+              pageSize: 100
             }
           }) as any
           if(!commonUtil.hasError(contactResp)) {
             let emailDetails = {}
             let phoneNumberDetails = {}
-            const contactDocs = contactResp.data || []
+            const contactDocs = (contactResp.data || []).filter((doc: any) => !doc.thruDate && !doc.PCMPthruDate)
 
             contactDocs.forEach((doc: any) => {
               if(doc.contactMechPurposeTypeId === "PRIMARY_EMAIL") {
