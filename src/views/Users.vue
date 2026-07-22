@@ -148,6 +148,7 @@ import { useUtilStore } from "@/store/util";
 
 const userStore = useUserStore();
 const utilStore = useUtilStore();
+const USERS_PAGE_SIZE = 25;
 
 // The logged-in user's own record, pinned at the top of the list. The profile is already available from
 // login, but it doesn't carry group associations, so those are fetched separately via getUserGroups().
@@ -188,7 +189,7 @@ const updateQuery = async () => {
 };
 
 const fetchUsers = async (pSize?: any, pIndex?: any) => {
-  const pageSize = pSize || import.meta.env.VITE_VIEW_SIZE;
+  const pageSize = pSize || USERS_PAGE_SIZE;
   const pageIndex = pIndex || 0;
 
   if(!userStore.query.queryString) {
@@ -215,7 +216,7 @@ const viewUserDetails = async (user: any) => {
 const loadMoreUsers = (event: any) => {
   fetchUsers(
     undefined,
-    Math.ceil(users.value?.length / (import.meta.env.VITE_VIEW_SIZE as any)).toString()
+    Math.ceil(users.value?.length / USERS_PAGE_SIZE).toString()
   ).then(async () => {
     await event.target.complete();
   });
