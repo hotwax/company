@@ -111,6 +111,7 @@ import { addCircleOutline, arrowForwardOutline, documentTextOutline, eyeOffOutli
 import { commonUtil, translate, logger } from "@common";
 import SelectFacilityModal from "@/components/SelectFacilityModal.vue";
 import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
+import { getResponseErrorMessage } from "@/utils";
 
 const props = defineProps({
   partyId: {
@@ -323,7 +324,7 @@ const finishSetup = async () => {
     }
   } catch (err: any) {
     logger.error("error", err);
-    commonUtil.showToast(err.errorMessage ? err.errorMessage : translate("Failed to quick setup user."));
+    commonUtil.showToast(getResponseErrorMessage(err, translate("Failed to quick setup user.")));
   }
 };
 
@@ -403,9 +404,9 @@ const finishAndCreateNewUser = async () => {
     });
     await userStore.clearSelectedUser();
     await router.replace({ path: "/create-user" });
-  } catch (err) {
+  } catch (err: any) {
     logger.error("error", err);
-    commonUtil.showToast(translate("Failed to quick setup user."));
+    commonUtil.showToast(getResponseErrorMessage(err, translate("Failed to quick setup user.")));
   }
 };
 

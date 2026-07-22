@@ -41,8 +41,24 @@ const getResponseErrorMessage = (error: any, defaultMessage: string) => {
     return responseData._ERROR_MESSAGE_;
   }
 
+  if(typeof responseData?.error?.message === "string" && responseData.error.message.trim()) {
+    return responseData.error.message;
+  }
+
+  if(typeof responseData?.errorMessage === "string" && responseData.errorMessage.trim()) {
+    return responseData.errorMessage;
+  }
+
+  if(typeof responseData?.error === "string" && responseData.error.trim()) {
+    return responseData.error;
+  }
+
   if (typeof responseData?.message === "string" && responseData.message.trim()) {
     return responseData.message;
+  }
+
+  if(typeof error?.errorMessage === "string" && error.errorMessage.trim()) {
+    return error.errorMessage;
   }
 
   if (typeof error?.message === "string" && error.message.trim()) {
