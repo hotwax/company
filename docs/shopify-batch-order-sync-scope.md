@@ -1,7 +1,7 @@
 # Shopify Batch Order Sync: Configuration and Monitoring Scope
 
 - Status: Draft for Expert User review
-- Version: 0.29
+- Version: 0.30
 - Date: 2026-07-22
 - Sign-off: Not signed off
 
@@ -322,6 +322,7 @@ These remain outside the current stated scope until explicitly added; they are n
 
 ## Change history
 
+- **0.30, 2026-07-22** — Added mandatory HotWax Agency and code-review gates, Product Sync design-parity requirements, the intended local OMS environment, and a safe real-Shopify-plus-synthetic-order verification protocol.
 - **0.29, 2026-07-22** — Added a delivery-agent prompt with an evidence-driven implementation loop and a strict minimal-server-change gate.
 - **0.28, 2026-07-22** — Kept operators on the error list after retry submission and exposed the new SystemMessage ID as a link before refreshing monitoring.
 - **0.27, 2026-07-22** — Allowed targeted individual-order retries during another active shop batch without relaxing the **Run now** overlap guard.
@@ -376,6 +377,50 @@ Operating constraints
 
 3. Do not use mocked or invented HotWax APIs as delivery proof. Focused unit tests may mock transport boundaries, but final behavior must be exercised through the real available Company app and real backend. Never expose secrets in logs, screenshots, fixtures, API responses, commits, issues, or PRs.
 
+Required review and product-alignment gates
+
+These reviews are mandatory work, not optional suggestions or final-pass theater:
+
+1. At intake, invoke the `hotwax-product-analyst` and `hotwax-product-manager` agents from `hotwax/hotwax-agency` as independent reviewers of this scope:
+   - `hotwax-product-analyst` must identify verified overlap, partial overlap, and genuine gaps without selling past the current product or code.
+   - `hotwax-product-manager` must confirm that the build remains one coherent HotWax product capability, that v1 delivers the complete operator activity, and that implementation convenience has not changed the accepted product scope.
+   - Treat disagreements with the accepted scope as explicit Sponsor decisions for Aditya; do not silently resolve them or let an agent rewrite the scope.
+2. Use the `hotwax-pwa-pr-review` skill on the actual Company diff and live UI. Follow its ownership, source-of-truth, code-placement, Vue/Ionic, operational-UI, shared-layer, backend-contract, and AI-code-cleanup model.
+3. Use every applicable Moqui/backend code-review skill available in the execution environment on any server diff. Review transaction boundaries, shop scoping, authorization, data integrity, idempotency, bounded queries, error behavior, backward compatibility, and upgrade/seed-data implications. If the required review skill or HotWax Agency agent is not discoverable, report the missing capability and repair or request it; do not silently skip the gate.
+4. Run the product agents after intake and again against the completed behavior. Run the code-review skills after each material vertical slice and again on the final PR diff. Convert every actionable finding into a ledger row, fix it, rerun the affected checks, and obtain a clean re-review before calling the slice Proven.
+
+Product Sync design-parity contract
+
+Order Sync must look and behave as a sibling of Shopify Product Sync, not as a generic admin dashboard. Inspect both the live Product Sync route and its real source before designing Order Sync, including `ShopifyProductSync.vue`, its first-time/wizard and returning views, schedule/job-detail interaction, summary, progress, errors, responsive states, and the Product Sync card in `ShopifyConnectionDetails.vue`.
+
+- Add the Order Sync card to the Shopify connection-details page under **Orders and fulfillment**. Match the Product Sync card's information hierarchy, Ionic primitives, density, spacing, click target, first-time/configured states, loading/error behavior, and responsive treatment while using order-specific labels and facts.
+- Carry the same design language into the configuration and monitoring pages: page hierarchy, summary treatment, status badges, schedule controls, progress rows, list/error treatment, empty states, refresh behavior, action placement, confirmations, and modal/popover lifecycle.
+- Prefer extracting or reusing small shared Product Sync primitives when they genuinely own the same presentation contract. Do not copy the full Product Sync page or force shared components around different domain semantics.
+- Perform side-by-side browser review of Product Sync and Order Sync at desktop and narrow/mobile widths. The `hotwax-pwa-pr-review` reviewer must explicitly judge sibling consistency, information duplication, Ionic usage, accessibility, and whether an operator can transfer their Product Sync mental model to Order Sync.
+
+Execution environment
+
+- Host: Aditya's local macOS development machine.
+- Company checkout: `/Users/adityapatel/Documents/GitHub/ionic-apps/accxui/apps/company`; implementation must use an isolated Company worktree and a separately verified localhost port.
+- Moqui framework: `/Users/adityapatel/Documents/GitHub/moqui/maarg-oms/moqui-framework`.
+- Shopify connector component: `/Users/adityapatel/Documents/GitHub/moqui/maarg-oms/moqui-framework/runtime/component/shopify-connector`.
+- Intended local OMS REST base: `http://localhost:8080/rest/s1`. A known working local test account is available from Aditya at execution time. Authenticate through a secure session or runtime-only secret input; never copy its username/password into tracked files, prompts, shell history, logs, screenshots, issues, or PRs.
+- At task start, verify the port-8080 listener, `/admin/checkLoginOptions`, authenticated session, database, active component/worktree links, and selected Shopify shop/remote. A previously working environment is not proof that it is running now. If 8080 is unavailable, inspect and coordinate the intended local runtime; do not silently substitute a remote OMS, start a second conflicting runtime, bypass a Bitronix lock, or alter runtime configuration.
+- The current Product Sync experience is the visual/interaction reference. Verify which exact Company checkout serves it before relying on localhost evidence.
+
+Real-order and synthetic-variant verification
+
+Use real Shopify reads and local-only OMS writes to prove the order path. Never create, update, cancel, tag, or otherwise mutate an order in Shopify for this test.
+
+1. Confirm that the selected Shopify connection is an approved test source and that its token has the scopes required by the current `OrderUnifiedMegaQuery.ftl`.
+2. Through the current Shopify connector service path—not an ad hoc GraphQL client—fetch a small set of real Shopify orders using the version-controlled/rendered `OrderUnifiedMegaQuery.ftl`. Record only non-secret identifiers and SystemMessage/MDM evidence; do not log or commit customer PII or full payloads.
+3. Run a standard batch against real Shopify IDs to prove the upstream path: job/SystemMessage creation, Shopify mega-query fetch, zero/one/two MDM imports, SystemMessage ID correlation, status derivation, and Order Sync UI progress.
+4. Separately, create local synthetic new-order variants from the fetched mega-query payloads. Store working payloads only in a temporary, git-ignored location. Change every Shopify identity-bearing ID/GID that must be unique—order, line, transaction, fulfillment, refund/return, and other related identifiers—using one deterministic run-specific mapping so internal references remain consistent. Preserve the original business fields unless a specific test requires otherwise, and use values guaranteed not to collide with real Shopify or OMS data.
+5. Fabricated Shopify IDs cannot be fetched from Shopify. Feed synthetic variants only at the existing post-fetch staging/DataManager boundary, using the same normalized payload shape and `SYNC_SHOPIFY_ORDER` import path the real mega-query flow uses. Do not add a production API merely to inject tests; prefer a local test fixture/harness or direct existing service invocation that cannot be exposed in production.
+6. Prove each synthetic variant creates a distinct local OMS order and produces the expected Shopify history, MDM log/file, Created tag, latest-batch count, recent-order row, links, and SystemMessage correlation. Reuse a synthetic identity in a controlled second pass only when needed to prove update classification; do not call Shopify with the fabricated ID.
+7. Use a real, resolvable Shopify order ID for individual-retry verification because retry must re-fetch current data from Shopify. Do not claim retry proof from a fabricated ID that Shopify cannot resolve.
+8. Combine the real-order upstream trace and synthetic-variant downstream trace in the delivery ledger. Do not label the synthetic path alone end-to-end. Redact payloads from evidence and remove temporary test artifacts after their results are recorded; preserve durable OMS audit records according to the existing environment policy.
+
 Minimal-server-change gate
 
 Before writing application or backend code, create an API-reuse matrix for every required datum and action:
@@ -423,8 +468,9 @@ For each slice, repeat this loop until its ledger rows are Proven:
 6. Inspect browser console and network activity. Reconcile displayed IDs, counts, states, and permissions with the underlying SystemMessage, ServiceJob, DataManager, Shopify mapping, and audit records.
 7. Exercise success, loading, empty, partial-failure, failure, retry, refresh, paused, unauthorized, and narrow/mobile states applicable to the slice.
 8. Run regression checks for Product Sync and Shopify connection navigation wherever shared code changed.
-9. Review the diff for accidental API expansion, credential exposure, cross-shop leakage, unbounded queries, duplicated code, or unrelated edits.
-10. Update the ledger with concrete evidence. If any check fails, classify the failure as client logic, contract/data, permissions, environment, or test defect; fix the smallest responsible layer and restart the loop at step 2.
+9. Run the required HotWax Agency and code-review gates for the slice; add every actionable finding to the ledger and resolve it.
+10. Review the diff for accidental API expansion, credential exposure, cross-shop leakage, unbounded queries, duplicated code, Product Sync design drift, or unrelated edits.
+11. Update the ledger with concrete evidence. If any check fails, classify the failure as client logic, contract/data, permissions, environment, product alignment, review finding, or test defect; fix the smallest responsible layer and restart the loop at step 2.
 
 Do not mark a ledger row Proven from source inspection, a build, or a mocked test when the behavior is visible in the UI. Do not claim a percentage-complete result. The loop ends only when every in-scope row is Proven or a specific external blocker is demonstrated with the exact failed command/request and the safe work already exhausted.
 
@@ -434,7 +480,10 @@ Required validation
 - Backend tests for every changed service, REST contract, permission check, correlation field, bounded query, and retry path.
 - Company typecheck/lint/build using the repository's actual scripts.
 - Real browser proof from the exact feature worktree and real available backend, including responsive and accessibility checks.
-- Product Sync regression proof when shared scheduling, error, summary, or navigation code is reused or extracted.
+- Side-by-side Product Sync/Order Sync design-parity proof at desktop and narrow/mobile widths, including the connection-details cards.
+- Product Sync regression proof when shared scheduling, error, summary, card, or navigation code is reused or extracted.
+- A real Shopify mega-query upstream trace plus local synthetic-variant creation proof, kept separate and reconciled in the delivery ledger.
+- Clean final verdicts from `hotwax-product-analyst`, `hotwax-product-manager`, `hotwax-pwa-pr-review`, and every applicable backend code-review skill.
 - CI must pass for every affected repository.
 
 GitHub delivery
@@ -453,6 +502,9 @@ Report:
 - focused tests, full checks, CI, and real-browser scenarios completed;
 - issue and PR links;
 - delivery-ledger status for every acceptance criterion;
+- HotWax Agency product-alignment verdicts and code-review verdicts, including how every actionable finding was resolved;
+- Product Sync design-parity evidence, including the Shopify connection-details card;
+- real-order mega-query evidence and synthetic-variant local-import evidence, clearly separated;
 - remaining environmental blockers or uncertainty;
 - worktree paths, running localhost URLs, and cleanup that still requires authorization.
 
