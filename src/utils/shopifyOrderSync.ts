@@ -717,6 +717,57 @@ export function deriveOrderSyncErrorResolution(error: Pick<RecentOrderError, "er
   };
 }
 
+export interface OrderErrorRecordDetails {
+  record: UnknownRecord | null;
+  message: string;
+}
+
+const ERROR_RECORD_MESSAGE_KEYS = [
+  "_ERROR_MESSAGE_",
+  "errorMessage",
+  "errorText",
+  "error",
+  "Error",
+  "message",
+] as const;
+
+function orderErrorRecordMessage(record: UnknownRecord): string {
+  for (const key of ERROR_RECORD_MESSAGE_KEYS) {
+    const text = valueText(record[key]).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+export function extractOrderErrorRecordDetails(
+  records: readonly unknown[],
+  error: Pick<RecentOrderError, "shopifyOrderId" | "orderName">
+): OrderErrorRecordDetails {
+  const rows = records.filter(isRecord);
+  const needles = [error.shopifyOrderId, error.orderName]
+    .map((value) => valueText(value).trim())
+    .filter(Boolean);
+
+  let record: UnknownRecord | null = null;
+  if (needles.length) {
+    record = rows.find((row) => {
+      let serialized = "";
+      try {
+        serialized = JSON.stringify(row) || "";
+      } catch (_error) {
+        serialized = "";
+      }
+      return needles.some((needle) => serialized.includes(needle));
+    }) || null;
+  }
+  if (!record && rows.length === 1) record = rows[0];
+
+  return {
+    record,
+    message: record ? orderErrorRecordMessage(record) : "",
+  };
+}
+
 function matchesQuery(values: readonly unknown[], query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return true;

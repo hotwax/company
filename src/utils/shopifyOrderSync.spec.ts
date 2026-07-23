@@ -5,6 +5,7 @@ import {
   deriveOrderSyncMappingReadiness,
   deriveShopifyOrderSyncOverallState,
   deriveShopifyOrderSyncProgress,
+  extractOrderErrorRecordDetails,
   findSuitableShopifyOrderSyncJob,
   getShopifyOrderSyncCapabilities,
   getShopifyOrderSyncPollingDelay,
@@ -295,6 +296,36 @@ describe("Shopify Order Sync error resolution guidance", () => {
     expect(unknown.nextStep).toBe("Open the import and SystemMessage details to diagnose this record.");
     expect(empty.nextStep).toBe(unknown.nextStep);
     expect(unknown.needsSetupReview).toBe(false);
+  });
+});
+
+describe("Shopify Order Sync failed record extraction", () => {
+  const records = [
+    { payload: "{\"order\":{\"id\":\"gid://shopify/Order/6475855265946\",\"name\":\"HC#2690\"}}", _ERROR_MESSAGE_: "Payment method mapping SHOPIFY_PAYMENT_TYPE not found for gift_card" },
+    { payload: "{\"order\":{\"id\":\"gid://shopify/Order/1111\",\"name\":\"HC#1\"}}", errorMessage: "Different failure" },
+  ];
+
+  it("matches the failed record by Shopify order ID inside the serialized payload", () => {
+    const details = extractOrderErrorRecordDetails(records, { shopifyOrderId: "6475855265946", orderName: "" });
+
+    expect(details.record).toBe(records[0]);
+    expect(details.message).toBe("Payment method mapping SHOPIFY_PAYMENT_TYPE not found for gift_card");
+  });
+
+  it("matches by order name when the ID is unresolved and reads alternate message keys", () => {
+    const details = extractOrderErrorRecordDetails(records, { shopifyOrderId: "", orderName: "HC#1" });
+
+    expect(details.record).toBe(records[1]);
+    expect(details.message).toBe("Different failure");
+  });
+
+  it("falls back to a sole record and reports no match otherwise", () => {
+    const sole = [{ errorText: "only failure" }];
+    expect(extractOrderErrorRecordDetails(sole, { shopifyOrderId: "", orderName: "" }).message).toBe("only failure");
+
+    const unmatched = extractOrderErrorRecordDetails(records, { shopifyOrderId: "999999", orderName: "" });
+    expect(unmatched.record).toBeNull();
+    expect(unmatched.message).toBe("");
   });
 });
 

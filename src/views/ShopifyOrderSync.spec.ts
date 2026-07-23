@@ -14,10 +14,17 @@ const mocks = vi.hoisted(() => ({
   manualRefresh: vi.fn().mockResolvedValue(undefined),
   downloadTextFile: vi.fn(),
   alertRole: "confirm",
+  fetchLogDetails: vi.fn(),
+  downloadDataManagerFile: vi.fn(),
+  dataManagerErrorLogs: [] as any[],
+  showToast: vi.fn(),
 }));
 
 vi.mock("@common", () => ({
   buildAppUrl: (app: string, path: string) => `https://${app}.example${path}`,
+  commonUtil: {
+    showToast: (...args: unknown[]) => mocks.showToast(...args),
+  },
   translate: (key: string, values?: Record<string, unknown>) => Object.entries(values || {})
     .reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
 }));
@@ -25,7 +32,24 @@ vi.mock("@common", () => ({
 vi.mock("@/utils", () => ({
   downloadTextFile: (...args: unknown[]) => mocks.downloadTextFile(...args),
   formatDateTime: (value: unknown) => String(value || ""),
+  getDownloadFileContent: (data: any) => {
+    const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
+    if (typeof fileContent === "string") return fileContent;
+    if (fileContent === undefined || fileContent === null) return "";
+    return JSON.stringify(fileContent);
+  },
 }));
+
+vi.mock("@/composables/useDataManagerLog", async () => {
+  const { ref: vueRef } = await vi.importActual<typeof import("vue")>("vue");
+  return {
+    useDataManagerLog: () => ({
+      errorLogs: vueRef(mocks.dataManagerErrorLogs),
+      fetchLogDetails: (...args: unknown[]) => mocks.fetchLogDetails(...args),
+      downloadDataManagerFile: (...args: unknown[]) => mocks.downloadDataManagerFile(...args),
+    }),
+  };
+});
 
 vi.mock("@/store/shopifyOrderSync", () => ({
   useShopifyOrderSyncStore: () => mocks.store,
@@ -359,6 +383,55 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(requestSection.text()).not.toContain("Then use Retry individual order");
   });
 
+  it("surfaces the failed record's own error, log creation time, Shopify link, and payload downloads", async () => {
+    mocks.fetchLogDetails.mockResolvedValue({
+      logId: "LOG_UPDATE",
+      configId: "UPDATE_SHOPIFY_ORDER",
+      createdDate: "2026-07-22T12:08:00Z",
+      fileName: "orders-update.json",
+      logContentId: "CONTENT_1",
+      errorLogContentId: "ERR_CONTENT_1",
+    });
+    mocks.dataManagerErrorLogs = [{
+      payload: "{\"order\":{\"id\":\"gid://shopify/Order/123456\",\"name\":\"#1001\"}}",
+      _ERROR_MESSAGE_: "Payment method mapping not found for gift_card",
+    }];
+    mocks.downloadDataManagerFile.mockResolvedValue({ data: "{\"orders\":[]}" });
+
+    const wrapper = await mountMonitor();
+    const importSection = wrapper.get("[aria-labelledby='recent-errors-heading']");
+
+    expect(importSection.text()).toContain("Load the failed records file to see this order's recorded error message.");
+    const shopifyAdmin = importSection.findAll("button").find((button) => button.text() === "Shopify Admin");
+    expect(shopifyAdmin).toBeDefined();
+    expect(shopifyAdmin!.attributes("href")).toBe("https://test-shop.myshopify.com/admin/orders/123456");
+
+    const load = importSection.findAll("button").find((button) => button.text() === "Load details");
+    expect(load).toBeDefined();
+    await load!.trigger("click");
+    await flushPromises();
+
+    expect(mocks.fetchLogDetails).toHaveBeenCalledWith("LOG_UPDATE");
+    expect(importSection.text()).toContain("Payment method mapping not found for gift_card");
+    expect(importSection.text()).toContain("Created: 2026-07-22T12:08:00Z");
+
+    const downloadRecord = importSection.findAll("button").find((button) => button.text() === "Download record");
+    expect(downloadRecord).toBeDefined();
+    await downloadRecord!.trigger("click");
+    expect(mocks.downloadTextFile).toHaveBeenCalledWith(
+      expect.stringContaining("Payment method mapping not found for gift_card"),
+      "123456-failed-record.json",
+    );
+
+    const downloadFile = importSection.findAll("button").find((button) => button.text() === "Download file");
+    expect(downloadFile).toBeDefined();
+    await downloadFile!.trigger("click");
+    await flushPromises();
+    expect(mocks.downloadDataManagerFile).toHaveBeenCalledWith("UPDATE_SHOPIFY_ORDER", "CONTENT_1");
+    expect(mocks.downloadTextFile).toHaveBeenCalledWith("{\"orders\":[]}", "orders-update.json");
+    expect(mocks.showToast).toHaveBeenCalledWith("File downloaded successfully");
+  });
+
   it("shows safe standalone SystemMessage facts by correlating its loaded summary and successful audit", async () => {
     const order = recentOrder({
       systemMessageId: "M228520",
@@ -535,7 +608,8 @@ describe("ShopifyOrderSync monitoring", () => {
     });
 
     expect(wrapper.text()).toContain("999000111");
-    expect(wrapper.find("[href*='/admin/orders/']").exists()).toBe(false);
+    const ordersSection = wrapper.get("[aria-labelledby='recent-orders-heading']");
+    expect(ordersSection.find("[href*='/admin/orders/']").exists()).toBe(false);
   });
 
   it.each([

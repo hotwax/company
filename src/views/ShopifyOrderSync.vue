@@ -524,6 +524,27 @@
                         <p>{{ error.errorText ? translate(error.errorText) : translate("No error text was returned.") }}</p>
                       </ion-label>
                     </ion-item>
+                    <ion-item v-if="error.logId">
+                      <ion-label class="ion-text-wrap">
+                        {{ translate("Record error") }}
+                        <p v-if="errorLogDetails(error)?.status === 'ready'">
+                          {{ errorRecordDetails(error).message || translate("No record-level error message was found in the failed records file.") }}
+                        </p>
+                        <p v-else-if="errorLogDetails(error)?.status === 'error'" class="ion-text-danger" role="alert">
+                          {{ errorLogDetails(error)?.error }}
+                        </p>
+                        <p v-else>{{ translate("Load the failed records file to see this order's recorded error message.") }}</p>
+                      </ion-label>
+                      <ion-spinner v-if="errorLogDetails(error)?.status === 'loading'" slot="end" name="crescent" />
+                      <ion-button
+                        v-else-if="errorLogDetails(error)?.status !== 'ready'"
+                        slot="end"
+                        fill="clear"
+                        @click="loadErrorRecordDetails(error)"
+                      >
+                        {{ translate("Load details") }}
+                      </ion-button>
+                    </ion-item>
                     <ion-item>
                       <ion-label class="ion-text-wrap">
                         {{ translate("Next step") }}
@@ -567,6 +588,7 @@
                       <ion-label>
                         {{ translate("DataManager run") }}
                         <p>{{ error.logId }}</p>
+                        <p v-if="errorLogCreatedLabel(error)">{{ translate("Created") }}: {{ errorLogCreatedLabel(error) }}</p>
                       </ion-label>
                       <ion-note slot="end">{{ error.configId }}</ion-note>
                     </ion-item>
@@ -577,6 +599,29 @@
                         </ion-button>
                         <ion-button v-if="error.systemMessageId" fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
                           {{ translate("View SystemMessage") }}
+                        </ion-button>
+                        <ion-button
+                          v-if="shopifyAdminErrorOrderUrl(error)"
+                          fill="clear"
+                          :href="shopifyAdminErrorOrderUrl(error)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {{ translate("Shopify Admin") }}
+                        </ion-button>
+                        <ion-button
+                          v-if="errorRecordDetails(error).record"
+                          fill="clear"
+                          @click="downloadErrorRecordJson(error)"
+                        >
+                          {{ translate("Download record") }}
+                        </ion-button>
+                        <ion-button
+                          v-if="errorLogDetails(error)?.status === 'ready'"
+                          fill="clear"
+                          @click="downloadErrorImportFile(error)"
+                        >
+                          {{ translate("Download file") }}
                         </ion-button>
                         <ion-button
                           v-if="error.retryable && orderSyncStore.capabilities.canRetryIndividualOrder"
@@ -682,7 +727,8 @@ import {
 import { buildAppUrl, commonUtil, translate } from "@common";
 import { computed, ref, watch } from "vue";
 import { downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
-import { downloadTextFile, formatDateTime } from "@/utils";
+import { downloadTextFile, formatDateTime, getDownloadFileContent } from "@/utils";
+import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
 import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
 import ShopifyOrderSyncSystemMessageModal from "@/components/ShopifyOrderSyncSystemMessageModal.vue";
@@ -695,7 +741,12 @@ import {
   type ShopifyOrderSyncRecentError,
   type ShopifyOrderSyncRecentOrder,
 } from "@/store/shopifyOrderSync";
-import { type OrderSyncProgressRow, type OrderSyncProgressState, deriveOrderSyncErrorResolution } from "@/utils/shopifyOrderSync";
+import {
+  type OrderSyncProgressRow,
+  type OrderSyncProgressState,
+  deriveOrderSyncErrorResolution,
+  extractOrderErrorRecordDetails,
+} from "@/utils/shopifyOrderSync";
 import {
   buildShopifyOrderSyncErrorCsv,
   shopifyOrderSyncErrorCsvFileName,
@@ -1099,6 +1150,96 @@ function errorNextStep(error: { errorText: string }): string {
 
 function errorNeedsSetupReview(error: { errorText: string }): boolean {
   return deriveOrderSyncErrorResolution(error).needsSetupReview;
+}
+
+interface ErrorLogDetailsState {
+  status: "loading" | "ready" | "error";
+  log?: Record<string, any>;
+  records?: Record<string, any>[];
+  error?: string;
+}
+
+const dataManagerLog = useDataManagerLog();
+const errorLogDetailsByLogId = ref<Record<string, ErrorLogDetailsState>>({});
+
+function errorLogDetails(error: ShopifyOrderSyncRecentError): ErrorLogDetailsState | undefined {
+  return error.logId ? errorLogDetailsByLogId.value[error.logId] : undefined;
+}
+
+async function loadErrorRecordDetails(error: ShopifyOrderSyncRecentError) {
+  const logId = error.logId;
+  if (!logId) return;
+  const current = errorLogDetailsByLogId.value[logId];
+  if (current?.status === "loading" || current?.status === "ready") return;
+  errorLogDetailsByLogId.value = { ...errorLogDetailsByLogId.value, [logId]: { status: "loading" } };
+  try {
+    const log = await dataManagerLog.fetchLogDetails(logId);
+    if (!log) throw new Error("missing log");
+    errorLogDetailsByLogId.value = {
+      ...errorLogDetailsByLogId.value,
+      [logId]: { status: "ready", log, records: [...(dataManagerLog.errorLogs.value || [])] },
+    };
+  } catch (_error) {
+    errorLogDetailsByLogId.value = {
+      ...errorLogDetailsByLogId.value,
+      [logId]: { status: "error", error: translate("The failed records file could not be loaded.") },
+    };
+  }
+}
+
+function errorRecordDetails(error: ShopifyOrderSyncRecentError) {
+  const details = errorLogDetails(error);
+  if (details?.status !== "ready") return { record: null, message: "" };
+  return extractOrderErrorRecordDetails(details.records || [], error);
+}
+
+function errorLogCreatedLabel(error: ShopifyOrderSyncRecentError): string {
+  const loaded = errorLogDetails(error)?.log;
+  const fromStore = Object.values(orderSyncStore.importsBySystemMessageId || {})
+    .flat()
+    .find((row: any) => row.logId === error.logId);
+  const created = loaded?.createdDate || loaded?.createdStamp || fromStore?.createdDate;
+  return created ? formatDate(created) : "";
+}
+
+function downloadErrorRecordJson(error: ShopifyOrderSyncRecentError) {
+  const { record } = errorRecordDetails(error);
+  if (!record) return;
+  downloadTextFile(
+    JSON.stringify(record, null, 2),
+    `${error.shopifyOrderId || error.orderName || error.logId}-failed-record.json`,
+  );
+}
+
+async function downloadErrorImportFile(error: ShopifyOrderSyncRecentError) {
+  const log = errorLogDetails(error)?.log;
+  const configId = log?.configId || error.configId;
+  const contentId = log?.logContentId || log?.logFileContentId || log?.uploadFileContentId || log?.exportFileContentId;
+  if (!configId || !contentId) return;
+  try {
+    const response = await dataManagerLog.downloadDataManagerFile(configId, contentId);
+    const content = getDownloadFileContent(response?.data);
+    if (!content) throw new Error("empty file");
+    downloadTextFile(content, log?.fileName || log?.logFileName || `${error.logId}.json`);
+    commonUtil.showToast(translate("File downloaded successfully"));
+  } catch (_error) {
+    commonUtil.showToast(translate("Failed to download the import file"));
+  }
+}
+
+function shopifyAdminErrorOrderUrl(error: ShopifyOrderSyncRecentError): string {
+  if (
+    error.shopId !== props.id
+    || orderSyncStore.shop?.shopId !== props.id
+    || !/^(?!0+$)[0-9]{1,30}$/.test(error.shopifyOrderId)
+  ) return "";
+
+  const hostname = String(orderSyncStore.shop.myshopifyDomain || "").trim();
+  if (
+    hostname !== hostname.toLocaleLowerCase()
+    || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(hostname)
+  ) return "";
+  return `https://${hostname}/admin/orders/${error.shopifyOrderId}`;
 }
 
 async function handleManualRefresh() {
