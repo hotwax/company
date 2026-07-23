@@ -105,7 +105,18 @@ vi.mock("@ionic/vue", async () => {
     IonFabButton: container("button"),
     IonHeader: container("header"),
     IonIcon: container("i"),
-    IonInput: container("input"),
+    IonInput: defineComponent({
+      inheritAttrs: false,
+      props: { value: String },
+      emits: ["ionInput"],
+      setup(props, { attrs, emit, slots }) {
+        return () => h("input", {
+          ...attrs,
+          value: props.value,
+          onInput: (event: Event) => emit("ionInput", { detail: { value: (event.target as HTMLInputElement).value } }),
+        }, slots.default?.());
+      },
+    }),
     IonItem: container("div"),
     IonListHeader: container("div"),
     IonLabel: container("span"),
@@ -270,6 +281,7 @@ function createStore(overrides: Record<string, unknown> = {}) {
     runNowDisabledReason: "Run now is unavailable while this shop has active batch work.",
     isBatchActive: true,
     activeMutation: "",
+    runtimeTimeZone: "Asia/Kolkata",
     monitoringLoadedAt: "2026-07-22T12:10:00Z",
     monitoringError: "",
     monitoringRefreshing: false,
@@ -303,6 +315,56 @@ describe("ShopifyOrderSync monitoring", () => {
     mocks.manualRefresh.mockReset().mockResolvedValue(undefined);
     mocks.downloadTextFile.mockReset();
     mocks.alertRole = "confirm";
+    const memoryStorage = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => memoryStorage.get(key) || null,
+        setItem: (key: string, value: string) => memoryStorage.set(key, value),
+        removeItem: (key: string) => memoryStorage.delete(key),
+      },
+    });
+  });
+
+  it("filters loaded history inclusively by From and Thru dates, validates reversal, and clears", async () => {
+    const orders = [
+      recentOrder({ id: "ORDER_22", shopifyOrderId: "ORDER_22", orderName: "#22", processedAt: "2026-07-22T18:00:00Z", processedAtMillis: Date.parse("2026-07-22T18:00:00Z") }),
+      recentOrder({ id: "ORDER_21", shopifyOrderId: "ORDER_21", orderName: "#21", processedAt: "2026-07-21T18:00:00Z", processedAtMillis: Date.parse("2026-07-21T18:00:00Z") }),
+    ];
+    const wrapper = await mountMonitor({
+      recentOrders: orders,
+      recentAudits: orders,
+      filteredRecentOrders: vi.fn(() => orders),
+    });
+    const dateInputs = wrapper.findAll("input[type='date']");
+    expect(dateInputs).toHaveLength(2);
+    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_21");
+
+    await dateInputs[0].setValue("2026-07-22");
+    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_22");
+    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).not.toContain("ORDER_21");
+
+    await dateInputs[1].setValue("2026-07-21");
+    expect(wrapper.text()).toContain("From date must be on or before Thru date.");
+    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).not.toContain("ORDER_22");
+
+    await wrapper.get("[aria-label='Clear order history date range']").trigger("click");
+    expect(wrapper.text()).not.toContain("From date must be on or before Thru date.");
+    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_21");
+  });
+
+  it("persists the selected range across a monitoring refresh", async () => {
+    const wrapper = await mountMonitor();
+    const dateInputs = wrapper.findAll("input[type='date']");
+    await dateInputs[0].setValue("2026-07-22");
+    await dateInputs[1].setValue("2026-07-22");
+    expect(JSON.parse(window.localStorage.getItem("shopify-order-sync-date-range:SHOP_1") || "null"))
+      .toEqual({ fromDate: "2026-07-22", thruDate: "2026-07-22" });
+
+    await wrapper.unmount();
+    const refreshed = await mountMonitor();
+    expect(refreshed.findAll("input[type='date']").map((input) => input.element.getAttribute("value")))
+      .toEqual(["2026-07-22", "2026-07-22"]);
   });
 
   it("renders exactly two progress rows with an explicit partial overall outcome", async () => {
