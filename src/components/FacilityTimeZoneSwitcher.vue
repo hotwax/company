@@ -118,11 +118,11 @@ const closeModal = () => {
 function findTimeZone() {
   const searchedString = queryString.value.toLowerCase();
   filteredTimeZones.value = timeZones.value.filter((timeZone: any) =>
-    timeZone.id.toLowerCase().match(searchedString) || timeZone.label.toLowerCase().match(searchedString)
+    timeZone.id.toLowerCase().includes(searchedString) || timeZone.label.toLowerCase().includes(searchedString)
   );
   if (props.showBrowserTimeZone) {
     filteredTimeZones.value = filteredTimeZones.value.filter((timeZone: any) =>
-      !timeZone.id.toLowerCase().match(browserTimeZone.value.id.toLowerCase())
+      !timeZone.id.toLowerCase().includes(browserTimeZone.value.id.toLowerCase())
     );
   }
 }

@@ -149,12 +149,12 @@ async function addFacilityToGroup(facilityGroupId: string) {
 }
 
 async function removeFacilityFromGroup(facilityGroupId: string) {
-  const groupInformation = current.value.groupInformation.find((group: any) => group.facilityGroupId === facilityGroupId);
+  const groupInformation = current.value.groupInformation?.find((group: any) => group.facilityGroupId === facilityGroupId);
   try {
     const resp = await facilityStore.updateFacilityToGroup({
       facilityId: current.value.facilityId,
       facilityGroupId,
-      fromDate: groupInformation.fromDate,
+      fromDate: groupInformation?.fromDate,
       thruDate: DateTime.now().toMillis()
     });
     if (commonUtil.hasError(resp)) throw resp.data;

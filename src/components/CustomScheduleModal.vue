@@ -213,9 +213,10 @@ async function saveCustomSchedule() {
 }
 
 function getCapacity(startTime: any, endTime: any) {
+  if (!startTime || !endTime) return null;
   const formatedStartTime = DateTime.fromISO(startTime, { setZone: true }).toMillis();
   const formatedEndTime = DateTime.fromISO(endTime, { setZone: true }).toMillis();
-  if (formatedEndTime <= formatedStartTime) return null;
+  if (isNaN(formatedStartTime) || isNaN(formatedEndTime) || formatedEndTime <= formatedStartTime) return null;
   return formatedEndTime - formatedStartTime;
 }
 

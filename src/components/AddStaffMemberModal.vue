@@ -112,7 +112,7 @@ async function saveParties() {
   const partiesToAdd = selectedPartyValues.value.filter((selectedParty: any) => !props.selectedParties.some((party: any) => party.partyId === selectedParty.partyId && party.roleTypeId === selectedParty.roleTypeId));
   const partiesToRemove = props.selectedParties.filter((party: any) => !selectedPartyValues.value.some((selectedParty: any) => party.partyId === selectedParty.partyId));
   const partiesRoleChanged = props.selectedParties.filter((party: any) => selectedPartyValues.value.some((selectedParty: any) => selectedParty.partyId === party.partyId && selectedParty.roleTypeId !== party.roleTypeId));
-  partiesRoleChanged.map((party: any) => partiesToRemove.push(party));
+  partiesToRemove.push(...partiesRoleChanged);
 
   if (!(partiesToAdd.length > 0 || partiesToRemove.length > 0)) {
     commonUtil.showToast(translate("Please update atleast one party role."));

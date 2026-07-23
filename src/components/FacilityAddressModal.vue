@@ -160,8 +160,8 @@ async function saveTelecomNumber() {
   const payload = {
     facilityId: props.facilityId,
     contactMechPurposeTypeId: 'PRIMARY_PHONE',
-    contactNumber: telecomNumberValue.value.contactNumber.trim(),
-    countryCode: telecomNumberValue.value.countryCode.replace('+', '')
+    contactNumber: telecomNumberValue.value.contactNumber?.trim() || '',
+    countryCode: telecomNumberValue.value.countryCode?.replace('+', '') || ''
   };
 
   try {

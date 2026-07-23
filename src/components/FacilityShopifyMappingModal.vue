@@ -95,7 +95,7 @@ function closeModal() {
 }
 
 async function saveMapping() {
-  if (!shopId.value.trim() || !shopifyLocationId.value) {
+  if (!shopId.value?.trim() || !shopifyLocationId.value) {
     commonUtil.showToast(translate('Please fill all the required fields'));
     return;
   }
