@@ -188,7 +188,13 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
+          <ion-skeleton-text
+            v-if="orderSyncCardSnapshot.loading"
+            animated
+            class="product-sync-skeleton"
+          />
           <ShopifyOrderSyncCard
+            v-else
             :snapshot="orderSyncCardSnapshot"
             @open="openOrderSyncEntry()"
           />
