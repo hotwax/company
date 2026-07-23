@@ -254,7 +254,7 @@ export const useUtilStore = defineStore("util", {
 
     async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
       return api({
-        url: "admin/paymentMethodTypes",
+        url: "oms/paymentMethodTypes",
         method: "post",
         data: payload
       })
