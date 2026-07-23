@@ -318,7 +318,22 @@
           @updated="handleRefresh"
           @close="handleSyncJobDetailsDidDismiss"
         />
-        <ion-modal :is-open="showStepDetailsModal" :backdrop-dismiss="false" @didDismiss="showStepDetailsModal = false">
+        <SystemMessageDetailsModal
+          :is-open="showStepDetailsModal && currentStepDetail?.type === 'systemMessage'"
+          :message-id="currentStepDetail?.type === 'systemMessage' ? currentStepDetail.id : ''"
+          :details="productSystemMessageDetails"
+          :primary-action="systemMessageFsmState.primaryAction"
+          :secondary-actions="systemMessageFsmState.secondaryActions"
+          :action-loading-id="systemMessageActionLoadingId"
+          @action="handleProductSystemMessageAction"
+          @refresh="refreshAfterSystemMessageAction"
+          @close="showStepDetailsModal = false"
+        />
+        <ion-modal
+          :is-open="showStepDetailsModal && currentStepDetail?.type !== 'systemMessage'"
+          :backdrop-dismiss="false"
+          @didDismiss="showStepDetailsModal = false"
+        >
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -337,85 +352,6 @@
             </ion-card>
             
             <template v-else-if="currentStepDetail">
-              <!-- System Message Details -->
-              <template v-if="currentStepDetail.type === 'systemMessage'">
-                <ion-list lines="full">
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Status") }}
-                      <p>{{ translate("Message ID") }}: {{ currentStepDetail.id }}</p>
-                    </ion-label>
-                    <ion-label slot="end">{{ currentSyncRun?.systemMessage?.statusLabel || getStatusDescription(latestSystemMessage?.statusId) }}</ion-label>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Next step") }}
-                      <p>{{ systemMessageFsmState.nextJobReason }}</p>
-                      <p v-if="systemMessageFsmState.nextJob">
-                        {{ systemMessageFsmState.nextJob.label }} · {{ systemMessageFsmState.nextJob.nextRunLabel }}
-                      </p>
-                    </ion-label>
-                    <ion-buttons slot="end">
-                      <ion-button
-                        v-if="systemMessageFsmState.primaryAction"
-                        fill="clear"
-                        :disabled="!!systemMessageActionLoadingId"
-                        @click="runSystemMessageAction(systemMessageFsmState.primaryAction.id)"
-                      >
-                        <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" slot="start" name="crescent" />
-                        <span v-else>{{ systemMessageFsmState.primaryAction.label }}</span>
-                      </ion-button>
-                      <ion-button
-                        v-for="action in systemMessageFsmState.secondaryActions"
-                        :key="action.id"
-                        fill="clear"
-                        color="medium"
-                        :disabled="!!systemMessageActionLoadingId"
-                        @click="runSystemMessageAction(action.id)"
-                      >
-                        <ion-spinner v-if="systemMessageActionLoadingId === action.id" slot="start" name="crescent" />
-                        <span v-else>{{ action.label }}</span>
-                      </ion-button>
-                    </ion-buttons>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Bulk operation ID") }}
-                      <p>{{ translate("Shopify returns this after it accepts the bulk operation.") }}</p>
-                    </ion-label>
-                    <ion-label slot="end">
-                      {{ latestBulkOperationId || translate("Pending") }}
-                    </ion-label>
-                  </ion-item>
-                </ion-list>
-                <ion-accordion-group>
-                  <ion-accordion v-if="currentSyncRun?.systemMessage?.messageText" value="system-message-text">
-                    <ion-item slot="header">
-                      <ion-label>{{ translate("Message Text") }}</ion-label>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item>
-                        <ion-label>
-                          <p>{{ currentSyncRun.systemMessage.messageText }}</p>
-                        </ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                  <ion-accordion v-if="currentSyncRun?.systemMessage?.errorText" value="system-message-error-text">
-                    <ion-item slot="header">
-                      <ion-label>{{ translate("Error Text") }}</ion-label>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item>
-                        <ion-label>
-                          <p>{{ currentSyncRun.systemMessage.errorText }}</p>
-                        </ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                </ion-accordion-group>
-              </template>
-
               <!-- Bulk Operation Details -->
               <template v-if="currentStepDetail.type === 'bulkOperation'">
                 <ion-list lines="full">
@@ -506,8 +442,6 @@ import { CronExpressionParser } from "cron-parser";
 import { DateTime } from "luxon";
 import {
   IonBackButton,
-  IonAccordion,
-  IonAccordionGroup,
   IonBadge,
   IonButton,
   IonButtons,
@@ -559,6 +493,7 @@ import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncRetu
 import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
 import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
+import SystemMessageDetailsModal from "@/components/SystemMessageDetailsModal.vue";
 import AnimatedDuration from "@/components/AnimatedDuration.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
@@ -960,6 +895,25 @@ const systemMessageFsmState = computed(() => {
     isSendJobPaused: isBulkOperationSendJobPaused.value,
     isPollJobPaused: isBulkOperationPollJobPaused.value
   });
+});
+const productSystemMessageDetails = computed(() => {
+  const message = currentSyncRun.value?.systemMessage || latestSystemMessage.value || {};
+  const completed = !!currentSyncRun.value?.completed;
+
+  return {
+    statusId: message.statusId || progressState.value?.systemMessageState,
+    statusLabel: message.statusLabel || getStatusDescription(message.statusId || progressState.value?.systemMessageState),
+    systemMessageTypeId: message.systemMessageTypeId,
+    systemMessageRemoteId: message.systemMessageRemoteId,
+    requestedAt: message.initDate || message.createdDate,
+    completedAt: completed ? getSystemMessageStatusAt(message) : undefined,
+    totalRecordCount: message.totalRecordCount ?? currentSyncRun.value?.bulkOperation?.objectCount,
+    failureCount: message.failureCount ?? currentSyncRun.value?.mdmLog?.failedRecordCount,
+    bulkOperationId: latestBulkOperationId.value || translate("Pending"),
+    nextStepReason: systemMessageFsmState.value.nextJobReason,
+    nextJobLabel: systemMessageFsmState.value.nextJob?.label,
+    nextJobRunLabel: systemMessageFsmState.value.nextJob?.nextRunLabel,
+  };
 });
 const systemMessageProgressLabel = computed(() => {
   const statusLabel = currentSyncRun.value?.systemMessage?.statusLabel || translate("Pending");
@@ -2269,6 +2223,10 @@ function handleSyncJobDetailsDidDismiss() {
   isSyncJobAuditHistoryLoading.value = false;
 }
 
+async function handleRefresh() {
+  await loadSecondaryData({ silent: true });
+}
+
 async function canDismissSyncJobDetailsModal() {
   const canDismiss = await confirmDiscardSyncJobDetailsChanges();
   if (canDismiss) resetSyncJobDetailsDraft();
@@ -2780,6 +2738,10 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   } finally {
     systemMessageActionLoadingId.value = "";
   }
+}
+
+function handleProductSystemMessageAction(actionId: string) {
+  return runSystemMessageAction(actionId as ProductSyncFsmActionId);
 }
 
 async function performSync(params: any, successMsg: string, modalRef: any, loadingRef: any) {

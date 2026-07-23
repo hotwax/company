@@ -680,7 +680,7 @@
       @updated="refreshAfterJobModalUpdate"
       @close="showJobDetailsModal = false"
     />
-    <ShopifyOrderSyncSystemMessageModal
+    <SystemMessageDetailsModal
       :is-open="showSystemMessageModal"
       :message-id="selectedSystemMessageId"
       :details="selectedSystemMessageDetails"
@@ -733,7 +733,7 @@ import { downloadTextFile, formatDateTime, getDownloadFileContent } from "@/util
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
 import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
-import ShopifyOrderSyncSystemMessageModal from "@/components/ShopifyOrderSyncSystemMessageModal.vue";
+import SystemMessageDetailsModal from "@/components/SystemMessageDetailsModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
 import ShopifyOrderSyncCustomRequestCard from "@/components/ShopifyOrderSyncCustomRequestCard.vue";
 import ShopifyOrderSyncOrdersModal from "@/components/ShopifyOrderSyncOrdersModal.vue";
