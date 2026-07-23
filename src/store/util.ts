@@ -234,8 +234,8 @@ export const useUtilStore = defineStore("util", {
       this.emailTypes = emailTypes
     },
 
-    async fetchShipmentMethodTypes() {
-      if(this.shipmentMethodTypes.length) {return}
+    async fetchShipmentMethodTypes(force = false) {
+      if(this.shipmentMethodTypes.length && !force) {return}
       this.fetchStatus = { ...this.fetchStatus, shipmentMethodTypes: "pending" }
       let shipmentMethodTypes: any[] = [], pageIndex = 0, resp: any
 
@@ -255,6 +255,35 @@ export const useUtilStore = defineStore("util", {
         this.fetchStatus = { ...this.fetchStatus, shipmentMethodTypes: "error" }
       }
       this.shipmentMethodTypes = shipmentMethodTypes
+    },
+
+    async createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
+      return api({
+        url: "oms/shippingGateways/shipmentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
+      return api({
+        url: "oms/paymentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async createProductStoreShipmentMethod(payload: {
+      productStoreId: string
+      shipmentMethodTypeId: string
+      partyId: string
+      roleTypeId?: string
+    }): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/shippingMethods`,
+        method: "post",
+        data: { roleTypeId: "CARRIER", ...payload }
+      })
     },
 
     async fetchOrganizationPartyId() {
