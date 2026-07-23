@@ -438,6 +438,14 @@
                 <ion-card v-for="log in failedImportLogs" :key="log.logId" role="listitem">
                   <ion-list lines="full">
                     <ion-item>
+                      <ion-label>{{ translate("Log ID") }}</ion-label>
+                      <ion-note slot="end">{{ log.logId }}</ion-note>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label>{{ translate("Created") }}</ion-label>
+                      <ion-note slot="end">{{ formatDate(log.createdDate) }}</ion-note>
+                    </ion-item>
+                    <ion-item>
                       <ion-label>{{ translate("Start time") }}</ion-label>
                       <ion-note slot="end">{{ formatDate(log.startDateTime) }}</ion-note>
                     </ion-item>

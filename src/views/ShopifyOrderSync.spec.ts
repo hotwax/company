@@ -271,6 +271,7 @@ function createStore(overrides: Record<string, unknown> = {}) {
       totalRecordCount: 2,
       successRecordCount: 1,
       failedRecordCount: 1,
+      createdDate: "2026-07-22T12:07:00Z",
       startDateTime: "2026-07-22T12:08:00Z",
       finishDateTime: "2026-07-22T12:10:00Z",
     }],
@@ -403,8 +404,9 @@ describe("ShopifyOrderSync monitoring", () => {
     const failedRuns = wrapper.get("[aria-labelledby='failed-import-logs-heading']");
 
     expect(failedRuns.findAll("[role='listitem']")).toHaveLength(1);
-    expect(failedRuns.text()).not.toContain("LOG_UPDATE");
     expect(failedRuns.text()).not.toContain("LOG_CREATE");
+    expect(failedRuns.text()).toContain("Log IDLOG_UPDATE");
+    expect(failedRuns.text()).toContain("Created2026-07-22T12:07:00Z");
     expect(failedRuns.text()).toContain("Start time2026-07-22T12:08:00Z");
     expect(failedRuns.text()).toContain("End time2026-07-22T12:10:00Z");
     expect(failedRuns.text()).toContain("2 records · 1 error record");
