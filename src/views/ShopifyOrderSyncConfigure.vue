@@ -454,9 +454,23 @@
                 {{ activationAcknowledgementLabel }}
               </ion-checkbox>
             </ion-item>
-            <ion-card-content>
+          </ion-card>
+        </ion-content>
+        <ion-footer>
+          <ion-toolbar>
+            <ion-buttons slot="start">
               <ion-button
-                expand="block"
+                fill="clear"
+                :disabled="activeMutation === 'activate'"
+                @click="closeActivationReview"
+              >
+                {{ translate("Cancel") }}
+              </ion-button>
+            </ion-buttons>
+            <ion-buttons slot="end">
+              <ion-button
+                fill="solid"
+                color="primary"
                 :disabled="!activationAcknowledged || activeMutation === 'activate'"
                 data-testid="activate-order-sync-job"
                 @click="activateJob"
@@ -464,9 +478,9 @@
                 <ion-spinner v-if="activeMutation === 'activate'" slot="start" name="crescent" />
                 {{ translate("Activate Order Sync") }}
               </ion-button>
-            </ion-card-content>
-          </ion-card>
-        </ion-content>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-footer>
       </ion-modal>
     </ion-content>
   </ion-page>
@@ -486,6 +500,7 @@ import {
   IonCardTitle,
   IonCheckbox,
   IonContent,
+  IonFooter,
   IonHeader,
   IonIcon,
   IonInput,

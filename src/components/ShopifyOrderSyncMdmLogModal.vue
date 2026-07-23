@@ -11,34 +11,42 @@
       </ion-toolbar>
     </ion-header>
     <ion-content>
-      <ion-card v-if="isLoading">
-        <ion-card-content>
-          <ion-spinner name="crescent" />
-        </ion-card-content>
-      </ion-card>
-      <ion-card v-else-if="loadError" role="alert">
-        <ion-card-content>{{ loadError }}</ion-card-content>
-      </ion-card>
-      <ion-list v-else lines="full">
+      <ion-list lines="full">
         <ion-item>
           <ion-label>{{ translate("Log ID") }}</ion-label>
-          <ion-label slot="end">{{ mdmLog.logId || translate("Not available") }}</ion-label>
+          <ion-note slot="end">{{ logId }}</ion-note>
         </ion-item>
-        <ion-item>
+        <ion-item v-if="details.statusId">
           <ion-label>{{ translate("Status") }}</ion-label>
-          <ion-label slot="end">{{ statusLabel }}</ion-label>
+          <ion-badge slot="end" :color="statusColor">{{ statusLabel }}</ion-badge>
         </ion-item>
-        <ion-item v-if="mdmLog.totalRecordCount !== undefined">
+        <ion-item v-if="details.configId">
+          <ion-label>{{ translate("Import configuration") }}</ion-label>
+          <ion-note slot="end">{{ details.configId }}</ion-note>
+        </ion-item>
+        <ion-item v-if="details.systemMessageId">
+          <ion-label>{{ translate("SystemMessage") }}</ion-label>
+          <ion-note slot="end">{{ details.systemMessageId }}</ion-note>
+        </ion-item>
+        <ion-item v-if="details.startedAt">
+          <ion-label>{{ translate("Started") }}</ion-label>
+          <ion-note slot="end">{{ formatDate(details.startedAt) }}</ion-note>
+        </ion-item>
+        <ion-item v-if="details.completedAt">
+          <ion-label>{{ translate("Completed") }}</ion-label>
+          <ion-note slot="end">{{ formatDate(details.completedAt) }}</ion-note>
+        </ion-item>
+        <ion-item v-if="details.totalRecordCount !== undefined">
           <ion-label>{{ translate("Total Records") }}</ion-label>
-          <ion-label slot="end">{{ mdmLog.totalRecordCount }}</ion-label>
+          <ion-note slot="end">{{ details.totalRecordCount }}</ion-note>
         </ion-item>
-        <ion-item v-if="mdmLog.successRecordCount !== undefined">
+        <ion-item v-if="details.successRecordCount !== undefined">
           <ion-label>{{ translate("Success Records") }}</ion-label>
-          <ion-label slot="end">{{ mdmLog.successRecordCount }}</ion-label>
+          <ion-note slot="end">{{ details.successRecordCount }}</ion-note>
         </ion-item>
-        <ion-item v-if="mdmLog.failedRecordCount !== undefined">
+        <ion-item v-if="details.failedRecordCount !== undefined">
           <ion-label>{{ translate("Failed Records") }}</ion-label>
-          <ion-label slot="end">{{ mdmLog.failedRecordCount }}</ion-label>
+          <ion-note slot="end">{{ details.failedRecordCount }}</ion-note>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -47,10 +55,9 @@
 
 <script setup lang="ts">
 import {
+  IonBadge,
   IonButton,
   IonButtons,
-  IonCard,
-  IonCardContent,
   IonContent,
   IonHeader,
   IonIcon,
@@ -58,41 +65,47 @@ import {
   IonLabel,
   IonList,
   IonModal,
-  IonSpinner,
+  IonNote,
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { computed, ref, watch } from "vue";
 import { closeOutline } from "ionicons/icons";
+import { computed } from "vue";
 import { translate } from "@common";
-import { useDataManagerLog } from "@/composables/useDataManagerLog";
+import { formatDateTime } from "@/utils";
 
-const props = defineProps<{ isOpen: boolean; logId: string }>();
+interface SafeShopifyOrderSyncMdmLogDetails {
+  statusId?: string;
+  configId?: string;
+  systemMessageId?: string;
+  startedAt?: string | number;
+  completedAt?: string | number;
+  totalRecordCount?: number;
+  successRecordCount?: number;
+  failedRecordCount?: number;
+}
+
+const props = withDefaults(defineProps<{
+  isOpen: boolean;
+  logId: string;
+  details?: SafeShopifyOrderSyncMdmLogDetails;
+}>(), { details: () => ({}) });
 const emit = defineEmits<{ close: [] }>();
-const { currentMdmLog, fetchLogDetails } = useDataManagerLog();
-const isLoading = ref(false);
-const loadError = ref("");
 
-const mdmLog = computed(() => currentMdmLog.value || {});
 const statusLabel = computed(() => {
-  const status = String(mdmLog.value.statusId || mdmLog.value.status || "").trim();
-  return status || translate("Not available");
+  const status = String(props.details.statusId || "").trim();
+  const normalized = status.toLocaleLowerCase();
+  if (normalized.includes("finish") || normalized.includes("complete") || normalized.includes("success")) return translate("Completed");
+  if (normalized.includes("fail") || normalized.includes("crash") || normalized.includes("cancel")) return translate("Failed");
+  if (normalized.includes("run") || normalized.includes("process") || normalized.includes("pending")) return translate("In progress");
+  return status;
 });
+const statusColor = computed(() => statusLabel.value === translate("Completed")
+  ? "success"
+  : statusLabel.value === translate("Failed") ? "danger" : statusLabel.value === translate("In progress") ? "primary" : "medium");
 
-watch(() => [props.isOpen, props.logId], ([isOpen]) => {
-  if (isOpen && props.logId) void load();
-});
-
-async function load() {
-  isLoading.value = true;
-  loadError.value = "";
-  try {
-    await fetchLogDetails(props.logId);
-  } catch (_error) {
-    loadError.value = translate("Failed to load sync step details.");
-  } finally {
-    isLoading.value = false;
-  }
+function formatDate(value: unknown): string {
+  return formatDateTime(value) || "";
 }
 
 function close() {

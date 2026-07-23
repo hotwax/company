@@ -222,7 +222,9 @@
                       </p>
                       <template v-else>
                         <p v-for="log in progressImports" :key="log.logId || log.configId">
-                          {{ importLabel(log.configId) }} · {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }} · {{ log.totalRecordCount }} {{ translate("records") }}
+                          <ion-button class="progress-fact-button" fill="clear" size="small" @click.stop="openMdmLogDetails(log.logId)">
+                            {{ importLabel(log.configId) }} · {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }} · {{ log.totalRecordCount }} {{ translate("records") }}
+                          </ion-button>
                         </p>
                       </template>
                     </template>
@@ -348,14 +350,22 @@
                         {{ translate(order.outcome) }}
                       </ion-badge>
                     </ion-item>
-                    <ion-item>
+                    <ion-item
+                      :button="!!order.logId"
+                      :detail="!!order.logId"
+                      @click="openMdmLogDetails(order.logId)"
+                    >
                       <ion-label>
                         {{ translate("DataManager result") }}
                         <p>{{ order.configId || translate("Not available") }}</p>
                       </ion-label>
                       <ion-note slot="end">{{ translate("Completed") }}</ion-note>
                     </ion-item>
-                    <ion-item>
+                    <ion-item
+                      :button="!!order.systemMessageId"
+                      :detail="!!order.systemMessageId"
+                      @click="openSystemMessageDetails(order.systemMessageId)"
+                    >
                       <ion-label>
                         {{ translate("SystemMessage") }}
                         <p>{{ order.systemMessageId || translate("Not available") }}</p>
@@ -363,7 +373,7 @@
                     </ion-item>
                     <ion-item lines="none">
                       <ion-buttons>
-                        <ion-button v-if="order.logId" fill="clear" :href="dataManagerLogUrl(order.logId)" target="_blank" rel="noopener noreferrer">
+                        <ion-button v-if="order.logId" fill="clear" @click.stop="openMdmLogDetails(order.logId)">
                           {{ translate("DataManager run") }}
                         </ion-button>
                         <ion-button v-if="hotWaxOrderUrl(order.orderId)" fill="clear" :href="hotWaxOrderUrl(order.orderId)" target="_blank" rel="noopener noreferrer">
@@ -429,7 +439,7 @@
                     </ion-item>
                     <ion-item lines="none">
                       <ion-button fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
-                        {{ translate("View SystemMessage") }}
+                        {{ translate("View request progress") }}
                       </ion-button>
                     </ion-item>
                   </ion-list>
@@ -515,15 +525,31 @@
                       </ion-label>
                       <ion-note slot="end">{{ error.configId || translate("Not available") }}</ion-note>
                     </ion-item>
-                    <ion-item>
+                    <ion-item
+                      :button="!!error.systemMessageId"
+                      :detail="!!error.systemMessageId"
+                      @click="openSystemMessageDetails(error.systemMessageId)"
+                    >
                       <ion-label>
                         {{ translate("SystemMessage") }}
                         <p>{{ error.systemMessageId || translate("Not available") }}</p>
                       </ion-label>
                     </ion-item>
+                    <ion-item
+                      v-if="error.logId"
+                      button
+                      detail
+                      @click="openMdmLogDetails(error.logId)"
+                    >
+                      <ion-label>
+                        {{ translate("DataManager run") }}
+                        <p>{{ error.logId }}</p>
+                      </ion-label>
+                      <ion-note slot="end">{{ error.configId }}</ion-note>
+                    </ion-item>
                     <ion-item lines="none">
                       <ion-buttons>
-                        <ion-button v-if="error.logId" fill="clear" :href="dataManagerLogUrl(error.logId)" target="_blank" rel="noopener noreferrer">
+                        <ion-button v-if="error.logId" fill="clear" @click.stop="openMdmLogDetails(error.logId)">
                           {{ translate("View import") }}
                         </ion-button>
                         <ion-button v-if="error.systemMessageId" fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
@@ -571,9 +597,19 @@
       </main>
     </ion-content>
 
-    <ShopifyOrderSyncJobDetailsModal
+    <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSyncStore.job?.jobName || ''"
+      :title="translate('Queue order requests')"
+      :allowed-parameter-names="['shopId', 'systemMessageRemoteId', 'systemMessageTypeId', 'runAsBatch']"
+      :parameter-description="translate('Job and service parameters used by this Order Sync job.')"
+      :can-run-now="canRunForSelectedShop"
+      :can-edit="canEditJobFromModal"
+      :run-now-disabled-reason="orderSyncStore.runNowDisabledReason"
+      :edit-disabled-reason="editJobDisabledReason"
+      :run-handler="confirmRunNow"
+      :save-handler="saveJobFromModal"
+      @updated="refreshAfterJobModalUpdate"
       @close="showJobDetailsModal = false"
     />
     <ShopifyOrderSyncSystemMessageModal
@@ -586,6 +622,7 @@
     <ShopifyOrderSyncMdmLogModal
       :is-open="showMdmLogModal"
       :log-id="selectedMdmLogId"
+      :details="selectedMdmLogDetails"
       @close="showMdmLogModal = false"
     />
   </ion-page>
@@ -620,11 +657,11 @@ import {
   modalController,
 } from "@ionic/vue";
 import { buildAppUrl, commonUtil, translate } from "@common";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { downloadTextFile, formatDateTime } from "@/utils";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
-import ShopifyOrderSyncJobDetailsModal from "@/components/ShopifyOrderSyncJobDetailsModal.vue";
+import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
 import ShopifyOrderSyncSystemMessageModal from "@/components/ShopifyOrderSyncSystemMessageModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
 import ShopifyOrderSyncCustomRequestCard from "@/components/ShopifyOrderSyncCustomRequestCard.vue";
@@ -717,6 +754,13 @@ const staleRefreshError = computed(() => hasLoadedMonitoring.value ? (orderSyncS
 const selectedShopMatchesRoute = computed(() => Boolean(props.id) && orderSyncStore.selectedShopId === props.id);
 const loadedShopMatchesRoute = computed(() => selectedShopMatchesRoute.value && orderSyncStore.shop?.shopId === props.id);
 const canRunForSelectedShop = computed(() => loadedShopMatchesRoute.value && orderSyncStore.canRunNow);
+const canEditJobFromModal = computed(() => loadedShopMatchesRoute.value
+  && orderSyncStore.capabilities.canEditSchedule
+  && orderSyncStore.capabilities.canActivate
+  && !orderSyncStore.activeMutation);
+const editJobDisabledReason = computed(() => canEditJobFromModal.value
+  ? ""
+  : translate("COMMON_ADMIN permission is required to edit Order Sync."));
 const shopName = computed(() => orderSyncStore.shop?.name || translate("Shopify instance {id}", { id: props.id }));
 const shopifyShopId = computed(() => orderSyncStore.shop?.shopifyShopId || "");
 const productStoreId = computed(() => orderSyncStore.productStore?.productStoreId || orderSyncStore.shop?.productStoreId || "");
@@ -744,14 +788,54 @@ const selectedSystemMessageDetails = computed(() => {
   const failedRecordCount = imports.length
     ? imports.reduce((total, row) => total + row.failedRecordCount, 0)
     : undefined;
+  const importStatuses = imports.map((row) => String(row.statusId || "").toLocaleLowerCase());
+  const importsFailed = imports.length > 0 && ((failedRecordCount ?? 0) > 0
+    || importStatuses.some((status) => status.includes("fail") || status.includes("crash") || status.includes("reject")));
+  const importsActive = imports.length > 0
+    && importStatuses.some((status) => status.includes("pending") || status.includes("run") || status.includes("process"));
+  const importsCompleted = imports.length > 0
+    && !importsFailed
+    && !importsActive
+    && importStatuses.every((status) => status.includes("finish") || status.includes("complete") || status.includes("success"));
   return {
-    statusId: message?.statusId || (requestFailure || importFailure ? "Failed" : successfulAudit ? "Completed" : undefined),
+    statusId: requestFailure
+      ? "Failed"
+      : importsFailed
+        ? "Failed"
+        : importsActive
+          ? "In progress"
+          : importsCompleted
+            ? "Completed"
+            : message?.statusId || (importFailure ? "Failed" : successfulAudit ? "Completed" : undefined),
     systemMessageTypeId: message?.systemMessageTypeId || (successfulAudit || requestFailure || importFailure ? "ShopifyOrderSync" : undefined),
     systemMessageRemoteId: message?.systemMessageRemoteId,
-    requestedAt: message?.initDate,
+    requestedAt: message?.initDate || requestFailure?.occurredAt,
     completedAt: message?.processedDate || message?.lastUpdatedStamp || successfulAudit?.processedAt || requestFailure?.occurredAt || importFailure?.occurredAt,
     totalRecordCount,
     failureCount: failedRecordCount !== undefined ? failedRecordCount : (requestFailure || importFailure ? 1 : successfulAudit ? 0 : undefined),
+    requestFailedBeforeImport: !!requestFailure,
+    requestFailureText: requestFailure?.errorText,
+  };
+});
+const selectedMdmLogDetails = computed(() => {
+  const imports = Object.values(orderSyncStore.importsBySystemMessageId || {}).flat();
+  const imported = imports.find((entry) => entry.logId === selectedMdmLogId.value);
+  const successfulAudits = (orderSyncStore.recentOrders || [])
+    .filter((order) => order.logId === selectedMdmLogId.value);
+  const failed = (orderSyncStore.recentErrors || [])
+    .find((error) => error.logId === selectedMdmLogId.value);
+  const latestAudit = successfulAudits
+    .slice()
+    .sort((first, second) => second.processedAtMillis - first.processedAtMillis)[0];
+  return {
+    statusId: imported?.statusId || (successfulAudits.length ? "DmlsFinished" : failed ? "DmlsFailed" : undefined),
+    configId: imported?.configId || latestAudit?.configId || failed?.configId,
+    systemMessageId: imported?.systemMessageId || latestAudit?.systemMessageId || failed?.systemMessageId,
+    startedAt: imported?.createdDate,
+    completedAt: imported?.finishDateTime || latestAudit?.processedAt || failed?.occurredAt,
+    totalRecordCount: imported?.totalRecordCount ?? (successfulAudits.length || (failed ? 1 : undefined)),
+    successRecordCount: imported?.successRecordCount ?? (successfulAudits.length || (failed ? 0 : undefined)),
+    failedRecordCount: imported?.failedRecordCount ?? (successfulAudits.length ? 0 : failed ? 1 : undefined),
   };
 });
 const filteredOrders = computed(() => orderSyncStore.filteredRecentOrders(ordersQuery.value));
@@ -891,6 +975,19 @@ function openSystemMessageDetails(systemMessageId: unknown) {
   showSystemMessageModal.value = true;
 }
 
+function openMdmLogDetails(logId: unknown) {
+  const id = String(logId || "").trim();
+  if (!id) return;
+  const safeLogIds = new Set([
+    ...Object.values(orderSyncStore.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
+    ...(orderSyncStore.recentOrders || []).map((order) => order.logId),
+    ...(orderSyncStore.recentErrors || []).map((error) => error.logId),
+  ].filter(Boolean));
+  if (!safeLogIds.has(id)) return;
+  selectedMdmLogId.value = id;
+  showMdmLogModal.value = true;
+}
+
 async function openCustomOrderRequest() {
   if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
     actionError.value = translate("Administrator permission is required to download specific orders.");
@@ -941,13 +1038,8 @@ function openProgressDetails(row: OrderSyncProgressRow) {
     return;
   }
   if (row.id === "hotwax-import" && progressImports.value[0]?.logId) {
-    selectedMdmLogId.value = progressImports.value[0].logId;
-    showMdmLogModal.value = true;
+    openMdmLogDetails(progressImports.value[0].logId);
   }
-}
-
-function dataManagerLogUrl(logId: string): string {
-  return buildAppUrl("job-manager", `/file-history/${encodeURIComponent(logId)}`) || "#";
 }
 
 function hotWaxOrderUrl(orderId: string): string {
@@ -983,13 +1075,12 @@ async function handleManualRefresh() {
   await polling.manualRefresh();
 }
 
-async function downloadErrorsCsv() {
+function downloadErrorsCsv() {
   if (!loadedShopMatchesRoute.value || !filteredErrors.value.length || errorDownloadState.value === "loading") return;
   const shopId = props.id;
   const rows = [...filteredErrors.value];
   errorDownloadState.value = "loading";
   errorDownloadMessage.value = translate("Preparing the safe error CSV.");
-  await nextTick();
   if (props.id !== shopId || orderSyncStore.selectedShopId !== shopId) {
     errorDownloadState.value = "idle";
     errorDownloadMessage.value = "";
@@ -998,9 +1089,11 @@ async function downloadErrorsCsv() {
 
   try {
     const csv = buildShopifyOrderSyncErrorCsv(rows);
+    // This must stay in the original click task so Chromium retains the user's
+    // download activation.
     downloadTextFile(csv, shopifyOrderSyncErrorCsvFileName(shopId));
     errorDownloadState.value = "success";
-    errorDownloadMessage.value = translate("Safe error CSV downloaded.");
+    errorDownloadMessage.value = translate("Safe error CSV download started.");
   } catch (_error) {
     errorDownloadState.value = "error";
     errorDownloadMessage.value = translate("The safe error CSV could not be downloaded.");
@@ -1017,11 +1110,11 @@ function escapeAlertText(value: unknown): string {
 }
 
 async function confirmRunNow() {
-  if (!canRunForSelectedShop.value) return;
+  if (!canRunForSelectedShop.value) return false;
   const routeShopId = props.id;
   const loadedShopId = orderSyncStore.shop?.shopId || "";
   const jobName = orderSyncStore.job?.jobName || "";
-  if (loadedShopId !== routeShopId) return;
+  if (loadedShopId !== routeShopId) return false;
   const confirmationShopName = shopName.value;
   const alert = await alertController.create({
     header: translate("Run Order Sync now?"),
@@ -1040,22 +1133,42 @@ async function confirmRunNow() {
     || orderSyncStore.shop?.shopId !== loadedShopId
     || orderSyncStore.job?.jobName !== jobName
     || !orderSyncStore.canRunNow
-  ) return;
+  ) return false;
 
   actionMessage.value = "";
   actionError.value = "";
   try {
     const queued = await orderSyncStore.runNow({ shopId: routeShopId });
-    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return;
+    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return false;
     const correlation = queued.systemMessageId || queued.jobRunId;
     actionMessage.value = correlation
       ? translate("The standard next batch was queued as {id}.", { id: correlation })
       : translate("The standard next batch was queued.");
     await polling.manualRefresh();
+    return true;
   } catch (error) {
-    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return;
+    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return false;
     actionError.value = errorMessage(error, translate("Order Sync could not be queued."));
+    return false;
   }
+}
+
+async function saveJobFromModal(input: { cronExpression: string; paused: boolean }) {
+  const shopId = props.id;
+  const currentJob = orderSyncStore.job;
+  if (!shopId || !currentJob || orderSyncStore.selectedShopId !== shopId || currentJob.shopId !== shopId) {
+    throw new Error("The loaded Order Sync job does not belong to the selected Shopify shop.");
+  }
+  if (input.cronExpression !== currentJob.cronExpression) {
+    await orderSyncStore.updateSchedule(input.cronExpression, shopId);
+  }
+  if (input.paused !== orderSyncStore.job?.paused) {
+    await orderSyncStore.updateJobStatus(input.paused, shopId);
+  }
+}
+
+async function refreshAfterJobModalUpdate() {
+  await polling.manualRefresh();
 }
 
 async function confirmRetry(error: ShopifyOrderSyncRecentError) {
@@ -1186,6 +1299,15 @@ ion-buttons {
 
 .stat-data ion-card {
   flex: 0 0 375px;
+}
+
+.progress-fact-button {
+  --padding-start: 0;
+  --padding-end: 0;
+  height: auto;
+  margin: 0;
+  text-align: start;
+  white-space: normal;
 }
 
 @media screen and (max-width: 430px) {

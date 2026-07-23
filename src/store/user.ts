@@ -82,8 +82,10 @@ export const useUserStore = defineStore("user", {
       } catch (error: any) {
         this.fetchStatus.profile = "error"
         commonUtil.showToast(translate("Failed to fetch user profile"))
-        logger.error("fetchUserProfile", error)
-        useAuth().clearAuth()
+        logger.error("fetchUserProfile", {
+          message: String(error?.message || "Failed to fetch user profile"),
+          status: error?.response?.status
+        })
 
         return Promise.reject(new Error(error))
       }

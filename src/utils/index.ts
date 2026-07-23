@@ -88,7 +88,9 @@ const downloadTextFile = (content: string, fileName: string) => {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Chromium may still be reading the object URL after the synthetic click.
+  // Revoking it in the same task starts the download and then cancels it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const formatDateTime = (value: any, format?: string) => {

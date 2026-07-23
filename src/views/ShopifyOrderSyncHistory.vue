@@ -72,7 +72,7 @@
                 <p>{{ log.totalRecordCount }} {{ translate("records") }} · {{ log.successRecordCount }} {{ translate("successful") }} · {{ log.failedRecordCount }} {{ translate("failed") }}</p>
               </ion-label>
               <ion-badge slot="end" :color="statusColor(log.statusId)">{{ statusLabel(log.statusId, log.failedRecordCount) }}</ion-badge>
-              <ion-button slot="end" fill="clear" :href="dataManagerLogUrl(log.logId)" target="_blank" rel="noopener">
+              <ion-button slot="end" fill="clear" @click="openMdmLogDetails(log)">
                 {{ translate("View MDM log") }}
               </ion-button>
             </ion-item>
@@ -83,6 +83,12 @@
         </ion-card>
       </template>
     </ion-content>
+    <ShopifyOrderSyncMdmLogModal
+      :is-open="showMdmLogModal"
+      :log-id="selectedMdmLog?.logId || ''"
+      :details="selectedMdmLogDetails"
+      @close="closeMdmLogDetails"
+    />
   </ion-page>
 </template>
 
@@ -92,11 +98,12 @@ import {
   IonCardTitle, IonCardSubtitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList,
   IonListHeader, IonPage, IonSpinner, IonTitle, IonToolbar, onIonViewWillEnter
 } from "@ionic/vue";
-import { buildAppUrl, translate } from "@common";
+import { translate } from "@common";
 import { computed, ref } from "vue";
 import { refreshOutline } from "ionicons/icons";
 import { formatDateTime } from "@/utils";
 import { useShopifyOrderSyncStore, type ShopifyOrderSyncBatch, type ShopifyOrderSyncImport } from "@/store/shopifyOrderSync";
+import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
 
 const props = defineProps<{ id: string }>();
 const orderSyncStore = useShopifyOrderSyncStore();
@@ -104,7 +111,19 @@ const isLoading = ref(true);
 const loadError = ref("");
 const batches = ref<ShopifyOrderSyncBatch[]>([]);
 const importsBySystemMessageId = ref<Record<string, ShopifyOrderSyncImport[]>>({});
+const showMdmLogModal = ref(false);
+const selectedMdmLog = ref<ShopifyOrderSyncImport | null>(null);
 const shopName = computed(() => orderSyncStore.shop?.name || translate("Shopify instance {id}", { id: props.id }));
+const selectedMdmLogDetails = computed(() => selectedMdmLog.value ? {
+  statusId: selectedMdmLog.value.statusId,
+  configId: selectedMdmLog.value.configId,
+  systemMessageId: selectedMdmLog.value.systemMessageId,
+  startedAt: selectedMdmLog.value.createdDate,
+  completedAt: selectedMdmLog.value.finishDateTime,
+  totalRecordCount: selectedMdmLog.value.totalRecordCount,
+  successRecordCount: selectedMdmLog.value.successRecordCount,
+  failedRecordCount: selectedMdmLog.value.failedRecordCount,
+} : {});
 
 onIonViewWillEnter(loadHistory);
 
@@ -150,7 +169,13 @@ function batchColor(status: unknown): string {
   return statusColor(status);
 }
 
-function dataManagerLogUrl(logId: string): string {
-  return buildAppUrl("job-manager", `/file-history/${encodeURIComponent(logId)}`) || "#";
+function openMdmLogDetails(log: ShopifyOrderSyncImport) {
+  selectedMdmLog.value = log;
+  showMdmLogModal.value = true;
+}
+
+function closeMdmLogDetails() {
+  showMdmLogModal.value = false;
+  selectedMdmLog.value = null;
 }
 </script>

@@ -1026,6 +1026,168 @@ async function fetchRecentErrors(shopId: string): Promise<{
   return normalizeErrorProjection(payload, shopId);
 }
 
+interface DurableAuditCorrelation {
+  systemMessageId: string;
+  configId: ShopifyOrderSyncImport["configId"];
+  logId: string;
+  processedAtMillis: number;
+}
+
+function latestDurableAuditCorrelations(
+  recentOrders: ShopifyOrderSyncRecentOrder[],
+): DurableAuditCorrelation[] {
+  const latestByConfig = new Map<string, DurableAuditCorrelation>();
+  for (const order of recentOrders) {
+    if (!order.systemMessageId || !order.configId || !order.logId) continue;
+    const configId = order.configId as ShopifyOrderSyncImport["configId"];
+    const key = `${order.systemMessageId}:${configId}`;
+    const current = latestByConfig.get(key);
+    if (!current || order.processedAtMillis > current.processedAtMillis) {
+      latestByConfig.set(key, {
+        systemMessageId: order.systemMessageId,
+        configId,
+        logId: order.logId,
+        processedAtMillis: order.processedAtMillis,
+      });
+    } else if (order.processedAtMillis === current.processedAtMillis && order.logId !== current.logId) {
+      throw new Error("Order Sync audits returned ambiguous DataManager correlations.");
+    }
+  }
+  return [...latestByConfig.values()];
+}
+
+function requiredImportCount(row: UnknownRecord, field: "totalRecordCount" | "failedRecordCount"): number {
+  const raw = row[field];
+  const value = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`DataManager response contained an invalid ${field}.`);
+  }
+  return value;
+}
+
+async function fetchAuditCorrelatedImports(
+  systemMessageRemoteId: string,
+  correlations: DurableAuditCorrelation[],
+): Promise<Map<string, ShopifyOrderSyncImport>> {
+  const importsByLogId = new Map<string, ShopifyOrderSyncImport>();
+  if (!correlations.length) return importsByLogId;
+  const correlationByLogId = new Map<string, DurableAuditCorrelation>();
+  for (const correlation of correlations) {
+    const existing = correlationByLogId.get(correlation.logId);
+    if (existing && (existing.systemMessageId !== correlation.systemMessageId || existing.configId !== correlation.configId)) {
+      throw new Error("Order Sync audits reused a DataManager log across correlations.");
+    }
+    correlationByLogId.set(correlation.logId, correlation);
+  }
+  const logIds = [...correlationByLogId.keys()];
+  const payload = await requestBackend({
+    url: "oms/dataDocumentView",
+    method: "post",
+    data: {
+      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+      customParametersMap: {
+        logId: logIds,
+        systemMessageTypeId: SHOPIFY_ORDER_SYNC_MESSAGE_TYPE,
+        systemMessageRemoteId,
+        configId: [...ORDER_IMPORT_CONFIG_IDS],
+      },
+      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId",
+      pageSize: logIds.length + 1,
+      pageIndex: 0,
+    },
+  }, "Loading audit-correlated Order Sync imports");
+  const rows = listPayload(payload, ["entityValueList", "dataManagerLogs", "logs", "docs"], "Audit-correlated Order Sync imports");
+  if (rows.length > logIds.length) throw new Error("Audit-correlated DataManager response returned duplicate rows.");
+
+  for (const row of rows) {
+    const logId = textValue(row, ["logId"]);
+    const correlation = correlationByLogId.get(logId);
+    if (!correlation) throw new Error("DataManager response crossed the requested audit log scope.");
+    if (importsByLogId.has(logId)) throw new Error("Audit-correlated DataManager response returned duplicate rows.");
+    if (textValue(row, ["systemMessageTypeId"]) !== SHOPIFY_ORDER_SYNC_MESSAGE_TYPE) {
+      throw new Error("DataManager response contained an unexpected SystemMessage type.");
+    }
+    if (textValue(row, ["systemMessageRemoteId"]) !== systemMessageRemoteId) {
+      throw new Error("DataManager response crossed the selected Shopify remote scope.");
+    }
+    if (textValue(row, ["systemMessageId"]) !== correlation.systemMessageId) {
+      throw new Error("DataManager response crossed the audit SystemMessage correlation.");
+    }
+    if (textValue(row, ["configId"]) !== correlation.configId) {
+      throw new Error("DataManager response crossed the audit import configuration.");
+    }
+    const totalRecordCount = requiredImportCount(row, "totalRecordCount");
+    const failedRecordCount = requiredImportCount(row, "failedRecordCount");
+    if (failedRecordCount > totalRecordCount) throw new Error("DataManager response contained impossible import counts.");
+    const projected = projectImport(row, correlation.systemMessageId, correlation.configId);
+    if (!projected.statusId) throw new Error("DataManager response is missing logStatusId.");
+    importsByLogId.set(logId, {
+      ...projected,
+      totalRecordCount,
+      failedRecordCount,
+      successRecordCount: totalRecordCount - failedRecordCount,
+    });
+  }
+  for (const logId of logIds) {
+    if (!importsByLogId.has(logId)) throw new Error("Audit-correlated DataManager log was not returned.");
+  }
+  return importsByLogId;
+}
+
+function reconcileImportsWithSuccessfulAudits(
+  importsBySystemMessageId: Record<string, ShopifyOrderSyncImport[]>,
+  correlations: DurableAuditCorrelation[],
+  authoritativeImportsByLogId: Map<string, ShopifyOrderSyncImport>,
+): Record<string, ShopifyOrderSyncImport[]> {
+  const reconciled = Object.fromEntries(
+    Object.entries(importsBySystemMessageId).map(([systemMessageId, imports]) => [
+      systemMessageId,
+      imports.map((entry) => ({ ...entry })),
+    ]),
+  ) as Record<string, ShopifyOrderSyncImport[]>;
+  for (const durable of correlations) {
+    const { systemMessageId, configId } = durable;
+    const existingImports = reconciled[systemMessageId] || [];
+    const existingForConfig = existingImports.find((entry) => entry.configId === configId);
+    if (existingForConfig?.logId === durable.logId) continue;
+    const durableImport = authoritativeImportsByLogId.get(durable.logId);
+    if (!durableImport || durableImport.systemMessageId !== systemMessageId || durableImport.configId !== configId) {
+      throw new Error("Audit-correlated DataManager import crossed its expected scope.");
+    }
+    reconciled[systemMessageId] = [
+      ...existingImports.filter((entry) => entry.configId !== configId),
+      durableImport,
+    ].sort((first, second) => ORDER_IMPORT_CONFIG_IDS.indexOf(first.configId) - ORDER_IMPORT_CONFIG_IDS.indexOf(second.configId));
+  }
+
+  return reconciled;
+}
+
+async function fetchCanonicalOrderSyncEvidence(
+  shopId: string,
+  systemMessageRemoteId: string,
+  batches: ShopifyOrderSyncBatch[],
+): Promise<{
+  importsBySystemMessageId: Record<string, ShopifyOrderSyncImport[]>;
+  recentOrders: ShopifyOrderSyncRecentOrder[];
+}> {
+  const [fetchedImportsBySystemMessageId, auditRows] = await Promise.all([
+    fetchBatchImports(systemMessageRemoteId, batches),
+    fetchAuditRows(shopId),
+  ]);
+  const recentOrders = normalizeRecentProcessedOrders(auditRows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
+  const correlations = latestDurableAuditCorrelations(recentOrders);
+  const authoritativeImportsByLogId = await fetchAuditCorrelatedImports(systemMessageRemoteId, correlations);
+  return {
+    importsBySystemMessageId: reconcileImportsWithSuccessfulAudits(
+      fetchedImportsBySystemMessageId,
+      correlations,
+      authoritativeImportsByLogId,
+    ),
+    recentOrders,
+  };
+}
+
 function summaryFor(
   batches: ShopifyOrderSyncBatch[],
   importsBySystemMessageId: Record<string, ShopifyOrderSyncImport[]>,
@@ -1310,7 +1472,11 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
         const systemMessages = await fetchSystemMessages(shopId, remote.systemMessageRemoteId);
         const batches = scheduledBatches(systemMessages);
-        const importsBySystemMessageId = await fetchBatchImports(remote.systemMessageRemoteId, batches);
+        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+          shopId,
+          remote.systemMessageRemoteId,
+          batches,
+        );
         if (token !== this.requestToken) return this.cardSnapshot || cardFromSummary(shopId, null, emptySummary());
         const summary = summaryFor(batches, importsBySystemMessageId, job, productStore);
         this.shop = shop;
@@ -1322,6 +1488,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.recentOrders = recentOrders;
         this.summary = summary;
         this.configurationState = deriveOrderSyncConfigurationState({ job });
         this.cardSnapshot = cardFromSummary(shopId, job, summary, true);
@@ -1423,7 +1590,11 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
         const systemMessages = await fetchSystemMessages(shopId, remote.systemMessageRemoteId);
         const batches = scheduledBatches(systemMessages);
-        const importsBySystemMessageId = await fetchBatchImports(remote.systemMessageRemoteId, batches);
+        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+          shopId,
+          remote.systemMessageRemoteId,
+          batches,
+        );
         if (token !== this.requestToken) return null;
         const summary = summaryFor(batches, importsBySystemMessageId, job, productStore);
         this.runtimeTimeZone = runtimeTimeZone;
@@ -1435,10 +1606,11 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.recentOrders = recentOrders;
         this.summary = summary;
         this.configurationState = deriveOrderSyncConfigurationState({ job });
         this.cardSnapshot = cardFromSummary(shopId, job, summary, true);
-        return { runtimeTimeZone, shop, productStore, remote, job, systemMessages, batches, importsBySystemMessageId, summary };
+        return { runtimeTimeZone, shop, productStore, remote, job, systemMessages, batches, importsBySystemMessageId, recentOrders, summary };
       } catch (error) {
         if (token !== this.requestToken) return null;
         throw error;
@@ -1456,14 +1628,16 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       try {
         const { runtimeTimeZone, shop, productStore, remote, templateJob, job } = await fetchOrderSyncContext(shopId);
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
-        const [systemMessages, auditRows, errorProjection] = await Promise.all([
+        const [systemMessages, errorProjection] = await Promise.all([
           fetchSystemMessages(shopId, remote.systemMessageRemoteId),
-          fetchAuditRows(shopId),
           fetchRecentErrors(shopId),
         ]);
         const batches = scheduledBatches(systemMessages);
-        const importsBySystemMessageId = await fetchBatchImports(remote.systemMessageRemoteId, batches);
-        const recentOrders = normalizeRecentProcessedOrders(auditRows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
+        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+          shopId,
+          remote.systemMessageRemoteId,
+          batches,
+        );
         const { recentErrors, recentRequestErrors } = errorProjection;
         if (token !== this.requestToken) return null;
         const summary = summaryFor(batches, importsBySystemMessageId, job, productStore);
