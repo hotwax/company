@@ -8,6 +8,11 @@
           </ion-button>
         </ion-buttons>
         <ion-title>{{ translate("Payment methods") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button aria-label="Create payment method" @click="openCreateModal()">
+            <ion-icon slot="icon-only" :icon="addOutline" />
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -68,11 +73,12 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
+import CreatePaymentMethodModal from '@/components/CreatePaymentMethodModal.vue';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 
@@ -259,6 +265,27 @@ function navigateBack() {
   const hasReturnTarget = Boolean(new URLSearchParams(window.location.search).get("returnTo"));
   if (hasReturnTarget) router.replace(backHref.value);
   else router.push(backHref.value);
+}
+
+async function openCreateModal() {
+  const modal = await modalController.create({
+    component: CreatePaymentMethodModal,
+    componentProps: {
+      shopId: props.id,
+      existingTypes: paymentMethods.value
+    }
+  });
+
+  modal.onDidDismiss().then(async ({ data }) => {
+    if (!data?.created) return;
+    await Promise.all([
+      netSuiteStore.fetchPaymentMethods(),
+      shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
+    ]);
+    initializeLocalMappings();
+  });
+
+  await modal.present();
 }
 </script>
 
