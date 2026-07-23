@@ -68,7 +68,7 @@ export default defineConfig({
     'import.meta.env.VITE_APP_VERSION_INFO': JSON.stringify(JSON.stringify(versionInfoUtil.getVersionInfo(pkg.version)))
   },
   resolve: {
-    dedupe: ['vue', 'pinia', 'luxon', 'vue-i18n', 'mitt', 'vue-logger-plugin'],
+    dedupe: ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router', 'pinia', 'luxon', 'vue-i18n', 'mitt', 'vue-logger-plugin'],
     alias: {
       '@': path.resolve(projectRoot, 'src'),
       '@common': commonRoot
