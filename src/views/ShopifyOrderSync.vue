@@ -311,7 +311,7 @@
               </ion-list>
             </ion-card>
 
-            <ShopifyOrderSyncCustomRequestCard @open-search="openCustomOrderRequest" />
+            <ShopifyOrderSyncCustomRequestCard @open-search="openCustomOrderRequest" @open-replay="openOrdersReplay" />
           </section>
 
           <section class="sync-stat" aria-labelledby="recent-orders-heading">
@@ -665,6 +665,49 @@
       </main>
     </ion-content>
 
+    <ion-modal :is-open="showReplayOrdersModal" :backdrop-dismiss="false" @didDismiss="showReplayOrdersModal = false">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="showReplayOrdersModal = false">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Replay orders") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list lines="full">
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <h2>{{ translate("Replay orders from a certain time") }}</h2>
+              <p>{{ translate("Select a time to rewind order sync to. Every order updated from that time onward is re-imported through the standard fresh-fetch path, up to {limit} orders.", { limit: REPLAY_ORDER_LIMIT }) }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-label>{{ translate("Sync updates from") }}</ion-label>
+            <ion-datetime-button slot="end" datetime="replay-orders-datetime" />
+            <ion-popover :keep-contents-on-did-dismiss="true">
+              <ion-datetime id="replay-orders-datetime" presentation="date-time" v-model="replayFromDate" />
+            </ion-popover>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+      <ion-footer>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button fill="clear" :disabled="isReplayStarting" @click="showReplayOrdersModal = false">{{ translate("Cancel") }}</ion-button>
+          </ion-buttons>
+          <ion-buttons slot="end">
+            <ion-button fill="solid" color="primary" :disabled="isReplayStarting" @click="startOrdersReplay">
+              <ion-spinner v-if="isReplayStarting" name="crescent" />
+              <span v-else>{{ translate("Start replay") }}</span>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-footer>
+    </ion-modal>
+
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSyncStore.job?.jobName || ''"
@@ -708,13 +751,18 @@ import {
   IonCardSubtitle,
   IonCardTitle,
   IonContent,
+  IonDatetime,
+  IonDatetimeButton,
+  IonFooter,
   IonHeader,
   IonIcon,
   IonItem,
   IonLabel,
   IonList,
+  IonModal,
   IonNote,
   IonPage,
+  IonPopover,
   IonProgressBar,
   IonSearchbar,
   IonSkeletonText,
@@ -726,7 +774,7 @@ import {
 } from "@ionic/vue";
 import { buildAppUrl, commonUtil, translate } from "@common";
 import { computed, ref, watch } from "vue";
-import { downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
+import { closeOutline, downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { downloadTextFile, formatDateTime, getDownloadFileContent } from "@/utils";
 import { useDataManagerLog } from "@/composables/useDataManagerLog";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
@@ -1103,6 +1151,70 @@ async function openCustomOrderRequest() {
       if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
       actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
     }
+  }
+}
+
+const REPLAY_ORDER_LIMIT = 50;
+const showReplayOrdersModal = ref(false);
+const replayFromDate = ref("");
+const isReplayStarting = ref(false);
+
+function openOrdersReplay() {
+  if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
+    actionError.value = translate("Administrator permission is required to download specific orders.");
+    return;
+  }
+  if (!orderSyncStore.remote?.systemMessageRemoteId) {
+    commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
+    return;
+  }
+  replayFromDate.value = "";
+  showReplayOrdersModal.value = true;
+}
+
+async function startOrdersReplay() {
+  if (!replayFromDate.value) {
+    commonUtil.showToast(translate("Please select a date to start the sync from."));
+    return;
+  }
+  const requestedShopId = props.id;
+  isReplayStarting.value = true;
+  actionMessage.value = "";
+  actionError.value = "";
+  try {
+    const search = await orderSyncStore.searchShopifyOrders({
+      queryString: `updated_at:>='${replayFromDate.value}'`,
+      pageSize: REPLAY_ORDER_LIMIT,
+      shopId: requestedShopId,
+    });
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+
+    const shopifyOrderIds = [...new Set(
+      search.orders.map((order) => String(order.legacyResourceId || "").trim()).filter(Boolean),
+    )];
+    if (!shopifyOrderIds.length) {
+      actionMessage.value = translate("No Shopify orders were updated since the selected time.");
+      showReplayOrdersModal.value = false;
+      return;
+    }
+    if (search.hasNextPage) {
+      actionError.value = translate("More than {limit} orders were updated since the selected time. Choose a later time or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
+      return;
+    }
+
+    const result = await orderSyncStore.requestSelectedOrders({ shopifyOrderIds, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
+      queued: result.queued.length,
+      failed: result.failedOrderIds.length,
+    });
+    showReplayOrdersModal.value = false;
+    await polling.manualRefresh();
+  } catch (error) {
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
+  } finally {
+    isReplayStarting.value = false;
   }
 }
 

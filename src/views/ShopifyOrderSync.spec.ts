@@ -71,10 +71,27 @@ vi.mock("@ionic/vue", async () => {
       return () => h(tag, attrs, slots.default?.());
     },
   });
+  const datetime = defineComponent({
+    inheritAttrs: false,
+    props: { modelValue: String },
+    emits: ["update:modelValue"],
+    setup(props, { attrs, emit }) {
+      return () => h("input", {
+        ...attrs,
+        "data-datetime": "true",
+        value: props.modelValue,
+        onInput: (event: Event) => emit("update:modelValue", (event.target as HTMLInputElement).value),
+      });
+    },
+  });
   return {
     IonAccordion: container(),
     IonAccordionGroup: container(),
     IonBackButton: container("a"),
+    IonDatetime: datetime,
+    IonDatetimeButton: container("button"),
+    IonFooter: container("footer"),
+    IonPopover: container(),
     IonBadge: container("span"),
     IonButton: container("button"),
     IonButtons: container(),
@@ -430,6 +447,78 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(mocks.downloadDataManagerFile).toHaveBeenCalledWith("UPDATE_SHOPIFY_ORDER", "CONTENT_1");
     expect(mocks.downloadTextFile).toHaveBeenCalledWith("{\"orders\":[]}", "orders-update.json");
     expect(mocks.showToast).toHaveBeenCalledWith("File downloaded successfully");
+  });
+
+  it("replays orders updated since a chosen time through the bounded fresh-fetch path", async () => {
+    const searchShopifyOrders = vi.fn().mockResolvedValue({
+      orders: [
+        { legacyResourceId: "111", name: "HC#1" },
+        { legacyResourceId: "222", name: "HC#2" },
+      ],
+      hasNextPage: false,
+      endCursor: "",
+    });
+    const requestSelectedOrders = vi.fn().mockResolvedValue({
+      queued: [
+        { shopifyOrderId: "111", systemMessageId: "M1" },
+        { shopifyOrderId: "222", systemMessageId: "M2" },
+      ],
+      failedOrderIds: [],
+    });
+    const wrapper = await mountMonitor({
+      remote: { systemMessageRemoteId: "REMOTE_SHOP_1" },
+      searchShopifyOrders,
+      requestSelectedOrders,
+    });
+
+    const replayItem = wrapper.findAll("div").find((element) =>
+      element.attributes("button") !== undefined && element.text().includes("Replay orders from a time"));
+    expect(replayItem).toBeDefined();
+    await replayItem!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Replay orders from a certain time");
+    await wrapper.get("[data-datetime]").setValue("2026-07-20T10:00:00");
+
+    const start = wrapper.findAll("button").find((button) => button.text() === "Start replay");
+    expect(start).toBeDefined();
+    await start!.trigger("click");
+    await flushPromises();
+
+    expect(searchShopifyOrders).toHaveBeenCalledWith({
+      queryString: "updated_at:>='2026-07-20T10:00:00'",
+      pageSize: 50,
+      shopId: "SHOP_1",
+    });
+    expect(requestSelectedOrders).toHaveBeenCalledWith({ shopifyOrderIds: ["111", "222"], shopId: "SHOP_1" });
+    expect(wrapper.text()).toContain("Queued 2 selected Shopify orders; 0 could not be queued.");
+  });
+
+  it("refuses an over-limit replay window without queuing anything", async () => {
+    const searchShopifyOrders = vi.fn().mockResolvedValue({
+      orders: Array.from({ length: 50 }, (_, index) => ({ legacyResourceId: String(1000 + index) })),
+      hasNextPage: true,
+      endCursor: "cursor",
+    });
+    const requestSelectedOrders = vi.fn();
+    const wrapper = await mountMonitor({
+      remote: { systemMessageRemoteId: "REMOTE_SHOP_1" },
+      searchShopifyOrders,
+      requestSelectedOrders,
+    });
+
+    const replayItem = wrapper.findAll("div").find((element) =>
+      element.attributes("button") !== undefined && element.text().includes("Replay orders from a time"));
+    await replayItem!.trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-datetime]").setValue("2026-07-20T10:00:00");
+    const start = wrapper.findAll("button").find((button) => button.text() === "Start replay");
+    await start!.trigger("click");
+    await flushPromises();
+
+    expect(requestSelectedOrders).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("More than 50 orders were updated since the selected time. Choose a later time or use Download specific orders.");
+    expect(wrapper.text()).toContain("Replay orders from a certain time");
   });
 
   it("shows safe standalone SystemMessage facts by correlating its loaded summary and successful audit", async () => {

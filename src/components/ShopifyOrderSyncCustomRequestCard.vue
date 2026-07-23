@@ -11,6 +11,12 @@
           <p>{{ translate("Search Shopify directly and select orders to download on demand") }}</p>
         </ion-label>
       </ion-item>
+      <ion-item button detail @click="emit('open-replay')">
+        <ion-label>
+          {{ translate("Replay orders from a time") }}
+          <p>{{ translate("Re-import every order updated since a chosen time") }}</p>
+        </ion-label>
+      </ion-item>
     </ion-list>
   </ion-card>
 </template>
@@ -19,5 +25,5 @@
 import { IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonItem, IonLabel, IonList } from "@ionic/vue";
 import { translate } from "@common";
 
-const emit = defineEmits<{ "open-search": [] }>();
+const emit = defineEmits<{ "open-search": []; "open-replay": [] }>();
 </script>
