@@ -363,43 +363,6 @@
                 :aria-label="translate('Search order sync history')"
                 @ionInput="ordersQuery = String($event.detail.value || '')"
               />
-              <ion-item class="order-history-date-filter" lines="none">
-                <ion-input
-                  type="date"
-                  :value="ordersFromDate"
-                  label-placement="stacked"
-                  clear-input
-                  :aria-label="translate('From date')"
-                  @ionInput="ordersFromDate = String($event.detail.value || '')"
-                >
-                  <div slot="label">{{ translate("From date") }}</div>
-                </ion-input>
-                <ion-input
-                  type="date"
-                  :value="ordersThruDate"
-                  label-placement="stacked"
-                  clear-input
-                  :aria-label="translate('Thru date')"
-                  @ionInput="ordersThruDate = String($event.detail.value || '')"
-                >
-                  <div slot="label">{{ translate("Thru date") }}</div>
-                </ion-input>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :disabled="!ordersFromDate && !ordersThruDate"
-                  :aria-label="translate('Clear order history date range')"
-                  @click="clearOrderDateRange"
-                >
-                  {{ translate("Clear") }}
-                </ion-button>
-              </ion-item>
-              <ion-note v-if="orderDateRangeError" class="order-history-date-error" color="danger">
-                {{ orderDateRangeError }}
-              </ion-note>
-              <ion-note v-else-if="ordersFromDate || ordersThruDate" class="order-history-date-help">
-                {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSyncStore.runtimeTimeZone || "UTC" }) }}
-              </ion-note>
             </div>
             <div class="stat-data" role="list">
               <transition-group name="list" tag="div" class="list-transition-group">
@@ -456,10 +419,7 @@
               <ion-card v-if="!filteredOrders.length">
                 <ion-item lines="none">
                   <ion-label class="ion-text-center">
-                    <p v-if="orderDateRangeError">{{ orderDateRangeError }}</p>
-                    <p v-else-if="ordersQuery && (ordersFromDate || ordersThruDate)">{{ translate("No loaded orders match the current search and date range.") }}</p>
-                    <p v-else-if="ordersQuery">{{ translate("No loaded orders match this search.") }}</p>
-                    <p v-else-if="ordersFromDate || ordersThruDate">{{ translate("No loaded orders match the selected date range.") }}</p>
+                    <p v-if="ordersQuery">{{ translate("No loaded orders match this search.") }}</p>
                     <p v-else>{{ recentOrdersEmptyMessage }}</p>
                   </ion-label>
                 </ion-item>
@@ -752,13 +712,18 @@
               <p>{{ translate("Select a time to rewind order sync to. Every order updated from that time onward is re-imported through the standard fresh-fetch path, up to {limit} orders.", { limit: REPLAY_ORDER_LIMIT }) }}</p>
             </ion-label>
           </ion-item>
-          <ion-item>
-            <ion-label>{{ translate("Sync updates from") }}</ion-label>
-            <ion-datetime-button slot="end" datetime="replay-orders-datetime" />
-            <ion-popover :keep-contents-on-did-dismiss="true">
-              <ion-datetime id="replay-orders-datetime" presentation="date-time" v-model="replayFromDate" />
-            </ion-popover>
+          <ion-item class="replay-date-range" lines="none">
+            <ion-input type="date" :value="replayFromDate" label-placement="stacked" clear-input :aria-label="translate('From date')" @ionInput="replayFromDate = String($event.detail.value || '')">
+              <div slot="label">{{ translate("From date") }}</div>
+            </ion-input>
+            <ion-input type="date" :value="replayThruDate" label-placement="stacked" clear-input :aria-label="translate('Thru date')" @ionInput="replayThruDate = String($event.detail.value || '')">
+              <div slot="label">{{ translate("Thru date") }}</div>
+            </ion-input>
           </ion-item>
+          <ion-note v-if="replayDateRangeError" color="danger" class="replay-date-range-error">{{ replayDateRangeError }}</ion-note>
+          <ion-note v-else class="replay-date-range-help">
+            {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSyncStore.runtimeTimeZone || "UTC" }) }}
+          </ion-note>
         </ion-list>
       </ion-content>
       <ion-footer>
@@ -820,8 +785,6 @@ import {
   IonCardTitle,
   IonChip,
   IonContent,
-  IonDatetime,
-  IonDatetimeButton,
   IonFooter,
   IonHeader,
   IonIcon,
@@ -832,7 +795,6 @@ import {
   IonModal,
   IonNote,
   IonPage,
-  IonPopover,
   IonProgressBar,
   IonRow,
   IonSearchbar,
@@ -876,8 +838,6 @@ const props = defineProps<{ id: string }>();
 const orderSyncStore = useShopifyOrderSyncStore();
 
 const ordersQuery = ref("");
-const ordersFromDate = ref("");
-const ordersThruDate = ref("");
 const errorsQuery = ref("");
 const pollingError = ref("");
 const actionMessage = ref("");
@@ -915,9 +875,6 @@ watch(() => props.id, (nextId, previousId) => {
   if (!nextId || nextId === previousId) return;
   const refreshWasInFlight = polling.isRefreshing.value;
   ordersQuery.value = "";
-  const savedDateRange = readOrderDateRange(nextId);
-  ordersFromDate.value = savedDateRange.fromDate;
-  ordersThruDate.value = savedDateRange.thruDate;
   errorsQuery.value = "";
   pollingError.value = "";
   actionMessage.value = "";
@@ -942,18 +899,6 @@ watch(() => props.id, (nextId, previousId) => {
     });
   }
 }, { immediate: true, flush: "sync" });
-
-watch([ordersFromDate, ordersThruDate], ([fromDate, thruDate]) => {
-  if (!props.id) return;
-  const storage = orderDateRangeStorage();
-  if (!storage) return;
-  const storageKey = orderDateRangeStorageKey(props.id);
-  if (!fromDate && !thruDate) {
-    storage.removeItem(storageKey);
-    return;
-  }
-  storage.setItem(storageKey, JSON.stringify({ fromDate, thruDate }));
-});
 
 const connectionDetailsHref = computed(() => `/shopify-connection-details/${encodeURIComponent(props.id)}`);
 const configurationHref = computed(() => `${connectionDetailsHref.value}/order-sync/configure`);
@@ -1049,29 +994,7 @@ const selectedMdmLogDetails = computed(() => {
     failedRecordCount: imported?.failedRecordCount ?? (successfulAudits.length ? 0 : failed ? 1 : undefined),
   };
 });
-const orderDateRangeError = computed(() => {
-  if (!ordersFromDate.value || !ordersThruDate.value || ordersFromDate.value <= ordersThruDate.value) return "";
-  return translate("From date must be on or before Thru date.");
-});
-const orderDateRangeMillis = computed(() => {
-  if (orderDateRangeError.value) return null;
-  const zone = orderSyncStore.runtimeTimeZone || "UTC";
-  const fromDate = ordersFromDate.value ? DateTime.fromISO(ordersFromDate.value, { zone }).startOf("day") : null;
-  const thruDate = ordersThruDate.value ? DateTime.fromISO(ordersThruDate.value, { zone }).endOf("day") : null;
-  if ((fromDate && !fromDate.isValid) || (thruDate && !thruDate.isValid)) return null;
-  return {
-    fromMillis: fromDate?.toMillis() ?? Number.NEGATIVE_INFINITY,
-    thruMillis: thruDate?.toMillis() ?? Number.POSITIVE_INFINITY,
-  };
-});
-const filteredOrders = computed(() => {
-  if (orderDateRangeError.value) return [];
-  const dateRange = orderDateRangeMillis.value;
-  return orderSyncStore.filteredRecentOrders(ordersQuery.value).filter((order) => {
-    if (!dateRange) return true;
-    return order.processedAtMillis >= dateRange.fromMillis && order.processedAtMillis <= dateRange.thruMillis;
-  });
-});
+const filteredOrders = computed(() => orderSyncStore.filteredRecentOrders(ordersQuery.value));
 const filteredErrors = computed(() => orderSyncStore.filteredRecentErrors(errorsQuery.value));
 
 watch([errorsQuery, () => orderSyncStore.recentErrors], () => {
@@ -1108,35 +1031,6 @@ const recentOrdersEmptyMessage = computed(() => {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-function orderDateRangeStorageKey(shopId: string): string {
-  return `shopify-order-sync-date-range:${shopId}`;
-}
-
-function orderDateRangeStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function readOrderDateRange(shopId: string): { fromDate: string; thruDate: string } {
-  try {
-    const saved = JSON.parse(orderDateRangeStorage()?.getItem(orderDateRangeStorageKey(shopId)) || "null");
-    return {
-      fromDate: typeof saved?.fromDate === "string" ? saved.fromDate : "",
-      thruDate: typeof saved?.thruDate === "string" ? saved.thruDate : "",
-    };
-  } catch {
-    return { fromDate: "", thruDate: "" };
-  }
-}
-
-function clearOrderDateRange() {
-  ordersFromDate.value = "";
-  ordersThruDate.value = "";
 }
 
 function formatDate(value: unknown): string {
@@ -1308,7 +1202,12 @@ async function openCustomOrderRequest() {
 const REPLAY_ORDER_LIMIT = 50;
 const showReplayOrdersModal = ref(false);
 const replayFromDate = ref("");
+const replayThruDate = ref("");
 const isReplayStarting = ref(false);
+const replayDateRangeError = computed(() => {
+  if (!replayFromDate.value || !replayThruDate.value || replayFromDate.value <= replayThruDate.value) return "";
+  return translate("From date must be on or before Thru date.");
+});
 
 function openOrdersReplay() {
   if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
@@ -1320,12 +1219,16 @@ function openOrdersReplay() {
     return;
   }
   replayFromDate.value = "";
+  replayThruDate.value = "";
   showReplayOrdersModal.value = true;
 }
 
 async function startOrdersReplay() {
-  if (!replayFromDate.value) {
-    commonUtil.showToast(translate("Please select a date to start the sync from."));
+  if (!replayFromDate.value || !replayThruDate.value) {
+    commonUtil.showToast(translate("Please select both From and Thru dates."));
+    return;
+  }
+  if (replayDateRangeError.value) {
     return;
   }
   const requestedShopId = props.id;
@@ -1333,8 +1236,11 @@ async function startOrdersReplay() {
   actionMessage.value = "";
   actionError.value = "";
   try {
+    const zone = orderSyncStore.runtimeTimeZone || "UTC";
+    const fromDateTime = DateTime.fromISO(replayFromDate.value, { zone }).startOf("day").toUTC().toISO() || "";
+    const thruDateTime = DateTime.fromISO(replayThruDate.value, { zone }).endOf("day").toUTC().toISO() || "";
     const search = await orderSyncStore.searchShopifyOrders({
-      queryString: `updated_at:>='${replayFromDate.value}'`,
+      queryString: `updated_at:>=${fromDateTime} updated_at:<=${thruDateTime}`,
       pageSize: REPLAY_ORDER_LIMIT,
       shopId: requestedShopId,
     });
@@ -1344,12 +1250,12 @@ async function startOrdersReplay() {
       search.orders.map((order) => String(order.legacyResourceId || "").trim()).filter(Boolean),
     )];
     if (!shopifyOrderIds.length) {
-      actionMessage.value = translate("No Shopify orders were updated since the selected time.");
+      actionMessage.value = translate("No Shopify orders were updated in the selected date range.");
       showReplayOrdersModal.value = false;
       return;
     }
     if (search.hasNextPage) {
-      actionError.value = translate("More than {limit} orders were updated since the selected time. Choose a later time or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
+      actionError.value = translate("More than {limit} orders were updated in the selected date range. Choose a narrower range or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
       return;
     }
 
@@ -1721,28 +1627,9 @@ ion-buttons {
   flex: 0 1 375px;
 }
 
-.order-history-date-filter {
-  flex: 1 1 100%;
-  --padding-start: 0;
-  --inner-padding-end: 0;
-  gap: 12px;
-}
-
-.order-history-date-filter ion-input {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.order-history-date-help,
-.order-history-date-error {
-  flex: 1 1 100%;
-  margin: 0 16px 8px;
-}
-
-.order-history-date-error {
-  display: block;
-}
-
+.replay-date-range { gap: 12px; }
+.replay-date-range ion-input { flex: 1 1 180px; min-width: 0; }
+.replay-date-range-help, .replay-date-range-error { display: block; margin: 0 16px 8px; }
 .stat-data {
   display: flex;
   flex-wrap: nowrap;
@@ -1782,21 +1669,14 @@ ion-buttons {
 
   .sync-monitor ion-card,
   .stat-title,
-  .sync-stat ion-searchbar,
-  .order-history-date-filter {
+  .sync-stat ion-searchbar {
     flex-basis: auto;
     min-width: 0;
     width: 100%;
   }
 
-  .order-history-date-filter {
-    flex-wrap: wrap;
-  }
-
-  .order-history-date-filter ion-input {
-    flex-basis: calc(50% - 6px);
-  }
-
+  .replay-date-range { flex-wrap: wrap; }
+  .replay-date-range ion-input { flex-basis: calc(50% - 6px); }
   .stat-data ion-card {
     flex-basis: min(100%, 375px);
     max-width: 100%;
