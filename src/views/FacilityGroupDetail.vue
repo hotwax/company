@@ -3,23 +3,26 @@
     <ion-header>
       <ion-toolbar>
         <ion-back-button default-href="/facilities/groups" slot="start" />
-        <ion-title>{{ group.facilityGroupName || facilityGroupId }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button @click="openEditModal()">
-            {{ translate("Edit details") }}
-          </ion-button>
-        </ion-buttons>
+        <ion-title>{{ translate("Group details") }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
       <section class="group-meta">
         <ion-card>
-          <ion-item lines="full">
-            <ion-label class="ion-text-wrap">
-              <p>{{ facilityGroupId }}</p>
-              <p v-if="group.description">{{ group.description }}</p>
-            </ion-label>
+          <ion-card-header>
+            <div class="card-header-row">
+              <div>
+                <ion-card-title>{{ group.facilityGroupName || facilityGroupId }}</ion-card-title>
+                <ion-card-subtitle>{{ facilityGroupId }}</ion-card-subtitle>
+              </div>
+              <ion-button fill="clear" @click="openEditModal()">
+                {{ translate("Edit details") }}
+              </ion-button>
+            </div>
+          </ion-card-header>
+          <ion-item v-if="group.description" lines="full">
+            <ion-label class="ion-text-wrap">{{ group.description }}</ion-label>
           </ion-item>
           <ion-item lines="full">
             <ion-label>{{ translate("Group type") }}</ion-label>
@@ -104,8 +107,10 @@
 import {
   IonBackButton,
   IonButton,
-  IonButtons,
   IonCard,
+  IonCardHeader,
+  IonCardSubtitle,
+  IonCardTitle,
   IonContent,
   IonFab,
   IonFabButton,
@@ -333,5 +338,11 @@ async function saveFacilityMemberships() {
 <style scoped>
 ion-content {
   --padding-bottom: 80px;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 </style>
