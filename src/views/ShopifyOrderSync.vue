@@ -432,6 +432,12 @@
                       </ion-label>
                     </ion-item>
                     <ion-item>
+                      <ion-label class="ion-text-wrap">
+                        {{ translate("Next step") }}
+                        <p>{{ errorNextStep(error) }}</p>
+                      </ion-label>
+                    </ion-item>
+                    <ion-item>
                       <ion-label>
                         {{ translate("SystemMessage") }}
                         <p>{{ error.systemMessageId }}</p>
@@ -517,6 +523,23 @@
                         {{ translate("Error") }}
                         <p>{{ error.errorText ? translate(error.errorText) : translate("No error text was returned.") }}</p>
                       </ion-label>
+                    </ion-item>
+                    <ion-item>
+                      <ion-label class="ion-text-wrap">
+                        {{ translate("Next step") }}
+                        <p>{{ errorNextStep(error) }}</p>
+                        <p v-if="error.retryable && orderSyncStore.capabilities.canRetryIndividualOrder">
+                          {{ translate("Then use Retry individual order to re-fetch the current Shopify payload.") }}
+                        </p>
+                      </ion-label>
+                      <ion-button
+                        v-if="errorNeedsSetupReview(error)"
+                        slot="end"
+                        fill="clear"
+                        :router-link="`${connectionDetailsHref}/order-sync/configure`"
+                      >
+                        {{ translate("Review setup") }}
+                      </ion-button>
                     </ion-item>
                     <ion-item>
                       <ion-label>
@@ -672,7 +695,7 @@ import {
   type ShopifyOrderSyncRecentError,
   type ShopifyOrderSyncRecentOrder,
 } from "@/store/shopifyOrderSync";
-import type { OrderSyncProgressRow, OrderSyncProgressState } from "@/utils/shopifyOrderSync";
+import { type OrderSyncProgressRow, type OrderSyncProgressState, deriveOrderSyncErrorResolution } from "@/utils/shopifyOrderSync";
 import {
   buildShopifyOrderSyncErrorCsv,
   shopifyOrderSyncErrorCsvFileName,
@@ -1068,6 +1091,14 @@ function retryState(errorId: string) {
 
 function retryError(errorId: string): string {
   return orderSyncStore.retryByErrorId[errorId]?.error || retryActionErrors.value[errorId] || "";
+}
+
+function errorNextStep(error: { errorText: string }): string {
+  return translate(deriveOrderSyncErrorResolution(error).nextStep);
+}
+
+function errorNeedsSetupReview(error: { errorText: string }): boolean {
+  return deriveOrderSyncErrorResolution(error).needsSetupReview;
 }
 
 async function handleManualRefresh() {

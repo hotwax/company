@@ -692,6 +692,31 @@ export function normalizeRecentOrderErrors(
   }).slice(0, boundedLimit(options.limit));
 }
 
+export interface OrderSyncErrorResolution {
+  nextStep: string;
+  needsSetupReview: boolean;
+}
+
+const ORDER_SYNC_ERROR_NEXT_STEPS: Record<string, string> = {
+  "Duplicate or conflicting order data prevented import.": "Check whether this order already exists in HotWax.",
+  "Required order data is missing.": "Correct the order data in Shopify.",
+  "A required order mapping is unavailable.": "Record the missing order mapping in Order Sync setup.",
+  "Shopify order validation failed.": "Review the failed record in the import and correct the order in Shopify.",
+  "The order import service failed.": "Review the batch SystemMessage for the underlying request failure.",
+  "Shopify order import failed.": "Open the DataManager run for this record's details.",
+  "Shopify order request failed before import.": "Review the request progress. The next scheduled batch will retry this window.",
+  "Error details could not be safely read.": "Company withheld the recorded error text because it could not be displayed safely. Open the DataManager run to review the import context.",
+};
+
+export function deriveOrderSyncErrorResolution(error: Pick<RecentOrderError, "errorText">): OrderSyncErrorResolution {
+  const nextStep = ORDER_SYNC_ERROR_NEXT_STEPS[error.errorText]
+    || "Open the import and SystemMessage details to diagnose this record.";
+  return {
+    nextStep,
+    needsSetupReview: error.errorText === "A required order mapping is unavailable.",
+  };
+}
+
 function matchesQuery(values: readonly unknown[], query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return true;

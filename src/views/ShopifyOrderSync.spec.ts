@@ -306,6 +306,59 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.text()).toContain("Failures");
   });
 
+  it("pairs every error card with a transparent resolution next step", async () => {
+    const retryableValidationError = createStore().recentErrors[0];
+    const mappingError = {
+      ...retryableValidationError,
+      id: "ERR_MAPPING",
+      errorText: "A required order mapping is unavailable.",
+      retryable: false,
+    };
+    const withheldError = {
+      ...retryableValidationError,
+      id: "ERR_WITHHELD",
+      shopifyOrderId: "",
+      orderName: "",
+      errorText: "Error details could not be safely read.",
+      retryable: false,
+    };
+    const errors = [retryableValidationError, mappingError, withheldError];
+    const requestFailure = {
+      id: "M221664:system-message",
+      shopId: "SHOP_1",
+      shopifyOrderId: "",
+      orderName: "",
+      errorText: "Shopify order request failed before import.",
+      occurredAt: "2026-07-22T12:09:00Z",
+      occurredAtMillis: 1,
+      configId: "",
+      logId: "",
+      systemMessageId: "M221664",
+      batchId: "",
+      retryable: false,
+    };
+    const wrapper = await mountMonitor({
+      recentErrors: errors,
+      filteredRecentErrors: vi.fn(() => errors),
+      recentRequestErrors: [requestFailure],
+    });
+
+    const importSection = wrapper.get("[aria-labelledby='recent-errors-heading']");
+    expect(importSection.text()).toContain("Review the failed record in the import and correct the order in Shopify.");
+    expect(importSection.text()).toContain("Then use Retry individual order to re-fetch the current Shopify payload.");
+    expect(importSection.text()).toContain("Record the missing order mapping in Order Sync setup.");
+    expect(importSection.text()).toContain("Company withheld the recorded error text because it could not be displayed safely. Open the DataManager run to review the import context.");
+
+    const setupLinks = importSection.findAll("button").filter((button) => button.text().includes("Review setup"));
+    expect(setupLinks).toHaveLength(1);
+    expect(setupLinks[0].attributes("router-link")).toBe("/shopify-connection-details/SHOP_1/order-sync/configure");
+
+    const requestSection = wrapper.get("[aria-labelledby='recent-request-errors-heading']");
+    expect(requestSection.text()).toContain("Next step");
+    expect(requestSection.text()).toContain("Review the request progress. The next scheduled batch will retry this window.");
+    expect(requestSection.text()).not.toContain("Then use Retry individual order");
+  });
+
   it("shows safe standalone SystemMessage facts by correlating its loaded summary and successful audit", async () => {
     const order = recentOrder({
       systemMessageId: "M228520",

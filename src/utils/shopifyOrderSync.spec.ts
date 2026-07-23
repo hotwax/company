@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveOrderSyncConfigurationState,
+  deriveOrderSyncErrorResolution,
   deriveOrderSyncMappingReadiness,
   deriveShopifyOrderSyncOverallState,
   deriveShopifyOrderSyncProgress,
@@ -250,6 +251,50 @@ describe("Shopify Order Sync overall run state", () => {
     expect(state("failed", "completed")).toBe("partial");
     expect(state("failed", "partial")).toBe("partial");
     expect(state("failed", "failed")).toBe("failed");
+  });
+});
+
+describe("Shopify Order Sync error resolution guidance", () => {
+  it("maps every safe error projection to a distinct operator next step", () => {
+    const safeMessages = [
+      "Duplicate or conflicting order data prevented import.",
+      "Required order data is missing.",
+      "A required order mapping is unavailable.",
+      "Shopify order validation failed.",
+      "The order import service failed.",
+      "Shopify order import failed.",
+      "Shopify order request failed before import.",
+      "Error details could not be safely read.",
+    ];
+
+    const nextSteps = safeMessages.map((errorText) => deriveOrderSyncErrorResolution({ errorText }).nextStep);
+
+    expect(new Set(nextSteps).size).toBe(safeMessages.length);
+    nextSteps.forEach((nextStep) => expect(nextStep.length).toBeGreaterThan(10));
+  });
+
+  it("routes only the missing-mapping category to Order Sync setup review", () => {
+    const mapping = deriveOrderSyncErrorResolution({ errorText: "A required order mapping is unavailable." });
+
+    expect(mapping.needsSetupReview).toBe(true);
+    expect(mapping.nextStep).toContain("Order Sync setup");
+    expect(deriveOrderSyncErrorResolution({ errorText: "Shopify order import failed." }).needsSetupReview).toBe(false);
+  });
+
+  it("explains the withheld-error safety boundary instead of hiding it", () => {
+    const withheld = deriveOrderSyncErrorResolution({ errorText: "Error details could not be safely read." });
+
+    expect(withheld.nextStep).toContain("withheld");
+    expect(withheld.nextStep).toContain("DataManager run");
+  });
+
+  it("falls back to a diagnostic next step for unknown or empty error text", () => {
+    const unknown = deriveOrderSyncErrorResolution({ errorText: "Some raw backend text" });
+    const empty = deriveOrderSyncErrorResolution({ errorText: "" });
+
+    expect(unknown.nextStep).toBe("Open the import and SystemMessage details to diagnose this record.");
+    expect(empty.nextStep).toBe(unknown.nextStep);
+    expect(unknown.needsSetupReview).toBe(false);
   });
 });
 
