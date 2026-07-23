@@ -292,12 +292,17 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.text()).not.toContain("Outstanding Shopify orders");
 
     const requestSection = wrapper.get("[aria-labelledby='recent-request-errors-heading']");
-    const detailsButton = requestSection.findAll("button")
-      .find((button) => button.text().includes("View SystemMessage"));
+    const requestButtons = requestSection.findAll("button");
+    expect(requestButtons).toHaveLength(1);
+    const detailsButton = requestButtons
+      .find((button) => button.text().includes("View request progress"));
     expect(detailsButton).toBeDefined();
     await detailsButton!.trigger("click");
     await flushPromises();
-    expect(wrapper.text()).toContain("SystemMessage details");
+    expect(wrapper.text()).toContain("Order sync request details");
+    expect(wrapper.text()).toContain("Shopify order request failed before import.");
+    expect(wrapper.text()).toContain("HotWax order import");
+    expect(wrapper.text()).toContain("Not started");
     expect(wrapper.text()).toContain("Failures");
   });
 
@@ -329,6 +334,117 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.text()).toContain("ShopifyOrderSync");
     expect(wrapper.text()).toContain("Failures");
     expect(wrapper.text()).toContain("Records");
+  });
+
+  it("shows the audit-correlated successful rerun instead of an earlier failed same-config log", async () => {
+    const firstOrder = recentOrder({
+      id: "AUDIT_RERUN_1",
+      systemMessageId: "M228571",
+      logId: "M101327",
+      processedAt: "2026-07-22T12:04:00Z",
+      processedAtMillis: Date.parse("2026-07-22T12:04:00Z"),
+    });
+    const secondOrder = recentOrder({
+      id: "AUDIT_RERUN_2",
+      shopifyOrderId: "223456",
+      orderId: "10001",
+      systemMessageId: "M228571",
+      logId: "M101327",
+      processedAt: "2026-07-22T12:05:00Z",
+      processedAtMillis: Date.parse("2026-07-22T12:05:00Z"),
+    });
+    const immutableEarlierError = {
+      ...createStore().recentErrors[0],
+      id: "M101276:0",
+      systemMessageId: "M228571",
+      logId: "M101276",
+    };
+    const wrapper = await mountMonitor({
+      recentOrders: [secondOrder, firstOrder],
+      filteredRecentOrders: vi.fn(() => [secondOrder, firstOrder]),
+      recentErrors: [immutableEarlierError],
+      filteredRecentErrors: vi.fn(() => [immutableEarlierError]),
+      systemMessages: [{
+        systemMessageId: "M228571",
+        systemMessageTypeId: "ShopifyOrderSync",
+        systemMessageRemoteId: "REMOTE_SHOP_1",
+        statusId: "SmsgSent",
+        initDate: "2026-07-22T12:00:00Z",
+        processedDate: "2026-07-22T12:05:00Z",
+      }],
+      importsBySystemMessageId: {
+        M228571: [{
+          logId: "M101327",
+          systemMessageId: "M228571",
+          configId: "SYNC_SHOPIFY_ORDER",
+          statusId: "DmlsFinished",
+          totalRecordCount: 2,
+          failedRecordCount: 0,
+          successRecordCount: 2,
+        }],
+      },
+    });
+    const batchButton = wrapper.findAll("button").find((button) => button.text().trim() === "Batch");
+    await batchButton!.trigger("click");
+    await flushPromises();
+
+    const modalTitle = wrapper.findAll("h1").find((heading) => heading.text() === "SystemMessage details");
+    const modalText = modalTitle?.element.closest("section")?.textContent || "";
+    expect(modalText).toContain("M228571");
+    expect(modalText).toContain("Completed");
+    expect(modalText).not.toContain("Failed");
+    expect(modalText).toMatch(/Records\s*2/);
+    expect(modalText).toMatch(/Failures\s*0/);
+
+    const failedImportButton = wrapper.findAll("button")
+      .find((button) => button.text().trim() === "View import");
+    expect(failedImportButton).toBeDefined();
+    expect(failedImportButton!.attributes("href")).toBeUndefined();
+    await failedImportButton!.trigger("click");
+    await flushPromises();
+
+    const logModalTitle = wrapper.findAll("h1").find((heading) => heading.text() === "Data Manager Log");
+    const logModalText = logModalTitle?.element.closest("section")?.textContent || "";
+    expect(logModalText).toContain("M101276");
+    expect(logModalText).toContain("Failed");
+    expect(logModalText).toMatch(/Failed Records\s*1/);
+  });
+
+  it("keeps projected operational facts inside Company while retaining only explicit order links", async () => {
+    const wrapper = await mountMonitor();
+
+    const dataManagerButton = wrapper.findAll("button")
+      .find((button) => button.text().trim() === "DataManager run");
+    expect(dataManagerButton).toBeDefined();
+    expect(dataManagerButton!.attributes("href")).toBeUndefined();
+    await dataManagerButton!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("Data Manager Log");
+    expect(wrapper.text()).toContain("LOG_CREATE");
+    expect(wrapper.text()).toContain("SYNC_SHOPIFY_ORDER");
+
+    const systemMessageButton = wrapper.findAll("button")
+      .find((button) => button.text().trim() === "Batch");
+    expect(systemMessageButton).toBeDefined();
+    await systemMessageButton!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("SystemMessage details");
+
+    const hotWaxLink = wrapper.get("[href='https://order-manager.example/orders/10000']");
+    const shopifyLink = wrapper.get("[href='https://test-shop.myshopify.com/admin/orders/123455']");
+    for (const link of [hotWaxLink, shopifyLink]) {
+      expect(link.attributes("target")).toBe("_blank");
+      expect(link.attributes("rel")).toBe("noopener noreferrer");
+    }
+    expect(shopifyOrderSyncSource).not.toMatch(/job-manager|\/file-history\//);
+  });
+
+  it("routes the shared editable job viewer through shop-scoped Order Sync actions", () => {
+    expect(shopifyOrderSyncSource).toContain(':run-handler="confirmRunNow"');
+    expect(shopifyOrderSyncSource).toContain(':save-handler="saveJobFromModal"');
+    expect(shopifyOrderSyncSource).toContain("orderSyncStore.updateSchedule(input.cronExpression, shopId)");
+    expect(shopifyOrderSyncSource).toContain("orderSyncStore.updateJobStatus(input.paused, shopId)");
+    expect(shopifyOrderSyncSource).not.toContain("useServiceJob");
   });
 
   it("uses a narrow mobile grid override for 375px viewports", () => {
@@ -420,15 +536,18 @@ describe("ShopifyOrderSync monitoring", () => {
       .find((button) => button.text().includes("Download CSV"));
 
     expect(download).toBeDefined();
-    await download!.trigger("click");
-    await flushPromises();
+    const click = download!.trigger("click");
 
     expect(mocks.downloadTextFile).toHaveBeenCalledTimes(1);
+    await click;
+    await flushPromises();
+
     const [csv, fileName] = mocks.downloadTextFile.mock.calls[0];
     expect(fileName).toBe("shopify-order-sync-errors-SHOP_1.csv");
     expect(csv).toContain("Shopify order validation failed.");
     expect(csv).toContain("123456");
     expect(csv).not.toMatch(/customer|address|token|secret/i);
+    expect(wrapper.text()).toContain("Safe error CSV download started.");
     expect(mocks.store.loadMonitoring).not.toHaveBeenCalled();
   });
 

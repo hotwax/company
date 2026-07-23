@@ -267,6 +267,7 @@ function monitoringApi(options: ApiOptions, fixture: {
   audits?: Record<string, unknown>[];
   errors?: Record<string, unknown>[];
   requestErrors?: Record<string, unknown>[];
+  auditImports?: Record<string, unknown>[];
   job?: Record<string, unknown> | null;
   remote?: Record<string, unknown>;
 }) {
@@ -280,6 +281,13 @@ function monitoringApi(options: ApiOptions, fixture: {
     orderSyncRequestErrors: fixture.requestErrors || [],
   });
   if (options.url === "oms/dataDocumentView") {
+    if (options.data?.customParametersMap?.logId) {
+      const requestedLogIds = new Set(options.data.customParametersMap.logId as string[]);
+      return ok({
+        entityValueList: (fixture.auditImports || fixture.imports)
+          .filter((row) => requestedLogIds.has(String(row.logId || "")))
+      });
+    }
     return ok({
       entityValueList: options.data?.customParametersMap?.systemMessageId ? fixture.imports : []
     });
@@ -522,6 +530,7 @@ describe("Shopify Order Sync store", () => {
         if (options.url === "shopify/order-sync/old-shop/job") return oldContext.promise;
         if (options.url === "shopify/order-sync/new-shop/job") return ok(orderSyncEnvelope("new-shop"));
         if (options.url === "admin/systemMessages") return ok({ systemMessages: [] });
+        if (options.url === "shopify/order-sync/new-shop/audits") return ok({ orderSyncAudits: [] });
         throw new Error(`Unexpected API call: ${options.method} ${options.url}`);
       });
 
@@ -583,6 +592,9 @@ describe("Shopify Order Sync store", () => {
             return ok(orderSyncEnvelope("10010", { shop: { name: "Selected shop" } }));
           }
           if (options.url === "oms/dataDocumentView") {
+            if (options.data?.customParametersMap?.logId) {
+              return ok({ entityValueList: [createLog] });
+            }
             if (options.data?.customParametersMap?.systemMessageId) {
               return ok({
                 entityValueList: expectedLogCount
@@ -623,7 +635,8 @@ describe("Shopify Order Sync store", () => {
         await store.loadMonitoring("10010");
 
         expect(store.batches.map(({ systemMessageId }) => systemMessageId)).toEqual(["batch-1"]);
-        expect(store.importsBySystemMessageId["batch-1"]).toHaveLength(expectedLogCount);
+        const durableLogCount = Math.max(1, expectedLogCount);
+        expect(store.importsBySystemMessageId["batch-1"]).toHaveLength(durableLogCount);
         expect(store.recentOrders).toEqual([
           expect.objectContaining({
             id: "audit-1",
@@ -635,9 +648,9 @@ describe("Shopify Order Sync store", () => {
           })
         ]);
         expect(store.summary.progressRows).toHaveLength(2);
-        expect(store.summary.progressRows[1].logCount).toBe(expectedLogCount);
+        expect(store.summary.progressRows[1].logCount).toBe(durableLogCount);
         expect(store.summary.overallStatus).toBe("completed");
-        expect(store.summary.processedOrderCount).toBe(expectedLogCount === 0 ? 0 : expectedLogCount === 1 ? 3 : 5);
+        expect(store.summary.processedOrderCount).toBe(expectedLogCount === 2 ? 5 : 3);
         expect(store.cardSnapshot).toEqual(expect.objectContaining({
           actionable: true,
           lastCompletedLabel: "2026-07-22T12:00:00Z"
@@ -675,7 +688,13 @@ describe("Shopify Order Sync store", () => {
         expect(summaryImportRequest?.data?.fieldsToSelect).toBe(
           "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId"
         );
-        expect(dataDocumentRequests).toHaveLength(1);
+        const auditImportRequest = dataDocumentRequests.find(({ data }) => Boolean(data?.customParametersMap?.logId));
+        expect(auditImportRequest?.data).toEqual(expect.objectContaining({
+          customParametersMap: expect.objectContaining({ logId: ["create-log"] }),
+          pageSize: 2,
+          pageIndex: 0,
+        }));
+        expect(dataDocumentRequests).toHaveLength(2);
         expect(mocks.api.mock.calls
           .map(([options]) => options as ApiOptions)
           .find(({ url }) => url === "shopify/order-sync/10010/errors"))
@@ -700,8 +719,9 @@ describe("Shopify Order Sync store", () => {
         shopifyFetchVerified: false
       })];
       mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
-        batches: [],
+        batches: [standardBatch("batch-1", "SmsgSent", "2026-07-22T12:00:00Z", { messageDate: undefined })],
         imports: [],
+        auditImports: [summaryImport("batch-1", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 1, 0, { logId: "create-log" })],
         audits
       }));
 
@@ -1254,6 +1274,7 @@ describe("Shopify Order Sync store", () => {
       mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
         batches: [standaloneMessage],
         imports: [],
+        auditImports: [summaryImport("M228520", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 1, 0, { logId: "M101225" })],
         audits: [safeAuditProjection({
           systemMessageId: "M228520",
           dataManagerLogId: "M101225",
@@ -1275,6 +1296,206 @@ describe("Shopify Order Sync store", () => {
       ]);
       expect(store.batches).toEqual([]);
       expect(store.recentOrders[0]).toEqual(expect.objectContaining({ systemMessageId: "M228520" }));
+    });
+
+    it("keeps older shop-scoped audit evidence when its SystemMessage is outside the loaded message window", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        auditImports: [summaryImport("M220000", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 1, 0, { logId: "M100900" })],
+        audits: [safeAuditProjection({
+          systemMessageId: "M220000",
+          dataManagerLogId: "M100900",
+          processedDate: "2026-06-01T12:01:00Z",
+        })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.systemMessages).toEqual([]);
+      expect(store.recentOrders).toEqual([
+        expect.objectContaining({ systemMessageId: "M220000", logId: "M100900" }),
+      ]);
+      expect(store.importsBySystemMessageId.M220000).toEqual([
+        expect.objectContaining({ logId: "M100900", totalRecordCount: 1, failedRecordCount: 0 }),
+      ]);
+    });
+
+    it("selects an audit-correlated successful rerun for one config while preserving the other config and immutable error", async () => {
+      const batch = standardBatch("M228571", "SmsgSent", "2026-07-22T12:00:00Z");
+      const imports = [
+        summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsCrashed", 1, 1, { logId: "M101276" }),
+        summaryImport("M228571", "UPDATE_SHOPIFY_ORDER", "DmlsFinished", 1, 0, { logId: "M101300" }),
+      ];
+      const audits = [
+        safeAuditProjection({
+          auditId: "audit-rerun-2",
+          systemMessageId: "M228571",
+          dataManagerLogId: "M101327",
+          shopifyOrderId: "223456",
+          orderId: "HOTWAX-2002",
+          processedDate: "2026-07-22T12:05:00Z",
+        }),
+        safeAuditProjection({
+          auditId: "audit-rerun-1",
+          systemMessageId: "M228571",
+          dataManagerLogId: "M101327",
+          shopifyOrderId: "123456",
+          orderId: "HOTWAX-2001",
+          processedDate: "2026-07-22T12:04:00Z",
+        }),
+      ];
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [batch],
+        imports,
+        auditImports: [
+          summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 2, 0, { logId: "M101327" }),
+        ],
+        audits,
+        errors: [safeErrorProjection({
+          errorId: "M101276:0",
+          logId: "M101276",
+          systemMessageId: "M228571",
+          batchId: "M228571-run",
+          occurredAt: "2026-07-22T12:01:00Z",
+        })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.importsBySystemMessageId.M228571).toEqual([
+        expect.objectContaining({
+          configId: "SYNC_SHOPIFY_ORDER",
+          logId: "M101327",
+          statusId: "DmlsFinished",
+          totalRecordCount: 2,
+          failedRecordCount: 0,
+          successRecordCount: 2,
+        }),
+        expect.objectContaining({
+          configId: "UPDATE_SHOPIFY_ORDER",
+          logId: "M101300",
+        }),
+      ]);
+      expect(store.summary.overallStatus).toBe("completed");
+      expect(store.recentErrors).toEqual([
+        expect.objectContaining({ logId: "M101276", systemMessageId: "M228571" }),
+      ]);
+    });
+
+    it.each([
+      ["card", (store: ReturnType<typeof useShopifyOrderSyncStore>) => store.loadCardSnapshot("10010")],
+      ["history", (store: ReturnType<typeof useShopifyOrderSyncStore>) => store.loadHistory("10010")],
+    ])("uses the same authoritative M228571 rerun evidence in the %s loader", async (_loader, load) => {
+      const batch = standardBatch("M228571", "SmsgSent", "2026-07-22T12:00:00Z");
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [batch],
+        imports: [
+          summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsCrashed", 1, 1, { logId: "M101276" }),
+          summaryImport("M228571", "UPDATE_SHOPIFY_ORDER", "DmlsFinished", 1, 0, { logId: "M101300" }),
+        ],
+        auditImports: [
+          summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 2, 0, { logId: "M101327" }),
+        ],
+        audits: [
+          safeAuditProjection({
+            auditId: "audit-rerun-2",
+            systemMessageId: "M228571",
+            dataManagerLogId: "M101327",
+            shopifyOrderId: "223456",
+            orderId: "HOTWAX-2002",
+            processedDate: "2026-07-22T12:05:00Z",
+          }),
+          safeAuditProjection({
+            auditId: "audit-rerun-1",
+            systemMessageId: "M228571",
+            dataManagerLogId: "M101327",
+            processedDate: "2026-07-22T12:04:00Z",
+          }),
+        ],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await load(store);
+
+      expect(store.importsBySystemMessageId.M228571).toEqual([
+        expect.objectContaining({
+          logId: "M101327",
+          configId: "SYNC_SHOPIFY_ORDER",
+          totalRecordCount: 2,
+          failedRecordCount: 0,
+          successRecordCount: 2,
+        }),
+        expect.objectContaining({ logId: "M101300", configId: "UPDATE_SHOPIFY_ORDER" }),
+      ]);
+      expect(store.summary.processedOrderCount).toBe(3);
+      expect(store.summary.overallStatus).toBe("completed");
+    });
+
+    it("uses authoritative log counts instead of treating a capped audit page as an exact total", async () => {
+      const audits = Array.from({ length: 100 }, (_, index) => safeAuditProjection({
+        auditId: `audit-capped-${index}`,
+        systemMessageId: "M228571",
+        dataManagerLogId: "M101327",
+        shopifyOrderId: String(900000 - index),
+        orderId: `HOTWAX-${index}`,
+        processedDate: new Date(Date.parse("2026-07-22T12:05:00Z") - index * 1000).toISOString(),
+      }));
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [standardBatch("M228571", "SmsgSent", "2026-07-22T12:00:00Z")],
+        imports: [summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsCrashed", 1, 1, { logId: "M101276" })],
+        auditImports: [summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 150, 0, { logId: "M101327" })],
+        audits,
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.recentOrders).toHaveLength(100);
+      expect(store.importsBySystemMessageId.M228571).toEqual([
+        expect.objectContaining({
+          logId: "M101327",
+          totalRecordCount: 150,
+          failedRecordCount: 0,
+          successRecordCount: 150,
+        }),
+      ]);
+      expect(store.summary.processedOrderCount).toBe(150);
+    });
+
+    it.each([
+      ["SystemMessage", { systemMessageId: "M228999" }, "audit SystemMessage correlation"],
+      ["remote", { systemMessageRemoteId: "REMOTE_OTHER" }, "selected Shopify remote scope"],
+    ])("fails closed when an audit-correlated log crosses the %s scope", async (_scope, importOverrides, expected) => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [standardBatch("M228571", "SmsgSent", "2026-07-22T12:00:00Z")],
+        imports: [summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsCrashed", 1, 1, { logId: "M101276" })],
+        auditImports: [summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 2, 0, {
+          logId: "M101327",
+          ...importOverrides,
+        })],
+        audits: [safeAuditProjection({ systemMessageId: "M228571", dataManagerLogId: "M101327" })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await expect(store.loadMonitoring("10010")).rejects.toThrow(expected);
+      expect(store.importsBySystemMessageId).toEqual({});
+    });
+
+    it("fails closed when an exact audit-log lookup returns duplicate rows", async () => {
+      const authoritative = summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsFinished", 2, 0, { logId: "M101327" });
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [standardBatch("M228571", "SmsgSent", "2026-07-22T12:00:00Z")],
+        imports: [summaryImport("M228571", "SYNC_SHOPIFY_ORDER", "DmlsCrashed", 1, 1, { logId: "M101276" })],
+        auditImports: [authoritative, { ...authoritative }],
+        audits: [safeAuditProjection({ systemMessageId: "M228571", dataManagerLogId: "M101327" })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await expect(store.loadMonitoring("10010")).rejects.toThrow("duplicate rows");
+      expect(store.importsBySystemMessageId).toEqual({});
     });
 
     it.each([

@@ -139,5 +139,5 @@ async function submit() {
   await modalController.dismiss({ legacyResourceIds: selectedOrders.value.map((order) => order.legacyResourceId) });
 }
 
-function close() { void modalController.dismiss(); }
+function close() { void modalController.dismiss(null, "cancel"); }
 </script>

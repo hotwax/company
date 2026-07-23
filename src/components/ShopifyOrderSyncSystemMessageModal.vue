@@ -3,9 +3,11 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-button :aria-label="translate('Close')" @click="close">{{ translate("Close") }}</ion-button>
+          <ion-button :aria-label="translate('Close')" @click="close">
+            <ion-icon slot="icon-only" :icon="closeOutline" />
+          </ion-button>
         </ion-buttons>
-        <ion-title>{{ translate("SystemMessage details") }}</ion-title>
+        <ion-title>{{ modalTitle }}</ion-title>
         <ion-buttons slot="end">
           <ion-button :disabled="!messageId" :aria-label="translate('Refresh')" @click="$emit('refresh')">
             <ion-icon slot="icon-only" :icon="refreshOutline" />
@@ -15,6 +17,24 @@
     </ion-header>
 
     <ion-content>
+      <ion-list v-if="details.requestFailedBeforeImport" lines="full">
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            {{ translate("Shopify order request") }}
+            <p v-if="details.requestedAt">{{ translate("Requested") }} · {{ formatDate(details.requestedAt) }}</p>
+            <p>{{ translate(details.requestFailureText || "Shopify order request failed before import.") }}</p>
+          </ion-label>
+          <ion-badge slot="end" color="danger">{{ translate("Failed") }}</ion-badge>
+        </ion-item>
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            {{ translate("HotWax order import") }}
+            <p>{{ translate("The request failed before import, so no DataManager import was created.") }}</p>
+          </ion-label>
+          <ion-badge slot="end" color="medium">{{ translate("Not started") }}</ion-badge>
+        </ion-item>
+      </ion-list>
+
       <ion-list lines="full">
           <ion-item>
             <ion-label>
@@ -72,7 +92,8 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { refreshOutline } from "ionicons/icons";
+import { closeOutline, refreshOutline } from "ionicons/icons";
+import { computed } from "vue";
 import { translate } from "@common";
 import { formatDateTime } from "@/utils";
 
@@ -84,14 +105,19 @@ interface SafeShopifyOrderSyncSystemMessageDetails {
   completedAt?: string | number;
   totalRecordCount?: number;
   failureCount?: number;
+  requestFailedBeforeImport?: boolean;
+  requestFailureText?: string;
 }
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   isOpen: boolean;
   messageId: string;
   details?: SafeShopifyOrderSyncSystemMessageDetails;
 }>(), { details: () => ({}) });
 const emit = defineEmits<{ close: []; refresh: [] }>();
+const modalTitle = computed(() => props.details.requestFailedBeforeImport
+  ? translate("Order sync request details")
+  : translate("SystemMessage details"));
 
 function close() {
   emit("close");

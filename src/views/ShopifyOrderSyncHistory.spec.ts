@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { flushPromises, mount } from "@vue/test-utils";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ShopifyOrderSyncHistory from "./ShopifyOrderSyncHistory.vue";
@@ -10,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@common", () => ({
-  buildAppUrl: (app: string, path: string) => `https://${app}.example${path}`,
   translate: (key: string, values?: Record<string, unknown>) => Object.entries(values || {})
     .reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
 }));
@@ -26,6 +26,19 @@ vi.mock("@/utils", () => ({
 vi.mock("@/store/shopifyOrderSync", () => ({
   useShopifyOrderSyncStore: () => mocks.store,
 }));
+
+vi.mock("@/components/ShopifyOrderSyncMdmLogModal.vue", async () => {
+  const { defineComponent, h } = await vi.importActual<typeof import("vue")>("vue");
+  return {
+    default: defineComponent({
+      inheritAttrs: false,
+      props: { isOpen: Boolean, logId: String, details: Object },
+      setup(props) {
+        return () => props.isOpen ? h("section", { "data-mdm-log-modal": props.logId }) : null;
+      },
+    }),
+  };
+});
 
 vi.mock("@ionic/vue", async () => {
   const { defineComponent, h } = await vi.importActual<typeof import("vue")>("vue");
@@ -189,12 +202,27 @@ describe("ShopifyOrderSyncHistory", () => {
     expect(failedRun.text()).toContain("No MDM import was required for this batch");
   });
 
-  it("keeps the MDM log link pointing at the job manager file history", async () => {
+  it("opens MDM log details in-app from an import row", async () => {
     const wrapper = await mountHistory();
-    const link = wrapper.findAll("button").find((button) => button.text() === "View MDM log");
+    const buttons = wrapper.findAll("button").filter((button) => button.text() === "View MDM log");
 
-    expect(link).toBeDefined();
-    expect(link!.attributes("href")).toBe("https://job-manager.example/file-history/LOG_2A");
+    expect(buttons).toHaveLength(2);
+    expect(wrapper.find("[data-mdm-log-modal]").exists()).toBe(false);
+
+    await buttons[0].trigger("click");
+    expect(wrapper.get("[data-mdm-log-modal]").attributes("data-mdm-log-modal")).toBe("LOG_2A");
+  });
+
+  it("keeps DataManager history details inside Company at the safe projected modal boundary", () => {
+    const source = readFileSync(`${process.cwd()}/src/views/ShopifyOrderSyncHistory.vue`, "utf8");
+
+    expect(source).toContain("ShopifyOrderSyncMdmLogModal");
+    expect(source).toContain("@click=\"openMdmLogDetails(log)\"");
+    expect(source).not.toContain("buildAppUrl");
+    expect(source).not.toContain("job-manager");
+    expect(source).not.toContain("file-history");
+    expect(source).not.toMatch(/target=["']_blank["']/);
+    expect(source).not.toMatch(/useDataManagerLog|fetchLogDetails|downloadDataManagerFile/);
   });
 
   it("filters runs by derived outcome", async () => {

@@ -98,6 +98,7 @@ vi.mock("@ionic/vue", async () => {
     IonCardTitle: container("h2"),
     IonCheckbox: checkbox,
     IonContent: container("main"),
+    IonFooter: container("footer"),
     IonHeader: container("header"),
     IonIcon: container("i"),
     IonInput: input,
@@ -225,6 +226,8 @@ describe("ShopifyOrderSyncConfigure", () => {
 
     await wrapper.get("[data-testid='open-order-sync-activation']").trigger("click");
     expect(wrapper.find("[data-open-modal='true']").exists()).toBe(true);
+    expect(wrapper.find("footer").exists()).toBe(true);
+    expect(wrapper.get("footer [data-testid='activate-order-sync-job']").text()).toContain("Activate Order Sync");
     expect(wrapper.text()).toContain("These warnings do not block activation");
     expect(wrapper.text()).toContain("Sales Channel mapping is missing.");
 
