@@ -724,21 +724,15 @@
           <ion-note v-else class="replay-date-range-help">
             {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSyncStore.runtimeTimeZone || "UTC" }) }}
           </ion-note>
-        </ion-list>
-      </ion-content>
-      <ion-footer>
-        <ion-toolbar>
-          <ion-buttons slot="start">
+          <ion-item lines="none" class="replay-actions">
             <ion-button fill="clear" :disabled="isReplayStarting" @click="showReplayOrdersModal = false">{{ translate("Cancel") }}</ion-button>
-          </ion-buttons>
-          <ion-buttons slot="end">
             <ion-button fill="solid" color="primary" :disabled="isReplayStarting" @click="startOrdersReplay">
               <ion-spinner v-if="isReplayStarting" name="crescent" />
               <span v-else>{{ translate("Start replay") }}</span>
             </ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-footer>
+          </ion-item>
+        </ion-list>
+      </ion-content>
     </ion-modal>
 
     <ServiceJobDetailsModal
@@ -1625,6 +1619,11 @@ ion-buttons {
 
 .sync-stat ion-searchbar {
   flex: 0 1 375px;
+}
+
+.replay-actions {
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .replay-date-range { gap: 12px; }
