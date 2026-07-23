@@ -48,7 +48,6 @@ import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, Ion
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { useUtilStore } from "@/store/util";
-import { useNetSuiteStore } from "@/store/netSuite";
 import { useShopifyStore } from "@/store/shopify";
 
 const props = defineProps({
@@ -71,7 +70,6 @@ const props = defineProps({
 });
 
 const utilStore = useUtilStore();
-const netSuiteStore = useNetSuiteStore();
 const shopifyStore = useShopifyStore();
 
 const description = ref("");
@@ -117,7 +115,7 @@ const createShipmentMethod = async () => {
     }
 
     // 2. Associate the shipment method type with the product store + carrier so it appears as a row.
-    const assocResp = await netSuiteStore.createProductStoreShipmentMethod({
+    const assocResp = await utilStore.createProductStoreShipmentMethod({
       productStoreId: props.productStoreId,
       shipmentMethodTypeId,
       partyId: carrierPartyId.value,
