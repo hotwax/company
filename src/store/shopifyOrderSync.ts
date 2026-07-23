@@ -1217,6 +1217,25 @@ function safeLandmarkDate(value: unknown): string {
   return SAFE_LANDMARK_DATE.test(text) ? text : "";
 }
 
+type LandmarkDateKey = keyof typeof ORDER_SYNC_LANDMARK_PROPERTY_IDS;
+
+async function fetchOldestOrderEntryDate(): Promise<string> {
+  const payload = await requestBackend({
+    url: "oms/orders",
+    method: "get",
+    params: {
+      orderTypeId: "SALES_ORDER",
+      orderByField: "entryDate",
+      pageSize: 1,
+      pageIndex: 0,
+    },
+  }, "Loading the oldest order date");
+  const rows = listPayload(payload, ["orders", "orderList", "entityValueList", "docs"], "Oldest order list");
+  const oldest = rows[0];
+  if (!oldest) return "";
+  return safeLandmarkDate(textValue(oldest, ["entryDate", "orderDate"]));
+}
+
 async function fetchOrderSyncLandmarkDates(shopId: string): Promise<{ launchDate: string; historyLastSyncDate: string }> {
   const payload = await requestBackend({
     url: "admin/systemProperties",
@@ -1924,6 +1943,46 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
     async refresh() {
       if (!this.selectedShopId) throw new Error("A Shopify shop ID is required.");
       return this.loadMonitoring(this.selectedShopId);
+    },
+
+    async suggestOldestOrderDate(): Promise<string> {
+      try {
+        return await fetchOldestOrderEntryDate();
+      } catch (_error) {
+        return "";
+      }
+    },
+
+    async setLandmarkDate(input: { key: LandmarkDateKey; value: string; shopId?: string }): Promise<void> {
+      this.requireAdmin("canConfigure");
+      const shopId = input.shopId || this.selectedShopId;
+      if (!shopId || (input.shopId && input.shopId !== this.selectedShopId)) {
+        throw new Error("The selected Shopify shop changed before the landmark date was saved.");
+      }
+      const systemPropertyId = ORDER_SYNC_LANDMARK_PROPERTY_IDS[input.key];
+      if (!systemPropertyId) throw new Error("Unknown Order Sync landmark date.");
+      const value = safeLandmarkDate(input.value);
+      if (!value) throw new Error("Choose a valid date.");
+      const lifecycleGeneration = this.lifecycleGeneration;
+      await requestBackend({
+        url: "admin/systemProperties",
+        method: "put",
+        data: {
+          systemResourceId: shopId,
+          systemPropertyId,
+          systemPropertyValue: value,
+          description: systemPropertyId === ORDER_SYNC_LANDMARK_PROPERTY_IDS.launchDate
+            ? "New order sync launch (go-live) date for this Shopify shop"
+            : "Order history sync cursor for this Shopify shop",
+        },
+      }, "Saving the Order Sync landmark date");
+      if (lifecycleGeneration !== this.lifecycleGeneration || this.selectedShopId !== shopId) return;
+      this.landmarkDates = {
+        ...this.landmarkDates,
+        status: "ready",
+        error: null,
+        [input.key]: value,
+      };
     },
 
     requireAdmin(action: keyof Omit<OrderSyncCapabilities, "canMonitor">) {

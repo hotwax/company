@@ -293,8 +293,10 @@ function createStore(overrides: Record<string, unknown> = {}) {
       historyLastSyncDate: "2026-07-22 03:00:00",
       error: null,
     },
+    suggestOldestOrderDate: vi.fn().mockResolvedValue("2026-05-01 08:00:00"),
+    setLandmarkDate: vi.fn().mockResolvedValue(undefined),
     retryByErrorId: {},
-    capabilities: { canRetryIndividualOrder: true },
+    capabilities: { canRetryIndividualOrder: true, canConfigure: true },
     canRunNow: false,
     runNowDisabledReason: "Run now is unavailable while this shop has active batch work.",
     isBatchActive: true,
@@ -429,13 +431,53 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(monitorSection.text()).toContain("2026-07-22 03:00:00");
   });
 
-  it("shows Not set for a landmark date the shop has not configured", async () => {
+  it("shows a setup-required prompt for a landmark date the shop has not configured", async () => {
     const wrapper = await mountMonitor({
       landmarkDates: { status: "ready", launchDate: "", historyLastSyncDate: "", error: null },
     });
     const monitorSection = wrapper.get("[aria-labelledby='sync-monitor-heading']");
 
     expect(monitorSection.text()).toContain("New order sync launch date");
+    expect(monitorSection.text()).toContain("Setup required");
+    expect(monitorSection.findAll("button").some((button) => button.text() === "Set date")).toBe(true);
+  });
+
+  it("opens the landmark modal, auto-suggests the oldest order date, and saves it", async () => {
+    const wrapper = await mountMonitor({
+      landmarkDates: { status: "ready", launchDate: "", historyLastSyncDate: "2026-07-22 03:00:00", error: null },
+    });
+    const monitorSection = wrapper.get("[aria-labelledby='sync-monitor-heading']");
+    const setButton = monitorSection.findAll("button").find((button) => button.text() === "Set date");
+    expect(setButton).toBeDefined();
+
+    await setButton!.trigger("click");
+    await flushPromises();
+
+    expect(mocks.store.suggestOldestOrderDate).toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Suggested from the oldest order in the system");
+    expect(wrapper.get("[data-datetime]").attributes("value")).toContain("2026-05-01");
+
+    const save = wrapper.findAll("button").find((button) => button.text() === "Save date");
+    expect(save).toBeDefined();
+    await save!.trigger("click");
+    await flushPromises();
+
+    expect(mocks.store.setLandmarkDate).toHaveBeenCalledWith(expect.objectContaining({
+      key: "launchDate",
+      value: "2026-05-01 08:00:00",
+      shopId: "SHOP_1",
+    }));
+    expect(mocks.manualRefresh).toHaveBeenCalled();
+  });
+
+  it("hides landmark date editing without admin permission", async () => {
+    const wrapper = await mountMonitor({
+      landmarkDates: { status: "ready", launchDate: "", historyLastSyncDate: "", error: null },
+      capabilities: { canRetryIndividualOrder: true, canConfigure: false },
+    });
+    const monitorSection = wrapper.get("[aria-labelledby='sync-monitor-heading']");
+
+    expect(monitorSection.findAll("button").some((button) => button.text() === "Set date")).toBe(false);
     expect(monitorSection.text()).toContain("Not set");
   });
 

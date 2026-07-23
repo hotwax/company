@@ -274,19 +274,29 @@
                 <ion-card-subtitle>{{ translate("Landmark dates that define how this shop's orders are synced") }}</ion-card-subtitle>
               </ion-card-header>
               <ion-list>
-                <ion-item>
+                <ion-item
+                  v-for="landmark in landmarkDateRows"
+                  :key="landmark.key"
+                  :lines="landmark.last ? 'none' : 'full'"
+                >
                   <ion-label class="ion-text-wrap">
-                    {{ translate("New order sync launch date") }}
-                    <p>{{ translate("Orders created on or after this go-live date sync as live fulfillment work") }}</p>
+                    {{ landmark.title }}
+                    <p>{{ landmark.description }}</p>
+                    <ion-badge v-if="!landmark.value && orderSyncStore.landmarkDates.status === 'ready'" color="warning">
+                      {{ translate("Setup required") }}
+                    </ion-badge>
                   </ion-label>
-                  <ion-label slot="end">{{ landmarkDateLabel(orderSyncStore.landmarkDates.launchDate) }}</ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label class="ion-text-wrap">
-                    {{ translate("Order history synced through") }}
-                    <p>{{ translate("Orders before the launch date are imported as historical records up to this point") }}</p>
+                  <ion-label v-if="landmark.value || !orderSyncStore.capabilities.canConfigure" slot="end">
+                    {{ landmarkDateLabel(landmark.value) }}
                   </ion-label>
-                  <ion-label slot="end">{{ landmarkDateLabel(orderSyncStore.landmarkDates.historyLastSyncDate) }}</ion-label>
+                  <ion-button
+                    v-if="orderSyncStore.capabilities.canConfigure"
+                    slot="end"
+                    fill="clear"
+                    @click="openLandmarkDateModal(landmark.key)"
+                  >
+                    {{ landmark.value ? translate("Edit") : translate("Set date") }}
+                  </ion-button>
                 </ion-item>
                 <ion-item v-if="orderSyncStore.landmarkDates.status === 'error'" lines="none">
                   <ion-label class="ion-text-wrap ion-text-danger" role="status">
@@ -488,6 +498,63 @@
       </main>
     </ion-content>
 
+    <ion-modal :is-open="showLandmarkDateModal" :backdrop-dismiss="false" @didDismiss="showLandmarkDateModal = false">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="showLandmarkDateModal = false">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ activeLandmark?.title }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list lines="full">
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <p>{{ activeLandmark?.description }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-label>{{ translate("Date") }}</ion-label>
+            <ion-datetime-button slot="end" datetime="landmark-datetime" />
+            <ion-popover :keep-contents-on-did-dismiss="true">
+              <ion-datetime id="landmark-datetime" presentation="date-time" v-model="landmarkDateValue" />
+            </ion-popover>
+          </ion-item>
+          <ion-item v-if="landmarkSuggestionLoading" lines="none">
+            <ion-spinner slot="start" name="crescent" />
+            <ion-label class="ion-text-wrap"><p>{{ translate("Finding the oldest order date…") }}</p></ion-label>
+          </ion-item>
+          <ion-item v-else-if="landmarkSuggestedDate" lines="none">
+            <ion-label class="ion-text-wrap">
+              <p>{{ translate("Suggested from the oldest order in the system") }}: {{ landmarkDateLabel(landmarkSuggestedDate) }}</p>
+            </ion-label>
+            <ion-button slot="end" fill="clear" @click="landmarkDateValue = landmarkSuggestedDate">
+              {{ translate("Use suggestion") }}
+            </ion-button>
+          </ion-item>
+          <ion-item v-if="landmarkSaveError" lines="none">
+            <ion-label class="ion-text-wrap ion-text-danger" role="alert"><p>{{ landmarkSaveError }}</p></ion-label>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+      <ion-footer>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button fill="clear" :disabled="isLandmarkSaving" @click="showLandmarkDateModal = false">{{ translate("Cancel") }}</ion-button>
+          </ion-buttons>
+          <ion-buttons slot="end">
+            <ion-button fill="solid" color="primary" :disabled="isLandmarkSaving || !landmarkDateValue" @click="saveLandmarkDate">
+              <ion-spinner v-if="isLandmarkSaving" name="crescent" />
+              <span v-else>{{ translate("Save date") }}</span>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-footer>
+    </ion-modal>
+
     <ion-modal :is-open="showReplayOrdersModal" :backdrop-dismiss="false" @didDismiss="showReplayOrdersModal = false">
       <ion-header>
         <ion-toolbar>
@@ -574,6 +641,8 @@ import {
   IonCardTitle,
   IonChip,
   IonContent,
+  IonDatetime,
+  IonDatetimeButton,
   IonFooter,
   IonHeader,
   IonIcon,
@@ -584,6 +653,7 @@ import {
   IonModal,
   IonNote,
   IonPage,
+  IonPopover,
   IonProgressBar,
   IonRow,
   IonSearchbar,
@@ -993,6 +1063,79 @@ async function openCustomOrderRequest() {
       actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
     }
   }
+}
+
+type LandmarkDateKey = "launchDate" | "historyLastSyncDate";
+
+const landmarkDateRows = computed(() => ([
+  {
+    key: "launchDate" as LandmarkDateKey,
+    title: translate("New order sync launch date"),
+    description: translate("Orders created on or after this go-live date sync as live fulfillment work"),
+    value: orderSyncStore.landmarkDates.launchDate,
+    last: false,
+  },
+  {
+    key: "historyLastSyncDate" as LandmarkDateKey,
+    title: translate("Order history synced through"),
+    description: translate("Orders before the launch date are imported as historical records up to this point"),
+    value: orderSyncStore.landmarkDates.historyLastSyncDate,
+    last: true,
+  },
+]));
+
+const showLandmarkDateModal = ref(false);
+const activeLandmarkKey = ref<LandmarkDateKey>("launchDate");
+const landmarkDateValue = ref("");
+const landmarkSuggestedDate = ref("");
+const landmarkSuggestionLoading = ref(false);
+const isLandmarkSaving = ref(false);
+const landmarkSaveError = ref("");
+const activeLandmark = computed(() => landmarkDateRows.value.find((row) => row.key === activeLandmarkKey.value));
+
+async function openLandmarkDateModal(key: LandmarkDateKey) {
+  if (!orderSyncStore.capabilities.canConfigure) {
+    actionError.value = translate("Administrator permission is required to set landmark dates.");
+    return;
+  }
+  activeLandmarkKey.value = key;
+  landmarkSaveError.value = "";
+  landmarkSuggestedDate.value = "";
+  const existing = orderSyncStore.landmarkDates[key];
+  landmarkDateValue.value = existing ? toDatetimeInput(existing) : "";
+  showLandmarkDateModal.value = true;
+  landmarkSuggestionLoading.value = true;
+  try {
+    const suggestion = await orderSyncStore.suggestOldestOrderDate();
+    landmarkSuggestedDate.value = suggestion;
+    if (!landmarkDateValue.value && suggestion) landmarkDateValue.value = toDatetimeInput(suggestion);
+  } finally {
+    landmarkSuggestionLoading.value = false;
+  }
+}
+
+async function saveLandmarkDate() {
+  if (!landmarkDateValue.value) return;
+  const requestedShopId = props.id;
+  const key = activeLandmarkKey.value;
+  isLandmarkSaving.value = true;
+  landmarkSaveError.value = "";
+  try {
+    const value = formatDateTime(landmarkDateValue.value, "yyyy-MM-dd HH:mm:ss") || landmarkDateValue.value;
+    await orderSyncStore.setLandmarkDate({ key, value, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    showLandmarkDateModal.value = false;
+    actionMessage.value = translate("Landmark date saved.");
+    await polling.manualRefresh();
+  } catch (error) {
+    landmarkSaveError.value = errorMessage(error, translate("The landmark date could not be saved."));
+  } finally {
+    isLandmarkSaving.value = false;
+  }
+}
+
+function toDatetimeInput(value: string): string {
+  return formatDateTime(value, "yyyy-MM-dd'T'HH:mm:ss") || "";
 }
 
 const REPLAY_ORDER_LIMIT = 50;

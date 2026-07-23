@@ -943,6 +943,70 @@ describe("Shopify Order Sync store", () => {
       expect(store.landmarkDates.error).toBeTruthy();
     });
 
+    it("suggests the oldest sales order's entry date", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => {
+        expect(options.url).toBe("oms/orders");
+        expect(options.params).toMatchObject({ orderTypeId: "SALES_ORDER", orderByField: "entryDate", pageSize: 1 });
+        return ok({ orders: [{ orderId: "ORDER_1", entryDate: "2026-05-01 08:00:00", orderDate: "2026-05-01 07:30:00" }] });
+      });
+
+      const store = useShopifyOrderSyncStore();
+      expect(await store.suggestOldestOrderDate()).toBe("2026-05-01 08:00:00");
+    });
+
+    it("suggests an empty date when there are no orders or the lookup fails", async () => {
+      mocks.api.mockImplementation(() => ok({ orders: [] }));
+      const emptyStore = useShopifyOrderSyncStore();
+      expect(await emptyStore.suggestOldestOrderDate()).toBe("");
+
+      setActivePinia(createPinia());
+      mocks.api.mockReset();
+      mocks.api.mockRejectedValue(new Error("private transport detail"));
+      const failingStore = useShopifyOrderSyncStore();
+      expect(await failingStore.suggestOldestOrderDate()).toBe("");
+    });
+
+    it("writes a landmark date to the shop-scoped system property with admin permission", async () => {
+      mocks.permissions.push("COMMON_ADMIN");
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, { batches: [], imports: [] }));
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      mocks.api.mockClear();
+      mocks.api.mockImplementation(() => ok({ systemPropertyId: "newOrderSync.launchDate" }));
+      await store.setLandmarkDate({ key: "launchDate", value: "2026-06-19 00:00:00", shopId: "10010" });
+
+      expect(mocks.api).toHaveBeenCalledWith(expect.objectContaining({
+        url: "admin/systemProperties",
+        method: "put",
+        data: expect.objectContaining({
+          systemResourceId: "10010",
+          systemPropertyId: "newOrderSync.launchDate",
+          systemPropertyValue: "2026-06-19 00:00:00",
+        }),
+      }));
+      expect(store.landmarkDates.launchDate).toBe("2026-06-19 00:00:00");
+    });
+
+    it("refuses to save a landmark date without admin permission", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, { batches: [], imports: [] }));
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      await expect(store.setLandmarkDate({ key: "launchDate", value: "2026-06-19 00:00:00" }))
+        .rejects.toThrow("COMMON_ADMIN");
+    });
+
+    it("refuses to save an invalid landmark date value", async () => {
+      mocks.permissions.push("COMMON_ADMIN");
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, { batches: [], imports: [] }));
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      await expect(store.setLandmarkDate({ key: "launchDate", value: "<script>" }))
+        .rejects.toThrow("valid date");
+    });
+
     it.each([
       ["Pending", null, null, "N", true],
       ["Running", "2026-07-22T13:00:00Z", null, "N", true],
