@@ -270,6 +270,34 @@
 
             <ion-card>
               <ion-card-header>
+                <ion-card-title>{{ translate("Key dates") }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Landmark dates that define how this shop's orders are synced") }}</ion-card-subtitle>
+              </ion-card-header>
+              <ion-list>
+                <ion-item>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("New order sync launch date") }}
+                    <p>{{ translate("Orders created on or after this go-live date sync as live fulfillment work") }}</p>
+                  </ion-label>
+                  <ion-label slot="end">{{ landmarkDateLabel(orderSyncStore.landmarkDates.launchDate) }}</ion-label>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Order history synced through") }}
+                    <p>{{ translate("Orders before the launch date are imported as historical records up to this point") }}</p>
+                  </ion-label>
+                  <ion-label slot="end">{{ landmarkDateLabel(orderSyncStore.landmarkDates.historyLastSyncDate) }}</ion-label>
+                </ion-item>
+                <ion-item v-if="orderSyncStore.landmarkDates.status === 'error'" lines="none">
+                  <ion-label class="ion-text-wrap ion-text-danger" role="status">
+                    <p>{{ translate("Landmark dates could not be loaded.") }}</p>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+
+            <ion-card>
+              <ion-card-header>
                 <ion-card-title>{{ translate("Pipeline") }}</ion-card-title>
                 <ion-card-subtitle>{{ translate("Monitor how the order sync pipeline is performing") }}</ion-card-subtitle>
               </ion-card-header>
@@ -1003,6 +1031,12 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function formatDate(value: unknown): string {
   return formatDateTime(value) || translate("Not available");
+}
+
+function landmarkDateLabel(value: string): string {
+  if (orderSyncStore.landmarkDates.status === "loading") return translate("Loading");
+  if (!value) return translate("Not set");
+  return formatDateTime(value) || value;
 }
 
 function progressRowTitle(id: OrderSyncProgressRow["id"]): string {

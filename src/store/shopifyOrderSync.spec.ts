@@ -287,10 +287,12 @@ function monitoringApi(options: ApiOptions, fixture: {
   auditImports?: Record<string, unknown>[];
   job?: Record<string, unknown> | null;
   remote?: Record<string, unknown>;
+  landmarkProperties?: Record<string, unknown>[];
 }) {
   if (options.url === "shopify/order-sync/10010/job") {
     return ok(orderSyncEnvelope("10010", { job: fixture.job || null, remote: fixture.remote }));
   }
+  if (options.url === "admin/systemProperties") return ok({ systemProperties: fixture.landmarkProperties || [] });
   if (options.url === "admin/systemMessages") return ok({ systemMessages: fixture.batches });
   if (options.url === "shopify/order-sync/10010/audits") return ok({ orderSyncAudits: fixture.audits || [] });
   if (options.url === "shopify/order-sync/10010/history") {
@@ -867,6 +869,71 @@ describe("Shopify Order Sync store", () => {
           changeDetailsComplete: false,
         }),
       ]);
+    });
+
+    it("loads the shop-scoped landmark dates from safe system properties", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        landmarkProperties: [
+          { systemResourceId: "10010", systemPropertyId: "newOrderSync.launchDate", systemPropertyValue: "2026-06-19 00:00:00" },
+          { systemResourceId: "10010", systemPropertyId: "orderSyncHistory.lastSyncDate", systemPropertyValue: "2026-07-22 03:00:00" },
+          { systemResourceId: "99999", systemPropertyId: "newOrderSync.launchDate", systemPropertyValue: "2020-01-01 00:00:00" },
+        ],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.landmarkDates).toEqual({
+        status: "ready",
+        launchDate: "2026-06-19 00:00:00",
+        historyLastSyncDate: "2026-07-22 03:00:00",
+        error: null,
+      });
+    });
+
+    it("reports empty landmark dates when the shop has not set them", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        landmarkProperties: [],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.landmarkDates).toMatchObject({ status: "ready", launchDate: "", historyLastSyncDate: "" });
+    });
+
+    it("rejects an unsafe landmark date value without failing the monitor load", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        landmarkProperties: [
+          { systemResourceId: "10010", systemPropertyId: "newOrderSync.launchDate", systemPropertyValue: "<script>alert(1)</script>" },
+        ],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.monitoringError).toBeNull();
+      expect(store.landmarkDates).toMatchObject({ status: "ready", launchDate: "", historyLastSyncDate: "" });
+    });
+
+    it("keeps landmark dates in an error state without failing the monitor load when the read throws", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => {
+        if (options.url === "admin/systemProperties") throw new Error("private transport detail");
+        return monitoringApi(options, { batches: [], imports: [] });
+      });
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.monitoringError).toBeNull();
+      expect(store.landmarkDates.status).toBe("error");
+      expect(store.landmarkDates.error).toBeTruthy();
     });
 
     it.each([

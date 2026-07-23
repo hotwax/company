@@ -290,6 +290,13 @@ export interface ShopifyOrderSyncOutstandingOrderCount {
   error: string | null;
 }
 
+export interface ShopifyOrderSyncLandmarkDates {
+  status: "idle" | "loading" | "ready" | "error";
+  launchDate: string;
+  historyLastSyncDate: string;
+  error: string | null;
+}
+
 type ConfigurationResource = "shop" | "remote" | "template" | "job" | "salesChannel" | "paymentMethod" | "shippingMethod";
 
 interface SafeShopifyOrderSyncContext {
@@ -1153,6 +1160,39 @@ async function fetchRecentErrors(shopId: string): Promise<{
   return normalizeErrorProjection(payload, shopId);
 }
 
+const ORDER_SYNC_LANDMARK_PROPERTY_IDS = {
+  launchDate: "newOrderSync.launchDate",
+  historyLastSyncDate: "orderSyncHistory.lastSyncDate",
+} as const;
+const SAFE_LANDMARK_DATE = /^[0-9T :.\-+/Z]{0,40}$/;
+
+function safeLandmarkDate(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return SAFE_LANDMARK_DATE.test(text) ? text : "";
+}
+
+async function fetchOrderSyncLandmarkDates(shopId: string): Promise<{ launchDate: string; historyLastSyncDate: string }> {
+  const payload = await requestBackend({
+    url: "admin/systemProperties",
+    method: "get",
+    params: {
+      systemResourceId: shopId,
+      pageSize: 100,
+    },
+  }, "Loading Order Sync landmark dates");
+  const rows = listPayload(payload, ["systemProperties", "entityValueList", "docs"], "Order Sync landmark date list");
+  const valueFor = (propertyId: string) => {
+    const row = rows.find((entry) => isRecord(entry)
+      && textValue(entry, ["systemResourceId"]) === shopId
+      && textValue(entry, ["systemPropertyId"]) === propertyId);
+    return row ? safeLandmarkDate((row as UnknownRecord).systemPropertyValue) : "";
+  };
+  return {
+    launchDate: valueFor(ORDER_SYNC_LANDMARK_PROPERTY_IDS.launchDate),
+    historyLastSyncDate: valueFor(ORDER_SYNC_LANDMARK_PROPERTY_IDS.historyLastSyncDate),
+  };
+}
+
 interface DurableAuditCorrelation {
   systemMessageId: string;
   configId: ShopifyOrderSyncImport["configId"];
@@ -1425,6 +1465,12 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       baselineCreatedAt: null,
       error: null,
     } as ShopifyOrderSyncOutstandingOrderCount,
+    landmarkDates: {
+      status: "idle",
+      launchDate: "",
+      historyLastSyncDate: "",
+      error: null,
+    } as ShopifyOrderSyncLandmarkDates,
     summary: emptySummary() as ShopifyOrderSyncSummary,
     monitoringLoading: false,
     monitoringRefreshing: false,
@@ -1511,6 +1557,12 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         status: "idle",
         count: null,
         baselineCreatedAt: null,
+        error: null,
+      };
+      this.landmarkDates = {
+        status: "idle",
+        launchDate: "",
+        historyLastSyncDate: "",
         error: null,
       };
       this.summary = emptySummary();
@@ -1758,12 +1810,19 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       this.monitoringLoading = !hasStaleData;
       this.monitoringRefreshing = hasStaleData;
       this.monitoringError = null;
+      if (this.landmarkDates.status === "idle" || this.landmarkDates.status === "error") {
+        this.landmarkDates = { ...this.landmarkDates, status: "loading", error: null };
+      }
       try {
         const { runtimeTimeZone, shop, productStore, remote, templateJob, job } = await fetchOrderSyncContext(shopId);
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
-        const [systemMessages, errorProjection] = await Promise.all([
+        const [systemMessages, errorProjection, landmarkDatesResult] = await Promise.all([
           fetchSystemMessages(shopId, remote.systemMessageRemoteId),
           fetchRecentErrors(shopId),
+          fetchOrderSyncLandmarkDates(shopId).then(
+            (dates) => ({ ok: true as const, dates }),
+            (error) => ({ ok: false as const, error }),
+          ),
         ]);
         const batches = scheduledBatches(systemMessages);
         const { importsBySystemMessageId, recentAudits, recentOrders } = await fetchCanonicalOrderSyncEvidence(
@@ -1787,6 +1846,14 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.recentOrders = recentOrders;
         this.recentErrors = recentErrors;
         this.recentRequestErrors = recentRequestErrors;
+        this.landmarkDates = landmarkDatesResult.ok
+          ? { status: "ready", ...landmarkDatesResult.dates, error: null }
+          : {
+            status: "error",
+            launchDate: "",
+            historyLastSyncDate: "",
+            error: landmarkDatesResult.error instanceof Error ? landmarkDatesResult.error.message : "Order Sync landmark dates could not be loaded.",
+          };
         this.summary = summary;
         this.configurationState = deriveOrderSyncConfigurationState({ job });
         this.cardSnapshot = cardFromSummary(shopId, job, summary, true);

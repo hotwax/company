@@ -258,6 +258,12 @@ function createStore(overrides: Record<string, unknown> = {}) {
     recentOrders,
     recentErrors,
     recentRequestErrors: [],
+    landmarkDates: {
+      status: "ready",
+      launchDate: "2026-06-19 00:00:00",
+      historyLastSyncDate: "2026-07-22 03:00:00",
+      error: null,
+    },
     retryByErrorId: {},
     capabilities: { canRetryIndividualOrder: true },
     canRunNow: false,
@@ -451,6 +457,27 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(mocks.downloadDataManagerFile).toHaveBeenCalledWith("UPDATE_SHOPIFY_ORDER", "CONTENT_1");
     expect(mocks.downloadTextFile).toHaveBeenCalledWith("{\"orders\":[]}", "orders-update.json");
     expect(mocks.showToast).toHaveBeenCalledWith("File downloaded successfully");
+  });
+
+  it("surfaces the shop's landmark dates in the sync monitor", async () => {
+    const wrapper = await mountMonitor();
+    const monitorSection = wrapper.get("[aria-labelledby='sync-monitor-heading']");
+
+    expect(monitorSection.text()).toContain("Key dates");
+    expect(monitorSection.text()).toContain("New order sync launch date");
+    expect(monitorSection.text()).toContain("2026-06-19 00:00:00");
+    expect(monitorSection.text()).toContain("Order history synced through");
+    expect(monitorSection.text()).toContain("2026-07-22 03:00:00");
+  });
+
+  it("shows Not set for a landmark date the shop has not configured", async () => {
+    const wrapper = await mountMonitor({
+      landmarkDates: { status: "ready", launchDate: "", historyLastSyncDate: "", error: null },
+    });
+    const monitorSection = wrapper.get("[aria-labelledby='sync-monitor-heading']");
+
+    expect(monitorSection.text()).toContain("New order sync launch date");
+    expect(monitorSection.text()).toContain("Not set");
   });
 
   it("replays orders updated since a chosen time through the bounded fresh-fetch path", async () => {
