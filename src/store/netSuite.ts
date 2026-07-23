@@ -162,6 +162,27 @@ export const useNetSuiteStore = defineStore('netSuite', {
       this.productStoreShipmentMethods = productStoreShipmentMethods
     },
 
+    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
+      return api({
+        url: "admin/paymentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
+    async createProductStoreShipmentMethod(payload: {
+      productStoreId: string
+      shipmentMethodTypeId: string
+      partyId: string
+      roleTypeId?: string
+    }): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/shippingMethods`,
+        method: "post",
+        data: { roleTypeId: "CARRIER", ...payload }
+      })
+    },
+
     async fetchIntegrationTypeMappings(params: any) {
       let integrationTypeMappings: any = {}, pageIndex = 0, resp: any
       try {
