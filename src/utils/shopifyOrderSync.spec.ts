@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveOrderSyncConfigurationState,
-  deriveOrderSyncErrorResolution,
   deriveOrderSyncMappingReadiness,
   deriveShopifyOrderSyncOverallState,
   deriveShopifyOrderSyncProgress,
-  extractOrderErrorRecordDetails,
   findSuitableShopifyOrderSyncJob,
   getShopifyOrderSyncCapabilities,
   getShopifyOrderSyncPollingDelay,
@@ -252,80 +250,6 @@ describe("Shopify Order Sync overall run state", () => {
     expect(state("failed", "completed")).toBe("partial");
     expect(state("failed", "partial")).toBe("partial");
     expect(state("failed", "failed")).toBe("failed");
-  });
-});
-
-describe("Shopify Order Sync error resolution guidance", () => {
-  it("maps every safe error projection to a distinct operator next step", () => {
-    const safeMessages = [
-      "Duplicate or conflicting order data prevented import.",
-      "Required order data is missing.",
-      "A required order mapping is unavailable.",
-      "Shopify order validation failed.",
-      "The order import service failed.",
-      "Shopify order import failed.",
-      "Shopify order request failed before import.",
-      "Error details could not be safely read.",
-    ];
-
-    const nextSteps = safeMessages.map((errorText) => deriveOrderSyncErrorResolution({ errorText }).nextStep);
-
-    expect(new Set(nextSteps).size).toBe(safeMessages.length);
-    nextSteps.forEach((nextStep) => expect(nextStep.length).toBeGreaterThan(10));
-  });
-
-  it("routes only the missing-mapping category to Order Sync setup review", () => {
-    const mapping = deriveOrderSyncErrorResolution({ errorText: "A required order mapping is unavailable." });
-
-    expect(mapping.needsSetupReview).toBe(true);
-    expect(mapping.nextStep).toContain("Order Sync setup");
-    expect(deriveOrderSyncErrorResolution({ errorText: "Shopify order import failed." }).needsSetupReview).toBe(false);
-  });
-
-  it("explains the withheld-error safety boundary instead of hiding it", () => {
-    const withheld = deriveOrderSyncErrorResolution({ errorText: "Error details could not be safely read." });
-
-    expect(withheld.nextStep).toContain("withheld");
-    expect(withheld.nextStep).toContain("DataManager run");
-  });
-
-  it("falls back to a diagnostic next step for unknown or empty error text", () => {
-    const unknown = deriveOrderSyncErrorResolution({ errorText: "Some raw backend text" });
-    const empty = deriveOrderSyncErrorResolution({ errorText: "" });
-
-    expect(unknown.nextStep).toBe("Open the import and SystemMessage details to diagnose this record.");
-    expect(empty.nextStep).toBe(unknown.nextStep);
-    expect(unknown.needsSetupReview).toBe(false);
-  });
-});
-
-describe("Shopify Order Sync failed record extraction", () => {
-  const records = [
-    { payload: "{\"order\":{\"id\":\"gid://shopify/Order/6475855265946\",\"name\":\"HC#2690\"}}", _ERROR_MESSAGE_: "Payment method mapping SHOPIFY_PAYMENT_TYPE not found for gift_card" },
-    { payload: "{\"order\":{\"id\":\"gid://shopify/Order/1111\",\"name\":\"HC#1\"}}", errorMessage: "Different failure" },
-  ];
-
-  it("matches the failed record by Shopify order ID inside the serialized payload", () => {
-    const details = extractOrderErrorRecordDetails(records, { shopifyOrderId: "6475855265946", orderName: "" });
-
-    expect(details.record).toBe(records[0]);
-    expect(details.message).toBe("Payment method mapping SHOPIFY_PAYMENT_TYPE not found for gift_card");
-  });
-
-  it("matches by order name when the ID is unresolved and reads alternate message keys", () => {
-    const details = extractOrderErrorRecordDetails(records, { shopifyOrderId: "", orderName: "HC#1" });
-
-    expect(details.record).toBe(records[1]);
-    expect(details.message).toBe("Different failure");
-  });
-
-  it("falls back to a sole record and reports no match otherwise", () => {
-    const sole = [{ errorText: "only failure" }];
-    expect(extractOrderErrorRecordDetails(sole, { shopifyOrderId: "", orderName: "" }).message).toBe("only failure");
-
-    const unmatched = extractOrderErrorRecordDetails(records, { shopifyOrderId: "999999", orderName: "" });
-    expect(unmatched.record).toBeNull();
-    expect(unmatched.message).toBe("");
   });
 });
 

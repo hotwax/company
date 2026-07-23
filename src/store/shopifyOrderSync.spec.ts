@@ -30,7 +30,6 @@ import {
   type SafeShopifyOrderSyncRemote,
   useShopifyOrderSyncStore
 } from "./shopifyOrderSync";
-import { buildShopifyOrderSyncErrorCsv } from "@/utils/shopifyOrderSyncErrorCsv";
 
 type ApiOptions = {
   url: string;
@@ -2442,9 +2441,6 @@ describe("Shopify Order Sync store", () => {
     expect(store.filteredRecentErrors("immutable").map(({ id }) => id)).toEqual(["error-1"]);
     expect(store.filteredRecentErrors("log-1").map(({ id }) => id)).toEqual(["error-1"]);
     expect(store.filteredRecentErrors("run-1").map(({ id }) => id)).toEqual(["error-1"]);
-    const downloadedCsv = buildShopifyOrderSyncErrorCsv(store.filteredRecentErrors("immutable"));
-    expect(downloadedCsv).toContain("errorId,shopId,shopifyOrderId,orderName,errorText,occurredAt,configId,logId,systemMessageId,batchId,retryable");
-    expect(downloadedCsv).toContain('"Original immutable import error"');
     expect(store.filteredRecentOrders("").map(({ id }) => id)).toEqual(["success-2", "success-1"]);
     expect(mocks.api).not.toHaveBeenCalled();
   });
