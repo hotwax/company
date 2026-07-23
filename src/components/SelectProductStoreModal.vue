@@ -15,7 +15,7 @@
       <ion-item v-for="productStore in productStores" :key="productStore.productStoreId">
         <ion-checkbox :checked="isSelected(productStore.productStoreId)" @ionChange="toggleProductStoreSelection(productStore)">
           <ion-label>
-            {{ productStore.storeName }}
+            {{ productStore.storeName || productStore.productStoreId }}
             <p>{{ productStore.productStoreId }}</p>
           </ion-label>
         </ion-checkbox>

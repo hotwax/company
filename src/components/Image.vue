@@ -7,7 +7,7 @@
 import { defineComponent } from "vue";
 import { IonSkeletonText } from '@ionic/vue'
 import { logger } from '@common';
-import defaultImage from '@/assets/images/defaultImage.png';
+import defaultImageUrl from "@/assets/images/defaultImage.png";
 
 export default defineComponent({
   name: "Image",
@@ -46,27 +46,31 @@ export default defineComponent({
       })
     },
     setImageUrl() {
-      if (this.src) {
-        if (this.src.indexOf("assets/") != -1) {
-          // Assign directly in case of assets
+      if (!this.src) {
+        this.imageUrl = defaultImageUrl;
+        return;
+      }
+
+      if (this.src.indexOf("assets/") != -1) {
+        // Assign directly in case of assets
+        this.imageUrl = this.src;
+      } else if (this.src.startsWith("http")) {
+        // If starts with http, it is web url check for existence and assign
+        this.checkIfImageExists(this.src).then(() => {
           this.imageUrl = this.src;
-        } else if (this.src.startsWith("http")) {
-          // If starts with http, it is web url check for existence and assign
-          this.checkIfImageExists(this.src).then(() => {
-            this.imageUrl = this.src;
-          }).catch(() => {
-            this.imageUrl = defaultImage;
-            logger.error("Image doesn't exist");
-          })
-        } else {
-          // Image is from resource server, hence append to base resource url, check for existence and assign
-          const imageUrl = this.resourceUrl.concat(this.src)
-          this.checkIfImageExists(imageUrl).then(() => {
-            this.imageUrl = imageUrl;
-          }).catch(() => {
-            logger.error("Image doesn't exist");
-          })
-        }
+        }).catch(() => {
+          this.imageUrl = defaultImageUrl;
+          logger.error("Image doesn't exist");
+        })
+      } else {
+        // Image is from resource server, hence append to base resource url, check for existence and assign
+        const imageUrl = this.resourceUrl.concat(this.src)
+        this.checkIfImageExists(imageUrl).then(() => {
+          this.imageUrl = imageUrl;
+        }).catch(() => {
+          this.imageUrl = defaultImageUrl;
+          logger.error("Image doesn't exist");
+        })
       }
     }
   },
