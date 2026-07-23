@@ -663,7 +663,6 @@ import {
   IonPage,
   IonPopover,
   IonProgressBar,
-  IonRow,
   IonSearchbar,
   IonSelect,
   IonSelectOption,
@@ -677,9 +676,8 @@ import {
 import { commonUtil, translate } from "@common";
 import { computed, ref, watch } from "vue";
 import { DateTime } from "luxon";
-import { closeOutline, downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
-import { downloadTextFile, formatDateTime, getDownloadFileContent } from "@/utils";
-import { useDataManagerLog } from "@/composables/useDataManagerLog";
+import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
+import { formatDateTime } from "@/utils";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
 import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/SystemMessageDetailsModal.vue";
@@ -689,25 +687,17 @@ import ShopifyOrderSyncOrdersModal from "@/components/ShopifyOrderSyncOrdersModa
 import {
   useShopifyOrderSyncStore,
   type ShopifyOrderSyncImport,
-  type ShopifyOrderSyncRecentError,
   type ShopifyOrderSyncRecentOrder,
 } from "@/store/shopifyOrderSync";
 import {
   type OrderSyncProgressRow,
   type OrderSyncProgressState,
-  deriveOrderSyncErrorResolution,
-  extractOrderErrorRecordDetails,
 } from "@/utils/shopifyOrderSync";
-import {
-  buildShopifyOrderSyncErrorCsv,
-  shopifyOrderSyncErrorCsvFileName,
-} from "@/utils/shopifyOrderSyncErrorCsv";
 
 const props = defineProps<{ id: string }>();
 const orderSyncStore = useShopifyOrderSyncStore();
 
 const ordersQuery = ref("");
-const errorsQuery = ref("");
 const pollingError = ref("");
 const actionMessage = ref("");
 const actionError = ref("");
@@ -716,9 +706,6 @@ const showSystemMessageModal = ref(false);
 const showMdmLogModal = ref(false);
 const selectedSystemMessageId = ref("");
 const selectedMdmLogId = ref("");
-const retryActionErrors = ref<Record<string, string>>({});
-const errorDownloadState = ref<"idle" | "loading" | "success" | "error">("idle");
-const errorDownloadMessage = ref("");
 
 async function refreshStore() {
   const shopId = props.id;
@@ -744,13 +731,9 @@ watch(() => props.id, (nextId, previousId) => {
   if (!nextId || nextId === previousId) return;
   const refreshWasInFlight = polling.isRefreshing.value;
   ordersQuery.value = "";
-  errorsQuery.value = "";
   pollingError.value = "";
   actionMessage.value = "";
   actionError.value = "";
-  retryActionErrors.value = {};
-  errorDownloadState.value = "idle";
-  errorDownloadMessage.value = "";
   orderSyncStore.resetForShop(nextId);
 
   if (!polling.isPageActive.value) return;
@@ -864,15 +847,8 @@ const selectedMdmLogDetails = computed(() => {
   };
 });
 const filteredOrders = computed(() => orderSyncStore.filteredRecentOrders(ordersQuery.value));
-const filteredErrors = computed(() => orderSyncStore.filteredRecentErrors(errorsQuery.value));
 const failedImportLogs = computed(() => {
   return orderSyncStore.failedDataManagerLogs || [];
-});
-
-watch([errorsQuery, () => orderSyncStore.recentErrors], () => {
-  if (errorDownloadState.value === "loading") return;
-  errorDownloadState.value = "idle";
-  errorDownloadMessage.value = "";
 });
 
 const jobStateLabel = computed(() => {
@@ -976,16 +952,6 @@ function rawStatusLabel(status: unknown, failed = 0, successful = 0): string {
   if (value.includes("running") || value.includes("active") || value.includes("processing") || value.includes("sending") || value.includes("produced")) return translate("In progress");
   if (value.includes("pause")) return translate("Paused");
   return status ? String(status) : translate("Not available");
-}
-
-function rawStatusColor(status: unknown, failed = 0, successful = 0): string {
-  const label = rawStatusLabel(status, failed, successful);
-  if (label === translate("Partially completed")) return "warning";
-  if (label === translate("Failed")) return "danger";
-  if (label === translate("Completed")) return "success";
-  if (label === translate("In progress")) return "primary";
-  if (label === translate("Paused")) return "warning";
-  return "medium";
 }
 
 function importLabel(configId: string): string {
@@ -1250,140 +1216,9 @@ function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
   return `https://${hostname}/admin/orders/${order.shopifyOrderId}`;
 }
 
-function retryState(errorId: string) {
-  return orderSyncStore.retryByErrorId[errorId];
-}
-
-function retryError(errorId: string): string {
-  return orderSyncStore.retryByErrorId[errorId]?.error || retryActionErrors.value[errorId] || "";
-}
-
-function errorNextStep(error: { errorText: string }): string {
-  return translate(deriveOrderSyncErrorResolution(error).nextStep);
-}
-
-function errorNeedsSetupReview(error: { errorText: string }): boolean {
-  return deriveOrderSyncErrorResolution(error).needsSetupReview;
-}
-
-interface ErrorLogDetailsState {
-  status: "loading" | "ready" | "error";
-  log?: Record<string, any>;
-  records?: Record<string, any>[];
-  error?: string;
-}
-
-const dataManagerLog = useDataManagerLog();
-const errorLogDetailsByLogId = ref<Record<string, ErrorLogDetailsState>>({});
-
-function errorLogDetails(error: ShopifyOrderSyncRecentError): ErrorLogDetailsState | undefined {
-  return error.logId ? errorLogDetailsByLogId.value[error.logId] : undefined;
-}
-
-async function loadErrorRecordDetails(error: ShopifyOrderSyncRecentError) {
-  const logId = error.logId;
-  if (!logId) return;
-  const current = errorLogDetailsByLogId.value[logId];
-  if (current?.status === "loading" || current?.status === "ready") return;
-  errorLogDetailsByLogId.value = { ...errorLogDetailsByLogId.value, [logId]: { status: "loading" } };
-  try {
-    const log = await dataManagerLog.fetchLogDetails(logId);
-    if (!log) throw new Error("missing log");
-    errorLogDetailsByLogId.value = {
-      ...errorLogDetailsByLogId.value,
-      [logId]: { status: "ready", log, records: [...(dataManagerLog.errorLogs.value || [])] },
-    };
-  } catch (_error) {
-    errorLogDetailsByLogId.value = {
-      ...errorLogDetailsByLogId.value,
-      [logId]: { status: "error", error: translate("The failed records file could not be loaded.") },
-    };
-  }
-}
-
-function errorRecordDetails(error: ShopifyOrderSyncRecentError) {
-  const details = errorLogDetails(error);
-  if (details?.status !== "ready") return { record: null, message: "" };
-  return extractOrderErrorRecordDetails(details.records || [], error);
-}
-
-function errorLogCreatedLabel(error: ShopifyOrderSyncRecentError): string {
-  const loaded = errorLogDetails(error)?.log;
-  const fromStore = Object.values(orderSyncStore.importsBySystemMessageId || {})
-    .flat()
-    .find((row: any) => row.logId === error.logId);
-  const created = loaded?.createdDate || loaded?.createdStamp || fromStore?.createdDate;
-  return created ? formatDate(created) : "";
-}
-
-function downloadErrorRecordJson(error: ShopifyOrderSyncRecentError) {
-  const { record } = errorRecordDetails(error);
-  if (!record) return;
-  downloadTextFile(
-    JSON.stringify(record, null, 2),
-    `${error.shopifyOrderId || error.orderName || error.logId}-failed-record.json`,
-  );
-}
-
-async function downloadErrorImportFile(error: ShopifyOrderSyncRecentError) {
-  const log = errorLogDetails(error)?.log;
-  const configId = log?.configId || error.configId;
-  const contentId = log?.logContentId || log?.logFileContentId || log?.uploadFileContentId || log?.exportFileContentId;
-  if (!configId || !contentId) return;
-  try {
-    const response = await dataManagerLog.downloadDataManagerFile(configId, contentId);
-    const content = getDownloadFileContent(response?.data);
-    if (!content) throw new Error("empty file");
-    downloadTextFile(content, log?.fileName || log?.logFileName || `${error.logId}.json`);
-    commonUtil.showToast(translate("File downloaded successfully"));
-  } catch (_error) {
-    commonUtil.showToast(translate("Failed to download the import file"));
-  }
-}
-
-function shopifyAdminErrorOrderUrl(error: ShopifyOrderSyncRecentError): string {
-  if (
-    error.shopId !== props.id
-    || orderSyncStore.shop?.shopId !== props.id
-    || !/^(?!0+$)[0-9]{1,30}$/.test(error.shopifyOrderId)
-  ) return "";
-
-  const hostname = String(orderSyncStore.shop.myshopifyDomain || "").trim();
-  if (
-    hostname !== hostname.toLocaleLowerCase()
-    || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(hostname)
-  ) return "";
-  return `https://${hostname}/admin/orders/${error.shopifyOrderId}`;
-}
-
 async function handleManualRefresh() {
   actionError.value = "";
   await polling.manualRefresh();
-}
-
-function downloadErrorsCsv() {
-  if (!loadedShopMatchesRoute.value || !filteredErrors.value.length || errorDownloadState.value === "loading") return;
-  const shopId = props.id;
-  const rows = [...filteredErrors.value];
-  errorDownloadState.value = "loading";
-  errorDownloadMessage.value = translate("Preparing the safe error CSV.");
-  if (props.id !== shopId || orderSyncStore.selectedShopId !== shopId) {
-    errorDownloadState.value = "idle";
-    errorDownloadMessage.value = "";
-    return;
-  }
-
-  try {
-    const csv = buildShopifyOrderSyncErrorCsv(rows);
-    // This must stay in the original click task so Chromium retains the user's
-    // download activation.
-    downloadTextFile(csv, shopifyOrderSyncErrorCsvFileName(shopId));
-    errorDownloadState.value = "success";
-    errorDownloadMessage.value = translate("Safe error CSV download started.");
-  } catch (_error) {
-    errorDownloadState.value = "error";
-    errorDownloadMessage.value = translate("The safe error CSV could not be downloaded.");
-  }
 }
 
 function escapeAlertText(value: unknown): string {
@@ -1457,61 +1292,6 @@ async function refreshAfterJobModalUpdate() {
   await polling.manualRefresh();
 }
 
-async function confirmRetry(error: ShopifyOrderSyncRecentError) {
-  if (!loadedShopMatchesRoute.value || !error.retryable || !orderSyncStore.capabilities.canRetryIndividualOrder) return;
-  const retryTarget = {
-    errorId: error.id,
-    shopId: props.id,
-    shopifyOrderId: error.shopifyOrderId,
-  };
-  const loadedShopId = orderSyncStore.shop?.shopId || "";
-  if (loadedShopId !== retryTarget.shopId || error.shopId !== retryTarget.shopId) return;
-  const confirmationShopName = shopName.value;
-  retryActionErrors.value = { ...retryActionErrors.value, [retryTarget.errorId]: "" };
-  const alert = await alertController.create({
-    header: translate("Retry individual order?"),
-    message: escapeAlertText(translate("Re-fetch Shopify order {order} for {shop}, then run the normal create or update classification and HotWax import. The original error will remain unchanged.", {
-      order: retryTarget.shopifyOrderId,
-      shop: confirmationShopName,
-    })),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      { text: translate("Retry order"), role: "confirm" },
-    ],
-  });
-  await alert.present();
-  const result = await alert.onDidDismiss();
-  const currentError = orderSyncStore.recentErrors.find((row) => row.id === retryTarget.errorId);
-  if (
-    result.role !== "confirm"
-    || props.id !== retryTarget.shopId
-    || orderSyncStore.selectedShopId !== retryTarget.shopId
-    || orderSyncStore.shop?.shopId !== loadedShopId
-    || !currentError
-    || currentError.shopId !== retryTarget.shopId
-    || currentError.shopifyOrderId !== retryTarget.shopifyOrderId
-    || !currentError.retryable
-    || !orderSyncStore.capabilities.canRetryIndividualOrder
-  ) return;
-
-  try {
-    await orderSyncStore.retryIndividualOrder({
-      errorId: retryTarget.errorId,
-      shopifyOrderId: retryTarget.shopifyOrderId,
-      shopId: retryTarget.shopId,
-    });
-    if (props.id !== retryTarget.shopId || orderSyncStore.selectedShopId !== retryTarget.shopId) return;
-    // The store preserves retry state and the immutable source row while this refresh
-    // makes the new standalone SystemMessage visible in monitoring.
-    await polling.manualRefresh();
-  } catch (retryFailure) {
-    if (props.id !== retryTarget.shopId || orderSyncStore.selectedShopId !== retryTarget.shopId) return;
-    retryActionErrors.value = {
-      ...retryActionErrors.value,
-      [retryTarget.errorId]: errorMessage(retryFailure, translate("The Shopify order could not be retried.")),
-    };
-  }
-}
 </script>
 
 <style scoped>
