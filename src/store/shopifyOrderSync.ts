@@ -873,79 +873,6 @@ async function fetchFailedOrderImportLogs(): Promise<ShopifyOrderSyncImport[]> {
     .slice(0, SHOPIFY_ORDER_SYNC_RESULT_LIMIT);
 }
 
-async function fetchAuditRows(shopId: string): Promise<UnknownRecord[]> {
-  const payload = await requestBackend({
-    url: `shopify/order-sync/${encodeURIComponent(shopId)}/audits`,
-    method: "get",
-    params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
-  }, "Loading recent successful Order Sync audits");
-  if (!isRecord(payload) || !exactKeys(payload, ["orderSyncAudits"]) || !Array.isArray(payload.orderSyncAudits)) {
-    throw new Error("Order Sync audit projection returned an invalid response shape.");
-  }
-  if (payload.orderSyncAudits.length > SHOPIFY_ORDER_SYNC_RESULT_LIMIT) {
-    throw new Error("Order Sync audit projection exceeded the 100-row contract.");
-  }
-
-  const seenAuditIds = new Set<string>();
-  let previousTimestamp = Number.POSITIVE_INFINITY;
-  return payload.orderSyncAudits.map((row) => {
-    if (!isRecord(row) || !exactKeys(row, ORDER_SYNC_AUDIT_KEYS)) {
-      throw new Error("Order Sync audit projection returned fields outside the safe contract.");
-    }
-    const auditId = requiredSafeId(row, "auditId", 512);
-    const rowShopId = requiredSafeId(row, "shopId");
-    const systemMessageId = requiredSafeId(row, "systemMessageId");
-    const dataManagerLogId = requiredSafeId(row, "dataManagerLogId");
-    if (rowShopId !== shopId) throw new Error("Order Sync audit projection crossed the selected Shopify shop scope.");
-    if (seenAuditIds.has(auditId)) throw new Error("Order Sync audit projection contained a duplicate audit ID.");
-    seenAuditIds.add(auditId);
-
-    const shopifyOrderId = row.shopifyOrderId;
-    const shopifyOrderName = row.shopifyOrderName;
-    const orderId = row.orderId;
-    const configId = row.configId;
-    const outcome = row.outcome;
-    if (typeof shopifyOrderId !== "string" || !SAFE_SHOPIFY_ORDER_ID.test(shopifyOrderId)) {
-      throw new Error("Order Sync audit projection contained an invalid Shopify order ID.");
-    }
-    if (typeof shopifyOrderName !== "string" || (shopifyOrderName && !SAFE_ORDER_NAME.test(shopifyOrderName))) {
-      throw new Error("Order Sync audit projection contained an invalid Shopify order name.");
-    }
-    if (typeof orderId !== "string" || orderId.length > 255 || /[\u0000-\u001f\u007f]/.test(orderId)) {
-      throw new Error("Order Sync audit projection contained an invalid HotWax order ID.");
-    }
-    if (!ORDER_IMPORT_CONFIG_IDS.includes(configId as typeof ORDER_IMPORT_CONFIG_IDS[number])) {
-      throw new Error("Order Sync audit projection contained an unexpected order config.");
-    }
-    if (outcome !== "Created" && outcome !== "Updated") {
-      throw new Error("Order Sync audit projection contained an invalid outcome.");
-    }
-    if (typeof row.shopifyFetchVerified !== "boolean") {
-      throw new Error("Order Sync audit projection contained an invalid Shopify fetch provenance flag.");
-    }
-    const processedDate = safeOccurredAt(row.processedDate);
-    const processedAtMillis = timestamp(processedDate);
-    if (processedAtMillis > previousTimestamp) {
-      throw new Error("Order Sync audit projection was not sorted newest first.");
-    }
-    previousTimestamp = processedAtMillis;
-
-    return {
-      auditId,
-      shopId: rowShopId,
-      systemMessageId,
-      dataManagerLogId,
-      shopifyOrderId,
-      shopifyOrderName,
-      orderId,
-      outcome,
-      configId,
-      processedDate,
-      shopifyFetchVerified: row.shopifyFetchVerified,
-    };
-  });
-}
-
 async function fetchHistoryRows(shopId: string): Promise<ShopifyOrderSyncRecentOrder[]> {
   const payload = await requestBackend({
     url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`,
@@ -1050,14 +977,6 @@ function requiredSafeId(row: UnknownRecord, key: string, maximum = 255): string 
   return value;
 }
 
-function optionalSafeId(row: UnknownRecord, key: string): string {
-  const value = row[key];
-  if (typeof value !== "string" || (value && !SAFE_CORRELATION_ID.test(value))) {
-    throw new Error(`Order Sync error projection contained an invalid ${key}.`);
-  }
-  return value;
-}
-
 function safeOccurredAt(value: unknown): string | number {
   const occurredAtMillis = timestamp(value);
   if ((typeof value !== "string" && typeof value !== "number") || !Number.isFinite(occurredAtMillis) || occurredAtMillis <= 0) {
@@ -1067,143 +986,6 @@ function safeOccurredAt(value: unknown): string | number {
     throw new Error("Order Sync error projection contained an invalid occurredAt.");
   }
   return value;
-}
-
-function projectSafeError(row: UnknownRecord, shopId: string, expectedKind: "import" | "request"): UnknownRecord {
-  if (!exactKeys(row, ORDER_SYNC_ERROR_KEYS)) {
-    throw new Error("Order Sync error projection returned fields outside the safe contract.");
-  }
-
-  const errorId = requiredSafeId(row, "errorId", 512);
-  const rowShopId = requiredSafeId(row, "shopId");
-  const logId = optionalSafeId(row, "logId");
-  const systemMessageId = requiredSafeId(row, "systemMessageId");
-  const batchId = optionalSafeId(row, "batchId");
-  if (rowShopId !== shopId) throw new Error("Order Sync error projection crossed the selected Shopify shop scope.");
-
-  const configId = row.configId;
-  if (typeof configId !== "string") {
-    throw new Error("Order Sync error projection contained an unexpected order config.");
-  }
-
-  const shopifyOrderId = row.shopifyOrderId;
-  if (typeof shopifyOrderId !== "string" || (shopifyOrderId && !SAFE_SHOPIFY_ORDER_ID.test(shopifyOrderId))) {
-    throw new Error("Order Sync error projection contained an invalid Shopify order ID.");
-  }
-  const orderName = row.orderName;
-  if (typeof orderName !== "string" || (orderName && !SAFE_ORDER_NAME.test(orderName))) {
-    throw new Error("Order Sync error projection contained an invalid order name.");
-  }
-  const errorText = row.errorText;
-  if (
-    typeof errorText !== "string"
-    || !SAFE_ERROR_MESSAGES.has(errorText)
-  ) {
-    throw new Error("Order Sync error projection contained unsafe error text.");
-  }
-  if (typeof row.retryable !== "boolean" || (row.retryable && !shopifyOrderId)) {
-    throw new Error("Order Sync error projection contained an inconsistent retryable value.");
-  }
-
-  const preImportFailure = !logId
-    && !configId
-    && !shopifyOrderId
-    && !orderName
-    && errorText === "Shopify order request failed before import."
-    && row.retryable === false
-    && errorId === `${systemMessageId}:system-message`;
-  const dataManagerFailure = Boolean(logId)
-    && ORDER_IMPORT_CONFIG_IDS.includes(configId as typeof ORDER_IMPORT_CONFIG_IDS[number])
-    && errorId.startsWith(`${logId}:`);
-  if (
-    (expectedKind === "request" && !preImportFailure)
-    || (expectedKind === "import" && !dataManagerFailure)
-  ) {
-    throw new Error("Order Sync error projection contained an invalid failure correlation.");
-  }
-
-  // Construct a fresh allowlisted record. The raw response object is never retained.
-  return {
-    errorId,
-    shopId: rowShopId,
-    shopifyOrderId,
-    orderName,
-    errorText,
-    occurredAt: safeOccurredAt(row.occurredAt),
-    configId,
-    logId,
-    systemMessageId,
-    batchId,
-    retryable: row.retryable,
-  };
-}
-
-function normalizeErrorRows(
-  rows: unknown[],
-  shopId: string,
-  expectedKind: "import" | "request",
-): ShopifyOrderSyncRecentError[] {
-  const projectedRows = rows.map((row) => {
-    if (!isRecord(row)) throw new Error("Order Sync error projection contained an invalid row.");
-    return projectSafeError(row, shopId, expectedKind);
-  });
-  const seenErrorIds = new Set<string>();
-  let previousTimestamp = Number.POSITIVE_INFINITY;
-  for (const row of projectedRows) {
-    const errorId = String(row.errorId);
-    if (seenErrorIds.has(errorId)) throw new Error("Order Sync error projection contained a duplicate error ID.");
-    seenErrorIds.add(errorId);
-    const currentTimestamp = timestamp(row.occurredAt);
-    if (currentTimestamp > previousTimestamp) {
-      throw new Error("Order Sync error projection was not sorted newest first.");
-    }
-    previousTimestamp = currentTimestamp;
-  }
-
-  return projectedRows.map((row) => {
-    const normalized = normalizeRecentOrderErrors([{ ...row, errorDate: row.occurredAt }], {
-      shopId,
-      limit: 1,
-    })[0];
-    if (!normalized) throw new Error("Order Sync error projection could not be normalized safely.");
-    return { ...normalized, retryable: row.retryable === true && normalized.retryable };
-  }).sort((first, second) => second.occurredAtMillis - first.occurredAtMillis || first.id.localeCompare(second.id));
-}
-
-function normalizeErrorProjection(payload: unknown, shopId: string): {
-  recentErrors: ShopifyOrderSyncRecentError[];
-  recentRequestErrors: ShopifyOrderSyncRecentError[];
-} {
-  if (
-    !isRecord(payload)
-    || !exactKeys(payload, ["orderSyncErrors", "orderSyncRequestErrors"])
-    || !Array.isArray(payload.orderSyncErrors)
-    || !Array.isArray(payload.orderSyncRequestErrors)
-  ) {
-    throw new Error("Order Sync error projection returned an invalid response shape.");
-  }
-  if (
-    payload.orderSyncErrors.length > SHOPIFY_ORDER_SYNC_RESULT_LIMIT
-    || payload.orderSyncRequestErrors.length > SHOPIFY_ORDER_SYNC_RESULT_LIMIT
-  ) {
-    throw new Error("Order Sync error projection exceeded the 100-row contract.");
-  }
-  return {
-    recentErrors: normalizeErrorRows(payload.orderSyncErrors, shopId, "import"),
-    recentRequestErrors: normalizeErrorRows(payload.orderSyncRequestErrors, shopId, "request"),
-  };
-}
-
-async function fetchRecentErrors(shopId: string): Promise<{
-  recentErrors: ShopifyOrderSyncRecentError[];
-  recentRequestErrors: ShopifyOrderSyncRecentError[];
-}> {
-  const payload = await requestBackend({
-    url: `shopify/order-sync/${encodeURIComponent(shopId)}/errors`,
-    method: "get",
-    params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
-  }, "Loading the safe Order Sync error projection");
-  return normalizeErrorProjection(payload, shopId);
 }
 
 const ORDER_SYNC_LANDMARK_PROPERTY_IDS = {
@@ -1258,36 +1040,6 @@ async function fetchOrderSyncLandmarkDates(shopId: string): Promise<{ launchDate
   };
 }
 
-interface DurableAuditCorrelation {
-  systemMessageId: string;
-  configId: ShopifyOrderSyncImport["configId"];
-  logId: string;
-  processedAtMillis: number;
-}
-
-function latestDurableAuditCorrelations(
-  recentOrders: ShopifyOrderSyncRecentOrder[],
-): DurableAuditCorrelation[] {
-  const latestByConfig = new Map<string, DurableAuditCorrelation>();
-  for (const order of recentOrders) {
-    if (!order.systemMessageId || !order.configId || !order.logId) continue;
-    const configId = order.configId as ShopifyOrderSyncImport["configId"];
-    const key = `${order.systemMessageId}:${configId}`;
-    const current = latestByConfig.get(key);
-    if (!current || order.processedAtMillis > current.processedAtMillis) {
-      latestByConfig.set(key, {
-        systemMessageId: order.systemMessageId,
-        configId,
-        logId: order.logId,
-        processedAtMillis: order.processedAtMillis,
-      });
-    } else if (order.processedAtMillis === current.processedAtMillis && order.logId !== current.logId) {
-      throw new Error("Order Sync audits returned ambiguous DataManager correlations.");
-    }
-  }
-  return [...latestByConfig.values()];
-}
-
 function requiredImportCount(row: UnknownRecord, field: "totalRecordCount" | "failedRecordCount"): number {
   const raw = row[field];
   const value = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
@@ -1295,104 +1047,6 @@ function requiredImportCount(row: UnknownRecord, field: "totalRecordCount" | "fa
     throw new Error(`DataManager response contained an invalid ${field}.`);
   }
   return value;
-}
-
-async function fetchAuditCorrelatedImports(
-  systemMessageRemoteId: string,
-  correlations: DurableAuditCorrelation[],
-): Promise<Map<string, ShopifyOrderSyncImport>> {
-  const importsByLogId = new Map<string, ShopifyOrderSyncImport>();
-  if (!correlations.length) return importsByLogId;
-  const correlationByLogId = new Map<string, DurableAuditCorrelation>();
-  for (const correlation of correlations) {
-    const existing = correlationByLogId.get(correlation.logId);
-    if (existing && (existing.systemMessageId !== correlation.systemMessageId || existing.configId !== correlation.configId)) {
-      throw new Error("Order Sync audits reused a DataManager log across correlations.");
-    }
-    correlationByLogId.set(correlation.logId, correlation);
-  }
-  const logIds = [...correlationByLogId.keys()];
-  const payload = await requestBackend({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        logId: logIds,
-        systemMessageTypeId: SHOPIFY_ORDER_SYNC_MESSAGE_TYPE,
-        systemMessageRemoteId,
-        configId: [...ORDER_IMPORT_CONFIG_IDS],
-      },
-      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId,startDateTime,finishDateTime,lastUpdatedTxStamp",
-      pageSize: logIds.length + 1,
-      pageIndex: 0,
-    },
-  }, "Loading audit-correlated Order Sync imports");
-  const rows = listPayload(payload, ["entityValueList", "dataManagerLogs", "logs", "docs"], "Audit-correlated Order Sync imports");
-  if (rows.length > logIds.length) throw new Error("Audit-correlated DataManager response returned duplicate rows.");
-
-  for (const row of rows) {
-    const logId = textValue(row, ["logId"]);
-    const correlation = correlationByLogId.get(logId);
-    if (!correlation) throw new Error("DataManager response crossed the requested audit log scope.");
-    if (importsByLogId.has(logId)) throw new Error("Audit-correlated DataManager response returned duplicate rows.");
-    if (textValue(row, ["systemMessageTypeId"]) !== SHOPIFY_ORDER_SYNC_MESSAGE_TYPE) {
-      throw new Error("DataManager response contained an unexpected SystemMessage type.");
-    }
-    if (textValue(row, ["systemMessageRemoteId"]) !== systemMessageRemoteId) {
-      throw new Error("DataManager response crossed the selected Shopify remote scope.");
-    }
-    if (textValue(row, ["systemMessageId"]) !== correlation.systemMessageId) {
-      throw new Error("DataManager response crossed the audit SystemMessage correlation.");
-    }
-    if (textValue(row, ["configId"]) !== correlation.configId) {
-      throw new Error("DataManager response crossed the audit import configuration.");
-    }
-    const totalRecordCount = requiredImportCount(row, "totalRecordCount");
-    const failedRecordCount = requiredImportCount(row, "failedRecordCount");
-    if (failedRecordCount > totalRecordCount) throw new Error("DataManager response contained impossible import counts.");
-    const projected = projectImport(row, correlation.systemMessageId, correlation.configId);
-    if (!projected.statusId) throw new Error("DataManager response is missing logStatusId.");
-    importsByLogId.set(logId, {
-      ...projected,
-      totalRecordCount,
-      failedRecordCount,
-      successRecordCount: totalRecordCount - failedRecordCount,
-    });
-  }
-  for (const logId of logIds) {
-    if (!importsByLogId.has(logId)) throw new Error("Audit-correlated DataManager log was not returned.");
-  }
-  return importsByLogId;
-}
-
-function reconcileImportsWithSuccessfulAudits(
-  importsBySystemMessageId: Record<string, ShopifyOrderSyncImport[]>,
-  correlations: DurableAuditCorrelation[],
-  authoritativeImportsByLogId: Map<string, ShopifyOrderSyncImport>,
-): Record<string, ShopifyOrderSyncImport[]> {
-  const reconciled = Object.fromEntries(
-    Object.entries(importsBySystemMessageId).map(([systemMessageId, imports]) => [
-      systemMessageId,
-      imports.map((entry) => ({ ...entry })),
-    ]),
-  ) as Record<string, ShopifyOrderSyncImport[]>;
-  for (const durable of correlations) {
-    const { systemMessageId, configId } = durable;
-    const existingImports = reconciled[systemMessageId] || [];
-    const existingForConfig = existingImports.find((entry) => entry.configId === configId);
-    if (existingForConfig?.logId === durable.logId) continue;
-    const durableImport = authoritativeImportsByLogId.get(durable.logId);
-    if (!durableImport || durableImport.systemMessageId !== systemMessageId || durableImport.configId !== configId) {
-      throw new Error("Audit-correlated DataManager import crossed its expected scope.");
-    }
-    reconciled[systemMessageId] = [
-      ...existingImports.filter((entry) => entry.configId !== configId),
-      durableImport,
-    ].sort((first, second) => ORDER_IMPORT_CONFIG_IDS.indexOf(first.configId) - ORDER_IMPORT_CONFIG_IDS.indexOf(second.configId));
-  }
-
-  return reconciled;
 }
 
 async function fetchCanonicalOrderSyncEvidence(
@@ -1404,23 +1058,14 @@ async function fetchCanonicalOrderSyncEvidence(
   recentAudits: RecentProcessedOrder[];
   recentOrders: ShopifyOrderSyncRecentOrder[];
 }> {
-  const [fetchedImportsBySystemMessageId, auditRows, recentOrders] = await Promise.all([
+  // The successful-order audit + fetch-proof correlation was removed from the connector (no new
+  // entities). Imports come straight from the batch DataManager logs, and recent successes are read
+  // from history. recentAudits stays an empty list until the audit/error panels are re-enabled.
+  const [importsBySystemMessageId, recentOrders] = await Promise.all([
     fetchBatchImports(systemMessageRemoteId, batches),
-    fetchAuditRows(shopId),
     fetchHistoryRows(shopId),
   ]);
-  const recentAudits = normalizeRecentProcessedOrders(auditRows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
-  const correlations = latestDurableAuditCorrelations(recentAudits);
-  const authoritativeImportsByLogId = await fetchAuditCorrelatedImports(systemMessageRemoteId, correlations);
-  return {
-    importsBySystemMessageId: reconcileImportsWithSuccessfulAudits(
-      fetchedImportsBySystemMessageId,
-      correlations,
-      authoritativeImportsByLogId,
-    ),
-    recentAudits,
-    recentOrders,
-  };
+  return { importsBySystemMessageId, recentAudits: [], recentOrders };
 }
 
 function summaryFor(
@@ -1883,9 +1528,8 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       try {
         const { runtimeTimeZone, shop, productStore, remote, templateJob, job } = await fetchOrderSyncContext(shopId);
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
-        const [systemMessages, errorProjection, failedDataManagerLogs, landmarkDatesResult] = await Promise.all([
+        const [systemMessages, failedDataManagerLogs, landmarkDatesResult] = await Promise.all([
           fetchSystemMessages(shopId, remote.systemMessageRemoteId),
-          fetchRecentErrors(shopId),
           fetchFailedOrderImportLogs(),
           fetchOrderSyncLandmarkDates(shopId).then(
             (dates) => ({ ok: true as const, dates }),
@@ -1898,7 +1542,10 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
           remote.systemMessageRemoteId,
           batches,
         );
-        const { recentErrors, recentRequestErrors } = errorProjection;
+        // The connector's dedicated /errors projection was removed; the panel is hidden for now,
+        // so recent errors stay empty until rebuilt on the DataManager failed-log query.
+        const recentErrors: ShopifyOrderSyncRecentError[] = [];
+        const recentRequestErrors: ShopifyOrderSyncRecentError[] = [];
         if (token !== this.requestToken) return null;
         const summary = summaryFor(batches, importsBySystemMessageId, job, productStore);
         this.shop = shop;
