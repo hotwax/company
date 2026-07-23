@@ -40,6 +40,28 @@ const ORDER_SYNC_AUDIT_KEYS = [
   "processedDate",
   "shopifyFetchVerified",
 ] as const;
+const ORDER_SYNC_HISTORY_KEYS = [
+  "historyId",
+  "shopId",
+  "shopifyOrderId",
+  "shopifyOrderName",
+  "orderId",
+  "outcome",
+  "updatedObjects",
+  "changeDetailsComplete",
+  "processedDate",
+  "shopifyFetchVerified",
+] as const;
+const ORDER_SYNC_HISTORY_OBJECT_KEYS = ["objectType", "count"] as const;
+const ORDER_SYNC_HISTORY_OBJECT_TYPES = [
+  "Order",
+  "OrderItem",
+  "Transaction",
+  "Refund",
+  "Return",
+  "Fulfillment",
+  "FulfillmentLocation",
+] as const;
 const ORDER_SYNC_ERROR_KEYS = [
   "errorId",
   "shopId",
@@ -164,7 +186,24 @@ export interface ShopifyOrderSyncImport {
   createdByJobRunId: string;
 }
 
-export type ShopifyOrderSyncRecentOrder = RecentProcessedOrder;
+export interface ShopifyOrderSyncHistoryObject {
+  objectType: typeof ORDER_SYNC_HISTORY_OBJECT_TYPES[number];
+  count: number;
+}
+
+export interface ShopifyOrderSyncRecentOrder {
+  id: string;
+  shopId: string;
+  shopifyOrderId: string;
+  orderName: string;
+  orderId: string;
+  outcome: "Created" | "Updated" | "Processed";
+  updatedObjects: ShopifyOrderSyncHistoryObject[];
+  changeDetailsComplete: boolean;
+  processedAt?: string | number;
+  processedAtMillis: number;
+  shopifyFetchVerified: boolean;
+}
 export type ShopifyOrderSyncRecentError = RecentOrderError;
 
 export interface ShopifyOrderSyncSummary {
@@ -854,6 +893,94 @@ async function fetchAuditRows(shopId: string): Promise<UnknownRecord[]> {
   });
 }
 
+async function fetchHistoryRows(shopId: string): Promise<ShopifyOrderSyncRecentOrder[]> {
+  const payload = await requestBackend({
+    url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`,
+    method: "get",
+    params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
+  }, "Loading recent Order Sync history");
+  if (!isRecord(payload) || !exactKeys(payload, ["orderSyncHistory"]) || !Array.isArray(payload.orderSyncHistory)) {
+    throw new Error("Order Sync history projection returned an invalid response shape.");
+  }
+  if (payload.orderSyncHistory.length > SHOPIFY_ORDER_SYNC_RESULT_LIMIT) {
+    throw new Error("Order Sync history projection exceeded the 100-row contract.");
+  }
+
+  const seenHistoryIds = new Set<string>();
+  let previousTimestamp = Number.POSITIVE_INFINITY;
+  return payload.orderSyncHistory.map((row) => {
+    if (!isRecord(row) || !exactKeys(row, ORDER_SYNC_HISTORY_KEYS)) {
+      throw new Error("Order Sync history projection returned fields outside the safe contract.");
+    }
+    const id = requiredSafeId(row, "historyId", 512);
+    const rowShopId = requiredSafeId(row, "shopId");
+    if (rowShopId !== shopId) throw new Error("Order Sync history projection crossed the selected Shopify shop scope.");
+    if (seenHistoryIds.has(id)) throw new Error("Order Sync history projection contained a duplicate history ID.");
+    seenHistoryIds.add(id);
+
+    const shopifyOrderId = row.shopifyOrderId;
+    const shopifyOrderName = row.shopifyOrderName;
+    const orderId = row.orderId;
+    const outcome = row.outcome;
+    if (typeof shopifyOrderId !== "string" || !SAFE_SHOPIFY_ORDER_ID.test(shopifyOrderId)) {
+      throw new Error("Order Sync history projection contained an invalid Shopify order ID.");
+    }
+    if (typeof shopifyOrderName !== "string" || (shopifyOrderName && !SAFE_ORDER_NAME.test(shopifyOrderName))) {
+      throw new Error("Order Sync history projection contained an invalid Shopify order name.");
+    }
+    if (typeof orderId !== "string" || orderId.length > 255 || /[\u0000-\u001f\u007f]/.test(orderId)) {
+      throw new Error("Order Sync history projection contained an invalid HotWax order ID.");
+    }
+    if (outcome !== "Created" && outcome !== "Updated" && outcome !== "Processed") {
+      throw new Error("Order Sync history projection contained an invalid outcome.");
+    }
+    if (!Array.isArray(row.updatedObjects) || row.updatedObjects.length > ORDER_SYNC_HISTORY_OBJECT_TYPES.length) {
+      throw new Error("Order Sync history projection contained an invalid object summary.");
+    }
+    const seenObjectTypes = new Set<string>();
+    const updatedObjects = row.updatedObjects.map((entry) => {
+      if (!isRecord(entry) || !exactKeys(entry, ORDER_SYNC_HISTORY_OBJECT_KEYS)) {
+        throw new Error("Order Sync history projection contained an invalid object summary.");
+      }
+      const objectType = entry.objectType;
+      const count = entry.count;
+      if (typeof objectType !== "string"
+        || !ORDER_SYNC_HISTORY_OBJECT_TYPES.includes(objectType as ShopifyOrderSyncHistoryObject["objectType"])
+        || seenObjectTypes.has(objectType)
+        || !Number.isSafeInteger(count)
+        || Number(count) < 1
+        || Number(count) > 100000) {
+        throw new Error("Order Sync history projection contained an invalid object summary.");
+      }
+      seenObjectTypes.add(objectType);
+      return { objectType: objectType as ShopifyOrderSyncHistoryObject["objectType"], count: Number(count) };
+    });
+    if (typeof row.changeDetailsComplete !== "boolean" || typeof row.shopifyFetchVerified !== "boolean") {
+      throw new Error("Order Sync history projection contained an invalid provenance flag.");
+    }
+    const processedAt = safeOccurredAt(row.processedDate);
+    const processedAtMillis = timestamp(processedAt);
+    if (processedAtMillis > previousTimestamp) {
+      throw new Error("Order Sync history projection was not sorted newest first.");
+    }
+    previousTimestamp = processedAtMillis;
+
+    return {
+      id,
+      shopId: rowShopId,
+      shopifyOrderId,
+      orderName: shopifyOrderName,
+      orderId,
+      outcome,
+      updatedObjects,
+      changeDetailsComplete: row.changeDetailsComplete,
+      processedAt,
+      processedAtMillis,
+      shopifyFetchVerified: row.shopifyFetchVerified,
+    };
+  });
+}
+
 function exactKeys(record: UnknownRecord, expectedKeys: readonly string[]): boolean {
   const actualKeys = Object.keys(record).sort();
   const sortedExpectedKeys = [...expectedKeys].sort();
@@ -1169,14 +1296,16 @@ async function fetchCanonicalOrderSyncEvidence(
   batches: ShopifyOrderSyncBatch[],
 ): Promise<{
   importsBySystemMessageId: Record<string, ShopifyOrderSyncImport[]>;
+  recentAudits: RecentProcessedOrder[];
   recentOrders: ShopifyOrderSyncRecentOrder[];
 }> {
-  const [fetchedImportsBySystemMessageId, auditRows] = await Promise.all([
+  const [fetchedImportsBySystemMessageId, auditRows, recentOrders] = await Promise.all([
     fetchBatchImports(systemMessageRemoteId, batches),
     fetchAuditRows(shopId),
+    fetchHistoryRows(shopId),
   ]);
-  const recentOrders = normalizeRecentProcessedOrders(auditRows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
-  const correlations = latestDurableAuditCorrelations(recentOrders);
+  const recentAudits = normalizeRecentProcessedOrders(auditRows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
+  const correlations = latestDurableAuditCorrelations(recentAudits);
   const authoritativeImportsByLogId = await fetchAuditCorrelatedImports(systemMessageRemoteId, correlations);
   return {
     importsBySystemMessageId: reconcileImportsWithSuccessfulAudits(
@@ -1184,6 +1313,7 @@ async function fetchCanonicalOrderSyncEvidence(
       correlations,
       authoritativeImportsByLogId,
     ),
+    recentAudits,
     recentOrders,
   };
 }
@@ -1285,6 +1415,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
     systemMessages: [] as ShopifyOrderSyncBatch[],
     batches: [] as ShopifyOrderSyncBatch[],
     importsBySystemMessageId: {} as Record<string, ShopifyOrderSyncImport[]>,
+    recentAudits: [] as RecentProcessedOrder[],
     recentOrders: [] as ShopifyOrderSyncRecentOrder[],
     recentErrors: [] as ShopifyOrderSyncRecentError[],
     recentRequestErrors: [] as ShopifyOrderSyncRecentError[],
@@ -1372,6 +1503,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       this.systemMessages = [];
       this.batches = [];
       this.importsBySystemMessageId = {};
+      this.recentAudits = [];
       this.recentOrders = [];
       this.recentErrors = [];
       this.recentRequestErrors = [];
@@ -1472,7 +1604,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
         const systemMessages = await fetchSystemMessages(shopId, remote.systemMessageRemoteId);
         const batches = scheduledBatches(systemMessages);
-        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+        const { importsBySystemMessageId, recentAudits, recentOrders } = await fetchCanonicalOrderSyncEvidence(
           shopId,
           remote.systemMessageRemoteId,
           batches,
@@ -1488,6 +1620,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.recentAudits = recentAudits;
         this.recentOrders = recentOrders;
         this.summary = summary;
         this.configurationState = deriveOrderSyncConfigurationState({ job });
@@ -1509,8 +1642,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
     async loadRecentAudits(selectedShopId?: string): Promise<ShopifyOrderSyncRecentOrder[]> {
       const shopId = selectedShopId || this.selectedShopId;
       if (!shopId) throw new Error("A Shopify shop ID is required.");
-      const rows = await fetchAuditRows(shopId);
-      const recentOrders = normalizeRecentProcessedOrders(rows, { shopId, limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
+      const recentOrders = await fetchHistoryRows(shopId);
       if (shopId === this.selectedShopId) this.recentOrders = recentOrders;
       return recentOrders;
     },
@@ -1590,7 +1722,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
         const systemMessages = await fetchSystemMessages(shopId, remote.systemMessageRemoteId);
         const batches = scheduledBatches(systemMessages);
-        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+        const { importsBySystemMessageId, recentAudits, recentOrders } = await fetchCanonicalOrderSyncEvidence(
           shopId,
           remote.systemMessageRemoteId,
           batches,
@@ -1606,6 +1738,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.recentAudits = recentAudits;
         this.recentOrders = recentOrders;
         this.summary = summary;
         this.configurationState = deriveOrderSyncConfigurationState({ job });
@@ -1633,7 +1766,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
           fetchRecentErrors(shopId),
         ]);
         const batches = scheduledBatches(systemMessages);
-        const { importsBySystemMessageId, recentOrders } = await fetchCanonicalOrderSyncEvidence(
+        const { importsBySystemMessageId, recentAudits, recentOrders } = await fetchCanonicalOrderSyncEvidence(
           shopId,
           remote.systemMessageRemoteId,
           batches,
@@ -1650,6 +1783,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.recentAudits = recentAudits;
         this.recentOrders = recentOrders;
         this.recentErrors = recentErrors;
         this.recentRequestErrors = recentRequestErrors;

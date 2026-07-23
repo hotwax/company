@@ -291,7 +291,7 @@
                   </ion-badge>
                 </ion-item>
                 <ion-item>
-                  <ion-label>{{ translate("Recently processed orders") }}</ion-label>
+                  <ion-label>{{ translate("Order history records") }}</ion-label>
                   <ion-label slot="end">{{ orderSyncStore.recentOrders.length }}</ion-label>
                 </ion-item>
                 <ion-item>
@@ -318,13 +318,13 @@
             <ion-progress-bar
               v-if="isRefreshing"
               type="indeterminate"
-              :aria-label="translate('Refreshing recently processed orders')"
+              :aria-label="translate('Refreshing order sync history')"
             />
             <div class="stat-header">
               <ion-item class="stat-title" lines="none">
                 <ion-label>
-                  <h2 id="recent-orders-heading">{{ translate("Recently processed orders") }}</h2>
-                  <p>{{ translate("Latest 100 orders confirmed as processed by DataManager, newest first") }}</p>
+                  <h2 id="recent-orders-heading">{{ translate("Recent order sync history") }}</h2>
+                  <p>{{ translate("Latest 100 records stitched from Shopify order history models, newest first") }}</p>
                 </ion-label>
                 <ion-badge slot="end" color="medium">{{ orderSyncStore.recentOrders.length }}</ion-badge>
               </ion-item>
@@ -332,7 +332,7 @@
                 :value="ordersQuery"
                 :debounce="0"
                 :placeholder="translate('Search the loaded orders by Shopify name or ID')"
-                :aria-label="translate('Search recently processed orders')"
+                :aria-label="translate('Search order sync history')"
                 @ionInput="ordersQuery = String($event.detail.value || '')"
               />
             </div>
@@ -350,43 +350,41 @@
                         {{ translate(order.outcome) }}
                       </ion-badge>
                     </ion-item>
-                    <ion-item
-                      :button="!!order.logId"
-                      :detail="!!order.logId"
-                      @click="openMdmLogDetails(order.logId)"
-                    >
+                    <ion-item>
                       <ion-label>
-                        {{ translate("DataManager result") }}
-                        <p>{{ order.configId || translate("Not available") }}</p>
+                        {{ translate("Shopify order ID") }}
+                        <p>{{ order.shopifyOrderId }}</p>
                       </ion-label>
-                      <ion-note slot="end">{{ translate("Completed") }}</ion-note>
+                      <ion-button
+                        v-if="shopifyAdminOrderUrl(order)"
+                        slot="end"
+                        fill="clear"
+                        color="medium"
+                        :href="shopifyAdminOrderUrl(order)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        :aria-label="translate('Open order in Shopify Admin')"
+                        @click.stop
+                      >
+                        <ion-icon slot="icon-only" :icon="openOutline" />
+                      </ion-button>
                     </ion-item>
-                    <ion-item
-                      :button="!!order.systemMessageId"
-                      :detail="!!order.systemMessageId"
-                      @click="openSystemMessageDetails(order.systemMessageId)"
-                    >
-                      <ion-label>
-                        {{ translate("SystemMessage") }}
-                        <p>{{ order.systemMessageId || translate("Not available") }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item lines="none">
-                      <ion-buttons>
-                        <ion-button v-if="order.logId" fill="clear" @click.stop="openMdmLogDetails(order.logId)">
-                          {{ translate("DataManager run") }}
-                        </ion-button>
-                        <ion-button v-if="hotWaxOrderUrl(order.orderId)" fill="clear" :href="hotWaxOrderUrl(order.orderId)" target="_blank" rel="noopener noreferrer">
-                          {{ translate("HotWax order") }}
-                        </ion-button>
-                        <ion-button v-if="shopifyAdminOrderUrl(order)" fill="clear" :href="shopifyAdminOrderUrl(order)" target="_blank" rel="noopener noreferrer">
-                          {{ translate("Shopify Admin") }}
-                        </ion-button>
-                        <ion-button v-if="order.systemMessageId" fill="clear" @click="openSystemMessageDetails(order.systemMessageId)">
-                          {{ translate("Batch") }}
-                        </ion-button>
-                      </ion-buttons>
-                    </ion-item>
+                    <ion-card-content v-if="order.outcome === 'Updated'">
+                      <p class="history-object-heading">{{ translate("Updated objects") }}</p>
+                      <div v-if="order.updatedObjects.length" class="history-object-list">
+                        <ion-chip v-for="object in order.updatedObjects" :key="object.objectType">
+                          <ion-label>{{ historyObjectLabel(object.objectType, object.count) }}</ion-label>
+                        </ion-chip>
+                      </div>
+                      <p v-if="order.updatedObjects.length && !order.changeDetailsComplete" class="ion-no-margin">
+                        {{ translate("Legacy history may not include every updated object.") }}
+                      </p>
+                      <p v-else class="ion-no-margin">
+                        {{ order.changeDetailsComplete
+                          ? translate("No tracked order objects changed.")
+                          : translate("Object-level details were not recorded for this legacy update.") }}
+                      </p>
+                    </ion-card-content>
                   </ion-list>
                 </ion-card>
               </transition-group>
@@ -444,9 +442,11 @@
                       </ion-label>
                     </ion-item>
                     <ion-item lines="none">
-                      <ion-button fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
-                        {{ translate("View request progress") }}
-                      </ion-button>
+                      <ion-row>
+                        <ion-button fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
+                          {{ translate("View request progress") }}
+                        </ion-button>
+                      </ion-row>
                     </ion-item>
                   </ion-list>
                 </ion-card>
@@ -593,7 +593,7 @@
                       <ion-note slot="end">{{ error.configId }}</ion-note>
                     </ion-item>
                     <ion-item lines="none">
-                      <ion-buttons>
+                      <ion-row>
                         <ion-button v-if="error.logId" fill="clear" @click.stop="openMdmLogDetails(error.logId)">
                           {{ translate("View import") }}
                         </ion-button>
@@ -632,7 +632,7 @@
                           <ion-spinner v-if="retryState(error.id)?.pending" slot="start" name="crescent" />
                           {{ translate("Retry individual order") }}
                         </ion-button>
-                      </ion-buttons>
+                      </ion-row>
                     </ion-item>
                     <ion-item v-if="!error.retryable || !orderSyncStore.capabilities.canRetryIndividualOrder || retryError(error.id) || retryState(error.id)?.systemMessageId" lines="none">
                       <ion-label class="ion-text-wrap">
@@ -707,6 +707,7 @@ import {
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
+  IonChip,
   IonContent,
   IonHeader,
   IonIcon,
@@ -716,6 +717,7 @@ import {
   IonNote,
   IonPage,
   IonProgressBar,
+  IonRow,
   IonSearchbar,
   IonSkeletonText,
   IonSpinner,
@@ -724,7 +726,7 @@ import {
   alertController,
   modalController,
 } from "@ionic/vue";
-import { buildAppUrl, commonUtil, translate } from "@common";
+import { commonUtil, translate } from "@common";
 import { computed, ref, watch } from "vue";
 import { downloadOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { downloadTextFile, formatDateTime, getDownloadFileContent } from "@/utils";
@@ -850,7 +852,7 @@ const selectedSystemMessageDetails = computed(() => {
   const message = (orderSyncStore.systemMessages || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
   const imports = orderSyncStore.importsBySystemMessageId[selectedSystemMessageId.value] || [];
-  const successfulAudit = (orderSyncStore.recentOrders || [])
+  const successfulAudit = (orderSyncStore.recentAudits || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
   const requestFailure = (orderSyncStore.recentRequestErrors || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
@@ -894,7 +896,7 @@ const selectedSystemMessageDetails = computed(() => {
 const selectedMdmLogDetails = computed(() => {
   const imports = Object.values(orderSyncStore.importsBySystemMessageId || {}).flat();
   const imported = imports.find((entry) => entry.logId === selectedMdmLogId.value);
-  const successfulAudits = (orderSyncStore.recentOrders || [])
+  const successfulAudits = (orderSyncStore.recentAudits || [])
     .filter((order) => order.logId === selectedMdmLogId.value);
   const failed = (orderSyncStore.recentErrors || [])
     .find((error) => error.logId === selectedMdmLogId.value);
@@ -944,16 +946,7 @@ const runNowExplanation = computed(() => {
   return orderSyncStore.runNowDisabledReason;
 });
 const recentOrdersEmptyMessage = computed(() => {
-  if (!orderSyncStore.job) return translate("Configure Order Sync to begin recording processed orders.");
-  if (!latestBatch.value) {
-    return orderSyncStore.job.paused
-      ? translate("The job is paused and has not completed its first batch.")
-      : translate("Order Sync is awaiting its first batch.");
-  }
-  if (orderSyncStore.summary.batchStatus === "completed" && orderSyncStore.summary.processedOrderCount === 0) {
-    return translate("The latest batch completed with 0 actionable order changes.");
-  }
-  return translate("No recently processed orders were found for this Shopify instance.");
+  return translate("No order sync history records were found for this Shopify instance.");
 });
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -1042,6 +1035,20 @@ function importLabel(configId: string): string {
     : translate("Updated order import");
 }
 
+function historyObjectLabel(objectType: string, count: number): string {
+  const labels: Record<string, [string, string]> = {
+    Order: ["Order", "Orders"],
+    OrderItem: ["Order item", "Order items"],
+    Transaction: ["Transaction", "Transactions"],
+    Refund: ["Refund", "Refunds"],
+    Return: ["Return", "Returns"],
+    Fulfillment: ["Fulfillment", "Fulfillments"],
+    FulfillmentLocation: ["Fulfillment location", "Fulfillment locations"],
+  };
+  const [singular, plural] = labels[objectType] || [objectType, objectType];
+  return `${translate(count === 1 ? singular : plural)} · ${count}`;
+}
+
 function openSystemMessageDetails(systemMessageId: unknown) {
   const id = String(systemMessageId || "").trim();
   if (!id) return;
@@ -1054,7 +1061,7 @@ function openMdmLogDetails(logId: unknown) {
   if (!id) return;
   const safeLogIds = new Set([
     ...Object.values(orderSyncStore.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
-    ...(orderSyncStore.recentOrders || []).map((order) => order.logId),
+    ...(orderSyncStore.recentAudits || []).map((order) => order.logId),
     ...(orderSyncStore.recentErrors || []).map((error) => error.logId),
   ].filter(Boolean));
   if (!safeLogIds.has(id)) return;
@@ -1114,10 +1121,6 @@ function openProgressDetails(row: OrderSyncProgressRow) {
   if (row.id === "hotwax-import" && progressImports.value[0]?.logId) {
     openMdmLogDetails(progressImports.value[0].logId);
   }
-}
-
-function hotWaxOrderUrl(orderId: string): string {
-  return orderId ? buildAppUrl("order-manager", `/orders/${encodeURIComponent(orderId)}`) || "" : "";
 }
 
 function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
@@ -1480,6 +1483,17 @@ ion-buttons {
   margin: 0;
   text-align: start;
   white-space: normal;
+}
+
+.history-object-heading {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.history-object-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 @media screen and (max-width: 430px) {

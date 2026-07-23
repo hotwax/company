@@ -1,7 +1,7 @@
 <template>
   <ion-card>
     <ion-card-header>
-      <ion-card-title>{{ translate("Import specific orders now") }}</ion-card-title>
+      <ion-card-title>{{ translate("Custom request") }}</ion-card-title>
       <ion-card-subtitle>{{ translate("Queues standalone fresh-fetch requests without changing the schedule") }}</ion-card-subtitle>
     </ion-card-header>
     <ion-list>

@@ -1,53 +1,65 @@
 <template>
   <ion-card
     :button="snapshot.actionable !== false"
-    class="widget"
+    class="widget order-sync"
     :aria-busy="snapshot.loading ? 'true' : 'false'"
     :aria-disabled="snapshot.actionable === false ? 'true' : undefined"
     :aria-label="cardAriaLabel"
     @click="openCard"
   >
-    <ion-card-header>
-      <ion-card-title>{{ translate("Order sync") }}</ion-card-title>
-      <ion-card-subtitle>{{ cardSubtitle }}</ion-card-subtitle>
-      <ion-badge :color="configurationBadge.color">
-        {{ configurationBadge.label }}
-      </ion-badge>
-      <p v-if="snapshot.error" role="status">{{ snapshot.error }}</p>
-    </ion-card-header>
+    <div class="order-sync-grid">
+      <ion-card-header>
+        <ion-card-title>{{ translate("Order sync") }}</ion-card-title>
+        <ion-card-subtitle>{{ cardSubtitle }}</ion-card-subtitle>
+        <p v-if="snapshot.error" role="status" class="error-message">{{ snapshot.error }}</p>
+      </ion-card-header>
 
-    <ion-list lines="full" aria-live="polite">
-      <ion-item>
-        <ion-label>{{ translate("Orders processed") }}</ion-label>
-        <ion-label slot="end">{{ processedCount }}</ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-label>{{ translate("Pending batch requests") }}</ion-label>
-        <ion-label slot="end">{{ pendingCount }}</ion-label>
-      </ion-item>
-      <ion-item>
-        <ion-label>{{ translate("Last completed batch") }}</ion-label>
-        <ion-label slot="end">{{ lastCompletedLabel }}</ion-label>
-      </ion-item>
-      <ion-item data-progress-row="shopify-order-batch-request">
-        <ion-label>
-          {{ translate("Shopify order batch request") }}
-          <p>{{ batchDetail }}</p>
-        </ion-label>
-        <ion-badge slot="end" :color="batchBadge.color">
-          {{ batchBadge.label }}
+      <div class="order-sync-badge-container">
+        <ion-badge :color="configurationBadge.color">
+          {{ configurationBadge.label }}
         </ion-badge>
-      </ion-item>
-      <ion-item lines="none" data-progress-row="hotwax-order-import">
-        <ion-label>
-          {{ translate("HotWax order import") }}
-          <p>{{ importDetail }}</p>
-        </ion-label>
-        <ion-badge slot="end" :color="importBadge.color">
-          {{ importBadge.label }}
-        </ion-badge>
-      </ion-item>
-    </ion-list>
+      </div>
+
+      <div class="history">
+        <ion-list lines="full" aria-live="polite">
+          <ion-item lines="full">
+            <ion-label>{{ translate("Orders processed") }}</ion-label>
+            <ion-label slot="end">{{ processedCount }}</ion-label>
+          </ion-item>
+          <ion-item lines="full">
+            <ion-label>{{ translate("Pending batch requests") }}</ion-label>
+            <ion-label slot="end">{{ pendingCount }}</ion-label>
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label>{{ translate("Last completed batch") }}</ion-label>
+            <ion-label slot="end">{{ lastCompletedLabel }}</ion-label>
+          </ion-item>
+        </ion-list>
+      </div>
+
+      <div class="current">
+        <ion-list lines="full" aria-live="polite">
+          <ion-item lines="full" data-progress-row="shopify-order-batch-request">
+            <ion-label>
+              {{ translate("Shopify order batch request") }}
+              <p>{{ batchDetail }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="batchBadge.color">
+              {{ batchBadge.label }}
+            </ion-badge>
+          </ion-item>
+          <ion-item lines="none" data-progress-row="hotwax-order-import">
+            <ion-label>
+              {{ translate("HotWax order import") }}
+              <p>{{ importDetail }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="importBadge.color">
+              {{ importBadge.label }}
+            </ion-badge>
+          </ion-item>
+        </ion-list>
+      </div>
+    </div>
   </ion-card>
 </template>
 
@@ -223,3 +235,72 @@ function getProgressBadge(status: string | undefined) {
   return { color: "medium", label };
 }
 </script>
+
+<style scoped>
+ion-card.widget {
+  border-radius: 16px;
+  margin-block: var(--spacer-lg);
+  margin-inline: 0;
+  will-change: box-shadow, height;
+  transition: box-shadow 0.7s ease;
+}
+
+ion-card.widget:hover {
+  box-shadow: 3px 8px 18px -2px rgba(0,0,0, .2), -2px -2px 13px -6px rgba(0,0,0, .2);
+}
+
+.order-sync-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+ion-card-header {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.order-sync-badge-container {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  padding: var(--spacer-md);
+}
+
+.history {
+  grid-column: 1;
+}
+
+.current {
+  grid-column: 2;
+}
+
+.error-message {
+  color: var(--ion-color-danger);
+  margin-block-start: var(--spacer-xs);
+  margin-block-end: 0;
+}
+
+@media screen and (max-width: 699px) {
+  .order-sync-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .order-sync-badge-container {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    padding-top: 0;
+    padding-bottom: var(--spacer-xs);
+    padding-left: var(--spacer-md);
+  }
+
+  .history {
+    grid-column: 1;
+  }
+
+  .current {
+    grid-column: 1;
+  }
+}
+</style>
