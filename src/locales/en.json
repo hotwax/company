@@ -1396,5 +1396,19 @@
   "View SystemMessage": "View SystemMessage",
   "View import history": "View import history",
   "Waiting for Shopify order date": "Waiting for Shopify order date",
-  "Waiting for request": "Waiting for request"
+  "Waiting for request": "Waiting for request",
+  "A list of previous order sync runs": "A list of previous order sync runs",
+  "All outcomes": "All outcomes",
+  "Newest first": "Newest first",
+  "No runs match the current filters": "No runs match the current filters",
+  "Oldest first": "Oldest first",
+  "Order import history could not load.": "Order import history could not load.",
+  "Outcome": "Outcome",
+  "Requested after": "Requested after",
+  "Requested before": "Requested before",
+  "Sort": "Sort",
+  "failed": "failed",
+  "successful": "successful",
+  "{count} failed": "{count} failed",
+  "{count} processed": "{count} processed"
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveOrderSyncConfigurationState,
   deriveOrderSyncMappingReadiness,
+  deriveShopifyOrderSyncOverallState,
   deriveShopifyOrderSyncProgress,
   findSuitableShopifyOrderSyncJob,
   getShopifyOrderSyncCapabilities,
@@ -221,6 +222,35 @@ describe("Shopify Order Sync two-row progress", () => {
       expect(rows[1]).toMatchObject({ state: "failed", logCount: 1 });
     }
   );
+});
+
+describe("Shopify Order Sync overall run state", () => {
+  const state = (batchState: string, importState: string) => deriveShopifyOrderSyncOverallState(
+    { state: batchState as never },
+    { state: importState as never }
+  );
+
+  it("keeps a pending or active batch request as the overall state", () => {
+    expect(state("pending", "pending")).toBe("pending");
+    expect(state("active", "pending")).toBe("active");
+  });
+
+  it("stays active while the import has not reached a terminal state", () => {
+    expect(state("completed", "active")).toBe("active");
+    expect(state("completed", "pending")).toBe("active");
+  });
+
+  it("mirrors the terminal import outcome once the request completed", () => {
+    expect(state("completed", "completed")).toBe("completed");
+    expect(state("completed", "partial")).toBe("partial");
+    expect(state("completed", "failed")).toBe("failed");
+  });
+
+  it("downgrades a failed request to partial only when the import still landed records", () => {
+    expect(state("failed", "completed")).toBe("partial");
+    expect(state("failed", "partial")).toBe("partial");
+    expect(state("failed", "failed")).toBe("failed");
+  });
 });
 
 describe("bounded recent Shopify order records", () => {

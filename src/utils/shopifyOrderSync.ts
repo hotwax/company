@@ -470,6 +470,18 @@ export function deriveShopifyOrderSyncProgress(
   return [batchRow, importRow];
 }
 
+export function deriveShopifyOrderSyncOverallState(
+  batchRow: Pick<OrderSyncProgressRow, "state">,
+  importRow: Pick<OrderSyncProgressRow, "state">
+): OrderSyncProgressState {
+  if (batchRow.state === "active" || batchRow.state === "pending") return batchRow.state;
+  if (importRow.state === "active" || importRow.state === "pending") return "active";
+  if (batchRow.state === "failed") {
+    return importRow.state === "completed" || importRow.state === "partial" ? "partial" : "failed";
+  }
+  return importRow.state;
+}
+
 const AUDIT_TIMESTAMPS = ["processedDate", "processedAt", "completedDate", "createdDate", "createdStamp", "lastUpdatedStamp"] as const;
 
 export interface SuccessfulOrderAuditLike extends UnknownRecord {}
