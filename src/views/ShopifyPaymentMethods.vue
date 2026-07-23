@@ -8,6 +8,12 @@
           </ion-button>
         </ion-buttons>
         <ion-title>{{ translate("Payment methods") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="openCreatePaymentMethodModal">
+            <ion-icon slot="start" :icon="addOutline" />
+            {{ translate("Add") }}
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -68,13 +74,14 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import CreatePaymentMethodModal from '@/components/CreatePaymentMethodModal.vue';
 
 const props = defineProps(['id']);
 const netSuiteStore = useNetSuiteStore();
@@ -139,6 +146,28 @@ async function editItem(id: string) {
     input.setFocus();
     const nativeInput = await input.getInputElement();
     nativeInput.select();
+  }
+}
+
+async function openCreatePaymentMethodModal() {
+  const modal = await modalController.create({
+    component: CreatePaymentMethodModal,
+    componentProps: {
+      shopId: props.id,
+      existingTypes: paymentMethods.value
+    }
+  });
+
+  await modal.present();
+  const { data } = await modal.onWillDismiss();
+  if (data?.created) {
+    isLoading.value = true;
+    await Promise.all([
+      netSuiteStore.fetchPaymentMethods(),
+      shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
+    ]);
+    initializeLocalMappings();
+    isLoading.value = false;
   }
 }
 

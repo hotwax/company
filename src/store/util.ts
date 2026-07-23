@@ -23,6 +23,7 @@ export const useUtilStore = defineStore("util", {
     productIdentifiers: [] as any[],
     productTypes: [] as any[],
     shipmentMethodTypes: [] as any[],
+    paymentMethodTypes: [] as any[],
     emailTypes: [] as any[],
     userGroups: [] as any[],
     shopifyShops: [] as any[],
@@ -42,6 +43,7 @@ export const useUtilStore = defineStore("util", {
       productIdentifiers: "none",
       productTypes: "none",
       shipmentMethodTypes: "none",
+      paymentMethodTypes: "none",
       emailTypes: "none",
       maargInfo: "none",
       currencies: "none",
@@ -57,6 +59,7 @@ export const useUtilStore = defineStore("util", {
     getProductIdentifiers: (state) => state.productIdentifiers,
     getProductTypes: (state) => state.productTypes,
     getShipmentMethodTypes: (state) => state.shipmentMethodTypes,
+    getPaymentMethodTypes: (state) => state.paymentMethodTypes,
     getEmailTypes: (state) => state.emailTypes,
     getUserGroups: (state): any[] => state.userGroups,
     getShopifyShops: (state): any[] => state.shopifyShops,
@@ -242,6 +245,61 @@ export const useUtilStore = defineStore("util", {
         this.fetchStatus = { ...this.fetchStatus, shipmentMethodTypes: "error" }
       }
       this.shipmentMethodTypes = shipmentMethodTypes
+    },
+
+    async createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
+      return api({
+        url: "oms/shippingGateways/shipmentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
+    upsertShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
+      const shipmentMethodTypes = this.shipmentMethodTypes.filter(
+        (type: any) => type.shipmentMethodTypeId !== payload.shipmentMethodTypeId
+      )
+      shipmentMethodTypes.push(payload)
+      this.shipmentMethodTypes = shipmentMethodTypes
+    },
+
+    async fetchPaymentMethodTypes() {
+      if(this.paymentMethodTypes.length) {return}
+      this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "pending" }
+      let paymentMethodTypes: any[] = [], pageIndex = 0, resp: any
+
+      try {
+        do {
+          resp = await api({ url: "oms/paymentMethodTypes", method: "get", params: { pageSize: 100, pageIndex } })
+          if(!commonUtil.hasError(resp)) {
+            paymentMethodTypes = paymentMethodTypes.concat(resp.data)
+          } else {
+            throw resp.data
+          }
+          pageIndex++
+        } while(resp.data.length >= 100)
+        this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "success", lastFetched: Date.now() }
+      } catch (error: any) {
+        logger.error(error)
+        this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "error" }
+      }
+      this.paymentMethodTypes = paymentMethodTypes
+    },
+
+    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
+      return api({
+        url: "oms/paymentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
+    upsertPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
+      const paymentMethodTypes = this.paymentMethodTypes.filter(
+        (type: any) => type.paymentMethodTypeId !== payload.paymentMethodTypeId
+      )
+      paymentMethodTypes.push(payload)
+      this.paymentMethodTypes = paymentMethodTypes
     },
 
     async fetchOrganizationPartyId() {
