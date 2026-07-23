@@ -4,6 +4,10 @@ import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useUtilStore } from "@/store/util"
+import { useProductStore } from "@/store/productStore"
+import { useShopifyStore } from "@/store/shopify"
+import { useFacilityStore } from "@/store/facility"
+import useServiceJob from "@/composables/useServiceJob"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -905,12 +909,6 @@ export const useUserStore = defineStore("user", {
     },
 
     async prefetchReferenceData() {
-      const { useProductStore } = await import('./productStore')
-      const { useUtilStore } = await import('./util')
-      const { useShopifyStore } = await import('./shopify')
-      const { useFacilityStore } = await import('./facility')
-      const { default: useServiceJob } = await import('@/composables/useServiceJob')
-
       const utilStore = useUtilStore()
       const { fetchJobs } = useServiceJob()
 
