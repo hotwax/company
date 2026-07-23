@@ -6,12 +6,10 @@
         {{ translate("View details") }}
         <ion-icon slot="end" :icon="keyOutline" />
       </ion-item>
-      <!-- TODO: Uncomment when OFBiz sendResetPasswordMailToParty is confirmed working; migrate to maarg admin/users/sendResetPasswordMail when backend support is available
       <ion-item button @click="sendResetPasswordEmail()">
         {{ translate("Reset password email") }}
         <ion-icon slot="end" :icon="mailOutline" />
       </ion-item>
-      -->
       <ion-item button lines="none" @click="unlinkFacilityLoginAlert()">
         {{ translate("Unlink") }}
         <ion-icon slot="end" :icon="removeCircleOutline" />
@@ -30,35 +28,38 @@ import {
   alertController,
   popoverController
 } from "@ionic/vue";
-import { removeCircleOutline, keyOutline } from "ionicons/icons";
-import { commonUtil, cookieHelper, emitter, logger, translate } from "@common";
+import { removeCircleOutline, keyOutline, mailOutline } from "ionicons/icons";
+import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
 import router from "@/router";
 import { useFacilityStore } from "@/store/facility";
+import { useUserStore } from "@/store/user";
 
 const props = defineProps(['currentFacility', 'currentFacilityUser', 'facilityTypeDesc']);
 const facilityStore = useFacilityStore();
+const userStore = useUserStore();
 
-async function viewDetails() {
+function viewDetails() {
   popoverController.dismiss();
-  const userDetailUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${cookieHelper().get('oms')}&token=${commonUtil.getToken()}&expirationTime=${commonUtil.getTokenExpiration()}&partyId=${props.currentFacilityUser.partyId}&redirectedFrom=${router.currentRoute.value.path}`;
-  window.location.href = userDetailUrl;
+  router.push(`/user-details/${props.currentFacilityUser.partyId}`);
 }
 
-// async function sendResetPasswordEmail() {
-//   try {
-//     const resp = await (facilityStore as any).sendResetPasswordEmail({ userLoginId: props.currentFacilityUser.userLoginId });
-//     if (!commonUtil.hasError(resp)) {
-//       commonUtil.showToast(translate('Password reset email sent successfully.'));
-//     } else {
-//       throw resp.data;
-//     }
-//   } catch (error) {
-//     commonUtil.showToast(translate('Failed to send password reset email.'));
-//     logger.error('Failed to send password reset email', error);
-//   }
-//   popoverController.dismiss();
-// }
+async function sendResetPasswordEmail() {
+  emitter.emit('presentLoader');
+  try {
+    const resp = await userStore.sendResetPasswordEmail({ userLoginId: props.currentFacilityUser.userLoginId });
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate('Password reset email sent successfully.'));
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(translate('Failed to send password reset email.'));
+    logger.error('Failed to send password reset email', error);
+  }
+  emitter.emit('dismissLoader');
+  popoverController.dismiss();
+}
 
 // TODO: Enable when moqui UserAccount disabling is supported in the backend
 // async function removePartyFromFacilityCompletely(payload: any) {

@@ -79,17 +79,6 @@ const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
 
-const isValidEmail = (email: string) => {
-  const emailPattern = /^[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,4}$/;
-  return emailPattern.test(email);
-}
-
-const isValidPassword = (password: string) => {
-  const passwordPattern = /^.*(?=.{5,})(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[!@#$%^&*]).*$/;
-  return passwordPattern.test(password);
-}
-
-
 const getDownloadFileContent = (data: any) => {
   const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
   if (typeof fileContent === "string") return fileContent;
@@ -150,4 +139,4 @@ const parseDateTimeValue = (value: string | number) => {
   return candidates.find((candidate) => candidate.isValid) || null;
 }
 
-export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue, isValidEmail, isValidPassword }
+export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue }

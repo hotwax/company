@@ -65,6 +65,7 @@ import { ref, computed, onMounted } from "vue";
 
 const props = defineProps(['facilityId']);
 const facilityStore = useFacilityStore();
+const utilStore = useUtilStore();
 const postalAddress = computed(() => facilityStore.getPostalAddress);
 
 const geoPoint = ref({} as any);
@@ -96,7 +97,6 @@ async function generateLatLong() {
     return;
   }
   isGeneratingLatLong.value = true;
-  const utilStore = useUtilStore();
   const postalCode = geoPoint.value.postalCode;
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 

@@ -14,7 +14,7 @@
   </ion-header>
 
   <ion-content>
-    <div class="empty-state" v-if="!Object.keys(filteredFacilityGroupsByType).length || isSearching">
+    <div class="empty-state" v-if="!Object.keys(filteredFacilityGroupsByType).length">
       <p>{{ translate("No facility groups found") }}</p>
     </div>
     <form v-else @keyup.enter="updateGroups">
@@ -72,7 +72,6 @@ const filteredFacilityGroupsByType = ref({} as any);
 const groupsToAdd = ref([] as Array<string>);
 const groupsToRemove = ref([] as Array<string>);
 const queryString = ref('');
-const isSearching = ref(false);
 
 onMounted(async () => {
   await fetchFacilityGroups();
@@ -190,10 +189,8 @@ function isFacilityGroupLinked(facilityGroupId: string) {
 }
 
 function findGroups() {
-  isSearching.value = true;
   if (!queryString.value.trim()) {
     filteredFacilityGroupsByType.value = facilityGroupsByType.value;
-    isSearching.value = false;
     return;
   }
 
@@ -213,7 +210,6 @@ function findGroups() {
     });
     return filteredGroups;
   }, {});
-  isSearching.value = false;
 }
 
 function getFacilityGroupTypeDesc(groupTypeId: any) {

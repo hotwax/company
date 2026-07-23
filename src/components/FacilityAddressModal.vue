@@ -94,7 +94,6 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common"
-import { isValidEmail } from "@/utils";
 import { useFacilityStore } from "@/store/facility";
 import { useUtilStore } from "@/store/util";
 import { ref, computed, onMounted } from "vue";
@@ -225,7 +224,7 @@ async function saveContact() {
     return;
   }
 
-  if (emailAddress.value.infoString && !isValidEmail(emailAddress.value.infoString)) {
+  if (emailAddress.value.infoString && !commonUtil.isValidEmail(emailAddress.value.infoString)) {
     commonUtil.showToast(translate("Invalid email address"));
     return;
   }

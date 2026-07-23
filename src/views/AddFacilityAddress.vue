@@ -157,7 +157,6 @@ import { computed, ref } from "vue";
 import { colorWandOutline, locationOutline } from "ionicons/icons";
 import { api, commonUtil, logger, translate } from "@common";
 import { useUtilStore } from "@/store/util";
-import { isValidEmail } from "@/utils";
 import router from "@/router";
 
 const props = defineProps<{ facilityId: string }>();
@@ -221,7 +220,7 @@ async function addAddress() {
     commonUtil.showToast(translate("Please fill all the required fields."));
     return;
   }
-  if (emailAddress.value && !isValidEmail(emailAddress.value)) {
+  if (emailAddress.value && !commonUtil.isValidEmail(emailAddress.value)) {
     commonUtil.showToast(translate("Invalid email address"));
     return;
   }
