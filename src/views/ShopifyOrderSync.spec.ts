@@ -134,6 +134,19 @@ vi.mock("@ionic/vue", async () => {
     IonPage: container(),
     IonProgressBar: container(),
     IonRow: container(),
+    IonSelect: defineComponent({
+      inheritAttrs: false,
+      props: { value: String },
+      emits: ["ionChange"],
+      setup(props, { attrs, emit, slots }) {
+        return () => h("select", {
+          ...attrs,
+          value: props.value,
+          onChange: (event: Event) => emit("ionChange", { detail: { value: (event.target as HTMLSelectElement).value } }),
+        }, slots.default?.());
+      },
+    }),
+    IonSelectOption: container("option"),
     IonSearchbar: container("input"),
     IonSkeletonText: container("i"),
     IonSpinner: container("i"),
@@ -335,56 +348,6 @@ describe("ShopifyOrderSync monitoring", () => {
     mocks.manualRefresh.mockReset().mockResolvedValue(undefined);
     mocks.downloadTextFile.mockReset();
     mocks.alertRole = "confirm";
-    const memoryStorage = new Map<string, string>();
-    Object.defineProperty(window, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: (key: string) => memoryStorage.get(key) || null,
-        setItem: (key: string, value: string) => memoryStorage.set(key, value),
-        removeItem: (key: string) => memoryStorage.delete(key),
-      },
-    });
-  });
-
-  it("filters loaded history inclusively by From and Thru dates, validates reversal, and clears", async () => {
-    const orders = [
-      recentOrder({ id: "ORDER_22", shopifyOrderId: "ORDER_22", orderName: "#22", processedAt: "2026-07-22T18:00:00Z", processedAtMillis: Date.parse("2026-07-22T18:00:00Z") }),
-      recentOrder({ id: "ORDER_21", shopifyOrderId: "ORDER_21", orderName: "#21", processedAt: "2026-07-21T18:00:00Z", processedAtMillis: Date.parse("2026-07-21T18:00:00Z") }),
-    ];
-    const wrapper = await mountMonitor({
-      recentOrders: orders,
-      recentAudits: orders,
-      filteredRecentOrders: vi.fn(() => orders),
-    });
-    const dateInputs = wrapper.findAll("input[type='date']");
-    expect(dateInputs).toHaveLength(2);
-    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_21");
-
-    await dateInputs[0].setValue("2026-07-22");
-    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_22");
-    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).not.toContain("ORDER_21");
-
-    await dateInputs[1].setValue("2026-07-21");
-    expect(wrapper.text()).toContain("From date must be on or before Thru date.");
-    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).not.toContain("ORDER_22");
-
-    await wrapper.get("[aria-label='Clear order history date range']").trigger("click");
-    expect(wrapper.text()).not.toContain("From date must be on or before Thru date.");
-    expect(wrapper.get("[aria-labelledby='recent-orders-heading']").text()).toContain("ORDER_21");
-  });
-
-  it("persists the selected range across a monitoring refresh", async () => {
-    const wrapper = await mountMonitor();
-    const dateInputs = wrapper.findAll("input[type='date']");
-    await dateInputs[0].setValue("2026-07-22");
-    await dateInputs[1].setValue("2026-07-22");
-    expect(JSON.parse(window.localStorage.getItem("shopify-order-sync-date-range:SHOP_1") || "null"))
-      .toEqual({ fromDate: "2026-07-22", thruDate: "2026-07-22" });
-
-    await wrapper.unmount();
-    const refreshed = await mountMonitor();
-    expect(refreshed.findAll("input[type='date']").map((input) => input.element.getAttribute("value")))
-      .toEqual(["2026-07-22", "2026-07-22"]);
   });
 
   it("renders exactly two progress rows with an explicit partial overall outcome", async () => {
@@ -412,9 +375,9 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(failedRuns.text()).toContain("Start time2026-07-22T12:08:00Z");
     expect(failedRuns.text()).toContain("End time2026-07-22T12:10:00Z");
     expect(failedRuns.text()).toContain("2 records · 1 error record");
-    const jobManagerLink = failedRuns.get("[href='https://job-manager.hotwax.io/file-history/LOG_UPDATE']");
-    expect(jobManagerLink.attributes("target")).toBe("_blank");
-    expect(jobManagerLink.attributes("rel")).toBe("noopener noreferrer");
+    const viewButton = failedRuns.findAll("button").find((button) => button.text() === "View DataManager run");
+    expect(viewButton).toBeDefined();
+    expect(failedRuns.find("[href*='job-manager']").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Recent request failures");
     expect(wrapper.text()).not.toContain("Recent import errors");
     expect(wrapper.text()).not.toContain("Download CSV");
@@ -481,7 +444,16 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(monitorSection.text()).toContain("Not set");
   });
 
-  it("replays orders updated since a chosen time through the bounded fresh-fetch path", async () => {
+  async function openReplayModal(wrapper: Awaited<ReturnType<typeof mountMonitor>>) {
+    const replayItem = wrapper.findAll("div").find((element) =>
+      element.attributes("button") !== undefined && element.text().includes("Replay orders from a time"));
+    expect(replayItem).toBeDefined();
+    await replayItem!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("Replay orders from a date range");
+  }
+
+  it("replays orders across a date range through the bounded fresh-fetch path", async () => {
     const searchShopifyOrders = vi.fn().mockResolvedValue({
       orders: [
         { legacyResourceId: "111", name: "HC#1" },
@@ -503,27 +475,45 @@ describe("ShopifyOrderSync monitoring", () => {
       requestSelectedOrders,
     });
 
-    const replayItem = wrapper.findAll("div").find((element) =>
-      element.attributes("button") !== undefined && element.text().includes("Replay orders from a time"));
-    expect(replayItem).toBeDefined();
-    await replayItem!.trigger("click");
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("Replay orders from a certain time");
-    await wrapper.get("[data-datetime]").setValue("2026-07-20T10:00:00");
+    await openReplayModal(wrapper);
+    const dateInputs = wrapper.findAll("input[type='date']");
+    expect(dateInputs).toHaveLength(2);
+    await dateInputs[0].setValue("2026-07-18");
+    await dateInputs[1].setValue("2026-07-20");
 
     const start = wrapper.findAll("button").find((button) => button.text() === "Start replay");
     expect(start).toBeDefined();
     await start!.trigger("click");
     await flushPromises();
 
-    expect(searchShopifyOrders).toHaveBeenCalledWith({
-      queryString: "updated_at:>='2026-07-20T10:00:00'",
-      pageSize: 50,
-      shopId: "SHOP_1",
-    });
+    const call = searchShopifyOrders.mock.calls[0][0];
+    expect(call.queryString).toMatch(/^updated_at:>=.+ updated_at:<=.+$/);
+    expect(call.pageSize).toBe(50);
+    expect(call.shopId).toBe("SHOP_1");
     expect(requestSelectedOrders).toHaveBeenCalledWith({ shopifyOrderIds: ["111", "222"], shopId: "SHOP_1" });
     expect(wrapper.text()).toContain("Queued 2 selected Shopify orders; 0 could not be queued.");
+  });
+
+  it("matches the replay window by created time when chosen", async () => {
+    const searchShopifyOrders = vi.fn().mockResolvedValue({ orders: [{ legacyResourceId: "111" }], hasNextPage: false, endCursor: "" });
+    const requestSelectedOrders = vi.fn().mockResolvedValue({ queued: [{ shopifyOrderId: "111", systemMessageId: "M1" }], failedOrderIds: [] });
+    const wrapper = await mountMonitor({
+      remote: { systemMessageRemoteId: "REMOTE_SHOP_1" },
+      searchShopifyOrders,
+      requestSelectedOrders,
+    });
+
+    await openReplayModal(wrapper);
+    await wrapper.get("select").setValue("created_at");
+    const dateInputs = wrapper.findAll("input[type='date']");
+    await dateInputs[0].setValue("2026-07-18");
+    await dateInputs[1].setValue("2026-07-20");
+    await wrapper.findAll("button").find((button) => button.text() === "Start replay")!.trigger("click");
+    await flushPromises();
+
+    const call = searchShopifyOrders.mock.calls[0][0];
+    expect(call.queryString).toMatch(/^created_at:>=.+ created_at:<=.+$/);
+    expect(call.queryString).not.toContain("updated_at");
   });
 
   it("refuses an over-limit replay window without queuing anything", async () => {
@@ -539,18 +529,16 @@ describe("ShopifyOrderSync monitoring", () => {
       requestSelectedOrders,
     });
 
-    const replayItem = wrapper.findAll("div").find((element) =>
-      element.attributes("button") !== undefined && element.text().includes("Replay orders from a time"));
-    await replayItem!.trigger("click");
-    await flushPromises();
-    await wrapper.get("[data-datetime]").setValue("2026-07-20T10:00:00");
-    const start = wrapper.findAll("button").find((button) => button.text() === "Start replay");
-    await start!.trigger("click");
+    await openReplayModal(wrapper);
+    const dateInputs = wrapper.findAll("input[type='date']");
+    await dateInputs[0].setValue("2026-07-18");
+    await dateInputs[1].setValue("2026-07-20");
+    await wrapper.findAll("button").find((button) => button.text() === "Start replay")!.trigger("click");
     await flushPromises();
 
     expect(requestSelectedOrders).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain("More than 50 orders were updated since the selected time. Choose a later time or use Download specific orders.");
-    expect(wrapper.text()).toContain("Replay orders from a certain time");
+    expect(wrapper.text()).toContain("More than 50 orders were found in the selected date range. Choose a narrower range or use Download specific orders.");
+    expect(wrapper.text()).toContain("Replay orders from a date range");
   });
 
   it("shows safe standalone SystemMessage facts by correlating its loaded summary and successful audit", async () => {

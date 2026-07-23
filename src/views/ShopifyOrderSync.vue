@@ -474,12 +474,9 @@
                       <ion-button
                         slot="end"
                         fill="clear"
-                        :href="jobManagerLogUrl(log.logId)"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        @click="openMdmLogDetails(log.logId)"
                       >
-                        {{ translate("Open in Job Manager") }}
-                        <ion-icon slot="end" :icon="openOutline" />
+                        {{ translate("View DataManager run") }}
                       </ion-button>
                     </ion-item>
                   </ion-list>
@@ -570,9 +567,20 @@
         <ion-list lines="full">
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
-              <h2>{{ translate("Replay orders from a certain time") }}</h2>
-              <p>{{ translate("Select a time to rewind order sync to. Every order updated from that time onward is re-imported through the standard fresh-fetch path, up to {limit} orders.", { limit: REPLAY_ORDER_LIMIT }) }}</p>
+              <h2>{{ translate("Replay orders from a date range") }}</h2>
+              <p>{{ translate("Re-import every Shopify order created or updated in a date range through the standard fresh-fetch path, up to {limit} orders.", { limit: REPLAY_ORDER_LIMIT }) }}</p>
             </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-select
+              :label="translate('Match orders by')"
+              :value="replayBasis"
+              interface="popover"
+              @ionChange="replayBasis = $event.detail.value === 'created_at' ? 'created_at' : 'updated_at'"
+            >
+              <ion-select-option value="updated_at">{{ translate("Updated time") }}</ion-select-option>
+              <ion-select-option value="created_at">{{ translate("Created time") }}</ion-select-option>
+            </ion-select>
           </ion-item>
           <ion-item class="replay-date-range" lines="none">
             <ion-input type="date" :value="replayFromDate" label-placement="stacked" clear-input :aria-label="translate('From date')" @ionInput="replayFromDate = String($event.detail.value || '')">
@@ -657,6 +665,8 @@ import {
   IonProgressBar,
   IonRow,
   IonSearchbar,
+  IonSelect,
+  IonSelectOption,
   IonSkeletonText,
   IonSpinner,
   IonTitle,
@@ -899,9 +909,6 @@ function formatDate(value: unknown): string {
   return formatDateTime(value) || translate("Not available");
 }
 
-function jobManagerLogUrl(logId: string): string {
-  return `https://job-manager.hotwax.io/file-history/${encodeURIComponent(logId)}`;
-}
 
 function landmarkDateLabel(value: string): string {
   if (orderSyncStore.landmarkDates.status === "loading") return translate("Loading");
@@ -1140,6 +1147,7 @@ function toDatetimeInput(value: string): string {
 
 const REPLAY_ORDER_LIMIT = 50;
 const showReplayOrdersModal = ref(false);
+const replayBasis = ref<"updated_at" | "created_at">("updated_at");
 const replayFromDate = ref("");
 const replayThruDate = ref("");
 const isReplayStarting = ref(false);
@@ -1157,6 +1165,7 @@ function openOrdersReplay() {
     commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
     return;
   }
+  replayBasis.value = "updated_at";
   replayFromDate.value = "";
   replayThruDate.value = "";
   showReplayOrdersModal.value = true;
@@ -1178,8 +1187,9 @@ async function startOrdersReplay() {
     const zone = orderSyncStore.runtimeTimeZone || "UTC";
     const fromDateTime = DateTime.fromISO(replayFromDate.value, { zone }).startOf("day").toUTC().toISO() || "";
     const thruDateTime = DateTime.fromISO(replayThruDate.value, { zone }).endOf("day").toUTC().toISO() || "";
+    const basis = replayBasis.value;
     const search = await orderSyncStore.searchShopifyOrders({
-      queryString: `updated_at:>=${fromDateTime} updated_at:<=${thruDateTime}`,
+      queryString: `${basis}:>=${fromDateTime} ${basis}:<=${thruDateTime}`,
       pageSize: REPLAY_ORDER_LIMIT,
       shopId: requestedShopId,
     });
@@ -1189,12 +1199,12 @@ async function startOrdersReplay() {
       search.orders.map((order) => String(order.legacyResourceId || "").trim()).filter(Boolean),
     )];
     if (!shopifyOrderIds.length) {
-      actionMessage.value = translate("No Shopify orders were updated in the selected date range.");
+      actionMessage.value = translate("No Shopify orders were found in the selected date range.");
       showReplayOrdersModal.value = false;
       return;
     }
     if (search.hasNextPage) {
-      actionError.value = translate("More than {limit} orders were updated in the selected date range. Choose a narrower range or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
+      actionError.value = translate("More than {limit} orders were found in the selected date range. Choose a narrower range or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
       return;
     }
 
