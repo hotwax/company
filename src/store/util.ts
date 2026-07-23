@@ -260,6 +260,19 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
+    async createProductStoreShipmentMethod(payload: {
+      productStoreId: string
+      shipmentMethodTypeId: string
+      partyId: string
+      roleTypeId?: string
+    }): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/shippingMethods`,
+        method: "post",
+        data: { roleTypeId: "CARRIER", ...payload }
+      })
+    },
+
     async fetchOrganizationPartyId() {
       this.fetchStatus = { ...this.fetchStatus, organizationPartyId: "pending" }
       let partyId = ""
