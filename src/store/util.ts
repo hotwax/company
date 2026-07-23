@@ -252,6 +252,14 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
+    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
+      return api({
+        url: "admin/paymentMethodTypes",
+        method: "post",
+        data: payload
+      })
+    },
+
     async fetchOrganizationPartyId() {
       this.fetchStatus = { ...this.fetchStatus, organizationPartyId: "pending" }
       let partyId = ""

@@ -39,8 +39,8 @@ import { computed, PropType, ref } from "vue";
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useNetSuiteStore } from "@/store/netSuite";
 import { useShopifyStore } from "@/store/shopify";
+import { useUtilStore } from "@/store/util";
 
 const props = defineProps({
   shopId: {
@@ -53,8 +53,8 @@ const props = defineProps({
   }
 });
 
-const netSuiteStore = useNetSuiteStore();
 const shopifyStore = useShopifyStore();
+const utilStore = useUtilStore();
 
 const description = ref("");
 const shopifyId = ref("");
@@ -83,7 +83,7 @@ const createPaymentMethod = async () => {
     // 1. Create the payment method type if it does not already exist.
     const typeExists = props.existingTypes.some((type: any) => type.paymentMethodTypeId === paymentMethodTypeId);
     if(!typeExists) {
-      const typeResp = await netSuiteStore.createPaymentMethodType({
+      const typeResp = await utilStore.createPaymentMethodType({
         paymentMethodTypeId,
         description: description.value.trim()
       });
