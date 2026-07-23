@@ -21,7 +21,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@common", () => ({
-  buildAppUrl: (app: string, path: string) => `https://${app}.example${path}`,
   commonUtil: {
     showToast: (...args: unknown[]) => mocks.showToast(...args),
   },
@@ -100,6 +99,7 @@ vi.mock("@ionic/vue", async () => {
     IonCardHeader: container("header"),
     IonCardSubtitle: container("p"),
     IonCardTitle: container("h2"),
+    IonChip: container(),
     IonContent: container("main"),
     IonFab: container(),
     IonFabButton: container("button"),
@@ -122,6 +122,7 @@ vi.mock("@ionic/vue", async () => {
     IonRadioGroup: container(),
     IonPage: container(),
     IonProgressBar: container(),
+    IonRow: container(),
     IonSearchbar: container("input"),
     IonSkeletonText: container("i"),
     IonSpinner: container("i"),
@@ -145,6 +146,8 @@ function recentOrder(overrides: Record<string, unknown> = {}) {
     orderName: "#1000",
     orderId: "10000",
     outcome: "Created",
+    updatedObjects: [],
+    changeDetailsComplete: true,
     processedAt: "2026-07-22T12:05:00Z",
     processedAtMillis: 1,
     systemMessageId: "SM_BATCH",
@@ -251,6 +254,7 @@ function createStore(overrides: Record<string, unknown> = {}) {
       initDate: "2026-07-22T12:00:00Z",
       processedDate: "2026-07-22T12:05:00Z",
     }],
+    recentAudits: recentOrders,
     recentOrders,
     recentErrors,
     recentRequestErrors: [],
@@ -329,7 +333,7 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.get("#recent-request-errors-heading").text()).toBe("Recent request failures");
     expect(wrapper.get("#recent-errors-heading").text()).toBe("Recent import errors");
     expect(wrapper.text()).toContain("Shopify order request failed before import.");
-    expect(wrapper.text()).toContain("Import specific orders now");
+    expect(wrapper.text()).toContain("Custom request");
     expect(wrapper.text()).not.toContain("Outstanding Shopify orders");
 
     const requestSection = wrapper.get("[aria-labelledby='recent-request-errors-heading']");
@@ -529,7 +533,9 @@ describe("ShopifyOrderSync monitoring", () => {
     });
     const wrapper = await mountMonitor({
       recentOrders: [order],
+      recentAudits: [order],
       filteredRecentOrders: vi.fn(() => [order]),
+      lastRunResult: { systemMessageId: "M228520" },
       systemMessages: [{
         systemMessageId: "M228520",
         systemMessageTypeId: "ShopifyOrderSync",
@@ -539,9 +545,9 @@ describe("ShopifyOrderSync monitoring", () => {
         processedDate: "2026-07-22T12:01:00Z",
       }],
     });
-    const batchButton = wrapper.findAll("button").find((button) => button.text().trim() === "Batch");
-    expect(batchButton).toBeDefined();
-    await batchButton!.trigger("click");
+    const queuedMessageButton = wrapper.findAll("button").find((button) => button.text().trim() === "M228520");
+    expect(queuedMessageButton).toBeDefined();
+    await queuedMessageButton!.trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain("SystemMessage details");
@@ -576,7 +582,9 @@ describe("ShopifyOrderSync monitoring", () => {
     };
     const wrapper = await mountMonitor({
       recentOrders: [secondOrder, firstOrder],
+      recentAudits: [secondOrder, firstOrder],
       filteredRecentOrders: vi.fn(() => [secondOrder, firstOrder]),
+      lastRunResult: { systemMessageId: "M228571" },
       recentErrors: [immutableEarlierError],
       filteredRecentErrors: vi.fn(() => [immutableEarlierError]),
       systemMessages: [{
@@ -599,8 +607,8 @@ describe("ShopifyOrderSync monitoring", () => {
         }],
       },
     });
-    const batchButton = wrapper.findAll("button").find((button) => button.text().trim() === "Batch");
-    await batchButton!.trigger("click");
+    const queuedMessageButton = wrapper.findAll("button").find((button) => button.text().trim() === "M228571");
+    await queuedMessageButton!.trigger("click");
     await flushPromises();
 
     const modalTitle = wrapper.findAll("h1").find((heading) => heading.text() === "SystemMessage details");
@@ -626,31 +634,29 @@ describe("ShopifyOrderSync monitoring", () => {
   });
 
   it("keeps projected operational facts inside Company while retaining only explicit order links", async () => {
-    const wrapper = await mountMonitor();
+    const updatedOrder = recentOrder({
+      outcome: "Updated",
+      updatedObjects: [
+        { objectType: "Order", count: 1 },
+        { objectType: "Fulfillment", count: 2 },
+      ],
+    });
+    const wrapper = await mountMonitor({
+      recentOrders: [updatedOrder],
+      filteredRecentOrders: vi.fn(() => [updatedOrder]),
+    });
+    const processedOrderCard = wrapper.get("[aria-labelledby='recent-orders-heading'] section[role='listitem']");
+    expect(processedOrderCard.text()).not.toContain("SystemMessage");
+    expect(processedOrderCard.text()).not.toContain("DataManager result");
+    expect(processedOrderCard.text()).toContain("Updated objects");
+    expect(processedOrderCard.text()).toContain("Order · 1");
+    expect(processedOrderCard.text()).toContain("Fulfillments · 2");
 
-    const dataManagerButton = wrapper.findAll("button")
-      .find((button) => button.text().trim() === "DataManager run");
-    expect(dataManagerButton).toBeDefined();
-    expect(dataManagerButton!.attributes("href")).toBeUndefined();
-    await dataManagerButton!.trigger("click");
-    await flushPromises();
-    expect(wrapper.text()).toContain("Data Manager Log");
-    expect(wrapper.text()).toContain("LOG_CREATE");
-    expect(wrapper.text()).toContain("SYNC_SHOPIFY_ORDER");
-
-    const systemMessageButton = wrapper.findAll("button")
-      .find((button) => button.text().trim() === "Batch");
-    expect(systemMessageButton).toBeDefined();
-    await systemMessageButton!.trigger("click");
-    await flushPromises();
-    expect(wrapper.text()).toContain("SystemMessage details");
-
-    const hotWaxLink = wrapper.get("[href='https://order-manager.example/orders/10000']");
     const shopifyLink = wrapper.get("[href='https://test-shop.myshopify.com/admin/orders/123455']");
-    for (const link of [hotWaxLink, shopifyLink]) {
-      expect(link.attributes("target")).toBe("_blank");
-      expect(link.attributes("rel")).toBe("noopener noreferrer");
-    }
+    expect(shopifyLink.attributes("target")).toBe("_blank");
+    expect(shopifyLink.attributes("rel")).toBe("noopener noreferrer");
+    expect(wrapper.findAll("button").some((button) => button.text().trim() === "HotWax order")).toBe(false);
+    expect(wrapper.find("[href='https://order-manager.example/orders/10000']").exists()).toBe(false);
     expect(shopifyOrderSyncSource).not.toMatch(/job-manager|\/file-history\//);
   });
 
@@ -681,7 +687,7 @@ describe("ShopifyOrderSync monitoring", () => {
 
     expect(wrapper.text()).toContain("Updated");
     const link = wrapper.get("[href='https://test-shop.myshopify.com/admin/orders/123455']");
-    expect(link.text()).toContain("Shopify Admin");
+    expect(link.attributes("aria-label")).toBe("Open order in Shopify Admin");
     expect(link.attributes("target")).toBe("_blank");
     expect(link.attributes("rel")).toBe("noopener noreferrer");
   });

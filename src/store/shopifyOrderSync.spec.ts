@@ -222,6 +222,22 @@ function safeAuditProjection(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function safeHistoryProjection(overrides: Record<string, unknown> = {}) {
+  return {
+    historyId: "10010:123456",
+    shopId: "10010",
+    shopifyOrderId: "123456",
+    shopifyOrderName: "HC#2690",
+    orderId: "HOTWAX-1001",
+    outcome: "Created",
+    updatedObjects: [],
+    changeDetailsComplete: true,
+    processedDate: "2026-07-22T12:03:00Z",
+    shopifyFetchVerified: true,
+    ...overrides
+  };
+}
+
 function standardBatch(
   systemMessageId: string,
   statusId: string,
@@ -265,6 +281,7 @@ function monitoringApi(options: ApiOptions, fixture: {
   batches: Record<string, unknown>[];
   imports: Record<string, unknown>[];
   audits?: Record<string, unknown>[];
+  history?: Record<string, unknown>[];
   errors?: Record<string, unknown>[];
   requestErrors?: Record<string, unknown>[];
   auditImports?: Record<string, unknown>[];
@@ -276,6 +293,20 @@ function monitoringApi(options: ApiOptions, fixture: {
   }
   if (options.url === "admin/systemMessages") return ok({ systemMessages: fixture.batches });
   if (options.url === "shopify/order-sync/10010/audits") return ok({ orderSyncAudits: fixture.audits || [] });
+  if (options.url === "shopify/order-sync/10010/history") {
+    return ok({
+      orderSyncHistory: fixture.history || fixture.audits?.map((row, index) => safeHistoryProjection({
+        historyId: `history-${index}`,
+        shopId: row.shopId || "10010",
+        shopifyOrderId: row.shopifyOrderId || "123456",
+        shopifyOrderName: row.shopifyOrderName || "",
+        orderId: row.orderId || "",
+        outcome: row.outcome || "Created",
+        processedDate: row.processedDate || "2026-07-22T12:03:00Z",
+        shopifyFetchVerified: row.shopifyFetchVerified ?? false,
+      })) || [],
+    });
+  }
   if (options.url === "shopify/order-sync/10010/errors") return ok({
     orderSyncErrors: fixture.errors || [],
     orderSyncRequestErrors: fixture.requestErrors || [],
@@ -531,6 +562,7 @@ describe("Shopify Order Sync store", () => {
         if (options.url === "shopify/order-sync/new-shop/job") return ok(orderSyncEnvelope("new-shop"));
         if (options.url === "admin/systemMessages") return ok({ systemMessages: [] });
         if (options.url === "shopify/order-sync/new-shop/audits") return ok({ orderSyncAudits: [] });
+        if (options.url === "shopify/order-sync/new-shop/history") return ok({ orderSyncHistory: [] });
         throw new Error(`Unexpected API call: ${options.method} ${options.url}`);
       });
 
@@ -627,6 +659,9 @@ describe("Shopify Order Sync store", () => {
               orderSyncAudits: [safeAuditProjection()]
             });
           }
+          if (options.url === "shopify/order-sync/10010/history") {
+            return ok({ orderSyncHistory: [safeHistoryProjection()] });
+          }
           if (options.url === "shopify/order-sync/10010/errors") return ok({ orderSyncErrors: [], orderSyncRequestErrors: [] });
           throw new Error(`Unexpected API call: ${options.method} ${options.url}`);
         });
@@ -639,7 +674,7 @@ describe("Shopify Order Sync store", () => {
         expect(store.importsBySystemMessageId["batch-1"]).toHaveLength(durableLogCount);
         expect(store.recentOrders).toEqual([
           expect.objectContaining({
-            id: "audit-1",
+            id: "10010:123456",
             shopId: "10010",
             shopifyOrderId: "123456",
             orderName: "HC#2690",
@@ -728,7 +763,7 @@ describe("Shopify Order Sync store", () => {
       const store = useShopifyOrderSyncStore();
       await store.loadMonitoring("10010");
 
-      expect(store.recentOrders).toEqual([
+      expect(store.recentAudits).toEqual([
         expect.objectContaining({
           id: "audit-synthetic",
           shopifyOrderId: "999000111",
@@ -792,6 +827,46 @@ describe("Shopify Order Sync store", () => {
       }));
       const oversizedStore = useShopifyOrderSyncStore();
       await expect(oversizedStore.loadMonitoring("10010")).rejects.toThrow("exceeded the 100-row contract");
+    });
+
+    it.each([
+      ["an unknown object type", [{ objectType: "CustomerPayload", count: 1 }]],
+      ["a duplicate object type", [{ objectType: "Order", count: 1 }, { objectType: "Order", count: 2 }]],
+      ["a non-positive object count", [{ objectType: "Refund", count: 0 }]],
+      ["an extra object field", [{ objectType: "Return", count: 1, rawValue: "unsafe" }]],
+    ])("rejects Order Sync history containing %s", async (_label, updatedObjects) => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        history: [safeHistoryProjection({ outcome: "Updated", updatedObjects })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await expect(store.loadMonitoring("10010")).rejects.toThrow("invalid object summary");
+      expect(store.recentOrders).toEqual([]);
+    });
+
+    it("accepts a legacy Processed history row without inventing an update result", async () => {
+      mocks.api.mockImplementation((options: ApiOptions) => monitoringApi(options, {
+        batches: [],
+        imports: [],
+        history: [safeHistoryProjection({
+          outcome: "Processed",
+          updatedObjects: [],
+          changeDetailsComplete: false,
+        })],
+      }));
+
+      const store = useShopifyOrderSyncStore();
+      await store.loadMonitoring("10010");
+
+      expect(store.recentOrders).toEqual([
+        expect.objectContaining({
+          outcome: "Processed",
+          updatedObjects: [],
+          changeDetailsComplete: false,
+        }),
+      ]);
     });
 
     it.each([
@@ -1121,6 +1196,7 @@ describe("Shopify Order Sync store", () => {
         }
         if (options.url === "oms/dataDocumentView") return ok({ entityValueList: [], entityValueListCount: 0 });
         if (options.url === "shopify/order-sync/10010/audits") return ok({ orderSyncAudits: [] });
+        if (options.url === "shopify/order-sync/10010/history") return ok({ orderSyncHistory: [] });
         if (options.url === "shopify/order-sync/10010/errors") return ok({ orderSyncErrors: [], orderSyncRequestErrors: [] });
         if (options.url === "admin/systemMessages") {
           return ok({
@@ -1295,7 +1371,7 @@ describe("Shopify Order Sync store", () => {
         }),
       ]);
       expect(store.batches).toEqual([]);
-      expect(store.recentOrders[0]).toEqual(expect.objectContaining({ systemMessageId: "M228520" }));
+      expect(store.recentAudits[0]).toEqual(expect.objectContaining({ systemMessageId: "M228520" }));
     });
 
     it("keeps older shop-scoped audit evidence when its SystemMessage is outside the loaded message window", async () => {
@@ -1314,7 +1390,7 @@ describe("Shopify Order Sync store", () => {
       await store.loadMonitoring("10010");
 
       expect(store.systemMessages).toEqual([]);
-      expect(store.recentOrders).toEqual([
+      expect(store.recentAudits).toEqual([
         expect.objectContaining({ systemMessageId: "M220000", logId: "M100900" }),
       ]);
       expect(store.importsBySystemMessageId.M220000).toEqual([
@@ -1716,6 +1792,7 @@ describe("Shopify Order Sync store", () => {
         }
         if (options.url === "admin/systemMessages") return ok({ systemMessages: [] });
         if (options.url === "shopify/order-sync/10010/audits") return ok({ orderSyncAudits: [] });
+        if (options.url === "shopify/order-sync/10010/history") return ok({ orderSyncHistory: [] });
         if (options.url === "shopify/order-sync/10010/errors") return ok({ orderSyncErrors: [], orderSyncRequestErrors: [] });
         throw new Error(`Unexpected API call: ${options.method} ${options.url}`);
       });

@@ -1,5 +1,5 @@
 <template>
-  <ion-modal :is-open="isOpen" @didDismiss="close">
+  <ion-modal :is-open="isOpen" :backdrop-dismiss="false" @didDismiss="close">
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
@@ -9,7 +9,7 @@
         </ion-buttons>
         <ion-title>{{ modalTitle }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button :disabled="!messageId" :aria-label="translate('Refresh')" @click="$emit('refresh')">
+          <ion-button v-if="refreshable" :disabled="!messageId || loading" :aria-label="translate('Refresh')" @click="$emit('refresh')">
             <ion-icon slot="icon-only" :icon="refreshOutline" />
           </ion-button>
         </ion-buttons>
@@ -17,7 +17,11 @@
     </ion-header>
 
     <ion-content>
-      <ion-list v-if="details.requestFailedBeforeImport" lines="full">
+      <div v-if="loading" class="loading-state" role="status" :aria-label="translate('Loading SystemMessage details')">
+        <ion-spinner name="crescent" />
+      </div>
+
+      <ion-list v-else-if="details.requestFailedBeforeImport" lines="full">
         <ion-item>
           <ion-label class="ion-text-wrap">
             {{ translate("Shopify order request") }}
@@ -35,13 +39,15 @@
         </ion-item>
       </ion-list>
 
-      <ion-list lines="full">
+      <ion-list v-if="!loading" lines="full">
           <ion-item>
             <ion-label>
               {{ translate("SystemMessage") }}
               <p>{{ messageId }}</p>
             </ion-label>
-            <ion-badge v-if="details.statusId" slot="end" :color="statusColor(details.statusId)">{{ statusLabel(details.statusId) }}</ion-badge>
+            <ion-badge v-if="details.statusId || details.statusLabel" slot="end" :color="statusColor(details.statusId, details.statusLabel)">
+              {{ details.statusLabel || statusLabel(details.statusId) }}
+            </ion-badge>
           </ion-item>
           <ion-item v-if="details.systemMessageTypeId">
             <ion-label>{{ translate("Message type") }}</ion-label>
@@ -71,6 +77,44 @@
             <ion-label>{{ translate("Failures") }}</ion-label>
             <ion-note slot="end">{{ details.failureCount }}</ion-note>
           </ion-item>
+          <ion-item v-if="details.bulkOperationId">
+            <ion-label>
+              {{ translate("Bulk operation ID") }}
+              <p>{{ translate("Shopify returns this after it accepts the bulk operation.") }}</p>
+            </ion-label>
+            <ion-note slot="end">{{ details.bulkOperationId }}</ion-note>
+          </ion-item>
+          <ion-item v-if="details.nextStepReason || details.nextJobLabel">
+            <ion-label class="ion-text-wrap">
+              {{ translate("Next step") }}
+              <p v-if="details.nextStepReason">{{ details.nextStepReason }}</p>
+              <p v-if="details.nextJobLabel">
+                {{ details.nextJobLabel }}<template v-if="details.nextJobRunLabel"> · {{ details.nextJobRunLabel }}</template>
+              </p>
+            </ion-label>
+            <ion-buttons v-if="primaryAction || secondaryActions.length" slot="end">
+              <ion-button
+                v-if="primaryAction"
+                fill="clear"
+                :disabled="!!actionLoadingId"
+                @click="$emit('action', primaryAction.id)"
+              >
+                <ion-spinner v-if="actionLoadingId === primaryAction.id" slot="start" name="crescent" />
+                <span v-else>{{ primaryAction.label }}</span>
+              </ion-button>
+              <ion-button
+                v-for="action in secondaryActions"
+                :key="action.id"
+                fill="clear"
+                color="medium"
+                :disabled="!!actionLoadingId"
+                @click="$emit('action', action.id)"
+              >
+                <ion-spinner v-if="actionLoadingId === action.id" slot="start" name="crescent" />
+                <span v-else>{{ action.label }}</span>
+              </ion-button>
+            </ion-buttons>
+          </ion-item>
       </ion-list>
     </ion-content>
   </ion-modal>
@@ -89,6 +133,7 @@ import {
   IonList,
   IonModal,
   IonNote,
+  IonSpinner,
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
@@ -97,8 +142,9 @@ import { computed } from "vue";
 import { translate } from "@common";
 import { formatDateTime } from "@/utils";
 
-interface SafeShopifyOrderSyncSystemMessageDetails {
+interface SafeSystemMessageDetails {
   statusId?: string;
+  statusLabel?: string;
   systemMessageTypeId?: string;
   systemMessageRemoteId?: string;
   requestedAt?: string | number;
@@ -107,14 +153,30 @@ interface SafeShopifyOrderSyncSystemMessageDetails {
   failureCount?: number;
   requestFailedBeforeImport?: boolean;
   requestFailureText?: string;
+  bulkOperationId?: string;
+  nextStepReason?: string;
+  nextJobLabel?: string;
+  nextJobRunLabel?: string;
 }
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
   messageId: string;
-  details?: SafeShopifyOrderSyncSystemMessageDetails;
-}>(), { details: () => ({}) });
-const emit = defineEmits<{ close: []; refresh: [] }>();
+  details?: SafeSystemMessageDetails;
+  refreshable?: boolean;
+  loading?: boolean;
+  primaryAction?: { id: string; label: string } | null;
+  secondaryActions?: Array<{ id: string; label: string }>;
+  actionLoadingId?: string;
+}>(), {
+  details: () => ({}),
+  refreshable: true,
+  loading: false,
+  primaryAction: null,
+  secondaryActions: () => [],
+  actionLoadingId: "",
+});
+const emit = defineEmits<{ close: []; refresh: []; action: [actionId: string] }>();
 const modalTitle = computed(() => props.details.requestFailedBeforeImport
   ? translate("Order sync request details")
   : translate("SystemMessage details"));
@@ -135,8 +197,8 @@ function statusLabel(status: unknown): string {
   return status ? String(status) : translate("Not available");
 }
 
-function statusColor(status: unknown): string {
-  const label = statusLabel(status);
+function statusColor(status: unknown, explicitLabel?: string): string {
+  const label = explicitLabel || statusLabel(status);
   if (label === translate("Completed")) return "success";
   if (label === translate("Failed")) return "danger";
   if (label === translate("In progress")) return "primary";
@@ -146,4 +208,9 @@ function statusColor(status: unknown): string {
 </script>
 
 <style scoped>
+.loading-state {
+  display: grid;
+  min-height: 12rem;
+  place-items: center;
+}
 </style>
