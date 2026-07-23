@@ -25,6 +25,15 @@ import type {
 } from "@/utils/shopifyOrderSync";
 
 const ORDER_IMPORT_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "UPDATE_SHOPIFY_ORDER"] as const;
+const DATA_MANAGER_LOG_STATUS_IDS = [
+  "DmlsCancelled",
+  "DmlsCrashed",
+  "DmlsFailed",
+  "DmlsFinished",
+  "DmlsPending",
+  "DmlsQueued",
+  "DmlsRunning",
+] as const;
 const SHOPIFY_ORDER_SYNC_QUEUE_SERVICE = "co.hotwax.shopify.system.ShopifySystemMessageServices.queue#FeedSystemMessage";
 const SYSTEM_MESSAGE_PAGE_SIZE = 250;
 const ORDER_SYNC_AUDIT_KEYS = [
@@ -182,7 +191,9 @@ export interface ShopifyOrderSyncImport {
   failedRecordCount: number;
   successRecordCount: number;
   createdDate?: string | number;
+  startDateTime?: string | number;
   finishDateTime?: string | number;
+  lastUpdatedTxStamp?: string | number;
   createdByJobRunId: string;
 }
 
@@ -680,7 +691,9 @@ function projectImport(row: UnknownRecord, expectedSystemMessageId?: string, exp
     failedRecordCount,
     successRecordCount: Math.max(numberValue(row, ["successRecordCount"]) || totalRecordCount - failedRecordCount, 0),
     createdDate: optionalDate(row, ["createdDate", "createdStamp"]),
+    startDateTime: optionalDate(row, ["startDateTime", "createdDate", "createdStamp"]),
     finishDateTime: optionalDate(row, ["finishDateTime", "completedDate"]),
+    lastUpdatedTxStamp: optionalDate(row, ["lastUpdatedTxStamp", "lastUpdatedStamp"]),
     createdByJobRunId: textValue(row, ["createdByJobRunId", "jobRunId"]),
   };
 }
@@ -773,7 +786,7 @@ async function fetchBatchImports(
         configId: [...ORDER_IMPORT_CONFIG_IDS],
         orderByField: "-lastUpdatedStamp",
       },
-      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId",
+      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId,startDateTime,finishDateTime,lastUpdatedTxStamp",
       pageSize: maximumExpectedRows + 1,
       pageIndex: 0,
     },
@@ -825,6 +838,39 @@ async function fetchBatchImports(
     logs.sort((first, second) => ORDER_IMPORT_CONFIG_IDS.indexOf(first.configId) - ORDER_IMPORT_CONFIG_IDS.indexOf(second.configId));
   }
   return importsBySystemMessageId;
+}
+
+async function fetchFailedOrderImportLogs(): Promise<ShopifyOrderSyncImport[]> {
+  // Match Job Manager's File History behavior: load the bounded DataManager log
+  // window, then apply the "Has Error" record-count predicate client-side.
+  const payload = await requestBackend({
+    url: "admin/dataManager/details",
+    method: "get",
+    params: {
+      configId: ORDER_IMPORT_CONFIG_IDS.join(","),
+      configId_op: "in",
+      statusId: DATA_MANAGER_LOG_STATUS_IDS.join(","),
+      statusId_op: "in",
+      orderByField: "-finishDateTime",
+      pageSize: 1000,
+      pageIndex: 0,
+    },
+  }, "Loading failed Order Sync DataManager logs");
+  const rows = listPayload(payload, ["dataManagerLogs", "entityValueList", "logs"], "Order Sync DataManager log history");
+  const seenLogIds = new Set<string>();
+  return rows
+    .map((row) => projectImport(row))
+    .filter((log) => {
+      if (!log.logId || log.failedRecordCount <= 0 || seenLogIds.has(log.logId)) return false;
+      seenLogIds.add(log.logId);
+      return true;
+    })
+    .sort((first, second) => {
+      const firstTime = timestamp(first.finishDateTime ?? first.lastUpdatedTxStamp ?? first.startDateTime ?? first.createdDate);
+      const secondTime = timestamp(second.finishDateTime ?? second.lastUpdatedTxStamp ?? second.startDateTime ?? second.createdDate);
+      return secondTime - firstTime || first.logId.localeCompare(second.logId);
+    })
+    .slice(0, SHOPIFY_ORDER_SYNC_RESULT_LIMIT);
 }
 
 async function fetchAuditRows(shopId: string): Promise<UnknownRecord[]> {
@@ -1258,7 +1304,7 @@ async function fetchAuditCorrelatedImports(
         systemMessageRemoteId,
         configId: [...ORDER_IMPORT_CONFIG_IDS],
       },
-      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId",
+      fieldsToSelect: "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId,startDateTime,finishDateTime,lastUpdatedTxStamp",
       pageSize: logIds.length + 1,
       pageIndex: 0,
     },
@@ -1455,6 +1501,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
     systemMessages: [] as ShopifyOrderSyncBatch[],
     batches: [] as ShopifyOrderSyncBatch[],
     importsBySystemMessageId: {} as Record<string, ShopifyOrderSyncImport[]>,
+    failedDataManagerLogs: [] as ShopifyOrderSyncImport[],
     recentAudits: [] as RecentProcessedOrder[],
     recentOrders: [] as ShopifyOrderSyncRecentOrder[],
     recentErrors: [] as ShopifyOrderSyncRecentError[],
@@ -1549,6 +1596,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       this.systemMessages = [];
       this.batches = [];
       this.importsBySystemMessageId = {};
+      this.failedDataManagerLogs = [];
       this.recentAudits = [];
       this.recentOrders = [];
       this.recentErrors = [];
@@ -1816,9 +1864,10 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
       try {
         const { runtimeTimeZone, shop, productStore, remote, templateJob, job } = await fetchOrderSyncContext(shopId);
         if (job && !isSuitableJob(job, remote, shopId)) throw new Error("The returned job is not a suitable shop-scoped batch Order Sync job.");
-        const [systemMessages, errorProjection, landmarkDatesResult] = await Promise.all([
+        const [systemMessages, errorProjection, failedDataManagerLogs, landmarkDatesResult] = await Promise.all([
           fetchSystemMessages(shopId, remote.systemMessageRemoteId),
           fetchRecentErrors(shopId),
+          fetchFailedOrderImportLogs(),
           fetchOrderSyncLandmarkDates(shopId).then(
             (dates) => ({ ok: true as const, dates }),
             (error) => ({ ok: false as const, error }),
@@ -1842,6 +1891,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.systemMessages = systemMessages;
         this.batches = batches;
         this.importsBySystemMessageId = importsBySystemMessageId;
+        this.failedDataManagerLogs = failedDataManagerLogs;
         this.recentAudits = recentAudits;
         this.recentOrders = recentOrders;
         this.recentErrors = recentErrors;
@@ -1858,7 +1908,7 @@ export const useShopifyOrderSyncStore = defineStore("shopifyOrderSync", {
         this.configurationState = deriveOrderSyncConfigurationState({ job });
         this.cardSnapshot = cardFromSummary(shopId, job, summary, true);
         this.monitoringLoadedAt = Date.now();
-        return { runtimeTimeZone, shop, productStore, remote, job, systemMessages, batches, importsBySystemMessageId, recentOrders, recentErrors, recentRequestErrors, summary };
+        return { runtimeTimeZone, shop, productStore, remote, job, systemMessages, batches, importsBySystemMessageId, failedDataManagerLogs, recentOrders, recentErrors, recentRequestErrors, summary };
       } catch (error) {
         if (token !== this.requestToken) return null;
         this.monitoringError = error instanceof Error ? error.message : "Order Sync monitoring could not be loaded.";

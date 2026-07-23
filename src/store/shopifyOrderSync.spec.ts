@@ -284,6 +284,7 @@ function monitoringApi(options: ApiOptions, fixture: {
   history?: Record<string, unknown>[];
   errors?: Record<string, unknown>[];
   requestErrors?: Record<string, unknown>[];
+  failedLogs?: Record<string, unknown>[];
   auditImports?: Record<string, unknown>[];
   job?: Record<string, unknown> | null;
   remote?: Record<string, unknown>;
@@ -294,6 +295,7 @@ function monitoringApi(options: ApiOptions, fixture: {
   }
   if (options.url === "admin/systemProperties") return ok({ systemProperties: fixture.landmarkProperties || [] });
   if (options.url === "admin/systemMessages") return ok({ systemMessages: fixture.batches });
+  if (options.url === "admin/dataManager/details") return ok({ dataManagerLogs: fixture.failedLogs || [] });
   if (options.url === "shopify/order-sync/10010/audits") return ok({ orderSyncAudits: fixture.audits || [] });
   if (options.url === "shopify/order-sync/10010/history") {
     return ok({
@@ -656,6 +658,7 @@ describe("Shopify Order Sync store", () => {
               }]
             });
           }
+          if (options.url === "admin/dataManager/details") return ok({ dataManagerLogs: [] });
           if (options.url === "shopify/order-sync/10010/audits") {
             return ok({
               orderSyncAudits: [safeAuditProjection()]
@@ -723,7 +726,7 @@ describe("Shopify Order Sync store", () => {
           })
         }));
         expect(summaryImportRequest?.data?.fieldsToSelect).toBe(
-          "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId"
+          "systemMessageId,systemMessageTypeId,systemMessageRemoteId,logId,logStatusId,totalRecordCount,failedRecordCount,configId,startDateTime,finishDateTime,lastUpdatedTxStamp"
         );
         const auditImportRequest = dataDocumentRequests.find(({ data }) => Boolean(data?.customParametersMap?.logId));
         expect(auditImportRequest?.data).toEqual(expect.objectContaining({
@@ -734,16 +737,20 @@ describe("Shopify Order Sync store", () => {
         expect(dataDocumentRequests).toHaveLength(2);
         expect(mocks.api.mock.calls
           .map(([options]) => options as ApiOptions)
-          .find(({ url }) => url === "shopify/order-sync/10010/errors"))
-          .toEqual({
-            url: "shopify/order-sync/10010/errors",
-            method: "get",
-            params: { pageSize: 100 }
-          });
-        const correlatedImportRequests = mocks.api.mock.calls
+          .some(({ url }) => url === "shopify/order-sync/10010/errors"))
+          .toBe(true);
+        const dataManagerRequests = mocks.api.mock.calls
           .map(([options]) => options as ApiOptions)
-          .filter(({ url, params }) => url === "admin/dataManager/details" && params?.systemMessageId);
-        expect(correlatedImportRequests).toHaveLength(0);
+          .filter(({ url }) => url === "admin/dataManager/details");
+        expect(dataManagerRequests).toEqual([expect.objectContaining({
+          method: "get",
+          params: expect.objectContaining({
+            configId: "SYNC_SHOPIFY_ORDER,UPDATE_SHOPIFY_ORDER",
+            configId_op: "in",
+            pageSize: 1000,
+            pageIndex: 0,
+          }),
+        })]);
       }
     );
 
@@ -1305,7 +1312,7 @@ describe("Shopify Order Sync store", () => {
       expect(store.summary.activeWorkSystemMessageId).toBe("");
       expect(mocks.api.mock.calls
         .map(([options]) => options as ApiOptions)
-        .filter(({ url }) => url === "admin/dataManager/details")
+        .filter(({ url, params }) => url === "admin/dataManager/details" && params?.systemMessageId)
         .every(({ params }) => params?.systemMessageId === "standard-batch")).toBe(true);
     });
 
@@ -1362,10 +1369,7 @@ describe("Shopify Order Sync store", () => {
         method: "get",
         params: { pageSize: 100 }
       }]);
-      expect(requests.some(({ url }) => [
-        "admin/dataManager/details",
-        "admin/dataManager/downloadDataManagerFile"
-      ].includes(url))).toBe(false);
+      expect(requests.some(({ url }) => url === "admin/dataManager/downloadDataManagerFile")).toBe(false);
       expect(JSON.stringify(store.$state)).not.toContain("contentLocation");
       expect(JSON.stringify(store.$state)).not.toContain("errorLogContentId");
     });

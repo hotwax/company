@@ -324,17 +324,10 @@
                 </ion-item>
                 <ion-item>
                   <ion-label>
-                    {{ translate("Import error records") }}
-                    <p>{{ translate("Latest loaded create and update import failures") }}</p>
+                    {{ translate("Failed DataManager runs") }}
+                    <p>{{ translate("Order imports with one or more error records") }}</p>
                   </ion-label>
-                  <ion-label slot="end">{{ orderSyncStore.recentErrors.length }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Request failures") }}
-                    <p>{{ translate("Terminal Shopify requests that failed before import") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">{{ orderSyncStore.recentRequestErrors.length }}</ion-label>
+                  <ion-label slot="end">{{ failedImportLogs.length }}</ion-label>
                 </ion-item>
               </ion-list>
             </ion-card>
@@ -427,263 +420,57 @@
             </div>
           </section>
 
-          <section class="sync-stat" aria-labelledby="recent-request-errors-heading">
+          <section class="sync-stat" aria-labelledby="failed-import-logs-heading">
             <div class="stat-header">
               <ion-item class="stat-title" lines="none">
                 <ion-label>
-                  <h2 id="recent-request-errors-heading">{{ translate("Recent request failures") }}</h2>
-                  <p>{{ translate("Latest 100 terminal Shopify requests that failed before import, newest first") }}</p>
+                  <h2 id="failed-import-logs-heading">{{ translate("Failed DataManager runs") }}</h2>
+                  <p>{{ translate("Latest Order Sync imports with one or more error records, newest first") }}</p>
                 </ion-label>
-              </ion-item>
-              <ion-badge :color="orderSyncStore.recentRequestErrors.length ? 'danger' : 'medium'">
-                {{ orderSyncStore.recentRequestErrors.length }}
-              </ion-badge>
-            </div>
-
-            <div class="stat-data" role="list">
-              <transition-group name="list" tag="div" class="list-transition-group">
-                <ion-card v-for="error in orderSyncStore.recentRequestErrors" :key="error.id" role="listitem">
-                  <ion-list lines="full">
-                    <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Shopify request failed before import") }}
-                        <p>{{ formatDate(error.occurredAt) }}</p>
-                      </ion-label>
-                      <ion-badge slot="end" color="danger">{{ translate("Failed") }}</ion-badge>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Error") }}
-                        <p>{{ translate(error.errorText) }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Next step") }}
-                        <p>{{ errorNextStep(error) }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>
-                        {{ translate("SystemMessage") }}
-                        <p>{{ error.systemMessageId }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item lines="none">
-                      <ion-row>
-                        <ion-button fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
-                          {{ translate("View request progress") }}
-                        </ion-button>
-                      </ion-row>
-                    </ion-item>
-                  </ion-list>
-                </ion-card>
-              </transition-group>
-              <ion-card v-if="!orderSyncStore.recentRequestErrors.length">
-                <ion-item lines="none">
-                  <ion-label class="ion-text-center">
-                    <p>{{ translate("No recent Shopify request failures were found for this instance.") }}</p>
-                  </ion-label>
-                </ion-item>
-              </ion-card>
-            </div>
-          </section>
-
-          <section class="sync-stat" aria-labelledby="recent-errors-heading">
-            <ion-progress-bar
-              v-if="isRefreshing"
-              type="indeterminate"
-              :aria-label="translate('Refreshing recent Order Sync errors')"
-            />
-            <div class="stat-header">
-              <ion-item class="stat-title" lines="none">
-                <ion-label>
-                  <h2 id="recent-errors-heading">{{ translate("Recent import errors") }}</h2>
-                  <p>{{ translate("Latest 100 failed create and update import records, newest first") }}</p>
-                </ion-label>
-              </ion-item>
-              <ion-buttons>
-                <ion-button
-                  size="small"
-                  fill="clear"
-                  :disabled="!loadedShopMatchesRoute || !filteredErrors.length || errorDownloadState === 'loading'"
-                  :aria-label="translate('Download loaded Order Sync errors as CSV')"
-                  @click="downloadErrorsCsv"
-                >
-                  <ion-spinner v-if="errorDownloadState === 'loading'" slot="start" name="crescent" />
-                  <ion-icon v-else slot="start" :icon="downloadOutline" />
-                  {{ errorDownloadState === "loading" ? translate("Preparing CSV") : translate("Download CSV") }}
-                </ion-button>
-                <ion-badge :color="orderSyncStore.recentErrors.length ? 'danger' : 'medium'">
-                  {{ orderSyncStore.recentErrors.length }}
+                <ion-badge slot="end" :color="failedImportLogs.length ? 'danger' : 'medium'">
+                  {{ failedImportLogs.length }}
                 </ion-badge>
-              </ion-buttons>
-              <ion-searchbar
-                :value="errorsQuery"
-                :debounce="0"
-                :placeholder="translate('Search the loaded errors by order, config, or batch')"
-                :aria-label="translate('Search recent Order Sync errors')"
-                @ionInput="errorsQuery = String($event.detail.value || '')"
-              />
+              </ion-item>
             </div>
-            <p
-              v-if="errorDownloadMessage"
-              :class="errorDownloadState === 'error' ? 'ion-text-danger' : 'ion-text-success'"
-              :role="errorDownloadState === 'error' ? 'alert' : 'status'"
-              aria-live="polite"
-            >
-              {{ errorDownloadMessage }}
-            </p>
 
             <div class="stat-data" role="list">
               <transition-group name="list" tag="div" class="list-transition-group">
-                <ion-card v-for="error in filteredErrors" :key="error.id" role="listitem">
+                <ion-card v-for="log in failedImportLogs" :key="log.logId" role="listitem">
                   <ion-list lines="full">
                     <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ error.orderName || error.shopifyOrderId || translate("Unresolved Shopify order") }}
-                        <p>{{ formatDate(error.occurredAt) }}</p>
-                      </ion-label>
-                      <ion-badge slot="end" color="danger">{{ translate("Failed") }}</ion-badge>
+                      <ion-label>{{ translate("Start time") }}</ion-label>
+                      <ion-note slot="end">{{ formatDate(log.startDateTime) }}</ion-note>
                     </ion-item>
                     <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Error") }}
-                        <p>{{ error.errorText ? translate(error.errorText) : translate("No error text was returned.") }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item v-if="error.logId">
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Record error") }}
-                        <p v-if="errorLogDetails(error)?.status === 'ready'">
-                          {{ errorRecordDetails(error).message || translate("No record-level error message was found in the failed records file.") }}
-                        </p>
-                        <p v-else-if="errorLogDetails(error)?.status === 'error'" class="ion-text-danger" role="alert">
-                          {{ errorLogDetails(error)?.error }}
-                        </p>
-                        <p v-else>{{ translate("Load the failed records file to see this order's recorded error message.") }}</p>
-                      </ion-label>
-                      <ion-spinner v-if="errorLogDetails(error)?.status === 'loading'" slot="end" name="crescent" />
-                      <ion-button
-                        v-else-if="errorLogDetails(error)?.status !== 'ready'"
-                        slot="end"
-                        fill="clear"
-                        @click="loadErrorRecordDetails(error)"
-                      >
-                        {{ translate("Load details") }}
-                      </ion-button>
+                      <ion-label>{{ translate("End time") }}</ion-label>
+                      <ion-note slot="end">{{ formatDate(log.finishDateTime || log.lastUpdatedTxStamp) }}</ion-note>
                     </ion-item>
                     <ion-item>
-                      <ion-label class="ion-text-wrap">
-                        {{ translate("Next step") }}
-                        <p>{{ errorNextStep(error) }}</p>
-                        <p v-if="error.retryable && orderSyncStore.capabilities.canRetryIndividualOrder">
-                          {{ translate("Then use Retry individual order to re-fetch the current Shopify payload.") }}
-                        </p>
-                      </ion-label>
-                      <ion-button
-                        v-if="errorNeedsSetupReview(error)"
-                        slot="end"
-                        fill="clear"
-                        :router-link="`${connectionDetailsHref}/order-sync/configure`"
-                      >
-                        {{ translate("Review setup") }}
-                      </ion-button>
-                    </ion-item>
-                    <ion-item>
-                      <ion-label>
-                        {{ translate("Shopify order") }}
-                        <p>{{ error.shopifyOrderId || translate("Not resolved") }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ error.configId || translate("Not available") }}</ion-note>
-                    </ion-item>
-                    <ion-item
-                      :button="!!error.systemMessageId"
-                      :detail="!!error.systemMessageId"
-                      @click="openSystemMessageDetails(error.systemMessageId)"
-                    >
-                      <ion-label>
-                        {{ translate("SystemMessage") }}
-                        <p>{{ error.systemMessageId || translate("Not available") }}</p>
-                      </ion-label>
-                    </ion-item>
-                    <ion-item
-                      v-if="error.logId"
-                      button
-                      detail
-                      @click="openMdmLogDetails(error.logId)"
-                    >
-                      <ion-label>
-                        {{ translate("DataManager run") }}
-                        <p>{{ error.logId }}</p>
-                        <p v-if="errorLogCreatedLabel(error)">{{ translate("Created") }}: {{ errorLogCreatedLabel(error) }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ error.configId }}</ion-note>
+                      <ion-label>{{ translate("Records") }}</ion-label>
+                      <ion-note slot="end">
+                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }} ·
+                        {{ log.failedRecordCount }} {{ translate(log.failedRecordCount === 1 ? "error record" : "error records") }}
+                      </ion-note>
                     </ion-item>
                     <ion-item lines="none">
-                      <ion-row>
-                        <ion-button v-if="error.logId" fill="clear" @click.stop="openMdmLogDetails(error.logId)">
-                          {{ translate("View import") }}
-                        </ion-button>
-                        <ion-button v-if="error.systemMessageId" fill="clear" @click="openSystemMessageDetails(error.systemMessageId)">
-                          {{ translate("View SystemMessage") }}
-                        </ion-button>
-                        <ion-button
-                          v-if="shopifyAdminErrorOrderUrl(error)"
-                          fill="clear"
-                          :href="shopifyAdminErrorOrderUrl(error)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {{ translate("Shopify Admin") }}
-                        </ion-button>
-                        <ion-button
-                          v-if="errorRecordDetails(error).record"
-                          fill="clear"
-                          @click="downloadErrorRecordJson(error)"
-                        >
-                          {{ translate("Download record") }}
-                        </ion-button>
-                        <ion-button
-                          v-if="errorLogDetails(error)?.status === 'ready'"
-                          fill="clear"
-                          @click="downloadErrorImportFile(error)"
-                        >
-                          {{ translate("Download file") }}
-                        </ion-button>
-                        <ion-button
-                          v-if="error.retryable && orderSyncStore.capabilities.canRetryIndividualOrder"
-                          fill="outline"
-                          :disabled="!loadedShopMatchesRoute || retryState(error.id)?.pending"
-                          @click="confirmRetry(error)"
-                        >
-                          <ion-spinner v-if="retryState(error.id)?.pending" slot="start" name="crescent" />
-                          {{ translate("Retry individual order") }}
-                        </ion-button>
-                      </ion-row>
-                    </ion-item>
-                    <ion-item v-if="!error.retryable || !orderSyncStore.capabilities.canRetryIndividualOrder || retryError(error.id) || retryState(error.id)?.systemMessageId" lines="none">
-                      <ion-label class="ion-text-wrap">
-                        <p v-if="!error.retryable">{{ translate("Retry unavailable because this record has no Shopify-resolvable order ID.") }}</p>
-                        <p v-else-if="!orderSyncStore.capabilities.canRetryIndividualOrder">{{ translate("Administrator permission is required to retry this order.") }}</p>
-                        <p v-if="retryError(error.id)" class="ion-text-danger" role="alert">{{ retryError(error.id) }}</p>
-                        <p v-if="retryState(error.id)?.systemMessageId" role="status">
-                          {{ translate("Retry queued as SystemMessage") }}
-                          <ion-button fill="clear" size="small" @click="openSystemMessageDetails(retryState(error.id)?.systemMessageId || '')">
-                            {{ retryState(error.id)?.systemMessageId }}
-                          </ion-button>.
-                          {{ translate("The original error remains unchanged.") }}
-                        </p>
-                      </ion-label>
+                      <ion-button
+                        slot="end"
+                        fill="clear"
+                        :href="jobManagerLogUrl(log.logId)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {{ translate("Open in Job Manager") }}
+                        <ion-icon slot="end" :icon="openOutline" />
+                      </ion-button>
                     </ion-item>
                   </ion-list>
                 </ion-card>
               </transition-group>
-              <ion-card v-if="!filteredErrors.length">
+              <ion-card v-if="!failedImportLogs.length">
                 <ion-item lines="none">
                   <ion-label class="ion-text-center">
-                    <p v-if="errorsQuery">{{ translate("No loaded errors match this search.") }}</p>
-                    <p v-else>{{ translate("No recent order import errors were found for this Shopify instance.") }}</p>
+                    <p>{{ translate("No DataManager runs with error records were found for this Shopify instance.") }}</p>
                   </ion-label>
                 </ion-item>
               </ion-card>
@@ -990,6 +777,9 @@ const selectedMdmLogDetails = computed(() => {
 });
 const filteredOrders = computed(() => orderSyncStore.filteredRecentOrders(ordersQuery.value));
 const filteredErrors = computed(() => orderSyncStore.filteredRecentErrors(errorsQuery.value));
+const failedImportLogs = computed(() => {
+  return orderSyncStore.failedDataManagerLogs || [];
+});
 
 watch([errorsQuery, () => orderSyncStore.recentErrors], () => {
   if (errorDownloadState.value === "loading") return;
@@ -1029,6 +819,10 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function formatDate(value: unknown): string {
   return formatDateTime(value) || translate("Not available");
+}
+
+function jobManagerLogUrl(logId: string): string {
+  return `https://job-manager.hotwax.io/file-history/${encodeURIComponent(logId)}`;
 }
 
 function landmarkDateLabel(value: string): string {

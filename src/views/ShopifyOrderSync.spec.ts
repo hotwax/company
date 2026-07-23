@@ -241,22 +241,39 @@ function createStore(overrides: Record<string, unknown> = {}) {
       SM_BATCH: [
         {
           logId: "LOG_CREATE",
+          systemMessageId: "SM_BATCH",
           configId: "SYNC_SHOPIFY_ORDER",
           statusId: "DmlsComplete",
           totalRecordCount: 2,
           successRecordCount: 2,
           failedRecordCount: 0,
+          startDateTime: "2026-07-22T12:06:00Z",
+          finishDateTime: "2026-07-22T12:07:00Z",
         },
         {
           logId: "LOG_UPDATE",
+          systemMessageId: "SM_BATCH",
           configId: "UPDATE_SHOPIFY_ORDER",
           statusId: "DmlsError",
           totalRecordCount: 2,
           successRecordCount: 1,
           failedRecordCount: 1,
+          startDateTime: "2026-07-22T12:08:00Z",
+          finishDateTime: "2026-07-22T12:10:00Z",
         },
       ],
     },
+    failedDataManagerLogs: [{
+      logId: "LOG_UPDATE",
+      systemMessageId: "SM_BATCH",
+      configId: "UPDATE_SHOPIFY_ORDER",
+      statusId: "DmlsFinished",
+      totalRecordCount: 2,
+      successRecordCount: 1,
+      failedRecordCount: 1,
+      startDateTime: "2026-07-22T12:08:00Z",
+      finishDateTime: "2026-07-22T12:10:00Z",
+    }],
     systemMessages: [{
       systemMessageId: "SM_BATCH",
       systemMessageTypeId: "ShopifyOrderSync",
@@ -381,144 +398,22 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.text()).not.toMatch(/bulk operation/i);
   });
 
-  it("separates terminal request failures from independently capped import errors", async () => {
-    const requestFailure = {
-      id: "M221664:system-message",
-      shopId: "SHOP_1",
-      shopifyOrderId: "",
-      orderName: "",
-      errorText: "Shopify order request failed before import.",
-      occurredAt: "2026-07-22T12:09:00Z",
-      occurredAtMillis: 1,
-      configId: "",
-      logId: "",
-      systemMessageId: "M221664",
-      batchId: "",
-      retryable: false,
-    };
-    const wrapper = await mountMonitor({ recentRequestErrors: [requestFailure] });
-
-    expect(wrapper.get("#recent-request-errors-heading").text()).toBe("Recent request failures");
-    expect(wrapper.get("#recent-errors-heading").text()).toBe("Recent import errors");
-    expect(wrapper.text()).toContain("Shopify order request failed before import.");
-    expect(wrapper.text()).toContain("Custom request");
-    expect(wrapper.text()).not.toContain("Outstanding Shopify orders");
-
-    const requestSection = wrapper.get("[aria-labelledby='recent-request-errors-heading']");
-    const requestButtons = requestSection.findAll("button");
-    expect(requestButtons).toHaveLength(1);
-    const detailsButton = requestButtons
-      .find((button) => button.text().includes("View request progress"));
-    expect(detailsButton).toBeDefined();
-    await detailsButton!.trigger("click");
-    await flushPromises();
-    expect(wrapper.text()).toContain("Order sync request details");
-    expect(wrapper.text()).toContain("Shopify order request failed before import.");
-    expect(wrapper.text()).toContain("HotWax order import");
-    expect(wrapper.text()).toContain("Not started");
-    expect(wrapper.text()).toContain("Failures");
-  });
-
-  it("pairs every error card with a transparent resolution next step", async () => {
-    const retryableValidationError = createStore().recentErrors[0];
-    const mappingError = {
-      ...retryableValidationError,
-      id: "ERR_MAPPING",
-      errorText: "A required order mapping is unavailable.",
-      retryable: false,
-    };
-    const withheldError = {
-      ...retryableValidationError,
-      id: "ERR_WITHHELD",
-      shopifyOrderId: "",
-      orderName: "",
-      errorText: "Error details could not be safely read.",
-      retryable: false,
-    };
-    const errors = [retryableValidationError, mappingError, withheldError];
-    const requestFailure = {
-      id: "M221664:system-message",
-      shopId: "SHOP_1",
-      shopifyOrderId: "",
-      orderName: "",
-      errorText: "Shopify order request failed before import.",
-      occurredAt: "2026-07-22T12:09:00Z",
-      occurredAtMillis: 1,
-      configId: "",
-      logId: "",
-      systemMessageId: "M221664",
-      batchId: "",
-      retryable: false,
-    };
-    const wrapper = await mountMonitor({
-      recentErrors: errors,
-      filteredRecentErrors: vi.fn(() => errors),
-      recentRequestErrors: [requestFailure],
-    });
-
-    const importSection = wrapper.get("[aria-labelledby='recent-errors-heading']");
-    expect(importSection.text()).toContain("Review the failed record in the import and correct the order in Shopify.");
-    expect(importSection.text()).toContain("Then use Retry individual order to re-fetch the current Shopify payload.");
-    expect(importSection.text()).toContain("Record the missing order mapping in Order Sync setup.");
-    expect(importSection.text()).toContain("Company withheld the recorded error text because it could not be displayed safely. Open the DataManager run to review the import context.");
-
-    const setupLinks = importSection.findAll("button").filter((button) => button.text().includes("Review setup"));
-    expect(setupLinks).toHaveLength(1);
-    expect(setupLinks[0].attributes("router-link")).toBe("/shopify-connection-details/SHOP_1/order-sync/configure");
-
-    const requestSection = wrapper.get("[aria-labelledby='recent-request-errors-heading']");
-    expect(requestSection.text()).toContain("Next step");
-    expect(requestSection.text()).toContain("Review the request progress. The next scheduled batch will retry this window.");
-    expect(requestSection.text()).not.toContain("Then use Retry individual order");
-  });
-
-  it("surfaces the failed record's own error, log creation time, Shopify link, and payload downloads", async () => {
-    mocks.fetchLogDetails.mockResolvedValue({
-      logId: "LOG_UPDATE",
-      configId: "UPDATE_SHOPIFY_ORDER",
-      createdDate: "2026-07-22T12:08:00Z",
-      fileName: "orders-update.json",
-      logContentId: "CONTENT_1",
-      errorLogContentId: "ERR_CONTENT_1",
-    });
-    mocks.dataManagerErrorLogs = [{
-      payload: "{\"order\":{\"id\":\"gid://shopify/Order/123456\",\"name\":\"#1001\"}}",
-      _ERROR_MESSAGE_: "Payment method mapping not found for gift_card",
-    }];
-    mocks.downloadDataManagerFile.mockResolvedValue({ data: "{\"orders\":[]}" });
-
+  it("shows only DataManager logs with error records and keeps the card to the requested facts", async () => {
     const wrapper = await mountMonitor();
-    const importSection = wrapper.get("[aria-labelledby='recent-errors-heading']");
+    const failedRuns = wrapper.get("[aria-labelledby='failed-import-logs-heading']");
 
-    expect(importSection.text()).toContain("Load the failed records file to see this order's recorded error message.");
-    const shopifyAdmin = importSection.findAll("button").find((button) => button.text() === "Shopify Admin");
-    expect(shopifyAdmin).toBeDefined();
-    expect(shopifyAdmin!.attributes("href")).toBe("https://test-shop.myshopify.com/admin/orders/123456");
-
-    const load = importSection.findAll("button").find((button) => button.text() === "Load details");
-    expect(load).toBeDefined();
-    await load!.trigger("click");
-    await flushPromises();
-
-    expect(mocks.fetchLogDetails).toHaveBeenCalledWith("LOG_UPDATE");
-    expect(importSection.text()).toContain("Payment method mapping not found for gift_card");
-    expect(importSection.text()).toContain("Created: 2026-07-22T12:08:00Z");
-
-    const downloadRecord = importSection.findAll("button").find((button) => button.text() === "Download record");
-    expect(downloadRecord).toBeDefined();
-    await downloadRecord!.trigger("click");
-    expect(mocks.downloadTextFile).toHaveBeenCalledWith(
-      expect.stringContaining("Payment method mapping not found for gift_card"),
-      "123456-failed-record.json",
-    );
-
-    const downloadFile = importSection.findAll("button").find((button) => button.text() === "Download file");
-    expect(downloadFile).toBeDefined();
-    await downloadFile!.trigger("click");
-    await flushPromises();
-    expect(mocks.downloadDataManagerFile).toHaveBeenCalledWith("UPDATE_SHOPIFY_ORDER", "CONTENT_1");
-    expect(mocks.downloadTextFile).toHaveBeenCalledWith("{\"orders\":[]}", "orders-update.json");
-    expect(mocks.showToast).toHaveBeenCalledWith("File downloaded successfully");
+    expect(failedRuns.findAll("[role='listitem']")).toHaveLength(1);
+    expect(failedRuns.text()).not.toContain("LOG_UPDATE");
+    expect(failedRuns.text()).not.toContain("LOG_CREATE");
+    expect(failedRuns.text()).toContain("Start time2026-07-22T12:08:00Z");
+    expect(failedRuns.text()).toContain("End time2026-07-22T12:10:00Z");
+    expect(failedRuns.text()).toContain("2 records · 1 error record");
+    const jobManagerLink = failedRuns.get("[href='https://job-manager.hotwax.io/file-history/LOG_UPDATE']");
+    expect(jobManagerLink.attributes("target")).toBe("_blank");
+    expect(jobManagerLink.attributes("rel")).toBe("noopener noreferrer");
+    expect(wrapper.text()).not.toContain("Recent request failures");
+    expect(wrapper.text()).not.toContain("Recent import errors");
+    expect(wrapper.text()).not.toContain("Download CSV");
   });
 
   it("surfaces the shop's landmark dates in the sync monitor", async () => {
@@ -695,6 +590,7 @@ describe("ShopifyOrderSync monitoring", () => {
           successRecordCount: 2,
         }],
       },
+      failedDataManagerLogs: [],
     });
     const queuedMessageButton = wrapper.findAll("button").find((button) => button.text().trim() === "M228571");
     await queuedMessageButton!.trigger("click");
@@ -708,18 +604,9 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(modalText).toMatch(/Records\s*2/);
     expect(modalText).toMatch(/Failures\s*0/);
 
-    const failedImportButton = wrapper.findAll("button")
-      .find((button) => button.text().trim() === "View import");
-    expect(failedImportButton).toBeDefined();
-    expect(failedImportButton!.attributes("href")).toBeUndefined();
-    await failedImportButton!.trigger("click");
-    await flushPromises();
-
-    const logModalTitle = wrapper.findAll("h1").find((heading) => heading.text() === "Data Manager Log");
-    const logModalText = logModalTitle?.element.closest("section")?.textContent || "";
-    expect(logModalText).toContain("M101276");
-    expect(logModalText).toContain("Failed");
-    expect(logModalText).toMatch(/Failed Records\s*1/);
+    const failedRuns = wrapper.get("[aria-labelledby='failed-import-logs-heading']");
+    expect(failedRuns.text()).not.toContain("M101276");
+    expect(failedRuns.text()).toContain("No DataManager runs with error records were found for this Shopify instance.");
   });
 
   it("keeps projected operational facts inside Company while retaining only explicit order links", async () => {
@@ -818,7 +705,7 @@ describe("ShopifyOrderSync monitoring", () => {
     expect(wrapper.find("[href*='/admin/orders/']").exists()).toBe(false);
   });
 
-  it("disables Run now for active batch work while leaving a resolvable retry available", async () => {
+  it("disables Run now for active batch work without rendering record-level retry actions", async () => {
     const wrapper = await mountMonitor();
     const buttons = wrapper.findAll("button");
     const runNow = buttons.find((button) => button.text().includes("Run now"));
@@ -826,40 +713,15 @@ describe("ShopifyOrderSync monitoring", () => {
 
     expect(runNow?.attributes()).toHaveProperty("disabled");
     expect(wrapper.text()).toContain("Run now is unavailable while this shop has active batch work.");
-    expect(retry).toBeDefined();
-    expect(retry?.attributes("disabled")).toBeUndefined();
-
-    await retry!.trigger("click");
-    await flushPromises();
-    expect(mocks.store.retryIndividualOrder).toHaveBeenCalledWith({
-      errorId: "ERR_1",
-      shopifyOrderId: "123456",
-      shopId: "SHOP_1",
-    });
-    expect(wrapper.text()).toContain("SM_RETRY");
-    expect(wrapper.text()).toContain("The original error remains unchanged.");
-    expect(wrapper.text()).toContain("#1001");
+    expect(retry).toBeUndefined();
   });
 
-  it("downloads only the already-loaded safe error projection as CSV", async () => {
+  it("does not render the deferred record-level error and CSV controls", async () => {
     const wrapper = await mountMonitor();
-    const download = wrapper.findAll("button")
-      .find((button) => button.text().includes("Download CSV"));
-
-    expect(download).toBeDefined();
-    const click = download!.trigger("click");
-
-    expect(mocks.downloadTextFile).toHaveBeenCalledTimes(1);
-    await click;
-    await flushPromises();
-
-    const [csv, fileName] = mocks.downloadTextFile.mock.calls[0];
-    expect(fileName).toBe("shopify-order-sync-errors-SHOP_1.csv");
-    expect(csv).toContain("Shopify order validation failed.");
-    expect(csv).toContain("123456");
-    expect(csv).not.toMatch(/customer|address|token|secret/i);
-    expect(wrapper.text()).toContain("Safe error CSV download started.");
-    expect(mocks.store.loadMonitoring).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain("Download CSV");
+    expect(wrapper.text()).not.toContain("Load details");
+    expect(wrapper.text()).not.toContain("Retry individual order");
+    expect(mocks.downloadTextFile).not.toHaveBeenCalled();
   });
 
   it("keeps retry actions hidden for a monitor-only user", async () => {
@@ -868,6 +730,6 @@ describe("ShopifyOrderSync monitoring", () => {
     });
 
     expect(wrapper.text()).not.toContain("Retry individual order");
-    expect(wrapper.text()).toContain("Administrator permission is required to retry this order.");
+    expect(wrapper.text()).not.toContain("Administrator permission is required to retry this order.");
   });
 });
