@@ -3,7 +3,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ServiceJobDetailsModal from "./ServiceJobDetailsModal.vue";
+import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
 
 const mocks = vi.hoisted(() => ({
   runNow: vi.fn(),

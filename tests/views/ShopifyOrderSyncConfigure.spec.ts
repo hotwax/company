@@ -4,7 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSyncConfigure from "./ShopifyOrderSyncConfigure.vue";
+import ShopifyOrderSyncConfigure from "@/views/ShopifyOrderSyncConfigure.vue";
 
 const mocks = vi.hoisted(() => ({
   enter: undefined as undefined | (() => void),

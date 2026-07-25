@@ -12,7 +12,7 @@ import {
   normalizeRecentProcessedOrders,
   searchLoadedOrderErrors,
   searchLoadedProcessedOrders
-} from "./shopifyOrderSync";
+} from "@/utils/shopifyOrderSync";
 
 describe("Shopify Order Sync job readiness", () => {
   const remote = { systemMessageRemoteId: "SHOPIFY_10010", internalId: "10010" };

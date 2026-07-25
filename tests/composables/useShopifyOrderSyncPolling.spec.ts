@@ -18,7 +18,7 @@ vi.mock("@ionic/vue", () => ({
 import {
   useShopifyOrderSyncPolling,
   type ShopifyOrderSyncPollingOptions
-} from "./useShopifyOrderSyncPolling";
+} from "@/composables/useShopifyOrderSyncPolling";
 
 const scopes: EffectScope[] = [];
 

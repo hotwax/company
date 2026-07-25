@@ -4,7 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSyncHistory from "./ShopifyOrderSyncHistory.vue";
+import ShopifyOrderSyncHistory from "@/views/ShopifyOrderSyncHistory.vue";
 
 const mocks = vi.hoisted(() => ({
   store: undefined as any,

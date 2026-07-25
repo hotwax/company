@@ -29,7 +29,7 @@ vi.mock("@/store/user", () => ({
 import {
   type SafeShopifyOrderSyncRemote,
   useShopifyOrderSyncStore
-} from "./shopifyOrderSync";
+} from "@/store/shopifyOrderSync";
 
 type ApiOptions = {
   url: string;

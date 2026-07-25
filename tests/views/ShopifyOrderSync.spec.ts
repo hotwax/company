@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { reactive, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSync from "./ShopifyOrderSync.vue";
+import ShopifyOrderSync from "@/views/ShopifyOrderSync.vue";
 
 const shopifyOrderSyncSource = readFileSync(`${process.cwd()}/src/views/ShopifyOrderSync.vue`, "utf8");
 

@@ -8,7 +8,7 @@ import {
   isShopifyOrderSyncScheduleDirty,
   normalizeShopifyOrderSyncCronExpression,
   validateShopifyOrderSyncCronExpression
-} from "./shopifyOrderSyncSchedule";
+} from "@/utils/shopifyOrderSyncSchedule";
 
 describe("Shopify Order Sync schedule contract", () => {
   it("preserves the inherited template schedule exactly and starts paused", () => {

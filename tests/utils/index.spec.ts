@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadTextFile } from "./index";
+import { downloadTextFile } from "@/utils/index";
 
 describe("downloadTextFile", () => {
   afterEach(() => {

@@ -37,7 +37,7 @@ vi.mock("@/store/util", () => ({
   useUtilStore: () => ({})
 }))
 
-import { useUserStore } from "./user"
+import { useUserStore } from "@/store/user"
 
 describe("user profile session handling", () => {
   beforeEach(() => {

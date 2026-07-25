@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSyncMdmLogModal from "./ShopifyOrderSyncMdmLogModal.vue";
+import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
 
 vi.mock("@common", () => ({ translate: (key: string) => key }));
 vi.mock("@/utils", () => ({ formatDateTime: (value: unknown) => String(value || "") }));
