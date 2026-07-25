@@ -268,7 +268,6 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
-<<<<<<< HEAD
     upsertShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
       const shipmentMethodTypes = this.shipmentMethodTypes.filter(
         (type: any) => type.shipmentMethodTypeId !== payload.shipmentMethodTypeId
@@ -300,10 +299,7 @@ export const useUtilStore = defineStore("util", {
       this.paymentMethodTypes = paymentMethodTypes
     },
 
-    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
-=======
     async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
->>>>>>> origin/main
       return api({
         url: "oms/paymentMethodTypes",
         method: "post",
@@ -311,14 +307,14 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
-<<<<<<< HEAD
     upsertPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
       const paymentMethodTypes = this.paymentMethodTypes.filter(
         (type: any) => type.paymentMethodTypeId !== payload.paymentMethodTypeId
       )
       paymentMethodTypes.push(payload)
       this.paymentMethodTypes = paymentMethodTypes
-=======
+    },
+
     async createProductStoreShipmentMethod(payload: {
       productStoreId: string
       shipmentMethodTypeId: string
@@ -330,7 +326,6 @@ export const useUtilStore = defineStore("util", {
         method: "post",
         data: { roleTypeId: "CARRIER", ...payload }
       })
->>>>>>> origin/main
     },
 
     async fetchOrganizationPartyId() {
