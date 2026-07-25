@@ -125,9 +125,9 @@ import { useProductStore } from '@/store/productStore';
 import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
-import TimeZoneModal from "@/components/TimezoneModal.vue";
-import Image from "@/components/Image.vue"
-import DxpAppVersionInfo from "@/components/DxpAppVersionInfo.vue"
+import TimeZoneModal from "@/components/common/TimezoneModal.vue";
+import Image from "@/components/common/Image.vue"
+import DxpAppVersionInfo from "@/components/common/DxpAppVersionInfo.vue"
 import { DateTime } from "luxon";
 import { translate, commonUtil, cookieHelper } from '@common'
 import router from '@/router'

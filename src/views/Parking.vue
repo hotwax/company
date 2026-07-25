@@ -88,9 +88,9 @@ import { computed } from 'vue';
 import { addOutline, archiveOutline, ellipsisVerticalOutline } from 'ionicons/icons';
 import { api, commonUtil, logger, translate } from '@common';
 import { useFacilityStore } from '@/store/facility';
-import CreateVirtualFacilityModal from '@/components/CreateVirtualFacilityModal.vue';
-import VirtualFacilityActionsPopover from '@/components/VirtualFacilityActionsPopover.vue';
-import ArchivedFacilityModal from '@/components/ArchivedFacilityModal.vue';
+import CreateVirtualFacilityModal from '@/components/facility/CreateVirtualFacilityModal.vue';
+import VirtualFacilityActionsPopover from '@/components/facility/VirtualFacilityActionsPopover.vue';
+import ArchivedFacilityModal from '@/components/facility/ArchivedFacilityModal.vue';
 
 const facilityStore = useFacilityStore();
 

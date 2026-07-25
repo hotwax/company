@@ -62,7 +62,7 @@ import { cloudUploadOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { computed, defineProps, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import TimezoneModal from "@/components/TimezoneModal.vue";
+import TimezoneModal from "@/components/common/TimezoneModal.vue";
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();

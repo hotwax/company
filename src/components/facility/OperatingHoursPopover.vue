@@ -26,8 +26,8 @@ import {
   popoverController
 } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from "@common";
-import AddOperatingHoursModal from "@/components/AddOperatingHoursModal.vue";
-import CustomScheduleModal from "@/components/CustomScheduleModal.vue";
+import AddOperatingHoursModal from "@/components/facility/AddOperatingHoursModal.vue";
+import CustomScheduleModal from "@/components/common/CustomScheduleModal.vue";
 import { useFacilityStore } from "@/store/facility";
 import { computed } from "vue";
 

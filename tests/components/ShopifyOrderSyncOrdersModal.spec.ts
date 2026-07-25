@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("ShopifyOrderSyncOrdersModal", () => {
   it("follows the Product Sync picker shell and reports an explicit cancel dismissal", () => {
     const source = readFileSync(
-      `${process.cwd()}/src/components/ShopifyOrderSyncOrdersModal.vue`,
+      `${process.cwd()}/src/components/shopify-order-sync/ShopifyOrderSyncOrdersModal.vue`,
       "utf8",
     );
 

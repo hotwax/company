@@ -137,8 +137,8 @@ import { useUtilStore } from '@/store/util';
 import { api } from '@common';
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
-import EditFacilityGroupModal from '@/components/EditFacilityGroupModal.vue';
-import AddProductStoreToGroupModal from '@/components/AddProductStoreToGroupModal.vue';
+import EditFacilityGroupModal from '@/components/facility/EditFacilityGroupModal.vue';
+import AddProductStoreToGroupModal from '@/components/product-store/AddProductStoreToGroupModal.vue';
 
 const props = defineProps<{ facilityGroupId: string }>();
 

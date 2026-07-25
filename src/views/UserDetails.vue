@@ -471,16 +471,16 @@ import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
 import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, mailOutline, timeOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import ContactActionsPopover from "@/components/ContactActionsPopover.vue";
-import ProductStoreActionsPopover from "@/components/ProductStoreActionsPopover.vue";
-import SecurityGroupActionsPopover from "@/components/SecurityGroupActionsPopover.vue";
-import ResetPasswordModal from "@/components/ResetPasswordModal.vue";
-import SelectFacilityModal from "@/components/SelectFacilityModal.vue";
-import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
-import SelectSecurityGroupModal from "@/components/SelectSecurityGroupModal.vue";
-import UserSecurityGroupAssocHistoryModal from "@/components/UserSecurityGroupAssocHistoryModal.vue";
+import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
+import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
+import SecurityGroupActionsPopover from "@/components/security/SecurityGroupActionsPopover.vue";
+import ResetPasswordModal from "@/components/security/ResetPasswordModal.vue";
+import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
+import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
+import SelectSecurityGroupModal from "@/components/security/SelectSecurityGroupModal.vue";
+import UserSecurityGroupAssocHistoryModal from "@/components/security/UserSecurityGroupAssocHistoryModal.vue";
 import { DateTime } from "luxon";
-import Image from "@/components/Image.vue";
+import Image from "@/components/common/Image.vue";
 
 const props = defineProps({
   partyId: {

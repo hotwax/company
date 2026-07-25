@@ -27,7 +27,7 @@ vi.mock("@/store/shopifyOrderSync", () => ({
   useShopifyOrderSyncStore: () => mocks.store,
 }));
 
-vi.mock("@/components/ShopifyOrderSyncMdmLogModal.vue", async () => {
+vi.mock("@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue", async () => {
   const { defineComponent, h } = await vi.importActual<typeof import("vue")>("vue");
   return {
     default: defineComponent({

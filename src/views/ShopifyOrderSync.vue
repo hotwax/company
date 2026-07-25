@@ -679,11 +679,11 @@ import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { formatDateTime } from "@/utils";
 import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
-import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
-import SystemMessageDetailsModal from "@/components/SystemMessageDetailsModal.vue";
-import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
-import ShopifyOrderSyncCustomRequestCard from "@/components/ShopifyOrderSyncCustomRequestCard.vue";
-import ShopifyOrderSyncOrdersModal from "@/components/ShopifyOrderSyncOrdersModal.vue";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
+import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
+import ShopifyOrderSyncCustomRequestCard from "@/components/shopify-order-sync/ShopifyOrderSyncCustomRequestCard.vue";
+import ShopifyOrderSyncOrdersModal from "@/components/shopify-order-sync/ShopifyOrderSyncOrdersModal.vue";
 import {
   useShopifyOrderSyncStore,
   type ShopifyOrderSyncImport,

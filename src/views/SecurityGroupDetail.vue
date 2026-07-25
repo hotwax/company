@@ -132,8 +132,8 @@ import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSu
 import { addOutline, pencilOutline, trashOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { commonUtil, logger, translate } from "@common";
-import ArtifactAuthzModal from "@/components/ArtifactAuthzModal.vue";
-import EditUserGroupModal from "@/components/EditUserGroupModal.vue";
+import ArtifactAuthzModal from "@/components/security/ArtifactAuthzModal.vue";
+import EditUserGroupModal from "@/components/security/EditUserGroupModal.vue";
 import { useAuthorizationStore } from "@/store/authorization";
 import { useUtilStore } from "@/store/util";
 import { useUserStore } from "@/store/user";

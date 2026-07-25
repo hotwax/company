@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
+import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 
 vi.mock("@common", () => ({ translate: (key: string) => key }));
 vi.mock("@/utils", () => ({ formatDateTime: (value: unknown) => String(value || "") }));
@@ -55,7 +55,7 @@ describe("ShopifyOrderSyncMdmLogModal", () => {
     expect(wrapper.text()).toMatch(/Failed Records\s*0/);
     expect(wrapper.find("a").exists()).toBe(false);
 
-    const source = readFileSync(`${process.cwd()}/src/components/ShopifyOrderSyncMdmLogModal.vue`, "utf8");
+    const source = readFileSync(`${process.cwd()}/src/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue`, "utf8");
     expect(source).not.toMatch(/useDataManagerLog|fetchLogDetails|messageText|errorMessage/);
     expect(source).toMatch(/aria-label="translate\('Close'\)"[\s\S]*closeOutline/);
   });

@@ -191,7 +191,7 @@ import {
   alertCircleOutline, checkmarkCircleOutline, helpCircleOutline, refreshOutline, syncCircleOutline
 } from "ionicons/icons";
 import { computed, reactive, ref } from "vue";
-import ShopifyOrderSyncMdmLogModal from "@/components/ShopifyOrderSyncMdmLogModal.vue";
+import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import { type ShopifyOrderSyncBatch, type ShopifyOrderSyncImport, useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
 import { formatDateTime, parseDateTimeValue } from "@/utils";
 import {

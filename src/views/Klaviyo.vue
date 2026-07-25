@@ -177,8 +177,8 @@ import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { translate } from '@common';
-import KlaviyoConnectionModal from "@/components/KlaviyoConnectionModal.vue";
-import KlaviyoUnigateConfigModal from "@/components/KlaviyoUnigateConfigModal.vue";
+import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
+import KlaviyoUnigateConfigModal from "@/components/klaviyo/KlaviyoUnigateConfigModal.vue";
 import { getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const klaviyoStore = useKlaviyoStore();

@@ -3,7 +3,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-import ShopifyOrderSyncCard from "@/components/ShopifyOrderSyncCard.vue";
+import ShopifyOrderSyncCard from "@/components/shopify-order-sync/ShopifyOrderSyncCard.vue";
 
 vi.mock("@common", () => ({
   translate: (key: string, values?: Record<string, unknown>) => Object.entries(values || {})

@@ -94,7 +94,7 @@ import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
-import CreateShipmentMethodModal from '@/components/CreateShipmentMethodModal.vue';
+import CreateShipmentMethodModal from '@/components/shipping-payment/CreateShipmentMethodModal.vue';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 

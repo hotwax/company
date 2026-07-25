@@ -87,7 +87,7 @@ import { computed, ref } from 'vue';
 import { translate } from "@common";
 import { useFacilityStore } from '@/store/facility';
 import { useUtilStore } from '@/store/util';
-import CreateFacilityGroupModal from '@/components/CreateFacilityGroupModal.vue';
+import CreateFacilityGroupModal from '@/components/facility/CreateFacilityGroupModal.vue';
 import SearchFilterCard from '@/components/common/SearchFilterCard.vue';
 import UniformFilterLayout from '@/components/common/UniformFilterLayout.vue';
 import router from '@/router';

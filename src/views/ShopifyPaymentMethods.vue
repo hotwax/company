@@ -84,10 +84,10 @@ import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } fro
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
-import CreatePaymentMethodModal from '@/components/CreatePaymentMethodModal.vue';
+import CreatePaymentMethodModal from '@/components/shipping-payment/CreatePaymentMethodModal.vue';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
-import CreatePaymentMethodModal from '@/components/CreatePaymentMethodModal.vue';
+import CreatePaymentMethodModal from '@/components/shipping-payment/CreatePaymentMethodModal.vue';
 
 const props = defineProps(['id']);
 const netSuiteStore = useNetSuiteStore();

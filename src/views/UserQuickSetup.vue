@@ -109,8 +109,8 @@ import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
 import { addCircleOutline, arrowForwardOutline, documentTextOutline, eyeOffOutline, eyeOutline } from "ionicons/icons";
 import { commonUtil, translate, logger } from "@common";
-import SelectFacilityModal from "@/components/SelectFacilityModal.vue";
-import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
+import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
+import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
 import { getResponseErrorMessage } from "@/utils";
 
 const props = defineProps({

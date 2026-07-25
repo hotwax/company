@@ -501,8 +501,8 @@ import { translate } from '@common';
 import { computed, defineEmits, defineProps, onBeforeUnmount, onMounted, ref } from "vue";
 import { checkmarkCircleOutline, ellipsisVerticalOutline, flashOutline, openOutline, pauseCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { popoverController } from "@ionic/vue";
-import AnimatedNumber from "@/components/AnimatedNumber.vue";
-import AnimatedDuration from "@/components/AnimatedDuration.vue";
+import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
+import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
 import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";

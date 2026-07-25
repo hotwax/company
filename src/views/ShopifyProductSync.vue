@@ -489,12 +489,12 @@ import { useUserStore } from '@/store/user';
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
-import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
-import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
-import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
-import ServiceJobDetailsModal from "@/components/ServiceJobDetailsModal.vue";
-import SystemMessageDetailsModal from "@/components/SystemMessageDetailsModal.vue";
-import AnimatedDuration from "@/components/AnimatedDuration.vue";
+import ShopifyProductSyncReturningView from "@/components/shopify-product-sync/ShopifyProductSyncReturningView.vue";
+import ShopifyProductSyncProductsModal from "@/components/shopify-product-sync/ShopifyProductSyncProductsModal.vue";
+import ShopifyProductSyncWizardView from "@/components/shopify-product-sync/ShopifyProductSyncWizardView.vue";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
+import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {

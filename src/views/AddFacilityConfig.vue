@@ -112,7 +112,7 @@ import { api, commonUtil, logger, translate } from "@common";
 import { useFacilityStore } from "@/store/facility";
 import { useUtilStore } from "@/store/util";
 import { useProductStore } from "@/store/productStore";
-import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
+import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
 import router from "@/router";
 import { DateTime } from "luxon";
 
