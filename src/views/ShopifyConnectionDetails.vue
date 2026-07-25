@@ -237,25 +237,250 @@
           </section>
         </div>
       </div>
+
+      <ion-modal :is-open="showProductStore" @didDismiss="onProductStoreDismiss">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeProductStore()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Product Store") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-item class="ion-margin-top">
+            <ion-icon slot="start" :icon="informationCircleOutline" />
+            <ion-label>
+              {{ translate("Link this Shopify connection to a Hotwax Product Store.") }}
+            </ion-label>
+          </ion-item>
+
+          <ion-item lines="full" class="ion-margin-top">
+            <ion-select v-model="selectedProductStoreId" interface="popover" :label="translate('Product Store')" :placeholder="translate('Select')">
+              <ion-select-option v-for="store in productStores" :key="store.productStoreId" :value="store.productStoreId">
+                {{ store.storeName ? store.storeName : store.productStoreId }}
+              </ion-select-option>
+            </ion-select>
+          </ion-item>
+
+          <ion-button
+            class="ion-margin"
+            expand="block"
+            @click="updateProductStoreMapping"
+            :disabled="!selectedProductStoreId || selectedProductStoreId === currentProductStoreId"
+          >
+            {{ translate("Save Product Store link") }}
+          </ion-button>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showCredentials" @didDismiss="closeCredentials">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeCredentials()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("API credentials") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-item class="ion-margin-top" lines="none">
+            <ion-icon slot="start" :icon="storefrontOutline" />
+            <ion-label>
+              <b>{{ shop.myshopifyDomain || shop.domain }}</b>
+              <p>{{ shop.shopId }}</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-list>
+            <ion-item>
+              <ion-input
+                v-model="form.shopifyShopId"
+                :label="translate('Shopify shop ID') + ' *'"
+                label-placement="stacked"
+                inputmode="numeric"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.clientId"
+                :label="translate('Client ID') + ' *'"
+                label-placement="stacked"
+                autocomplete="off"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.shopAccessToken"
+                :label="translate('Access token') + ' *'"
+                label-placement="stacked"
+                type="password"
+                placeholder="shpat_..."
+                autocomplete="off"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.clientSecret"
+                :label="translate('Client secret') + ' *'"
+                label-placement="stacked"
+                type="password"
+                autocomplete="off"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.oldClientSecret"
+                :label="translate('Old client secret')"
+                label-placement="stacked"
+                type="password"
+                helper-text="Only required when rotating the client secret"
+                autocomplete="off"
+              />
+            </ion-item>
+          </ion-list>
+
+          <ion-button
+            class="ion-margin"
+            expand="block"
+            :disabled="!isFormValid"
+            @click="updateCredentials()"
+          >
+            {{ translate("Rotate credentials") }}
+          </ion-button>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showAccessScopes" @didDismiss="closeAccessScopes">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeAccessScopes()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Access scopes") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-item class="ion-margin-top" lines="none">
+            <ion-icon slot="start" :icon="storefrontOutline" />
+            <ion-label>
+              {{ shop.myshopifyDomain || shop.domain }}
+              <p>{{ shop.shopId }}</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <p>{{ translate("Shopify OAuth scopes granted to this shop's app. Order sync fails if the query asks for data outside these scopes, so refresh after changing the app's granted scopes in Shopify.") }}</p>
+            </ion-label>
+          </ion-item>
+
+          <div v-if="scopes.length" class="ion-margin-horizontal">
+            <ion-chip v-for="scope in scopes" :key="scope" outline>
+              <ion-icon :icon="checkmarkCircleOutline" />
+              <ion-label>{{ scope }}</ion-label>
+            </ion-chip>
+          </div>
+          <ion-item v-else lines="none">
+            <ion-label class="ion-text-wrap ion-text-center">
+              <p>{{ translate("No scopes loaded yet. Refresh to fetch the scopes granted to this shop's Shopify app.") }}</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item v-if="lastRefreshedLabel" lines="none">
+            <ion-note slot="end">{{ translate("Last refreshed") }}: {{ lastRefreshedLabel }}</ion-note>
+          </ion-item>
+
+          <ion-button
+            class="ion-margin"
+            expand="block"
+            :disabled="!accessScopesRemoteId"
+            @click="refresh()"
+          >
+            <ion-icon slot="start" :icon="refreshOutline" />
+            {{ translate("Refresh scopes") }}
+          </ion-button>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showCloneSettings" @didDismiss="onCloneSettingsDismiss">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeCloneSettings()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Clone Settings") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content class="ion-padding">
+          <main>
+            <ion-card class="clone-card ion-no-margin">
+              <ion-card-content>
+                <ion-list>
+                  <!-- Source Shopify Shop Dropdown -->
+                  <ion-item>
+                    <ion-select interface="popover" :label="translate('Source Shopify Shop')" :placeholder="translate('Select shop')" v-model="sourceShopId">
+                      <ion-select-option v-for="sourceShop in sourceShopsList" :key="sourceShop.shopId" :value="sourceShop.shopId">
+                        {{ sourceShop.name || sourceShop.shopId }}
+                      </ion-select-option>
+                    </ion-select>
+                  </ion-item>
+                </ion-list>
+              </ion-card-content>
+            </ion-card>
+
+            <ion-list class="categories-list ion-margin-top">
+              <ion-list-header>
+                <ion-label>{{ translate("Select settings to clone") }}</ion-label>
+              </ion-list-header>
+              <ion-item v-for="(cat, key) in categories" :key="key">
+                <ion-checkbox slot="start" v-model="cat.selected" />
+                <ion-label>{{ cat.label }}</ion-label>
+              </ion-item>
+            </ion-list>
+
+            <ion-card color="warning" class="warning-card" v-if="sourceShopId">
+              <ion-card-content class="ion-text-center warning-content">
+                <ion-icon :icon="alertCircleOutline" class="warning-icon" />
+                <p>{{ translate("Warning: Existing mappings in the target shop will be overwritten.") }}</p>
+              </ion-card-content>
+            </ion-card>
+
+            <div class="action-container ion-margin-top">
+              <ion-button expand="block" :disabled="!sourceShopId || !hasSelectedCategories" @click="executeClone()">
+                {{ translate("Clone") }}
+              </ion-button>
+            </div>
+          </main>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { copyOutline } from "ionicons/icons";
-import { logger, translate } from '@common'
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
+import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
-import { computed, defineProps, ref } from "vue";
+import { computed, defineProps, reactive, ref } from "vue";
 import { useShopifyStore } from '@/store/shopify';
 import { useProductStore } from '@/store/productStore';
 import router from "@/router";
-import ShopifyProductStoreModal from "@/components/shopify/ShopifyProductStoreModal.vue";
-import EditShopifyCredentialsModal from "@/components/shopify/EditShopifyCredentialsModal.vue";
-import ShopifyAccessScopesModal from "@/components/shopify/ShopifyAccessScopesModal.vue";
-import CloneShopifySettingsModal from "@/components/shopify/CloneShopifySettingsModal.vue";
 import ShopifyOrderSyncCard from "@/components/shopify-order-sync/ShopifyOrderSyncCard.vue";
 import { useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
 import type { ShopifyOrderSyncCardSnapshot } from "@/store/shopifyOrderSync";
@@ -780,42 +1005,336 @@ async function loadTrackProgressDetails() {
   }
 }
 
-async function openCredentialsModal() {
-  const modal = await modalController.create({
-    component: EditShopifyCredentialsModal,
-    componentProps: { shop: shop.value }
-  })
-  await modal.present()
-}
+// ----- Clone settings modal -----
+const showCloneSettings = ref(false);
+const sourceShopId = ref("");
+const categories = ref({
+  productTypes: { label: translate("Product types"), selected: true },
+  shippingMethods: { label: translate("Shipping methods"), selected: true },
+  salesChannels: { label: translate("Sales channels"), selected: true },
+  paymentMethods: { label: translate("Payment methods"), selected: true }
+}) as any;
 
-async function openAccessScopesModal() {
-  const modal = await modalController.create({
-    component: ShopifyAccessScopesModal,
-    componentProps: { shop: shop.value }
-  })
-  await modal.present()
-}
+const sourceShopsList = computed(() => {
+  return shopifyStore.shops.filter((s: any) => s.shopId !== shop.value.shopId);
+});
 
-async function openProductStoreModal() {
-  const modal = await modalController.create({
-    component: ShopifyProductStoreModal,
-    componentProps: { shop: shop.value }
-  });
-  modal.onDidDismiss().then(async () => {
-    await shopifyStore.fetchShopifyShops();
-  });
-  modal.present();
+const hasSelectedCategories = computed(() => {
+  return Object.values(categories.value).some((cat: any) => cat.selected);
+});
+
+function resetCloneSettingsForm() {
+  sourceShopId.value = "";
+  categories.value = {
+    productTypes: { label: translate("Product types"), selected: true },
+    shippingMethods: { label: translate("Shipping methods"), selected: true },
+    salesChannels: { label: translate("Sales channels"), selected: true },
+    paymentMethods: { label: translate("Payment methods"), selected: true }
+  };
 }
 
 async function openCloneSettingsModal() {
-  const modal = await modalController.create({
-    component: CloneShopifySettingsModal,
-    componentProps: { targetShop: shop.value }
-  });
-  modal.onDidDismiss().then(async () => {
-    await loadConnectionSummaries();
-  });
-  await modal.present();
+  resetCloneSettingsForm();
+  showCloneSettings.value = true;
+  emitter.emit("presentLoader");
+  await shopifyStore.fetchShopifyShops();
+  emitter.emit("dismissLoader");
+}
+
+function closeCloneSettings() {
+  showCloneSettings.value = false;
+}
+
+async function onCloneSettingsDismiss() {
+  showCloneSettings.value = false;
+  await loadConnectionSummaries();
+}
+
+const fetchTypeMappingsForShop = async (shopId: string, mappedTypeId: string) => {
+  let mappings: any[] = [];
+  let pageIndex = 0;
+  let resp: any;
+  do {
+    resp = await api({
+      url: "oms/shopifyShops/typeMappings",
+      method: "get",
+      params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+    });
+    if (!commonUtil.hasError(resp) && resp.data) {
+      mappings = [...mappings, ...resp.data];
+    } else {
+      break;
+    }
+    pageIndex++;
+  } while (resp.data && resp.data.length >= 100);
+  return mappings;
+};
+
+const fetchCarrierShipmentsForShop = async (shopId: string) => {
+  let shipments: any[] = [];
+  let pageIndex = 0;
+  let resp: any;
+  do {
+    resp = await api({
+      url: "oms/shopifyShops/carrierShipments",
+      method: "get",
+      params: { shopId, pageSize: 100, pageIndex }
+    });
+    if (!commonUtil.hasError(resp) && resp.data) {
+      shipments = [...shipments, ...resp.data];
+    } else {
+      break;
+    }
+    pageIndex++;
+  } while (resp.data && resp.data.length >= 100);
+  return shipments;
+};
+
+async function cloneTypeMappings(mappedTypeId: string) {
+  const targetShopId = shop.value.shopId;
+  // 1. Fetch source and target mappings
+  const [sourceMappings, targetMappings] = await Promise.all([
+    fetchTypeMappingsForShop(sourceShopId.value, mappedTypeId),
+    fetchTypeMappingsForShop(targetShopId, mappedTypeId)
+  ]);
+
+  // 2. Delete existing mappings in target
+  if (targetMappings.length > 0) {
+    const deletePromises = targetMappings.map((mapping: any) =>
+      shopifyStore.deleteShopifyShopTypeMapping({
+        shopId: targetShopId,
+        mappedTypeId,
+        mappedKey: mapping.mappedKey
+      })
+    );
+    await Promise.allSettled(deletePromises);
+  }
+
+  // 3. Create cloned mappings in target
+  if (sourceMappings.length > 0) {
+    const createPromises = sourceMappings.map((mapping: any) =>
+      shopifyStore.createShopifyShopTypeMapping({
+        shopId: targetShopId,
+        mappedTypeId,
+        mappedKey: mapping.mappedKey,
+        mappedValue: mapping.mappedValue
+      })
+    );
+    await Promise.allSettled(createPromises);
+  }
+}
+
+async function cloneShippingMethods() {
+  const targetShopId = shop.value.shopId;
+  // 1. Fetch source shipments
+  const sourceShipments = await fetchCarrierShipmentsForShop(sourceShopId.value);
+
+  // 2. Create cloned shipments in target (upsert handles overwrite)
+  if (sourceShipments.length > 0) {
+    const createPromises = sourceShipments.map((shipment: any) =>
+      shopifyStore.createShopifyShopCarrierShipment({
+        shopId: targetShopId,
+        shipmentMethodTypeId: shipment.shipmentMethodTypeId,
+        shopifyShippingMethod: shipment.shopifyShippingMethod,
+        carrierPartyId: shipment.carrierPartyId
+      })
+    );
+    await Promise.allSettled(createPromises);
+  }
+}
+
+async function executeClone() {
+  emitter.emit("presentLoader");
+  try {
+    const promises: Promise<any>[] = [];
+
+    // Clone Product Types
+    if (categories.value.productTypes.selected) {
+      promises.push(cloneTypeMappings("SHOPIFY_PRODUCT_TYPE"));
+    }
+
+    // Clone Sales Channels
+    if (categories.value.salesChannels.selected) {
+      promises.push(cloneTypeMappings("SHOPIFY_ORDER_SOURCE"));
+    }
+
+    // Clone Payment Methods
+    if (categories.value.paymentMethods.selected) {
+      promises.push(cloneTypeMappings("SHOPIFY_PAYMENT_TYPE"));
+    }
+
+    // Clone Shipping Methods
+    if (categories.value.shippingMethods.selected) {
+      promises.push(cloneShippingMethods());
+    }
+
+    await Promise.all(promises);
+    commonUtil.showToast(translate("Settings cloned successfully"));
+    closeCloneSettings();
+  } catch (error) {
+    logger.error("Cloning failed", error);
+    commonUtil.showToast(translate("Failed to clone settings"));
+  } finally {
+    emitter.emit("dismissLoader");
+  }
+}
+
+// ----- API credentials modal -----
+const showCredentials = ref(false);
+const form = reactive({
+  shopifyShopId: '',
+  clientId: '',
+  shopAccessToken: '',
+  clientSecret: '',
+  oldClientSecret: ''
+});
+
+const isFormValid = computed(() =>
+  form.shopifyShopId.trim() &&
+  form.clientId.trim() &&
+  form.shopAccessToken.trim() &&
+  form.clientSecret.trim()
+);
+
+async function openCredentialsModal() {
+  form.shopifyShopId = '';
+  form.clientId = '';
+  form.shopAccessToken = '';
+  form.clientSecret = '';
+  form.oldClientSecret = '';
+  showCredentials.value = true;
+  // Pre-fill known identifiers from the existing SystemMessageRemote
+  try {
+    const remote = await shopifyStore.fetchSystemMessageRemote(shop.value.shopId);
+    if (remote) {
+      form.shopifyShopId = remote.remoteId ?? shop.value.shopifyShopId ?? '';
+    } else {
+      form.shopifyShopId = shop.value.shopifyShopId ?? '';
+    }
+  } catch (error: any) {
+    logger.error('fetchSystemMessageRemote', error);
+    form.shopifyShopId = shop.value.shopifyShopId ?? '';
+  }
+}
+
+function closeCredentials() {
+  showCredentials.value = false;
+}
+
+async function updateCredentials() {
+  if (!isFormValid.value) {
+    commonUtil.showToast(translate('Please fill in all required fields'));
+    return;
+  }
+
+  emitter.emit('presentLoader');
+  try {
+    await shopifyStore.updateShopifyRemote({
+      myShopifydomain: shop.value.myshopifyDomain || shop.value.domain,
+      shopifyShopId: form.shopifyShopId.trim(),
+      shopAccessToken: form.shopAccessToken.trim(),
+      clientId: form.clientId.trim(),
+      clientSecret: form.clientSecret.trim(),
+      oldClientSecret: form.oldClientSecret.trim() || undefined,
+      hotwaxShopId: shop.value.shopId
+    });
+    commonUtil.showToast(translate('Credentials updated successfully'));
+    showCredentials.value = false;
+  } catch (error: any) {
+    logger.error('updateShopifyCredentials', error);
+    commonUtil.showToast(translate('Failed to update credentials'));
+  }
+  emitter.emit('dismissLoader');
+}
+
+// ----- Access scopes modal -----
+const showAccessScopes = ref(false);
+const accessScopesRemoteId = ref<string>('');
+
+const scopeInfo = computed(() =>
+  accessScopesRemoteId.value ? shopifyStore.getAccessScopes(accessScopesRemoteId.value) : null
+);
+const scopes = computed<string[]>(() => scopeInfo.value?.scopes ?? []);
+const lastRefreshedLabel = computed(() =>
+  scopeInfo.value ? new Date(scopeInfo.value.lastRefreshed).toLocaleString() : ''
+);
+
+async function openAccessScopesModal() {
+  accessScopesRemoteId.value = '';
+  showAccessScopes.value = true;
+  // The refresh endpoint is keyed by the shop's SystemMessageRemote; resolve it once on open.
+  try {
+    const remote = await shopifyStore.fetchSystemMessageRemote(shop.value.shopId);
+    accessScopesRemoteId.value = remote?.systemMessageRemoteId ?? '';
+    if (!accessScopesRemoteId.value) {
+      commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
+    }
+  } catch (error: any) {
+    logger.error('fetchSystemMessageRemote', error);
+    commonUtil.showToast(translate('Failed to load the shop remote'));
+  }
+}
+
+function closeAccessScopes() {
+  showAccessScopes.value = false;
+}
+
+async function refresh() {
+  if (!accessScopesRemoteId.value) return;
+
+  emitter.emit('presentLoader');
+  try {
+    const granted = await shopifyStore.refreshAccessScopes(accessScopesRemoteId.value);
+    commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
+  } catch (error: any) {
+    logger.error('refreshAccessScopes', error);
+    commonUtil.showToast(translate('Failed to refresh access scopes'));
+  }
+  emitter.emit('dismissLoader');
+}
+
+// ----- Product store modal -----
+const showProductStore = ref(false);
+const productStores = computed(() => productStoreStore.productStores);
+const selectedProductStoreId = ref("");
+const currentProductStoreId = computed(() => shop.value?.productStoreId || "");
+
+async function openProductStoreModal() {
+  selectedProductStoreId.value = "";
+  showProductStore.value = true;
+  await productStoreStore.fetchProductStores();
+  selectedProductStoreId.value = currentProductStoreId.value;
+}
+
+function closeProductStore() {
+  showProductStore.value = false;
+}
+
+async function onProductStoreDismiss() {
+  showProductStore.value = false;
+  await shopifyStore.fetchShopifyShops();
+}
+
+async function updateProductStoreMapping() {
+  emitter.emit("presentLoader");
+  try {
+    const resp = await shopifyStore.updateShopifyShop({
+      shopId: shop.value.shopId,
+      productStoreId: selectedProductStoreId.value
+    });
+
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Product store linked successfully"));
+      await shopifyStore.fetchShopifyShops(); // Refresh state
+      showProductStore.value = false;
+    } else {
+      throw resp.data;
+    }
+  } catch (error: any) {
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to link product store"));
+  }
+  emitter.emit("dismissLoader");
 }
 
 function openProductSyncEntry() {
@@ -1020,5 +1539,28 @@ ion-item[data-sync-state="teardown-needed"]::part(native) {
     --padding-start: var(--spacer-lg);
     --padding-end: var(--spacer-lg);
   }
+}
+
+main {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.categories-list {
+  background: transparent;
+}
+
+.warning-card {
+  margin-top: var(--spacer-md);
+}
+
+.warning-icon {
+  font-size: 2rem;
+  color: var(--ion-color-warning);
+  margin-bottom: var(--spacer-xs);
+}
+
+.warning-content p {
+  margin: 0;
 }
 </style>

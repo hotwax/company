@@ -433,6 +433,135 @@
           </ion-content>
         </ion-modal>
 
+        <ion-modal :is-open="showProductsPickerModal" @didPresent="onProductsPickerDidPresent" @didDismiss="closeProductsPickerModal">
+          <ion-header>
+            <ion-toolbar>
+              <ion-buttons slot="start">
+                <ion-button data-testid="product-sync-products-modal-close-btn" @click="showProductsPickerModal = false">
+                  <ion-icon slot="icon-only" :icon="closeOutline" />
+                </ion-button>
+              </ion-buttons>
+              <ion-title>{{ modalTitle }}</ion-title>
+              <ion-buttons slot="end" v-if="!isSearchMode">
+                <ion-button @click="loadProducts" :disabled="productsPickerIsLoading" :aria-label="translate('Refresh')">
+                  <ion-icon slot="icon-only" :icon="refreshOutline" />
+                </ion-button>
+              </ion-buttons>
+              <ion-buttons slot="end" v-else-if="productsPickerIsLoading">
+                <ion-spinner data-testid="product-sync-products-toolbar-loader" name="crescent" />
+              </ion-buttons>
+            </ion-toolbar>
+            <ion-toolbar v-if="isSearchMode">
+              <ion-searchbar
+                data-testid="product-sync-products-search-input"
+                @ionFocus="selectSearchBarText($event)"
+                v-model="queryString"
+                :placeholder="translate('Search SKU, product name, or Shopify ID')"
+                @keyup.enter="handleSearch"
+                @ionInput="handleInput"
+              />
+            </ion-toolbar>
+          </ion-header>
+
+          <ion-content data-testid="product-sync-products-modal-content" ref="contentRef" :scroll-events="true" @ionScroll="enableScrolling()">
+            <ion-list v-if="limitExceeded" lines="full">
+              <ion-item>
+                <ion-label>{{ translate("Showing the first 100 updated products.") }}</ion-label>
+                <ion-note slot="end">{{ translate("100+") }}</ion-note>
+              </ion-item>
+            </ion-list>
+
+            <template v-if="productsPickerProducts.length">
+              <ion-list lines="full">
+                <ion-list-header v-if="showDefaultProductsHeader">
+                  <ion-label>{{ translate("Recently updated products from Shopify") }}</ion-label>
+                </ion-list-header>
+
+                <ion-item button data-testid="product-sync-products-select-all-row" @click="toggleAllVisibleProducts">
+                  <ion-label>
+                    {{ translate("Select all") }}
+                    <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
+                  </ion-label>
+                  <ion-checkbox
+                    slot="end"
+                    :checked="areAllVisibleProductsSelected"
+                    :indeterminate="areSomeVisibleProductsSelected"
+                    data-testid="product-sync-products-select-all-checkbox"
+                    @click.stop="toggleAllVisibleProducts"
+                  />
+                </ion-item>
+
+                <ion-item v-for="product in productsPickerProducts" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
+                  <ion-thumbnail v-if="product.imageUrl" slot="start">
+                    <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
+                  </ion-thumbnail>
+                  <ion-label>
+                    <h2>{{ product.title }}</h2>
+                    <p>{{ product.handle }}</p>
+                    <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
+                    <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
+                    <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
+                  </ion-label>
+                  <ion-note slot="end">
+                    {{ product.variantsCount }} {{ translate("variants") }}
+                    <p>{{ product.status }}</p>
+                    <p>{{ translate("Inventory") }} {{ product.totalInventory ?? 0 }}</p>
+                  </ion-note>
+                  <ion-checkbox
+                    slot="end"
+                    :checked="isProductSelected(product.id)"
+                    :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
+                    @click.stop="toggleProduct(product)"
+                  />
+                </ion-item>
+              </ion-list>
+
+              <ion-infinite-scroll data-testid="product-sync-products-infinite-scroll" @ionInfinite="loadMoreProducts($event)" threshold="100px" v-show="hasNextPage" ref="infiniteScrollRef">
+                <ion-infinite-scroll-content loading-spinner="crescent" :loading-text="translate('Loading')" />
+              </ion-infinite-scroll>
+            </template>
+
+            <ion-list v-else-if="productsPickerIsLoading" lines="none">
+              <ion-item>
+                <ion-spinner name="crescent" />
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else-if="queryString && isSearching" data-testid="product-sync-products-search-empty-state">
+              <ion-item>
+                <ion-label>{{ translate("No products found") }}</ion-label>
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else data-testid="product-sync-products-empty-state">
+              <ion-item>
+                <ion-label>{{ emptyStateLabel }}</ion-label>
+              </ion-item>
+            </ion-list>
+          </ion-content>
+
+          <ion-footer>
+            <ion-toolbar>
+              <ion-buttons slot="start">
+                <ion-button fill="clear" :disabled="!selectedProducts.length" @click="clearSelectedProducts">
+                  {{ translate("Clear") }}
+                </ion-button>
+              </ion-buttons>
+              <ion-buttons slot="end">
+                <ion-button
+                  data-testid="product-sync-products-submit-btn"
+                  fill="solid"
+                  color="primary"
+                  :disabled="!selectedProducts.length"
+                  @click="submitSelectedProducts"
+                >
+                  {{ translate("Sync selected products") }}{{ selectedProducts.length ? ` (${selectedProducts.length})` : "" }}
+                </ion-button>
+              </ion-buttons>
+            </ion-toolbar>
+          </ion-footer>
+        </ion-modal>
+
     </ion-content>
   </ion-page>
 </template>
@@ -449,6 +578,7 @@ import {
   IonCardContent,
   IonCardHeader,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
   IonFooter,
   IonFab,
@@ -459,6 +589,9 @@ import {
   IonPopover,
   IonProgressBar,
   IonIcon,
+  IonImg,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
   IonInput,
   IonItem,
   IonLabel,
@@ -470,14 +603,15 @@ import {
   IonPage,
   IonRadio,
   IonRadioGroup,
+  IonSearchbar,
   IonSegment,
   IonSegmentButton,
   IonSpinner,
   IonTitle,
   IonToggle,
+  IonThumbnail,
   IonToolbar,
-  alertController,
-  modalController
+  alertController
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import cronstrue from "cronstrue";
@@ -490,13 +624,12 @@ import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/shopify-product-sync/ShopifyProductSyncReturningView.vue";
-import ShopifyProductSyncProductsModal from "@/components/shopify-product-sync/ShopifyProductSyncProductsModal.vue";
 import ShopifyProductSyncWizardView from "@/components/shopify-product-sync/ShopifyProductSyncWizardView.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
-import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncDashboardSummary, ShopifyProductSyncProductSearchResult } from "@/store/shopifyProductSync";
 import {
   canAdvanceProductSyncStep,
 
@@ -1428,6 +1561,7 @@ watch(() => draft.value.selectedProductStoreId, async (productStoreId) => {
 onBeforeUnmount(() => {
   stopProgressPolling();
   stopNextSyncRefreshPolling();
+  clearSearchDebounce();
 });
 
 async function loadWizard() {
@@ -1704,28 +1838,282 @@ async function openStepDetails(step: any) {
   }
 }
 
+type ProductPickerMode = "search" | "unsynced";
+const SEARCH_DEBOUNCE_MS = 600;
+
+const showProductsPickerModal = ref(false);
+const productsPickerMode = ref<ProductPickerMode | undefined>();
+const productsPickerSystemMessageRemoteId = ref("");
+const productsPickerShopId = ref<string | undefined>();
+const productsPickerLastSyncedAt = ref<string | undefined>();
+const productsPickerShopifyShopProductCount = ref<number | undefined>();
+const queryString = ref("");
+const productsPickerProducts = ref<ShopifyProductSyncProductSearchResult[]>([]);
+const selectedProductsById = ref<Record<string, ShopifyProductSyncProductSearchResult>>({});
+const isScrollingEnabled = ref(false);
+const isSearching = ref(false);
+const productsPickerIsLoading = ref(false);
+const hasNextPage = ref(false);
+const endCursor = ref("");
+const contentRef = ref(null as any);
+const infiniteScrollRef = ref(null as any);
+let scrollElement: HTMLElement | null = null;
+let searchDebounceTimer: number | undefined;
+let productSearchRequestId = 0;
+
+const isSearchMode = computed(() => productsPickerMode.value !== "unsynced");
+const modalTitle = computed(() => isSearchMode.value ? translate("Select products") : translate("Un-synced updates"));
+const selectedProducts = computed(() => Object.values(selectedProductsById.value));
+const areAllVisibleProductsSelected = computed(() => {
+  return !!productsPickerProducts.value.length && productsPickerProducts.value.every((product) => selectedProductsById.value[product.id]);
+});
+const areSomeVisibleProductsSelected = computed(() => {
+  return productsPickerProducts.value.some((product) => selectedProductsById.value[product.id]) && !areAllVisibleProductsSelected.value;
+});
+const showDefaultProductsHeader = computed(() => {
+  return isSearchMode.value && !isSearching.value && !queryString.value.trim();
+});
+const limitExceeded = computed(() => {
+  return !isSearchMode.value && Number(productsPickerShopifyShopProductCount.value || 0) > productsPickerProducts.value.length && productsPickerProducts.value.length >= 100;
+});
+const emptyStateLabel = computed(() => {
+  if (isSearchMode.value) return translate("Enter a SKU, or product name to search a product");
+  return translate("No un-synced product updates");
+});
+
+function resetProductsPickerState() {
+  clearSearchDebounce();
+  queryString.value = "";
+  productsPickerProducts.value = [];
+  selectedProductsById.value = {};
+  isScrollingEnabled.value = false;
+  isSearching.value = false;
+  hasNextPage.value = false;
+  endCursor.value = "";
+  scrollElement = null;
+  productsPickerIsLoading.value = true;
+}
+
+function onProductsPickerDidPresent() {
+  void initializeScrollElement();
+  void loadProducts();
+}
+
+function closeProductsPickerModal() {
+  showProductsPickerModal.value = false;
+  clearSearchDebounce();
+}
+
+async function loadProducts() {
+  if (isSearchMode.value && queryString.value.trim()) {
+    await searchProducts();
+    return;
+  }
+
+  isSearching.value = false;
+  productsPickerIsLoading.value = true;
+  const requestId = ++productSearchRequestId;
+  try {
+    const response = isSearchMode.value
+      ? await shopifyProductSyncStore.fetchRecentlyUpdatedShopifyProducts({
+          systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+          pageSize: 15
+        })
+      : {
+          products: await shopifyProductSyncStore.fetchUnsyncedProductUpdates({
+            systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+            shopId: productsPickerShopId.value,
+            lastSyncedAt: productsPickerLastSyncedAt.value,
+            pageSize: 100
+          }) as ShopifyProductSyncProductSearchResult[],
+          hasNextPage: false,
+          endCursor: ""
+        };
+
+    if (requestId !== productSearchRequestId) return;
+    productsPickerProducts.value = response.products;
+    hasNextPage.value = response.hasNextPage;
+    endCursor.value = response.endCursor;
+  } catch (error: any) {
+    if (requestId !== productSearchRequestId) return;
+    logger.error(error);
+    commonUtil.showToast(isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates."));
+    productsPickerProducts.value = [];
+    hasNextPage.value = false;
+    endCursor.value = "";
+  } finally {
+    if (requestId === productSearchRequestId) {
+      productsPickerIsLoading.value = false;
+    }
+  }
+}
+
+async function searchProducts(after?: string) {
+  productsPickerIsLoading.value = true;
+  const requestId = ++productSearchRequestId;
+  try {
+    const response = await shopifyProductSyncStore.searchShopifyProducts({
+      systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+      queryString: queryString.value.trim(),
+      pageSize: 20,
+      after
+    });
+
+    if (requestId !== productSearchRequestId) return;
+    productsPickerProducts.value = after ? productsPickerProducts.value.concat(response.products) : response.products;
+    hasNextPage.value = response.hasNextPage;
+    endCursor.value = response.endCursor;
+  } catch (error: any) {
+    if (requestId !== productSearchRequestId) return;
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to search Shopify products."));
+    productsPickerProducts.value = after ? productsPickerProducts.value : [];
+    hasNextPage.value = false;
+    endCursor.value = "";
+  } finally {
+    if (requestId === productSearchRequestId) {
+      productsPickerIsLoading.value = false;
+    }
+  }
+}
+
+async function handleSearch() {
+  clearSearchDebounce();
+  if (!queryString.value.trim()) {
+    commonUtil.showToast(translate("Enter product sku to search"));
+    await loadProducts();
+    return;
+  }
+
+  isSearching.value = true;
+  await searchProducts();
+}
+
+function handleInput() {
+  clearSearchDebounce();
+  productSearchRequestId++;
+
+  searchDebounceTimer = window.setTimeout(async () => {
+    if (!queryString.value.trim()) {
+      await loadProducts();
+      return;
+    }
+
+    isSearching.value = true;
+    await searchProducts();
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+function clearSearchDebounce() {
+  if (!searchDebounceTimer) return;
+  window.clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = undefined;
+}
+
+async function initializeScrollElement() {
+  scrollElement = await contentRef.value?.$el?.getScrollElement?.();
+}
+
+function enableScrolling() {
+  if (!scrollElement) return;
+  const scrollHeight = scrollElement.scrollHeight;
+  const infiniteHeight = infiniteScrollRef.value?.$el?.offsetHeight || 0;
+  const scrollTop = scrollElement.scrollTop;
+  const threshold = 100;
+  const height = scrollElement.offsetHeight;
+  const distanceFromInfinite = scrollHeight - infiniteHeight - scrollTop - threshold - height;
+  isScrollingEnabled.value = distanceFromInfinite >= 0;
+}
+
+async function loadMoreProducts(event: any) {
+  if (!(isScrollingEnabled.value && hasNextPage.value && endCursor.value)) {
+    await event.target.complete();
+    return;
+  }
+
+  await searchProducts(endCursor.value);
+  await event.target.complete();
+}
+
+function getProductId(product: ShopifyProductSyncProductSearchResult) {
+  return product.legacyResourceId || product.id;
+}
+
+function formatShopifyDate(value: string) {
+  if (!value) return translate("Recent");
+  return formatDateTime(value);
+}
+
+function isProductSelected(productId: string) {
+  return !!selectedProductsById.value[productId];
+}
+
+function toggleProduct(product: ShopifyProductSyncProductSearchResult) {
+  if (selectedProductsById.value[product.id]) {
+    const updatedProducts = { ...selectedProductsById.value };
+    delete updatedProducts[product.id];
+    selectedProductsById.value = updatedProducts;
+    return;
+  }
+
+  selectedProductsById.value = {
+    ...selectedProductsById.value,
+    [product.id]: product
+  };
+}
+
+function toggleAllVisibleProducts() {
+  if (areAllVisibleProductsSelected.value) {
+    const updatedProducts = { ...selectedProductsById.value };
+    productsPickerProducts.value.forEach((product) => {
+      delete updatedProducts[product.id];
+    });
+    selectedProductsById.value = updatedProducts;
+    return;
+  }
+
+  const updatedProducts = { ...selectedProductsById.value };
+  productsPickerProducts.value.forEach((product) => {
+    updatedProducts[product.id] = product;
+  });
+  selectedProductsById.value = updatedProducts;
+}
+
+function clearSelectedProducts() {
+  selectedProductsById.value = {};
+}
+
+function submitSelectedProducts() {
+  const selected = selectedProducts.value;
+  const data = {
+    dismissed: true,
+    products: selected,
+    productIds: selected.map((product) => product.id),
+    legacyResourceIds: selected.map((product) => product.legacyResourceId).filter(Boolean)
+  };
+  handleSelectedProductsForSync(data);
+  showProductsPickerModal.value = false;
+}
+
+function selectSearchBarText(event: any) {
+  event.target.getInputElement().then((element: any) => {
+    element.select();
+  });
+}
+
 async function openUnsyncedUpdatesModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
     commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
-  const productsModal = await modalController.create({
-    component: ShopifyProductSyncProductsModal,
-    componentProps: {
-      mode: "unsynced",
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shopId: props.id,
-      lastSyncedAt: lastProductUpdateSyncedAt.value,
-      shopifyShopProductCount: shopifyShopProductCount.value
-    },
-    showBackdrop: true,
-    swipeToClose: true
-  });
-
-  await productsModal.present();
-  const { data } = await productsModal.onDidDismiss();
-  handleSelectedProductsForSync(data);
+  productsPickerMode.value = "unsynced";
+  productsPickerSystemMessageRemoteId.value = selectedShopSystemMessageRemoteId.value;
+  productsPickerShopId.value = props.id;
+  productsPickerLastSyncedAt.value = lastProductUpdateSyncedAt.value;
+  productsPickerShopifyShopProductCount.value = shopifyShopProductCount.value;
+  resetProductsPickerState();
+  showProductsPickerModal.value = true;
 }
 
 async function openSpecificProductsSyncModal() {
@@ -1734,19 +2122,13 @@ async function openSpecificProductsSyncModal() {
     return;
   }
 
-  const productsModal = await modalController.create({
-    component: ShopifyProductSyncProductsModal,
-    componentProps: {
-      mode: "search",
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value
-    },
-    showBackdrop: true,
-    swipeToClose: true
-  });
-
-  await productsModal.present();
-  const { data } = await productsModal.onDidDismiss();
-  handleSelectedProductsForSync(data);
+  productsPickerMode.value = "search";
+  productsPickerSystemMessageRemoteId.value = selectedShopSystemMessageRemoteId.value;
+  productsPickerShopId.value = undefined;
+  productsPickerLastSyncedAt.value = undefined;
+  productsPickerShopifyShopProductCount.value = undefined;
+  resetProductsPickerState();
+  showProductsPickerModal.value = true;
 }
 
 async function openResyncEntireCatalogModal() {

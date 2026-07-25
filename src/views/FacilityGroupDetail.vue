@@ -99,6 +99,112 @@
           <ion-icon :icon="saveOutline" />
         </ion-fab-button>
       </ion-fab>
+
+      <ion-modal :is-open="showEditModal" @didDismiss="closeEditModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeEditModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Edit group") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <form @keyup.enter="saveEditGroup">
+            <ion-list>
+              <ion-item>
+                <ion-input
+                  label-placement="floating"
+                  :label="translate('Name')"
+                  v-model="formData.facilityGroupName"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label-placement="floating"
+                  :label="translate('Internal ID')"
+                  :value="group.facilityGroupId"
+                  readonly
+                />
+              </ion-item>
+              <ion-item lines="none">
+                <ion-select
+                  :label="translate('Group type')"
+                  interface="popover"
+                  v-model="formData.facilityGroupTypeId"
+                >
+                  <ion-select-option value="">{{ translate("None") }}</ion-select-option>
+                  <ion-select-option
+                    v-for="type in facilityGroupTypes"
+                    :key="type.facilityGroupTypeId"
+                    :value="type.facilityGroupTypeId"
+                  >
+                    {{ type.description || type.facilityGroupTypeId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-textarea
+                  :label="translate('Description')"
+                  label-placement="floating"
+                  :auto-grow="true"
+                  :counter="true"
+                  :maxlength="255"
+                  v-model="formData.description"
+                />
+              </ion-item>
+            </ion-list>
+
+            <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+              <ion-fab-button @click="saveEditGroup" @keyup.enter.stop>
+                <ion-icon :icon="saveOutline" />
+              </ion-fab-button>
+            </ion-fab>
+          </form>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showProductStoreModal" @didDismiss="closeProductStoreModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeProductStoreModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Product stores") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list>
+            <ion-item
+              v-for="productStore in productStores"
+              :key="productStore.productStoreId"
+              @click="toggleSelection(productStore)"
+            >
+              <ion-checkbox :checked="isSelected(productStore.productStoreId)">
+                <ion-label>
+                  {{ productStore.storeName || productStore.productStoreId }}
+                  <p>{{ productStore.productStoreId }}</p>
+                </ion-label>
+              </ion-checkbox>
+            </ion-item>
+            <ion-item v-if="!productStores.length" lines="none">
+              <ion-label>{{ translate("No product stores found") }}</ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button :disabled="!isModified" @click="saveProductStores()">
+              <ion-icon :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -107,45 +213,52 @@
 import {
   IonBackButton,
   IonButton,
+  IonButtons,
   IonCard,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
   IonFab,
   IonFabButton,
   IonHeader,
   IonIcon,
+  IonInput,
   IonItem,
   IonLabel,
   IonList,
   IonListHeader,
+  IonModal,
   IonNote,
   IonPage,
   IonReorder,
   IonReorderGroup,
   IonSearchbar,
+  IonSelect,
+  IonSelectOption,
+  IonTextarea,
   IonTitle,
   IonToolbar,
-  modalController,
   onIonViewWillEnter
 } from '@ionic/vue';
 import { computed, ref } from 'vue';
 import { commonUtil, logger, translate } from "@common";
 import { useFacilityStore } from '@/store/facility';
 import { useUtilStore } from '@/store/util';
+import { useProductStore } from '@/store/productStore';
 import { api } from '@common';
 import { DateTime } from 'luxon';
-import { addCircleOutline, arrowForwardOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
-import EditFacilityGroupModal from '@/components/facility/EditFacilityGroupModal.vue';
-import AddProductStoreToGroupModal from '@/components/product-store/AddProductStoreToGroupModal.vue';
+import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
 
 const props = defineProps<{ facilityGroupId: string }>();
 
 const facilityStore = useFacilityStore();
 const utilStore = useUtilStore();
+const productStoreStore = useProductStore();
 
 const facilityGroupTypes = computed(() => facilityStore.getFacilityGroupTypes);
+const productStores = computed(() => productStoreStore.getProductStores);
 
 const group = ref<any>({});
 const productStoreCount = ref<number | null>(null);
@@ -156,6 +269,25 @@ const filteredAvailableFacilities = ref<any[]>([]);
 const facilitySearch = ref("");
 const isFacilitiesModified = ref(false);
 const isSaving = ref(false);
+
+// Edit facility group modal
+const showEditModal = ref(false);
+const formData = ref({
+  facilityGroupName: "",
+  facilityGroupTypeId: "",
+  description: ""
+});
+
+// Add product stores to group modal
+const showProductStoreModal = ref(false);
+const currentAssociations = ref<any[]>([]);
+const selectedProductStoreIds = ref<Set<string>>(new Set());
+const isModified = computed(() => {
+  const currentIds = new Set(currentAssociations.value.map((a: any) => a.productStoreId));
+  if (currentIds.size !== selectedProductStoreIds.value.size) return true;
+  for (const id of selectedProductStoreIds.value) if (!currentIds.has(id)) return true;
+  return false;
+});
 
 onIonViewWillEnter(async () => {
   isSaving.value = false;
@@ -188,32 +320,127 @@ async function loadProductStoreCount() {
 }
 
 async function openProductStoreModal() {
-  const modal = await modalController.create({
-    component: AddProductStoreToGroupModal,
-    componentProps: { facilityGroup: group.value }
-  });
-
-  modal.onDidDismiss().then(({ data }: any) => {
-    if (data?.updatedCount !== undefined) productStoreCount.value = data.updatedCount;
-  });
-
-  modal.present();
+  currentAssociations.value = [];
+  selectedProductStoreIds.value = new Set();
+  showProductStoreModal.value = true;
+  await productStoreStore.fetchProductStores();
+  await fetchCurrentAssociations();
 }
 
-async function openEditModal() {
-  const modal = await modalController.create({
-    component: EditFacilityGroupModal,
-    componentProps: { facilityGroup: group.value }
-  });
-
-  modal.onDidDismiss().then(({ data }: any) => {
-    if (data?.updated) {
-      group.value = { ...group.value, ...data.updated };
-      utilStore.patchFacilityGroup(props.facilityGroupId, data.updated);
+async function fetchCurrentAssociations() {
+  try {
+    const resp = await api({
+      url: "oms/groupProductStores",
+      method: "get",
+      params: { facilityGroupId: group.value.facilityGroupId, filterByDate: "Y", pageNoLimit: true }
+    });
+    if (!commonUtil.hasError(resp) && resp.data?.length) {
+      currentAssociations.value = resp.data;
+      selectedProductStoreIds.value = new Set(resp.data.map((a: any) => a.productStoreId));
+    } else {
+      currentAssociations.value = [];
+      selectedProductStoreIds.value = new Set();
     }
-  });
+  } catch (err) {
+    logger.error("Failed to fetch group product stores", err);
+  }
+}
 
-  modal.present();
+function isSelected(productStoreId: string) {
+  return selectedProductStoreIds.value.has(productStoreId);
+}
+
+function toggleSelection(store: any) {
+  const next = new Set(selectedProductStoreIds.value);
+  if (next.has(store.productStoreId)) {
+    next.delete(store.productStoreId);
+  } else {
+    next.add(store.productStoreId);
+  }
+  selectedProductStoreIds.value = next;
+}
+
+function closeProductStoreModal() {
+  showProductStoreModal.value = false;
+}
+
+async function saveProductStores() {
+  const currentIds = new Set(currentAssociations.value.map((a: any) => a.productStoreId));
+  const associationByStoreId = Object.fromEntries(currentAssociations.value.map((a: any) => [a.productStoreId, a]));
+
+  const toAdd = [...selectedProductStoreIds.value].filter((id) => !currentIds.has(id));
+  const toRemove = [...currentIds].filter((id) => !selectedProductStoreIds.value.has(id));
+
+  const addRequests = toAdd.map((productStoreId) =>
+    api({
+      url: `oms/productStores/${productStoreId}/facilityGroups`,
+      method: "post",
+      data: { facilityGroupId: group.value.facilityGroupId, fromDate: DateTime.now().toMillis() }
+    })
+  );
+
+  const removeRequests = toRemove.map((productStoreId) =>
+    api({
+      url: `oms/productStores/${productStoreId}/facilityGroups`,
+      method: "post",
+      data: {
+        facilityGroupId: group.value.facilityGroupId,
+        fromDate: associationByStoreId[productStoreId].fromDate,
+        thruDate: DateTime.now().toMillis()
+      }
+    })
+  );
+
+  const results = await Promise.allSettled([...addRequests, ...removeRequests]);
+  const anyFailed = results.some((r) => r.status === "rejected");
+
+  if (anyFailed) {
+    commonUtil.showToast(translate("Failed to update some product store associations"));
+  } else {
+    commonUtil.showToast(translate("Product stores updated"));
+  }
+
+  productStoreCount.value = selectedProductStoreIds.value.size;
+  closeProductStoreModal();
+}
+
+function openEditModal() {
+  formData.value = {
+    facilityGroupName: group.value.facilityGroupName || "",
+    facilityGroupTypeId: group.value.facilityGroupTypeId || "",
+    description: group.value.description || ""
+  };
+  showEditModal.value = true;
+}
+
+function closeEditModal() {
+  showEditModal.value = false;
+}
+
+async function saveEditGroup() {
+  if (!formData.value.facilityGroupName?.trim()) {
+    commonUtil.showToast(translate("Please fill all the required fields"));
+    return;
+  }
+
+  try {
+    const resp = await (facilityStore as any).updateFacilityGroup({
+      facilityGroupId: group.value.facilityGroupId,
+      ...formData.value
+    });
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Group details updated"));
+      const updated = { ...group.value, ...formData.value };
+      group.value = { ...group.value, ...updated };
+      utilStore.patchFacilityGroup(props.facilityGroupId, updated);
+      closeEditModal();
+    } else {
+      throw resp.data;
+    }
+  } catch (err) {
+    logger.error("Failed to update group details", err);
+    commonUtil.showToast(translate("Failed to update group details"));
+  }
 }
 
 async function loadGroup() {

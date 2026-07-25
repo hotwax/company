@@ -122,18 +122,91 @@
           </div>
         </template>
       </main>
+
+      <ion-modal :is-open="showArtifactAuthzModal" @didDismiss="closeArtifactAuthzModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeArtifactAuthzModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ isEditMode ? translate("Update authorization") : translate("Add authorization") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <form @keyup.enter="saveArtifactAuthz()">
+            <ion-item lines="full">
+              <ion-select v-model="form.artifactGroupId" :label="translate('Artifact group')" interface="popover" :disabled="isEditMode">
+                <ion-select-option v-for="artifactGroup in artifactGroups" :key="artifactGroup.artifactGroupId" :value="artifactGroup.artifactGroupId">
+                  {{ artifactGroup.description || artifactGroup.artifactGroupId }} [{{ artifactGroup.artifactGroupId }}]
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+            <ion-item lines="full">
+              <ion-select v-model="form.authzTypeEnumId" :label="translate('Authz type')" interface="popover">
+                <ion-select-option v-for="authzType in authzTypeEnums" :key="authzType.enumId" :value="authzType.enumId">
+                  {{ authzType.description || authzType.enumId }}
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+            <ion-item lines="full">
+              <ion-select v-model="form.authzActionEnumId" :label="translate('Action')" interface="popover">
+                <ion-select-option v-for="authzAction in authzActionEnums" :key="authzAction.enumId" :value="authzAction.enumId">
+                  {{ authzAction.description || authzAction.enumId }}
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+            <ion-item lines="none">
+              <ion-input v-model="form.authzServiceName" :label="translate('Authz service name')" placeholder="co.hotwax.SomeServices.some#Service" />
+            </ion-item>
+          </form>
+        </ion-content>
+
+        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+          <ion-fab-button :disabled="!isFormValid()" @click="saveArtifactAuthz()">
+            <ion-icon :icon="saveOutline" />
+          </ion-fab-button>
+        </ion-fab>
+      </ion-modal>
+
+      <ion-modal :is-open="showEditUserGroupModal" @didDismiss="closeEditUserGroupModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeEditUserGroupModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Update user group") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <form @keyup.enter="updateUserGroup()">
+            <ion-item lines="none">
+              <ion-textarea v-model="description" :label="translate('Description')" :counter="true" :maxlength="255" :auto-grow="true" />
+            </ion-item>
+          </form>
+        </ion-content>
+
+        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+          <ion-fab-button :disabled="description === (currentUserGroup?.description || '')" @click="updateUserGroup()">
+            <ion-icon :icon="saveOutline" />
+          </ion-fab-button>
+        </ion-fab>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToolbar, alertController, modalController } from "@ionic/vue";
-import { addOutline, pencilOutline, trashOutline } from "ionicons/icons";
+import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner, IonTextarea, IonTitle, IonToolbar, alertController } from "@ionic/vue";
+import { addOutline, closeOutline, pencilOutline, saveOutline, trashOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { commonUtil, logger, translate } from "@common";
-import ArtifactAuthzModal from "@/components/security/ArtifactAuthzModal.vue";
-import EditUserGroupModal from "@/components/security/EditUserGroupModal.vue";
 import { useAuthorizationStore } from "@/store/authorization";
 import { useUtilStore } from "@/store/util";
 import { useUserStore } from "@/store/user";
@@ -153,6 +226,18 @@ const query = ref("");
 const viewMode = ref<"permissions" | "authorizations">("permissions");
 const updatingPermissionIds = ref<Record<string, boolean>>({});
 
+const showArtifactAuthzModal = ref(false);
+const selectedAuthorization = ref<any>(null);
+const form = ref<any>({
+  artifactGroupId: "",
+  authzTypeEnumId: "",
+  authzActionEnumId: "",
+  authzServiceName: ""
+});
+
+const showEditUserGroupModal = ref(false);
+const description = ref("");
+
 const userGroups = computed(() => utilStore.getUserGroups);
 const currentUserGroup = computed(() => userGroups.value.find((group: any) => group.userGroupId === props.userGroupId));
 const userPermissions = computed(() => authorizationStore.getUserPermissions);
@@ -162,6 +247,7 @@ const authzActionEnums = computed(() => authorizationStore.getAuthzActionEnums);
 const userGroupTypeEnums = computed(() => authorizationStore.getUserGroupTypeEnums);
 const groupPermissions = computed(() => authorizationStore.getGroupPermissions(props.userGroupId));
 const groupAuthorizations = computed(() => authorizationStore.getGroupAuthorizations(props.userGroupId));
+const isEditMode = computed(() => !!selectedAuthorization.value?.artifactAuthzId);
 
 const filteredUserPermissions = computed(() => {
   const queryString = query.value.trim().toLowerCase();
@@ -254,38 +340,92 @@ const togglePermission = async (permission: any) => {
   updatingPermissionIds.value[permission.userPermissionId] = false;
 };
 
-const editUserGroup = async () => {
-  const editUserGroupModal = await modalController.create({
-    component: EditUserGroupModal,
-    componentProps: { userGroup: currentUserGroup.value }
-  });
-
-  return editUserGroupModal.present();
+const editUserGroup = () => {
+  description.value = currentUserGroup.value?.description || "";
+  showEditUserGroupModal.value = true;
 };
 
-const openAddAuthorization = async () => {
-  const authorizationModal = await modalController.create({
-    component: ArtifactAuthzModal,
-    componentProps: { userGroupId: props.userGroupId }
-  });
+const closeEditUserGroupModal = () => {
+  showEditUserGroupModal.value = false;
+};
 
-  authorizationModal.present();
-  const result = await authorizationModal.onDidDismiss();
-  if(result.role === "save") {
-    await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+const updateUserGroup = async () => {
+  if(description.value === (currentUserGroup.value?.description || "")) {return;}
+
+  try {
+    const resp = await utilStore.updateUserGroup({
+      userGroupId: currentUserGroup.value?.userGroupId,
+      description: description.value
+    });
+
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("User group updated successfully."));
+      utilStore.updateUserGroupInState({ userGroupId: currentUserGroup.value?.userGroupId, description: description.value });
+      closeEditUserGroupModal();
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(translate("Failed to update user group."));
+    logger.error(error);
   }
 };
 
-const openEditAuthorization = async (authorization: any) => {
-  const authorizationModal = await modalController.create({
-    component: ArtifactAuthzModal,
-    componentProps: { userGroupId: props.userGroupId, authorization }
-  });
+const openAddAuthorization = () => {
+  selectedAuthorization.value = null;
+  form.value = {
+    artifactGroupId: "",
+    authzTypeEnumId: "",
+    authzActionEnumId: "",
+    authzServiceName: ""
+  };
+  showArtifactAuthzModal.value = true;
+};
 
-  authorizationModal.present();
-  const result = await authorizationModal.onDidDismiss();
-  if(result.role === "save") {
-    await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+const openEditAuthorization = (authorization: any) => {
+  selectedAuthorization.value = authorization;
+  form.value = {
+    artifactGroupId: authorization.artifactGroupId,
+    authzTypeEnumId: authorization.authzTypeEnumId,
+    authzActionEnumId: authorization.authzActionEnumId,
+    authzServiceName: authorization.authzServiceName || ""
+  };
+  showArtifactAuthzModal.value = true;
+};
+
+const closeArtifactAuthzModal = () => {
+  showArtifactAuthzModal.value = false;
+};
+
+const isFormValid = () => {
+  return !!(form.value.artifactGroupId && form.value.authzTypeEnumId && form.value.authzActionEnumId);
+};
+
+const saveArtifactAuthz = async () => {
+  if(!isFormValid()) {return;}
+
+  try {
+    const resp = isEditMode.value
+      ? await authorizationStore.updateArtifactAuthz({
+        userGroupId: props.userGroupId,
+        artifactAuthzId: selectedAuthorization.value.artifactAuthzId,
+        ...form.value
+      })
+      : await authorizationStore.createArtifactAuthz({
+        userGroupId: props.userGroupId,
+        ...form.value
+      });
+
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(isEditMode.value ? translate("Authorization updated successfully.") : translate("Authorization added successfully."));
+      await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+      closeArtifactAuthzModal();
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(isEditMode.value ? translate("Failed to update authorization.") : translate("Failed to add authorization."));
+    logger.error(error);
   }
 };
 

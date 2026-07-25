@@ -53,19 +53,52 @@
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
       </main>
+
+      <ion-modal :is-open="showSelectOperatingCountriesModal" @didDismiss="closeSelectOperatingCountriesModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeSelectOperatingCountriesModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Select operating countries") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-searchbar :placeholder="translate('Search country')" v-model="queryString" @keydown.enter="updateQuery()" />
+
+          <ion-list>
+            <ion-item v-for="country in filteredCountries" :key="country.geoId" @click="toggleCountrySelection(country)">
+              <ion-checkbox :checked="isAlreadySelected(country.geoId)" justify="space-between">
+                <ion-label>
+                  <p class="overline">{{ country.geoId }}</p>
+                  {{ country.geoName ? country.geoName : country.geoId }}
+                </ion-label>
+              </ion-checkbox>
+            </ion-item>
+          </ion-list>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button :disabled="!areCountriesUpdated()" @click="saveCountries()">
+              <ion-icon :icon="checkmarkOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
+import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonProgressBar, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { arrowForwardOutline, checkmarkOutline, closeCircleOutline, closeOutline, mapOutline } from "ionicons/icons";
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import router from "@/router";
 import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
-import SelectOperatingCountriesModal from "@/components/facility/SelectOperatingCountriesModal.vue";
 import { generateInternalId } from '@/utils';
 
 const productStoreStore = useProductStore();
@@ -85,6 +118,12 @@ const productStores = computed(() => productStoreStore.productStores)
 const dbicCountriesCount = computed(() => utilStore.getDBICCountriesCount)
 const company = computed(() => productStoreStore.company)
 const organizationPartyId = computed(() => utilStore.organizationPartyId)
+
+const showSelectOperatingCountriesModal = ref(false);
+const queryString = ref("");
+const filteredCountries = ref([]) as any;
+const selectedCountryValues = ref([]) as any;
+const operatingCountries = computed(() => utilStore.operatingCountries);
 
 onIonViewWillEnter(async () => {
   await utilStore.fetchDBICCountries();
@@ -162,21 +201,42 @@ async function manageConfigurations() {
   emitter.emit("dismissLoader");
 }
 
-async function openSelectOperatingCountriesModal() {
-  const modal = await modalController.create({
-    component: SelectOperatingCountriesModal,
-    componentProps: {
-      selectedCountries: selectedCountries.value
-    }
-  })
+function openSelectOperatingCountriesModal() {
+  selectedCountryValues.value = selectedCountries.value.length ? JSON.parse(JSON.stringify(selectedCountries.value)) : [];
+  filteredCountries.value = JSON.parse(JSON.stringify(operatingCountries.value));
+  queryString.value = "";
+  showSelectOperatingCountriesModal.value = true;
+}
 
-  modal.onDidDismiss().then((result: any) => {
-    if(result.data?.selectedCountries) {
-      selectedCountries.value = result.data?.selectedCountries
-    }
-  })
+function updateQuery() {
+  filteredCountries.value = operatingCountries.value.filter((country: any) => (country.geoName.toLowerCase().includes(queryString.value.toLowerCase()) || country.geoId.toLowerCase().includes(queryString.value.toLowerCase())))
+}
 
-  modal.present()
+function isAlreadySelected(geoId: any) {
+  return selectedCountryValues.value.some((country: any) => country.geoId === geoId);
+}
+
+function toggleCountrySelection(selectedCountry: any) {
+  if(isAlreadySelected(selectedCountry.geoId)) {
+    selectedCountryValues.value = selectedCountryValues.value.filter((country: any) => country.geoId !== selectedCountry.geoId)
+  } else {
+    selectedCountryValues.value.push(selectedCountry);
+  }
+}
+
+function areCountriesUpdated() {
+  if(selectedCountries.value.length !== selectedCountryValues.value.length) return true;
+
+  return selectedCountryValues.value.some((selectedCountry: any) => !selectedCountries.value.find((country: any) => country.geoId === selectedCountry.geoId));
+}
+
+function saveCountries() {
+  selectedCountries.value = selectedCountryValues.value;
+  closeSelectOperatingCountriesModal();
+}
+
+function closeSelectOperatingCountriesModal() {
+  showSelectOperatingCountriesModal.value = false;
 }
 
 function removeCountry(geoId: string) {
@@ -210,5 +270,9 @@ function markGroupIdTouched() {
       max-width: 375px;
       margin: auto;
     }
+  }
+
+  ion-modal ion-content {
+    --padding-bottom: 80px;
   }
 </style>

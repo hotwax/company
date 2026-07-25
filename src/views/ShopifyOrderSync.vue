@@ -605,6 +605,68 @@
       </ion-content>
     </ion-modal>
 
+    <ion-modal :is-open="showCustomOrderRequestModal" @didDismiss="showCustomOrderRequestModal = false">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="showCustomOrderRequestModal = false">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Select orders") }}</ion-title>
+          <ion-buttons slot="end" v-if="isLoading">
+            <ion-spinner name="crescent" />
+          </ion-buttons>
+        </ion-toolbar>
+        <ion-toolbar>
+          <ion-searchbar
+            v-model="queryString"
+            :placeholder="translate('Search order name or Shopify ID')"
+            @keyup.enter="searchOrders()"
+            @ionInput="handleInput"
+          />
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content>
+        <ion-list v-if="orders.length" lines="full">
+          <ion-list-header v-if="!queryString.trim()">
+            <ion-label>{{ translate("Recently created orders from Shopify") }}</ion-label>
+          </ion-list-header>
+          <ion-item button @click="toggleAll">
+            <ion-label>
+              {{ translate("Select all") }}
+              <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
+            </ion-label>
+            <ion-checkbox slot="end" :checked="allSelected" @click.stop="toggleAll" />
+          </ion-item>
+          <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
+            <ion-label>
+              <h2>{{ order.name }}</h2>
+              <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
+              <p>{{ order.customerName || translate("No customer") }} · {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
+              <p>{{ formatOrderDate(order.createdAt) }}</p>
+            </ion-label>
+            <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
+            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" @click.stop="toggleOrder(order)" />
+          </ion-item>
+        </ion-list>
+        <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>
+        <ion-list v-else-if="queryString" lines="none"><ion-item><ion-label>{{ translate("No orders found") }}</ion-label></ion-item></ion-list>
+        <ion-list v-else lines="none"><ion-item><ion-label>{{ translate("No recent Shopify orders found") }}</ion-label></ion-item></ion-list>
+        <ion-infinite-scroll v-if="hasNextPage" @ionInfinite="loadMore">
+          <ion-infinite-scroll-content loading-spinner="crescent" :loading-text="translate('Loading')" />
+        </ion-infinite-scroll>
+      </ion-content>
+
+      <ion-footer>
+        <ion-toolbar>
+          <ion-buttons slot="start"><ion-button fill="clear" :disabled="!selectedOrders.length" @click="selectedOrdersById = {}">{{ translate("Clear") }}</ion-button></ion-buttons>
+          <ion-buttons slot="end"><ion-button fill="solid" color="primary" :disabled="!selectedOrders.length" @click="submit">{{ translate("Download selected orders") }} ({{ selectedOrders.length }})</ion-button></ion-buttons>
+        </ion-toolbar>
+      </ion-footer>
+    </ion-modal>
+
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSyncStore.job?.jobName || ''"
@@ -647,6 +709,7 @@ import {
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
+  IonCheckbox,
   IonChip,
   IonContent,
   IonDatetime,
@@ -654,10 +717,13 @@ import {
   IonFooter,
   IonHeader,
   IonIcon,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
   IonInput,
   IonItem,
   IonLabel,
   IonList,
+  IonListHeader,
   IonModal,
   IonNote,
   IonPage,
@@ -671,10 +737,9 @@ import {
   IonTitle,
   IonToolbar,
   alertController,
-  modalController,
 } from "@ionic/vue";
-import { commonUtil, translate } from "@common";
-import { computed, ref, watch } from "vue";
+import { commonUtil, logger, translate } from "@common";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { formatDateTime } from "@/utils";
@@ -683,11 +748,11 @@ import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.v
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import ShopifyOrderSyncCustomRequestCard from "@/components/shopify-order-sync/ShopifyOrderSyncCustomRequestCard.vue";
-import ShopifyOrderSyncOrdersModal from "@/components/shopify-order-sync/ShopifyOrderSyncOrdersModal.vue";
 import {
   useShopifyOrderSyncStore,
   type ShopifyOrderSyncImport,
   type ShopifyOrderSyncRecentOrder,
+  type ShopifyOrderSyncSearchResult,
 } from "@/store/shopifyOrderSync";
 import {
   type OrderSyncProgressRow,
@@ -994,7 +1059,20 @@ function openMdmLogDetails(logId: unknown) {
   showMdmLogModal.value = true;
 }
 
-async function openCustomOrderRequest() {
+const showCustomOrderRequestModal = ref(false);
+const queryString = ref("");
+const orders = ref<ShopifyOrderSyncSearchResult[]>([]);
+const selectedOrdersById = ref<Record<string, ShopifyOrderSyncSearchResult>>({});
+const isLoading = ref(false);
+const hasNextPage = ref(false);
+const endCursor = ref("");
+let debounceTimer: number | undefined;
+let requestId = 0;
+
+const selectedOrders = computed(() => Object.values(selectedOrdersById.value));
+const allSelected = computed(() => orders.value.length > 0 && orders.value.every((order) => selectedOrdersById.value[order.legacyResourceId]));
+
+function openCustomOrderRequest() {
   if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
     actionError.value = translate("Administrator permission is required to download specific orders.");
     return;
@@ -1003,40 +1081,93 @@ async function openCustomOrderRequest() {
     commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
     return;
   }
+  queryString.value = "";
+  orders.value = [];
+  selectedOrdersById.value = {};
+  isLoading.value = false;
+  hasNextPage.value = false;
+  endCursor.value = "";
+  if (debounceTimer) window.clearTimeout(debounceTimer);
+  showCustomOrderRequestModal.value = true;
+  void searchOrders();
+}
 
-  const ordersModal = await modalController.create({
-    component: ShopifyOrderSyncOrdersModal,
-    showBackdrop: true,
-    swipeToClose: true,
-  });
-  await ordersModal.present();
-  const { data } = await ordersModal.onDidDismiss();
-  const selectedIds = Array.isArray(data?.legacyResourceIds) ? data.legacyResourceIds : [];
-  if (selectedIds.length) {
-    const requestedShopId = props.id;
-    actionMessage.value = "";
-    actionError.value = "";
-    try {
-      const result = await orderSyncStore.requestSelectedOrders({ shopifyOrderIds: selectedIds, shopId: requestedShopId });
-      if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
-      if (result.queued.length === 1 && result.failedOrderIds.length === 0) {
-        actionMessage.value = translate("Shopify order {order} was queued as {id}.", {
-          order: result.queued[0].shopifyOrderId,
-          id: result.queued[0].systemMessageId,
-        });
-      } else {
-        actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
-          queued: result.queued.length,
-          failed: result.failedOrderIds.length,
-        });
-      }
-      await polling.manualRefresh();
-    } catch (error) {
-      if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
-      actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
-    }
+async function searchOrders(after?: string) {
+  isLoading.value = true;
+  const currentRequestId = ++requestId;
+  try {
+    const result = await orderSyncStore.searchShopifyOrders({ queryString: queryString.value.trim(), after, pageSize: 20 });
+    if (currentRequestId !== requestId) return;
+    orders.value = after ? orders.value.concat(result.orders) : result.orders;
+    hasNextPage.value = result.hasNextPage;
+    endCursor.value = result.endCursor;
+  } catch (error) {
+    if (currentRequestId !== requestId) return;
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to search Shopify orders."));
+    orders.value = [];
+    hasNextPage.value = false;
+  } finally {
+    if (currentRequestId === requestId) isLoading.value = false;
   }
 }
+
+function handleInput() {
+  if (debounceTimer) window.clearTimeout(debounceTimer);
+  requestId++;
+  debounceTimer = window.setTimeout(() => void searchOrders(), 600);
+}
+
+async function loadMore(event: any) {
+  if (hasNextPage.value && endCursor.value) await searchOrders(endCursor.value);
+  await event.target.complete();
+}
+
+function toggleOrder(order: ShopifyOrderSyncSearchResult) {
+  const next = { ...selectedOrdersById.value };
+  if (next[order.legacyResourceId]) delete next[order.legacyResourceId];
+  else next[order.legacyResourceId] = order;
+  selectedOrdersById.value = next;
+}
+
+function toggleAll() {
+  selectedOrdersById.value = allSelected.value
+    ? {}
+    : Object.fromEntries(orders.value.map((order) => [order.legacyResourceId, order]));
+}
+
+function isSelected(id: string) { return Boolean(selectedOrdersById.value[id]); }
+function formatOrderDate(value?: string) { return value ? formatDateTime(value) : translate("Date unavailable"); }
+
+async function submit() {
+  const selectedIds = selectedOrders.value.map((order) => order.legacyResourceId);
+  showCustomOrderRequestModal.value = false;
+  if (!selectedIds.length) return;
+  const requestedShopId = props.id;
+  actionMessage.value = "";
+  actionError.value = "";
+  try {
+    const result = await orderSyncStore.requestSelectedOrders({ shopifyOrderIds: selectedIds, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    if (result.queued.length === 1 && result.failedOrderIds.length === 0) {
+      actionMessage.value = translate("Shopify order {order} was queued as {id}.", {
+        order: result.queued[0].shopifyOrderId,
+        id: result.queued[0].systemMessageId,
+      });
+    } else {
+      actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
+        queued: result.queued.length,
+        failed: result.failedOrderIds.length,
+      });
+    }
+    await polling.manualRefresh();
+  } catch (error) {
+    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
+  }
+}
+
+onBeforeUnmount(() => { if (debounceTimer) window.clearTimeout(debounceTimer); });
 
 type LandmarkDateKey = "launchDate" | "historyLastSyncDate";
 

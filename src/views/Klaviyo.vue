@@ -140,12 +140,145 @@
           <ion-icon :icon="addOutline" />
         </ion-fab-button>
       </ion-fab>
+
+      <ion-modal :is-open="showUnigateConfig" @didDismiss="onUnigateConfigDismiss">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeUnigateConfig" :aria-label="translate('Close')">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Unigate tenant") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list inset>
+            <ion-item lines="none">
+              <ion-label>
+                {{ translate("This is the OMS-side connection that proxies every Klaviyo call.") }}
+                <p>{{ translate("All Klaviyo connections you add here are sent through this tenant. Edit only when the Unigate URL, tenant ID, or API key actually changes.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-list v-if="unigateConfig" inset>
+            <ion-item>
+              <ion-input
+                v-model="form.internalId"
+                :label="translate('Tenant ID')"
+                label-placement="stacked"
+                :placeholder="translate('Required — your Unigate tenant party ID')"
+                :maxlength="60"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.sendUrl"
+                :label="translate('Unigate base URL')"
+                label-placement="stacked"
+                :placeholder="'https://unigate.example.com/rest/s1/unigate/'"
+              />
+            </ion-item>
+            <ion-item v-if="sendUrlWarning" color="warning">
+              <ion-label>
+                {{ translate("Check this Unigate URL") }}
+                <p>{{ sendUrlWarning }}</p>
+              </ion-label>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.description"
+                :label="translate('Description')"
+                label-placement="stacked"
+                :placeholder="translate('e.g. Unigate connection for shipping and email')"
+                :maxlength="120"
+              />
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="form.authHeaderName"
+                :label="translate('Auth header')"
+                label-placement="stacked"
+                :placeholder="'api_key'"
+              />
+            </ion-item>
+          </ion-list>
+
+          <ion-list v-if="unigateConfig" inset>
+            <ion-item>
+              <ion-label>
+                {{ translate("Unigate API key") }}
+                <p>{{ existingMaskedKey }}</p>
+                <p>{{ translate("API keys are write-only. The full value is never displayed once saved.") }}</p>
+              </ion-label>
+              <ion-button v-if="!isReplacingKey" slot="end" fill="outline" color="danger" @click="beginReplaceKey">
+                {{ translate("Replace API key") }}
+              </ion-button>
+            </ion-item>
+
+            <template v-if="isReplacingKey">
+              <ion-item color="danger">
+                <ion-label>
+                  {{ translate("This will stop your current key from working") }}
+                  <p>{{ translate("As soon as you save, every Klaviyo connection routed through this tenant will start using the new key. If the new key is wrong or missing, customers will stop receiving emails until you fix it.") }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  v-model="form.newApiKey"
+                  type="password"
+                  :label="translate('New Unigate API key')"
+                  label-placement="stacked"
+                  autocomplete="off"
+                  :spellcheck="false"
+                >
+                  <ion-input-password-toggle slot="end" />
+                </ion-input>
+              </ion-item>
+              <ion-item>
+                <ion-checkbox
+                  :checked="confirmedKeyReplacement"
+                  @ionChange="confirmedKeyReplacement = $event.detail.checked"
+                  justify="space-between"
+                >
+                {{ translate("I understand the previous key will stop working immediately.") }}
+                </ion-checkbox>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-button fill="clear" expand="block" @click="cancelReplaceKey">{{ translate("Cancel key replacement") }}</ion-button>
+              </ion-item>
+            </template>
+          </ion-list>
+
+          <ion-list v-else inset>
+            <ion-item>
+              <ion-label>
+                {{ translate("UNIGATE_CONFIG isn't set up on this OMS instance yet.") }}
+                <p>{{ translate("From OMS Admin, open Unigate → Communication Gateway, then Setup Tenant. Once it exists, refresh this page.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-fab v-if="unigateConfig" vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button
+              :disabled="!canSave || isSaving"
+              @click="save"
+              :aria-label="translate('Save tenant changes')"
+            >
+              <ion-spinner v-if="isSaving" name="crescent" />
+              <ion-icon v-else :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import {
   IonBadge,
   IonButton,
@@ -154,15 +287,19 @@ import {
   IonCardContent,
   IonCardHeader,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
   IonFab,
   IonFabButton,
   IonHeader,
   IonIcon,
+  IonInput,
+  IonInputPasswordToggle,
   IonItem,
   IonLabel,
   IonList,
   IonMenuButton,
+  IonModal,
   IonPage,
   IonSkeletonText,
   IonSpinner,
@@ -171,15 +308,14 @@ import {
   modalController,
   onIonViewWillEnter,
 } from "@ionic/vue";
-import { addCircleOutline, addOutline, serverOutline } from "ionicons/icons";
+import { addCircleOutline, addOutline, closeOutline, saveOutline, serverOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
-import { translate } from '@common';
+import { commonUtil, logger, translate } from '@common';
 import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
-import KlaviyoUnigateConfigModal from "@/components/klaviyo/KlaviyoUnigateConfigModal.vue";
-import { getUnigateSendUrlWarning } from "@/utils/maarg";
+import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
 const klaviyoStore = useKlaviyoStore();
 const utilStore = useUtilStore();
@@ -197,6 +333,88 @@ const maargInfo = computed(() => utilStore.maargInfo);
 const unigateConfigWarning = computed(() => {
   return getUnigateSendUrlWarning(unigateConfig.value?.sendUrl, maargInfo.value);
 });
+
+// --- Unigate tenant config modal (inlined) ---
+const showUnigateConfig = ref(false);
+
+const form = reactive({
+  internalId: unigateConfig.value?.internalId || "",
+  sendUrl: getPreferredUnigateSendUrl(unigateConfig.value?.sendUrl || "", maargInfo.value),
+  description: unigateConfig.value?.description || "",
+  authHeaderName: unigateConfig.value?.authHeaderName || "api_key",
+  newApiKey: "",
+});
+
+const isReplacingKey = ref(false);
+const confirmedKeyReplacement = ref(false);
+const isSaving = ref(false);
+
+const existingMaskedKey = computed(() => {
+  const masked = maskApiKey(unigateConfig.value?.publicKey);
+  return masked || translate("Saved on the server (not visible)");
+});
+
+// Tenant ID is always required to save. The API key is required only when
+// the user explicitly chose to replace it (existing key remains otherwise).
+const canSave = computed(() => {
+  if (!form.internalId.trim()) return false;
+  if (isReplacingKey.value) {
+    if (!form.newApiKey.trim()) return false;
+    if (!confirmedKeyReplacement.value) return false;
+  }
+  return true;
+});
+
+const sendUrlWarning = computed(() => getUnigateSendUrlWarning(form.sendUrl, maargInfo.value));
+
+function beginReplaceKey() {
+  isReplacingKey.value = true;
+  form.newApiKey = "";
+  confirmedKeyReplacement.value = false;
+}
+
+function cancelReplaceKey() {
+  isReplacingKey.value = false;
+  form.newApiKey = "";
+  confirmedKeyReplacement.value = false;
+}
+
+async function save() {
+  if (!canSave.value || !unigateConfig.value) return;
+  isSaving.value = true;
+
+  try {
+    const payload: any = {
+      internalId: form.internalId.trim(),
+      sendUrl: form.sendUrl.trim(),
+      description: form.description.trim(),
+      authHeaderName: form.authHeaderName.trim() || "api_key",
+    };
+    if (isReplacingKey.value && form.newApiKey.trim()) {
+      payload.publicKey = form.newApiKey.trim();
+    }
+    await klaviyoStore.updateSystemMessageRemote(unigateConfig.value.systemMessageRemoteId, payload);
+    await klaviyoStore.fetchUnigateConfig();
+    commonUtil.showToast(translate("Unigate tenant updated"));
+    closeUnigateConfig();
+  } catch (error: any) {
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to update Unigate tenant"));
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+function closeUnigateConfig() {
+  showUnigateConfig.value = false;
+}
+
+// Runs on every dismiss (close button, save, backdrop) — mirrors the former
+// modal's onDidDismiss() → fetchUnigateConfig() follow-up.
+async function onUnigateConfigDismiss() {
+  await klaviyoStore.fetchUnigateConfig();
+}
+// --- end Unigate tenant config modal ---
 
 onIonViewWillEnter(async () => {
   if (!klaviyoStore.hasCheckedUnigate) {
@@ -240,12 +458,17 @@ async function openConnectionModal() {
   modal.present();
 }
 
-async function openUnigateConfigModal() {
-  const modal = await modalController.create({ component: KlaviyoUnigateConfigModal });
-  modal.onDidDismiss().then(async () => {
-    await klaviyoStore.fetchUnigateConfig();
-  });
-  modal.present();
+function openUnigateConfigModal() {
+  // Re-seed form + local state so each open behaves like a fresh modal instance.
+  form.internalId = unigateConfig.value?.internalId || "";
+  form.sendUrl = getPreferredUnigateSendUrl(unigateConfig.value?.sendUrl || "", maargInfo.value);
+  form.description = unigateConfig.value?.description || "";
+  form.authHeaderName = unigateConfig.value?.authHeaderName || "api_key";
+  form.newApiKey = "";
+  isReplacingKey.value = false;
+  confirmedKeyReplacement.value = false;
+  isSaving.value = false;
+  showUnigateConfig.value = true;
 }
 
 function openConnection(conn: any) {

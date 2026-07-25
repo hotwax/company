@@ -83,18 +83,61 @@
           </div>
         </div>
       </div>
+
+      <ion-modal :is-open="showCreateShipmentMethodModal" @didDismiss="closeCreateShipmentMethodModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeCreateShipmentMethodModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Create shipment method") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list>
+            <ion-item v-if="carriers.length > 1">
+              <ion-select :label="translate('Carrier')" :placeholder="translate('Select')" v-model="createShipmentCarrierPartyId" interface="popover">
+                <ion-select-option v-for="carrier in carriers" :key="carrier.partyId" :value="carrier.partyId">
+                  {{ carrier.groupName || carrier.partyId }}
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+
+            <ion-item>
+              <ion-input v-model="description" :label="translate('Shipment method name')" label-placement="stacked" :placeholder="translate('e.g. Standard Shipping')" :maxlength="60" @ionInput="onDescriptionInput" />
+            </ion-item>
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <p>{{ translate("Hotwax ID") }}: <ion-text color="primary">{{ derivedId || "—" }}</ion-text></p>
+              </ion-label>
+            </ion-item>
+
+            <ion-item>
+              <ion-input v-model="shopifyShippingMethod" :label="translate('Shopify name')" label-placement="stacked" :placeholder="translate('Shopify shipping method name')" />
+            </ion-item>
+          </ion-list>
+        </ion-content>
+
+        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+          <ion-fab-button :disabled="!canSave" @click="createShipmentMethod()">
+            <ion-icon :icon="saveOutline" />
+          </ion-fab-button>
+        </ion-fab>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline, airplaneOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, airplaneOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
-import CreateShipmentMethodModal from '@/components/shipping-payment/CreateShipmentMethodModal.vue';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 
@@ -323,28 +366,103 @@ function navigateBack() {
   else router.push(backHref.value);
 }
 
-async function openCreateModal() {
-  const modal = await modalController.create({
-    component: CreateShipmentMethodModal,
-    componentProps: {
-      shopId: props.id,
-      productStoreId: shop.value.productStoreId,
-      carrierPartyId: selectedCarrierPartyId.value,
-      carriers: carriers.value
-    }
-  });
+const showCreateShipmentMethodModal = ref(false);
+const description = ref("");
+const shopifyShippingMethod = ref("");
+const createShipmentCarrierPartyId = ref("");
 
-  modal.onDidDismiss().then(async ({ data }) => {
-    if (!data?.created) return;
+// Auto-derive the shipment method type id from the description (uppercase, non-alphanumeric -> underscore).
+const derivedId = computed(() => description.value
+  .trim()
+  .toUpperCase()
+  .replace(/[^A-Z0-9]+/g, "_")
+  .replace(/^_+|_+$/g, "")
+);
+
+const canSave = computed(() => Boolean(derivedId.value && shopifyShippingMethod.value.trim() && createShipmentCarrierPartyId.value));
+
+function onDescriptionInput() {
+  // keep description as typed; derivedId recomputes reactively
+}
+
+function openCreateModal() {
+  // Seed fresh modal state (formerly the modal's ref initializers via componentProps).
+  description.value = "";
+  shopifyShippingMethod.value = "";
+  createShipmentCarrierPartyId.value = selectedCarrierPartyId.value || (carriers.value[0]?.partyId ?? "");
+  showCreateShipmentMethodModal.value = true;
+}
+
+function closeCreateShipmentMethodModal() {
+  showCreateShipmentMethodModal.value = false;
+}
+
+async function createShipmentMethod() {
+  if(!canSave.value) {return;}
+
+  const shipmentMethodTypeId = derivedId.value;
+  emitter.emit("presentLoader");
+
+  try {
+    // 1. Create the shipment method type if it does not already exist.
+    const typeExists = utilStore.shipmentMethodTypes.some((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
+    if(!typeExists) {
+      const typeResp = await utilStore.createShipmentMethodType({
+        shipmentMethodTypeId,
+        description: description.value.trim()
+      });
+      if(commonUtil.hasError(typeResp)) {
+        throw typeResp.data;
+      }
+      await utilStore.fetchShipmentMethodTypes(true);
+    }
+
+    // 2. Associate the shipment method type with the product store + carrier so it appears as a row.
+    const assocResp = await utilStore.createProductStoreShipmentMethod({
+      productStoreId: shop.value.productStoreId,
+      shipmentMethodTypeId,
+      partyId: createShipmentCarrierPartyId.value,
+      roleTypeId: "CARRIER"
+    });
+    if(commonUtil.hasError(assocResp)) {
+      throw assocResp.data;
+    }
+
+    // 3. Create the Shopify carrier-shipment mapping (the identification).
+    const mappingResp = await shopifyStore.createShopifyShopCarrierShipment({
+      shopId: props.id,
+      shipmentMethodTypeId,
+      shopifyShippingMethod: shopifyShippingMethod.value.trim(),
+      carrierPartyId: createShipmentCarrierPartyId.value
+    });
+    if(commonUtil.hasError(mappingResp)) {
+      throw mappingResp.data;
+    }
+
+    commonUtil.showToast(translate("Shipment method created successfully"));
+    showCreateShipmentMethodModal.value = false;
+  } catch (error) {
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to create shipment method"));
+    // Keep the modal open so the user can correct and retry.
+    return;
+  } finally {
+    emitter.emit("dismissLoader");
+  }
+
+  // Refresh data and reflect the created method (formerly handled in modal.onDidDismiss).
+  // Isolated from the create try/catch so a refresh failure can't report the
+  // already-successful creation as failed or keep the modal open.
+  try {
+    if (createShipmentCarrierPartyId.value) selectedCarrierPartyId.value = createShipmentCarrierPartyId.value;
     await Promise.all([
       netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: shop.value.productStoreId }),
       shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id })
     ]);
-    if (data.carrierPartyId) selectedCarrierPartyId.value = data.carrierPartyId;
     initializeLocalMappings();
-  });
-
-  await modal.present();
+  } catch (refreshError) {
+    logger.error(refreshError);
+  }
 }
 </script>
 

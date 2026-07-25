@@ -143,7 +143,7 @@
                 </ion-item>
               </ion-list>
               <div class="login-detail-actions">
-                <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') && selectedUser.userId !== userProfile.userId" fill="outline" color="warning" @click="resetPassword()">
+                <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') && selectedUser.userId !== userProfile.userId" fill="outline" color="warning" @click="openResetPasswordModal()">
                   {{ translate('Reset password') }}
                 </ion-button>
                 <ion-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') || selectedUser.hasLoggedOut === 'Y'" fill="outline" color="danger" @click="confirmForceLogout()">
@@ -459,26 +459,159 @@
           </ion-card>
         </section>
       </main>
+
+      <ion-modal :is-open="showResetPasswordModal" @didDismiss="closeResetPasswordModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeResetPasswordModal">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Reset password") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list>
+            <ion-item lines="none">
+              <p>
+                {{ translate('Password should be at least 5 characters long and contain at least one number, alphabet and special character.') }}
+              </p>
+            </ion-item>
+            <ion-item lines="none">
+              <ion-input
+                id="newPassword"
+                ref="newPasswordRef"
+                v-model="newPassword"
+                :label="translate('New password')"
+                :placeholder="translate('Enter password')"
+                name="password"
+                :type="showNewPassword ? 'text' : 'password'"
+                :error-text="translate('Password requirements not fulfilled.')"
+                autocomplete="new-password"
+                @keyup="validateResetPassword"
+                @ion-blur="markResetPasswordTouched"
+              />
+            </ion-item>
+            <ion-item lines="none">
+              <ion-input
+                id="confirmPassword"
+                ref="confirmPasswordInput"
+                v-model="confirmPassword"
+                :label="translate('Verify password')"
+                :placeholder="translate('Confirm password')"
+                name="confirmPassword"
+                :type="showConfirmPassword ? 'text' : 'password'"
+                :error-text="translate('Passwords do not match.')"
+                @keyup="validateConfirmPassword()"
+                @ion-blur="markConfirmPasswordTouched"
+              />
+            </ion-item>
+          </ion-list>
+
+          <ion-item v-if="resetPasswordEmail?.length" class="ion-padding-top">
+            <ion-label>{{ resetPasswordEmail }}</ion-label>
+            <ion-button slot="end" fill="clear" @click="sendResetPasswordEmail()">
+              {{ translate('Reset password email') }}
+              <ion-icon slot="end" :icon="mailOutline" />
+            </ion-button>
+          </ion-item>
+
+          <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+            <ion-fab-button :disabled="(!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN') && userProfile?.userLoginId !== resetPasswordUserLoginId) || checkResetButtonStatus()" @click="resetPassword()">
+              <ion-icon :icon="lockClosedOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showSelectSecurityGroupModal" @didDismiss="closeSelectSecurityGroupModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeSelectSecurityGroupModal">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Select security groups") }}</ion-title>
+          </ion-toolbar>
+          <ion-toolbar>
+            <ion-searchbar v-model="queryString" :placeholder="translate('Search security groups')" />
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content class="select-security-group-content">
+          <template v-if="filteredSecurityGroups.length">
+            <ion-list>
+              <ion-item v-for="securityGroup in filteredSecurityGroups" :key="securityGroup.userGroupId">
+                <ion-checkbox :checked="isSelected(securityGroup.userGroupId)" @ion-change="toggleSecurityGroupSelection(securityGroup)">
+                  <ion-label>
+                    {{ securityGroup.description || securityGroup.userGroupId }}
+                    <p>{{ securityGroup.userGroupId }}</p>
+                  </ion-label>
+                </ion-checkbox>
+              </ion-item>
+            </ion-list>
+          </template>
+          <div v-else class="empty-state">
+            <p>{{ translate("No security groups found") }}</p>
+          </div>
+
+          <ion-fab slot="fixed" vertical="bottom" horizontal="end" @click="saveSecurityGroups()">
+            <ion-fab-button>
+              <ion-icon :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showUserSecurityGroupAssocHistoryModal" @didDismiss="closeUserSecurityGroupAssocHistoryModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeUserSecurityGroupAssocHistoryModal">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Security group history") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list v-if="userGroupAssocHistories.length">
+            <ion-item v-for="assocHistory in userGroupAssocHistories" :key="assocHistory.userGroupId">
+              <ion-label>
+                {{ assocHistory.description ? assocHistory.description : assocHistory.userGroupId }}
+                <p>{{ assocHistory.userGroupId }}</p>
+              </ion-label>
+              <ion-note slot="end">
+                {{ commonUtil.getDateWithOrdinalSuffix(assocHistory.fromDate) }} - {{ assocHistory.thruDate ? commonUtil.getDateWithOrdinalSuffix(assocHistory.thruDate) : translate('Current') }}
+              </ion-note>
+            </ion-item>
+          </ion-list>
+          <div v-else class="empty-state">
+            <p>{{ translate("No history found.") }}</p>
+          </div>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { IonAvatar, IonBackButton, IonBadge, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonText, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewWillEnter, onIonViewWillLeave, popoverController } from "@ionic/vue";
+import { IonAvatar, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonText, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewWillEnter, onIonViewWillLeave, popoverController } from "@ionic/vue";
 import router from "@/router";
 import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
-import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, mailOutline, timeOutline } from "ionicons/icons";
+import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, closeOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, lockClosedOutline, mailOutline, saveOutline, timeOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
 import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
 import SecurityGroupActionsPopover from "@/components/security/SecurityGroupActionsPopover.vue";
-import ResetPasswordModal from "@/components/security/ResetPasswordModal.vue";
 import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
 import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
-import SelectSecurityGroupModal from "@/components/security/SelectSecurityGroupModal.vue";
-import UserSecurityGroupAssocHistoryModal from "@/components/security/UserSecurityGroupAssocHistoryModal.vue";
 import { DateTime } from "luxon";
 import Image from "@/components/common/Image.vue";
 
@@ -530,6 +663,37 @@ const imageUrl = computed(() => {
 
   return `${commonUtil.getMaargURL()}admin/users/${selectedUser.value.userId}/profileImage${versionParam}`;
 });
+
+// Reset password modal
+const showResetPasswordModal = ref(false);
+const resetPasswordEmail = ref<string | undefined>("");
+const resetPasswordUserLoginId = ref<string | undefined>("");
+const newPassword = ref("");
+const confirmPassword = ref("");
+const showConfirmPassword = ref(false);
+const showNewPassword = ref(false);
+const newPasswordRef = ref<any>(null);
+const confirmPasswordInput = ref<any>(null);
+
+// Select security group modal
+const showSelectSecurityGroupModal = ref(false);
+const queryString = ref("");
+const selectedSecurityGroupsProp = ref<any[]>([]);
+const selectedSecurityGroupValues = ref<any[]>([]);
+const securityGroups = computed(() => utilStore.getUserGroups);
+const filteredSecurityGroups = computed(() => {
+  const query = queryString.value.toLowerCase();
+  if(!query) {return securityGroups.value;}
+
+  return securityGroups.value.filter((securityGroup: any) => {
+    return securityGroup.userGroupId.toLowerCase().includes(query) ||
+        (securityGroup.description && securityGroup.description.toLowerCase().includes(query));
+  });
+});
+
+// User security group association history modal
+const showUserSecurityGroupAssocHistoryModal = ref(false);
+const userGroupAssocHistories = ref<any[]>([]);
 
 onIonViewWillLeave(async () => {
   await userStore.updateRedirectedFromUrl("");
@@ -765,16 +929,100 @@ const createNewUserLogin = async () => {
   }
 };
 
-const resetPassword = async () => {
-  const resetPasswordModal = await modalController.create({
-    component: ResetPasswordModal,
-    componentProps: {
-      email: selectedUser.value.emailDetails?.email,
-      userLoginId: selectedUser.value.userId
-    }
-  });
+const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
-  return resetPasswordModal.present();
+const openResetPasswordModal = () => {
+  resetPasswordEmail.value = selectedUser.value.emailDetails?.email;
+  resetPasswordUserLoginId.value = selectedUser.value.userId;
+  newPassword.value = "";
+  confirmPassword.value = "";
+  showNewPassword.value = false;
+  showConfirmPassword.value = false;
+  showResetPasswordModal.value = true;
+};
+
+const closeResetPasswordModal = () => {
+  showResetPasswordModal.value = false;
+};
+
+const resetPassword = async () => {
+  try {
+    const resp = await userStore.resetPassword({
+      userId: resetPasswordUserLoginId.value as string,
+      newPassword: newPassword.value,
+      newPasswordVerify: confirmPassword.value
+    });
+    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
+    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
+    if(!commonUtil.hasError(resp) && resp.data?.updateSuccessful) {
+      commonUtil.showToast(translate("Password reset successful."));
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(translate("Failed to reset password."));
+    logger.error(error);
+  }
+  closeResetPasswordModal();
+};
+
+const checkResetButtonStatus = () => {
+  return ((!newPassword.value.length || !confirmPassword.value.length) ||
+    (newPassword.value !== confirmPassword.value) ||
+    (!commonUtil.isValidPassword(newPassword.value) || !commonUtil.isValidPassword(confirmPassword.value)));
+};
+
+const validateResetPassword = (event: any) => {
+  const value = event.target.value;
+  const element = inputElement(newPasswordRef);
+  element?.classList.remove("ion-valid");
+  element?.classList.remove("ion-invalid");
+
+  if(value === "") {return;}
+
+  if(commonUtil.isValidPassword(value)) {
+    element?.classList.add("ion-valid");
+  } else {
+    element?.classList.add("ion-invalid");
+  }
+};
+
+const validateConfirmPassword = () => {
+  const element = inputElement(confirmPasswordInput);
+  element?.classList.remove("ion-valid");
+  element?.classList.remove("ion-invalid");
+
+  if(newPassword.value === confirmPassword.value) {
+    element?.classList.add("ion-valid");
+  } else {
+    element?.classList.add("ion-invalid");
+  }
+};
+
+const sendResetPasswordEmail = async () => {
+  try {
+    const resp = await userStore.sendResetPasswordEmail({
+      emailAddress: resetPasswordEmail.value,
+      userName: resetPasswordUserLoginId.value
+    });
+    if(!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Password reset email sent successfully."));
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(translate("Failed to send password reset email."));
+    logger.error(error);
+  }
+  closeResetPasswordModal();
+};
+
+const markResetPasswordTouched = () => {
+  inputElement(newPasswordRef)?.classList.add("ion-touched");
+};
+
+const markConfirmPasswordTouched = () => {
+  inputElement(confirmPasswordInput)?.classList.add("ion-touched");
 };
 
 const confirmForceLogout = async () => {
@@ -948,53 +1196,67 @@ const selectFacility = async () => {
   return selectFacilityModal.present();
 };
 
-const selectSecurityGroup = async () => {
-  const selectSecurityGroupModal = await modalController.create({
-    component: SelectSecurityGroupModal,
-    componentProps: { selectedSecurityGroups: userSecurityGroups.value }
-  });
+const selectSecurityGroup = () => {
+  selectedSecurityGroupsProp.value = userSecurityGroups.value;
+  selectedSecurityGroupValues.value = JSON.parse(JSON.stringify(userSecurityGroups.value || []));
+  queryString.value = "";
+  showSelectSecurityGroupModal.value = true;
+};
 
-  selectSecurityGroupModal.onDidDismiss().then(async (result) => {
-    if(result.data && result.data.value) {
-      const securityGroupsToCreate = result.data.value.securityGroupsToCreate;
-      const securityGroupsToRemove = result.data.value.securityGroupsToRemove;
+const closeSelectSecurityGroupModal = () => {
+  showSelectSecurityGroupModal.value = false;
+};
 
-      try {
-        const updateResponses = await Promise.allSettled(securityGroupsToRemove
-          .map(async (payload: any) => await userStore.removeUserSecurityGroup({
-            userGroupId: payload.userGroupId,
-            userId: selectedUser.value.userId,
-            fromDate: payload.fromDate,
-            thruDate: DateTime.now().toMillis()
-          })));
+const saveSecurityGroups = async () => {
+  const securityGroupsToCreate = selectedSecurityGroupValues.value.filter((selectedGroup: any) => !selectedSecurityGroupsProp.value.some((group: any) => group.userGroupId === selectedGroup.userGroupId));
+  const securityGroupsToRemove = selectedSecurityGroupsProp.value.filter((group: any) => !selectedSecurityGroupValues.value.some((selectedGroup: any) => group.userGroupId === selectedGroup.userGroupId));
 
-        const createResponses = await Promise.allSettled(securityGroupsToCreate
-          .map(async (payload: any) => await userStore.addUserToSecurityGroup({
-            userGroupId: payload.userGroupId,
-            userId: selectedUser.value.userId,
-            fromDate: DateTime.now().toMillis()
-          })));
+  try {
+    const updateResponses = await Promise.allSettled(securityGroupsToRemove
+      .map(async (payload: any) => await userStore.removeUserSecurityGroup({
+        userGroupId: payload.userGroupId,
+        userId: selectedUser.value.userId,
+        fromDate: payload.fromDate,
+        thruDate: DateTime.now().toMillis()
+      })));
 
-        const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");
-        if(hasFailedResponse) {
-          commonUtil.showToast(translate("Failed to update some security group(s)."));
-        } else {
-          commonUtil.showToast(translate("Security group(s) updated successfully."));
-        }
-        const userGroups = await userStore.getUserGroups(selectedUser.value.userId);
-        const now = Date.now();
-        const updatedUserSecurityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now);
-        userStore.updateSelectedUser({ ...selectedUser.value, securityGroups: updatedUserSecurityGroups });
-        isUserFulfillmentAdmin.value = updatedUserSecurityGroups.length ? await userStore.isUserFulfillmentAdmin(updatedUserSecurityGroups.map((group: any) => group.userGroupId)) : false;
-        await userStore.indexEmployee(selectedUser.value.partyId);
-      } catch (error) {
-        logger.error(error);
-        commonUtil.showToast(translate("Failed to update some security group(s)."));
-      }
+    const createResponses = await Promise.allSettled(securityGroupsToCreate
+      .map(async (payload: any) => await userStore.addUserToSecurityGroup({
+        userGroupId: payload.userGroupId,
+        userId: selectedUser.value.userId,
+        fromDate: DateTime.now().toMillis()
+      })));
+
+    const hasFailedResponse = [...updateResponses, ...createResponses].some((response: any) => response.status === "rejected");
+    if(hasFailedResponse) {
+      commonUtil.showToast(translate("Failed to update some security group(s)."));
+    } else {
+      commonUtil.showToast(translate("Security group(s) updated successfully."));
     }
-  });
+    const userGroups = await userStore.getUserGroups(selectedUser.value.userId);
+    const now = Date.now();
+    const updatedUserSecurityGroups = userGroups.filter((group: any) => !group.thruDate || group.thruDate > now);
+    userStore.updateSelectedUser({ ...selectedUser.value, securityGroups: updatedUserSecurityGroups });
+    isUserFulfillmentAdmin.value = updatedUserSecurityGroups.length ? await userStore.isUserFulfillmentAdmin(updatedUserSecurityGroups.map((group: any) => group.userGroupId)) : false;
+    await userStore.indexEmployee(selectedUser.value.partyId);
+  } catch (error) {
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to update some security group(s)."));
+  }
+  closeSelectSecurityGroupModal();
+};
 
-  return selectSecurityGroupModal.present();
+const toggleSecurityGroupSelection = (updatedSecurityGroup: any) => {
+  const selectedGroup = selectedSecurityGroupValues.value.some((group :any) => group.userGroupId === updatedSecurityGroup.userGroupId);
+  if(selectedGroup) {
+    selectedSecurityGroupValues.value = selectedSecurityGroupValues.value.filter((group :any) => group.userGroupId !== updatedSecurityGroup.userGroupId);
+  } else {
+    selectedSecurityGroupValues.value.push(updatedSecurityGroup);
+  }
+};
+
+const isSelected = (securityGroupId: any) => {
+  return selectedSecurityGroupValues.value.some((securityGroup :any) => securityGroup.userGroupId === securityGroupId);
 };
 
 const selectProductStore = async () => {
@@ -1236,12 +1498,29 @@ const getUserFacilities = () => {
   return selectedUser.value.facilities?.filter((facility: any) => facility.roleTypeId === "WAREHOUSE_PICKER") || [];
 };
 
-const openUserSecurityGroupAssocHistoryModal = async () => {
-  const userSecurityGroupAssocHistoryModal = await modalController.create({
-    component: UserSecurityGroupAssocHistoryModal,
-  });
+const openUserSecurityGroupAssocHistoryModal = () => {
+  userGroupAssocHistories.value = [];
+  showUserSecurityGroupAssocHistoryModal.value = true;
+  fetchUserSecurityGroupAssoHistory();
+};
 
-  return userSecurityGroupAssocHistoryModal.present();
+const closeUserSecurityGroupAssocHistoryModal = () => {
+  showUserSecurityGroupAssocHistoryModal.value = false;
+};
+
+const fetchUserSecurityGroupAssoHistory = async () => {
+  if(!selectedUser.value.userId) {return;}
+
+  let histories = [] as any;
+  try {
+    histories = await userStore.getUserGroups(selectedUser.value.userId);
+    const currentSecurityGroups = histories.filter((history: any) => !history.thruDate);
+    const expiredSecurityGroups = histories.filter((history: any) => history.thruDate);
+    histories = currentSecurityGroups.concat(expiredSecurityGroups);
+  } catch (error: any) {
+    console.error(error);
+  }
+  userGroupAssocHistories.value = histories;
 };
 </script>
 
@@ -1291,5 +1570,9 @@ ion-skeleton-text {
 
 label {
   cursor: pointer;
+}
+
+.select-security-group-content {
+  --padding-bottom: 80px;
 }
 </style>

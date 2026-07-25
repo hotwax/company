@@ -342,7 +342,9 @@ export interface OrderSyncProgressRow {
 const SYSTEM_MESSAGE_COMPLETE = new Set(["smsgsent", "sent", "smsgconsumed", "consumed", "smsgconfirmed", "confirmed"]);
 const FAILURE_TOKENS = ["fail", "error", "reject", "cancel", "crash"];
 const COMPLETE_TOKENS = ["complete", "success", "finish", "processed", "consumed", "confirmed"];
-const ACTIVE_TOKENS = ["active", "running", "inprogress", "started", "processing", "received", "sending", "produced"];
+// "active" means a transfer is in progress (Sending/Consuming). Staged states
+// (Triggered/Produced/Received) intentionally fall through to "pending".
+const ACTIVE_TOKENS = ["active", "running", "inprogress", "started", "processing", "sending", "consuming"];
 
 function tokenIncludes(token: string, fragments: readonly string[]): boolean {
   return fragments.some((fragment) => token.includes(fragment));

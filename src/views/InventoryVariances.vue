@@ -55,17 +55,59 @@
           <ion-checkbox :checked="enumsInEnumGroup(variance.enumId)" @click="addVarianceToGroup(variance.enumId, $event)"></ion-checkbox>
         </div>
       </div>
+
+      <ion-modal :is-open="showTransferInventoryModal" @didDismiss="closeTransferInventoryModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeTransferInventoryModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Transfer Inventory") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-item class="ion-margin-top">
+            <ion-icon slot="start" :icon="informationCircleOutline" />
+            <ion-label>
+              {{ translate("Learn more about creating inventory transfers from inventory variances") }}
+            </ion-label>
+            <ion-button fill="clear" size="small" color="medium">
+              <ion-icon :icon="openOutline" slot="icon-only" />
+            </ion-button>
+          </ion-item>
+
+          <ion-item>
+            <ion-icon slot="start" :icon="businessOutline" />
+            <ion-label>
+              {{ translate("Facility wise inventory transfer") }}
+              <p>{{ translate("If each facility has its own dedicated inventory transfer location for this variance, configure the transfer location from the facility configuration section") }}</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item lines="none" class="ion-margin-top">
+            <ion-input v-model="transferLocationId" :label="translate('Transfer location')" :placeholder="translate('NetSuite facility ID')" :helperText="selectedVarianceEnumId"/>
+          </ion-item>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button @click="saveTransferInventoryNetSuiteId" :disabled="!transferLocationId || transferLocationId === (selectedIntegrationMapping?.mappingValue)">
+              <ion-icon :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
-import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
-import TransferInventoryModal from '@/components/facility/TransferInventoryModal.vue';
+import { IonBackButton, IonButton, IonButtons, IonChip, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { businessOutline, closeCircleOutline, closeOutline, informationCircleOutline, openOutline, saveOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { commonUtil, emitter, logger, translate } from '@common'
 import { useNetSuiteStore } from '@/store/netSuite';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useUtilStore } from '@/store/util';
 import { DateTime } from 'luxon';
 import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
@@ -73,7 +115,7 @@ import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
 const netSuiteStore = useNetSuiteStore();
 const utilStore = useUtilStore();
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
-const { removeNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
+const { addNetSuiteId, removeNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
 const inventoryVariances = computed(() => netSuiteStore.inventoryVariances);
 const enumsInEnumGroup = computed(() => netSuiteStore.getEnumGroups)
@@ -96,16 +138,46 @@ onIonViewWillEnter(async () => {
   await netSuiteStore.fetchEnumGroupMember()
 });
 
-async function openTransferInventoryModal(variance: any) {
-  const transferInventoryModal = await modalController.create({
-    component: TransferInventoryModal,
-    componentProps: { 
-      varianceEnumId: variance.enumId,
-      integrationMapping: updatedNetSuiteIds.value[variance.enumId] ? updatedNetSuiteIds.value[variance.enumId] : ""
-    }
-  });
+const transferLocationId = ref("");
+const showTransferInventoryModal = ref(false);
+const selectedVarianceEnumId = ref("");
+const selectedIntegrationMapping = ref<any>("");
 
-  transferInventoryModal.present();
+function openTransferInventoryModal(variance: any) {
+  selectedVarianceEnumId.value = variance.enumId;
+  selectedIntegrationMapping.value = updatedNetSuiteIds.value[variance.enumId] ? updatedNetSuiteIds.value[variance.enumId] : "";
+  transferLocationId.value = selectedIntegrationMapping.value?.mappingValue || "";
+  showTransferInventoryModal.value = true;
+}
+
+// Validates the input data, saves or updates NetSuite facility ID for inventory transfers associated with the integration type ID: NETSUITE_VAR_TRAN.
+async function saveTransferInventoryNetSuiteId() {
+  if(!transferLocationId.value) {
+    commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
+    return false;
+  }
+
+  if(selectedIntegrationMapping.value?.mappingValue === transferLocationId.value) {
+    commonUtil.showToast(translate("Please update the NetSuite ID"));
+    return false;
+  }
+
+  const payload = {
+    integrationTypeId: inventoryVarianceTypeId,
+    mappingKey: selectedVarianceEnumId.value,
+    mappingValue: transferLocationId.value
+  };
+
+  if(selectedIntegrationMapping.value.integrationMappingId) {
+    await updateNetSuiteId(payload, selectedIntegrationMapping.value.integrationMappingId)
+  } else {
+    await addNetSuiteId(payload)
+  }
+  closeTransferInventoryModal();
+}
+
+function closeTransferInventoryModal() {
+  showTransferInventoryModal.value = false;
 }
 
 // adding & updating the enum with enumGroup
