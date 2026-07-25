@@ -1,6 +1,6 @@
 <template>
   <ion-page>
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/netsuite" />
         <ion-title>{{ translate("Facilities") }}</ion-title>

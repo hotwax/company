@@ -4,6 +4,14 @@ import { Login, commonUtil, logger, translate } from "@common/index"
 import { useAuth } from "@common/composables/useAuth"
 import { useUserStore } from "@/store/user"
 
+const FindFacilities = () => import("@/views/FindFacilities.vue")
+const FacilityDetails = () => import("@/views/FacilityDetails.vue")
+const CreateFacility = () => import("@/views/CreateFacility.vue")
+const AddFacilityAddress = () => import("@/views/AddFacilityAddress.vue")
+const AddFacilityConfig = () => import("@/views/AddFacilityConfig.vue")
+const FindGroups = () => import("@/views/FindGroups.vue")
+const FacilityGroupDetail = () => import("@/views/FacilityGroupDetail.vue")
+const Parking = () => import("@/views/Parking.vue")
 const Users = () => import("@/views/Users.vue")
 const AppPermissions = () => import("@/views/AppPermissions.vue")
 const SecurityGroups = () => import("@/views/SecurityGroups.vue")
@@ -30,6 +38,7 @@ const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
 const Composer = () => import("@/views/agent/Composer.vue")
 const Workforce = () => import("@/views/agent/Workforce.vue")
+const ResetPassword = () => import("@/views/ResetPassword.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -51,6 +60,14 @@ const requirePermission = (permissionId: string) => () => {
 const routes: Array<RouteRecordRaw> = [
   { path: "/", redirect: "/product-store" },
   { path: "/product-store", name: "ProductStore", component: ProductStore, beforeEnter: authGuard },
+  { path: "/facilities/find", name: "FindFacilities", component: FindFacilities, beforeEnter: authGuard },
+  { path: "/facilities/groups", name: "FindGroups", component: FindGroups, beforeEnter: authGuard },
+  { path: "/facility-group-detail/:facilityGroupId", name: "FacilityGroupDetail", component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
+  { path: "/parking", name: "Parking", component: Parking, beforeEnter: authGuard },
+  { path: "/facility-details/:facilityId", name: "FacilityDetails", component: FacilityDetails, props: true, beforeEnter: authGuard },
+  { path: "/create-facility", name: "CreateFacility", component: CreateFacility, beforeEnter: authGuard },
+  { path: "/create-facility/address/:facilityId", name: "AddFacilityAddress", component: AddFacilityAddress, props: true, beforeEnter: authGuard },
+  { path: "/create-facility/config/:facilityId", name: "AddFacilityConfig", component: AddFacilityConfig, props: true, beforeEnter: authGuard },
   { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
   { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission("APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN") },
   { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
@@ -98,6 +115,7 @@ const routes: Array<RouteRecordRaw> = [
     }
   },
   { path: "/login", name: "Login", component: Login },
+  { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },

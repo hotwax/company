@@ -439,6 +439,7 @@ export const useProductStore = defineStore('productStore', {
     getCurrentFacilities: (state) => state.currentFacilities,
     getCurrentShopifyJobStatus: (state) => state.currentShopifyJobStatus,
     getProductStores: (state) => state.productStores,
+    getProductStoreById: (state) => (productStoreId: string) => state.productStores.find((productStore: any) => productStore.productStoreId === productStoreId),
     getCompany: (state) => state.company,
     getNetSuiteProductStore: (state) => state.netSuiteProductStore,
     getFetchStatus: (state) => state.fetchStatus
@@ -459,14 +460,14 @@ export const useProductStore = defineStore('productStore', {
           productStores = resp.data
           if (payload?.fetchCounts) {
               const shipmentMethodCount = await this.fetchProductStoresShipmentMethodCount()
-              productStores = productStores.map((s: any) => ({
-                ...s,
-                facilityCount: s.facilityCount ?? 0
+              productStores = productStores.map((productStore: any) => ({
+                ...productStore,
+                facilityCount: productStore.facilityCount ?? 0
               }))
               if (Object.keys(shipmentMethodCount).length) {
-                productStores = productStores.map((s: any) => ({
-                  ...s,
-                  shipmentMethodCount: shipmentMethodCount[s.productStoreId] ?? 0
+                productStores = productStores.map((productStore: any) => ({
+                  ...productStore,
+                  shipmentMethodCount: shipmentMethodCount[productStore.productStoreId] ?? 0
                 }))
             }
           }

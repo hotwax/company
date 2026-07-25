@@ -13,7 +13,7 @@
   <ion-content>
     <ion-list>
       <ion-item v-for="productStore in productStores" :key="productStore.productStoreId">
-        <ion-checkbox :checked="isSelected(productStore.productStoreId)" @ion-change="toggleProductStoreSelection(productStore)">
+        <ion-checkbox :checked="isSelected(productStore.productStoreId)" @ionChange="toggleProductStoreSelection(productStore)">
           <ion-label>
             {{ productStore.storeName || productStore.productStoreId }}
             <p>{{ productStore.productStoreId }}</p>
@@ -21,9 +21,8 @@
         </ion-checkbox>
       </ion-item>
     </ion-list>
-
-    <ion-fab slot="fixed" vertical="bottom" horizontal="end" @click="saveProductStores()">
-      <ion-fab-button>
+    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button @click="saveProductStores()">
         <ion-icon :icon="saveOutline" />
       </ion-fab-button>
     </ion-fab>
@@ -31,49 +30,62 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import {
+  IonButton,
+  IonButtons,
+  IonCheckbox,
+  IonContent,
+  IonFab,
+  IonFabButton,
+  IonHeader,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonTitle,
+  IonToolbar,
+  modalController
+} from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { translate } from "@common";
-import { useUtilStore } from "@/store/util";
+import { useProductStore } from "@/store/productStore";
+import { ref, computed } from "vue";
 
-const props = defineProps<{
-  selectedProductStores: any[]
-}>();
+const props = defineProps(["selectedProductStores"]);
+const productStoreStore = useProductStore();
 
-const utilStore = useUtilStore();
+const productStores = computed(() => productStoreStore.getProductStores);
 
-const productStores = computed(() => utilStore.getProductStores);
-const selectedProductStoreValues = ref<any[]>(JSON.parse(JSON.stringify(props.selectedProductStores || [])));
+const selectedProductStoreValues = ref(JSON.parse(JSON.stringify(props.selectedProductStores)));
 
-const closeModal = () => {
+function closeModal() {
   modalController.dismiss({ dismissed: true });
-};
+}
 
-const saveProductStores = () => {
-  const productStoresToCreate = selectedProductStoreValues.value.filter((selectedStore: any) => !props.selectedProductStores.some((store: any) => store.productStoreId === selectedStore.productStoreId))
-  const productStoresToRemove = props.selectedProductStores.filter((store: any) => !selectedProductStoreValues.value.some((selectedStore: any) => store.productStoreId === selectedStore.productStoreId))
+async function saveProductStores() {
+  const productStoresToCreate = selectedProductStoreValues.value.filter((selectedStore: any) =>
+    !props.selectedProductStores.some((store: any) => store.productStoreId === selectedStore.productStoreId)
+  );
+  const productStoresToRemove = props.selectedProductStores.filter((store: any) =>
+    !selectedProductStoreValues.value.some((selectedStore: any) => store.productStoreId === selectedStore.productStoreId)
+  );
 
   modalController.dismiss({
     dismissed: true,
-    value: {
-      selectedProductStores: selectedProductStoreValues.value,
-      productStoresToCreate,
-      productStoresToRemove
-    }
+    value: { selectedProductStores: selectedProductStoreValues.value, productStoresToCreate, productStoresToRemove }
   });
-};
+}
 
-const toggleProductStoreSelection = (updatedStore: any) => {
-  const selectedStore = selectedProductStoreValues.value.some((store :any) => store.productStoreId === updatedStore.productStoreId);
-  if(selectedStore) {
-    selectedProductStoreValues.value = selectedProductStoreValues.value.filter((store :any) => store.productStoreId !== updatedStore.productStoreId);
+function toggleProductStoreSelection(updatedStore: any) {
+  const isCurrentlySelected = selectedProductStoreValues.value.some((store: any) => store.productStoreId === updatedStore.productStoreId);
+  if (isCurrentlySelected) {
+    selectedProductStoreValues.value = selectedProductStoreValues.value.filter((store: any) => store.productStoreId !== updatedStore.productStoreId);
   } else {
     selectedProductStoreValues.value.push(updatedStore);
   }
-};
+}
 
-const isSelected = (productStoreId: any) => {
-  return selectedProductStoreValues.value.some((productStore :any) => productStore.productStoreId === productStoreId);
-};
+function isSelected(productStoreId: string) {
+  return selectedProductStoreValues.value.some((productStore: any) => productStore.productStoreId === productStoreId);
+}
 </script>

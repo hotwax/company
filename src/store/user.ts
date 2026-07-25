@@ -4,6 +4,10 @@ import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useUtilStore } from "@/store/util"
+import { useProductStore } from "@/store/productStore"
+import { useShopifyStore } from "@/store/shopify"
+import { useFacilityStore } from "@/store/facility"
+import useServiceJob from "@/composables/useServiceJob"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -34,6 +38,7 @@ export const useUserStore = defineStore("user", {
   getters: {
     isAuthenticated: () => useAuth().isAuthenticated.value,
     getUserProfile: (state) => state.current,
+    getTimeZones: (state) => state.availableTimeZones,
     getUserPermissions: (state) => state.permissions,
     getInstanceUrl: (state) => state.instanceUrl,
     getQuery: (state) => state.query,
@@ -897,6 +902,32 @@ export const useUserStore = defineStore("user", {
       } catch (error: any) {
         return Promise.reject(new Error(error))
       }
+
+      // Hydrate remaining reference data lazily in the background. Not
+      // awaited so login doesn't wait on it; each store tracks its own
+      // fetchStatus (see Settings.vue's Data Fetch Status panel) and
+      // swallows its own errors.
+      this.prefetchReferenceData()
+    },
+
+    async prefetchReferenceData() {
+      const utilStore = useUtilStore()
+      const { fetchJobs } = useServiceJob()
+
+      await Promise.allSettled([
+        useProductStore().fetchProductStores(),
+        useShopifyStore().fetchShopifyShops(),
+        useFacilityStore().fetchFacilityGroupTypes(),
+        utilStore.fetchStatusItems(),
+        utilStore.fetchFacilities(),
+        utilStore.fetchOrganizationPartyId(),
+        utilStore.fetchFacilityGroups(),
+        utilStore.fetchDBICCountries(),
+        utilStore.fetchOperatingCountries(),
+        utilStore.fetchProductIdentifiers(),
+        utilStore.fetchShipmentMethodTypes(),
+        fetchJobs()
+      ])
     },
 
     // Called by @common's initialiseConfig after logout

@@ -33,6 +33,8 @@ export const useUtilStore = defineStore("util", {
     statusItems: {} as any,
     maargInfo: null as any,
     currencies: [] as any[],
+    states: {} as any,
+    shopifyShopForProductStore: {} as any,
     fetchStatus: {
       facilities: "none",
       statuses: "none",
@@ -53,6 +55,7 @@ export const useUtilStore = defineStore("util", {
 
   getters: {
     getFacilityGroups: (state) => state.facilityGroups,
+    getInventoryGroups: (state) => state.facilityGroups.filter((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"),
     getFacilities: (state) => state.facilities,
     getOperatingCountries: (state) => state.operatingCountries,
     getDBICCountriesCount: (state) => state.dbicCountries.total,
@@ -72,6 +75,8 @@ export const useUtilStore = defineStore("util", {
     getStatusItems: (state) => state.statusItems,
     getMaargInfo: (state) => state.maargInfo,
     getCurrencies: (state) => state.currencies,
+    getStates: (state) => state.states,
+    getShopifyShopIdForProductStore: (state) => (productStoreId: string) => state.shopifyShopForProductStore[productStoreId] || '',
     getFetchStatus: (state) => state.fetchStatus
   },
 
@@ -117,7 +122,7 @@ export const useUtilStore = defineStore("util", {
             }
           })
           if(!commonUtil.hasError(resp) && resp.data) {
-            facilities = facilities.concat(resp.data.filter((f: any) => f.externalId))
+            facilities = facilities.concat(resp.data)
           } else {
             throw resp.data
           }
@@ -129,6 +134,14 @@ export const useUtilStore = defineStore("util", {
         this.fetchStatus = { ...this.fetchStatus, facilities: "error" }
       }
       this.facilities = facilities
+    },
+
+    patchFacility(facilityId: string, patch: any) {
+      this.facilities = this.facilities.map((facility: any) => facility.facilityId === facilityId ? { ...facility, ...patch } : facility)
+    },
+
+    patchFacilityGroup(facilityGroupId: string, patch: any) {
+      this.facilityGroups = this.facilityGroups.map((group: any) => group.facilityGroupId === facilityGroupId ? { ...group, ...patch } : group)
     },
 
     async createFacility(payload: {
@@ -224,8 +237,8 @@ export const useUtilStore = defineStore("util", {
       this.emailTypes = emailTypes
     },
 
-    async fetchShipmentMethodTypes() {
-      if(this.shipmentMethodTypes.length) {return}
+    async fetchShipmentMethodTypes(force = false) {
+      if(this.shipmentMethodTypes.length && !force) {return}
       this.fetchStatus = { ...this.fetchStatus, shipmentMethodTypes: "pending" }
       let shipmentMethodTypes: any[] = [], pageIndex = 0, resp: any
 
@@ -255,6 +268,7 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
+<<<<<<< HEAD
     upsertShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
       const shipmentMethodTypes = this.shipmentMethodTypes.filter(
         (type: any) => type.shipmentMethodTypeId !== payload.shipmentMethodTypeId
@@ -287,6 +301,9 @@ export const useUtilStore = defineStore("util", {
     },
 
     async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
+=======
+    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
+>>>>>>> origin/main
       return api({
         url: "oms/paymentMethodTypes",
         method: "post",
@@ -294,12 +311,26 @@ export const useUtilStore = defineStore("util", {
       })
     },
 
+<<<<<<< HEAD
     upsertPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
       const paymentMethodTypes = this.paymentMethodTypes.filter(
         (type: any) => type.paymentMethodTypeId !== payload.paymentMethodTypeId
       )
       paymentMethodTypes.push(payload)
       this.paymentMethodTypes = paymentMethodTypes
+=======
+    async createProductStoreShipmentMethod(payload: {
+      productStoreId: string
+      shipmentMethodTypeId: string
+      partyId: string
+      roleTypeId?: string
+    }): Promise<any> {
+      return api({
+        url: `admin/productStores/${payload.productStoreId}/shippingMethods`,
+        method: "post",
+        data: { roleTypeId: "CARRIER", ...payload }
+      })
+>>>>>>> origin/main
     },
 
     async fetchOrganizationPartyId() {
@@ -486,6 +517,83 @@ export const useUtilStore = defineStore("util", {
       } catch (error: any) {
         logger.error("fetchCurrencies", error)
         this.fetchStatus = { ...this.fetchStatus, currencies: "error" }
+      }
+    },
+
+    async fetchShopifyShopForProductStores(productStoreIds: string[]) {
+      let shopifyShopId = ''
+      try {
+        const resp = await api({
+          url: 'oms/shopifyShops/shops',
+          method: 'get',
+          params: { productStoreId: productStoreIds, productStoreId_op: 'in', pageSize: productStoreIds.length }
+        })
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          const shops = resp.data
+          this.shopifyShopForProductStore = {
+            ...this.shopifyShopForProductStore,
+            ...shops.reduce((acc: any, shop: any) => { acc[shop.productStoreId] = shop.shopifyShopId; return acc; }, {})
+          }
+          shopifyShopId = shops[0]?.shopifyShopId || ''
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+      }
+      return shopifyShopId
+    },
+
+    async fetchStates(payload: { geoId: string }) {
+      if (payload.geoId in this.states) return
+      let states: any[] = []
+
+      try {
+        const resp = await api({
+          url: "admin/geos/assocs/to",
+          method: "get",
+          params: { geoId: payload.geoId, geoAssocTypeEnumId: "GAT_REGIONS", pageNoLimit: true }
+        })
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          states = resp.data
+        } else {
+          throw resp.data
+        }
+      } catch (error: any) {
+        logger.error(error)
+      }
+      this.states[payload.geoId] = states
+    },
+
+    async generateLatLong(payload: any) {
+      try {
+        const resp = await api({
+          url: "api/geocode",
+          method: "POST",
+          data: payload,
+        });
+        if (resp.data) {
+          return Promise.resolve(resp.data);
+        } else {
+          throw resp.data;
+        }
+      } catch (error) {
+        logger.error(error);
+        return Promise.reject(error);
+      }
+    },
+
+    async fetchShopifyShops() {
+      try {
+        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageNoLimit: true } });
+        if (!commonUtil.hasError(resp) && resp.data?.length) {
+          return Promise.resolve(resp.data);
+        } else {
+          throw resp.data;
+        }
+      } catch (error) {
+        logger.error(error);
+        return Promise.reject(error);
       }
     },
 

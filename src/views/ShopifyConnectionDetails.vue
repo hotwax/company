@@ -51,6 +51,12 @@
                 <p>{{ translate("Access token and secrets") }}</p>
               </ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openAccessScopesModal()">
+              <ion-label>
+                {{ translate("Access scopes") }}
+                <p>{{ translate("Shopify API scopes granted to this shop") }}</p>
+              </ion-label>
+            </ion-item>
           </section>
         </div>
 
@@ -248,6 +254,7 @@ import { useProductStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyProductStoreModal from "@/components/ShopifyProductStoreModal.vue";
 import EditShopifyCredentialsModal from "@/components/EditShopifyCredentialsModal.vue";
+import ShopifyAccessScopesModal from "@/components/ShopifyAccessScopesModal.vue";
 import CloneShopifySettingsModal from "@/components/CloneShopifySettingsModal.vue";
 import ShopifyOrderSyncCard from "@/components/ShopifyOrderSyncCard.vue";
 import { useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
@@ -776,6 +783,14 @@ async function loadTrackProgressDetails() {
 async function openCredentialsModal() {
   const modal = await modalController.create({
     component: EditShopifyCredentialsModal,
+    componentProps: { shop: shop.value }
+  })
+  await modal.present()
+}
+
+async function openAccessScopesModal() {
+  const modal = await modalController.create({
+    component: ShopifyAccessScopesModal,
     componentProps: { shop: shop.value }
   })
   await modal.present()

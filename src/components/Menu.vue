@@ -27,6 +27,17 @@
         </ion-menu-toggle>
 
         <ion-item-divider color="light">
+          <ion-label>{{ translate("Facilities") }}</ion-label>
+        </ion-item-divider>
+
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in facilitiesPages" :key="'facilities-' + i">
+          <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedFacilitiesIndex === i }">
+            <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
+            <ion-label>{{ translate(p.title) }}</ion-label>
+          </ion-item>
+        </ion-menu-toggle>
+
+        <ion-item-divider color="light">
           <ion-label>{{ translate("Users") }}</ion-label>
         </ion-item-divider>
 
@@ -79,7 +90,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { briefcaseOutline, businessOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, walletOutline } from "ionicons/icons";
+import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import router from "@/router";
 import { useUserStore } from "@/store/user";
@@ -146,6 +157,27 @@ const userPages = [
   }
 ];
 
+const facilitiesPages = [
+  {
+    title: "Find",
+    url: "/facilities/find",
+    iosIcon: storefrontOutline,
+    mdIcon: storefrontOutline,
+  },
+  {
+    title: "Groups",
+    url: "/facilities/groups",
+    iosIcon: albumsOutline,
+    mdIcon: albumsOutline,
+  },
+  {
+    title: "Parking",
+    url: "/parking",
+    iosIcon: carOutline,
+    mdIcon: carOutline,
+  }
+];
+
 const visibleUserPages = computed(() => userPages.filter((screen) => userStore.hasPermission(screen.permission)))
 
 const agentPages = [
@@ -176,6 +208,11 @@ const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
 
   return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+})
+
+const selectedFacilitiesIndex = computed(() => {
+  const path = router.currentRoute.value.path
+  return facilitiesPages.findIndex((screen) => screen.url === path)
 })
 
 const selectedAgentIndex = computed(() => {

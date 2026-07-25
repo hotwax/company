@@ -4,6 +4,8 @@
       <Menu v-if="router.currentRoute.value.name !== 'Login'" />
       <ion-router-outlet id="main-content"></ion-router-outlet>
     </ion-split-pane>
+    <!-- Fast Travel: Cmd/Ctrl+K app switcher + deep-link router across the HotWax suite -->
+    <FastTravel current-app="company" />
   </ion-app>
 </template>
 
@@ -11,7 +13,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/Menu.vue'
-import { emitter, translate } from '@common'
+import { emitter, FastTravel, translate } from '@common'
 import { Settings } from 'luxon'
 import { useUserStore } from '@/store/user'
 import router from "@/router"

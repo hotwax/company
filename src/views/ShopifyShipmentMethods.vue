@@ -8,6 +8,11 @@
           </ion-button>
         </ion-buttons>
         <ion-title>{{ translate("Shipment methods") }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button aria-label="Create shipment method" :disabled="!carriers.length" @click="openCreateModal()">
+            <ion-icon slot="icon-only" :icon="addOutline" />
+          </ion-button>
+        </ion-buttons>
         <ion-buttons slot="primary">
           <ion-button :disabled="!isDirty" @click="saveAllDirtyMappings()">
             {{ translate("Save all") }}
@@ -83,12 +88,13 @@
 </template>
 
 <script setup lang="ts">
-import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, hasError, logger, translate } from '@common'
 import { useUtilStore } from '@/store/util';
 import { useNetSuiteStore } from '@/store/netSuite';
 import { useShopifyStore } from '@/store/shopify';
+import CreateShipmentMethodModal from '@/components/CreateShipmentMethodModal.vue';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 
@@ -315,6 +321,30 @@ function navigateBack() {
   const hasReturnTarget = Boolean(new URLSearchParams(window.location.search).get("returnTo"));
   if (hasReturnTarget) router.replace(backHref.value);
   else router.push(backHref.value);
+}
+
+async function openCreateModal() {
+  const modal = await modalController.create({
+    component: CreateShipmentMethodModal,
+    componentProps: {
+      shopId: props.id,
+      productStoreId: shop.value.productStoreId,
+      carrierPartyId: selectedCarrierPartyId.value,
+      carriers: carriers.value
+    }
+  });
+
+  modal.onDidDismiss().then(async ({ data }) => {
+    if (!data?.created) return;
+    await Promise.all([
+      netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: shop.value.productStoreId }),
+      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id })
+    ]);
+    if (data.carrierPartyId) selectedCarrierPartyId.value = data.carrierPartyId;
+    initializeLocalMappings();
+  });
+
+  await modal.present();
 }
 </script>
 
