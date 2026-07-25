@@ -14,7 +14,7 @@
     <ion-item class="ion-margin-top" lines="none">
       <ion-icon slot="start" :icon="storefrontOutline" />
       <ion-label>
-        <b>{{ props.shop.myshopifyDomain || props.shop.domain }}</b>
+        {{ props.shop.myshopifyDomain || props.shop.domain }}
         <p>{{ props.shop.shopId }}</p>
       </ion-label>
     </ion-item>
@@ -55,7 +55,7 @@
 
 <script setup lang="ts">
 import {
-  IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem,
+  IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem,
   IonLabel, IonNote, IonTitle, IonToolbar, modalController
 } from '@ionic/vue'
 import { checkmarkCircleOutline, closeOutline, refreshOutline, storefrontOutline } from 'ionicons/icons'
