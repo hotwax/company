@@ -156,8 +156,28 @@ describe("shop ↔ remote matching", () => {
     expect(shopRemoteCandidates([mismatched], shop)).toEqual([]);
   });
 
-  it("requires a shopifyShopId — a shop without one can never be matched", () => {
-    expect(shopRemoteCandidates([remote], { shopId: "10000" })).toEqual([]);
+  /**
+   * A shop row missing `shopifyShopId` used to resolve to NO remote, which broke the one case the
+   * credentials modal exists for: a connection whose Shopify id is not cached yet. The OMS-side key
+   * (`internalId` + `internalIdType: HOTWAX_SHOP_ID`) is the canonical link and is always present on a
+   * real Shopify remote, so it is now sufficient on its own.
+   */
+  it("matches on the OMS-side key alone when the shop has no shopifyShopId", () => {
+    const typed = { systemMessageRemoteId: "R", remoteId: "6973849727", internalId: "10000", internalIdType: "HOTWAX_SHOP_ID" };
+
+    expect(shopRemoteCandidates([typed], { shopId: "10000" })).toEqual([typed]);
+  });
+
+  it("still refuses a non-Shopify remote whose internalId happens to collide", () => {
+    // An AWS/SFTP/NiFi remote must never be mistaken for a shop remote, which is why the internalId
+    // path requires `internalIdType`.
+    const collide = { systemMessageRemoteId: "AWS_CONFIG", internalId: "10000" };
+
+    expect(shopRemoteCandidates([collide], { shopId: "10000" })).toEqual([]);
+  });
+
+  it("cannot match anything when the shop has neither id", () => {
+    expect(shopRemoteCandidates([remote], {})).toEqual([]);
   });
 
   it("ranks canonical write access above legacy, read-only and no-access", () => {

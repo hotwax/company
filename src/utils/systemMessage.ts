@@ -106,6 +106,13 @@ export interface SystemMessageRemote {
   systemMessageRemoteId: string;
   remoteId?: string;
   internalId?: string;
+  /**
+   * What `internalId` refers to — `HOTWAX_SHOP_ID` on a Shopify shop remote.
+   *
+   * Load-bearing: it is what distinguishes a shop remote from an AWS/SFTP/NiFi remote that happens to
+   * carry a colliding `internalId`, which is why the OMS-side match requires it.
+   */
+  internalIdType?: string;
   ownerShopId?: string;
   accessScopeEnumId?: string;
   description?: string;
@@ -145,18 +152,52 @@ export interface ShopRemoteMatchTarget {
  * the shop row alone — `oms/shopifyShops/shops` returns no remote id at all, and an earlier
  * attempt to read `shop.systemMessageRemoteId` silently matched nothing.
  */
+/** `internalIdType` a Shopify shop remote carries — verified live on every Shopify remote. */
+const HOTWAX_SHOP_ID_TYPE = "HOTWAX_SHOP_ID";
+
 export function shopRemoteCandidates(
   remotes: SystemMessageRemote[] | null | undefined,
   shop: ShopRemoteMatchTarget | null | undefined,
 ): SystemMessageRemote[] {
   const shopifyShopId = String(shop?.shopifyShopId ?? "");
   const shopId = String(shop?.shopId ?? "");
-  if (!shopifyShopId) return [];
+  if (!shopifyShopId && !shopId) return [];
 
   return (remotes ?? []).filter((remote) => {
-    if (String(remote?.remoteId ?? "") !== shopifyShopId) return false;
-    if (!shopId || !remote?.internalId) return true;
-    return String(remote.internalId) === shopId;
+    const remoteId = String(remote?.remoteId ?? "");
+    const internalId = String(remote?.internalId ?? "");
+
+    /**
+     * TWO ways to match, because either side's id may be the one we have.
+     *
+     * `internalId` + `internalIdType: HOTWAX_SHOP_ID` is the OMS-side key and the canonical link — it
+     * is always present on a Shopify remote. `remoteId === shopifyShopId` is the Shopify-side key.
+     *
+     * ⚠️ Requiring `shopifyShopId` (the previous behaviour) made this unusable for the case it is most
+     * needed in: a connection whose cached shop row has no `shopifyShopId` yet resolved to NO remote,
+     * so the credentials modal could not pre-fill the id and the access-scope modal reported "no remote
+     * found" — for a shop whose remote exists and is findable by `internalId`. It also made
+     * `remote.remoteId` tautologically equal to `shop.shopifyShopId`, so reading the remote added
+     * nothing.
+     *
+     * `internalIdType` is required on the internalId path so a non-Shopify remote (AWS, SFTP, NiFi …)
+     * that happens to carry a colliding `internalId` cannot match.
+     */
+    const matchesOmsSide = Boolean(shopId) && internalId === shopId &&
+      String(remote?.internalIdType ?? "") === HOTWAX_SHOP_ID_TYPE;
+    const matchesShopifySide = Boolean(shopifyShopId) && remoteId === shopifyShopId;
+
+    if (!matchesOmsSide && !matchesShopifySide) return false;
+
+    /**
+     * When BOTH ids are known they must agree — this is what stops one shop claiming another's remote.
+     *
+     * Deliberately NOT gated on `internalIdType`: a remote whose `remoteId` matches but whose
+     * `internalId` names a different shop must be rejected whether or not it declares a type. Gating it
+     * would let a mistyped remote through on the Shopify-side match alone.
+     */
+    if (shopId && internalId) return internalId === shopId;
+    return true;
   });
 }
 
