@@ -73,6 +73,7 @@ import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } fro
 import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { shouldPopHistoryOnBack } from "@/utils/navigation";
 import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify";
 import { useTypedEnums } from '@/composables/useSeed';
 
@@ -248,9 +249,14 @@ const router = useRouter();
 onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
 
 function navigateBack() {
-  const hasReturnTarget = Boolean(new URLSearchParams(window.location.search).get("returnTo"));
-  if (hasReturnTarget) router.replace(backHref.value);
-  else router.push(backHref.value);
+  // POP the entry we came from; do not push. Pushing left this page sitting ahead of the connection
+  // detail page in history, so its ion-back-button walked forward into here instead of reaching
+  // /shopify — an inescapable loop. See `shouldPopHistoryOnBack`.
+  if (shouldPopHistoryOnBack(window.location.search, router.options.history.state?.back)) {
+    router.back();
+    return;
+  }
+  router.replace(backHref.value);
 }
 </script>
 

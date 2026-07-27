@@ -75,6 +75,7 @@ import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/u
 import { useProductTypes } from '@/composables/useSeed';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { shouldPopHistoryOnBack } from "@/utils/navigation";
 
 const props = defineProps(['id']);
 // Writes still go through the store; every READ comes from the cache.
@@ -257,7 +258,14 @@ const router = useRouter();
 onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
 
 function navigateBack() {
-  router.push(backHref.value);
+  // POP the entry we came from; do not push. Pushing left this page sitting ahead of the connection
+  // detail page in history, so its ion-back-button walked forward into here instead of reaching
+  // /shopify — an inescapable loop. See `shouldPopHistoryOnBack`.
+  if (shouldPopHistoryOnBack(window.location.search, router.options.history.state?.back)) {
+    router.back();
+    return;
+  }
+  router.replace(backHref.value);
 }
 </script>
 
