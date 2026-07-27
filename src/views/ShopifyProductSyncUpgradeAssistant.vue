@@ -368,7 +368,6 @@ import {
 import { arrowForwardOutline, checkmarkCircleOutline, warningOutline } from "ionicons/icons";
 import { computed, defineProps, ref } from "vue";
 import router from "@/router";
-import { useShopifyStore } from '@/store/shopify';
 import { commonUtil, logger, translate } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG } from "@/config/productSyncMigration";
 import {
@@ -380,9 +379,9 @@ import {
   useShopifyProductSyncMigrationStore
 } from "@/store/shopifyProductSyncMigration";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import { useShopifyShop } from "@/composables/useShopify";
 
 const props = defineProps(["id"]);
-const shopifyStore = useShopifyStore();
 const shopifyProductSyncStore = useShopifyProductSyncStore();
 const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const migrationConfig = PRODUCT_SYNC_MIGRATION_CONFIG;
@@ -415,7 +414,8 @@ const assistantState = ref<ProductSyncMigrationAssistantState>({
   legacySystemMessages: []
 });
 
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => shopRecord.value ?? {});
 const entryAction = computed<ProductSyncMigrationEntryAction>(() => {
   return shopifyProductSyncMigrationStore.resolveEntryAction(assistantState.value);
 });
@@ -576,10 +576,9 @@ async function loadAssistant() {
 
   try {
     if (!shop.value.shopId) {
-      await shopifyStore.fetchShopifyShops();
     }
 
-    const currentShop = shopifyStore.getShopById(props.id) || {};
+    const currentShop = shop.value;
 
     await shopifyProductSyncMigrationStore.fetchAssistantState(
       { shopId: props.id, shop: currentShop },
@@ -798,7 +797,7 @@ async function teardownLegacySync() {
   teardownFailedSteps.value = [];
 
   try {
-    const currentShop = shopifyStore.getShopById(props.id) || {};
+    const currentShop = shop.value;
     const result = await shopifyProductSyncMigrationStore.teardownLegacySync(
       { shopId: props.id, shop: currentShop },
       (step: ProductSyncMigrationTeardownStep) => {

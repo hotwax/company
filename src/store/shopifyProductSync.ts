@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { dataManagerLogCache, systemMessageCache, systemMessageRemoteCache } from "@/utils/cacheEntities";
+import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import { api, logger } from '@common'
 import { parseDateTimeValue } from "@/utils";
 
@@ -167,51 +169,125 @@ export interface ShopifyProductSyncHistoryRun {
   operations: ShopifyProductSyncHistoryOperation[];
 }
 
-export interface ShopifyProductSyncRun {
-  systemMessageId: string;
-  systemMessage: {
-    id?: string;
-    statusId?: string;
-    statusLabel?: string;
-    statusColor?: string;
-    errorText?: string;
-    messageText?: string;
-  };
-  bulkOperation: {
-    id?: string;
-    status?: string;
-    statusLabel?: string;
-    statusColor?: string;
-    objectCount?: number;
-    rootObjectCount?: number;
-    createdAt?: string;
-    completedAt?: string;
-    isStatusUnavailable?: boolean;
-    query?: string;
-  };
-  mdmLog: {
-    id?: string;
-    statusId?: string;
-    statusLabel?: string;
-    statusColor?: string;
-    startDate?: string;
-    endDate?: string;
-    finishDateTime?: string;
-    createdDate?: string;
-    createdStamp?: string;
-    completedDate?: string;
-    completedAt?: string;
-    lastUpdatedStamp?: string;
-    totalRecordCount?: number;
-    failedRecordCount?: number;
-    successRecordCount?: number;
-    configId?: string;
-    logContentId?: string;
-    fileName?: string;
-  };
+export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
+
+
+export interface ShopifyShopProductCount {
+  count: number;
+  lastSyncedAt?: string;
+}
+
+export interface ShopifyProductUpdateSyncRunState {
+  latestSystemMessage?: any;
+  latestConfirmedSystemMessage?: any;
+  latestConsumedSystemMessage?: any;
+  lastSyncedAt?: string;
+  systemMessageRemoteId: string;
+  systemMessages?: any[];
+}
+
+export interface ShopifyPendingProductUpdateRequestsState {
+  count: number;
+  latestSystemMessage?: any;
+}
+
+export interface ShopifyProductSyncDashboardSummary {
+  syncRunState: ShopifyProductUpdateSyncRunState;
+  pendingRequests: ShopifyPendingProductUpdateRequestsState;
+  runningOperation: ShopifyRunningBulkOperation | null;
+  unsyncedUpdates: ShopifyShopProductCount;
+  updateFilesToProcess: number;
+}
+
+export interface ShopifyRunningBulkOperation {
+  id: string;
   status: string;
-  statusColor: string;
-  completed: boolean;
+  type: string;
+  createdAt: string;
+  objectCount: number;
+}
+
+export interface ShopifyUnsyncedProductUpdate {
+  id: string;
+  legacyResourceId?: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+}
+
+export interface ShopifyProductSyncProductSearchResult {
+  id: string;
+  legacyResourceId: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+  cursor: string;
+}
+
+export interface ShopifyProductSyncProductSearchState {
+  products: ShopifyProductSyncProductSearchResult[];
+  hasNextPage: boolean;
+  endCursor: string;
+}
+
+export interface ShopifyProductSyncOnDemandResult {
+  systemMessageId?: string;
+  syncedProductId?: string[];
+  missingProductId?: string[];
+  failedProductId?: string[];
+  rejectedProductId?: string[];
+  acceptedCount?: number;
+  syncedCount?: number;
+  failedCount?: number;
+  rejectedCount?: number;
+}
+
+export interface ShopifyProductSyncActionResult {
+  jobOutput?: string;
+  message?: string;
+  systemMessageId?: string;
+}
+
+export interface ShopifyProductSyncHistoryOperation {
+  id: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  statusLabel: string;
+  metricValue?: number | string;
+  metricLabel?: string;
+  actionLabel?: string;
+  detailType: string;
+}
+
+export interface ShopifyProductSyncHistoryRun {
+  id: string;
+  systemMessageId: string;
+  createdTime: string;
+  bulkOperationStatus: string;
+  bulkOperationStatusLabel: string;
+  mdmStatus: string;
+  mdmStatusLabel: string;
+  bulkOperationId: string;
+  objectCount: number;
+  mdmImportId: string;
+  totalRecordCount: number;
+  failedRecordCount: number;
+  operations: ShopifyProductSyncHistoryOperation[];
 }
 
 export interface ShopifyProductSyncHistoryState {
@@ -521,31 +597,19 @@ function resolveSystemMessageRemoteId(payload: any): string {
     "";
 }
 
+/**
+ * Shop → its remotes. Delegates to the shared rule in `@/utils/systemMessage`, which the sync
+ * WORKER also uses — the match must not exist twice, because a drift between the two would mean the
+ * screen and the poller disagree about which remote a shop owns.
+ */
 function getShopRemoteCandidates(systemMessageRemoteList: any[], payload: any) {
-  const shopifyShopId = String(payload.shopifyShopId || payload.shop?.shopifyShopId || "");
-  const shopId = String(payload.shopId || payload.shop?.shopId || "");
-
-  return (systemMessageRemoteList || []).filter((remote: any) => {
-    const remoteMatchesShopifyShop = shopifyShopId && String(remote.remoteId) === shopifyShopId;
-    const internalMatchesShop = shopId && String(remote.internalId) === shopId;
-    return remoteMatchesShopifyShop && (!shopId || !remote.internalId || internalMatchesShop);
-  });
+  return shopRemoteCandidates(systemMessageRemoteList as any[], {
+    shopId: String(payload.shopId || payload.shop?.shopId || ""),
+    shopifyShopId: String(payload.shopifyShopId || payload.shop?.shopifyShopId || ""),
+  }) as any[];
 }
 
-function sortShopRemoteCandidates(candidates: any[]) {
-  // Prioritize the best access scope so the selected candidate surfaces the right state:
-  // canonical write > deprecated/legacy write (still surfaces "update required") > read-only > no-access.
-  const accessScopeRank = (scope: string) => {
-    const normalized = String(scope || "").trim().toUpperCase();
-    if (normalized === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 3;
-    if (normalized === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID) return 2;
-    if (normalized === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID) return 0;
-    return 1;
-  };
-  return [...candidates].sort((first: any, second: any) => {
-    return accessScopeRank(second.accessScopeEnumId) - accessScopeRank(first.accessScopeEnumId);
-  });
-}
+const sortShopRemoteCandidates = (candidates: any[]) => sortRemotesByAccess(candidates as any[]) as any[];
 
 function hasShopifyWriteAccess(accessScopeEnumId: string) {
   const normalizedScope = String(accessScopeEnumId || "").trim().toUpperCase();
@@ -581,7 +645,24 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
   };
 }
 
+/**
+ * Candidate remotes for a shop, read from the cached remote list.
+ *
+ * This ran three times on a single connection-details load, each time re-fetching the whole remote
+ * list to filter it client-side. The list is cached seed data, so the filtering happens locally and
+ * the request disappears. Network fallback only while the cache is unpopulated.
+ */
 async function fetchShopRemoteCandidates(payload: any) {
+  try {
+    const cached = await systemMessageRemoteCache.all();
+    if (cached.length) {
+      const remotes = cached.map((row: any) => row.raw);
+      return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
+    }
+  } catch (error) {
+    logger.warn("System message remote cache unavailable; falling back to the server", error);
+  }
+
   const response = await requestBackend<SystemMessageRemotesResponse>({
     url: "oms/systemMessageRemotes",
     method: "get"
@@ -723,24 +804,34 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
   const systemMessageId = payload.systemMessageId;
   const pageSize = systemMessageId ? 1 : 100;
 
-  const response = await requestBackend<any>({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        systemMessageId,
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-        remoteInternalId: shopId,
-        remoteInternalIdType: "HOTWAX_SHOP_ID",
-        orderByField: "-lastUpdatedStamp"
-      },
-      pageSize,
-      pageIndex: 0
-    }
+  // CACHE-FIRST — see `cachedSyncMessageHistory`; the DataDocument is only asked when the cache
+  // cannot answer.
+  const cachedHistory = await cachedSyncMessageHistory({
+    shopId,
+    systemMessageId,
+    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+    pageSize,
   });
 
-  const systemMessages = getEntityValueList(response, "Product sync system message history");
+  const systemMessages = cachedHistory ?? getEntityValueList(
+    await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+        customParametersMap: {
+          systemMessageId,
+          systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+          remoteInternalId: shopId,
+          remoteInternalIdType: "HOTWAX_SHOP_ID",
+          orderByField: "-lastUpdatedStamp"
+        },
+        pageSize,
+        pageIndex: 0
+      }
+    }),
+    "Product sync system message history",
+  );
 
   const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed" || systemMessage.statusId === "SmsgConsumed");
   const consumedMessages = systemMessages.filter((systemMessage: any) => {
@@ -763,10 +854,96 @@ const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProd
   };
 };
 
+/**
+ * Local reproduction of `dataDocumentId: SYSTEM_MESSAGE_DATA_MANAGER_LOG`.
+ *
+ * That DataDocument is a server-side join of SystemMessage ⋈ DataManagerLog, scoped by message type
+ * and by the REMOTE's internal id (the shop id, `remoteInternalIdType: HOTWAX_SHOP_ID`). Every input
+ * is already cached: messages and logs are class-A domains, and the shop→remote link lives on the
+ * cached remote as `internalId`. So the document is DERIVED here rather than requested — it was the
+ * largest cluster of calls on the product-sync page.
+ *
+ * Returns `null` when the cache cannot answer (no remote resolved, or nothing cached yet), which
+ * callers treat as "fall back to the server" rather than "no results" — the distinction matters,
+ * because an empty array is a legitimate answer.
+ */
+async function cachedSyncMessageHistory(query: {
+  shopId: string;
+  systemMessageTypeId: string;
+  systemMessageId?: string;
+  statusId?: string;
+  pageSize?: number;
+}): Promise<any[] | null> {
+  try {
+    const remotes = (await systemMessageRemoteCache.all()).map((row: any) => row.raw ?? row);
+    const remoteIds = new Set(
+      remotes
+        .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
+        .map((remote: any) => String(remote.systemMessageRemoteId)),
+    );
+    if (!remoteIds.size) return null;
+
+    const messages = (await systemMessageCache.all()).map((row: any) => row.raw ?? row);
+    if (!messages.length) return null;
+
+    const logs = (await dataManagerLogCache.all()).map((row: any) => row.raw ?? row);
+    const logByMessageId = new Map<string, any>();
+    for (const log of logs) {
+      const key = String(log?.systemMessageId ?? "");
+      if (key && !logByMessageId.has(key)) logByMessageId.set(key, log);
+    }
+
+    let rows = messages.filter((message: any) =>
+      remoteIds.has(String(message?.systemMessageRemoteId)) &&
+      String(message?.systemMessageTypeId) === query.systemMessageTypeId);
+
+    if (query.systemMessageId) {
+      rows = rows.filter((message: any) => String(message.systemMessageId) === String(query.systemMessageId));
+    }
+    if (query.statusId) {
+      rows = rows.filter((message: any) => String(message.statusId) === query.statusId);
+    }
+
+    // The document orders by `-lastUpdatedStamp`; messages carry none (verified live), so
+    // `processedDate` then `initDate` is the equivalent recency signal.
+    rows.sort((a: any, b: any) =>
+      Number(b.processedDate ?? b.initDate ?? 0) - Number(a.processedDate ?? a.initDate ?? 0));
+
+    // `logId` is the field callers test to decide whether a message actually imported anything.
+    const joined = rows.map((message: any) => {
+      const log = logByMessageId.get(String(message.systemMessageId));
+      if (!log) return { ...message };
+      return {
+        ...message,
+        logId: log.logId,
+        totalRecordCount: log.totalRecordCount,
+        failedRecordCount: log.failedRecordCount,
+        successRecordCount: log.successRecordCount,
+        finishDateTime: log.finishDateTime,
+      };
+    });
+
+    return query.pageSize ? joined.slice(0, query.pageSize) : joined;
+  } catch (error) {
+    logger.warn("Cached sync message history unavailable; falling back to the server", error);
+    return null;
+  }
+}
+
 const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
   const shopId = payload.shopId || payload.shop?.shopId;
   if (!shopId) {
     throw new Error("Shop ID is required to count pending product update requests.");
+  }
+
+  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
+  const cachedPending = await cachedSyncMessageHistory({
+    shopId,
+    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+    statusId: "SmsgProduced",
+  });
+  if (cachedPending) {
+    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
   }
 
   const response = await requestBackend<any>({

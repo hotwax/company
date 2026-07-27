@@ -505,7 +505,7 @@ import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
 import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 
 import ShopifyProductSyncActionsPopover from "./ShopifyProductSyncActionsPopover.vue";
-import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 import type { ProductSyncFsmState } from "@/utils/shopifyProductSyncFsm";
 
 const props = defineProps<{
@@ -612,7 +612,8 @@ onBeforeUnmount(() => {
 
 const hasNextStepBar = computed(() => {
   const job = props.systemMessageFsmState?.nextJob;
-  if (!job || job.paused) return false;
+  // `paused` is the Moqui string "N" when active, which is JS-truthy — compare explicitly.
+  if (!job || String(job.paused ?? "N").toUpperCase() === "Y") return false;
   if (!job.nextRunAtMs || !job.previousRunAtMs) return false;
   return job.nextRunAtMs > job.previousRunAtMs;
 });

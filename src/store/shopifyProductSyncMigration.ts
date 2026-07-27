@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { serviceJobCache, systemMessageTypeCache } from "@/utils/cacheEntities";
+import { useMaargConfig } from "@/composables/useSeed";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
 import { fetchShopSystemMessageRemoteIdInternal, fetchSyncJobConfigInternal } from "@/store/shopifyProductSync";
@@ -227,16 +229,11 @@ export function buildLegacySystemMessageItem(systemMessage: any): ProductSyncMig
 }
 
 async function fetchMaargInfo() {
-  const response = await api({
-    url: "admin/maarg",
-    method: "GET"
-  }) as any;
-
-  if (!response?.data || typeof response.data !== "object") {
-    throw new Error("Maarg version response is unavailable.");
-  }
-
-  return response.data;
+  // Server config properties, held in localStorage — read once per session, not per check.
+  const maarg = useMaargConfig();
+  await maarg.load();
+  if (!maarg.config.value) throw new Error("Maarg version response is unavailable.");
+  return maarg.config.value;
 }
 
 async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
@@ -250,14 +247,28 @@ async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
   };
 }
 
+/**
+ * Look a system message type up in the cached seed set.
+ *
+ * These are existence probes run once per required artifact — previously one request each (11 on a
+ * single connection-details load). The cached set is complete, so a miss is a genuine "missing".
+ * The network fallback covers only the case where the seed sync has not populated the table yet,
+ * so an unsynced cache can never be misreported as a missing artifact.
+ */
 async function fetchSystemMessageTypeEntity(systemMessageTypeId: string) {
+  try {
+    const cached = await systemMessageTypeCache.all();
+    if (cached.length) {
+      return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId)?.raw;
+    }
+  } catch (error) {
+    logger.warn("System message type cache unavailable; falling back to the server", error);
+  }
+
   const response = await api({
     url: "admin/systemMessages/types",
     method: "GET",
-    params: {
-      systemMessageTypeId,
-      pageSize: 1
-    }
+    params: { systemMessageTypeId, pageSize: 1 }
   }) as any;
 
   return Array.isArray(response?.data) ? response.data[0] : undefined;
@@ -272,13 +283,26 @@ async function fetchDataManagerConfigEntity(configId: string) {
   return response?.data;
 }
 
+/**
+ * Look a service job up in the cached definitions.
+ *
+ * The check only reads `jobName` and `paused`, both of which the cached row carries. Same
+ * fallback rule as above: network only when the cache has not been populated.
+ */
 async function fetchServiceJobEntity(jobName: string) {
+  try {
+    const cached = await serviceJobCache.all();
+    if (cached.length) {
+      return cached.find((row: any) => row.jobName === jobName)?.raw;
+    }
+  } catch (error) {
+    logger.warn("Service job cache unavailable; falling back to the server", error);
+  }
+
   const response = await api({
     url: `admin/serviceJobs/${jobName}`,
     method: "GET",
-    params: {
-      pageSize: 1
-    }
+    params: { pageSize: 1 }
   }) as any;
 
   return response?.data?.jobDetail;
@@ -393,13 +417,28 @@ async function fetchLegacySystemMessageRemoteIds(payload: any) {
   }
 }
 
+const LEGACY_BULK_QUERY_TYPE_TERM = "BulkProductAndVariantsByIdQuery";
+
 async function fetchDynamicLegacySystemMessageTypes(): Promise<string[]> {
+  // The server form is a `_op: like` search over the type catalog. That catalog is cached in full,
+  // so the same substring match runs locally (Moqui's bare `like` value is a contains match).
+  try {
+    const cached = await systemMessageTypeCache.all();
+    if (cached.length) {
+      return cached
+        .map((row: any) => String(row.systemMessageTypeId || "").trim())
+        .filter((typeId: string) => typeId.includes(LEGACY_BULK_QUERY_TYPE_TERM));
+    }
+  } catch (error) {
+    logger.warn("System message type cache unavailable; falling back to the server", error);
+  }
+
   try {
     const response = await api({
       url: "admin/systemMessages/types",
       method: "GET",
       params: {
-        systemMessageTypeId: "BulkProductAndVariantsByIdQuery",
+        systemMessageTypeId: LEGACY_BULK_QUERY_TYPE_TERM,
         systemMessageTypeId_op: "like",
         pageSize: 50
       }

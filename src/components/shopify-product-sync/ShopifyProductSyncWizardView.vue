@@ -581,7 +581,7 @@
 <script setup lang="ts">
 import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
 import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
-import type { ShopifyProductSyncRun } from "@/store/shopifyProductSync";
+import type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 import type { ProductSyncFsmState } from "@/utils/shopifyProductSyncFsm";
 import {
   IonAccordion,
