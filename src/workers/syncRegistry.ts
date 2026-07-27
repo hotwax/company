@@ -37,6 +37,35 @@ export interface ActiveDomain {
   args?: any;
 }
 
+/**
+ * The key a domain's last-run clock is stored under.
+ *
+ * ⚠️ NOT the domain name. One page can activate the SAME domain several times with different args and
+ * different cadences — the connection details page activates `systemMessage` for product-sync types at
+ * the idle cadence and again for order-sync types at the active one. Keyed on name alone, those share
+ * one clock: the 10s activation restamps it every 10s, the 60s activation's interval therefore never
+ * elapses, and it runs exactly once per page entry and then never again. Silent, because the first tick
+ * does run it, so the screen looks correct on arrival and simply stops updating.
+ *
+ * Keyed on name + args, two activations that do DIFFERENT work get independent clocks, while two that
+ * are genuinely identical still share one (they are the same work).
+ */
+export function activationKey(active: ActiveDomain): string {
+  const args = active.args;
+  if (args === undefined || args === null) return active.name;
+  // Key order is stabilised so an equivalent activation built in a different order maps to one clock.
+  return `${active.name}:${stableStringify(args)}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
 const registry = new Map<string, SyncDomain>();
 
 /** Register a domain. Called at worker module load by each domain module. */
@@ -72,7 +101,8 @@ export function dueDomains(
   intervalFor: (active: ActiveDomain) => number | undefined,
 ): ActiveDomain[] {
   return active.filter((entry) => {
-    const last = lastRunAt[entry.name];
+    // Per-ACTIVATION clock, not per-domain — see `activationKey`.
+    const last = lastRunAt[activationKey(entry)];
     const interval = intervalFor(entry);
     if (interval === undefined) return last === undefined; // class B: bootstrap once
     if (last === undefined) return true; // first run is immediate

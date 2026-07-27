@@ -2,6 +2,7 @@ import { expose } from "comlink";
 import { ensureCacheReady } from "@/utils/appCacheDb";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
+  activationKey,
   type ActiveDomain,
   type SyncContext,
   dueDomains,
@@ -75,13 +76,16 @@ async function runDomain(entry: ActiveDomain, force = false): Promise<void> {
     return;
   }
   post({ type: "sync-start", domain: entry.name });
+  // Per-ACTIVATION clock, not per-domain: one page can activate the same domain twice with different
+  // args and cadences, and a shared clock lets the faster one starve the slower. See `activationKey`.
+  const clockKey = activationKey(entry);
   try {
     const written = await domain.sync(ctx, entry.args, { force });
-    lastRunAt[entry.name] = Date.now();
-    post({ type: "sync-end", domain: entry.name, written, at: lastRunAt[entry.name] });
+    lastRunAt[clockKey] = Date.now();
+    post({ type: "sync-end", domain: entry.name, written, at: lastRunAt[clockKey] });
   } catch (err) {
     // Record the attempt so one failing domain can't spin every base tick.
-    lastRunAt[entry.name] = Date.now();
+    lastRunAt[clockKey] = Date.now();
     const { isAuth, message } = classifyError(err);
     post({ type: isAuth ? "auth-error" : "sync-error", domain: entry.name, message });
   }
@@ -128,9 +132,14 @@ async function start(payload: HarnessStartPayload): Promise<void> {
 
 function setDomains(domains: ActiveDomain[]): void {
   active = domains ?? [];
-  // Drop run history for domains no longer active so re-activation bootstraps again.
-  const names = new Set(active.map((entry) => entry.name));
-  for (const key of Object.keys(lastRunAt)) if (!names.has(key)) delete lastRunAt[key];
+  /**
+   * Drop run history for activations no longer active so re-activation bootstraps again.
+   *
+   * Keyed per activation, so swapping cadence (order sync escalating to 10s) keeps each activation's
+   * own clock instead of resetting or sharing one.
+   */
+  const keys = new Set(active.map(activationKey));
+  for (const key of Object.keys(lastRunAt)) if (!keys.has(key)) delete lastRunAt[key];
 }
 
 async function refetchOne(request: { domain: string; pk: Record<string, unknown> }): Promise<number> {
@@ -154,7 +163,9 @@ async function refetchOne(request: { domain: string; pk: Record<string, unknown>
 async function syncDomainNow(domain: string): Promise<number> {
   const entry = active.find((candidate) => candidate.name === domain) ?? { name: domain };
   await runDomain(entry, true);
-  return lastRunAt[domain] ? 1 : 0;
+  // Read back under the SAME key `runDomain` stamped, otherwise a domain activated with args always
+  // reports 0 — the clock is keyed per activation, not per name.
+  return lastRunAt[activationKey(entry)] ? 1 : 0;
 }
 
 expose({
