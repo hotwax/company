@@ -240,10 +240,14 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, createOutline, trashOutline } from "ionicons/icons";
-import { useKlaviyoStore } from '@/store/klaviyo';
-import { maskApiKey } from '@/store/klaviyo';
-import type { ProductStoreEmailSetting } from '@/store/klaviyo';
-import { useUtilStore } from '@/store/util';
+import {
+  deleteCommGatewayAuth,
+  deleteEmailSetting,
+  maskApiKey,
+  upsertEmailSetting,
+  useKlaviyo,
+} from '@/composables/useKlaviyo';
+import type { ProductStoreEmailSetting } from '@/composables/useKlaviyo';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common'
 import { useProductStores } from '@/composables/useProductStores';
@@ -255,8 +259,12 @@ import {
 } from "@/utils/klaviyoEmailEvents";
 
 const props = defineProps<{ id: string }>();
-const klaviyoStore = useKlaviyoStore();
-const utilStore = useUtilStore();
+
+// Module-level composable state — shared with the landing page and the connection modal.
+const {
+  connectionById, emailSettingsForGateway, emailSettings: allSettings, emailTypes,
+  ensureEmailTypes, fetchAllEmailSettings, fetchConnections, hydrate,
+} = useKlaviyo();
 
 const isLoading = ref(false);
 const showDeleteModal = ref(false);
@@ -271,11 +279,9 @@ const decodedId = computed(() => {
   }
 });
 
-const connection = computed(() => klaviyoStore.getConnectionById(decodedId.value));
+const connection = computed(() => connectionById(decodedId.value));
 
-const eventsForThisConnection = computed(() => {
-  return klaviyoStore.getEmailSettingsForGateway(decodedId.value) || [];
-});
+const eventsForThisConnection = computed(() => emailSettingsForGateway(decodedId.value));
 const maskedKey = computed(() => maskApiKey(connection.value?.publicKey) || translate("Not set"));
 
 const canConfirmDelete = computed(() => {
@@ -289,8 +295,6 @@ const subjectDrafts = ref<Record<string, string>>({});
 
 // Cached at login — no fetch on entry.
 const { productStores } = useProductStores();
-const allSettings = computed<ProductStoreEmailSetting[]>(() => klaviyoStore.getEmailSettings || []);
-const emailTypes = computed(() => utilStore.emailTypes || []);
 
 const preferredStoreId = computed(() => {
   const firstConfiguredEvent = allSettings.value.find(
@@ -324,14 +328,16 @@ watch(
 onIonViewWillEnter(async () => {
   isLoading.value = true;
   try {
-    await klaviyoStore.hydrate();
-    
+    await hydrate();
+
     // Product stores are cached and watched below with `immediate: true` — nothing to fetch here.
+    // `hydrate` skips these two when no Unigate tenant exists, so cover that path directly:
+    // email types are a load-once memo (the guard is belt-and-braces), settings always refetch.
     if (!emailTypes.value?.length) {
-      await utilStore.fetchEmailTypes();
+      await ensureEmailTypes();
     }
     if (!allSettings.value?.length) {
-      await klaviyoStore.fetchAllEmailSettings();
+      await fetchAllEmailSettings();
     }
   } catch (error) {
     logger.error(error);
@@ -393,8 +399,8 @@ async function commitSubjectIfChanged(evt: any) {
       gatewayAuthId,
       fromAddress: evt.setting.fromAddress,
     };
-    await klaviyoStore.upsertEmailSetting(payload);
-    await klaviyoStore.fetchAllEmailSettings();
+    await upsertEmailSetting(payload);
+    await fetchAllEmailSettings();
     commonUtil.showToast(translate("Subject updated"));
     delete subjectDrafts.value[evt.emailType];
   } catch (error: any) {
@@ -425,13 +431,13 @@ async function toggleEvent(evt: any, enabled: boolean) {
         systemMessageRemoteId: "UNIGATE_CONFIG",
         gatewayAuthId,
       };
-      await klaviyoStore.upsertEmailSetting(payload);
+      await upsertEmailSetting(payload);
       commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));
     } else {
-      await klaviyoStore.deleteEmailSetting(selectedStoreId.value, evt.emailType);
+      await deleteEmailSetting(selectedStoreId.value, evt.emailType);
       commonUtil.showToast(translate("{label} turned off", { label: getEventLabel(evt.emailType) }));
     }
-    await klaviyoStore.fetchAllEmailSettings();
+    await fetchAllEmailSettings();
   } catch (error: any) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update email event"));
@@ -446,7 +452,7 @@ async function openEditModal() {
     componentProps: { connection: connection.value },
   });
   modal.onDidDismiss().then(async () => {
-    await klaviyoStore.fetchConnections();
+    await fetchConnections();
   });
   modal.present();
 }
@@ -467,10 +473,10 @@ async function performDelete() {
   if (!canConfirmDelete.value) return;
   isDeleting.value = true;
   try {
-    await klaviyoStore.deleteCommGatewayAuth(connection.value.commGatewayAuthId);
+    await deleteCommGatewayAuth(connection.value.commGatewayAuthId);
     commonUtil.showToast(translate("Klaviyo connection disconnected"));
     showDeleteModal.value = false;
-    await klaviyoStore.hydrate();
+    await hydrate();
     router.replace("/klaviyo");
   } catch (error: any) {
     logger.error(error);

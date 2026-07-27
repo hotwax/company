@@ -568,7 +568,7 @@
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
               <h2>{{ translate("Replay orders from a date range") }}</h2>
-              <p>{{ translate("Re-import every Shopify order created or updated in a date range through the standard fresh-fetch path, up to {limit} orders.", { limit: REPLAY_ORDER_LIMIT }) }}</p>
+              <p>{{ translate("Re-import Shopify orders through the standard import path. The run covers every order updated since the From date; the date range previews the orders it targets.") }}</p>
             </ion-label>
           </ion-item>
           <ion-item>
@@ -1047,7 +1047,8 @@ function rawStatusLabel(status: unknown, failed = 0, successful = 0): string {
   return status ? String(status) : translate("Not available");
 }
 
-function importLabel(configId: string): string {
+/** `configId` is optional on a cached import row, so the label must accept its absence. */
+function importLabel(configId: string | undefined): string {
   return configId === "SYNC_SHOPIFY_ORDER"
     ? translate("New order import")
     : translate("Updated order import");
@@ -1128,7 +1129,7 @@ async function searchOrders(after?: string) {
     if (currentRequestId !== requestId) return;
     orders.value = after ? orders.value.concat(result.orders) : result.orders;
     hasNextPage.value = result.hasNextPage;
-    endCursor.value = result.endCursor;
+    endCursor.value = result.endCursor ?? "";
   } catch (error) {
     if (currentRequestId !== requestId) return;
     logger.error(error);
@@ -1175,17 +1176,17 @@ async function submit() {
   actionMessage.value = "";
   actionError.value = "";
   try {
-    const result = await orderSync.requestSelectedOrders({ shopifyOrderIds: selectedIds, shopId: requestedShopId });
+    const result = await orderSync.requestSelectedOrders({ orders: selectedOrders.value, shopId: requestedShopId });
     if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    if (result.queued.length === 1 && result.failedOrderIds.length === 0) {
-      actionMessage.value = translate("Shopify order {order} was queued as {id}.", {
+    if (result.queued.length === 1) {
+      actionMessage.value = translate("Requested import run {id} covering Shopify order {order}.", {
         order: result.queued[0].shopifyOrderId,
-        id: result.queued[0].systemMessageId,
+        id: result.jobRunId,
       });
     } else {
-      actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
-        queued: result.queued.length,
-        failed: result.failedOrderIds.length,
+      actionMessage.value = translate("Requested import run {id} covering {count} Shopify orders.", {
+        count: result.queued.length,
+        id: result.jobRunId,
       });
     }
     await polling.manualRefresh();
@@ -1320,25 +1321,25 @@ async function startOrdersReplay() {
     });
     if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
 
-    const shopifyOrderIds = [...new Set(
-      search.orders.map((order) => String(order.legacyResourceId || "").trim()).filter(Boolean),
-    )];
-    if (!shopifyOrderIds.length) {
+    if (!search.orders.length) {
       actionMessage.value = translate("No Shopify orders were found in the selected date range.");
       showReplayOrdersModal.value = false;
       return;
     }
-    if (search.hasNextPage) {
-      actionError.value = translate("More than {limit} orders were found in the selected date range. Choose a narrower range or use Download specific orders.", { limit: REPLAY_ORDER_LIMIT });
-      return;
-    }
 
-    const result = await orderSync.requestSelectedOrders({ shopifyOrderIds, shopId: requestedShopId });
+    // The window import covers every order updated since the From date in ONE run, so the matched
+    // count is a preview, not a cap — `hasNextPage` only means the preview stopped counting.
+    const result = await orderSync.replayOrdersFromDate({ fromDate: fromDateTime, shopId: requestedShopId });
     if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
-    actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
-      queued: result.queued.length,
-      failed: result.failedOrderIds.length,
-    });
+    actionMessage.value = search.hasNextPage
+      ? translate("Requested import run {id} covering more than {limit} Shopify orders.", {
+        id: result.jobRunId,
+        limit: REPLAY_ORDER_LIMIT,
+      })
+      : translate("Requested import run {id} covering {count} Shopify orders.", {
+        count: search.orders.length,
+        id: result.jobRunId,
+      });
     showReplayOrdersModal.value = false;
     await polling.manualRefresh();
   } catch (error) {
@@ -1436,7 +1437,15 @@ async function confirmRunNow() {
 async function saveJobFromModal(input: { cronExpression: string; paused: boolean }) {
   const shopId = props.id;
   const currentJob = orderSync.job;
-  if (!shopId || !currentJob || orderSync.selectedShopId !== shopId || currentJob.shopId !== shopId) {
+  /**
+   * The shop binding is `selectedShopId`, NOT a `shopId` on the job row.
+   *
+   * A cached ServiceJob carries no top-level `shopId` — it is resolved for this shop by matching the
+   * shop's remote against the job's `serviceJobParameters`. Testing `currentJob.shopId !== shopId`
+   * compared `undefined` to the id and was therefore always true, so saving a schedule from this
+   * modal ALWAYS threw "does not belong to the selected Shopify shop" and never wrote anything.
+   */
+  if (!shopId || !currentJob || orderSync.selectedShopId !== shopId) {
     throw new Error("The loaded Order Sync job does not belong to the selected Shopify shop.");
   }
   if (input.cronExpression !== currentJob.cronExpression) {

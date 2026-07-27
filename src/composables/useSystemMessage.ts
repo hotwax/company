@@ -56,6 +56,31 @@ export function systemMessageMayHaveErrors(systemMessage: any): boolean {
   return !(status.includes("consumed") || status.includes("confirmed") || status.includes("sent"));
 }
 
+/**
+ * A Shopify bulk operation, as this app reads it.
+ *
+ * Fields mirror `shopifyBulkOperationProjection` in `cacheEntities`; every one is optional because
+ * the value legitimately starts as `{}` before a run has one, and `isStatusUnavailable` is the
+ * synthetic marker set when Shopify cannot be reached (rendered as "status unavailable", not as a
+ * failure).
+ */
+export interface ShopifyBulkOperationLike {
+  id?: string;
+  status?: string;
+  errorCode?: string;
+  systemMessageRemoteId?: string;
+  objectCount?: number | string;
+  rootObjectCount?: number | string;
+  fileSize?: number | string;
+  url?: string;
+  query?: string;
+  createdAt?: string | number;
+  completedAt?: string | number;
+  /** Set when the operation exists but Shopify could not be asked for its current state. */
+  isStatusUnavailable?: boolean;
+  [key: string]: unknown;
+}
+
 export function useSystemMessage() {
   const state = reactive({
     currentSystemMessage: {} as Record<string, any>,
@@ -345,6 +370,17 @@ export function useSystemMessage() {
     };
   };
 
+  /**
+   * A Shopify bulk operation as this app handles it.
+   *
+   * Mirrors `shopifyBulkOperationProjection` in `cacheEntities`, plus `isStatusUnavailable` — the
+   * synthetic marker set when Shopify cannot be reached for a run, which callers render as "status
+   * unavailable" rather than as a failure.
+   *
+   * Typed rather than left as the inferred `{}`: every consumer reads `.status`/`.objectCount` off
+   * this, and `{}` made all eleven of those reads type errors in `ShopifyProductSyncHistory.vue`
+   * while still compiling everywhere the value was passed through untyped.
+   */
   const fetchShopifyBulkOperationBySystemMessageId = async (systemMessageId: string, systemMessageData?: any) => {
     const systemMessage = systemMessageData || await fetchSystemMessageById(systemMessageId);
     // Cache-first, and skipped entirely for a message whose status rules errors out — see
@@ -355,7 +391,7 @@ export function useSystemMessage() {
     
     if (systemMessageData) state.currentSystemMessage = systemMessageData;
 
-    let shopifyBulkOperation = {};
+    let shopifyBulkOperation: ShopifyBulkOperationLike = {};
     const bulkOperationSource = await getBulkOperationSource(systemMessage);
     const systemMessageRemoteId = bulkOperationSource.systemMessage?.systemMessageRemoteId || systemMessage?.systemMessageRemoteId;
     if (systemMessage && bulkOperationSource.bulkOperationId && systemMessageRemoteId) {

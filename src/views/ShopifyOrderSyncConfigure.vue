@@ -1036,9 +1036,17 @@ function isCurrentShopContext(targetShopId: string) {
 
 function currentJobName(targetShopId: string) {
   if (!isCurrentShopContext(targetShopId)) return "";
-  const loadedJob = job.value;
-  if (!loadedJob || String(loadedJob.shopId || "") !== targetShopId) return "";
-  return String(loadedJob.jobName || "").trim();
+  /**
+   * The job is ALREADY scoped to this shop — do not re-check it against a field that does not exist.
+   *
+   * `job` comes from `useShopifySyncJob`, which resolves it by matching the shop's SystemMessageRemote
+   * against the job's `serviceJobParameters`. A cached job row carries no top-level `shopId`: Moqui's
+   * `ServiceJob` entity has none, and `get#ServiceJobs` builds each row from `ServiceJobAndProduct`
+   * plus its parameters. So `String(loadedJob.shopId || "")` was always `""`, this always returned
+   * `""`, and every caller gated on it — `saveSchedule`, `openActivationReview`, `isCurrentJob` —
+   * hit its `if (!targetJobName) return` and did NOTHING. A silent no-op, no error, no toast.
+   */
+  return String(job.value?.jobName || "").trim();
 }
 
 function isCurrentJob(targetShopId: string, targetJobName: string) {

@@ -309,25 +309,21 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { addCircleOutline, addOutline, closeOutline, saveOutline, serverOutline } from "ionicons/icons";
-import { useKlaviyoStore } from '@/store/klaviyo';
-import { maskApiKey } from '@/store/klaviyo';
-import { useUtilStore } from '@/store/util';
+import { maskApiKey, updateSystemMessageRemote, useKlaviyo } from '@/composables/useKlaviyo';
 import { useMaargConfig } from '@/composables/useSeed';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common';
 import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
 import { getPreferredUnigateSendUrl, getUnigateSendUrlWarning } from "@/utils/maarg";
 
-const klaviyoStore = useKlaviyoStore();
-const utilStore = useUtilStore();
+// Module-level composable state — this page, the details view, and the modal share one copy.
+const {
+  hasUnigateConfig, unigateConfig, klaviyoConnections, eventCountByGateway,
+  hasCheckedUnigate, hydrate, fetchUnigateConfig, fetchConnections,
+} = useKlaviyo();
 
 const isInitialLoading = ref(false);
 const isRechecking = ref(false);
-
-const hasUnigateConfig = computed(() => klaviyoStore.hasUnigateConfig);
-const unigateConfig = computed(() => klaviyoStore.getUnigateConfig);
-const klaviyoConnections = computed(() => klaviyoStore.getKlaviyoConnections || []);
-const eventCountByGateway = computed(() => klaviyoStore.getEventCountByGateway || {});
 // Maarg config is seed data held in localStorage; loaded once and read here.
 // Read from the store instead of triggering a per-screen fetch.
 const { config: maargConfig, load: loadMaargConfig } = useMaargConfig();
@@ -395,9 +391,9 @@ async function save() {
     if (isReplacingKey.value && form.newApiKey.trim()) {
       payload.publicKey = form.newApiKey.trim();
     }
-    await klaviyoStore.updateSystemMessageRemote(unigateConfig.value.systemMessageRemoteId, payload);
+    await updateSystemMessageRemote(unigateConfig.value.systemMessageRemoteId, payload);
     void loadMaargConfig();
-  await klaviyoStore.fetchUnigateConfig();
+    await fetchUnigateConfig();
     commonUtil.showToast(translate("Unigate tenant updated"));
     closeUnigateConfig();
   } catch (error: any) {
@@ -415,15 +411,15 @@ function closeUnigateConfig() {
 // Runs on every dismiss (close button, save, backdrop) — mirrors the former
 // modal's onDidDismiss() → fetchUnigateConfig() follow-up.
 async function onUnigateConfigDismiss() {
-  await klaviyoStore.fetchUnigateConfig();
+  await fetchUnigateConfig();
 }
 // --- end Unigate tenant config modal ---
 
 onIonViewWillEnter(async () => {
-  if (!klaviyoStore.hasCheckedUnigate) {
+  if (!hasCheckedUnigate.value) {
     isInitialLoading.value = true;
   }
-  await klaviyoStore.hydrate();
+  await hydrate();
   isInitialLoading.value = false;
 });
 
@@ -441,7 +437,7 @@ function eventCountLabel(conn: any) {
 async function recheckUnigate() {
   isRechecking.value = true;
   try {
-    await klaviyoStore.hydrate();
+    await hydrate();
   } finally {
     isRechecking.value = false;
   }
@@ -454,7 +450,7 @@ async function openConnectionModal() {
   });
   modal.onDidDismiss().then(async (event: any) => {
     if (event?.data?.connection) {
-      await klaviyoStore.fetchConnections();
+      await fetchConnections();
       router.push(`/klaviyo/${encodeURIComponent(event.data.connection.commGatewayAuthId)}`);
     }
   });
@@ -475,7 +471,8 @@ function openUnigateConfigModal() {
 }
 
 function openConnection(conn: any) {
-  klaviyoStore.setCurrent(conn);
+  // The details view resolves its connection from the route param; the store's write-only
+  // `setCurrent` mirror had no reader anywhere and was dropped in the composable migration.
   router.push(`/klaviyo/${encodeURIComponent(conn.commGatewayAuthId)}`);
 }
 </script>

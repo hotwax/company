@@ -682,7 +682,8 @@ const mdmLogBadgeLabel = computed(() => {
 const systemMessageErrorText = computed(() => {
   return String(props.currentSyncRun?.systemMessage?.errorText || "").trim();
 });
-function normalizeSyncStepStatus(statusId: string) {
+/** Callers pass an optional cached `statusId`; the body already handles absence. */
+function normalizeSyncStepStatus(statusId: string | undefined) {
   return String(statusId || "").toLowerCase().replace(/[_\-\s]/g, "");
 }
 

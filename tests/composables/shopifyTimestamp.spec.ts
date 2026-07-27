@@ -115,3 +115,38 @@ describe("fetchUnsyncedProductUpdateCount — failure is not a zero", () => {
     expect(api).not.toHaveBeenCalled();
   });
 });
+
+import { fetchShopifyShopProductCount } from "@/composables/useShopify";
+
+/**
+ * Same bug class, second site: the PORTED store functions build their `updated_at` filter through
+ * `buildProductUpdatesCountQuery`, a different path from `fetchUnsyncedProductUpdateCount` above.
+ * When the product-sync page moved onto the spine, its `lastSyncedAt` became cached epoch millis and
+ * flowed into these builders raw — reproducing the Shopify 400 the first fix never covered. The
+ * normalisation now lives INSIDE the builders, so every caller is safe; these pin that.
+ */
+describe("fetchShopifyShopProductCount — timestamp format through the ported builder", () => {
+  const countResponse = { data: { data: { productsCount: { count: 3, precision: "EXACT" } } } };
+
+  it("converts spine millis to ISO inside the builder", async () => {
+    api.mockReset().mockResolvedValue(countResponse);
+
+    await fetchShopifyShopProductCount({ systemMessageRemoteId: "RemoteB", lastSyncedAt: MILLIS });
+
+    expect(queryOf()).toContain(`updated_at:>'${ISO}'`);
+    expect(queryOf()).not.toContain(String(MILLIS));
+  });
+
+  it("normalises a millis date arriving via syncRunState — the spine's actual hand-off shape", async () => {
+    // An empty explicit `lastSyncedAt` falls back to `syncRunState.lastSyncedAt` (and only derives via
+    // a fetch when neither exists — deliberate, and out of unit scope here).
+    api.mockReset().mockResolvedValue(countResponse);
+
+    await fetchShopifyShopProductCount({
+      systemMessageRemoteId: "RemoteB",
+      syncRunState: { lastSyncedAt: MILLIS },
+    });
+
+    expect(queryOf()).toContain(`updated_at:>'${ISO}'`);
+  });
+});

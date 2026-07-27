@@ -28,6 +28,8 @@ import {
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import { api, commonUtil, logger, translate } from "@common";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { onSessionCleared } from "./sessionScope";
+import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
   productStoreCache,
@@ -1096,6 +1098,12 @@ export function useShopifyProductSyncRunState(shopIdSource: ShopIdSource) {
     statusId: run.statusId ?? run.systemMessage?.statusId,
     initDate: run.initDate ?? run.systemMessage?.initDate,
     logId: run.logId,
+    // The import's own status, off the SPINE first for the same reason as `logId`: the document
+    // reports it the moment the import exists, while the enriched log row can be a tick behind.
+    // `normalizeProductSyncStatus` (the wizard FSM) keys on this — omitting it made every completed
+    // import look "in progress" to the progress card.
+    logStatusId: run.logStatusId ?? run.mdmLog?.statusId,
+    finishDateTime: run.mdmLog?.finishDateTime,
     totalRecordCount: run.totalRecordCount ?? run.mdmLog?.totalRecordCount,
     failedRecordCount: run.failedRecordCount ?? run.mdmLog?.failedRecordCount,
     successRecordCount: run.mdmLog?.successRecordCount,
@@ -1229,6 +1237,114 @@ export async function fetchUnsyncedProductUpdateCount(
  * equivalent list (see the tracker) rather than calling this, which runs this feature
  * alongside order sync on one worker — so the run cursor and job-run watch are defined once.
  */
+export interface ConfigureProductSyncJobInput {
+  shopId: string;
+  productStoreId?: string;
+  productIdentifierEnumId?: string;
+}
+
+/**
+ * Give a shop its own product-sync job by cloning the template.
+ *
+ * Two GENERIC `admin/serviceJobs` calls — clone, then set the shop's parameters — so this needs none
+ * of the bespoke Shopify surface. It moved off `store/shopifyProductSync.configureSyncJob` unchanged
+ * except for the two things the store version lacked:
+ *
+ *  - it REFRESHES the cached `serviceJob` row. `serviceJob` is class B and snapshots once per login,
+ *    so without this the new job is invisible to every cached read — the Upgrade Assistant would
+ *    schedule a job and then still render "no job configured" until the next login.
+ *  - it returns the resolved job rather than the raw `AxiosResponse`, so a caller can verify what
+ *    landed instead of reading `undefined` off an axios envelope.
+ *
+ * The job is created PAUSED, which is deliberate: activation is a separate, reviewed step.
+ */
+export async function configureProductSyncJob(input: ConfigureProductSyncJobInput) {
+  const { shopId, productStoreId, productIdentifierEnumId } = input;
+  if (!shopId) throw new Error("A shop is required to configure the product sync job.");
+
+  const jobName = `${PRODUCT_SYNC_FEATURE.templateJobName}_${shopId}`;
+
+  await api({
+    url: `admin/serviceJobs/${PRODUCT_SYNC_FEATURE.templateJobName}/clone`,
+    method: "POST",
+    data: { newJobName: jobName },
+  });
+
+  const serviceJobParameters: Array<{ parameterName: string; parameterValue: string }> = [
+    { parameterName: "shopId", parameterValue: shopId },
+  ];
+  if (productStoreId) {
+    serviceJobParameters.push({ parameterName: "productStoreIds", parameterValue: productStoreId });
+  }
+  if (productIdentifierEnumId) {
+    serviceJobParameters.push({
+      parameterName: "shopifyProductIdentifier",
+      parameterValue: productIdentifierEnumId,
+    });
+  }
+
+  const resp: any = await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: { jobName, paused: "Y", serviceJobParameters },
+  });
+
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  const body = resp?.data?.jobDetail ?? resp?.data ?? {};
+  return { shopId, jobName, paused: "Y", serviceJobParameters, ...body };
+}
+
+/**
+ * Give a shop its own ORDER sync job by cloning the template — the generic-API alternate to the
+ * broken bespoke route.
+ *
+ * `POST shopify/order-sync/{shopId}/job` 400s (`Cannot get property 'hotwax' on null object`,
+ * verified live 2026-07-26) and is a backend contract we do not control. But the job it was meant to
+ * create is an ordinary ServiceJob clone, and the exact same two generic calls that
+ * `configureProductSyncJob` uses are proven live. Parameter set copied from the working clone
+ * (`queue_ShopifyOrderSync_10010`, read from the cache):
+ *
+ *   systemMessageRemoteId=<the shop's remote>   systemMessageTypeId=ShopifyOrderSync   runAsBatch=true
+ *
+ * The job is matched to its shop by these PARAMETERS (`findSuitableSyncJob`), never by name, so the
+ * `_${shopId}` suffix is only a human-readable convention. Created PAUSED: activation is a separate,
+ * reviewed step on the configure screen, same as product sync.
+ */
+export async function configureOrderSyncJob(input: { shopId: string; systemMessageRemoteId: string }) {
+  const { shopId, systemMessageRemoteId } = input;
+  if (!shopId) throw new Error("A shop is required to configure the Order Sync job.");
+  if (!systemMessageRemoteId) {
+    throw new Error("The shop's SystemMessageRemote must exist before Order Sync can be configured.");
+  }
+
+  const jobName = `${ORDER_SYNC_FEATURE.templateJobName}_${shopId}`;
+
+  await api({
+    url: `admin/serviceJobs/${ORDER_SYNC_FEATURE.templateJobName}/clone`,
+    method: "POST",
+    data: { newJobName: jobName },
+  });
+
+  const serviceJobParameters = [
+    { parameterName: "systemMessageRemoteId", parameterValue: systemMessageRemoteId },
+    { parameterName: "systemMessageTypeId", parameterValue: SHOPIFY_ORDER_SYNC_MESSAGE_TYPE },
+    // String "true", not "Y" — copied from the live working clone; `isTruthy` accepts both.
+    { parameterName: "runAsBatch", parameterValue: "true" },
+  ];
+
+  const resp: any = await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: { jobName, paused: "Y", serviceJobParameters },
+  });
+
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  const body = resp?.data?.jobDetail ?? resp?.data ?? {};
+  return { shopId, jobName, paused: "Y", serviceJobParameters, ...body };
+}
+
 export function productSyncExtraDomains(intervalMs: number, jobNames: readonly string[] = []): ActiveDomain[] {
   const names = jobNames.filter(Boolean);
   return [
@@ -2290,15 +2406,38 @@ export function orderSyncSummary(
   }).length;
 
   const latestCompletedBatch = ordered.find((batch) => {
-    const [batchHalf, importHalf] = deriveSyncProgress(batch, logsFor(batch));
+    const logs = logsFor(batch);
+    /**
+     * ⚠️ Requires at least one ACTUAL import log, not just an import state of "completed".
+     *
+     * `deriveSyncProgress` reports a consumed batch with ZERO import logs as import "completed"
+     * (nothing was required, so nothing is outstanding — defensible for the progress row). But that
+     * meant one zero-order run poisoned this headline: the newest batch matched the predicate, its
+     * empty logs produced no `lastCompletedAt`, and the card claimed "No completed batch recorded"
+     * for a shop whose real last completed import was days old and still cached. Observed live the
+     * moment a queued run returned zero orders. "Last completed batch" means "last batch that
+     * actually imported", which is also what the retired store computed.
+     */
+    if (!logs.length) return false;
+    const [batchHalf, importHalf] = deriveSyncProgress(batch, logs);
     return TERMINAL_STATES.has(batchHalf.state) && importHalf.state === "completed";
   });
 
   const completedLogs = logsFor(latestCompletedBatch);
   const lastCompletedAt = completedLogs
-    .map((log: any) => log?.finishDateTime ?? log?.completedDate)
+    .map((log: any) => log?.finishDateTime ?? log?.completedDate ?? log?.processedDate)
     .filter(Boolean)
     .sort((a: any, b: any) => Number(b) - Number(a))[0];
+
+  /**
+   * "Orders processed" describes the last COMPLETED batch, not the newest one.
+   *
+   * Reading it off `importRow` (the newest batch) makes the headline number collapse to 0 the moment
+   * a new request is produced, then climb back when its import lands — so on a shop syncing every few
+   * minutes the card shows 0 most of the time. The number must stay on the last batch that actually
+   * finished, which is what the deleted store did.
+   */
+  const completedProgress = deriveSyncProgress(latestCompletedBatch, completedLogs);
 
   return {
     latestBatch,
@@ -2307,7 +2446,7 @@ export function orderSyncSummary(
     batchStatus: batchRow.state,
     overallStatus,
     pendingBatchRequests,
-    processedOrderCount: importRow.successfulRecords,
+    processedOrderCount: completedProgress[1].successfulRecords,
     lastCompletedAt,
     nextRunTime: job?.cronExpression
       ? getNextSyncRun(job.cronExpression, {
@@ -2320,7 +2459,18 @@ export function orderSyncSummary(
 
 /** True while the latest batch is still moving — drives the live/idle polling cadence and spinners. */
 export function isOrderSyncBatchActive(summary: OrderSyncSummary | null | undefined): boolean {
-  const state = summary?.overallStatus;
+  /**
+   * NO BATCH IS NOT AN ACTIVE BATCH.
+   *
+   * `"pending"` is ambiguous: `deriveSyncProgress(undefined, [])` yields it for a shop that has never
+   * run, exactly as it does for a genuinely queued request. Reading the state alone therefore called
+   * every never-synced shop "active" — and since this drives the worker's cadence, the connection
+   * page pinned order sync at its 10s poll permanently for every such shop, which is every shop that
+   * has not yet used order sync. It also made "Run now" report "a batch request is already in
+   * progress" when none existed.
+   */
+  if (!summary?.latestBatch) return false;
+  const state = summary.overallStatus;
   return state === "active" || state === "pending";
 }
 
@@ -2413,6 +2563,14 @@ export interface OrderSyncCardInput {
   /** False until every cached table the summary joins has emitted — drives the card's skeleton. */
   hydrated?: boolean;
   error?: string | null;
+  /**
+   * Whether the shop itself resolved from the cache.
+   *
+   * Separate from `shopId`, which is only the ROUTE parameter. A route id with no matching cached
+   * shop row still yields a non-empty `shopId`, so gating `actionable` on that alone produced a card
+   * rendered as a button whose click handler — which reads the resolved row — silently returned.
+   */
+  shopResolved?: boolean;
 }
 
 /**
@@ -2441,8 +2599,9 @@ export function orderSyncCardSnapshot(input: OrderSyncCardInput): ShopifyOrderSy
       ? undefined
       : String(summary.lastCompletedAt),
     // The order-sync routes exist for every state — `missing` opens the configure screen, the rest
-    // open monitoring — so the card is actionable as soon as there is a shop to open it for.
-    actionable: Boolean(input.shopId),
+    // open monitoring — so the card is actionable once there is a RESOLVED shop to open it for.
+    // `shopResolved` defaults to "the id is enough" only when the caller does not know better.
+    actionable: Boolean(input.shopId) && input.shopResolved !== false,
     batchStatus: ORDER_SYNC_PROGRESS_BADGE_LABELS[batchRow.state],
     batchDetail: summary.latestBatch?.systemMessageId || "No batch request yet",
     importStatus: ORDER_SYNC_PROGRESS_BADGE_LABELS[importRow.state],
@@ -2509,6 +2668,9 @@ export function useShopifyOrderSyncCard(
     summary: summary.value,
     job: job.value,
     hydrated: hydrated.value,
+    // Only once the tables have settled — before that "not found" is indistinguishable from
+    // "not emitted yet", and treating it as unresolved would make the card briefly inert.
+    shopResolved: !hydrated.value || Boolean(ctx.shop.value),
     error: toValue(options.error) ?? null,
   }));
 
@@ -2594,6 +2756,14 @@ const landmarkState = reactive({
  * re-reading — see `saveLandmarkDate`.
  */
 let landmarkDatesRequest: Promise<void> | null = null;
+
+// Module state survives an SPA logout — without this, user B reads user A's landmark dates.
+onSessionCleared(() => {
+  landmarkDatesRequest = null;
+  landmarkState.status = "idle";
+  landmarkState.error = null;
+  landmarkState.byShopId = {};
+});
 
 async function fetchLandmarkDates(): Promise<void> {
   landmarkState.status = "loading";
@@ -2865,35 +3035,106 @@ export function useShopifyOrderSync() {
     }
   }
 
-  /** `PUT admin/serviceJobs/{jobName}` — proven live; the bespoke `/job` PUT returns 400. */
-  const updateSchedule = (cronExpression: string) => withMutation("schedule", async () => {
+  /**
+   * Resolve the job a mutation must target, for an EXPLICIT shop when the caller names one.
+   *
+   * The callers all capture a `targetShopId` before awaiting and re-check it afterwards, because the
+   * user can switch shops mid-request. Without honouring that id here the mutation would apply to
+   * whatever `state.selectedShopId` happens to be when it runs — a wrong-shop write in exactly the
+   * race the caller is guarding against.
+   */
+  function resolveJobName(shopId?: string): string {
+    // REFUSE rather than guess. An order-sync job is matched by REMOTE, not by shop id, so resolving
+    // one for a shop other than the bound session's would need that shop's remote resolved too —
+    // and getting it wrong means writing a cron or a pause to another shop's job. Callers pass their
+    // captured target id precisely to detect this race, so surfacing it is the intended outcome.
+    if (shopId && shopId !== state.selectedShopId) {
+      throw new Error("The selected Shopify shop changed before the Order Sync change completed.");
+    }
     const jobName = job.value?.jobName;
     if (!jobName) throw new Error("Configure the selected shop's Order Sync job first.");
-    if (!cronExpression.trim()) throw new Error("A cron expression is required.");
-    return updateJob({ jobName, cronExpression: cronExpression.trim() });
+    return String(jobName);
+  }
+
+  /**
+   * The job as the CALLER needs to see it after a write.
+   *
+   * `api()` resolves to a raw `AxiosResponse`, so returning it directly gave every caller
+   * `resp.jobName === undefined`. The configure screen verifies a write landed on the job it meant to
+   * change (`String(updatedJob?.jobName || "") !== targetJobName`), so an undefined name made that
+   * guard fire on EVERY successful save — the schedule was written and the screen still reported
+   * "the selected Order Sync job changed before the update completed". Returning the merged job makes
+   * the guard test what it was written to test.
+   */
+  function jobResultFrom(resp: any, jobName: string, applied: Record<string, unknown>) {
+    const payload = resp?.data ?? {};
+    const body = payload?.jobDetail ?? payload;
+    return { shopId: state.selectedShopId, jobName, ...body, ...applied };
+  }
+
+  /**
+   * `PUT admin/serviceJobs/{jobName}` — proven live; the bespoke `/job` PUT returns 400.
+   *
+   * Refreshes the cached `serviceJob` row afterwards. `serviceJob` is a class-B domain that snapshots
+   * ONCE per login, so without this the write lands on the server while every screen reading cached
+   * job state — this one, the monitoring screen, the connection card — keeps rendering the old cron
+   * and paused flag until the next login.
+   */
+  const updateSchedule = (cronExpression: string, shopId?: string) => withMutation("schedule", async () => {
+    const jobName = resolveJobName(shopId);
+    const cron = cronExpression.trim();
+    if (!cron) throw new Error("A cron expression is required.");
+    const resp = await updateJob({ jobName, cronExpression: cron });
+    await refreshAfterMutation("serviceJob", { jobName });
+    return jobResultFrom(resp, jobName, { cronExpression: cron });
   });
 
-  /** Same generic mechanism as the schedule change. */
-  const updateJobStatus = (paused: boolean) => withMutation("status", async () => {
-    const jobName = job.value?.jobName;
-    if (!jobName) throw new Error("Configure the selected shop's Order Sync job first.");
-    return updateJob({ jobName, paused: paused ? "Y" : "N" });
+  /** Same generic mechanism, same cache refresh, as the schedule change. */
+  const updateJobStatus = (paused: boolean, shopId?: string) => withMutation("status", async () => {
+    const jobName = resolveJobName(shopId);
+    const resp = await updateJob({ jobName, paused: paused ? "Y" : "N" });
+    await refreshAfterMutation("serviceJob", { jobName });
+    // `paused` is echoed as the BOOLEAN the caller passed, not Moqui's "Y"/"N" — the activation guard
+    // tests `updatedJob?.paused !== false`, which "N" (truthy) would fail.
+    return jobResultFrom(resp, jobName, { paused });
   });
 
   /** `POST admin/serviceJobs/{jobName}/runNow` — already generic. */
-  const runNow = () => withMutation("run-now", async () => {
-    const jobName = job.value?.jobName;
-    if (!jobName) throw new Error("Configure the selected shop's Order Sync job first.");
-    const result = await runJobNow(jobName);
+  const runNow = (options: { shopId?: string } = {}) => withMutation("run-now", async () => {
+    const jobName = resolveJobName(options.shopId);
+    const resp: any = await runJobNow(jobName);
+    // Unwrapped for the same reason as the job writes: the caller reads `systemMessageId`/`jobRunId`
+    // off this to link the queued run, and both live under `data`.
+    const result = { jobName, ...(resp?.data ?? {}) };
     state.lastRunResult = result;
     return result;
   });
 
-  const setLandmarkDate = (input: { key: LandmarkDateKey; value: string }) =>
-    withMutation("landmark", () => saveLandmark(input.key, input.value));
+  /** `shopId` is the caller's captured target — checked, not used, for the reason in `assertShop`. */
+  const setLandmarkDate = (input: { key: LandmarkDateKey; value: string; shopId?: string }) =>
+    withMutation("landmark", () => {
+      assertShop(input.shopId);
+      return saveLandmark(input.key, input.value);
+    });
 
-  /** Shopify order search — remote truth, never cached. */
-  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number }) {
+  /** Same shop-race check the job mutations make, for the reads and writes that are not job-scoped. */
+  function assertShop(shopId?: string) {
+    if (shopId && shopId !== state.selectedShopId) {
+      throw new Error("The selected Shopify shop changed before the Order Sync request completed.");
+    }
+  }
+
+  /**
+   * Shopify order search — remote truth, never cached.
+   *
+   * `pageInfo` is SPREAD into the result as well as nested. Callers read `hasNextPage`/`endCursor`
+   * straight off the returned object to drive their paging loop, and nesting them only under
+   * `pageInfo` left both undefined — a search silently stopped after its first page.
+   */
+  async function searchShopifyOrders(
+    input: { queryString: string; after?: string; pageSize?: number; shopId?: string },
+  ) {
+    assertShop(input.shopId);
     const systemMessageRemoteId = remoteId.value;
     if (!systemMessageRemoteId) throw new Error("The selected Shopify shop remote is unavailable.");
     const resp: any = await api({
@@ -2906,50 +3147,142 @@ export function useShopifyOrderSync() {
       },
     });
     const edges = resp?.data?.data?.orders?.edges ?? resp?.data?.orders?.edges ?? [];
+    const pageInfo = resp?.data?.data?.orders?.pageInfo ?? resp?.data?.orders?.pageInfo ?? null;
     return {
-      orders: edges.map((edge: any) => edge?.node).filter(Boolean),
-      pageInfo: resp?.data?.data?.orders?.pageInfo ?? null,
+      orders: edges.map((edge: any) => edge?.node).filter(Boolean) as any[],
+      pageInfo,
+      hasNextPage: Boolean(pageInfo?.hasNextPage),
+      endCursor: (pageInfo?.endCursor ?? null) as string | null,
     };
   }
 
   /**
-   * ⚠️ BLOCKED ON THE BACKEND — not a client gap.
+   * Targeted order retry — the WINDOW-REPLAY alternate to the broken bespoke endpoint.
    *
-   * Both paths wrap `POST shopify/order-sync/{shopId}/retry`, confirmed 400
-   * `Cannot get property 'hotwax' on null object` (verified live 2026-07-26). The generic equivalent
-   * would be *producing a standalone ShopifyOrderSync SystemMessage* for the order, and there is no
-   * generic message-production API on the client — that needs the service contract the broken
-   * endpoint wraps. Kept calling the real endpoint so the failure is visible and honest rather than
-   * silently swallowed.
+   * `POST shopify/order-sync/{shopId}/retry` 400s (`Cannot get property 'hotwax' on null object`,
+   * verified live 2026-07-26), and the generic surface has no message-production route either:
+   * `POST admin/systemMessages` and `admin/systemMessages/produce` both 405, and `runNow` ignores
+   * body parameter overrides (all probed live 2026-07-27). What IS proven live (run M2399240 →
+   * message M228628): the job's `fromDate` PARAMETER drives the sync window, `[fromDate, now]`.
+   *
+   * So a targeted retry becomes a WINDOW import: swap `fromDate` to just before the oldest selected
+   * order's `updatedAt`, run the job once, restore the parameter. Orders inside the window that were
+   * not selected re-import too — the import is idempotent, so the over-coverage is harmless — which
+   * is why these mutations report one covering RUN, not per-order queue ids.
    */
-  const requestSelectedOrders = (input: { shopifyOrderIds: string[] }) =>
+
+  /** `yyyy-MM-dd HH:mm:ss`, read as UTC — the only timestamp format the job runner accepts (ISO
+   * errored live: `Timestamp format must be yyyy-mm-dd hh:mm:ss[.fffffffff]`, run M2399238). */
+  function toJobTimestamp(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) throw new Error("A valid from date is required to replay orders.");
+    return date.toISOString().slice(0, 19).replace("T", " ");
+  }
+
+  /**
+   * The primitive every retry path composes: PUT the job's parameter set with `fromDate` swapped in,
+   * run the job once, restore the original set.
+   *
+   * The COMPLETE current set is re-sent rather than a one-parameter patch: merge-vs-replace semantics
+   * of `serviceJobParameters` on the PUT are undocumented, and the full-set shape is the one proven
+   * live. The restore runs in `finally` so a failed run cannot leave a stale window pinned to the
+   * job. Known race: if the job's cron fires between swap and restore (~2s against a >=5-minute
+   * cron), that scheduled run imports the replay window too — idempotent, so at worst a duplicate
+   * import of the same orders.
+   */
+  async function replayWindow(fromDateIso: string, shopId?: string) {
+    const jobName = resolveJobName(shopId);
+    const currentParameters: any[] = Array.isArray(job.value?.serviceJobParameters)
+      ? job.value.serviceJobParameters
+      : [];
+    const baseline = currentParameters.map((parameter: any) => ({
+      parameterName: parameter.parameterName,
+      parameterValue: parameter.parameterValue ?? null,
+    }));
+    // REFUSE on a parameter-less row rather than PUT a lone `fromDate`: if the PUT replaces the whole
+    // set, that write would strip the remote/type parameters and orphan the job from its shop.
+    if (!baseline.some((parameter) => parameter.parameterName === "systemMessageRemoteId" && parameter.parameterValue)) {
+      throw new Error("The Order Sync job's parameters are unavailable. Refresh and try again.");
+    }
+    if (!baseline.some((parameter) => parameter.parameterName === "fromDate")) {
+      baseline.push({ parameterName: "fromDate", parameterValue: null });
+    }
+    const swapped = baseline.map((parameter) =>
+      parameter.parameterName === "fromDate"
+        ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
+        : parameter);
+    await updateJob({ jobName, serviceJobParameters: swapped });
+    try {
+      const resp: any = await runJobNow(jobName);
+      const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
+      state.lastRunResult = result;
+      return result;
+    } finally {
+      await updateJob({ jobName, serviceJobParameters: baseline });
+      await refreshAfterMutation("serviceJob", { jobName });
+    }
+  }
+
+  /** Replay every order the shop changed since `fromDate` (ISO). The replay-modal path. */
+  const replayOrdersFromDate = (input: { fromDate: string; shopId?: string }) =>
+    withMutation("replay-orders", () => replayWindow(input.fromDate, input.shopId));
+
+  const requestSelectedOrders = (input: {
+    orders: Array<{ legacyResourceId?: string; id?: string; updatedAt?: string; createdAt?: string }>;
+    shopId?: string;
+  }) =>
     withMutation("request-orders", async () => {
-      const shopId = state.selectedShopId;
-      return api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/retry`,
-        method: "post",
-        data: { shopifyOrderIds: input.shopifyOrderIds },
-      });
+      assertShop(input.shopId);
+      const orders = (input.orders ?? []).filter((order) => order.legacyResourceId || order.id);
+      if (!orders.length) throw new Error("Select at least one Shopify order to request.");
+      const stamps = orders
+        .map((order) => Date.parse(order.updatedAt || order.createdAt || ""))
+        .filter((stamp) => !Number.isNaN(stamp));
+      if (!stamps.length) {
+        throw new Error("The selected Shopify orders are missing their update dates. Search again and retry.");
+      }
+      // One minute of cushion so a subsecond-truncated `updatedAt` cannot fall outside the window.
+      const run = await replayWindow(new Date(Math.min(...stamps) - 60_000).toISOString(), input.shopId);
+      return {
+        queued: orders.map((order) => ({
+          shopifyOrderId: String(order.legacyResourceId || order.id),
+          jobRunId: run.jobRunId,
+        })),
+        failedOrderIds: [] as string[],
+        ...run,
+      };
     });
 
-  const retryIndividualOrder = (input: { errorId: string; shopifyOrderId: string }) =>
+  /** `errorId` is accepted for caller compatibility; the window mechanism has no use for it. */
+  const retryIndividualOrder = (input: { errorId?: string; shopifyOrderId: string; shopId?: string }) =>
     withMutation("retry-order", async () => {
-      const shopId = state.selectedShopId;
-      return api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/retry`,
-        method: "post",
-        data: { errorId: input.errorId, shopifyOrderId: input.shopifyOrderId },
+      assertShop(input.shopId);
+      const search = await searchShopifyOrders({
+        queryString: `id:${input.shopifyOrderId}`,
+        pageSize: 5,
+        shopId: input.shopId,
       });
+      const order = search.orders.find(
+        (candidate: any) => String(candidate.legacyResourceId ?? "") === String(input.shopifyOrderId),
+      ) ?? search.orders[0];
+      if (!order) {
+        throw new Error(`Shopify order ${input.shopifyOrderId} was not found on the connected shop.`);
+      }
+      const basis = Date.parse(order.updatedAt || order.createdAt || "");
+      if (Number.isNaN(basis)) {
+        throw new Error(`Shopify order ${input.shopifyOrderId} is missing its update date.`);
+      }
+      const run = await replayWindow(new Date(basis - 60_000).toISOString(), input.shopId);
+      return { shopifyOrderId: input.shopifyOrderId, ...run };
     });
 
   /** ⚠️ Also blocked: wraps the same broken `/job` resource. See the module note. */
-  const configure = () => withMutation("configure", async () => {
+  const configure = (input: { shopId?: string } = {}) => withMutation("configure", async () => {
+    assertShop(input.shopId);
     const shopId = state.selectedShopId;
-    return api({
-      url: `shopify/order-sync/${encodeURIComponent(shopId)}/job`,
-      method: "post",
-      data: { templateJobName: SHOPIFY_ORDER_SYNC_TEMPLATE_JOB },
-    });
+    // Generic clone + parameters — the bespoke `POST shopify/order-sync/{id}/job` is broken on the
+    // backend (400, verified live). See `configureOrderSyncJob` for the full story.
+    return configureOrderSyncJob({ shopId, systemMessageRemoteId: remoteId.value });
   });
 
   async function suggestOldestOrderDate(): Promise<string> {
@@ -2979,7 +3312,7 @@ export function useShopifyOrderSync() {
     resetForShop, loadMonitoring, loadConfiguration, loadHistory, refresh, suggestOldestOrderDate,
     // mutations
     updateSchedule, updateJobStatus, runNow, setLandmarkDate,
-    searchShopifyOrders, requestSelectedOrders, retryIndividualOrder, configure,
+    searchShopifyOrders, requestSelectedOrders, retryIndividualOrder, replayOrdersFromDate, configure,
     filteredErrors,
   });
 }
@@ -2990,7 +3323,7 @@ const ORDER_SEARCH_QUERY = `
   query OrderSyncOrderSearch($query: String!, $first: Int!, $after: String) {
     orders(query: $query, first: $first, after: $after, sortKey: CREATED_AT, reverse: true) {
       edges {
-        node { id name createdAt displayFulfillmentStatus displayFinancialStatus
+        node { id legacyResourceId name createdAt updatedAt displayFulfillmentStatus displayFinancialStatus
           customer { displayName } totalPriceSet { shopMoney { amount currencyCode } } }
       }
       pageInfo { hasNextPage endCursor }
@@ -3482,3 +3815,1849 @@ export function useShopifyConnectionSyncSession(options: ConnectionSyncSessionOp
     ],
   });
 }
+
+
+// =============================================================================================
+// 7b. Shop connection — creation, credentials, access scopes, location import
+// =============================================================================================
+
+/**
+ * Everything `store/shopify.ts` did, relocated. The store held four kinds of thing:
+ *   - shop/mapping/location LISTS — already cached tables here (`useShopifyShops`,
+ *     `useShopifyTypeMappings`, `useShopifyCarrierShipments`, `useShopifyLocations`), so those
+ *     actions map to reads that already exist and are not re-ported;
+ *   - connection mutations (create shop+remote, rotate credentials, import locations) — moved here
+ *     with write-through, which the store versions lacked entirely: they pushed into their own
+ *     `shops` array and every cached read stayed stale until relogin;
+ *   - access scopes — `persist: true` state, reproduced below with explicit localStorage persistence;
+ *   - `clearShopifyState` — replaced by the `sessionScope` registry.
+ */
+
+const ACCESS_SCOPES_STORAGE_KEY = "company.shopifyAccessScopes";
+
+interface StoredAccessScopes {
+  scopes: string[];
+  lastRefreshed: number;
+}
+
+function readStoredAccessScopes(): Record<string, StoredAccessScopes> {
+  try {
+    return JSON.parse(localStorage.getItem(ACCESS_SCOPES_STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Last-known Shopify access scopes per remote.
+ *
+ * Persisted (the store was `persist: true`) so the config UI can show the scopes granted at the last
+ * refresh without hitting Shopify on every page load — a scope refresh is a real Shopify round trip.
+ * The stored copy is only ever a display cache; `refreshAccessScopes` is the sole writer.
+ */
+const accessScopesState = reactive<{ byRemoteId: Record<string, StoredAccessScopes> }>({
+  byRemoteId: readStoredAccessScopes(),
+});
+
+onSessionCleared(() => {
+  accessScopesState.byRemoteId = {};
+  localStorage.removeItem(ACCESS_SCOPES_STORAGE_KEY);
+});
+
+export function useShopifyAccessScopes() {
+  const scopesFor = (systemMessageRemoteId: string | undefined) =>
+    systemMessageRemoteId ? accessScopesState.byRemoteId[systemMessageRemoteId] ?? null : null;
+
+  /** Ask Shopify (via the OMS bridge) what is currently granted, and persist the answer. */
+  const refreshAccessScopes = async (systemMessageRemoteId: string): Promise<string[]> => {
+    const resp: any = await api({
+      url: `sob/shop/remote/${systemMessageRemoteId}/accessScopes`,
+      method: "post",
+    });
+    if (commonUtil.hasError(resp)) throw resp;
+    const scopes: string[] = resp.data?.accessScopes ?? [];
+    accessScopesState.byRemoteId = {
+      ...accessScopesState.byRemoteId,
+      [systemMessageRemoteId]: { scopes, lastRefreshed: Date.now() },
+    };
+    localStorage.setItem(ACCESS_SCOPES_STORAGE_KEY, JSON.stringify(accessScopesState.byRemoteId));
+    return scopes;
+  };
+
+  return { scopesFor, refreshAccessScopes };
+}
+
+/**
+ * Create a Shopify connection: the SystemMessageRemote (credentials + linkage) and the ShopifyShop.
+ *
+ * Moved verbatim from the store except the ending: the store pushed the new shop into its own array,
+ * which no cached read ever saw — a freshly created connection was invisible on every converted page
+ * until the next login snapshot. Write-through refreshes both cached sides instead.
+ */
+export async function createShopifyConnection(payload: {
+  shopId: string;
+  shopifyShopId: string;
+  myshopifyDomain: string;
+  shopAccessToken: string;
+  clientId: string;
+  clientSecret: string;
+  name?: string;
+  productStoreId?: string;
+}) {
+  // Predictable remote id so the remote↔shop linkage is self-describing.
+  const systemMessageRemoteId = `${payload.shopId}_REMOTE`;
+  const remoteResp: any = await api({
+    url: "oms/systemMessageRemotes",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      sendUrl: payload.myshopifyDomain,
+      remoteAppCode: payload.clientId,
+      sharedSecret: payload.clientSecret,
+      sendSharedSecret: payload.shopAccessToken,
+      password: payload.shopAccessToken,
+      remoteId: payload.shopifyShopId,
+      remoteIdType: "SHOPIFY_SHOP_ID",
+      internalId: payload.shopId,
+      internalIdType: "HOTWAX_SHOP_ID",
+      authHeaderName: "X-Shopify-Access-Token",
+      description: payload.name || payload.myshopifyDomain,
+    },
+  });
+  if (commonUtil.hasError(remoteResp)) throw remoteResp;
+
+  const shopResp: any = await api({
+    url: "oms/shopifyShops/shops",
+    method: "post",
+    data: {
+      shopId: payload.shopId,
+      shopifyShopId: payload.shopifyShopId,
+      myshopifyDomain: payload.myshopifyDomain,
+      name: payload.name || payload.myshopifyDomain.split(".")[0],
+      productStoreId: payload.productStoreId || undefined,
+      isEnabled: "Y",
+    },
+  });
+  if (commonUtil.hasError(shopResp)) throw shopResp;
+
+  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  await refreshAfterMutation("shopifyShop", { shopId: payload.shopId });
+
+  return {
+    shopId: payload.shopId,
+    shopifyShopId: payload.shopifyShopId,
+    myshopifyDomain: payload.myshopifyDomain,
+    name: payload.name || payload.myshopifyDomain.split(".")[0],
+    productStoreId: payload.productStoreId || null,
+    isEnabled: "Y",
+  };
+}
+
+/** Rotate/replace a shop remote's Shopify credentials. Returns the server's response data. */
+export async function updateShopifyRemote(payload: {
+  myShopifydomain: string;
+  shopifyShopId: string;
+  shopAccessToken: string;
+  clientId: string;
+  clientSecret: string;
+  oldClientSecret?: string;
+  name?: string;
+  hotwaxShopId?: string;
+}) {
+  const resp: any = await api({ url: "sob/shop/remote", method: "post", data: payload });
+  if (commonUtil.hasError(resp)) throw resp;
+  return resp.data;
+}
+
+/**
+ * One shop's ShopifyLocation↔facility mapping rows, fetched live.
+ *
+ * The cached `shopifyLocations` table holds the same rows, but the import modal reads this
+ * immediately BEFORE and AFTER a mutation to diff what changed — a read-your-own-write it cannot
+ * get from a cache the worker refreshes asynchronously.
+ */
+export async function fetchShopifyShopLocations(shopId: string, pageSize = 100): Promise<any[]> {
+  const resp: any = await api({
+    url: "oms/shopifyShops/locations",
+    method: "get",
+    params: { shopId, pageSize },
+  });
+  if (commonUtil.hasError(resp)) throw resp;
+  return Array.isArray(resp.data) ? resp.data : [];
+}
+
+/**
+ * One shop's type mappings / carrier shipments, fetched LIVE.
+ *
+ * For WIZARD DECISIONS immediately after a mutation ("does this shop have a product-type mapping yet,
+ * or do I create the starter one?"), not for display — display reads the cached tables. A decision
+ * must read its own write; the cache commits through the worker and a liveQuery emission later, so a
+ * synchronous read straight after `await mutation()` can still be one tick stale, and acting on that
+ * staleness would re-create mappings that already exist.
+ */
+export async function fetchShopifyTypeMappings(shopId: string, mappedTypeId: string): Promise<any[]> {
+  const rows: any[] = [];
+  let pageIndex = 0;
+  let page: any[] = [];
+  do {
+    const resp: any = await api({
+      url: "oms/shopifyShops/typeMappings",
+      method: "get",
+      params: { shopId, mappedTypeId, pageSize: 100, pageIndex },
+    });
+    if (commonUtil.hasError(resp)) throw resp;
+    page = Array.isArray(resp.data) ? resp.data : [];
+    rows.push(...page);
+    pageIndex += 1;
+  } while (page.length >= 100);
+  return rows;
+}
+
+/** See `fetchShopifyTypeMappings` — the carrier-shipment sibling, same read-your-own-write purpose. */
+export async function fetchShopifyCarrierShipments(shopId: string): Promise<any[]> {
+  const rows: any[] = [];
+  let pageIndex = 0;
+  let page: any[] = [];
+  do {
+    const resp: any = await api({
+      url: "oms/shopifyShops/carrierShipments",
+      method: "get",
+      params: { shopId, pageSize: 100, pageIndex },
+    });
+    if (commonUtil.hasError(resp)) throw resp;
+    page = Array.isArray(resp.data) ? resp.data : [];
+    rows.push(...page);
+    pageIndex += 1;
+  } while (page.length >= 100);
+  return rows;
+}
+
+/**
+ * Import Shopify locations as facilities (POST) and write-through the shop's cached location rows,
+ * so the mapping pages see the import without waiting for the next login snapshot.
+ */
+export async function importShopifyFacilities(shopId: string, locations: any[]): Promise<any> {
+  const resp: any = await api({
+    url: `shopify/shops/${shopId}/shopify-locations`,
+    method: "post",
+    data: locations,
+  });
+  if (commonUtil.hasError(resp)) throw resp;
+  await refreshAfterMutation("shopifyLocation", { shopId });
+  return resp;
+}
+
+// =============================================================================================
+// 8. Product sync — live Shopify/OMS calls and mutations
+// =============================================================================================
+
+/**
+ * Everything the product sync screens do that is NOT a cached read.
+ *
+ * Moved here verbatim from `store/shopifyProductSync.ts`, which was a Pinia store in name only — it
+ * held no state (`state: () => ({})`) and its actions were one-line delegates to these module
+ * functions. So this is a relocation, not a rewrite: the views stop importing a store and Shopify
+ * logic lives in the Shopify composable, per the one-composable-per-master-entity rule.
+ *
+ * Most of what follows is permanently live and that is correct — Shopify GraphQL, webhook
+ * subscription state, and the product-store count documents are remote truth with no cacheable
+ * equivalent. The cached reads they used to be bundled with (`syncRuns`, job config, the shop remote)
+ * now come from sections 2–4; what is left here is the part that must ask a server.
+ */
+export interface ShopifyProductSyncSetupState {
+  hasLinkedOmsProducts: boolean;
+  productStoreLocked: boolean;
+  identifierLocked: boolean;
+  selectedProductStoreId: string;
+  selectedIdentifierEnumId: string;
+  shopifyAccessState?: ShopifyProductSyncAccessState;
+  syncJobId?: string;
+  completed?: boolean;
+}
+
+export interface ShopifyProductSyncAccessState {
+  systemMessageRemoteId: string;
+  accessScopeEnumId: string;
+  hasWriteAccess: boolean;
+  status: "write" | "read-only" | "unavailable" | "update-required";
+  label: string;
+}
+
+export interface ShopifyProductSyncReviewStats {
+  shopifyProductCount: number;
+  shopifyVariantCount: number;
+  omsProductCount?: number;
+  omsVariantCount?: number;
+  linkedShopCount: number;
+  loaded: boolean;
+}
+
+export interface ShopifyProductSyncPreflightResult {
+  matched: number;
+  sampled: number;
+  status: "matched" | "warning" | "conflict";
+  items: any[];
+}
+
+export interface ShopifyProductSyncProgressState {
+  syncJobId: string;
+  status: "queued" | "sent" | "running" | "waiting" | "completed" | "cancelled" | "error";
+  systemMessageState: string;
+  completed: boolean;
+  bulkOperationId?: string;
+  bulkOperationStatus?: string;
+  objectCount?: number;
+  rootObjectCount?: number;
+  queuedJobsAhead?: number;
+}
+
+export interface ShopifyShopProductCount {
+  count: number;
+  lastSyncedAt?: string;
+}
+
+export interface ShopifyProductUpdateSyncRunState {
+  latestSystemMessage?: any;
+  latestConfirmedSystemMessage?: any;
+  latestConsumedSystemMessage?: any;
+  lastSyncedAt?: string;
+  systemMessageRemoteId: string;
+  systemMessages?: any[];
+}
+
+export interface ShopifyPendingProductUpdateRequestsState {
+  count: number;
+  latestSystemMessage?: any;
+}
+
+export interface ShopifyProductSyncDashboardSummary {
+  syncRunState: ShopifyProductUpdateSyncRunState;
+  pendingRequests: ShopifyPendingProductUpdateRequestsState;
+  runningOperation: ShopifyRunningBulkOperation | null;
+  unsyncedUpdates: ShopifyShopProductCount;
+  updateFilesToProcess: number;
+}
+
+export interface ShopifyRunningBulkOperation {
+  id: string;
+  status: string;
+  type: string;
+  createdAt: string;
+  objectCount: number;
+}
+
+export interface ShopifyUnsyncedProductUpdate {
+  id: string;
+  legacyResourceId?: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+}
+
+export interface ShopifyProductSyncProductSearchResult {
+  id: string;
+  legacyResourceId: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+  cursor: string;
+}
+
+export interface ShopifyProductSyncProductSearchState {
+  products: ShopifyProductSyncProductSearchResult[];
+  hasNextPage: boolean;
+  endCursor: string;
+}
+
+export interface ShopifyProductSyncOnDemandResult {
+  systemMessageId?: string;
+  syncedProductId?: string[];
+  missingProductId?: string[];
+  failedProductId?: string[];
+  rejectedProductId?: string[];
+  acceptedCount?: number;
+  syncedCount?: number;
+  failedCount?: number;
+  rejectedCount?: number;
+}
+
+export interface ShopifyProductSyncActionResult {
+  jobOutput?: string;
+  message?: string;
+  systemMessageId?: string;
+}
+
+export interface ShopifyProductSyncHistoryOperation {
+  id: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  statusLabel: string;
+  metricValue?: number | string;
+  metricLabel?: string;
+  actionLabel?: string;
+  detailType: string;
+}
+
+export interface ShopifyProductSyncHistoryRun {
+  id: string;
+  systemMessageId: string;
+  createdTime: string;
+  bulkOperationStatus: string;
+  bulkOperationStatusLabel: string;
+  mdmStatus: string;
+  mdmStatusLabel: string;
+  bulkOperationId: string;
+  objectCount: number;
+  mdmImportId: string;
+  totalRecordCount: number;
+  failedRecordCount: number;
+  operations: ShopifyProductSyncHistoryOperation[];
+}
+
+export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
+
+
+export interface ShopifyShopProductCount {
+  count: number;
+  lastSyncedAt?: string;
+}
+
+export interface ShopifyProductUpdateSyncRunState {
+  latestSystemMessage?: any;
+  latestConfirmedSystemMessage?: any;
+  latestConsumedSystemMessage?: any;
+  lastSyncedAt?: string;
+  systemMessageRemoteId: string;
+  systemMessages?: any[];
+}
+
+export interface ShopifyPendingProductUpdateRequestsState {
+  count: number;
+  latestSystemMessage?: any;
+}
+
+export interface ShopifyProductSyncDashboardSummary {
+  syncRunState: ShopifyProductUpdateSyncRunState;
+  pendingRequests: ShopifyPendingProductUpdateRequestsState;
+  runningOperation: ShopifyRunningBulkOperation | null;
+  unsyncedUpdates: ShopifyShopProductCount;
+  updateFilesToProcess: number;
+}
+
+export interface ShopifyRunningBulkOperation {
+  id: string;
+  status: string;
+  type: string;
+  createdAt: string;
+  objectCount: number;
+}
+
+export interface ShopifyUnsyncedProductUpdate {
+  id: string;
+  legacyResourceId?: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+}
+
+export interface ShopifyProductSyncProductSearchResult {
+  id: string;
+  legacyResourceId: string;
+  title: string;
+  handle: string;
+  updatedAt: string;
+  vendor: string;
+  productType: string;
+  status: string;
+  totalInventory?: number;
+  imageUrl?: string;
+  imageAltText?: string;
+  variantsCount: number;
+  cursor: string;
+}
+
+export interface ShopifyProductSyncProductSearchState {
+  products: ShopifyProductSyncProductSearchResult[];
+  hasNextPage: boolean;
+  endCursor: string;
+}
+
+export interface ShopifyProductSyncOnDemandResult {
+  systemMessageId?: string;
+  syncedProductId?: string[];
+  missingProductId?: string[];
+  failedProductId?: string[];
+  rejectedProductId?: string[];
+  acceptedCount?: number;
+  syncedCount?: number;
+  failedCount?: number;
+  rejectedCount?: number;
+}
+
+export interface ShopifyProductSyncActionResult {
+  jobOutput?: string;
+  message?: string;
+  systemMessageId?: string;
+}
+
+export interface ShopifyProductSyncHistoryOperation {
+  id: string;
+  title: string;
+  subtitle: string;
+  status: string;
+  statusLabel: string;
+  metricValue?: number | string;
+  metricLabel?: string;
+  actionLabel?: string;
+  detailType: string;
+}
+
+export interface ShopifyProductSyncHistoryRun {
+  id: string;
+  systemMessageId: string;
+  createdTime: string;
+  bulkOperationStatus: string;
+  bulkOperationStatusLabel: string;
+  mdmStatus: string;
+  mdmStatusLabel: string;
+  bulkOperationId: string;
+  objectCount: number;
+  mdmImportId: string;
+  totalRecordCount: number;
+  failedRecordCount: number;
+  operations: ShopifyProductSyncHistoryOperation[];
+}
+
+export interface ShopifyProductSyncHistoryState {
+  runs: ShopifyProductSyncHistoryRun[];
+}
+
+interface ShopifyGraphqlResponse {
+  response?: any;
+  data?: any;
+  errors?: any[];
+}
+
+interface SystemMessagesResponse {
+  systemMessages?: any[];
+  systemMessagesCount?: number;
+}
+
+interface SystemMessageRemotesResponse {
+  systemMessageRemoteList?: any[];
+}
+
+const PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID = "BulkQueryShopifyProductUpdates";
+const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
+// SHOP_RW_ACCESS is the official read-write access scope. SHOP_READ_WRITE_ACCESS is the
+// deprecated full-form enum and requires updating (it is being phased out / force-replaced).
+const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
+const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const LIVE_CATALOG_COUNTS_QUERY = `
+query WizardLiveCatalogCounts {
+  productsCount {
+    count
+    precision
+  }
+  productVariantsCount {
+    count
+    precision
+  }
+}
+`;
+
+const RUNNING_BULK_OPERATIONS_QUERY = `
+query RunningBulkOperations {
+  bulkOperations(first: 1, query: "status:running operation_type:query", sortKey: CREATED_AT, reverse: true) {
+    nodes {
+      id
+      status
+      type
+      createdAt
+      objectCount
+    }
+  }
+}
+`;
+
+function buildProductUpdatesCountQuery(fromDate?: string | number) {
+  // Normalised HERE so every caller is safe: the spine's `lastSyncedAt` is epoch millis (the cache
+  // projection's `date` coercion), and interpolating millis raw produced `updated_at:>'178461…'`,
+  // which Shopify answers with 400 — the exact bug `fetchUnsyncedProductUpdateCount` already fixed
+  // on its own path.
+  const iso = toShopifyTimestamp(fromDate);
+  const filterQuery = iso ? `(query: "updated_at:>'${escapeGraphqlString(iso)}'")` : "";
+  return `
+query UnsyncedProductUpdatesCount {
+  productsCount${filterQuery} {
+    count
+    precision
+  }
+}
+`;
+}
+
+function buildProductUpdatesListQuery(fromDate?: string | number, first = 100) {
+  const pageSize = Math.min(Math.max(Number(first) || 100, 1), 100);
+  // Same millis→ISO normalisation as the count query above.
+  const iso = toShopifyTimestamp(fromDate);
+  const filterQuery = iso ? `, query: "updated_at:>'${escapeGraphqlString(iso)}'"` : "";
+  return `
+query UnsyncedProductUpdates {
+  products(first: ${pageSize}${filterQuery}, sortKey: UPDATED_AT, reverse: true) {
+    nodes {
+      id
+      legacyResourceId
+      title
+      handle
+      updatedAt
+      vendor
+      productType
+      status
+      totalInventory
+      variantsCount {
+        count
+      }
+      featuredMedia {
+        ... on MediaImage {
+          image {
+            url
+            altText
+          }
+        }
+      }
+    }
+  }
+}
+`;
+}
+
+function buildProductSearchQuery(queryString: string, first = 20, after?: string) {
+  const pageSize = Math.min(Math.max(Number(first) || 20, 1), 50);
+  const afterQuery = after ? `, after: "${escapeGraphqlString(after)}"` : "";
+  return `
+query ProductSyncProductSearch {
+  products(first: ${pageSize}, query: "${escapeGraphqlString(queryString)}", sortKey: TITLE${afterQuery}) {
+    edges {
+      cursor
+      node {
+        id
+        legacyResourceId
+        title
+        handle
+        updatedAt
+        vendor
+        productType
+        status
+        totalInventory
+        variantsCount {
+          count
+        }
+        featuredMedia {
+          ... on MediaImage {
+            image {
+              url
+              altText
+            }
+          }
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+`;
+}
+
+function buildProductByIdQuery(productGid: string) {
+  return `
+query ProductSyncProductById {
+  product(id: "${escapeGraphqlString(productGid)}") {
+    id
+    legacyResourceId
+    title
+    handle
+    updatedAt
+    vendor
+    productType
+    status
+    totalInventory
+    variantsCount {
+      count
+    }
+    featuredMedia {
+      ... on MediaImage {
+        image {
+          url
+          altText
+        }
+      }
+    }
+  }
+}
+`;
+}
+
+function getExactShopifyProductGid(queryString: string) {
+  const normalizedQuery = queryString.trim();
+  if (/^gid:\/\/shopify\/Product\/\d+$/.test(normalizedQuery)) {
+    return normalizedQuery;
+  }
+  if (/^\d{8,}$/.test(normalizedQuery)) {
+    return `gid://shopify/Product/${normalizedQuery}`;
+  }
+  return "";
+}
+
+function getShopifyProductLegacyId(productGid: string) {
+  return productGid.split("/").pop() || "";
+}
+
+function mapShopifyProductNode(product: any, cursor = ""): ShopifyProductSyncProductSearchResult {
+  return {
+    id: product.id,
+    legacyResourceId: String(product.legacyResourceId || ""),
+    title: product.title,
+    handle: product.handle,
+    updatedAt: product.updatedAt,
+    vendor: product.vendor,
+    productType: product.productType,
+    status: product.status,
+    totalInventory: product.totalInventory,
+    imageUrl: product.featuredMedia?.image?.url,
+    imageAltText: product.featuredMedia?.image?.altText,
+    variantsCount: Number(product.variantsCount?.count || 0),
+    cursor
+  };
+}
+
+async function requestBackend<T>(request: any, context = "Shopify product sync backend request"): Promise<T> {
+  try {
+    const resp = await api(request) as any;
+    if (typeof resp?.data === "undefined" || resp.data === null) {
+      throw new Error(`${context} returned no response data.`);
+    }
+    return resp.data as T;
+  } catch (error) {
+    const details = getApiErrorDetails(error);
+    throw new Error(`${context} failed${details ? ` (${details})` : ""}.`);
+  }
+}
+
+function getApiErrorDetails(error: any): string {
+  const status = error?.response?.status;
+  const responseMessage = error?.response?.data?.message || error?.response?.data?.error;
+  const message = responseMessage || error?.message || "";
+  return [status ? `status ${status}` : "", message].filter(Boolean).join(": ");
+}
+
+function assertPlainObject(value: any, context: string): asserts value is Record<string, any> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${context} returned an invalid response shape.`);
+  }
+}
+
+function assertBooleanField(value: any, fieldName: string, context: string) {
+  if (typeof value !== "boolean") {
+    throw new Error(`${context} response must include boolean ${fieldName}.`);
+  }
+}
+
+function assertStringField(value: any, fieldName: string, context: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${context} response must include string ${fieldName}.`);
+  }
+}
+
+function assertArrayField(value: any, fieldName: string, context: string) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${context} response must include array ${fieldName}.`);
+  }
+}
+
+function validateSetupState(response: any): ShopifyProductSyncSetupState {
+  const context = "Product sync setup state";
+  assertPlainObject(response, context);
+  assertBooleanField(response.hasLinkedOmsProducts, "hasLinkedOmsProducts", context);
+  assertBooleanField(response.productStoreLocked, "productStoreLocked", context);
+  assertBooleanField(response.identifierLocked, "identifierLocked", context);
+  assertStringField(response.selectedProductStoreId, "selectedProductStoreId", context);
+  assertStringField(response.selectedIdentifierEnumId, "selectedIdentifierEnumId", context);
+  if (typeof response.syncJobId !== "undefined") assertStringField(response.syncJobId, "syncJobId", context);
+  if (typeof response.completed !== "undefined") assertBooleanField(response.completed, "completed", context);
+  return response as ShopifyProductSyncSetupState;
+}
+
+
+
+function getRequiredCount(payload: any, key: string, context: string): number {
+  const value = payload?.[key]?.count ?? payload?.response?.[key]?.count ?? payload?.data?.[key]?.count;
+  if (typeof value === "undefined" || value === null || Number.isNaN(Number(value))) {
+    throw new Error(`${context} response is missing ${key}.count.`);
+  }
+  return Number(value);
+}
+
+function escapeGraphqlString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function getTimestampValue(value: any): number {
+  return parseDateTimeValue(value)?.toMillis() || 0;
+}
+
+function getTimestampDate(value: any): string | undefined {
+  return parseDateTimeValue(value)?.toISO() || undefined;
+}
+
+function getEntityValueList(response: any, context: string): any[] {
+  if (Array.isArray(response?.entityValueList)) return response.entityValueList;
+  if (Number(response?.entityValueListCount || 0) === 0) return [];
+  throw new Error(`${context} response must include array entityValueList.`);
+}
+
+function resolveSystemMessageRemoteId(payload: any): string {
+  if (typeof payload === "string") return payload;
+  return payload.systemMessageRemoteId ||
+    payload.shop?.systemMessageRemoteId ||
+    payload.shopId ||
+    "";
+}
+
+/**
+ * Shop → its remotes. Delegates to the shared rule in `@/utils/systemMessage`, which the sync
+ * WORKER also uses — the match must not exist twice, because a drift between the two would mean the
+ * screen and the poller disagree about which remote a shop owns.
+ */
+function getShopRemoteCandidates(systemMessageRemoteList: any[], payload: any) {
+  return shopRemoteCandidates(systemMessageRemoteList as any[], {
+    shopId: String(payload.shopId || payload.shop?.shopId || ""),
+    shopifyShopId: String(payload.shopifyShopId || payload.shop?.shopifyShopId || ""),
+  }) as any[];
+}
+
+const sortShopRemoteCandidates = (candidates: any[]) => sortRemotesByAccess(candidates as any[]) as any[];
+
+function hasShopifyWriteAccess(accessScopeEnumId: string) {
+  const normalizedScope = String(accessScopeEnumId || "").trim().toUpperCase();
+  return normalizedScope === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID;
+}
+
+function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncAccessState {
+  const accessScopeEnumId = String(candidate?.accessScopeEnumId || "").trim();
+  const hasWriteAccess = hasShopifyWriteAccess(accessScopeEnumId);
+
+  if (!candidate?.systemMessageRemoteId) {
+    return {
+      systemMessageRemoteId: "",
+      accessScopeEnumId: "",
+      hasWriteAccess: false,
+      status: "unavailable",
+      label: "Unavailable"
+    };
+  }
+
+  return {
+    systemMessageRemoteId: String(candidate.systemMessageRemoteId || "").trim(),
+    accessScopeEnumId,
+    hasWriteAccess,
+    status: hasWriteAccess ? "write" : (
+      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "update-required" :
+        accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "unavailable" : "read-only"
+    ),
+    label: hasWriteAccess ? "Write access" : (
+      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "Update required" :
+        accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "Unavailable" : "Read only"
+    )
+  };
+}
+
+/**
+ * Candidate remotes for a shop, read from the cached remote list.
+ *
+ * This ran three times on a single connection-details load, each time re-fetching the whole remote
+ * list to filter it client-side. The list is cached seed data, so the filtering happens locally and
+ * the request disappears. Network fallback only while the cache is unpopulated.
+ */
+async function fetchShopRemoteCandidates(payload: any) {
+  try {
+    const cached = await systemMessageRemoteCache.all();
+    if (cached.length) {
+      const remotes = cached.map((row: any) => row.raw);
+      return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
+    }
+  } catch (error) {
+    logger.warn("System message remote cache unavailable; falling back to the server", error);
+  }
+
+  const response = await requestBackend<SystemMessageRemotesResponse>({
+    url: "oms/systemMessageRemotes",
+    method: "get"
+  });
+
+  return sortShopRemoteCandidates(getShopRemoteCandidates(response?.systemMessageRemoteList || [], payload));
+}
+
+export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
+  const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
+  if (!shopifyShopId) {
+    throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
+  }
+
+  const candidates = await fetchShopRemoteCandidates(payload);
+  if (!candidates.length) {
+    throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
+  }
+
+  if (payload.returnAllSystemMessageRemoteIds) {
+    return candidates
+      .map((candidate: any) => String(candidate.systemMessageRemoteId || "").trim())
+      .filter((systemMessageRemoteId: string, index: number, list: string[]) => {
+        return systemMessageRemoteId && list.indexOf(systemMessageRemoteId) === index;
+      });
+  }
+
+  // Extract unique remote IDs from candidates
+  const remoteIds = candidates
+    .map((candidate: any) => candidate.systemMessageRemoteId)
+    .filter((id: string, index: number, self: any[]) => id && self.indexOf(id) === index);
+
+  if (!remoteIds.length) return candidates[0]?.systemMessageRemoteId;
+
+  try {
+    const response = await requestBackend<SystemMessagesResponse>({
+      url: "admin/systemMessages",
+      method: "get",
+      params: {
+        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+        systemMessageRemoteId: remoteIds,
+        systemMessageRemoteId_op: "in",
+        pageSize: remoteIds.length
+      }
+    });
+
+    const validRemoteIds = new Set(response?.systemMessages?.map((msg: any) => msg.systemMessageRemoteId));
+    // Pick the first remoteId from the original candidates list that is valid
+    const firstValid = remoteIds.find(id => validRemoteIds.has(id));
+
+    if (firstValid) {
+      return firstValid;
+    }
+  } catch (e) {
+    logger.error("Failed to resolve system message remote IDs in bulk", e);
+  }
+
+  return candidates[0].systemMessageRemoteId;
+};
+
+export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProductSyncAccessState> => {
+  const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
+  if (!shopifyShopId) {
+    throw new Error("Shopify shop id is required to resolve Shopify access scope.");
+  }
+
+  const candidates = await fetchShopRemoteCandidates(payload);
+  if (!candidates.length) {
+    return {
+      systemMessageRemoteId: "",
+      accessScopeEnumId: "",
+      hasWriteAccess: false,
+      status: "unavailable",
+      label: "Unavailable"
+    };
+  }
+
+  return getShopifyAccessStateFromCandidate(candidates[0]);
+};
+
+
+const getSystemMessageRank = (systemMessage: any) => {
+  const statusId = String(systemMessage?.statusId || "").toLowerCase();
+  const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
+  const logId = systemMessage?.logId;
+
+  // Terminal status:
+  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
+  // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
+  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
+                     (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
+
+  if (isTerminal) {
+    return 1;
+  }
+
+  // Any other case is considered "In Progress" and gets a higher rank (>= 2)
+  if (logStatusId === "dmlsrunning") return 5;
+  if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
+  if (statusId === "smsgreceived") return 3.5;
+  if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
+  if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
+
+  // Default for any unknown in-progress status
+  return 0;
+};
+
+function getLatestSystemMessage(systemMessages: any[]) {
+  return systemMessages.reduce((latest: any, current: any) => {
+    if (!latest) return current;
+
+    const latestRank = getSystemMessageRank(latest);
+    const currentRank = getSystemMessageRank(current);
+
+    if (currentRank > latestRank) {
+      return current;
+    }
+    if (currentRank < latestRank) {
+      return latest;
+    }
+
+    const currentTimestamp = getTimestampValue(current.lastUpdatedStamp);
+    const latestTimestamp = getTimestampValue(latest.lastUpdatedStamp);
+
+    if (currentTimestamp > latestTimestamp) {
+      return current;
+    }
+    return latest;
+  }, undefined);
+}
+
+export const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProductUpdateSyncRunState> => {
+  const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
+  const shopId = payload.shopId || payload.shop?.shopId;
+  if (!shopId) {
+    throw new Error("Shop ID is required to find product update sync system messages.");
+  }
+
+  const systemMessageId = payload.systemMessageId;
+  const pageSize = systemMessageId ? 1 : 100;
+
+  // CACHE-FIRST — see `cachedSyncMessageHistory`; the DataDocument is only asked when the cache
+  // cannot answer.
+  const cachedHistory = await cachedSyncMessageHistory({
+    shopId,
+    systemMessageId,
+    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+    pageSize,
+  });
+
+  const systemMessages = cachedHistory ?? getEntityValueList(
+    await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+        customParametersMap: {
+          systemMessageId,
+          systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+          remoteInternalId: shopId,
+          remoteInternalIdType: "HOTWAX_SHOP_ID",
+          orderByField: "-lastUpdatedStamp"
+        },
+        pageSize,
+        pageIndex: 0
+      }
+    }),
+    "Product sync system message history",
+  );
+
+  const confirmedMessages = systemMessages.filter((systemMessage: any) => systemMessage.statusId === "SmsgConfirmed" || systemMessage.statusId === "SmsgConsumed");
+  const consumedMessages = systemMessages.filter((systemMessage: any) => {
+    const statusId = String(systemMessage.statusId || "").toLowerCase();
+    const isConsumed = statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
+    return isConsumed && systemMessage.logId;
+  });
+  const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages);
+  const latestConsumedSystemMessage = getLatestSystemMessage(consumedMessages);
+  const latestSystemMessage = getLatestSystemMessage(systemMessages);
+
+
+  return {
+    latestSystemMessage,
+    latestConfirmedSystemMessage,
+    latestConsumedSystemMessage,
+    lastSyncedAt: getTimestampDate(latestConsumedSystemMessage?.initDate),
+    systemMessageRemoteId,
+    systemMessages
+  };
+};
+
+/**
+ * Local reproduction of `dataDocumentId: SYSTEM_MESSAGE_DATA_MANAGER_LOG`.
+ *
+ * That DataDocument is a server-side join of SystemMessage ⋈ DataManagerLog, scoped by message type
+ * and by the REMOTE's internal id (the shop id, `remoteInternalIdType: HOTWAX_SHOP_ID`). Every input
+ * is already cached: messages and logs are class-A domains, and the shop→remote link lives on the
+ * cached remote as `internalId`. So the document is DERIVED here rather than requested — it was the
+ * largest cluster of calls on the product-sync page.
+ *
+ * Returns `null` when the cache cannot answer (no remote resolved, or nothing cached yet), which
+ * callers treat as "fall back to the server" rather than "no results" — the distinction matters,
+ * because an empty array is a legitimate answer.
+ */
+async function cachedSyncMessageHistory(query: {
+  shopId: string;
+  systemMessageTypeId: string;
+  systemMessageId?: string;
+  statusId?: string;
+  pageSize?: number;
+}): Promise<any[] | null> {
+  try {
+    const remotes = (await systemMessageRemoteCache.all()).map((row: any) => row.raw ?? row);
+    const remoteIds = new Set(
+      remotes
+        .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
+        .map((remote: any) => String(remote.systemMessageRemoteId)),
+    );
+    if (!remoteIds.size) return null;
+
+    const messages = (await systemMessageCache.all()).map((row: any) => row.raw ?? row);
+    if (!messages.length) return null;
+
+    const logs = (await dataManagerLogCache.all()).map((row: any) => row.raw ?? row);
+    const logByMessageId = new Map<string, any>();
+    for (const log of logs) {
+      const key = String(log?.systemMessageId ?? "");
+      if (key && !logByMessageId.has(key)) logByMessageId.set(key, log);
+    }
+
+    let rows = messages.filter((message: any) =>
+      remoteIds.has(String(message?.systemMessageRemoteId)) &&
+      String(message?.systemMessageTypeId) === query.systemMessageTypeId);
+
+    /**
+     * ⚠️ An EMPTY scoped result is "cannot answer", not "no runs".
+     *
+     * The message table hydrates per (remote, type), so mid-hydration it can hold SOME shops' rows
+     * while this shop's have not landed yet. Observed live on a cold profile: the first-ever visit to
+     * the product sync page read the cache after another remote's tick had committed, got zero rows
+     * for THIS shop, concluded `hasLinkedOmsProducts: false`, and dropped a shop with months of sync
+     * history into the first-time wizard — a reload "fixed" it, which is the signature of a
+     * hydration race. Deferring to the server document costs one request only for shops that
+     * genuinely have no runs (the real wizard case), and is correct for everyone else.
+     */
+    if (!rows.length) return null;
+
+    if (query.systemMessageId) {
+      rows = rows.filter((message: any) => String(message.systemMessageId) === String(query.systemMessageId));
+    }
+    if (query.statusId) {
+      rows = rows.filter((message: any) => String(message.statusId) === query.statusId);
+    }
+
+    // The document orders by `-lastUpdatedStamp`; messages carry none (verified live), so
+    // `processedDate` then `initDate` is the equivalent recency signal.
+    rows.sort((a: any, b: any) =>
+      Number(b.processedDate ?? b.initDate ?? 0) - Number(a.processedDate ?? a.initDate ?? 0));
+
+    // `logId` is the field callers test to decide whether a message actually imported anything.
+    const joined = rows.map((message: any) => {
+      const log = logByMessageId.get(String(message.systemMessageId));
+      if (!log) return { ...message };
+      return {
+        ...message,
+        logId: log.logId,
+        totalRecordCount: log.totalRecordCount,
+        failedRecordCount: log.failedRecordCount,
+        successRecordCount: log.successRecordCount,
+        finishDateTime: log.finishDateTime,
+      };
+    });
+
+    return query.pageSize ? joined.slice(0, query.pageSize) : joined;
+  } catch (error) {
+    logger.warn("Cached sync message history unavailable; falling back to the server", error);
+    return null;
+  }
+}
+
+export const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
+  const shopId = payload.shopId || payload.shop?.shopId;
+  if (!shopId) {
+    throw new Error("Shop ID is required to count pending product update requests.");
+  }
+
+  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
+  const cachedPending = await cachedSyncMessageHistory({
+    shopId,
+    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+    statusId: "SmsgProduced",
+  });
+  if (cachedPending) {
+    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
+  }
+
+  const response = await requestBackend<any>({
+    url: "oms/dataDocumentView",
+    method: "post",
+    data: {
+      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+      customParametersMap: {
+        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
+        remoteInternalId: shopId,
+        remoteInternalIdType: "HOTWAX_SHOP_ID",
+        statusId: "SmsgProduced"
+      },
+      pageSize: payload.pageSize || 1,
+      pageIndex: 0,
+      orderByField: "-initDate"
+    }
+  }, "Pending product update requests");
+
+  return {
+    count: Number(response?.entityValueListCount || 0),
+    latestSystemMessage: response?.entityValueList?.[0]
+  };
+};
+
+export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch live catalog counts.");
+  }
+
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: LIVE_CATALOG_COUNTS_QUERY
+    }
+  });
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify live catalog count query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+
+  return {
+    shopifyProductCount: getRequiredCount(graphQlPayload, "productsCount", "Shopify live catalog count query"),
+    shopifyVariantCount: getRequiredCount(graphQlPayload, "productVariantsCount", "Shopify live catalog count query"),
+    linkedShopCount: payload.linkedShopCount || 0,
+    loaded: true
+  };
+};
+
+export const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRunningBulkOperation | null> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch running bulk operations.");
+  }
+
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: RUNNING_BULK_OPERATIONS_QUERY
+    }
+  });
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify running bulk operation query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+
+  const runningOperation = graphQlPayload?.bulkOperations?.nodes?.[0];
+  if (!runningOperation) return null;
+
+  return {
+    id: runningOperation.id,
+    status: runningOperation.status,
+    type: runningOperation.type,
+    createdAt: runningOperation.createdAt,
+    objectCount: Number(runningOperation.objectCount || 0)
+  }
+}
+
+export const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncSetupState> => {
+  const [syncRunState, shopifyAccessState] = await Promise.all([
+    fetchProductUpdateSyncRunState(payload),
+    fetchShopifyAccessState(payload).catch(() => ({
+      systemMessageRemoteId: "",
+      accessScopeEnumId: "",
+      hasWriteAccess: false,
+      status: "unavailable",
+      label: "Unavailable"
+    } as ShopifyProductSyncAccessState))
+  ]);
+
+  const hasLinkedOmsProducts = !!syncRunState.latestSystemMessage;
+
+  return validateSetupState({
+    hasLinkedOmsProducts,
+    shopifyAccessState,
+    productStoreLocked: hasLinkedOmsProducts,
+    identifierLocked: hasLinkedOmsProducts,
+    selectedProductStoreId: payload.shop?.productStoreId || payload.productStore?.productStoreId || "",
+    selectedIdentifierEnumId: payload.productStore?.productIdentifierEnumId || ""
+  });
+};
+
+export const fetchShopifyShopProductCount = async (payload: any): Promise<ShopifyShopProductCount> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product update counts.");
+  }
+
+  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
+    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: buildProductUpdatesCountQuery(lastSyncedAt)
+    }
+  });
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify unsynced product update count query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+
+  return {
+    count: getRequiredCount(graphQlPayload, "productsCount", "Shopify unsynced product update count query"),
+    lastSyncedAt
+  };
+}
+
+export const fetchUnsyncedProductUpdates = async (payload: any): Promise<ShopifyUnsyncedProductUpdate[]> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product updates.");
+  }
+
+  const lastSyncedAt = payload.lastSyncedAt || payload.syncRunState?.lastSyncedAt ||
+    (await fetchProductUpdateSyncRunState(payload)).lastSyncedAt;
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: buildProductUpdatesListQuery(lastSyncedAt, payload.pageSize || 100)
+    }
+  });
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify unsynced product update list query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+  if (!Array.isArray(graphQlPayload?.products?.nodes)) {
+    throw new Error("Shopify unsynced product update list query response is missing products.nodes.");
+  }
+
+  return graphQlPayload.products.nodes.map((product: any) => ({
+    id: product.id,
+    legacyResourceId: String(product.legacyResourceId || ""),
+    title: product.title,
+    handle: product.handle,
+    updatedAt: product.updatedAt,
+    vendor: product.vendor,
+    productType: product.productType,
+    status: product.status,
+    totalInventory: product.totalInventory,
+    imageUrl: product.featuredMedia?.image?.url,
+    imageAltText: product.featuredMedia?.image?.altText,
+    variantsCount: Number(product.variantsCount?.count || 0)
+  }));
+};
+
+export const fetchRecentlyUpdatedShopifyProducts = async (payload: any): Promise<ShopifyProductSyncProductSearchState> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to fetch recently updated products.");
+  }
+
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: buildProductUpdatesListQuery(undefined, payload.pageSize || 15)
+    }
+  }, "Shopify recently updated products query");
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify recently updated products query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+  if (!Array.isArray(graphQlPayload?.products?.nodes)) {
+    throw new Error("Shopify recently updated products query response is missing products.nodes.");
+  }
+
+  return {
+    products: graphQlPayload.products.nodes.map((product: any) => mapShopifyProductNode(product)),
+    hasNextPage: false,
+    endCursor: ""
+  };
+};
+
+export const searchShopifyProducts = async (payload: any): Promise<ShopifyProductSyncProductSearchState> => {
+  const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
+  if (!systemMessageRemoteId) {
+    throw new Error("Shopify systemMessageRemoteId is required to search products.");
+  }
+
+  const queryString = String(payload.queryString || "").trim();
+  if (!queryString) {
+    return {
+      products: [],
+      hasNextPage: false,
+      endCursor: ""
+    };
+  }
+
+  const exactProductGid = !payload.after ? getExactShopifyProductGid(queryString) : "";
+  if (exactProductGid) {
+    const response = await requestBackend<ShopifyGraphqlResponse>({
+      url: "shopify/graphql",
+      method: "post",
+      data: {
+        systemMessageRemoteId,
+        queryText: buildProductByIdQuery(exactProductGid)
+      }
+    }, "Shopify product ID lookup query");
+
+    const graphQlPayload = response?.response || response?.data || response;
+    if (response?.errors?.length || graphQlPayload?.errors?.length) {
+      throw new Error(`Shopify product ID lookup query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+    }
+    const productNode = graphQlPayload?.product || graphQlPayload?.data?.product || graphQlPayload?.response?.product || graphQlPayload?.response?.data?.product;
+    if (productNode) {
+      return {
+        products: [mapShopifyProductNode(productNode)],
+        hasNextPage: false,
+        endCursor: ""
+      };
+    }
+  }
+
+  const searchQueryString = exactProductGid ? `id:${getShopifyProductLegacyId(exactProductGid)}` : queryString;
+  const response = await requestBackend<ShopifyGraphqlResponse>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText: buildProductSearchQuery(searchQueryString, payload.pageSize || 20, payload.after)
+    }
+  }, "Shopify product search query");
+
+  const graphQlPayload = response?.response || response?.data || response;
+  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    throw new Error(`Shopify product search query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
+  }
+  if (!Array.isArray(graphQlPayload?.products?.edges)) {
+    throw new Error("Shopify product search query response is missing products.edges.");
+  }
+
+  return {
+    products: graphQlPayload.products.edges.map((edge: any) => {
+      return mapShopifyProductNode(edge.node || {}, edge.cursor);
+    }),
+    hasNextPage: !!graphQlPayload.products.pageInfo?.hasNextPage,
+    endCursor: graphQlPayload.products.pageInfo?.endCursor || ""
+  };
+};
+
+export const syncShopifyProductsOnDemand = async (payload: any): Promise<ShopifyProductSyncOnDemandResult> => {
+  if (!payload.shopId) {
+    throw new Error("Shopify shop id is required to sync products on demand.");
+  }
+  if (!payload.shopifyProductId) {
+    throw new Error("Shopify product id is required to sync products on demand.");
+  }
+
+  const data: any = {
+    shopId: payload.shopId,
+    shopifyProductId: payload.shopifyProductId
+  };
+  if (payload.namespace) data.namespace = payload.namespace;
+  if (payload.additionalParameters) data.additionalParameters = payload.additionalParameters;
+
+  return requestBackend<ShopifyProductSyncOnDemandResult>({
+    url: "sob/shopify/syncShopifyProductsOnDemand",
+    method: "post",
+    data
+  }, "Shopify product sync on demand endpoint");
+};
+
+export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductSyncOnDemandResult> => {
+  if (!payload.shopId) {
+    throw new Error("Shopify shop id is required to sync products.");
+  }
+
+  const data: any = {
+    shopId: payload.shopId,
+    includeAll: payload.includeAll || false
+  };
+
+  if (payload.fromDate) data.fromDate = payload.fromDate;
+  if (payload.thruDate) data.thruDate = payload.thruDate;
+  if (payload.namespace) data.namespace = payload.namespace;
+  if (payload.filterQuery) data.filterQuery = payload.filterQuery;
+
+  return requestBackend<ShopifyProductSyncOnDemandResult>({
+    url: "shopify/products/sync",
+    method: "post",
+    data
+  }, "Shopify product sync endpoint");
+};
+
+const sendShopifyBulkQueryMessage = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
+  const systemMessageRemoteId = String(payload?.systemMessageRemoteId || "").trim();
+  const queryText = String(payload?.queryText || "").trim();
+
+  if (!systemMessageRemoteId) {
+    throw new Error("System message remote id is required to send a Shopify bulk query message.");
+  }
+  if (!queryText) {
+    throw new Error("Query text is required to send a Shopify bulk query message.");
+  }
+
+  return requestBackend<ShopifyProductSyncActionResult>({
+    url: "shopify/graphql",
+    method: "post",
+    data: {
+      systemMessageRemoteId,
+      queryText
+    }
+  }, "Shopify GraphQL send endpoint");
+};
+
+const pollBulkOperationResult = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
+  const parentSystemMessageTypeId = String(payload?.parentSystemMessageTypeId || "").trim();
+  if (!parentSystemMessageTypeId) {
+    throw new Error("Parent system message type id is required to poll a Shopify bulk operation result.");
+  }
+
+  return requestBackend<ShopifyProductSyncActionResult>({
+    url: "shopify/bulk/result/poll",
+    method: "post",
+    data: {
+      parentSystemMessageTypeId
+    }
+  }, "Shopify bulk result poll endpoint");
+};
+
+export const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProductSyncActionResult> => {
+  if (!String(systemMessageId || "").trim()) {
+    throw new Error("System message id is required to cancel a Shopify product sync message.");
+  }
+
+  return requestBackend<ShopifyProductSyncActionResult>({
+    url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}`,
+    method: "put",
+    data: {
+      systemMessageId,
+      statusId: "SmsgCancelled"
+    }
+  }, "System message status update endpoint");
+};
+;
+
+export const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
+  const stats = await fetchLiveCatalogCounts(payload);
+
+  try {
+    const omsProductResp = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        pageIndex: 0,
+        pageSize: 1,
+        customParametersMap: {
+          productStoreId: payload.productStoreId,
+          isVirtual: "Y"
+        },
+        fieldsToSelect: "productCount,productStoreId"
+      }
+    });
+
+    const omsVariantResp = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        pageIndex: 0,
+        pageSize: 1,
+        customParametersMap: {
+          productStoreId: payload.productStoreId,
+          isVariant: "Y"
+        },
+        fieldsToSelect: "productCount,productStoreId"
+      }
+    });
+
+    logger.info("Oms product and variant counts", { omsProductResp, omsVariantResp });
+
+    stats.omsProductCount = omsProductResp?.entityValueList?.[0]?.productCount || 0;
+    stats.omsVariantCount = omsVariantResp?.entityValueList?.[0]?.productCount || 0;
+  } catch (error) {
+    logger.warn("Failed to fetch OMS counts using dataDocumentView", error);
+  }
+
+  return stats;
+};
+
+export const fetchPreflight = async (payload: any): Promise<any[]> => {
+  const { systemMessageRemoteId, productStoreId, productIdentifierEnumId } = payload;
+
+  try {
+    const shopifyResp = await api({
+      url: "shopify/graphql",
+      method: "post",
+      data: {
+        systemMessageRemoteId,
+        queryText: `
+          query WizardVariantSample($first: Int!) {
+            productVariants(first: $first) {
+              nodes {
+                id
+                sku
+                barcode
+                legacyResourceId
+              }
+            }
+          }
+        `,
+        variables: { first: 10 }
+      }
+    }) as any;
+
+    const graphQlPayload = shopifyResp?.data;
+    const shopifyVariants = graphQlPayload?.response?.productVariants?.nodes || [];
+    if (shopifyVariants.length === 0) return [];
+
+    const shopifyVariantIds = shopifyVariants.map((v: any) => v.legacyResourceId);
+
+    const omsResp = await api({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "PRODUCT_STORE_PRODUCT",
+        customParametersMap: {
+          productStoreId,
+          shopifyProductId: shopifyVariantIds
+        },
+        fieldsToSelect: "shopifyProductId,internalName"
+      }
+    }) as any;
+
+    const omsProducts = omsResp?.data?.entityValueList || [];
+
+    return shopifyVariants.map((v: any) => {
+      const omsProduct = omsProducts.find((p: any) => p.shopifyProductId === v.legacyResourceId);
+
+      let shopifyValue = "";
+      switch (productIdentifierEnumId) {
+        case "SHOPIFY_PRODUCT_SKU":
+          shopifyValue = v.sku;
+          break;
+        case "SHOPIFY_BARCODE":
+          shopifyValue = v.barcode;
+          break;
+        case "SHOPIFY_PRODUCT_ID":
+          shopifyValue = v.legacyResourceId;
+          break;
+      }
+
+      return {
+        shopifyVariantId: v.id,
+        shopifyProductId: v.legacyResourceId,
+        shopifyValue,
+        omsValue: omsProduct ? omsProduct.internalName : null,
+        isMatched: omsProduct ? (omsProduct.internalName === shopifyValue) : false
+      };
+    });
+  } catch (error) {
+    logger.error("Failed to fetch preflight data", error);
+    throw error;
+  }
+};
+
+
+export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: boolean; jobName: string }> => {
+  const shopId = payload.shopId;
+
+  try {
+    const resp = await api({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "SERVICE_JOB_PARAMETER",
+        pageIndex: 0,
+        pageSize: 1,
+        customParametersMap: {
+          parameterName: "shopId",
+          parameterValue: shopId,
+          parentJobName: "sync_ShopifyProductUpdates"
+        }
+      }
+    }) as any;
+
+    const entityValueList = resp?.data?.entityValueList || [];
+    if (entityValueList.length > 0) {
+      return { isConfigured: true, jobName: entityValueList[0].jobName };
+    }
+  } catch (error) {
+    logger.warn("Failed to fetch sync job config using dataDocumentView", error);
+  }
+
+  return { isConfigured: false, jobName: "" };
+};
+
+
+// `configureSyncJob` from the store is NOT ported here: `configureProductSyncJob` (section 2)
+// already replaces it and additionally refreshes the cached `serviceJob` row, which the store version
+// did not — without that the new job stays invisible to every cached read until the next login.
+
+
+const fetchErrorRecordCount = async (payload: any): Promise<number> => {
+  const { shopId, configId } = payload;
+  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
+
+  try {
+    const response = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
+        customParametersMap: {
+          configId: configId || "SYNC_SHOPIFY_PRODUCT",
+          parameterName: "shopId",
+          parameterValue: shopId,
+          failedRecordCount: 0,
+          failedRecordCount_op: "equals",
+          failedRecordCount_not: "true",
+          finishDateTime_from: finishDateTimeFrom.toString()
+        },
+        fieldsToSelect: "failedRecordCount"
+      }
+    });
+
+    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
+  } catch (error) {
+    logger.warn("Failed to fetch error record count using dataDocumentView", error);
+    return 0;
+  }
+};
+
+export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
+  const { shopId, configId } = payload;
+  try {
+    const response = await requestBackend<any>({
+      url: "oms/dataDocumentView",
+      method: "post",
+      data: {
+        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
+        pageSize: 1,
+        pageIndex: 0,
+        customParametersMap: {
+          configId: configId || "SYNC_SHOPIFY_PRODUCT",
+          parameterName: "shopId",
+          parameterValue: shopId,
+          statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
+          statusId_not: "true"
+        }
+      }
+    });
+
+    return Number(response?.entityValueListCount || 0);
+  } catch (error: any) {
+    logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
+    return 0;
+  }
+};
+
+export const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDashboardSummary> => {
+  const { systemMessageRemoteId } = payload;
+
+  const [syncRunState, pendingRequests, runningOperation, updateFilesToProcess] = await Promise.all([
+    fetchProductUpdateSyncRunState(payload).catch(e => { logger.error("Failed to fetch product update sync run state", e); return { systemMessages: [], lastSyncedAt: "" } as any }),
+    fetchPendingProductUpdateRequests(payload).catch(e => { logger.error("Failed to fetch pending product update requests", e); return { count: 0 } as any }),
+    fetchRunningBulkOperation(payload).catch(e => { logger.warn("Failed to fetch running bulk operation (likely GraphQL error)", e); return null }),
+    fetchUpdateFilesToProcessCount(payload).catch(e => { logger.error("Failed to fetch update files to process count", e); return 0 })
+  ]);
+
+  let unsyncedUpdates = { count: 0, products: [] } as any;
+  try {
+    unsyncedUpdates = await fetchShopifyShopProductCount({
+      ...payload,
+      systemMessageRemoteId,
+      syncRunState
+    });
+  } catch (error) {
+    logger.warn("Failed to fetch unsynced product updates (likely GraphQL error)", error);
+  }
+
+  return {
+    syncRunState,
+    pendingRequests,
+    runningOperation,
+    unsyncedUpdates,
+    updateFilesToProcess
+  };
+};
+
+export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {
+  const response = await requestBackend<any>({
+    url: "shopify/webhook-subscription",
+    method: "get",
+    params: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      queryParams: {
+        topics: payload.topic
+      }
+    }
+  });
+
+  return response?.webhookList || [];
+}
+
+export const subscribeWebhook = async (payload: any): Promise<any> => {
+  return await requestBackend<any>({
+    url: "shopify/webhook-subscription",
+    method: "post",
+    data: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      topic: payload.topic
+    }
+  });
+};
+
+export const unsubscribeWebhook = async (payload: any): Promise<any> => {
+  return await requestBackend<any>({
+    url: "shopify/webhook-subscription",
+    method: "delete",
+    data: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      webhookSubscriptionId: payload.webhookSubscriptionId
+    }
+  });
+};

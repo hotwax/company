@@ -376,14 +376,18 @@ import {
   type ProductSyncMigrationLegacyItem,
   type ProductSyncMigrationTeardownStep,
   isActionableLegacyItem,
-  useShopifyProductSyncMigrationStore
-} from "@/store/shopifyProductSyncMigration";
-import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
-import { useShopifyShop } from "@/composables/useShopify";
+  fetchAssistantState,
+  resolveEntryAction,
+  // Aliased: this view has a local `teardownLegacySync` wrapper that drives the step log.
+  teardownLegacySync as runTeardownLegacySync,
+  enableServiceJob,
+  cancelLegacySystemMessage,
+  deactivateLegacyServiceJob,
+  deprecateLegacySystemMessageType,
+} from "@/composables/useShopifyProductSyncMigration";
+import { configureProductSyncJob, useShopifyShop } from "@/composables/useShopify";
 
 const props = defineProps(["id"]);
-const shopifyProductSyncStore = useShopifyProductSyncStore();
-const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const migrationConfig = PRODUCT_SYNC_MIGRATION_CONFIG;
 const isLoading = ref(true);
 const loadErrorMessage = ref("");
@@ -417,7 +421,7 @@ const assistantState = ref<ProductSyncMigrationAssistantState>({
 const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
 const entryAction = computed<ProductSyncMigrationEntryAction>(() => {
-  return shopifyProductSyncMigrationStore.resolveEntryAction(assistantState.value);
+  return resolveEntryAction(assistantState.value);
 });
 const assistantTitle = computed(() => {
   if (entryAction.value === "current") {
@@ -580,7 +584,7 @@ async function loadAssistant() {
 
     const currentShop = shop.value;
 
-    await shopifyProductSyncMigrationStore.fetchAssistantState(
+    await fetchAssistantState(
       { shopId: props.id, shop: currentShop },
       (partialState) => {
         assistantState.value = { ...assistantState.value, ...partialState };
@@ -710,7 +714,7 @@ async function configureSyncJobForShop() {
   isConfiguringSyncJob.value = true;
   try {
     const shopId = props.id;
-    await shopifyProductSyncStore.configureSyncJob({
+    await configureProductSyncJob({
       shopId,
       productStoreId: shop.value.productStore?.productStoreId || shop.value.productStoreId,
       productIdentifierEnumId: shop.value.productStore?.productIdentifierEnumId || shop.value.productIdentifierEnumId
@@ -729,7 +733,7 @@ async function configureSyncJobForShop() {
 async function enableJob(artifactCheck: any) {
   isEnablingJob.value[artifactCheck.id] = true;
   try {
-    await shopifyProductSyncMigrationStore.enableServiceJob(artifactCheck.id, artifactCheck.jobDetail);
+    await enableServiceJob(artifactCheck.id, artifactCheck.jobDetail);
     await commonUtil.showToast(translate("Job enabled successfully."));
     await loadAssistant();
   } catch (error) {
@@ -798,7 +802,7 @@ async function teardownLegacySync() {
 
   try {
     const currentShop = shop.value;
-    const result = await shopifyProductSyncMigrationStore.teardownLegacySync(
+    const result = await runTeardownLegacySync(
       { shopId: props.id, shop: currentShop },
       (step: ProductSyncMigrationTeardownStep) => {
         // Update or append this step in the log
@@ -882,16 +886,16 @@ async function teardownSection(kind: "type" | "job" | "message") {
 
 async function runTeardownAction(item: ProductSyncMigrationLegacyItem, kind: "type" | "job" | "message") {
   if (kind === "type") {
-    await shopifyProductSyncMigrationStore.deprecateLegacySystemMessageType(item.id);
+    await deprecateLegacySystemMessageType(item.id);
     return;
   }
 
   if (kind === "job") {
-    await shopifyProductSyncMigrationStore.deactivateLegacyServiceJob(item.id);
+    await deactivateLegacyServiceJob(item.id);
     return;
   }
 
-  await shopifyProductSyncMigrationStore.cancelLegacySystemMessage(item);
+  await cancelLegacySystemMessage(item);
 }
 </script>
 

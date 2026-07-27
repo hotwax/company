@@ -13,6 +13,7 @@ vi.mock("@common", () => ({
 }));
 
 import {
+  isOrderSyncBatchActive,
   orderSyncCardSnapshot,
   orderSyncSummary,
   ORDER_SYNC_PROGRESS_BADGE_LABELS,
@@ -169,12 +170,7 @@ describe("orderSyncCardSnapshot — counts and completion", () => {
     expect(snapshot.configurationState).toBe("configured-active");
   });
 
-  /**
-   * `processedCount` reads the LATEST batch, so an in-flight batch legitimately shows 0 processed
-   * while a completed one behind it shows its own total. Pinning this stops a future "just show the
-   * newest number" change from reporting the wrong batch's count as the current one.
-   */
-  it("counts the latest batch's successful records, not the whole history", () => {
+  it("counts the latest completed batch's successful records, not the whole history", () => {
     const snapshot = snapshotFor(
       [{ systemMessageId: "SM-1", statusId: "SmsgConsumed", initDate: 1_000 }],
       {
@@ -188,6 +184,60 @@ describe("orderSyncCardSnapshot — counts and completion", () => {
     expect(snapshot.processedCount).toBe(12);
     expect(snapshot.pendingCount).toBe(0);
     expect(snapshot.importStatus).toBe("Completed");
+  });
+
+  /**
+   * REGRESSION: "Orders processed" must not collapse to 0 when a new request is produced.
+   *
+   * It used to read the NEWEST batch's import row, so the headline number dropped to zero the moment
+   * a request was queued and climbed back when its import landed — on a shop syncing every few
+   * minutes, wrong most of the time. It must stay on the last batch that actually finished.
+   */
+  it("keeps the last completed count while a newer batch is still in flight", () => {
+    const snapshot = snapshotFor(
+      [
+        { systemMessageId: "SM-NEW", statusId: "SmsgProduced", initDate: 2_000 },
+        { systemMessageId: "SM-DONE", statusId: "SmsgConsumed", initDate: 1_000 },
+      ],
+      {
+        "SM-DONE": [{
+          logId: "L1", statusId: "Completed", successRecordCount: 7, totalRecordCount: 7,
+          finishDateTime: 2_500,
+        }],
+      },
+      CONFIGURED_JOB,
+    );
+
+    expect(snapshot.processedCount).toBe(7);
+    expect(snapshot.pendingCount).toBe(1);
+  });
+});
+
+/**
+ * The summary drives the WORKER'S CADENCE through `isOrderSyncBatchActive`, so "no batch at all"
+ * must not read as "a batch is moving".
+ */
+describe("isOrderSyncBatchActive", () => {
+  it("is false for a shop that has never run order sync", () => {
+    // REGRESSION: an empty summary derives `overallStatus === "pending"`, identical to a genuinely
+    // queued request. Reading the state alone pinned the connection page's worker at its 10s active
+    // poll permanently for every never-synced shop, and made "Run now" claim a batch was in flight.
+    expect(orderSyncSummary([], {}, null, null).overallStatus).toBe("pending");
+    expect(isOrderSyncBatchActive(orderSyncSummary([], {}, null, null))).toBe(false);
+  });
+
+  it("is true once a real batch is queued", () => {
+    const summary = orderSyncSummary(
+      [{ systemMessageId: "SM-1", statusId: "SmsgProduced", initDate: 1_000 }], {}, null, null);
+    expect(isOrderSyncBatchActive(summary)).toBe(true);
+  });
+
+  it("is false once the batch and its import are both terminal", () => {
+    const summary = orderSyncSummary(
+      [{ systemMessageId: "SM-1", statusId: "SmsgConsumed", initDate: 1_000 }],
+      { "SM-1": [{ logId: "L1", statusId: "Completed", successRecordCount: 3, totalRecordCount: 3 }] },
+      null, null);
+    expect(isOrderSyncBatchActive(summary)).toBe(false);
   });
 });
 
@@ -208,5 +258,44 @@ describe("orderSyncCardSnapshot — loading and error", () => {
 
     expect(snapshot.error).toBe("Shop could not be loaded.");
     expect(snapshot.loading).toBe(false);
+  });
+});
+
+describe("orderSyncSummary — a zero-order batch must not erase the last completed batch", () => {
+  /**
+   * Observed live the moment a queued run returned zero orders: the newest batch was consumed with NO
+   * import log, `deriveSyncProgress` reports that import half as "completed" (nothing was required),
+   * so the batch won the `latestCompletedBatch` pick — and its empty logs produced no
+   * `lastCompletedAt`. The card then claimed "No completed batch recorded" for a shop whose real last
+   * completed import was days old and still cached. One idle run poisoned the headline.
+   */
+  const REAL_COMPLETED = { systemMessageId: "M228520", statusId: "SmsgConsumed", initDate: 1_784_000_000_000 };
+  const ZERO_ORDER = { systemMessageId: "M228622", statusId: "SmsgConsumed", initDate: 1_785_000_000_000 };
+  const IMPORTS = {
+    M228520: [{ logId: "M101276", configId: "SYNC_SHOPIFY_ORDER", statusId: "DmlSuccess",
+                successRecordCount: 1, totalRecordCount: 1, failedRecordCount: 0, finishDateTime: 1_784_000_500_000 }],
+  };
+
+  it("keeps the older batch WITH an import as the last completed one", () => {
+    const summary = orderSyncSummary([ZERO_ORDER, REAL_COMPLETED], IMPORTS, CONFIGURED_JOB, null);
+
+    expect(summary.latestCompletedBatch?.systemMessageId).toBe("M228520");
+    expect(summary.lastCompletedAt).toBe(1_784_000_500_000);
+    expect(summary.processedOrderCount).toBe(1);
+  });
+
+  it("still reports the zero-order batch as the LATEST batch, just not the last completed one", () => {
+    const summary = orderSyncSummary([ZERO_ORDER, REAL_COMPLETED], IMPORTS, CONFIGURED_JOB, null);
+
+    expect(summary.latestBatch?.systemMessageId).toBe("M228622");
+    // Not pending either — a consumed batch with nothing to import is settled work.
+    expect(summary.pendingBatchRequests).toBe(0);
+  });
+
+  it("reports no completed batch when genuinely nothing ever imported", () => {
+    const summary = orderSyncSummary([ZERO_ORDER], {}, CONFIGURED_JOB, null);
+
+    expect(summary.latestCompletedBatch).toBeUndefined();
+    expect(summary.lastCompletedAt).toBeUndefined();
   });
 });

@@ -61,7 +61,7 @@
         </main>
       </div>
 
-      <ion-modal :is-open="showHistory" @didDismiss="closeHistory">
+      <ion-modal :is-open="showHistory" @did-dismiss="closeHistory">
         <ion-header>
           <ion-toolbar>
             <ion-buttons slot="start">
@@ -94,7 +94,7 @@
         </ion-content>
       </ion-modal>
 
-      <ion-modal :is-open="showManageGroups" @didDismiss="closeManageGroups">
+      <ion-modal :is-open="showManageGroups" @did-dismiss="closeManageGroups">
         <ion-header>
           <ion-toolbar>
             <ion-buttons slot="start">
@@ -136,7 +136,7 @@
         </ion-content>
       </ion-modal>
 
-      <ion-modal :is-open="showUsers" @didDismiss="closeUsers">
+      <ion-modal :is-open="showUsers" @did-dismiss="closeUsers">
         <ion-header>
           <ion-toolbar>
             <ion-buttons slot="start">
@@ -151,30 +151,41 @@
         <ion-content>
           <ion-searchbar v-model="usersQuery" :placeholder="translate('Search users')" />
 
-          <ion-list v-for="group in usersGroups" :key="group.groupId">
-            <ion-item-divider color="light">
-              <ion-label>
-                {{ group.groupName || group.groupId }}
-                <p>{{ group.groupId }}</p>
-              </ion-label>
-              <ion-note slot="end">
-                {{ filteredUsers(group.groupId).length }}
-              </ion-note>
-            </ion-item-divider>
+          <!-- Users are fetched per EXPANDED group, on demand — see the note on openUsers(). -->
+          <ion-accordion-group v-if="usersGroups.length" :multiple="true" :value="expandedUserGroups" @ion-change="onExpandedUserGroupsChange($event)">
+            <ion-accordion v-for="group in usersGroups" :key="group.groupId" :value="group.groupId">
+              <ion-item slot="header" color="light">
+                <ion-label>
+                  {{ group.groupName || group.groupId }}
+                  <p>{{ group.groupId }}</p>
+                </ion-label>
+                <ion-note v-if="usersForGroup(group.groupId)" slot="end">
+                  {{ filteredUsers(group.groupId).length }}
+                </ion-note>
+              </ion-item>
 
-            <ion-item v-for="user in filteredUsers(group.groupId)" :key="user.userId || user.partyId">
-              <ion-label>
-                {{ displayName(user) }}
-                <p>{{ user.userId || user.partyId }}</p>
-              </ion-label>
-            </ion-item>
+              <div slot="content">
+                <div v-if="loadingUserGroups.includes(group.groupId)" class="loading-state">
+                  <ion-spinner name="crescent" />
+                </div>
 
-            <ion-item v-if="!filteredUsers(group.groupId).length" lines="none">
-              <ion-label color="medium">
-                {{ translate("No users found") }}
-              </ion-label>
-            </ion-item>
-          </ion-list>
+                <ion-list v-else>
+                  <ion-item v-for="user in filteredUsers(group.groupId)" :key="user.userId || user.partyId">
+                    <ion-label>
+                      {{ displayName(user) }}
+                      <p>{{ user.userId || user.partyId }}</p>
+                    </ion-label>
+                  </ion-item>
+
+                  <ion-item v-if="!filteredUsers(group.groupId).length" lines="none">
+                    <ion-label color="medium">
+                      {{ translate("No users found") }}
+                    </ion-label>
+                  </ion-item>
+                </ion-list>
+              </div>
+            </ion-accordion>
+          </ion-accordion-group>
 
           <div v-if="!usersGroups.length" class="empty-state">
             <p>{{ translate("No security groups assigned") }}</p>
@@ -187,19 +198,28 @@
 
 <script setup lang="ts">
 import { commonUtil, logger, translate } from "@common"
-import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonModal, IonNote, IonPage, IonSearchbar, IonSpinner, IonTitle, IonToolbar } from "@ionic/vue"
+import { IonAccordion, IonAccordionGroup, IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonModal, IonNote, IonPage, IonSearchbar, IonSpinner, IonTitle, IonToolbar } from "@ionic/vue"
 import { closeOutline, saveOutline, shieldCheckmarkOutline } from "ionicons/icons"
-import { computed, ref, watch } from "vue"
 import { DateTime } from "luxon"
+import { computed, ref, watch } from "vue"
 import AppPermissionCard from "@/components/security/AppPermissionCard.vue"
+import { useAppPermissions } from "@/composables/useAppPermissions"
+import { useAuth } from "@/composables/useSecurity"
 import { appPermissionCatalogs } from "@/config/appPermissions"
 import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/appPermissions"
 import router from "@/router"
-import { useAppPermissionsStore } from "@/store/appPermissions"
 import { toEpochMillis } from "@/utils/appPermissionTime"
-import { useAuth } from "@/composables/useSecurity"
 
-const appPermissionsStore = useAppPermissionsStore()
+const {
+  securityGroups,
+  getPermissionById,
+  activeGroupsByPermission,
+  permissionHistory,
+  loadAssignments,
+  savePermissionGroups,
+  loadGroupUsers,
+  usersForGroup
+} = useAppPermissions()
 const { hasPermission } = useAuth();
 const loading = ref(false)
 const loadError = ref(false)
@@ -227,7 +247,7 @@ const matchesPermission = (permission: AppPermissionDefinition, queryString: str
 
 const availablePermissions = (app: AppPermissionCatalog): AppPermissionDefinition[] => {
   return app.permissionIds.flatMap((permissionId) => {
-    const permission = appPermissionsStore.getPermissionById(permissionId)
+    const permission = getPermissionById(permissionId)
 
     return permission ? [permission] : []
   })
@@ -252,14 +272,14 @@ const filteredPermissions = computed<readonly AppPermissionDefinition[]>(() => {
     : availablePermissions(selectedApp.value)
 })
 
-const activeGroups = (permissionId: string) => appPermissionsStore.getActiveGroupsByPermission(permissionId)
+const activeGroups = (permissionId: string) => activeGroupsByPermission(permissionId)
 
 const loadSelectedApp = async () => {
   if(!selectedApp.value) {return}
   loading.value = true
   loadError.value = false
   try {
-    await appPermissionsStore.fetchAssignments()
+    await loadAssignments()
   } catch (error) {
     logger.error("Failed to load app permission assignments.", error instanceof Error ? error.message : String(error))
     loadError.value = true
@@ -298,8 +318,9 @@ const selectedGroups = ref<any[]>([])
 const showUsers = ref(false)
 const usersPermission = ref<any>({})
 const usersGroups = ref<any[]>([])
-const usersByGroup = ref<Record<string, any[]>>({})
 const usersQuery = ref("")
+const expandedUserGroups = ref<string[]>([])
+const loadingUserGroups = ref<string[]>([])
 
 const filteredSecurityGroups = computed(() => {
   const queryString = manageQuery.value.trim().toLowerCase()
@@ -345,7 +366,7 @@ const toggleSecurityGroup = (securityGroup: any) => {
 const displayName = (user: any) => user.fullName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username || user.userId || user.partyId
 
 const filteredUsers = (groupId: string) => {
-  const users = usersByGroup.value[groupId] || []
+  const users = usersForGroup(groupId) || []
   if(!usersNormalizedQuery.value) {return users}
 
   return users.filter((user: any) => [displayName(user), user.username, user.userId, user.partyId]
@@ -366,14 +387,14 @@ const closeUsers = () => {
 }
 
 const openHistory = (permission: AppPermissionDefinition) => {
-  historyRecords.value = appPermissionsStore.getPermissionHistory(permission.permissionId)
+  historyRecords.value = permissionHistory(permission.permissionId)
   showHistory.value = true
 }
 
 const openManageGroups = (permission: AppPermissionDefinition) => {
   managePermission.value = permission
   manageActiveGroups.value = activeGroups(permission.permissionId)
-  manageSecurityGroups.value = appPermissionsStore.securityGroups
+  manageSecurityGroups.value = securityGroups.value
   manageQuery.value = ""
   selectedGroups.value = manageActiveGroups.value.map((group: any) => ({
     groupId: group.groupId,
@@ -398,7 +419,7 @@ const saveManageGroups = async () => {
       return
     }
 
-    const outcome = await appPermissionsStore.savePermissionGroups(managePermission.value.permissionId, originalGroups, selected)
+    const outcome = await savePermissionGroups(managePermission.value.permissionId, originalGroups, selected)
     if(outcome.failed && outcome.succeeded) {
       commonUtil.showToast(translate("Some permission assignments were updated, but others failed. The latest state has been reloaded."))
     } else if(outcome.failed) {
@@ -414,22 +435,39 @@ const saveManageGroups = async () => {
   }
 }
 
-const openUsers = async (permission: AppPermissionDefinition) => {
-  const groups = activeGroups(permission.permissionId)
-  loading.value = true
+/**
+ * Opening the users modal fetches NOTHING — each group's users load when that group is expanded.
+ * The previous version did `Promise.all(groups.map(fetchGroupUsers))` here: one
+ * `admin/groups/{id}/users` request per active group, the N+1 recorded against this page in
+ * docs/cache-sync-remaining-work.md §2. The endpoint is per-group and membership is not cached, so
+ * on-demand loading (memoized in useAppPermissions) is the fix.
+ */
+const openUsers = (permission: AppPermissionDefinition) => {
+  usersPermission.value = permission
+  usersGroups.value = activeGroups(permission.permissionId)
+  usersQuery.value = ""
+  expandedUserGroups.value = []
+  showUsers.value = true
+}
+
+const loadUsersForGroup = async (groupId: string) => {
+  if(usersForGroup(groupId) || loadingUserGroups.value.includes(groupId)) {return}
+  loadingUserGroups.value = [...loadingUserGroups.value, groupId]
   try {
-    await Promise.all(groups.map((group) => appPermissionsStore.fetchGroupUsers(group.groupId)))
-    usersPermission.value = permission
-    usersGroups.value = groups
-    usersByGroup.value = appPermissionsStore.usersByGroup
-    usersQuery.value = ""
-    showUsers.value = true
+    await loadGroupUsers(groupId)
   } catch (error) {
     logger.error("Failed to load users with app permission access.", error instanceof Error ? error.message : String(error))
     commonUtil.showToast(translate("Something went wrong."))
   } finally {
-    loading.value = false
+    loadingUserGroups.value = loadingUserGroups.value.filter((id) => id !== groupId)
   }
+}
+
+const onExpandedUserGroupsChange = async (event: CustomEvent) => {
+  const value = (event.detail as any)?.value
+  const expanded: string[] = Array.isArray(value) ? value : value ? [value] : []
+  expandedUserGroups.value = expanded
+  await Promise.all(expanded.map((groupId) => loadUsersForGroup(groupId)))
 }
 </script>
 

@@ -3,9 +3,6 @@ import { DateTime, Settings } from "luxon"
 import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
-import { useUtilStore } from "@/store/util"
-import { useProductStore } from "@/store/productStore"
-import { useShopifyStore } from "@/store/shopify"
 import { useServiceJob } from "@/composables/useServiceJobs"
 
 export const useUserStore = defineStore("user", {
@@ -400,13 +397,18 @@ export const useUserStore = defineStore("user", {
           params: { partyId }
         }) as any
 
-        const utilStore = useUtilStore()
-        await Promise.allSettled([utilStore.fetchProductStores(), utilStore.fetchRoles()])
+        /**
+         * Store names come from the CACHED productStores table (class-B snapshot, filled at login)
+         * rather than the retired util store. The old code also fetched roles here and never read
+         * them — dropped with the store.
+         */
+        const { productStoreCache } = await import("@/utils/cacheEntities")
+        const cachedStores = await productStoreCache.all().catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
           const storeNameByProductStoreId = {} as any
-          utilStore.getProductStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
+          cachedStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
 
           productStores = (resp.data || [])
             .filter((productStoreRole: any) => !productStoreRole.thruDate || productStoreRole.thruDate > now)
@@ -938,22 +940,22 @@ export const useUserStore = defineStore("user", {
       const { useMaargConfig } = await import("@/composables/useSeed")
       useMaargConfig().clear()
 
-      // Reset all other persisted stores so no data leaks across sessions
-      const { useProductStore } = await import("./productStore")
-      const { useUtilStore } = await import("./util")
-      const { useShopifyStore } = await import("./shopify")
-      const { useKlaviyoStore } = await import("./klaviyo")
+      /**
+       * Reset the remaining persisted stores AND composable module state.
+       *
+       * The retired stores (shopify, klaviyo, productStore, util, authorization) were replaced by
+       * composables holding MODULE-level session state — which an SPA logout does not unmount, so
+       * without the sessionScope sweep user B would read user A's landmark dates and access scopes.
+       * Composables register their own resets with `onSessionCleared`; this stays one call no matter
+       * how many composables carry session state.
+       */
+      const { clearSessionScopedState } = await import("@/composables/sessionScope")
+      clearSessionScopedState()
+
       const { useComposerStore } = await import("./composer")
       const { useWorkforceStore } = await import("./workforce")
-      const { useAuthorizationStore } = await import("./authorization")
-
-      useProductStore().clearProductStoreState()
-      useUtilStore().clearUtilState()
-      useShopifyStore().clearShopifyState()
-      useKlaviyoStore().clear()
       useComposerStore().clearComposerState()
       useWorkforceStore().clearWorkforceState()
-      useAuthorizationStore().$reset()
     }
   },
 

@@ -478,11 +478,12 @@ import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, reactive, ref, watch } from "vue";
-import { useShopifyStore } from '@/store/shopify';
 import router from "@/router";
 import ShopifyOrderSyncCard from "@/components/shopify-order-sync/ShopifyOrderSyncCard.vue";
-import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
-import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
+import {
+  fetchEligibility,
+  fetchLegacyTeardownState,
+} from "@/composables/useShopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
   useShopifyConnectionSyncSession,
@@ -492,14 +493,14 @@ import {
   useShopifyShop,
   useShopifyShopMutations,
   useShopifyShops,
+  fetchShopifyAccessState,
+  updateShopifyRemote,
+  useShopifyAccessScopes,
 } from "@/composables/useShopify";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useProductStores } from "@/composables/useProductStores";
 
 const props = defineProps(['id']);
-const shopifyStore = useShopifyStore();
-const shopifyProductSyncStore = useShopifyProductSyncStore();
-const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
 const selectedShopLoadError = ref<string | null>(null);
@@ -921,9 +922,9 @@ async function loadProductsInventorySummary() {
   }
 
   const [eligibilityResult, accessStateResult, legacyTeardownStateResult] = await Promise.allSettled([
-    shopifyProductSyncMigrationStore.fetchEligibility(),
-    shopifyProductSyncStore.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
-    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value })
+    fetchEligibility(),
+    fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
+    fetchLegacyTeardownState({ shopId: props.id, shop: shop.value })
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -1240,7 +1241,7 @@ async function updateCredentials() {
 
   emitter.emit('presentLoader');
   try {
-    const updated = await shopifyStore.updateShopifyRemote({
+    const updated = await updateShopifyRemote({
       myShopifydomain: shop.value.myshopifyDomain || shop.value.domain,
       shopifyShopId: form.shopifyShopId.trim(),
       shopAccessToken: form.shopAccessToken.trim(),
@@ -1285,7 +1286,7 @@ const showAccessScopes = ref(false);
 const accessScopesRemoteId = ref<string>('');
 
 const scopeInfo = computed(() =>
-  accessScopesRemoteId.value ? shopifyStore.getAccessScopes(accessScopesRemoteId.value) : null
+  accessScopesRemoteId.value ? scopesFor(accessScopesRemoteId.value) : null
 );
 const scopes = computed<string[]>(() => scopeInfo.value?.scopes ?? []);
 const lastRefreshedLabel = computed(() =>
@@ -1312,7 +1313,7 @@ async function refresh() {
 
   emitter.emit('presentLoader');
   try {
-    const granted = await shopifyStore.refreshAccessScopes(accessScopesRemoteId.value);
+    const granted = await refreshAccessScopes(accessScopesRemoteId.value);
     commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
   } catch (error: any) {
     logger.error('refreshAccessScopes', error);
@@ -1324,6 +1325,8 @@ async function refresh() {
 // ----- Product store modal -----
 const showProductStore = ref(false);
 const { productStores } = useProductStores();
+// Access scopes: persisted display cache + the live Shopify refresh (was Pinia `persist: true`).
+const { scopesFor, refreshAccessScopes } = useShopifyAccessScopes();
 const selectedProductStoreId = ref("");
 const currentProductStoreId = computed(() => shop.value?.productStoreId || "");
 
@@ -1386,16 +1389,15 @@ function openProductSyncMigrationNotice() {
  * diagnosis lives.
  */
 function openOrderSyncEntry() {
-  const shopId = selectedShopId.value;
-  if (!shopId) return;
-
   const snapshot = orderSyncCardSnapshot.value;
-  if (!snapshot.actionable || snapshot.loading) return;
+  // Gate on the SAME id the snapshot's `actionable` was computed from. Reading `selectedShopId`
+  // (the cached row) while the card was enabled on the route id made a card for an unknown shop
+  // render as a button whose handler silently returned.
+  if (!snapshot.actionable || snapshot.loading || !snapshot.shopId) return;
 
-  const encodedShopId = encodeURIComponent(shopId);
   const destination = !snapshot.error && snapshot.configurationState === "missing"
-    ? `/shopify-connection-details/${encodedShopId}/order-sync/configure`
-    : `/shopify-connection-details/${encodedShopId}/order-sync`;
+    ? `/shopify-connection-details/${snapshot.shopId}/order-sync/configure`
+    : `/shopify-connection-details/${snapshot.shopId}/order-sync`;
 
   router.push(destination);
 }

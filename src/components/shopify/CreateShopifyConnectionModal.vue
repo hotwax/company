@@ -90,16 +90,15 @@
 </template>
 
 <script setup lang="ts">
+import { createShopifyConnection } from "@/composables/useShopify";
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput,
   IonItem, IonList, IonTitle, IonToolbar, modalController
 } from '@ionic/vue'
 import { closeOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useShopifyStore } from '@/store/shopify'
 import { computed, reactive } from 'vue'
 
-const shopifyStore = useShopifyStore()
 const props = defineProps<{ productStoreId?: string, initialDomain?: string }>()
 
 const form = reactive({
@@ -141,7 +140,7 @@ async function saveConnection() {
 
   emitter.emit('presentLoader')
   try {
-    await shopifyStore.createShopifyConnection({
+    await createShopifyConnection({
       shopId: form.shopId.trim(),
       shopifyShopId: form.shopifyShopId.trim(),
       myshopifyDomain: form.myshopifyDomain.trim(),

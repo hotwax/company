@@ -289,6 +289,21 @@ let organizationInFlight: Promise<string> | null = null;
 const organizationCompany = ref<Record<string, any>>({});
 let companyInFlight: Promise<Record<string, any>> | null = null;
 
+// The retired `store/util` was `persist: true`; drop its stale localStorage copy once.
+try { localStorage.removeItem("util") } catch { /* no localStorage (node test) — ignore */ }
+
+/** The roles every operating company needs (moved with `bootstrapOrganization` from `store/util`). */
+const DEFAULT_COMPANY_ROLE_TYPE_IDS = [
+  "BILL_FROM_VENDOR",
+  "SHIP_FROM_VENDOR",
+  "BILL_TO_CUSTOMER",
+  "INTERNAL_ORGANIZATIO",
+  "SUPPLIER",
+  "VENDOR",
+  "CONTACT",
+  "_NA_",
+];
+
 /**
  * The instance's available time zones.
  *
@@ -417,7 +432,76 @@ export function useOrganization() {
     organizationCompany.value = {};
   }
 
-  return { organizationPartyId, loadOrganizationPartyId, company: organizationCompany, loadCompany, clearCompany };
+  /**
+   * First-run organization setup (moved from `store/util`): ensure the party group exists, name it,
+   * grant the default company roles, and record it as `ORGANIZATION_PARTY`. Idempotent — every write
+   * is a create-or-update — so re-running against an existing organization only renames it. On
+   * success the partyId memo is set and the company memo cleared so the next `loadCompany()` reads
+   * the fresh name.
+   */
+  async function bootstrapOrganization(payload: { partyId?: string; groupName?: string } = {}) {
+    try {
+      const partyId = payload.partyId?.trim() || "COMPANY";
+      const groupName = payload.groupName?.trim() || "Default Company";
+
+      const existingOrganizationResp: any = await api({
+        url: `admin/organizations/${partyId}`,
+        method: "get",
+        params: { partyId },
+      });
+
+      if (commonUtil.hasError(existingOrganizationResp)) {
+        const partyResp: any = await api({
+          url: "admin/organizations",
+          method: "post",
+          data: { partyId, partyTypeId: "PARTY_GROUP" },
+        });
+        if (commonUtil.hasError(partyResp)) throw partyResp.data;
+      }
+
+      const partyGroupResp: any = await api({
+        url: `admin/organizations/${partyId}`,
+        method: "post",
+        data: { partyId, groupName },
+      });
+      if (commonUtil.hasError(partyGroupResp)) throw partyGroupResp.data;
+
+      for (const roleTypeId of DEFAULT_COMPANY_ROLE_TYPE_IDS) {
+        const roleResp: any = await api({
+          url: `admin/organizations/${partyId}/roles`,
+          method: "put",
+          data: { partyId, roleTypeId },
+        });
+        if (commonUtil.hasError(roleResp)) throw roleResp.data;
+      }
+
+      const systemPropertyResp: any = await api({
+        url: "admin/systemProperties",
+        method: "put",
+        data: {
+          systemResourceId: "general",
+          systemPropertyId: "ORGANIZATION_PARTY",
+          systemPropertyValue: partyId,
+          description: "The default organizationPartyId for setup, dropdowns, and reports",
+        },
+      });
+      if (commonUtil.hasError(systemPropertyResp)) throw systemPropertyResp.data;
+
+      organizationPartyId.value = partyId;
+      clearCompany();
+
+      return { partyId, groupName, roleTypeIds: DEFAULT_COMPANY_ROLE_TYPE_IDS };
+    } catch (error) {
+      logger.error(error);
+    }
+
+    return null;
+  }
+
+  return {
+    organizationPartyId, loadOrganizationPartyId, bootstrapOrganization,
+    company: organizationCompany, loadCompany, clearCompany,
+  };
 }
 
 export function useMaargConfig() {

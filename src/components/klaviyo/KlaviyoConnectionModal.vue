@@ -154,13 +154,20 @@ import {
   modalController,
 } from "@ionic/vue";
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
-import { useKlaviyoStore } from '@/store/klaviyo';
-import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
+import {
+  createCommGatewayAuth,
+  ensureKeyPrefix,
+  generateAuthId,
+  maskApiKey,
+  updateCommGatewayAuth,
+  useKlaviyo,
+} from '@/composables/useKlaviyo';
 import { commonUtil, logger, translate } from '@common'
 
 const props = defineProps<{ connection?: any | null }>();
 
-const klaviyoStore = useKlaviyoStore();
+// Shared module-level state: refreshing here updates the landing page's list too.
+const { fetchConnections } = useKlaviyo();
 const isEdit = computed(() => !!props.connection?.commGatewayAuthId);
 
 const form = ref({
@@ -241,8 +248,8 @@ async function save() {
         payload.authHeaderName = form.value.authHeaderName || "Authorization";
         payload.baseUrl = form.value.baseUrl;
       }
-      const updated = await klaviyoStore.updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
-      await klaviyoStore.fetchConnections();
+      const updated = await updateCommGatewayAuth(form.value.commGatewayAuthId, payload);
+      await fetchConnections();
       commonUtil.showToast(translate("Klaviyo connection updated"));
       closeModal({ dismissed: false, connection: updated });
     } else {
@@ -255,9 +262,9 @@ async function save() {
         authHeaderName: form.value.authHeaderName,
         publicKey: ensureKeyPrefix(form.value.privateApiKey.trim()),
       };
-      const created: any = await klaviyoStore.createCommGatewayAuth(payload);
+      const created: any = await createCommGatewayAuth(payload);
       if (commonUtil.hasError({ data: created })) throw created;
-      await klaviyoStore.fetchConnections();
+      await fetchConnections();
       commonUtil.showToast(translate("Klaviyo connected"));
       closeModal({ dismissed: false, connection: created || payload });
     }

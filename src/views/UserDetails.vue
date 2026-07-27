@@ -604,9 +604,10 @@ import { computed, ref } from "vue";
 import { IonAvatar, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonText, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewWillEnter, onIonViewWillLeave, popoverController } from "@ionic/vue";
 import router from "@/router";
 import { useUserStore } from "@/store/user";
-import { useUtilStore } from "@/store/util";
 import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, closeOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, lockClosedOutline, mailOutline, saveOutline, timeOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
+import { useUserGroups } from '@/composables/useSecurity';
+import { useShopifyShops } from '@/composables/useShopify';
 import { useRoleTypes } from '@/composables/useSeed';
 import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
 import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
@@ -624,7 +625,6 @@ const props = defineProps({
 });
 
 const userStore = useUserStore();
-const utilStore = useUtilStore();
 
 const passwordRef = ref<any>(null);
 
@@ -647,7 +647,6 @@ const username = ref("");
 const password = ref("");
 const isUserFetched = ref(false);
 const showPassword = ref(false);
-const shopifyShopsForProductStore = ref<any[]>([]);
 const isUserFulfillmentAdmin = ref(false);
 
 const selectedUser = computed(() => userStore.selectedUser);
@@ -657,7 +656,13 @@ const userSecurityGroups = computed(() => userStore.getSelectedUserSecurityGroup
 const { descriptionById: roleTypeDescriptions } = useRoleTypes();
 const getRoleTypeDesc = (roleTypeId: string) => roleTypeDescriptions.value[roleTypeId] ?? roleTypeId;
 const userProfile = computed(() => userStore.getUserProfile);
-const shopifyShops = computed(() => utilStore.getShopifyShops);
+// Cached, reactive — no fetch needed. The favorites card scopes shops by the favorite product
+// store; that scope lives in a ref and the list is a computed (not an imperative snapshot) so it
+// also fills in when the cached shop table hydrates after view entry.
+const { shops: shopifyShops } = useShopifyShops();
+const shopsProductStoreId = ref("");
+const shopifyShopsForProductStore = computed(() =>
+  shopifyShops.value.filter((shopifyShop: any) => shopifyShop.productStoreId === shopsProductStoreId.value));
 const redirectedFromUrl = computed(() => userStore.getRedirectedFromUrl);
 // Bumped on successful upload so the <img> URL changes and the browser doesn't keep showing the old cached image.
 const imageVersion = ref(0);
@@ -683,7 +688,11 @@ const showSelectSecurityGroupModal = ref(false);
 const queryString = ref("");
 const selectedSecurityGroupsProp = ref<any[]>([]);
 const selectedSecurityGroupValues = ref<any[]>([]);
-const securityGroups = computed(() => utilStore.getUserGroups);
+// Cached, reactive — no fetch needed. This app only ever manages login-capable groups, and the
+// cache holds EVERY group (framework/system ones like UgtMoquiAdmin included), so the old
+// server-side UgtUserAccess scope is kept client-side.
+const { userGroups: cachedUserGroups } = useUserGroups();
+const securityGroups = computed(() => cachedUserGroups.value.filter((group: any) => group.groupTypeEnumId === "UgtUserAccess"));
 const filteredSecurityGroups = computed(() => {
   const query = queryString.value.toLowerCase();
   if(!query) {return securityGroups.value;}
@@ -705,7 +714,6 @@ onIonViewWillLeave(async () => {
 onIonViewWillEnter(async () => {
   isUserFetched.value = false;
   await userStore.getSelectedUserDetails({ partyId: props.partyId, isFetchRequired: true });
-  await Promise.all([utilStore.fetchUserGroups(), utilStore.fetchShopifyShopConfigs()]);
   const productStoreId = selectedUser.value.favoriteProductStorePref?.preferenceValue;
   if(productStoreId) {
     getShopifyShops(productStoreId);
@@ -720,7 +728,7 @@ const checkUserAssociatedSecurityGroup = (securityGroupId: any) => {
 };
 
 const getShopifyShops = (productStoreId: string) => {
-  shopifyShopsForProductStore.value = shopifyShops.value.filter((shopifyShop: any) => shopifyShop.productStoreId === productStoreId);
+  shopsProductStoreId.value = productStoreId;
 };
 
 const updateFavoriteProductStore = (event: any) => {

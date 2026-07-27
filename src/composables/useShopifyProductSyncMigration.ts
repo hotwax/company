@@ -1,9 +1,22 @@
-import { defineStore } from 'pinia'
+/**
+ * PRODUCT SYNC MIGRATION (Upgrade Assistant) — composable module.
+ *
+ * Moved wholesale from `store/shopifyProductSyncMigration.ts`, which — like the retired
+ * `shopifyProductSync` store — was a Pinia store in name only: `state: () => ({})` and an actions
+ * block of one-line delegates to these module functions. Nothing here holds state; every function is
+ * a live read or mutation against the OMS, which is correct for a one-shot migration assistant.
+ *
+ * Kept as its OWN composable rather than folded into `useShopify`: the assistant is a bounded,
+ * removable feature (it dies when every shop is on the new sync), and burying 1,100 lines of legacy
+ * teardown logic in the everyday Shopify composable would outlive its usefulness.
+ */
 import { serviceJobCache, systemMessageTypeCache } from "@/utils/cacheEntities";
 import { useMaargConfig } from "@/composables/useSeed";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
-import { fetchShopSystemMessageRemoteIdInternal, fetchSyncJobConfigInternal } from "@/store/shopifyProductSync";
+// Both moved to the Shopify composable when `store/shopifyProductSync` was retired; the `*Internal`
+// suffix went with it, since these are no longer a store's private helpers.
+import { fetchShopSystemMessageRemoteId, fetchSyncJobConfig } from "@/composables/useShopify";
 import { DateTime } from "luxon";
 
 export type ProductSyncMigrationEntryAction = "current" | "setup" | "request-upgrade";
@@ -236,7 +249,7 @@ async function fetchMaargInfo() {
   return maarg.config.value;
 }
 
-async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
+export async function fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
   const maargInfo = await fetchMaargInfo();
   const componentRelease = String(maargInfo?.instanceInfo?.componentRelease || "").trim();
 
@@ -404,7 +417,7 @@ async function fetchDataDocumentCheck(dataDocumentId: string, label: string, not
 
 async function fetchLegacySystemMessageRemoteIds(payload: any) {
   try {
-    const systemMessageRemoteIds = await fetchShopSystemMessageRemoteIdInternal({
+    const systemMessageRemoteIds = await fetchShopSystemMessageRemoteId({
       shopId: payload?.shopId,
       shop: payload?.shop,
       returnAllSystemMessageRemoteIds: true
@@ -668,7 +681,7 @@ async function fetchLegacySystemMessages(payload: any): Promise<{ items: Product
   };
 }
 
-async function fetchLegacyTeardownState(payload: any) {
+export async function fetchLegacyTeardownState(payload: any) {
   const shopId = getShopId(payload);
 
   const legacySystemMessageRemoteIds = await fetchLegacySystemMessageRemoteIds(payload);
@@ -690,7 +703,7 @@ async function fetchLegacyTeardownState(payload: any) {
   };
 }
 
-async function deprecateLegacySystemMessageType(systemMessageTypeId: string): Promise<void> {
+export async function deprecateLegacySystemMessageType(systemMessageTypeId: string): Promise<void> {
   const systemMessageType = await fetchSystemMessageTypeEntity(systemMessageTypeId);
   if (!systemMessageType?.systemMessageTypeId) return;
 
@@ -712,7 +725,7 @@ async function deprecateLegacySystemMessageType(systemMessageTypeId: string): Pr
   });
 }
 
-async function deactivateLegacyServiceJob(jobName: string): Promise<void> {
+export async function deactivateLegacyServiceJob(jobName: string): Promise<void> {
   const jobDetail = await fetchServiceJobEntity(jobName);
   if (!jobDetail?.jobName) return;
 
@@ -730,7 +743,7 @@ async function deactivateLegacyServiceJob(jobName: string): Promise<void> {
   });
 }
 
-async function enableServiceJob(jobName: string, jobDetail: any): Promise<void> {
+export async function enableServiceJob(jobName: string, jobDetail: any): Promise<void> {
   if (!jobDetail || !jobDetail.jobName) {
     throw new Error(`Job details missing for ${jobName}`);
   }
@@ -749,7 +762,7 @@ async function enableServiceJob(jobName: string, jobDetail: any): Promise<void> 
   });
 }
 
-async function cancelLegacySystemMessage(systemMessage: any): Promise<void> {
+export async function cancelLegacySystemMessage(systemMessage: any): Promise<void> {
   const systemMessageId = typeof systemMessage === "string" ? systemMessage : systemMessage.id;
 
   if (typeof systemMessage === "object" && systemMessage !== null) {
@@ -798,7 +811,7 @@ async function cancelLegacySystemMessage(systemMessage: any): Promise<void> {
   });
 }
 
-async function teardownLegacySync(
+export async function teardownLegacySync(
   payload: any,
   onProgress?: (step: ProductSyncMigrationTeardownStep) => void
 ): Promise<ProductSyncMigrationTeardownResult> {
@@ -942,7 +955,7 @@ async function teardownLegacySync(
   };
 }
 
-async function fetchAssistantState(
+export async function fetchAssistantState(
   payload: any,
   onProgress?: (state: Partial<ProductSyncMigrationAssistantState>) => void
 ): Promise<ProductSyncMigrationAssistantState> {
@@ -1012,7 +1025,7 @@ async function fetchAssistantState(
   // 3. Per-shop sync job configuration
   if (shopId) {
     try {
-      const syncJobConfig = await fetchSyncJobConfigInternal({ shopId });
+      const syncJobConfig = await fetchSyncJobConfig({ shopId });
       state.syncJobConfigured = syncJobConfig.isConfigured;
       state.syncJobName = syncJobConfig.jobName || "";
       onProgress?.({
@@ -1029,7 +1042,7 @@ async function fetchAssistantState(
   // 4. Resolve system message remote id (needed for upgrade setup)
   if (shopId) {
     try {
-      state.systemMessageRemoteId = await fetchShopSystemMessageRemoteIdInternal({
+      state.systemMessageRemoteId = await fetchShopSystemMessageRemoteId({
         shopId,
         shop: payload?.shop
       });
@@ -1079,7 +1092,7 @@ async function fetchAssistantState(
   return state;
 }
 
-function resolveEntryAction(state: ProductSyncMigrationAssistantState): ProductSyncMigrationEntryAction {
+export function resolveEntryAction(state: ProductSyncMigrationAssistantState): ProductSyncMigrationEntryAction {
   // If we know it's not eligible, request upgrade
   if (state.isEligible === false) {
     return "request-upgrade";
@@ -1105,35 +1118,3 @@ function resolveEntryAction(state: ProductSyncMigrationAssistantState): ProductS
   return "setup";
 }
 
-export const useShopifyProductSyncMigrationStore = defineStore('shopifyProductSyncMigration', {
-  state: () => ({}),
-  actions: {
-    async fetchAssistantState(payload: any, onProgress?: (state: Partial<ProductSyncMigrationAssistantState>) => void): Promise<ProductSyncMigrationAssistantState> {
-      return fetchAssistantState(payload, onProgress);
-    },
-    async fetchEligibility(): Promise<ProductSyncMigrationEligibility> {
-      return fetchEligibility();
-    },
-    async fetchLegacyTeardownState(payload: any): Promise<any> {
-      return fetchLegacyTeardownState(payload);
-    },
-    resolveEntryAction(state: ProductSyncMigrationAssistantState): ProductSyncMigrationEntryAction {
-      return resolveEntryAction(state);
-    },
-    async teardownLegacySync(payload: any, onProgress?: (step: ProductSyncMigrationTeardownStep) => void): Promise<ProductSyncMigrationTeardownResult> {
-      return teardownLegacySync(payload, onProgress);
-    },
-    async enableServiceJob(jobName: string, jobDetail: any): Promise<void> {
-      return enableServiceJob(jobName, jobDetail);
-    },
-    async cancelLegacySystemMessage(systemMessage: any): Promise<void> {
-      return cancelLegacySystemMessage(systemMessage);
-    },
-    async deactivateLegacyServiceJob(jobName: string): Promise<void> {
-      return deactivateLegacyServiceJob(jobName);
-    },
-    async deprecateLegacySystemMessageType(systemMessageTypeId: string): Promise<void> {
-      return deprecateLegacySystemMessageType(systemMessageTypeId);
-    }
-  }
-})

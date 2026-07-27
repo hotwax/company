@@ -83,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+import { fetchLocationsFromShopify, fetchShopifyShopLocations, importShopifyFacilities } from "@/composables/useShopify";
 import {
   IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton,
   IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList,
@@ -91,12 +92,11 @@ import {
 } from '@ionic/vue'
 import { close, downloadOutline } from 'ionicons/icons'
 import { commonUtil, logger, translate } from '@common'
-import { useShopifyStore } from '@/store/shopify'
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useProductStoreMutations } from "@/composables/useProductStores";
 import { computed, ref, onMounted } from 'vue'
 
 const props = defineProps<{ shopId: string, productStoreId?: string }>()
-const shopifyStore = useShopifyStore()
 const isLoading    = ref(true)
 const isImporting  = ref(false)
 const fetchError   = ref('')
@@ -115,16 +115,18 @@ async function fetchData() {
   isLoading.value = true
   fetchError.value = ''
   try {
-    const [shopifyResp, omsResp] = await Promise.all([
-      shopifyStore.fetchLocationsFromShopify({ shopId: props.shopId }),
-      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.shopId })
+    // Both composable functions return UNWRAPPED arrays (Shopify location nodes / mapping rows),
+    // not axios envelopes — the store versions returned raw responses.
+    const [shopifyNodes, omsMappings] = await Promise.all([
+      fetchLocationsFromShopify(props.shopId),
+      fetchShopifyShopLocations(props.shopId)
     ])
 
     const alreadyMapped = new Set(
-      (omsResp.data || []).map((m: any) => String(m.shopifyLocationId))
+      omsMappings.map((m: any) => String(m.shopifyLocationId))
     )
 
-    const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
+    const nodes = shopifyNodes
     locations.value = nodes.map((node: any) => {
       const shopifyLocationId = String(node.id).split('/').pop()!
       return {
@@ -171,9 +173,8 @@ async function importSelected() {
 
   isImporting.value = true
   try {
-    const resp = await shopifyStore.importShopifyFacilities({
-      shopId: props.shopId,
-      locations: selectedForImport.value.map(loc => ({
+    const resp = await importShopifyFacilities(props.shopId,
+      selectedForImport.value.map(loc => ({
         shopifyLocationId: loc.shopifyLocationId,
         name:              loc.name,
         facilityTypeId:    facilityTypes.value[loc.shopifyLocationId],
@@ -187,13 +188,17 @@ async function importSelected() {
         latitude:    loc.latitude,
         longitude:   loc.longitude
       }))
-    })
+    )
 
     if (commonUtil.hasError(resp)) throw resp.data
 
     const count = Array.isArray(resp.data) ? resp.data.length : selectedForImport.value.length
     const importedShopifyLocationIds = selectedForImport.value.map(loc => String(loc.shopifyLocationId))
     const facilityIds = await resolveImportedFacilityIds(resp.data, importedShopifyLocationIds)
+    // The import created OMS facilities, and the facility lists read the CACHE — without this
+    // write-through the new rows stay invisible until the next login sync. (The Shopify-location
+    // mapping domain is refreshed inside `importShopifyFacilities` itself.)
+    await Promise.allSettled(facilityIds.map(facilityId => refreshAfterMutation('facility', { facilityId })))
     let associated = 0
 
     try {
@@ -220,14 +225,10 @@ async function resolveImportedFacilityIds(importResponse: any, shopifyLocationId
   if (importedFacilityIds.length) return importedFacilityIds
 
   try {
-    const mappingResp = await shopifyStore.fetchShopifyShopLocationsRaw({
-      shopId: props.shopId,
-      pageSize: 200
-    })
-    if (commonUtil.hasError(mappingResp)) throw mappingResp.data
+    const mappingRows = await fetchShopifyShopLocations(props.shopId, 200)
 
     const selectedShopifyLocationIds = new Set(shopifyLocationIds)
-    const mappedRows = (mappingResp.data || []).filter((mapping: any) =>
+    const mappedRows = mappingRows.filter((mapping: any) =>
       selectedShopifyLocationIds.has(String(mapping.shopifyLocationId))
     )
     return collectFacilityIds(mappedRows)
@@ -237,7 +238,8 @@ async function resolveImportedFacilityIds(importResponse: any, shopifyLocationId
   }
 }
 
-function collectFacilityIds(data: any) {
+/** Annotated `string[]`: the `any` envelope makes the Set infer as `unknown` without it. */
+function collectFacilityIds(data: any): string[] {
   const rows = Array.isArray(data)
     ? data
     : Array.isArray(data?.facilities)

@@ -144,7 +144,6 @@ import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSu
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/common/TimezoneModal.vue";
 import Image from "@/components/common/Image.vue"
@@ -158,7 +157,6 @@ import { getCurrentTime } from "../utils"
 import { useCacheStatus } from "@/composables/useCacheStatus";
 import { useMaargConfig } from "@/composables/useSeed";
 const userStore = useUserStore();
-const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
 const { config: maargConfig, load: loadMaargConfig } = useMaargConfig();
 const maargInfo = computed(() => maargConfig.value)

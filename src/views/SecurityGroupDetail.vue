@@ -207,8 +207,20 @@ import { IonBackButton, IonButton, IonButtons, IonCard, IonCardHeader, IonCardSu
 import { addOutline, closeOutline, pencilOutline, saveOutline, trashOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { commonUtil, logger, translate } from "@common";
-import { useAuthorizationStore } from "@/store/authorization";
-import { useUtilStore } from "@/store/util";
+import {
+  addUserGroupPermission,
+  createArtifactAuthz,
+  deleteArtifactAuthz,
+  removeUserGroupPermission,
+  updateArtifactAuthz,
+  updateUserGroup as updateUserGroupRequest,
+  useArtifactAuthorizations,
+  useArtifactGroups,
+  usePermissions,
+  useUserGroupPermissions,
+  useUserGroupRecord,
+} from "@/composables/useSecurity";
+import { useTypedEnums } from "@/composables/useSeed";
 import { useUserStore } from "@/store/user";
 
 const props = defineProps({
@@ -218,8 +230,7 @@ const props = defineProps({
   }
 });
 
-const authorizationStore = useAuthorizationStore();
-const utilStore = useUtilStore();
+// Session permissions only — every other read now comes from the security composables.
 const userStore = useUserStore();
 
 const query = ref("");
@@ -238,21 +249,27 @@ const form = ref<any>({
 const showEditUserGroupModal = ref(false);
 const description = ref("");
 
-const userGroups = computed(() => utilStore.getUserGroups);
-const currentUserGroup = computed(() => userGroups.value.find((group: any) => group.userGroupId === props.userGroupId));
-const userPermissions = computed(() => authorizationStore.getUserPermissions);
-const artifactGroups = computed(() => authorizationStore.getArtifactGroups);
-const authzTypeEnums = computed(() => authorizationStore.getAuthzTypeEnums);
-const authzActionEnums = computed(() => authorizationStore.getAuthzActionEnums);
-const userGroupTypeEnums = computed(() => authorizationStore.getUserGroupTypeEnums);
-const groupPermissions = computed(() => authorizationStore.getGroupPermissions(props.userGroupId));
-const groupAuthorizations = computed(() => authorizationStore.getGroupAuthorizations(props.userGroupId));
+// Cached reads: the group itself, the permission catalog, and the three enum slices all come from
+// the reference cache and re-emit reactively — no onMounted fetches for any of them.
+const { record: currentUserGroup } = useUserGroupRecord(props.userGroupId);
+const { permissions: userPermissions } = usePermissions();
+const { values: authzTypeEnums, descriptionById: authzTypeDescriptions } = useTypedEnums("AuthzType");
+const { values: authzActionEnums, descriptionById: authzActionDescriptions } = useTypedEnums("AuthzAction");
+const { descriptionById: userGroupTypeDescriptions } = useTypedEnums("UserGroupType");
+
+// Live reads: per-group associations (no cached table), fetched for this group only.
+const { artifactGroups, load: loadArtifactGroups } = useArtifactGroups();
+const { activePermissions: groupPermissions, load: loadGroupPermissions } = useUserGroupPermissions(props.userGroupId);
+const { authorizations: groupAuthorizations, load: loadGroupAuthorizations } = useArtifactAuthorizations(props.userGroupId);
+
 const isEditMode = computed(() => !!selectedAuthorization.value?.artifactAuthzId);
 
 const filteredUserPermissions = computed(() => {
   const queryString = query.value.trim().toLowerCase();
 
-  return Object.values(userPermissions.value)
+  // Judgment call: the old store listed permissions in the server's (unspecified) response order;
+  // the cached catalog is description-sorted, matching every other lookup list in the app.
+  return userPermissions.value
     .filter((permission: any) => !queryString ||
       permission.userPermissionId.toLowerCase().includes(queryString) ||
       (permission.description && permission.description.toLowerCase().includes(queryString)))
@@ -267,34 +284,29 @@ const getArtifactGroupDescription = (artifactGroupId: string) => {
 };
 
 const getAuthzTypeDescription = (authzTypeEnumId: string) => {
-  return authzTypeEnums.value.find((authzType: any) => authzType.enumId === authzTypeEnumId)?.description || authzTypeEnumId;
+  return authzTypeDescriptions.value[authzTypeEnumId] || authzTypeEnumId;
 };
 
 const getAuthzActionDescription = (authzActionEnumId: string) => {
-  return authzActionEnums.value.find((authzAction: any) => authzAction.enumId === authzActionEnumId)?.description || authzActionEnumId;
+  return authzActionDescriptions.value[authzActionEnumId] || authzActionEnumId;
 };
 
 const getUserGroupTypeDescription = (groupTypeEnumId: string) => {
-  return userGroupTypeEnums.value.find((groupType: any) => groupType.enumId === groupTypeEnumId)?.description || groupTypeEnumId;
+  return userGroupTypeDescriptions.value[groupTypeEnumId] || groupTypeEnumId;
 };
 
 const loadSegmentData = async () => {
   if(viewMode.value === "permissions") {
-    await authorizationStore.fetchUserGroupPermissions(props.userGroupId);
+    await loadGroupPermissions();
   } else {
-    await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+    await loadGroupAuthorizations();
   }
 };
 
 onMounted(async () => {
-  await Promise.all([
-    utilStore.fetchUserGroups(),
-    authorizationStore.fetchUserPermissions(),
-    authorizationStore.fetchArtifactGroups(),
-    authorizationStore.fetchAuthzEnums(),
-    authorizationStore.fetchUserGroupTypeEnums()
-  ]);
-  await loadSegmentData();
+  // Artifact groups are the one remaining catalog fetch (not a cached domain); the segment data is
+  // independent of it, so both load in parallel.
+  await Promise.all([loadArtifactGroups(), loadSegmentData()]);
 });
 
 const updateViewMode = async (event: CustomEvent) => {
@@ -312,14 +324,14 @@ const togglePermission = async (permission: any) => {
     let resp;
     if(permission.isChecked) {
       const fromDate = groupPermissions.value[permission.userPermissionId].fromDate;
-      resp = await authorizationStore.removeUserGroupPermission({
+      resp = await removeUserGroupPermission({
         userGroupId: props.userGroupId,
         userPermissionId: permission.userPermissionId,
         fromDate,
         thruDate: DateTime.now().toMillis()
       });
     } else {
-      resp = await authorizationStore.addUserGroupPermission({
+      resp = await addUserGroupPermission({
         userGroupId: props.userGroupId,
         userPermissionId: permission.userPermissionId,
         fromDate: DateTime.now().toMillis()
@@ -328,7 +340,7 @@ const togglePermission = async (permission: any) => {
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("User group permission association successfully updated."));
-      await authorizationStore.fetchUserGroupPermissions(props.userGroupId);
+      await loadGroupPermissions();
     } else {
       throw resp.data;
     }
@@ -353,14 +365,15 @@ const updateUserGroup = async () => {
   if(description.value === (currentUserGroup.value?.description || "")) {return;}
 
   try {
-    const resp = await utilStore.updateUserGroup({
+    // The composable writes through to the cached userGroups table on success, so the title and
+    // detail card re-emit on their own — no hand-patched `updateUserGroupInState` equivalent.
+    const resp = await updateUserGroupRequest({
       userGroupId: currentUserGroup.value?.userGroupId,
       description: description.value
     });
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("User group updated successfully."));
-      utilStore.updateUserGroupInState({ userGroupId: currentUserGroup.value?.userGroupId, description: description.value });
       closeEditUserGroupModal();
     } else {
       throw resp.data;
@@ -406,19 +419,19 @@ const saveArtifactAuthz = async () => {
 
   try {
     const resp = isEditMode.value
-      ? await authorizationStore.updateArtifactAuthz({
+      ? await updateArtifactAuthz({
         userGroupId: props.userGroupId,
         artifactAuthzId: selectedAuthorization.value.artifactAuthzId,
         ...form.value
       })
-      : await authorizationStore.createArtifactAuthz({
+      : await createArtifactAuthz({
         userGroupId: props.userGroupId,
         ...form.value
       });
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(isEditMode.value ? translate("Authorization updated successfully.") : translate("Authorization added successfully."));
-      await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+      await loadGroupAuthorizations();
       closeArtifactAuthzModal();
     } else {
       throw resp.data;
@@ -431,14 +444,14 @@ const saveArtifactAuthz = async () => {
 
 const removeAuthorization = async (authorization: any) => {
   try {
-    const resp = await authorizationStore.deleteArtifactAuthz({
+    const resp = await deleteArtifactAuthz({
       userGroupId: props.userGroupId,
       artifactAuthzId: authorization.artifactAuthzId
     });
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Authorization removed successfully."));
-      await authorizationStore.fetchArtifactAuthorizations(props.userGroupId);
+      await loadGroupAuthorizations();
     } else {
       throw resp.data;
     }

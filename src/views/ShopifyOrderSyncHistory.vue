@@ -298,13 +298,14 @@ function formatDate(value: unknown): string {
   return formatDateTime(value) || translate("Not available");
 }
 
-function importLabel(configId: string): string {
+/** Both ids are optional on the cached rows these render, so both labels accept their absence. */
+function importLabel(configId: string | undefined): string {
   return configId === "SYNC_SHOPIFY_ORDER" ? translate("New order import") : translate("Updated order import");
 }
 
-function batchStatusLabel(statusId: string): string {
-  const label = SYSTEM_MESSAGE_STATUS_LABELS[statusId];
-  return label ? translate(label) : statusLabel(statusId);
+function batchStatusLabel(statusId: string | undefined): string {
+  const label = statusId ? SYSTEM_MESSAGE_STATUS_LABELS[statusId] : "";
+  return label ? translate(label) : statusLabel(statusId ?? "");
 }
 
 function progressStateLabel(state: SyncProgressState): string {

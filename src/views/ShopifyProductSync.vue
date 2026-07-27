@@ -618,11 +618,7 @@ import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useUserStore } from "@/store/user";
-import {
-  useShopifyProductSyncStore,
-  type ShopifyProductSyncDashboardSummary,
-  type ShopifyProductSyncProductSearchResult,
-} from "@/store/shopifyProductSync";
+
 import {
   ProductSyncExperienceMode,
   ProductSyncWizardStep,
@@ -646,10 +642,34 @@ import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataM
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
 import {
+  cancelSystemMessage,
+  configureProductSyncJob,
+  fetchPreflight,
+  fetchRecentlyUpdatedShopifyProducts,
+  fetchReviewStats,
+  fetchSetupState,
+  fetchShopSystemMessageRemoteId,
+  fetchSyncJobConfig,
+  fetchUnsyncedProductUpdates,
+  fetchWebhookSubscriptions,
+  searchShopifyProducts,
+  subscribeWebhook,
+  syncShopifyProducts,
+  syncShopifyProductsOnDemand,
+  unsubscribeWebhook,
+  PRODUCT_SYNC_FEATURE,
+  useShopifyProductSyncRunState,
+  fetchRunningBulkOperation,
+  fetchShopifyShopProductCount,
+  fetchUpdateFilesToProcessCount,
+  PRODUCT_SYNC_RUN_WINDOW,
+  productSyncExtraDomains,
+  syncFeatureDomains,
   useShopifyProductSyncRun,
   useShopifyShop,
   useShopifyShopMutations,
   useShopifyShops,
+  type ShopifyProductSyncProductSearchResult,
 } from "@/composables/useShopify";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
@@ -685,7 +705,6 @@ import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 
 
 const props = defineProps(["id"]);
-const shopifyProductSyncStore = useShopifyProductSyncStore();
 const userStore = useUserStore();
 const {
   products,
@@ -724,10 +743,24 @@ const { currentSyncRun, fetchSyncRun, clearSyncRun } = useShopifyProductSyncRun(
 const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
 const BULK_OPERATION_SEND_JOB_NAME = "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery";
 const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
-const latestSystemMessage = ref<any>(null);
-const latestConfirmedSystemMessage = ref<any>(null);
-const latestConsumedSystemMessage = ref<any>(null);
-const lastProductUpdateSyncedAt = ref("");
+/**
+ * Run state, LIVE from the shop-scoped spine — the same source the connection-details card reads.
+ *
+ * These four were refs filled by `fetchDashboardSummary`, whose run-state half joined two
+ * independently-windowed tables; this page and the connection-details card could therefore DISAGREE
+ * about whether the same shop had ever synced (measured live: card said "Last synced Jul 21",
+ * this page said "No completed sync recorded"). One source now, and it updates itself as the worker
+ * commits — triggering a sync needs no re-fetch to observe progress.
+ */
+const {
+  runState: spineRunState,
+  pendingRequests: spinePendingRequests,
+} = useShopifyProductSyncRunState(() => props.id);
+
+const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystemMessage);
+const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
+const latestConsumedSystemMessage = computed<any>(() => spineRunState.value.latestConsumedSystemMessage);
+const lastProductUpdateSyncedAt = computed(() => spineRunState.value.lastSyncedAt || "");
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
 const hasEverLoadedSecondary = ref(false);
@@ -783,9 +816,10 @@ const experienceMode = ref<ProductSyncExperienceMode>("auto");
 const currentStep = ref<ProductSyncWizardStep>("home");
 const draft = ref(createProductSyncWizardDraft());
 const shopifyShopProductCount = ref(0);
-const pendingUpdateRequestsCount = ref(0);
+const pendingUpdateRequestsCount = computed(() => spinePendingRequests.value.length);
 const updateFilesToProcessCount = ref(0);
-const pendingUpdateRequestsLastCreatedAt = ref("");
+const pendingUpdateRequestsLastCreatedAt = computed(() =>
+  spinePendingRequests.value[0]?.initDate || spinePendingRequests.value[0]?.lastUpdatedStamp || "");
 const errorRecordCount = computed(() => {
   return recentMdmLogs.value.reduce((acc: number, log: any) => acc + Number(log.failedRecordCount || 0), 0);
 });
@@ -1692,7 +1726,7 @@ async function loadWizard() {
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
     await loadSelectedShopSystemMessageRemoteId();
 
-    setupState.value = await shopifyProductSyncStore.fetchSetupState({
+    setupState.value = await fetchSetupState({
       shopId: props.id,
       shop: shop.value,
       productStore: selectedProductStore.value
@@ -1804,12 +1838,8 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
   latestPauseAuditByJobName.value = {};
   try {
-    const summary = await shopifyProductSyncStore.fetchDashboardSummary({
-      shopId: props.id,
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shop: shop.value
-    });
-    applyDashboardSummary(summary);
+    // Run state is a spine computed — only the three live counts are fetched here.
+    await loadLiveDashboardCounts();
 
     try {
       if (latestSystemMessage.value?.systemMessageId) {
@@ -1854,19 +1884,28 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
 }
 
-function applyDashboardSummary(summary: ShopifyProductSyncDashboardSummary) {
-  latestSystemMessage.value = summary.syncRunState.latestSystemMessage || null;
-  latestConfirmedSystemMessage.value = summary.syncRunState.latestConfirmedSystemMessage || null;
-  latestConsumedSystemMessage.value = summary.syncRunState.latestConsumedSystemMessage || null;
-  lastProductUpdateSyncedAt.value = summary.syncRunState.lastSyncedAt || "";
-  pendingUpdateRequestsCount.value = Number(summary.pendingRequests.count || 0);
-  pendingUpdateRequestsLastCreatedAt.value = summary.pendingRequests.latestSystemMessage?.initDate ||
-    summary.pendingRequests.latestSystemMessage?.createdDate ||
-    summary.pendingRequests.latestSystemMessage?.lastUpdatedStamp ||
-    "";
-  runningShopifyBulkOperation.value = summary.runningOperation;
-  shopifyShopProductCount.value = Number(summary.unsyncedUpdates?.count || 0);
-  updateFilesToProcessCount.value = Number(summary.updateFilesToProcess || 0);
+/**
+ * The three dashboard values that are GENUINELY live — everything else on the dashboard is a spine
+ * computed now. Each is remote truth with no cacheable equivalent: what Shopify is running, what
+ * changed on Shopify's side since the last sync, and the DataManager backlog count.
+ *
+ * `allSettled`, not `all`: one Shopify hiccup must not blank the other two numbers.
+ */
+async function loadLiveDashboardCounts() {
+  const payload = {
+    shopId: props.id,
+    systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
+    shop: shop.value,
+    lastSyncedAt: lastProductUpdateSyncedAt.value,
+  };
+  const [running, unsynced, backlog] = await Promise.allSettled([
+    fetchRunningBulkOperation(payload),
+    fetchShopifyShopProductCount(payload),
+    fetchUpdateFilesToProcessCount(payload),
+  ]);
+  runningShopifyBulkOperation.value = running.status === "fulfilled" ? running.value : null;
+  shopifyShopProductCount.value = unsynced.status === "fulfilled" ? Number(unsynced.value?.count || 0) : 0;
+  updateFilesToProcessCount.value = backlog.status === "fulfilled" ? Number(backlog.value || 0) : 0;
 }
 
 async function loadBulkOperationMonitoringJobs() {
@@ -1877,7 +1916,7 @@ async function loadBulkOperationMonitoringJobs() {
 
 
 async function loadSelectedShopSystemMessageRemoteId() {
-  selectedShopSystemMessageRemoteId.value = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
+  selectedShopSystemMessageRemoteId.value = await fetchShopSystemMessageRemoteId({
     shopId: props.id,
     shop: shop.value
   });
@@ -1977,12 +2016,12 @@ async function loadProducts() {
   const requestId = ++productSearchRequestId;
   try {
     const response = isSearchMode.value
-      ? await shopifyProductSyncStore.fetchRecentlyUpdatedShopifyProducts({
+      ? await fetchRecentlyUpdatedShopifyProducts({
           systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
           pageSize: 15
         })
       : {
-          products: await shopifyProductSyncStore.fetchUnsyncedProductUpdates({
+          products: await fetchUnsyncedProductUpdates({
             systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
             shopId: productsPickerShopId.value,
             lastSyncedAt: productsPickerLastSyncedAt.value,
@@ -2014,7 +2053,7 @@ async function searchProducts(after?: string) {
   productsPickerIsLoading.value = true;
   const requestId = ++productSearchRequestId;
   try {
-    const response = await shopifyProductSyncStore.searchShopifyProducts({
+    const response = await searchShopifyProducts({
       systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
       queryString: queryString.value.trim(),
       pageSize: 20,
@@ -2172,7 +2211,7 @@ async function openUnsyncedUpdatesModal() {
   productsPickerMode.value = "unsynced";
   productsPickerSystemMessageRemoteId.value = selectedShopSystemMessageRemoteId.value;
   productsPickerShopId.value = props.id;
-  productsPickerLastSyncedAt.value = lastProductUpdateSyncedAt.value;
+  productsPickerLastSyncedAt.value = String(lastProductUpdateSyncedAt.value || "") || undefined;
   productsPickerShopifyShopProductCount.value = shopifyShopProductCount.value;
   resetProductsPickerState();
   showProductsPickerModal.value = true;
@@ -2211,7 +2250,7 @@ async function handleSelectedProductsForSync(data: any) {
 
   isSaving.value = true;
   try {
-    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
+    const result = await syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: shopifyProductIds
     });
@@ -2249,12 +2288,8 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const summary = await shopifyProductSyncStore.fetchDashboardSummary({
-    shopId: props.id,
-    systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-    shop: shop.value
-  });
-  applyDashboardSummary(summary);
+  // The latest message is a spine computed; refresh only the live counts, then point the run join.
+  await loadLiveDashboardCounts();
 
   if (latestSystemMessage.value?.systemMessageId) {
     await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
@@ -2320,7 +2355,7 @@ async function resyncProduct(record: any) {
 
   isSaving.value = true;
   try {
-    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
+    const result = await syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
     });
@@ -2887,7 +2922,7 @@ async function persistIdentifierSelection() {
 async function loadReviewStats() {
   isReviewLoading.value = true;
   try {
-    reviewStats.value = await shopifyProductSyncStore.fetchReviewStats({
+    reviewStats.value = await fetchReviewStats({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId,
       linkedShopCount: relatedShops.value.length,
@@ -2926,7 +2961,7 @@ function toggleStartConfirmation() {
 }
 
 async function loadPreflight() {
-  const rawItems = await shopifyProductSyncStore.fetchPreflight({
+  const rawItems = await fetchPreflight({
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     productStoreId: draft.value.selectedProductStoreId,
     productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -3000,7 +3035,7 @@ async function checkSyncJobConfig() {
   isSyncJobConfigLoaded.value = false;
   try {
     const shopId = props.id; 
-    const result = await shopifyProductSyncStore.fetchSyncJobConfig({ shopId });
+    const result = await fetchSyncJobConfig({ shopId });
     
     syncJobConfigured.value = result.isConfigured;
     if (result.isConfigured) {
@@ -3019,7 +3054,7 @@ async function configureSyncJob() {
     const shopId = shop.value?.shopId;
     if (!shopId) throw new Error("Shop ID not available");
 
-    await shopifyProductSyncStore.configureSyncJob({
+    await configureProductSyncJob({
       shopId,
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -3056,7 +3091,7 @@ async function startProductSync() {
       await loadSelectedShopSystemMessageRemoteId();
     }
 
-    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({ 
+    const resp: any = await syncShopifyProducts({ 
       shopId: props.id,
       includeAll: true 
     });
@@ -3154,7 +3189,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
+    await cancelSystemMessage(systemMessageId);
     commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
@@ -3174,7 +3209,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
   try {
     clearSyncRun();
     const job = syncJobObj.value;
-    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({
+    const resp: any = await syncShopifyProducts({
       shopId: props.id,
       ...params
     });
@@ -3230,14 +3265,9 @@ async function loadProgress() {
   if (!selectedShopSystemMessageRemoteId.value) return false;
   let loadedRunState = false;
   try {
-    // The two `/runs` fetches that used to be here are gone: the recent-run lists are cached
-    // projections that stay current on their own.
-    const [syncRunStateResult, sendJobResult, pollJobResult] = await Promise.allSettled([
-      shopifyProductSyncStore.fetchProductUpdateSyncRunState({
-        systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-        shopId: props.id,
-        systemMessageId: progressState.value?.systemMessageId
-      }),
+    // Run state comes off the SPINE, synchronously — the worker keeps it current on a 10s cadence,
+    // so a poll here reads the freshest committed state without a request. Only job detail is live.
+    const [sendJobResult, pollJobResult] = await Promise.allSettled([
       fetchJobDetail(BULK_OPERATION_SEND_JOB_NAME, shop.value.productStoreId),
       fetchJobDetail(BULK_OPERATION_POLL_JOB_NAME, shop.value.productStoreId)
     ]);
@@ -3257,12 +3287,7 @@ async function loadProgress() {
     }
 
 
-    if (syncRunStateResult.status !== "fulfilled") {
-      throw syncRunStateResult.reason;
-    }
-
-    const syncRunState = syncRunStateResult.value;
-    assertBackendDataAvailable(syncRunState, translate("Product sync run state is unavailable."));
+    const syncRunState = spineRunState.value;
     loadedRunState = true;
 
     // Prioritize the system message ID we already have in state if it's still active
@@ -3340,40 +3365,45 @@ function stopProgressPolling() {
 }
 
 /**
+ * The full domain set this page reads, built from the SAME builders every other sync screen uses.
+ *
+ * This used to be two hand-rolled copies of this list (initial activation + the job-set watcher),
+ * which had already drifted from each other's siblings: the message window was pinned at 25 while
+ * `PRODUCT_SYNC_RUN_WINDOW` reads expect 200 — the exact fetch-depth-vs-read-limit mismatch that made
+ * a shop with a completed sync report "never synced" elsewhere. Composing from `syncFeatureDomains` +
+ * `productSyncExtraDomains` means the descriptor owns the shape and this page can no longer drift:
+ *
+ *  - `systemMessage` per feature type at `PRODUCT_SYNC_RUN_WINDOW` depth
+ *  - `dataManagerLog` per import config (REQUIRED for the run join — a run's MDM half is matched by
+ *    `systemMessageId`, and without logs this page concludes nothing ever synced and drops into the
+ *    first-time wizard even for a shop with history)
+ *  - the `syncRun` spine — the only shop-scoped source of the message↔import pairing
+ *  - `serviceJobRun` scoped to the jobs the cards display
+ *  - `productUpdateHistory` for the recently-synced-products list, the one page-specific domain
+ */
+function productSyncPageDomains(jobNames: readonly string[]) {
+  const intervalMs = PRODUCT_SYNC_FEATURE.activePollMs;
+  return [
+    ...syncFeatureDomains(PRODUCT_SYNC_FEATURE, intervalMs, {
+      messageTotal: PRODUCT_SYNC_RUN_WINDOW,
+      // Shared across shops (no endpoint keys logs to a shop), so depth is the only lever — matches
+      // the connection-details session so the two pages agree on the window.
+      importTotal: 300,
+    }),
+    ...productSyncExtraDomains(intervalMs, jobNames),
+    { name: "productUpdateHistory", intervalMs: 15_000, args: { shopIds: [props.id] } },
+  ];
+}
+
+/**
  * Activate the live (class-A) domains this page reads, and start the label clock.
  *
- * `serviceJobRun` is told WHICH jobs to watch because there is no route that lists runs across jobs;
- * the tracked set is the same one the old scheduler used. Domains stop on view exit, which terminates
- * the worker and its timer — the cache stays behind so a revisit paints instantly.
+ * Domains stop on view exit, which terminates the worker and its timer — the cache stays behind so a
+ * revisit paints instantly.
  */
 async function startNextSyncRefreshPolling() {
   labelClock = window.setInterval(() => { currentTimeMs.value = Date.now(); }, 15000);
-  await startSyncDomains([
-    {
-      name: "systemMessage",
-      intervalMs: 10_000,
-      // Only what this page renders — see the note in systemMessageDomain on per-tick cost.
-      args: {
-        types: [
-          { systemMessageTypeId: "BulkQueryShopifyProductUpdates", total: 25 },
-          { systemMessageTypeId: "BulkOperationsFinish", total: 25 },
-        ],
-      },
-    },
-    /**
-     * REQUIRED for the run join, not optional extra data. A run's MDM half is matched by
-     * `systemMessageId`, and the page decides whether a sync has ever COMPLETED by looking for a
-     * message with a matching log. Without this domain the join finds no logs and the page concludes
-     * nothing ever synced — it drops into the first-time wizard even for a shop with sync history.
-     */
-    { name: "dataManagerLog", intervalMs: 10_000, args: { configId: PRODUCT_SYNC_MDM_CONFIG_ID } },
-    { name: "productUpdateHistory", intervalMs: 15_000, args: { shopIds: [props.id] } },
-    {
-      name: "serviceJobRun",
-      intervalMs: 10_000,
-      args: { jobNames: getTrackedRefreshJobs().map((job: any) => job.jobName) },
-    },
-  ]);
+  await startSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)));
 }
 
 function stopNextSyncRefreshPolling() {
@@ -3392,22 +3422,8 @@ function stopNextSyncRefreshPolling() {
  */
 watch(() => getTrackedRefreshJobs().map((job: any) => job.jobName).join(","), (names) => {
   if (!names) return;
-  void startSyncDomains([
-    {
-      name: "systemMessage",
-      intervalMs: 10_000,
-      // Only what this page renders — see the note in systemMessageDomain on per-tick cost.
-      args: {
-        types: [
-          { systemMessageTypeId: "BulkQueryShopifyProductUpdates", total: 25 },
-          { systemMessageTypeId: "BulkOperationsFinish", total: 25 },
-        ],
-      },
-    },
-    { name: "dataManagerLog", intervalMs: 10_000, args: { configId: PRODUCT_SYNC_MDM_CONFIG_ID } },
-    { name: "productUpdateHistory", intervalMs: 15_000, args: { shopIds: [props.id] } },
-    { name: "serviceJobRun", intervalMs: 10_000, args: { jobNames: names.split(",") } },
-  ]);
+  // Same single builder — `start` swaps the domain set on the running worker rather than respawning.
+  void startSyncDomains(productSyncPageDomains(names.split(",")));
 });
 
 function getTrackedRefreshJobs() {
@@ -3758,7 +3774,7 @@ async function loadWebhookSubscriptions() {
   if (!selectedShopSystemMessageRemoteId.value) return;
   isWebhookLoading.value = true;
   try {
-    webhookSubscriptions.value = await shopifyProductSyncStore.fetchWebhookSubscriptions({
+    webhookSubscriptions.value = await fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       topic: "BULK_OPERATIONS_FINISH"
     });
@@ -3779,7 +3795,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
   isWebhookLoading.value = true;
   try {
     if (subscribe) {
-      await shopifyProductSyncStore.subscribeWebhook({
+      await subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
       });
@@ -3787,7 +3803,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
       if (subscription) {
-        await shopifyProductSyncStore.unsubscribeWebhook({
+        await unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });
