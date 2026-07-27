@@ -132,28 +132,32 @@
 </template>
 
 <script setup lang="ts">
+import { useShopifyCarrierShipments, useShopifyShop, useShopifyShopMutations } from "@/composables/useShopify";
+import { useShipmentMethodTypeMutations, useShipmentMethodTypes } from "@/composables/useSeed";
+import { useProductStoreMutations, useProductStoreShippingMethods } from "@/composables/useProductStores";
+import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
-import { useUtilStore } from '@/store/util';
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useShopifyStore } from '@/store/shopify';
+import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 
 const props = defineProps(['id']);
-const utilStore = useUtilStore();
-const netSuiteStore = useNetSuiteStore();
-const shopifyStore = useShopifyStore();
-const isLoading = ref(true);
+const shopMutations = useShopifyShopMutations(props.id);
+const { createShipmentMethodType } = useShipmentMethodTypeMutations();
+// Skeleton only until the cache emits; on a warm cache that is immediate.
+const isLoading = computed(() => !hydrated.value);
 const editingItemKey = ref("");
+// Keys the user has actually started editing. Everything else is safe to reseed from the cache.
+const userEditedKeys = ref<Set<string>>(new Set());
 const localMappings = ref<any>({});
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => shopRecord.value ?? {});
 const selectedCarrierPartyId = ref("");
 
-const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
-const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
-const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
+const { shipmentMethodTypes } = useShipmentMethodTypes();
+const { shippingMethods: productStoreShipmentMethods } = useProductStoreShippingMethods();
+const { byCarrierAndMethod: shopifyShopsCarrierShipments, hydrated } = useShopifyCarrierShipments(props.id);
 const backHref = computed(() => {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo")
   return returnTo || `/shopify-connection-details/${props.id}`
@@ -187,27 +191,20 @@ const isDirty = computed(() => {
   });
 });
 
-onIonViewWillEnter(async () => {
-  isLoading.value = true;
-  await Promise.all([
-    utilStore.fetchShipmentMethodTypes(),
-    netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: shop.value.productStoreId }),
-    shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id })
-  ]);
-  
-  if (carriers.value.length && !selectedCarrierPartyId.value) {
-    selectedCarrierPartyId.value = carriers.value[0].partyId;
-  }
-  
-  initializeLocalMappings();
-  isLoading.value = false;
-})
 
 watch(carriers, (newCarriers) => {
   if (newCarriers.length && !selectedCarrierPartyId.value) {
     selectedCarrierPartyId.value = newCarriers[0].partyId;
   }
 })
+
+// Seed the local edit map whenever either cached source emits. It reads BOTH the store's shipment
+// methods and the shop's carrier shipments, which arrive from IndexedDB independently, and it was
+// previously only invoked after a create — so on a normal page load nothing seeded it and every row
+// compared against an empty local map, rendering the edit input instead of the mapped value.
+watch([productStoreShipmentMethods, shopifyShopsCarrierShipments], () => {
+  initializeLocalMappings();
+}, { deep: true, immediate: true });
 
 function initializeLocalMappings() {
   const now = Date.now();
@@ -216,8 +213,11 @@ function initializeLocalMappings() {
     if ((!sm.fromDate || sm.fromDate <= now) && (!sm.thruDate || sm.thruDate > now)) {
       const key = `${sm.partyId}_${sm.shipmentMethodTypeId}`;
       const original = shopifyShopsCarrierShipments.value[key];
-      // Only initialize if we don't have a local mapping yet or if the item is not dirty
-      if (!localMappings.value[key] || !isItemDirtyByCarrier(sm.partyId, sm.shipmentMethodTypeId)) {
+      // Reseed anything the USER has not opened for editing. The previous guard skipped rows that
+      // merely LOOKED dirty, which is the state produced when the first seed ran before the carrier
+      // shipments arrived: local was "", the real mapping landed later, and the row was then stuck
+      // in edit mode forever because it could never be reseeded.
+      if (!userEditedKeys.value.has(key)) {
         localMappings.value[key] = {
           shopifyShippingMethod: original ? original.shopifyShippingMethod : ""
         };
@@ -251,6 +251,7 @@ function getShopifyMapping(shipmentMethodTypeId: string) {
 
 async function editItem(carrierPartyId: string, shipmentMethodTypeId: string) {
   editingItemKey.value = `${carrierPartyId}_${shipmentMethodTypeId}`;
+  userEditedKeys.value.add(editingItemKey.value);
   await nextTick();
   const input = document.querySelector('ion-input[autofocus]') as any;
   if (input) {
@@ -270,16 +271,15 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await shopifyStore.createShopifyShopCarrierShipment({
-      shopId: props.id,
+    const resp = await shopMutations.saveCarrierShipment({
       shipmentMethodTypeId,
       shopifyShippingMethod: mapping.shopifyShippingMethod,
       carrierPartyId: selectedCarrierPartyId.value
-    });
+    }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
+      await shopMutations.refreshCarrierShipments();
       editingItemKey.value = "";
     } else {
       throw resp.data;
@@ -304,14 +304,13 @@ async function saveAllDirtyMappings() {
     for (const key of dirtyKeys) {
       const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
-      await shopifyStore.createShopifyShopCarrierShipment({
-        shopId: props.id,
+      await shopMutations.saveCarrierShipment({
         shipmentMethodTypeId,
         shopifyShippingMethod: mapping.shopifyShippingMethod,
         carrierPartyId: carrierPartyId
-      });
+      }, { refresh: false });
     }
-    await shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id });
+    await shopMutations.refreshCarrierShipments();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -405,21 +404,14 @@ async function createShipmentMethod() {
 
   try {
     // 1. Create the shipment method type if it does not already exist.
-    const typeExists = utilStore.shipmentMethodTypes.some((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
+    const typeExists = shipmentMethodTypes.value.some((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
     if(!typeExists) {
-      const typeResp = await utilStore.createShipmentMethodType({
-        shipmentMethodTypeId,
-        description: description.value.trim()
-      });
-      if(commonUtil.hasError(typeResp)) {
-        throw typeResp.data;
-      }
-      await utilStore.fetchShipmentMethodTypes(true);
+      // Resyncs the shipmentMethodType cache itself.
+      await createShipmentMethodType({ shipmentMethodTypeId, description: description.value.trim() });
     }
 
     // 2. Associate the shipment method type with the product store + carrier so it appears as a row.
-    const assocResp = await utilStore.createProductStoreShipmentMethod({
-      productStoreId: shop.value.productStoreId,
+    const assocResp = await useProductStoreMutations(shop.value.productStoreId).addShipmentMethod({
       shipmentMethodTypeId,
       partyId: createShipmentCarrierPartyId.value,
       roleTypeId: "CARRIER"
@@ -429,12 +421,11 @@ async function createShipmentMethod() {
     }
 
     // 3. Create the Shopify carrier-shipment mapping (the identification).
-    const mappingResp = await shopifyStore.createShopifyShopCarrierShipment({
-      shopId: props.id,
+    const mappingResp = await shopMutations.saveCarrierShipment({
       shipmentMethodTypeId,
       shopifyShippingMethod: shopifyShippingMethod.value.trim(),
       carrierPartyId: createShipmentCarrierPartyId.value
-    });
+    }, { refresh: false });
     if(commonUtil.hasError(mappingResp)) {
       throw mappingResp.data;
     }
@@ -455,9 +446,10 @@ async function createShipmentMethod() {
   // already-successful creation as failed or keep the modal open.
   try {
     if (createShipmentCarrierPartyId.value) selectedCarrierPartyId.value = createShipmentCarrierPartyId.value;
+    // Both lists render from the cache, so refreshing means re-snapshotting those domains.
     await Promise.all([
-      netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: shop.value.productStoreId }),
-      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId: props.id })
+      resyncDomain("productStoreShippingMethod"),
+      resyncDomain("shopifyCarrierShipment"),
     ]);
     initializeLocalMappings();
   } catch (refreshError) {

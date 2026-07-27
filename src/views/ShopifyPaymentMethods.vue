@@ -127,23 +127,27 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonNote, IonPage, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useShopifyStore } from '@/store/shopify';
-import { useUtilStore } from '@/store/util';
+import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify";
+import { createPaymentMethodType } from "@/composables/useSeed";
+import { usePaymentMethodTypes } from '@/composables/useSeed';
+import { refreshAfterMutation, resyncDomain } from '@/services/appCacheBootstrap';
 
 const props = defineProps(['id']);
-const netSuiteStore = useNetSuiteStore();
-const shopifyStore = useShopifyStore();
-const utilStore = useUtilStore();
-const isLoading = ref(true);
+const shopMutations = useShopifyShopMutations(props.id);
+// `refreshing` is toggled by the create/refresh flow; the skeleton also covers cache hydration.
+const refreshing = ref(false);
+const isLoading = computed(() => refreshing.value || !hydrated.value);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 
-const paymentMethods = computed(() => netSuiteStore.paymentMethods)
-const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
+const { mappings: shopifyTypeMappings, hydrated } = useShopifyTypeMappings(props.id, "SHOPIFY_PAYMENT_TYPE");
+// Cached reference data; `resyncDomain('paymentMethodType')` refreshes it after a create. The page
+// previously read the same list twice — once from the cache and once from the netSuite store.
+const { paymentMethodTypes } = usePaymentMethodTypes();
+const paymentMethods = paymentMethodTypes;
 const backHref = computed(() => {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo")
   return returnTo || `/shopify-connection-details/${props.id}`
@@ -183,7 +187,7 @@ const existingTypeIds = computed(() => {
   (existingPaymentTypes.value || []).forEach((type: any) => {
     addTypeId(type?.paymentMethodTypeId);
   });
-  (utilStore.paymentMethodTypes || []).forEach((type: any) => {
+  (paymentMethodTypes.value || []).forEach((type: any) => {
     addTypeId(type?.paymentMethodTypeId);
   });
 
@@ -202,19 +206,14 @@ const canSave = computed(() => {
   return Boolean(derivedId.value && shopifyId.value.trim()) && !duplicateWarning.value;
 });
 
-onIonViewWillEnter(async () => {
-  isLoading.value = true;
-  await Promise.all([
-    netSuiteStore.fetchPaymentMethods(),
-    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
-  ]);
-  initializeLocalMappings();
-  isLoading.value = false;
-})
 
-watch(shopifyTypeMappings, () => {
+// `initializeLocalMappings` reads BOTH cached sources, which emit from IndexedDB independently.
+// Watching only one meant that if the other had not arrived yet the local map was built empty and
+// never rebuilt — every row then compared `undefined` against its real mapping, looked "dirty",
+// and rendered the edit input instead of the mapped value. `immediate` also seeds a warm cache.
+watch([shopifyTypeMappings, paymentMethods], () => {
   initializeLocalMappings();
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 function initializeLocalMappings() {
   const mappings: any = {};
@@ -251,9 +250,6 @@ function openCreatePaymentMethodModal() {
   shopifyId.value = "";
   createdTypeIds.value = new Set<string>();
   existingPaymentTypes.value = paymentMethods.value;
-  if (!utilStore.paymentMethodTypes.length) {
-    void utilStore.fetchPaymentMethodTypes();
-  }
   showCreatePaymentMethodModal.value = true;
 }
 
@@ -277,26 +273,23 @@ async function createPaymentMethod() {
 
   try {
     if (!existingTypeIds.value.has(paymentMethodTypeId)) {
-      const typeResp = await utilStore.createPaymentMethodType({
+      // Creating the type re-snapshots the cached catalog, so the picker picks it up on its own —
+      // the old local mirror push (`upsertPaymentMethodType`) is gone with the store.
+      const typeResp = await createPaymentMethodType({
         paymentMethodTypeId,
         description: trimmedDescription.value
       });
       if (commonUtil.hasError(typeResp)) {
         throw typeResp.data;
       }
-      utilStore.upsertPaymentMethodType({
-        paymentMethodTypeId,
-        description: trimmedDescription.value
-      });
       createdTypeIds.value = new Set([...createdTypeIds.value, paymentMethodTypeId]);
     }
 
-    const mappingResp = await shopifyStore.createShopifyShopTypeMapping({
-      shopId: props.id,
+    const mappingResp = await shopMutations.saveTypeMapping({
       mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
       mappedKey: shopifyId.value.trim(),
       mappedValue: paymentMethodTypeId
-    });
+    }, { refresh: false });
     if (commonUtil.hasError(mappingResp)) {
       throw mappingResp.data;
     }
@@ -313,17 +306,17 @@ async function createPaymentMethod() {
 
   // Refresh data (formerly handled in modal.onDidDismiss). Isolated from the create
   // try/catch so a refresh failure can't report the already-successful creation as failed.
-  isLoading.value = true;
+  refreshing.value = true;
   try {
     await Promise.all([
-      netSuiteStore.fetchPaymentMethods(),
-      shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id })
+      shopMutations.refreshTypeMappings(),
+      resyncDomain("paymentMethodType"),
     ]);
     initializeLocalMappings();
   } catch (refreshError) {
     logger.error(refreshError);
   } finally {
-    isLoading.value = false;
+    refreshing.value = false;
   }
 }
 
@@ -339,23 +332,21 @@ async function saveMapping(paymentMethodTypeId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopifyStore.deleteShopifyShopTypeMapping({
-        shopId: props.id,
+      await shopMutations.removeTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: oldMappedKey
-      });
+      }, { refresh: false });
     }
 
-    const resp = await shopifyStore.createShopifyShopTypeMapping({
-      shopId: props.id,
+    const resp = await shopMutations.saveTypeMapping({
       mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
       mappedKey: newMappedKey,
       mappedValue: paymentMethodTypeId
-    });
+    }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
+      await shopMutations.refreshTypeMappings();
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -377,21 +368,19 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMapping(id);
 
       if (oldMappedKey) {
-        await shopifyStore.deleteShopifyShopTypeMapping({
-          shopId: props.id,
+        await shopMutations.removeTypeMapping({
           mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
           mappedKey: oldMappedKey
-        });
+        }, { refresh: false });
       }
 
-      await shopifyStore.createShopifyShopTypeMapping({
-        shopId: props.id,
+      await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: newMappedKey,
         mappedValue: id
-      });
+      }, { refresh: false });
     }
-    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PAYMENT_TYPE", shopId: props.id });
+    await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
