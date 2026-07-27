@@ -24,6 +24,8 @@ class CompanyCacheDB extends Dexie {
   systemMessages!: Table<CachedRow, string>;
   systemMessageRemotes!: Table<CachedRow, string>;
   serviceJobRuns!: Table<CachedRow, string>;
+  /** Shop-scoped sync cursor/spine — see the `syncRuns` schema note. */
+  syncRuns!: Table<CachedRow, string>;
   serviceJobs!: Table<CachedRow, string>;
   productStores!: Table<CachedRow, string>;
   shopifyShops!: Table<CachedRow, string>;
@@ -98,6 +100,33 @@ const CACHE_SCHEMA = {
   systemMessages:
     "systemMessageId, systemMessageTypeId, systemMessageRemoteId, statusId, initDate, processedDate, lastAttemptDate, lastUpdatedStamp, [systemMessageRemoteId+initDate], [systemMessageRemoteId+systemMessageTypeId], [systemMessageRemoteId+systemMessageTypeId+initDate], [systemMessageRemoteId+statusId]",
   serviceJobRuns: "jobRunId, jobName, startTime, endTime, hasError, [jobName+startTime]",
+  /**
+   * SyncRun — the SHOP-SCOPED CURSOR (spine) for sync monitoring. Not a data table.
+   *
+   * ⚠️ IT EXISTS BECAUSE LOGS CANNOT BE KEYED BY SHOP AND MESSAGES CAN.
+   *
+   * `systemMessages` partition cleanly per shop: `SystemMessage.systemMessageRemoteId` → remote →
+   * `internalId` = shopId, and a remote belongs to exactly one shop, so each (remote, type) gets its
+   * own window and cursor and adding a shop takes nothing from the others.
+   *
+   * `dataManagerLogs` do not. Probed live: `admin/dataManager/details` ignores every shop filter (a
+   * nonexistent shop id returns the full unfiltered set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which
+   * DOES scope by shop, omits `systemMessageId` — the join key — so it cannot be tied to a message.
+   * One `configId` window is therefore shared by every shop, and depth is the only lever: ample for
+   * one shop, structurally insufficient combined.
+   *
+   * `SYSTEM_MESSAGE_DATA_MANAGER_LOG` breaks the deadlock. It is scoped by `remoteInternalId` (the
+   * shop) + `systemMessageTypeId` and returns the PAIRING — `systemMessageId` alongside `logId` — which
+   * is precisely the join no other feed can produce. So rows here are identity, not detail: which runs
+   * belong to this shop and which import each became. The full message and log records are then
+   * ENRICHED by id into their own tables (see `syncRunDomain`), which is per-id and therefore always
+   * possible. That removes the window-alignment problem: a shop's log is fetched because its run says
+   * it exists, not because it happened to fall inside a shared window.
+   *
+   * `[shopId+systemMessageTypeId+initDate]` is the read every sync screen makes.
+   */
+  syncRuns:
+    "systemMessageId, shopId, configId, systemMessageTypeId, systemMessageRemoteId, statusId, logId, initDate, lastUpdatedStamp, [shopId+systemMessageTypeId+initDate], [shopId+configId+initDate]",
   /**
    * SystemMessageError — on-demand (class C) write-through, fetched when a run is inspected.
    *

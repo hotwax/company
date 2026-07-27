@@ -228,7 +228,41 @@ export const integrationTypeMappingProjection = {
 
 export const serviceJobCache = defineCachedEntity("serviceJobs", serviceJobProjection);
 export const systemMessageRemoteCache = defineCachedEntity("systemMessageRemotes", systemMessageRemoteProjection);
+/**
+ * SyncRun — one row of `SYSTEM_MESSAGE_DATA_MANAGER_LOG`, used as a shop-scoped CURSOR.
+ *
+ * Deliberately thin: this records WHICH runs a shop has and which import each became. Detail lives in
+ * `systemMessages` and `dataManagerLogs`, enriched by id — see the schema note on `syncRuns`.
+ *
+ * The document is a SPARSE projection: log-side fields are simply absent on a run that never imported
+ * (verified live — M227136 carries `logId`/`totalRecordCount`, M228375 carries neither). `logId`
+ * being absent IS the meaning of "consumed but imported nothing", so it must not coerce to 0 or "".
+ */
+export const syncRunProjection = {
+  keyField: "systemMessageId",
+  fields: {
+    systemMessageId: "text",
+    systemMessageTypeId: "text",
+    systemMessageRemoteId: "text",
+    statusId: "text",
+    initDate: "date",
+    processedDate: "date",
+    remoteMessageId: "text",
+    /** `remoteInternalId` from the document — the HotWax shop id. What makes this table shop-scoped. */
+    shopId: "text",
+    configId: "text",
+    logId: "text",
+    logStatusId: "text",
+    totalRecordCount: "count",
+    failedRecordCount: "count",
+    lastUpdatedStamp: "date",
+  },
+  /** Keyed by the CACHED name, valued by the SOURCE field — the direction `projectRow` looks up. */
+  rename: { shopId: "remoteInternalId" },
+} as const;
+
 export const productStoreCache = defineCachedEntity("productStores", productStoreProjection);
+export const syncRunCache = defineCachedEntity("syncRuns", syncRunProjection);
 export const shopifyShopCache = defineCachedEntity("shopifyShops", shopifyShopProjection);
 export const facilityCache = defineCachedEntity("facilities", facilityProjection);
 export const facilityGroupCache = defineCachedEntity("facilityGroups", facilityGroupProjection);

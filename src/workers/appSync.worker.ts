@@ -8,6 +8,7 @@
 import "./domains/dataManagerLogDomain";
 import "./domains/systemMessageDomain";
 import "./domains/serviceJobRunDomain";
+import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/referenceDomains";
 
