@@ -615,10 +615,9 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
-import { commonUtil, hasError, logger, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useUserStore } from "@/store/user";
-import { useProductStore } from "@/store/productStore";
 import {
   useShopifyProductSyncStore,
   type ShopifyProductSyncDashboardSummary,
@@ -687,7 +686,6 @@ import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 
 const props = defineProps(["id"]);
 const shopifyProductSyncStore = useShopifyProductSyncStore();
-const productStoreStore = useProductStore();
 const userStore = useUserStore();
 const {
   products,
@@ -781,11 +779,9 @@ const runningShopifyBulkOperationError = ref("");
 const preflightLoaded = ref(false);
 const preflightAccepted = ref(false);
 const preflightWarningConfirmed = ref(false);
-const productStoreContextError = ref("");
 const experienceMode = ref<ProductSyncExperienceMode>("auto");
 const currentStep = ref<ProductSyncWizardStep>("home");
 const draft = ref(createProductSyncWizardDraft());
-const relatedShops = ref<any[]>([]);
 const shopifyShopProductCount = ref(0);
 const pendingUpdateRequestsCount = ref(0);
 const updateFilesToProcessCount = ref(0);
@@ -1261,7 +1257,11 @@ const syncJobDraftNextRunRelativeLabel = computed(() => {
   if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
   const nextRun = getNextRunDateTime({ cronExpression: syncJobDraftCronExpression.value });
   if (!nextRun) return translate("Not scheduled");
-  return `${translate("next run in")} ${nextRun.toRelative({ base: DateTime.fromMillis(currentTimeMs.value), style: "long" }).replace("in ", "")}`;
+  // `toRelative` returns null for an invalid base or target; treat that as unschedulable rather
+  // than calling `.replace` on null.
+  const relative = nextRun.toRelative({ base: DateTime.fromMillis(currentTimeMs.value), style: "long" });
+  if (!relative) return translate("Not scheduled");
+  return `${translate("next run in")} ${relative.replace("in ", "")}`;
 });
 const syncJobDraftNextRunTimeLabel = computed(() => {
   if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
@@ -1331,7 +1331,6 @@ const reviewReady = computed(() => {
   return !!reviewStats.value.loaded && !isReviewLoading.value;
 });
 const nextDisabled = computed(() => {
-  if (productStoreContextError.value) return true;
   return !canAdvanceProductSyncStep(currentStep.value, {
     draft: draft.value,
     productStoreLocked: productStoreLocked.value,
@@ -1674,14 +1673,7 @@ function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => u
   });
 }
 
-watch(() => draft.value.selectedProductStoreId, async (productStoreId) => {
-  if (productStoreId) {
-    await loadProductStoreContext(productStoreId);
-  } else {
-    relatedShops.value = [];
-    productStoreContextError.value = "";
-  }
-});
+
 
 onBeforeUnmount(() => {
   stopProgressPolling();
@@ -1730,10 +1722,7 @@ async function loadWizard() {
       currentStep.value = "home";
     }
 
-    if (draft.value.selectedProductStoreId) {
-      await loadProductStoreContext(draft.value.selectedProductStoreId);
-    }
-
+    // `relatedShops` is a computed over the cached shop list — nothing to load.
     await loadWebhookSubscriptions();
 
     const requestedStep = getQueryProductSyncWizardStep(router.currentRoute.value.query.step);
@@ -2346,24 +2335,19 @@ async function resyncProduct(record: any) {
   }
 }
 
-async function loadProductStoreContext(productStoreId: string) {
-  try {
-    assertShopifyShopsLoaded();
-    const context = await shopifyProductSyncStore.fetchProductStoreContext({
-      shopId: props.id,
-      productStoreId,
-      shops: cachedShops.value || []
-    });
-    assertBackendDataAvailable(context, translate("Product store sync context is unavailable."));
-    relatedShops.value = context.relatedShops || [];
-    productStoreContextError.value = "";
-  } catch (error: any) {
-    logger.error(error);
-    relatedShops.value = [];
-    productStoreContextError.value = getErrorMessage(error, translate("Failed to load product store sync context."));
-    commonUtil.showToast(translate("Failed to load product store sync context."));
-  }
-}
+/**
+ * Shops sharing the selected product store — a FILTER over the cached shop list.
+ *
+ * `fetchProductStoreContext` made no request at all: it took `shops` (which this view already had from
+ * `useShopifyShops`) and returned those whose `productStoreId` matched. That is store indirection over
+ * data already in hand, so it is a computed, not a load — which also removes the failure path and the
+ * toast, because a local filter cannot fail.
+ */
+const relatedShops = computed(() => {
+  const productStoreId = draft.value.selectedProductStoreId;
+  if (!productStoreId) return [];
+  return (cachedShops.value || []).filter((shop: any) => shop?.productStoreId === productStoreId);
+});
 
 function getProductStoreName(productStore: any) {
   if (!productStore?.productStoreId) return "";
@@ -2495,11 +2479,19 @@ function handleIdentifierChange(identifierEnumId: string) {
   draft.value.selectedIdentifierEnumId = identifierEnumId;
 }
 
-function handleExperienceModeChange(mode: ProductSyncExperienceMode) {
-  if (!mode) return;
+const PRODUCT_SYNC_EXPERIENCE_MODES: readonly string[] = ["first-time", "returning", "auto"];
+
+/**
+ * `ion-segment` types `$event.detail.value` as `string | number | undefined`, so the incoming value
+ * is NARROWED against the known modes rather than cast. An unrecognised value is ignored instead of
+ * being written to state, which is what a cast would have allowed.
+ */
+function handleExperienceModeChange(mode: string | number | undefined) {
+  if (typeof mode !== "string" || !PRODUCT_SYNC_EXPERIENCE_MODES.includes(mode)) return;
+  const nextMode = mode as ProductSyncExperienceMode;
   showModeModal.value = false;
   window.setTimeout(() => {
-    experienceMode.value = mode;
+    experienceMode.value = nextMode;
   }, 250);
 }
 
@@ -2877,7 +2869,8 @@ async function persistIdentifierSelection() {
     const resp = await useProductStoreMutations(payload.productStoreId).updateStore(payload);
 
     if (!commonUtil.hasError(resp)) {
-      productStoreStore.updateCurrent(payload);
+      // No Pinia `updateCurrent` write here: nothing in this view reads that state, and
+      // `useProductStoreMutations` already write-through refreshes the cached product store.
       isSaving.value = false;
       return true;
     } else {

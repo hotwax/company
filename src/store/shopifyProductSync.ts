@@ -546,22 +546,7 @@ function validateSetupState(response: any): ShopifyProductSyncSetupState {
   return response as ShopifyProductSyncSetupState;
 }
 
-function validateProductStoreContext(response: any): any {
-  const context = "Product sync product store context";
-  assertPlainObject(response, context);
-  assertArrayField(response.relatedShops, "relatedShops", context);
-  return response;
-}
 
-function buildProductStoreContext(payload: any): any {
-  const context = "Product sync product store context";
-  assertStringField(payload?.productStoreId, "productStoreId", context);
-  assertArrayField(payload?.shops, "shops", context);
-
-  return validateProductStoreContext({
-    relatedShops: payload.shops.filter((shop: any) => shop?.productStoreId === payload.productStoreId)
-  });
-}
 
 function getRequiredCount(payload: any, key: string, context: string): number {
   const value = payload?.[key]?.count ?? payload?.response?.[key]?.count ?? payload?.data?.[key]?.count;
@@ -1313,10 +1298,7 @@ const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProd
     }
   }, "System message status update endpoint");
 };
-
-const fetchProductStoreContext = async (payload: any): Promise<any> => {
-  return buildProductStoreContext(payload);
-};
+;
 
 const fetchReviewStats = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const stats = await fetchLiveCatalogCounts(payload);
@@ -1684,9 +1666,6 @@ export const useShopifyProductSyncStore = defineStore('shopifyProductSync', {
     },
     async fetchSetupState(payload: any): Promise<ShopifyProductSyncSetupState> {
       return fetchSetupState(payload);
-    },
-    async fetchProductStoreContext(payload: any): Promise<any> {
-      return fetchProductStoreContext(payload);
     },
     async fetchReviewStats(payload: any): Promise<ShopifyProductSyncReviewStats> {
       return fetchReviewStats(payload);

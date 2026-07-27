@@ -211,17 +211,6 @@ export const useShopifyStore = defineStore('shopify', {
       return resp.data
     },
 
-    async fetchSystemMessageRemote(shopId: string) {
-      const resp = await api({
-        url: 'oms/systemMessageRemotes',
-        method: 'get',
-        params: { pageSize: 250 }
-      })
-      if (commonUtil.hasError(resp)) throw resp
-      const list: any[] = resp.data?.systemMessageRemoteList ?? []
-      return list.find((r: any) => r.internalId === shopId && r.internalIdType === 'HOTWAX_SHOP_ID') ?? null
-    },
-
     // Refresh (fetch from Shopify + replace stored) the granted access scopes for a shop remote.
     // Stored per systemMessageRemoteId and persisted, so the config UI can show the last-known scopes
     // without hitting Shopify on every page load.
