@@ -210,10 +210,21 @@ async function addVarianceToGroup(enumId: any, event: any) {
       }
     }
     
+    const wasMember = !!enumsInEnumGroup.value(enumId);
+
     resp = await setEnumGroupMembership(payload);
-    if(!commonUtil.hasError(resp)) {
-    } else {
-      throw resp.data;
+    if(commonUtil.hasError(resp)) throw resp.data;
+
+    // `:checked` is a one-way binding, so the native click has already flipped the DOM box while
+    // the cache is the real source of truth. Re-assert the box from the cache once the resync has
+    // landed, otherwise a write that returns 200 without actually persisting leaves the row ticked
+    // forever — the state silently reverts on the next load and the user is never told.
+    const isMember = !!enumsInEnumGroup.value(enumId);
+    checkbox.checked = isMember;
+
+    if(isMember === wasMember) {
+      commonUtil.showToast(translate("The server accepted the change but did not save it."));
+      logger.error(`enumGroupMember for ${enumId} did not persist; NETSUITE_IIV_REASON may not exist as an EnumerationGroup`);
     }
   } catch (err) {
     // Reverting the checkbox shows *something* happened but not that it failed — a user who looks
