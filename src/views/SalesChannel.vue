@@ -141,6 +141,9 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
       throw resp.data;
     }
   } catch (err) {
+    // `channel.enumCode` was already mutated above, so a failed save leaves the row showing a value
+    // the server never accepted. Tell the user rather than dismissing the loader in silence.
+    commonUtil.showToast(translate("Failed to update NetSuite Id"));
     logger.error(err);
   }
   emitter.emit('dismissLoader');

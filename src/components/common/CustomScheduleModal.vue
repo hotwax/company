@@ -203,6 +203,9 @@ async function saveCustomSchedule() {
         throw resp.data;
       }
     } catch (err) {
+      // A failed remove means `addCustomSchedule` never runs, so the modal closes with the old
+      // schedule still in place and nothing to tell the user their edit was dropped.
+      commonUtil.showToast(translate("Failed to update the schedule."));
       logger.error(err);
     }
   } else {

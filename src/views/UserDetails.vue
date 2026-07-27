@@ -1396,6 +1396,7 @@ const editName = async () => {
               throw resp.data;
             }
           } catch (err) {
+            commonUtil.showToast(translate("Failed to rename user."));
             logger.error(err);
           }
 

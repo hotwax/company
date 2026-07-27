@@ -326,8 +326,7 @@ onIonViewWillEnter(async () => {
   try {
     await klaviyoStore.hydrate();
     
-    if (!productStores.value?.length) {
-    }
+    // Product stores are cached and watched below with `immediate: true` — nothing to fetch here.
     if (!emailTypes.value?.length) {
       await utilStore.fetchEmailTypes();
     }

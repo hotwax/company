@@ -144,6 +144,10 @@ async function editNetSuiteId(facility: any) {
               throw resp.data;
             }
           } catch(err) {
+            // The server rejects this outright when `ORDR_ORGN_DPT` is not seeded as an
+            // Enumeration (FK violation). Without a toast the loader just dismisses and the row is
+            // unchanged, which reads as the click being ignored.
+            commonUtil.showToast(translate("Failed to update NetSuite department Id"))
             logger.error(err)
           }
           emitter.emit('dismissLoader')
@@ -172,6 +176,7 @@ async function removeNetSuiteId(facility: any) {
       throw resp.data;
     }
   } catch (err) {
+    commonUtil.showToast(translate("Failed to remove NetSuite department Id"));
     logger.error(err);
   }
   emitter.emit('dismissLoader');

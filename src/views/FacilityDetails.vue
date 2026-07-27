@@ -1900,6 +1900,10 @@ async function saveTelecomNumber() {
       throw resp.data;
     }
   } catch (err) {
+    // `saveContact` has usually already toasted "Facility contact updated successfully" for the
+    // address by the time this runs, so swallowing the error tells the user the phone saved when
+    // it did not.
+    commonUtil.showToast(translate("Failed to update contact number."));
     logger.error(err);
   }
 }
@@ -1932,6 +1936,7 @@ async function saveEmailAddress() {
       throw resp.data;
     }
   } catch (err) {
+    commonUtil.showToast(translate("Failed to update email address."));
     logger.error(err);
   }
 }
