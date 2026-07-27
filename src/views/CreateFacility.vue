@@ -80,7 +80,7 @@ import {
   IonToolbar,
   onIonViewWillEnter
 } from "@ionic/vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { addOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useFacilityCreation, useFacilityMutations, useFacilityTypes } from "@/composables/useFacilities";
@@ -105,17 +105,35 @@ const facilityTypeMap = computed<Record<string, any>>(() =>
 
 const facilityTypeOptions = computed(() => facilityTypes.value);
 
-onIonViewWillEnter(async () => {
-  formData.value = { facilityName: "", facilityId: "", externalId: "" };
-  isAutoGenerateId.value = true;
-  void loadOrganizationPartyId();
+/**
+ * Pick the default type from whatever the cache currently holds.
+ *
+ * Split out of `onIonViewWillEnter` because `facilityTypes` is served from IndexedDB and can still
+ * be empty when the view opens — on a cold cache the one-shot read left the selector blank with
+ * nothing to re-run it once the rows landed.
+ */
+function selectDefaultFacilityType() {
   const types = facilityTypes.value;
+  if (!types.length) return;
   const queryType = router.currentRoute.value.query.type as string | undefined;
   selectedFacilityTypeId.value = (queryType && types.find((facilityType: any) => facilityType.facilityTypeId === queryType)?.facilityTypeId)
     ?? types.find((facilityType: any) => facilityType.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
     ?? types.find((facilityType: any) => facilityType.facilityTypeId === "WAREHOUSE")?.facilityTypeId
     ?? types[0]?.facilityTypeId
     ?? "";
+}
+
+// Re-runs on every cache emit, but only until the user picks something themselves.
+watch(facilityTypes, () => {
+  if (!selectedFacilityTypeId.value) selectDefaultFacilityType();
+});
+
+onIonViewWillEnter(async () => {
+  formData.value = { facilityName: "", facilityId: "", externalId: "" };
+  isAutoGenerateId.value = true;
+  void loadOrganizationPartyId();
+  selectedFacilityTypeId.value = "";
+  selectDefaultFacilityType();
 });
 
 function setFacilityId(event: any) {
