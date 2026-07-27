@@ -1,9 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+/**
+ * The Order Sync derivations now live in the domain COMPOSABLE (this app centralises logic per
+ * composable rather than in scattered `utils/` modules). That file also wires the cache and the api
+ * client, so importing it pulls `@common` → `useAuth` → `cookieHelper`, which has no browser context
+ * here. Stubbing that boundary keeps these tests what they should be: pure L1 checks of the
+ * derivation, no DOM and no network.
+ */
+vi.mock("@common", () => ({
+  api: vi.fn(),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
+}));
 
 import {
-  deriveShopifyOrderSyncProgress,
-  type OrderSyncProgressState,
-} from "@/utils/shopifyOrderSync";
+  deriveSyncProgress,
+  type SyncProgressState,
+} from "@/composables/useShopify";
 
 /**
  * L1 unit — the raw→UI-vocabulary boundary. No mocks, no DOM.
@@ -15,7 +29,7 @@ import {
  *   SmsgTriggered  SmsgProduced  SmsgSending   SmsgSent      SmsgReceived
  *   SmsgConsuming  SmsgConsumed  SmsgConfirmed SmsgRejected  SmsgCancelled  SmsgError
  *
- * This feeds each REAL status ID through deriveShopifyOrderSyncProgress and pins
+ * This feeds each REAL status ID through deriveSyncProgress and pins
  * the "Shopify order batch request" row's derived state. With no import logs,
  * that row's state is a pure function of the SystemMessage status alone.
  *
@@ -23,11 +37,11 @@ import {
  * not whatever the code currently happens to return — that is exactly what lets
  * this test catch a status that slips into the wrong bucket.
  */
-const batchState = (statusId: string | null): OrderSyncProgressState =>
-  deriveShopifyOrderSyncProgress(statusId ? { statusId } : null, [])[0].state;
+const batchState = (statusId: string | null): SyncProgressState =>
+  deriveSyncProgress(statusId ? { statusId } : null, [])[0].state;
 
 describe("Shopify batch-request state from real SystemMessage status IDs", () => {
-  it.each<[statusId: string | null, expected: OrderSyncProgressState]>([
+  it.each<[statusId: string | null, expected: SyncProgressState]>([
     // No message produced yet → nothing has run.
     [null, "pending"],
     ["SmsgTriggered", "pending"], // fired, but nothing produced yet → still waiting

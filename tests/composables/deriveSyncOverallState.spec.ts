@@ -1,14 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+/**
+ * The Order Sync derivations now live in the domain COMPOSABLE (this app centralises logic per
+ * composable rather than in scattered `utils/` modules). That file also wires the cache and the api
+ * client, so importing it pulls `@common` → `useAuth` → `cookieHelper`, which has no browser context
+ * here. Stubbing that boundary keeps these tests what they should be: pure L1 checks of the
+ * derivation, no DOM and no network.
+ */
+vi.mock("@common", () => ({
+  api: vi.fn(),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
+}));
 
 import {
-  deriveShopifyOrderSyncOverallState,
-  type OrderSyncProgressState,
-} from "@/utils/shopifyOrderSync";
+  deriveSyncOverallState,
+  type SyncProgressState,
+} from "@/composables/useShopify";
 
 /**
  * L1 unit — pure derivation, no mocks, no DOM.
  *
- * `deriveShopifyOrderSyncOverallState` collapses the two monitoring rows the
+ * `deriveSyncOverallState` collapses the two monitoring rows the
  * operator watches — the Shopify order *batch request* and the HotWax
  * *DataManager import* — into the single status shown for the run. It is the
  * truth behind these acceptance rows:
@@ -18,14 +32,14 @@ import {
  *
  * Scope note (honesty about what this unit owns): the processed *count* and the
  * zero-change "Completed / 0 ≠ failed" distinction are produced upstream in
- * `deriveShopifyOrderSyncProgress`. This function only combines two
+ * `deriveSyncProgress`. This function only combines two
  * already-derived states, so combination is all we assert here.
  */
-const overall = (batch: OrderSyncProgressState, importRow: OrderSyncProgressState) =>
-  deriveShopifyOrderSyncOverallState({ state: batch }, { state: importRow });
+const overall = (batch: SyncProgressState, importRow: SyncProgressState) =>
+  deriveSyncOverallState({ state: batch }, { state: importRow });
 
-describe("deriveShopifyOrderSyncOverallState", () => {
-  it.each<[label: string, batch: OrderSyncProgressState, importRow: OrderSyncProgressState, expected: OrderSyncProgressState]>([
+describe("deriveSyncOverallState", () => {
+  it.each<[label: string, batch: SyncProgressState, importRow: SyncProgressState, expected: SyncProgressState]>([
     // The batch request is not terminal yet → its own state wins; the import is ignored.
     ["request still pending → the run is pending", "pending", "failed", "pending"],
     ["request still active → the run is active", "active", "completed", "active"],
