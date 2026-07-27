@@ -77,7 +77,7 @@
           v-if="productStores.length"
           :value="selectedStoreId"
           scrollable
-          @ionChange="handleStoreChange($event.detail.value)"
+          @ionChange="handleStoreChange(String($event.detail.value ?? ''))"
         >
           <ion-segment-button
             v-for="productStore in productStores"
@@ -181,7 +181,7 @@
               v-model="deleteConfirmText"
               :placeholder="'DELETE'"
               autocomplete="off"
-              spellcheck="false"
+              :spellcheck="false"
             />
           </ion-item>
         </ion-list>
@@ -243,10 +243,10 @@ import { closeOutline, createOutline, trashOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey } from '@/store/klaviyo';
 import type { ProductStoreEmailSetting } from '@/store/klaviyo';
-import { useProductStore } from '@/store/productStore';
 import { useUtilStore } from '@/store/util';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common'
+import { useProductStores } from '@/composables/useProductStores';
 import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
 import {
   getDefaultKlaviyoProductStoreId,
@@ -256,7 +256,6 @@ import {
 
 const props = defineProps<{ id: string }>();
 const klaviyoStore = useKlaviyoStore();
-const productStoreStore = useProductStore();
 const utilStore = useUtilStore();
 
 const isLoading = ref(false);
@@ -288,7 +287,8 @@ const busyEvent = ref<string | null>(null);
 const selectedStoreId = ref<string>("");
 const subjectDrafts = ref<Record<string, string>>({});
 
-const productStores = computed(() => productStoreStore.productStores || []);
+// Cached at login — no fetch on entry.
+const { productStores } = useProductStores();
 const allSettings = computed<ProductStoreEmailSetting[]>(() => klaviyoStore.getEmailSettings || []);
 const emailTypes = computed(() => utilStore.emailTypes || []);
 
@@ -327,7 +327,6 @@ onIonViewWillEnter(async () => {
     await klaviyoStore.hydrate();
     
     if (!productStores.value?.length) {
-      await productStoreStore.fetchProductStores();
     }
     if (!emailTypes.value?.length) {
       await utilStore.fetchEmailTypes();
@@ -378,6 +377,13 @@ async function commitSubjectIfChanged(evt: any) {
   if (draft === undefined) return;
   if (draft === evt.setting.subject) return;
   if (!draft.trim()) return;
+  // Every write below is scoped to the gateway auth; without a resolved connection the payload
+  // would post `undefined` and silently write against the wrong (or no) gateway.
+  const gatewayAuthId = connection.value?.commGatewayAuthId;
+  if (!gatewayAuthId) {
+    commonUtil.showToast(translate("Connection is still loading. Please try again."));
+    return;
+  }
   busyEvent.value = evt.emailType;
   try {
     const payload: ProductStoreEmailSetting = {
@@ -385,7 +391,7 @@ async function commitSubjectIfChanged(evt: any) {
       emailType: evt.emailType,
       subject: draft.trim(),
       systemMessageRemoteId: "UNIGATE_CONFIG",
-      gatewayAuthId: connection.value.commGatewayAuthId,
+      gatewayAuthId,
       fromAddress: evt.setting.fromAddress,
     };
     await klaviyoStore.upsertEmailSetting(payload);
@@ -403,15 +409,22 @@ async function commitSubjectIfChanged(evt: any) {
 async function toggleEvent(evt: any, enabled: boolean) {
   if (busyEvent.value) return;
   if (evt.enabled && !evt.ownedByThisGateway) return;
+  const gatewayAuthId = connection.value?.commGatewayAuthId;
   busyEvent.value = evt.emailType;
   try {
     if (enabled) {
+      // Turning a notification ON writes against the gateway auth; without a resolved connection
+      // the payload would carry `undefined`. (Turning OFF only needs the store + type.)
+      if (!gatewayAuthId) {
+        commonUtil.showToast(translate("Connection is still loading. Please try again."));
+        return;
+      }
       const payload: ProductStoreEmailSetting = {
         productStoreId: selectedStoreId.value,
         emailType: evt.emailType,
         subject: evt.setting?.subject || defaultSubjectFor(evt.emailType),
         systemMessageRemoteId: "UNIGATE_CONFIG",
-        gatewayAuthId: connection.value.commGatewayAuthId,
+        gatewayAuthId,
       };
       await klaviyoStore.upsertEmailSetting(payload);
       commonUtil.showToast(translate("{label} turned on", { label: getEventLabel(evt.emailType) }));

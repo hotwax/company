@@ -50,7 +50,7 @@
           label-placement="stacked"
           :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
           autocomplete="off"
-          spellcheck="false"
+          :spellcheck="false"
         >
           <ion-input-password-toggle slot="end" />
         </ion-input>
@@ -89,7 +89,7 @@
             label-placement="stacked"
             :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
             autocomplete="off"
-            spellcheck="false"
+            :spellcheck="false"
           >
             <ion-input-password-toggle slot="end" />
           </ion-input>
@@ -156,7 +156,7 @@ import {
 import { checkmarkOutline, closeOutline, saveOutline } from "ionicons/icons";
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey, ensureKeyPrefix, generateAuthId } from '@/store/klaviyo';
-import { commonUtil, hasError, logger, translate } from '@common'
+import { commonUtil, logger, translate } from '@common'
 
 const props = defineProps<{ connection?: any | null }>();
 

@@ -31,26 +31,34 @@ import {
 import { removeCircleOutline, star, starOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
-import { useProductStore } from "@/store/productStore";
+import { useFacilityGroupMutations, useFacilityMutations, useFacilityRecord } from "@/composables/useFacilities";
+import { useProductStores } from "@/composables/useProductStores";
+import { useShopifyShops } from "@/composables/useShopify";
 import { computed } from "vue";
 
 const props = defineProps(['currentProductStore', 'facilityId']);
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
-const productStoreStore = useProductStore();
+const mutations = useFacilityMutations(props.facilityId);
+const { createGroup, findGroup } = useFacilityGroupMutations();
+const { productStores } = useProductStores();
+const { shops } = useShopifyShops();
 
-const current = computed(() => facilityStore.getCurrent);
-const getProductStoreById = computed(() => (id: string) => productStoreStore.getProductStoreById(id));
-const shopifyShopIdForProductStore = computed(() => (id: string) => utilStore.getShopifyShopIdForProductStore(id));
+// All three came from stores that are no longer populated for this screen; the facility, the store
+// list and the shop<->store link are all in the login-time cache already.
+const { record } = useFacilityRecord(props.facilityId);
+const current = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const getProductStoreById = computed(() => (id: string) =>
+  productStores.value.find((store: any) => store.productStoreId === id));
+// NOTE: `shopifyShopId`, not `shopId`. The two differ (10000 vs 6973849727) and it is the
+// Shopify id that doubles as the facility group id in `primaryFacilityGroupId`.
+const shopifyShopIdForProductStore = computed(() => (id: string) =>
+  shops.value.find((shop: any) => shop.productStoreId === id)?.shopifyShopId ?? '');
 
 async function removeStoreFromFacility() {
   emitter.emit('presentLoader');
 
   try {
-    const resp = await facilityStore.updateProductStoreFacility({
-      facilityId: props.facilityId,
+    // Unlink = close the association with a thruDate; the mutation refreshes the cached table.
+    const resp = await mutations.updateProductStore({
       productStoreId: props.currentProductStore.productStoreId,
       fromDate: props.currentProductStore.fromDate,
       thruDate: DateTime.now().toMillis()
@@ -60,18 +68,10 @@ async function removeStoreFromFacility() {
       commonUtil.showToast(translate('Store unlinked successfully.'));
 
       if (shopifyShopIdForProductStore.value(props.currentProductStore.productStoreId) === current.value.primaryFacilityGroupId) {
-        const updateResp = await facilityStore.updateFacility({
-          facilityId: props.facilityId,
-          primaryFacilityGroupId: ''
-        });
-        if (!commonUtil.hasError(updateResp)) {
-          await facilityStore.updateCurrentFacility({ ...current.value, primaryFacilityGroupId: '' });
-        } else {
-          throw updateResp.data;
-        }
+        const updateResp = await mutations.updateFacility({ primaryFacilityGroupId: '' });
+        if (commonUtil.hasError(updateResp)) throw updateResp.data;
       }
 
-      await facilityStore.fetchCurrentFacilityProductStores({ facilityId: props.facilityId });
     } else {
       throw resp.data;
     }
@@ -86,15 +86,8 @@ async function removeStoreFromFacility() {
 
 async function updatePrimaryStore(shopifyShopId = '') {
   try {
-    const resp = await facilityStore.updateFacility({
-      facilityId: props.facilityId,
-      primaryFacilityGroupId: shopifyShopId
-    });
-    if (!commonUtil.hasError(resp)) {
-      await facilityStore.updateCurrentFacility({ ...current.value, primaryFacilityGroupId: shopifyShopId });
-    } else {
-      throw resp.data;
-    }
+    const resp = await mutations.updateFacility({ primaryFacilityGroupId: shopifyShopId });
+    if (commonUtil.hasError(resp)) throw resp.data;
   } catch (error) {
     commonUtil.showToast(translate('Failed to update primary product store'));
     logger.error('Failed to update primary product store', error);
@@ -106,10 +99,6 @@ async function togglePrimary() {
 
   const productStoreId = props.currentProductStore.productStoreId;
   let shopifyShopId = shopifyShopIdForProductStore.value(productStoreId);
-
-  if (!shopifyShopId) {
-    shopifyShopId = await utilStore.fetchShopifyShopForProductStores([productStoreId]);
-  }
 
   if (!shopifyShopId) {
     commonUtil.showToast(translate('Failed to make product store primary due to missing Shopify shop'));
@@ -142,24 +131,13 @@ async function togglePrimary() {
 }
 
 async function fetchFacilityGroup(shopifyShopId: string) {
-  let facilityGroupId;
-  try {
-    const resp = await facilityStore.fetchFacilityGroup(shopifyShopId);
-    if (!commonUtil.hasError(resp)) {
-      facilityGroupId = resp.data?.facilityGroupId;
-    } else {
-      throw resp.data;
-    }
-  } catch (error) {
-    logger.error('Failed to fetch facility group', error);
-  }
-  return facilityGroupId;
+  return findGroup(shopifyShopId);
 }
 
 async function createFacilityGroup(shopifyShopId: string) {
   let facilityGroupId;
   try {
-    const resp = await facilityStore.createFacilityGroup({
+    const resp = await createGroup({
       facilityGroupId: shopifyShopId,
       facilityGroupName: getProductStoreById.value(props.currentProductStore.productStoreId)?.storeName,
       facilityGroupTypeId: 'FEATURING'

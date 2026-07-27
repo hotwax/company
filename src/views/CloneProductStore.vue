@@ -17,7 +17,7 @@
             <ion-list>
               <!-- Source Store Selector -->
               <ion-item>
-                <ion-select interface="popover" :label="translate('Source Product Store')" :placeholder="translate('Select store')" v-model="sourceStoreId" @ionChange="clearTargetOnConflict()">
+                <ion-select interface="popover" :disabled="!storesReady" :label="translate('Source Product Store')" :placeholder="translate('Select store')" v-model="sourceStoreId" @ionChange="clearTargetOnConflict()">
                   <ion-select-option v-for="store in sourceStoresList" :key="store.productStoreId" :value="store.productStoreId">
                     {{ store.storeName || store.productStoreId }}
                   </ion-select-option>
@@ -68,11 +68,10 @@
 import { IonButton, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonPage, IonSelect, IonSelectOption, IonTitle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, copyOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from "@common";
-import { useProductStore } from "@/store/productStore";
 import { computed, ref } from "vue";
 import router from "@/router";
+import { useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
 
-const productStoreStore = useProductStore();
 
 const sourceStoreId = ref("");
 const targetStoreId = ref("");
@@ -113,7 +112,8 @@ const CATEGORY_MAP = {
   }
 } as any;
 
-const productStores = computed(() => productStoreStore.productStores || []);
+// Cached at login — the list is already there when the view opens.
+const { productStores, hydrated: storesReady } = useProductStores();
 
 const sourceStoresList = computed(() => {
   return productStores.value.filter((s: any) => s.productStoreId !== targetStoreId.value);
@@ -127,11 +127,7 @@ const hasSelectedCategories = computed(() => {
   return Object.values(categories.value).some((cat: any) => cat.selected);
 });
 
-onIonViewWillEnter(async () => {
-  emitter.emit("presentLoader");
-  await productStoreStore.fetchProductStores();
-  emitter.emit("dismissLoader");
-});
+
 
 function clearTargetOnConflict() {
   if (sourceStoreId.value === targetStoreId.value) {
@@ -192,7 +188,7 @@ async function executeClone() {
     });
 
     // Update target product store details
-    const detailsUpdateResp = await productStoreStore.updateProductStore(targetPayload);
+    const detailsUpdateResp = await useProductStoreMutations(targetPayload.productStoreId).updateStore(targetPayload);
     if (commonUtil.hasError(detailsUpdateResp)) {
       throw detailsUpdateResp.data;
     }
@@ -208,7 +204,7 @@ async function executeClone() {
         
         settingsToClone.forEach((setting: any) => {
           settingsPromises.push(
-            productStoreStore.saveCurrentStoreSettings({
+            useProductStoreMutations(targetStoreId.value).saveSettings({
               fromDate: Date.now(),
               productStoreId: targetStoreId.value,
               settingTypeEnumId: setting.settingTypeEnumId,

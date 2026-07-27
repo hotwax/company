@@ -312,6 +312,7 @@ import { addCircleOutline, addOutline, closeOutline, saveOutline, serverOutline 
 import { useKlaviyoStore } from '@/store/klaviyo';
 import { maskApiKey } from '@/store/klaviyo';
 import { useUtilStore } from '@/store/util';
+import { useMaargConfig } from '@/composables/useSeed';
 import router from "@/router";
 import { commonUtil, logger, translate } from '@common';
 import KlaviyoConnectionModal from "@/components/klaviyo/KlaviyoConnectionModal.vue";
@@ -327,11 +328,12 @@ const hasUnigateConfig = computed(() => klaviyoStore.hasUnigateConfig);
 const unigateConfig = computed(() => klaviyoStore.getUnigateConfig);
 const klaviyoConnections = computed(() => klaviyoStore.getKlaviyoConnections || []);
 const eventCountByGateway = computed(() => klaviyoStore.getEventCountByGateway || {});
-// maargInfo is fetched once at login (see user/login → util/fetchMaargInfo)
+// Maarg config is seed data held in localStorage; loaded once and read here.
 // Read from the store instead of triggering a per-screen fetch.
-const maargInfo = computed(() => utilStore.maargInfo);
+const { config: maargConfig, load: loadMaargConfig } = useMaargConfig();
+const maargInfo = computed(() => maargConfig.value);
 const unigateConfigWarning = computed(() => {
-  return getUnigateSendUrlWarning(unigateConfig.value?.sendUrl, maargInfo.value);
+  return getUnigateSendUrlWarning(unigateConfig.value?.sendUrl ?? "", maargInfo.value);
 });
 
 // --- Unigate tenant config modal (inlined) ---
@@ -394,7 +396,8 @@ async function save() {
       payload.publicKey = form.newApiKey.trim();
     }
     await klaviyoStore.updateSystemMessageRemote(unigateConfig.value.systemMessageRemoteId, payload);
-    await klaviyoStore.fetchUnigateConfig();
+    void loadMaargConfig();
+  await klaviyoStore.fetchUnigateConfig();
     commonUtil.showToast(translate("Unigate tenant updated"));
     closeUnigateConfig();
   } catch (error: any) {

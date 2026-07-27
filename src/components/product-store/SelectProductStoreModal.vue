@@ -48,13 +48,13 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { translate } from "@common";
-import { useProductStore } from "@/store/productStore";
+import { useProductStores } from "@/composables/useProductStores";
 import { ref, computed } from "vue";
 
 const props = defineProps(["selectedProductStores"]);
-const productStoreStore = useProductStore();
 
-const productStores = computed(() => productStoreStore.getProductStores);
+// Cached at login — no fetch on open.
+const { productStores } = useProductStores();
 
 const selectedProductStoreValues = ref(JSON.parse(JSON.stringify(props.selectedProductStores)));
 
