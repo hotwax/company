@@ -194,16 +194,14 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
-          <ion-skeleton-text
-            v-if="orderSyncCardSnapshot.loading"
-            animated
-            class="product-sync-skeleton"
-          />
-          <ShopifyOrderSyncCard
-            v-else
-            :snapshot="orderSyncCardSnapshot"
-            @open="openOrderSyncEntry()"
-          />
+          <!-- Order sync is disabled for now: its store/view-model were removed in the rebuild
+               and its routes do not mount, so the card renders inert and is not clickable. -->
+          <div class="order-sync-disabled">
+            <ShopifyOrderSyncCard :snapshot="orderSyncCardSnapshot" />
+            <ion-note class="order-sync-disabled-note">
+              {{ translate("Order sync is temporarily unavailable.") }}
+            </ion-note>
+          </div>
           <section>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
@@ -477,47 +475,55 @@ import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, 
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
-import { computed, defineProps, reactive, ref } from "vue";
+import { computed, defineProps, reactive, ref, watch } from "vue";
 import { useShopifyStore } from '@/store/shopify';
-import { useProductStore } from '@/store/productStore';
 import router from "@/router";
 import ShopifyOrderSyncCard from "@/components/shopify-order-sync/ShopifyOrderSyncCard.vue";
-import { useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
-import type { ShopifyOrderSyncCardSnapshot } from "@/store/shopifyOrderSync";
 import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
-import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
+import {
+  fetchUnsyncedProductUpdateCount,
+  useShopifyProductSyncRun,
+  PRODUCT_SYNC_RUN_WINDOW,
+  useShopifyProductSyncRunState,
+  useShopifyProductSyncSession,
+  useShopifyShop,
+  useShopifyShopMutations,
+  useShopifyShops,
+} from "@/composables/useShopify";
+import { useProductStores } from "@/composables/useProductStores";
 
 const props = defineProps(['id']);
 const shopifyStore = useShopifyStore();
-const productStoreStore = useProductStore();
-const shopifyOrderSyncStore = useShopifyOrderSyncStore();
 const shopifyProductSyncStore = useShopifyProductSyncStore();
 const shopifyProductSyncMigrationStore = useShopifyProductSyncMigrationStore();
 const isLoading = ref(true);
 const isSyncSummaryLoading = ref(true);
 const selectedShopLoadError = ref<string | null>(null);
-const lastKnownOrderSyncConfigurationState = ref<ShopifyOrderSyncCardSnapshot["configurationState"] | null>(null);
 const PRODUCT_SYNC_ACTIVITY_HOUR_COUNT = 24;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_WIDTH = 320;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_HEIGHT = 96;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_PADDING_X = 12;
 const PRODUCT_SYNC_ACTIVITY_GRAPH_PADDING_Y = 12;
 type DebugPageState = "live" | "setup-required" | "incompatible" | "upgrade-ready" | "teardown-needed" | "upgraded";
-const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
+const { currentSyncRun, fetchSyncRun, clearSyncRun } = useShopifyProductSyncRun();
 const debugPageState = ref<DebugPageState>("live");
-const productSyncSummary = ref<any>({
-  syncRunState: {
-    lastSyncedAt: "",
-    latestSystemMessage: null,
-    latestConsumedSystemMessage: null
-  },
-  pendingRequests: {
-    count: 0
-  },
-  runningOperation: null
-});
-const productSyncRecordsProcessed = ref(0);
+/**
+ * Product sync state, LIVE from the cache.
+ *
+ * This page used to call `fetchDashboardSummary`, which fanned out to five requests (three of them
+ * `oms/dataDocumentView` reproductions of a SystemMessage ⋈ DataManagerLog join) and then read two of
+ * the five results. Both of those two are cached: the join is `useShopifyProductSyncRunState`, and
+ * only the Shopify-side "unsynced updates" count remains a real request.
+ */
+const {
+  runState: productSyncRunState,
+  remoteId: productSyncRemoteId,
+} = useShopifyProductSyncRunState(() => props.id);
+
+const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.value }));
+const productSyncRecordsProcessed = computed(() =>
+  Number(productSyncRunState.value.latestConsumedSystemMessage?.totalRecordCount || 0));
 const productSyncUnsyncedCount = ref(0);
 const hasProductSyncSummaryError = ref(false);
 const productSyncMigrationEligibility = ref({
@@ -538,35 +544,49 @@ const legacyProductSyncState = ref({
   legacySystemMessages: [] as any[]
 });
 
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+const { shops: cachedShops } = useShopifyShops();
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => shopRecord.value ?? {});
 const selectedShopId = computed(() => String(shop.value.shopId || "").trim());
-const orderSyncCardSnapshot = computed<ShopifyOrderSyncCardSnapshot>(() => {
-  const snapshot = shopifyOrderSyncStore.cardSnapshot?.shopId === selectedShopId.value
-    ? shopifyOrderSyncStore.cardSnapshot
-    : null;
-  const error = selectedShopLoadError.value || shopifyOrderSyncStore.cardError || snapshot?.error || null;
+/**
+ * ORDER SYNC IS DISABLED on this page for now.
+ *
+ * Its store and view-model were removed in the order-sync rebuild, and the order-sync routes do
+ * not mount either, so the card is fed a fixed inert snapshot and rendered non-interactive. This
+ * keeps the rest of the connection page — product sync, shipping/payment/sales-channel mappings,
+ * locations, instance details — fully working. Restoring it is the order-sync rebuild, not a fix
+ * here; nothing below reads live order-sync state.
+ */
+interface OrderSyncCardSnapshot {
+  shopId: string;
+  configurationState: "missing" | "configured-paused" | "configured-active";
+  subtitle?: string;
+  processedCount: number;
+  pendingCount: number;
+  nextRunLabel?: string;
+  lastCompletedLabel?: string;
+  actionable: boolean;
+  batchStatus: string;
+  batchDetail: string;
+  importStatus: string;
+  importDetail: string;
+  loading: boolean;
+  error: string | null;
+}
 
-  return {
-    shopId: selectedShopId.value,
-    configurationState: snapshot?.configurationState || lastKnownOrderSyncConfigurationState.value || "missing",
-    subtitle: snapshot?.subtitle,
-    processedCount: snapshot?.processedCount ?? 0,
-    pendingCount: snapshot?.pendingCount ?? 0,
-    nextRunLabel: snapshot?.nextRunLabel,
-    lastCompletedLabel: snapshot?.lastCompletedLabel,
-    actionable: Boolean(
-      selectedShopId.value
-      && !shopifyOrderSyncStore.cardLoading
-      && (snapshot?.actionable || error)
-    ),
-    batchStatus: snapshot?.batchStatus || "Not started",
-    batchDetail: snapshot?.batchDetail || "",
-    importStatus: snapshot?.importStatus || "Not started",
-    importDetail: snapshot?.importDetail || "",
-    loading: !error && shopifyOrderSyncStore.cardLoading,
-    error,
-  };
-});
+const orderSyncCardSnapshot = computed<OrderSyncCardSnapshot>(() => ({
+  shopId: selectedShopId.value,
+  configurationState: "missing",
+  processedCount: 0,
+  pendingCount: 0,
+  actionable: false,           // not clickable: the order-sync routes are unavailable
+  batchStatus: "Unavailable",
+  batchDetail: "",
+  importStatus: "Unavailable",
+  importDetail: "",
+  loading: false,
+  error: null,
+}));
 const effectiveProductSyncMigrationEligibility = computed(() => {
   if (debugPageState.value === "incompatible") {
     return {
@@ -835,42 +855,50 @@ const activityGraphAriaLabel = computed(() => {
   return `${translate("Product sync activity over the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}. ${activityGraphCaption.value}. ${translate("Peak")} ${activityGraphPeakCount.value}/${translate("hour")}.`;
 });
 
-onIonViewWillEnter(async () => {
+/**
+ * Activate the class-A domains this page's product-sync card reads.
+ *
+ * Required, not optional: `useShopifyProductSyncRunState` is a projection over cached messages and
+ * imports, and without the worker filling those tables it is legitimately empty — the card would
+ * report "never synced" for a shop with a long sync history. Idle cadence, because this page only
+ * shows a summary; the product sync page itself asks for the fast one.
+ */
+useShopifyProductSyncSession(() => [], {
+  active: () => false,
+  // 100 to match what the card reads — the summary picks the newest run that actually imported, and
+  // the newest few frequently imported nothing. Honoured on an already-shallow window because the
+  // domain backfills; before that, `total` only ever applied to an empty scope.
+  messageTotal: PRODUCT_SYNC_RUN_WINDOW,
+  // Logs are NOT keyable by shop — no endpoint offers it. `admin/dataManager/details` ignores every
+  // shop filter (a nonexistent shop returns the full set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which
+  // does scope by shop, omits `systemMessageId` — the join key — entirely. So this one window is
+  // shared across shops and depth is the only lever: 300 so a quiet shop's logs still fall inside it
+  // when a busy shop dominates recent traffic.
+  importTotal: 300,
+});
+
+/**
+ * Load the summaries once the shop is known.
+ *
+ * The shop comes from the cache, and a cached read arrives ASYNCHRONOUSLY — on a cold subscription
+ * `shop.value` is still undefined during `onIonViewWillEnter`. Reading it there treated "not emitted
+ * yet" as "shop does not exist" and failed the page with "could not be resolved". Watching instead
+ * covers both the first emit and any later cache write, and `immediate` keeps a warm cache instant.
+ */
+watch(selectedShopId, async (shopId: string) => {
+  if (!shopId) return;
   isLoading.value = true;
   selectedShopLoadError.value = null;
-  lastKnownOrderSyncConfigurationState.value = null;
-
   try {
-    if (!shop.value.shopId) {
-      await shopifyStore.fetchShopifyShops();
-    }
-
-    const shopId = selectedShopId.value;
-    if (!shopId) {
-      throw new Error("The selected Shopify connection could not be resolved.");
-    }
-
-    const existingSnapshot = shopifyOrderSyncStore.cardSnapshot;
-    if (
-      existingSnapshot?.shopId === shopId
-      && (
-        !existingSnapshot.error
-        || existingSnapshot.configurationState === "configured-paused"
-        || existingSnapshot.configurationState === "configured-active"
-      )
-    ) {
-      lastKnownOrderSyncConfigurationState.value = existingSnapshot.configurationState;
-    }
-
     isLoading.value = false;
     await loadConnectionSummaries(shopId);
-  } catch {
-    logger.error("Failed to resolve the selected Shopify connection");
+  } catch (error) {
+    logger.error("Failed to load the selected Shopify connection", error);
     selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
     isSyncSummaryLoading.value = false;
     isLoading.value = false;
   }
-});
+}, { immediate: true });
 
 async function loadConnectionSummaries(shopId = selectedShopId.value) {
   if (!shopId) {
@@ -878,26 +906,15 @@ async function loadConnectionSummaries(shopId = selectedShopId.value) {
     return;
   }
 
-  const [productSyncResult, orderSyncResult] = await Promise.allSettled([
+  // Only product sync loads here now; order sync is disabled (see orderSyncCardSnapshot).
+  const [productSyncResult] = await Promise.allSettled([
     loadProductsInventorySummary(),
-    loadOrderSyncCard(shopId),
   ]);
 
   if (productSyncResult.status === "rejected") {
     logger.error("Failed to load Product Sync summary");
     hasProductSyncSummaryError.value = true;
     isSyncSummaryLoading.value = false;
-  }
-
-  if (orderSyncResult.status === "rejected") {
-    logger.warn("Failed to load Order Sync card status");
-  }
-}
-
-async function loadOrderSyncCard(shopId: string) {
-  const snapshot = await shopifyOrderSyncStore.loadCardSnapshot(shopId);
-  if (!snapshot.error) {
-    lastKnownOrderSyncConfigurationState.value = snapshot.configurationState;
   }
 }
 
@@ -921,31 +938,20 @@ async function loadProductsInventorySummary() {
     legacyServiceJobs: [],
     legacySystemMessages: []
   };
-  productSyncSummary.value = {
-    syncRunState: {
-      lastSyncedAt: "",
-      latestSystemMessage: null,
-      latestConsumedSystemMessage: null
-    },
-    pendingRequests: {
-      count: 0
-    },
-    runningOperation: null
-  };
-  productSyncRecordsProcessed.value = 0;
+  // Nothing to reset for the run state or the record count — both are cached projections that
+  // re-derive from whichever shop is selected.
   productSyncUnsyncedCount.value = 0;
-  currentSyncRun.value = {} as any;
+  clearSyncRun();
 
   if (!props.id) {
     isSyncSummaryLoading.value = false;
     return;
   }
 
-  const [eligibilityResult, accessStateResult, legacyTeardownStateResult, systemMessageRemoteIdResult] = await Promise.allSettled([
+  const [eligibilityResult, accessStateResult, legacyTeardownStateResult] = await Promise.allSettled([
     shopifyProductSyncMigrationStore.fetchEligibility(),
     shopifyProductSyncStore.fetchShopifyAccessState({ shopId: props.id, shop: shop.value }),
-    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value }),
-    shopifyProductSyncStore.fetchShopSystemMessageRemoteId({ shopId: props.id, shop: shop.value })
+    shopifyProductSyncMigrationStore.fetchLegacyTeardownState({ shopId: props.id, shop: shop.value })
   ]);
 
   if (eligibilityResult.status === "fulfilled") {
@@ -970,40 +976,63 @@ async function loadProductsInventorySummary() {
     logger.warn("Failed to inspect legacy product sync state", legacyTeardownStateResult.reason);
   }
 
-  let systemMessageRemoteId = null;
-  if (systemMessageRemoteIdResult.status === "fulfilled") {
-    systemMessageRemoteId = systemMessageRemoteIdResult.value;
-  }
+  /**
+   * The remote is resolved from the CACHE — it is a join of two cached tables, never a request.
+   * `fetchShopSystemMessageRemoteId` used to be the fourth leg of the batch above.
+   */
+  const systemMessageRemoteId = productSyncRemoteId.value || null;
 
   try {
-    productSyncSummary.value = await shopifyProductSyncStore.fetchDashboardSummary({
-      shopId: props.id,
-      systemMessageRemoteId,
-      shop: shop.value
-    });
-
-    productSyncRecordsProcessed.value = Number(productSyncSummary.value.syncRunState?.latestConsumedSystemMessage?.totalRecordCount || 0);
-    productSyncUnsyncedCount.value = Number(productSyncSummary.value.unsyncedUpdates?.count || 0);
-
-    await loadTrackProgressDetails();
+    /**
+     * `unsyncedUpdates` is the only part of the old dashboard summary this page still asks for: it
+     * counts products changed in Shopify since the last sync, which only Shopify knows.
+     *
+     * Everything else the summary returned — the run state, the pending-request count — is now the
+     * reactive `productSyncRunState` above, derived from cached messages and imports. The old call
+     * fetched five things and this page read two of them.
+     */
+    productSyncUnsyncedCount.value = await loadUnsyncedProductUpdateCount(systemMessageRemoteId);
   } catch (error) {
-    logger.error(error);
-    hasProductSyncSummaryError.value = true;
+    logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error);
+    productSyncUnsyncedCount.value = 0;
   }
-  
+
   isSyncSummaryLoading.value = false;
 }
 
-async function loadTrackProgressDetails() {
-  try {
-    const trackProgressMessage = productSyncSummary.value.syncRunState.latestSystemMessage;
-    if (trackProgressMessage?.systemMessageId) {
-      await fetchSyncRun(trackProgressMessage.systemMessageId, trackProgressMessage);
-    }
-  } catch (error) {
-    logger.warn("Failed to load track progress details in background", error);
-  }
+/** Shopify-only: how many products changed since the last completed sync. */
+async function loadUnsyncedProductUpdateCount(systemMessageRemoteId: string | null): Promise<number> {
+  if (!systemMessageRemoteId) return 0;
+  return fetchUnsyncedProductUpdateCount(
+    systemMessageRemoteId,
+    productSyncRunState.value.lastSyncedAt || undefined,
+  );
 }
+
+/**
+ * Keep the progress column (system message → bulk operation → HotWax import) pointed at the newest run.
+ *
+ * REACTIVE, not a one-shot call inside the loader. It used to be `loadTrackProgressDetails()` awaited
+ * at the end of the dashboard fetch; when that fetch was replaced by cached reads the call went with
+ * it, `currentSyncRun` was never populated, and the whole three-row column silently vanished behind its
+ * `v-if`. Watching the newest run instead means it also follows a shop switch and a new run arriving,
+ * which the imperative version never did.
+ *
+ * `fetchSyncRun` is cache-first — it only reaches Shopify for a bulk operation that is not cached and
+ * not yet terminal — so re-pointing it costs nothing for a run already seen.
+ */
+watch(
+  () => productSyncRunState.value.latestSystemMessage?.systemMessageId,
+  (systemMessageId) => {
+    if (!systemMessageId) {
+      clearSyncRun();
+      return;
+    }
+    void fetchSyncRun(systemMessageId, productSyncRunState.value.latestSystemMessage)
+      .catch((error) => logger.warn("Failed to load sync progress detail", error));
+  },
+  { immediate: true },
+);
 
 // ----- Clone settings modal -----
 const showCloneSettings = ref(false);
@@ -1016,7 +1045,7 @@ const categories = ref({
 }) as any;
 
 const sourceShopsList = computed(() => {
-  return shopifyStore.shops.filter((s: any) => s.shopId !== shop.value.shopId);
+  return cachedShops.value.filter((s: any) => s.shopId !== shop.value.shopId);
 });
 
 const hasSelectedCategories = computed(() => {
@@ -1037,7 +1066,6 @@ async function openCloneSettingsModal() {
   resetCloneSettingsForm();
   showCloneSettings.value = true;
   emitter.emit("presentLoader");
-  await shopifyStore.fetchShopifyShops();
   emitter.emit("dismissLoader");
 }
 
@@ -1101,11 +1129,10 @@ async function cloneTypeMappings(mappedTypeId: string) {
   // 2. Delete existing mappings in target
   if (targetMappings.length > 0) {
     const deletePromises = targetMappings.map((mapping: any) =>
-      shopifyStore.deleteShopifyShopTypeMapping({
-        shopId: targetShopId,
+      useShopifyShopMutations(targetShopId).removeTypeMapping({
         mappedTypeId,
         mappedKey: mapping.mappedKey
-      })
+      }, { refresh: false })
     );
     await Promise.allSettled(deletePromises);
   }
@@ -1113,12 +1140,11 @@ async function cloneTypeMappings(mappedTypeId: string) {
   // 3. Create cloned mappings in target
   if (sourceMappings.length > 0) {
     const createPromises = sourceMappings.map((mapping: any) =>
-      shopifyStore.createShopifyShopTypeMapping({
-        shopId: targetShopId,
+      useShopifyShopMutations(targetShopId).saveTypeMapping({
         mappedTypeId,
         mappedKey: mapping.mappedKey,
         mappedValue: mapping.mappedValue
-      })
+      }, { refresh: false })
     );
     await Promise.allSettled(createPromises);
   }
@@ -1132,12 +1158,11 @@ async function cloneShippingMethods() {
   // 2. Create cloned shipments in target (upsert handles overwrite)
   if (sourceShipments.length > 0) {
     const createPromises = sourceShipments.map((shipment: any) =>
-      shopifyStore.createShopifyShopCarrierShipment({
-        shopId: targetShopId,
+      useShopifyShopMutations(targetShopId).saveCarrierShipment({
         shipmentMethodTypeId: shipment.shipmentMethodTypeId,
         shopifyShippingMethod: shipment.shopifyShippingMethod,
         carrierPartyId: shipment.carrierPartyId
-      })
+      }, { refresh: false })
     );
     await Promise.allSettled(createPromises);
   }
@@ -1147,20 +1172,27 @@ async function executeClone() {
   emitter.emit("presentLoader");
   try {
     const promises: Promise<any>[] = [];
+    // Which cached slices this clone touches, so each is refreshed exactly ONCE at the end. The
+    // clone fans out one write per mapping row and each of those defers its refresh; without this
+    // the target shop's mapping pages would keep rendering pre-clone data from the cache.
+    const clonedTypeIds: string[] = [];
 
     // Clone Product Types
     if (categories.value.productTypes.selected) {
       promises.push(cloneTypeMappings("SHOPIFY_PRODUCT_TYPE"));
+      clonedTypeIds.push("SHOPIFY_PRODUCT_TYPE");
     }
 
     // Clone Sales Channels
     if (categories.value.salesChannels.selected) {
       promises.push(cloneTypeMappings("SHOPIFY_ORDER_SOURCE"));
+      clonedTypeIds.push("SHOPIFY_ORDER_SOURCE");
     }
 
     // Clone Payment Methods
     if (categories.value.paymentMethods.selected) {
       promises.push(cloneTypeMappings("SHOPIFY_PAYMENT_TYPE"));
+      clonedTypeIds.push("SHOPIFY_PAYMENT_TYPE");
     }
 
     // Clone Shipping Methods
@@ -1169,6 +1201,13 @@ async function executeClone() {
     }
 
     await Promise.all(promises);
+
+    const targetMutations = useShopifyShopMutations(shop.value.shopId);
+    await Promise.all([
+      ...(clonedTypeIds.length ? [targetMutations.refreshTypeMappings()] : []),
+      ...(categories.value.shippingMethods.selected ? [targetMutations.refreshCarrierShipments()] : []),
+    ]);
+
     commonUtil.showToast(translate("Settings cloned successfully"));
     closeCloneSettings();
   } catch (error) {
@@ -1295,14 +1334,13 @@ async function refresh() {
 
 // ----- Product store modal -----
 const showProductStore = ref(false);
-const productStores = computed(() => productStoreStore.productStores);
+const { productStores } = useProductStores();
 const selectedProductStoreId = ref("");
 const currentProductStoreId = computed(() => shop.value?.productStoreId || "");
 
 async function openProductStoreModal() {
   selectedProductStoreId.value = "";
   showProductStore.value = true;
-  await productStoreStore.fetchProductStores();
   selectedProductStoreId.value = currentProductStoreId.value;
 }
 
@@ -1312,20 +1350,17 @@ function closeProductStore() {
 
 async function onProductStoreDismiss() {
   showProductStore.value = false;
-  await shopifyStore.fetchShopifyShops();
 }
 
 async function updateProductStoreMapping() {
   emitter.emit("presentLoader");
   try {
-    const resp = await shopifyStore.updateShopifyShop({
-      shopId: shop.value.shopId,
+    const resp = await useShopifyShopMutations(shop.value.shopId).updateShop({
       productStoreId: selectedProductStoreId.value
     });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Product store linked successfully"));
-      await shopifyStore.fetchShopifyShops(); // Refresh state
       showProductStore.value = false;
     } else {
       throw resp.data;
@@ -1352,30 +1387,6 @@ function openProductSyncMigrationNotice() {
   }
 
   router.push(`/shopify-connection-details/${props.id}/product-sync/upgrade-assistant`);
-}
-
-function openOrderSyncEntry() {
-  const shopId = selectedShopId.value;
-  if (!shopId) return;
-
-  const snapshot = orderSyncCardSnapshot.value;
-  if (!snapshot.actionable || snapshot.loading) return;
-  const configurationState = snapshot.configurationState;
-  const encodedShopId = encodeURIComponent(shopId);
-
-  if (snapshot.error) {
-    router.push(`/shopify-connection-details/${encodedShopId}/order-sync`);
-    return;
-  }
-
-  if (configurationState === "configured-paused" || configurationState === "configured-active") {
-    router.push(`/shopify-connection-details/${encodedShopId}/order-sync`);
-    return;
-  }
-
-  if (configurationState === "missing") {
-    router.push(`/shopify-connection-details/${encodedShopId}/order-sync/configure`);
-  }
 }
 
 function openShopDetails() {
@@ -1420,6 +1431,16 @@ function getHourKey(value: any) {
 </script>
 
 <style scoped>
+.order-sync-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.order-sync-disabled-note {
+  display: block;
+  padding: 0 var(--spacer-sm, 8px) var(--spacer-sm, 8px);
+}
+
 .item-box::part(native) {
   --border-radius: var(--spacer-xs);
   border: var(--border-medium);
