@@ -77,28 +77,15 @@ import {
 import { translate } from "@common";
 import { computed } from "vue";
 import { formatDateTime } from "@/utils";
+import type { ShopifyOrderSyncCardSnapshot } from "@/composables/useShopify";
 
-type ShopifyOrderSyncConfigurationState =
-  | "missing"
-  | "configured-paused"
-  | "configured-active";
-
-interface ShopifyOrderSyncCardSnapshot {
-  configurationState: ShopifyOrderSyncConfigurationState;
-  subtitle?: string;
-  processedCount?: number | string;
-  pendingCount?: number | string;
-  nextRunLabel?: string;
-  lastCompletedLabel?: string;
-  batchStatus?: string;
-  batchDetail?: string;
-  importStatus?: string;
-  importDetail?: string;
-  loading?: boolean;
-  error?: string | null;
-  actionable?: boolean;
-}
-
+/**
+ * The snapshot type is OWNED BY THE COMPOSABLE, not redeclared here.
+ *
+ * It used to be a local copy, which is how the card kept rendering while its producer was deleted —
+ * a structural match to a hand-written stub type-checks exactly as well as the real thing. Importing
+ * it makes a drift in either direction a compile error.
+ */
 const props = defineProps<{
   snapshot: ShopifyOrderSyncCardSnapshot;
 }>();
@@ -194,7 +181,13 @@ function getProgressDetail(detail: string | undefined, emptyLabel: string) {
       ? translate("{count} import", { count })
       : translate("{count} imports", { count });
   }
-  if (detail) return translate(detail);
+  /**
+   * Anything else is OPAQUE DATA, not copy — the batch row's detail is a SystemMessage id
+   * (`M228571`). It used to go through `translate()`, which asked i18n for a key that can never
+   * exist and logged three misses per render per row; the id only reached the screen at all because
+   * intlify falls back to echoing the key. Identifiers are rendered verbatim.
+   */
+  if (detail) return detail;
   if (props.snapshot.configurationState === "missing") return translate("Order sync is not configured");
   return emptyLabel;
 }

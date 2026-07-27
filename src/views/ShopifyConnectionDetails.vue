@@ -194,14 +194,16 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
-          <!-- Order sync is disabled for now: its store/view-model were removed in the rebuild
-               and its routes do not mount, so the card renders inert and is not clickable. -->
-          <div class="order-sync-disabled">
-            <ShopifyOrderSyncCard :snapshot="orderSyncCardSnapshot" />
-            <ion-note class="order-sync-disabled-note">
-              {{ translate("Order sync is temporarily unavailable.") }}
-            </ion-note>
-          </div>
+          <ion-skeleton-text
+            v-if="orderSyncCardSnapshot.loading"
+            animated
+            class="product-sync-skeleton"
+          />
+          <ShopifyOrderSyncCard
+            v-else
+            :snapshot="orderSyncCardSnapshot"
+            @open="openOrderSyncEntry()"
+          />
           <section>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
@@ -483,14 +485,15 @@ import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
 import { useShopifyProductSyncMigrationStore } from "@/store/shopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
+  useShopifyConnectionSyncSession,
+  useShopifyOrderSyncCard,
   useShopifyProductSyncRun,
-  PRODUCT_SYNC_RUN_WINDOW,
   useShopifyProductSyncRunState,
-  useShopifyProductSyncSession,
   useShopifyShop,
   useShopifyShopMutations,
   useShopifyShops,
 } from "@/composables/useShopify";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useProductStores } from "@/composables/useProductStores";
 
 const props = defineProps(['id']);
@@ -519,6 +522,9 @@ const debugPageState = ref<DebugPageState>("live");
 const {
   runState: productSyncRunState,
   remoteId: productSyncRemoteId,
+  // The remote ROW, not just its id — the credentials modal pre-fills `remoteId` (the Shopify shop id)
+  // off it. Both were previously a 250-row fetch through the store.
+  remote: shopRemote,
 } = useShopifyProductSyncRunState(() => props.id);
 
 const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.value }));
@@ -549,44 +555,17 @@ const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
 const selectedShopId = computed(() => String(shop.value.shopId || "").trim());
 /**
- * ORDER SYNC IS DISABLED on this page for now.
+ * Order sync state, LIVE from the cache — the same shape the deleted `shopifyOrderSync` store fed
+ * this card, now derived from cached batches ⋈ imports ⋈ the shop's ServiceJob.
  *
- * Its store and view-model were removed in the order-sync rebuild, and the order-sync routes do
- * not mount either, so the card is fed a fixed inert snapshot and rendered non-interactive. This
- * keeps the rest of the connection page — product sync, shipping/payment/sales-channel mappings,
- * locations, instance details — fully working. Restoring it is the order-sync rebuild, not a fix
- * here; nothing below reads live order-sync state.
+ * Shop-scoped and stateless, so it does not touch the module-level session the three order-sync
+ * screens share. `selectedShopLoadError` is threaded in because a shop that fails to resolve must
+ * show as an error on the card rather than as a confident "Setup required".
  */
-interface OrderSyncCardSnapshot {
-  shopId: string;
-  configurationState: "missing" | "configured-paused" | "configured-active";
-  subtitle?: string;
-  processedCount: number;
-  pendingCount: number;
-  nextRunLabel?: string;
-  lastCompletedLabel?: string;
-  actionable: boolean;
-  batchStatus: string;
-  batchDetail: string;
-  importStatus: string;
-  importDetail: string;
-  loading: boolean;
-  error: string | null;
-}
-
-const orderSyncCardSnapshot = computed<OrderSyncCardSnapshot>(() => ({
-  shopId: selectedShopId.value,
-  configurationState: "missing",
-  processedCount: 0,
-  pendingCount: 0,
-  actionable: false,           // not clickable: the order-sync routes are unavailable
-  batchStatus: "Unavailable",
-  batchDetail: "",
-  importStatus: "Unavailable",
-  importDetail: "",
-  loading: false,
-  error: null,
-}));
+const {
+  snapshot: orderSyncCardSnapshot,
+  batchActive: orderSyncBatchActive,
+} = useShopifyOrderSyncCard(() => props.id, { error: () => selectedShopLoadError.value });
 const effectiveProductSyncMigrationEligibility = computed(() => {
   if (debugPageState.value === "incompatible") {
     return {
@@ -856,25 +835,18 @@ const activityGraphAriaLabel = computed(() => {
 });
 
 /**
- * Activate the class-A domains this page's product-sync card reads.
+ * Activate the class-A domains BOTH cards on this page read.
  *
- * Required, not optional: `useShopifyProductSyncRunState` is a projection over cached messages and
- * imports, and without the worker filling those tables it is legitimately empty — the card would
- * report "never synced" for a shop with a long sync history. Idle cadence, because this page only
- * shows a summary; the product sync page itself asks for the fast one.
+ * Required, not optional: the product-sync run state and the order-sync card are projections over
+ * cached messages and imports, and without the worker filling those tables they are legitimately
+ * empty — each card would report "never synced" for a shop with a long history.
+ *
+ * One session, not two, because every `useCacheSync()` owns its own worker. Product sync stays on
+ * its idle cadence (this page only summarises it; the product sync screen asks for the fast one)
+ * while order sync escalates to 10s on its own whenever a batch is moving.
  */
-useShopifyProductSyncSession(() => [], {
-  active: () => false,
-  // 100 to match what the card reads — the summary picks the newest run that actually imported, and
-  // the newest few frequently imported nothing. Honoured on an already-shallow window because the
-  // domain backfills; before that, `total` only ever applied to an empty scope.
-  messageTotal: PRODUCT_SYNC_RUN_WINDOW,
-  // Logs are NOT keyable by shop — no endpoint offers it. `admin/dataManager/details` ignores every
-  // shop filter (a nonexistent shop returns the full set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which
-  // does scope by shop, omits `systemMessageId` — the join key — entirely. So this one window is
-  // shared across shops and depth is the only lever: 300 so a quiet shop's logs still fall inside it
-  // when a busy shop dominates recent traffic.
-  importTotal: 300,
+useShopifyConnectionSyncSession({
+  orderSyncActive: () => orderSyncBatchActive.value,
 });
 
 /**
@@ -1242,18 +1214,18 @@ async function openCredentialsModal() {
   form.clientSecret = '';
   form.oldClientSecret = '';
   showCredentials.value = true;
-  // Pre-fill known identifiers from the existing SystemMessageRemote
-  try {
-    const remote = await shopifyStore.fetchSystemMessageRemote(shop.value.shopId);
-    if (remote) {
-      form.shopifyShopId = remote.remoteId ?? shop.value.shopifyShopId ?? '';
-    } else {
-      form.shopifyShopId = shop.value.shopifyShopId ?? '';
-    }
-  } catch (error: any) {
-    logger.error('fetchSystemMessageRemote', error);
-    form.shopifyShopId = shop.value.shopifyShopId ?? '';
-  }
+  /**
+   * Pre-fill from the shop's SystemMessageRemote, read from the CACHE.
+   *
+   * `shopifyStore.fetchSystemMessageRemote(shopId)` fetched `oms/systemMessageRemotes?pageSize=250` and
+   * scanned for `internalId === shopId && internalIdType === 'HOTWAX_SHOP_ID'` — 250 rows to find one
+   * that `systemMessageRemoteCache` already holds, and `useShopifySyncContext` already resolves by the
+   * same rule. No request, and no failure path to handle.
+   */
+  // Remote FIRST, shop row second. The remote resolves by the OMS-side key (`internalId` +
+  // `internalIdType`), so it can supply the Shopify id even when the cached shop row lacks it — which is
+  // the connection this modal is usually opened to repair.
+  form.shopifyShopId = shopRemote.value?.remoteId || shop.value.shopifyShopId || '';
 }
 
 function closeCredentials() {
@@ -1268,7 +1240,7 @@ async function updateCredentials() {
 
   emitter.emit('presentLoader');
   try {
-    await shopifyStore.updateShopifyRemote({
+    const updated = await shopifyStore.updateShopifyRemote({
       myShopifydomain: shop.value.myshopifyDomain || shop.value.domain,
       shopifyShopId: form.shopifyShopId.trim(),
       shopAccessToken: form.shopAccessToken.trim(),
@@ -1278,6 +1250,28 @@ async function updateCredentials() {
       hotwaxShopId: shop.value.shopId
     });
     commonUtil.showToast(translate('Credentials updated successfully'));
+    /**
+     * Write-through: pull the mutated remote back into the cache.
+     *
+     * Every reader of this remote — the credentials pre-fill, the access-scope modal, and the sync
+     * context that decides which messages belong to this shop — now reads it from IndexedDB, so
+     * without this the UI keeps showing pre-edit values until the next login snapshot.
+     */
+    /**
+     * Refresh BOTH sides of the shop↔remote link, and only with a real id.
+     *
+     * An empty `systemMessageRemoteId` would issue `GET oms/systemMessageRemotes/` and the worker
+     * swallows the failure, so a blank id fails completely silently. And the modal edits the remote's
+     * `remoteId` — the field the client match is built on — so refreshing the remote without the shop
+     * leaves the two unmatchable until the next login, which blanks both cards on this page.
+     */
+    // `updateShopifyRemote` returns `resp.data`, and `POST sob/shop/remote` answers with the remote id —
+    // authoritative for a brand-new connection, where the cached id is still empty.
+    const editedRemoteId = updated?.systemMessageRemoteId || productSyncRemoteId.value;
+    if (editedRemoteId) {
+      await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId: editedRemoteId });
+    }
+    await refreshAfterMutation("shopifyShop", { shopId: shop.value.shopId });
     showCredentials.value = false;
   } catch (error: any) {
     logger.error('updateShopifyCredentials', error);
@@ -1301,16 +1295,11 @@ const lastRefreshedLabel = computed(() =>
 async function openAccessScopesModal() {
   accessScopesRemoteId.value = '';
   showAccessScopes.value = true;
-  // The refresh endpoint is keyed by the shop's SystemMessageRemote; resolve it once on open.
-  try {
-    const remote = await shopifyStore.fetchSystemMessageRemote(shop.value.shopId);
-    accessScopesRemoteId.value = remote?.systemMessageRemoteId ?? '';
-    if (!accessScopesRemoteId.value) {
-      commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
-    }
-  } catch (error: any) {
-    logger.error('fetchSystemMessageRemote', error);
-    commonUtil.showToast(translate('Failed to load the shop remote'));
+  // Keyed by the shop's SystemMessageRemote, which the sync context resolves from cache — see
+  // `openCredentialsModal` for why this is no longer a 250-row fetch.
+  accessScopesRemoteId.value = productSyncRemoteId.value;
+  if (!accessScopesRemoteId.value) {
+    commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
   }
 }
 
@@ -1389,6 +1378,28 @@ function openProductSyncMigrationNotice() {
   router.push(`/shopify-connection-details/${props.id}/product-sync/upgrade-assistant`);
 }
 
+/**
+ * Open the right order-sync destination for the card's current state.
+ *
+ * An unconfigured shop has nothing to monitor, so it goes to the configure screen; everything else —
+ * including a shop whose status could not be read — goes to monitoring, which is where the real
+ * diagnosis lives.
+ */
+function openOrderSyncEntry() {
+  const shopId = selectedShopId.value;
+  if (!shopId) return;
+
+  const snapshot = orderSyncCardSnapshot.value;
+  if (!snapshot.actionable || snapshot.loading) return;
+
+  const encodedShopId = encodeURIComponent(shopId);
+  const destination = !snapshot.error && snapshot.configurationState === "missing"
+    ? `/shopify-connection-details/${encodedShopId}/order-sync/configure`
+    : `/shopify-connection-details/${encodedShopId}/order-sync`;
+
+  router.push(destination);
+}
+
 function openShopDetails() {
   router.push(`/shopify-connection-details/${props.id}/instance-details`);
 }
@@ -1431,16 +1442,6 @@ function getHourKey(value: any) {
 </script>
 
 <style scoped>
-.order-sync-disabled {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.order-sync-disabled-note {
-  display: block;
-  padding: 0 var(--spacer-sm, 8px) var(--spacer-sm, 8px);
-}
-
 .item-box::part(native) {
   --border-radius: var(--spacer-xs);
   border: var(--border-medium);

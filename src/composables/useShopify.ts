@@ -92,11 +92,31 @@ export function useShopsForProductStore(productStoreId: string | undefined) {
 // Inventory locations
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Stable ordering for a shop-scoped table read WITHOUT a shop scope.
+ *
+ * ⚠️ Several pages read these tables across every shop on purpose — the NetSuite mapping screens have
+ * no shop context and show Shopify values as reference. That is fine. What is NOT fine is that they then
+ * `find(...)` or `reduce(...)` a single winner out of rows from several shops, so the value displayed
+ * depends on IndexedDB iteration order: nondeterministic between reloads, not merely arbitrary.
+ *
+ * Sorting by `shopId` makes the winner STABLE. It does not make it right — where more than one shop maps
+ * the same thing, the honest display is the set, and callers that care should use the `*ByKey` grouping
+ * a composable exposes alongside its collapsed map. This removes the flakiness; the product question of
+ * what to show is left visible at the call site.
+ */
+function stableByShop<T extends Record<string, any>>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => String(a?.shopId ?? "").localeCompare(String(b?.shopId ?? "")));
+}
+
 export function useShopifyLocations(shopId: string | undefined) {
-  const { records, hydrated } = useCachedList<any>(
+  const { records: unordered, hydrated } = useCachedList<any>(
     shopifyLocationCache,
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
+
+  // Stable order so an unscoped read's `find`/`reduce` winner does not vary — see `stableByShop`.
+  const records = computed(() => stableByShop(unordered.value));
 
   /** shopifyLocationId → facilityId, the shape mapping editors work in. */
   const facilityByLocation = computed<Record<string, string>>(() =>
@@ -124,10 +144,13 @@ export function useShopifyLocations(shopId: string | undefined) {
 // ---------------------------------------------------------------------------------------------
 
 export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId: string) {
-  const { records, hydrated } = useCachedList<any>(
+  const { records: unordered, hydrated } = useCachedList<any>(
     shopifyTypeMappingCache,
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
+
+  // Stable order so an unscoped read's `find` returns the same row every reload — see `stableByShop`.
+  const records = computed(() => stableByShop(unordered.value));
 
   const mappings = computed(() => records.value.filter((row: any) => row.mappedTypeId === mappedTypeId));
 
@@ -142,10 +165,13 @@ export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId:
 }
 
 export function useShopifyCarrierShipments(shopId: string | undefined) {
-  const { records, hydrated } = useCachedList<any>(
+  const { records: unordered, hydrated } = useCachedList<any>(
     shopifyCarrierShipmentCache,
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
+
+  // Stable order so the collapsed map below picks the same row every reload — see `stableByShop`.
+  const records = computed(() => stableByShop(unordered.value));
 
   /**
    * `${carrierPartyId}_${shipmentMethodTypeId}` → row.
@@ -162,7 +188,23 @@ export function useShopifyCarrierShipments(shopId: string | undefined) {
       return map;
     }, {}));
 
-  return { carrierShipments: records, byCarrierAndMethod, hydrated };
+  /**
+   * The SAME key → EVERY matching row, not one winner.
+   *
+   * ⚠️ `byCarrierAndMethod` has no shop in its key, so on an unscoped read two shops mapping the same
+   * carrier + method collapse into one entry and one of them is silently dropped. That is invisible in
+   * the UI — a map collapse renders as a normal single value. Callers reading across shops should use
+   * this and decide what to show; `length > 1` is the signal that a single value would be a lie.
+   */
+  const allByCarrierAndMethod = computed<Record<string, any[]>>(() =>
+    records.value.reduce((map: Record<string, any[]>, row: any) => {
+      if (row.carrierPartyId && row.shipmentMethodTypeId) {
+        (map[`${row.carrierPartyId}_${row.shipmentMethodTypeId}`] ||= []).push(row);
+      }
+      return map;
+    }, {}));
+
+  return { carrierShipments: records, byCarrierAndMethod, allByCarrierAndMethod, hydrated };
 }
 
 
@@ -299,12 +341,18 @@ export function useShopifyShopMutations(shopId: string) {
 
     /**
      * ⚠️ NO DELETE ROUTE EXISTS. `oms.rest.xml` defines `shopifyShops/typeMappings` with `get` and
-     * `post` only — there are ZERO delete methods anywhere under `oms/shopifyShops`. This call is
-     * kept because removing it would silently change behaviour, but it cannot succeed as written.
+     * `post` only — there are ZERO delete methods anywhere under `oms/shopifyShops`. The server
+     * answers this request with 405, verified live against a running instance.
      *
-     * Consequence, since the PK is (shopId, mappedKey): re-mapping to a different Shopify key POSTs
-     * a new row and the old row survives, so a shop accumulates stale mappings. Fixing it needs a
-     * delete route (or a delete service) on the backend — it is not fixable from the client.
+     * What that means for callers, which is NOT what an earlier version of this note claimed: every
+     * caller awaits this BEFORE the replacement `saveTypeMapping`, so the 405 rejects the promise
+     * and the save never runs. Renaming a mapping therefore fails outright — it does not "leave a
+     * stale row behind"; nothing is written at all and the user gets a failure toast.
+     *
+     * So the safe-but-broken behaviour is deliberate: dropping this call would make renames appear
+     * to work while orphaning the old row, and since the PK is (shopId, mappedKey) two rows would
+     * then share one `mappedValue` and `getShopifyMappingId` would pick between them arbitrarily.
+     * A backend delete route is the only real fix.
      */
     async removeTypeMapping(payload: { mappedTypeId: string; mappedKey: string }, options?: WriteOptions) {
       const resp: any = await api({
@@ -825,14 +873,8 @@ export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
   return { salesChannelMappings, paymentMethodMappings, shippingMethodMappings, readiness, hydrated };
 }
 
-export interface ShopifySyncSessionOptions {
-  /** True while work is in flight — selects the worker's fast cadence over its idle one. */
-  active: () => boolean;
-  /** Reload the pieces that genuinely cannot be cached. Omit if the feature has none. */
-  refresh?: () => Promise<void>;
-  onError?: (error: unknown) => void;
-  /** Worker domains this feature needs beyond its messages and imports (job runs, and so on). */
-  extraDomains?: (intervalMs: number) => ActiveDomain[];
+/** Window depths for one feature's domain set. Split out so both callers name the same options. */
+export interface SyncFeatureDomainOptions {
   /** Window depth per (remote, type) for messages. Honoured via the domain's backfill pass. */
   messageTotal?: number;
   /**
@@ -844,8 +886,61 @@ export interface ShopifySyncSessionOptions {
    * shop, does not return `systemMessageId` and so cannot be joined to a message. Depth is therefore
    * the only control: it must be deep enough that a quiet shop's logs still land inside the window
    * when a busy shop dominates recent traffic.
+   *
+   * It is per `configId`, so two features composed into one session do NOT share a budget — product
+   * sync's `SYNC_SHOPIFY_PRODUCT` and order sync's `SYNC_SHOPIFY_ORDER` each get their own window.
    */
   importTotal?: number;
+}
+
+export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
+  /** True while work is in flight — selects the worker's fast cadence over its idle one. */
+  active: () => boolean;
+  /** Reload the pieces that genuinely cannot be cached. Omit if the feature has none. */
+  refresh?: () => Promise<void>;
+  onError?: (error: unknown) => void;
+  /** Worker domains this feature needs beyond its messages and imports (job runs, and so on). */
+  extraDomains?: (intervalMs: number) => ActiveDomain[];
+}
+
+/**
+ * The class-A domains ONE sync feature needs — its messages and the imports they produce.
+ *
+ * Exported because a page can render more than one feature (connection details shows both product
+ * sync and order sync) and every `useCacheSync()` call owns its own worker. Composing two features'
+ * domain lists into a single session is therefore the difference between one worker and two.
+ *
+ * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
+ * might want, and syncing all of them costs one request per (type × remote) per tick — twelve for a
+ * screen that renders one type. Declaring the types here is what keeps a tick at two requests.
+ *
+ * `intervalMs` is stamped per domain, and `effectiveInterval` prefers the active domain's value over
+ * the registered default, so features composed into one session keep their own cadences.
+ */
+export function syncFeatureDomains(
+  feature: ShopifySyncFeature,
+  intervalMs: number,
+  options: SyncFeatureDomainOptions = {},
+): ActiveDomain[] {
+  return [
+    ...feature.messageTypeIds.map((systemMessageTypeId) => ({
+      name: "systemMessage",
+      intervalMs,
+      args: { types: [{ systemMessageTypeId, total: options.messageTotal ?? 50 }] },
+    })),
+    // Every import config, because an import is matched to its message by `systemMessageId` and a
+    // missing log makes a finished run look like it never imported.
+    ...feature.importConfigIds.map((configId) => ({
+      name: "dataManagerLog",
+      intervalMs,
+      args: { configId, ...(options.importTotal ? { total: options.importTotal } : {}) },
+    })),
+  ];
+}
+
+/** The active/idle cadence choice for one feature, in one place. */
+export function syncFeatureInterval(feature: ShopifySyncFeature, active: boolean): number {
+  return active ? feature.activePollMs : feature.idlePollMs;
 }
 
 /**
@@ -855,10 +950,6 @@ export interface ShopifySyncSessionOptions {
  * the screen's entity reads are `liveQuery` subscriptions that update themselves as the worker
  * commits. Cadence is the one live decision: the feature's `activePollMs` while work is moving,
  * `idlePollMs` when it is not.
- *
- * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
- * might want, and syncing all of them costs one request per (type × remote) per tick — twelve for a
- * screen that renders one type. Declaring the types here is what keeps a tick at two requests.
  */
 export function useShopifySyncSession(
   feature: ShopifySyncFeature,
@@ -870,30 +961,30 @@ export function useShopifySyncSession(
   /** True only during a manual/live refresh — never for observing cached progress. */
   const isRefreshing = ref(false);
 
-  function domains(intervalMs: number): ActiveDomain[] {
+  /**
+   * The domain set, as a COMPUTED over everything that can change it.
+   *
+   * Deliberately not `watch(() => options.active())`, which was the previous trigger: that re-scopes
+   * only when this feature's own predicate flips and is blind to anything `extraDomains` depends on.
+   * Two live consequences — a screen whose `jobNames()` resolved after activation never picked up its
+   * `serviceJobRun` domain, and a page composing a SECOND feature's domains (connection details, which
+   * runs product sync and order sync on one worker) could never escalate that feature's cadence.
+   *
+   * Tracking the assembled list instead makes any reactive input a re-scope trigger, which is what a
+   * caller assembling domains from live state already assumes.
+   */
+  const activeDomainSet = computed<ActiveDomain[]>(() => {
+    const intervalMs = syncFeatureInterval(feature, options.active());
     return [
-      ...feature.messageTypeIds.map((systemMessageTypeId) => ({
-        name: "systemMessage",
-        intervalMs,
-        args: { types: [{ systemMessageTypeId, total: options.messageTotal ?? 50 }] },
-      })),
-      // Every import config, because an import is matched to its message by `systemMessageId` and a
-      // missing log makes a finished run look like it never imported.
-      ...feature.importConfigIds.map((configId) => ({
-        name: "dataManagerLog",
-        intervalMs,
-        args: { configId, ...(options.importTotal ? { total: options.importTotal } : {}) },
-      })),
+      ...syncFeatureDomains(feature, intervalMs, options),
       ...(options.extraDomains?.(intervalMs) ?? []),
     ];
-  }
-
-  const intervalFor = (active: boolean) => (active ? feature.activePollMs : feature.idlePollMs);
+  });
 
   async function activate() {
     isPageActive.value = true;
     try {
-      await start(domains(intervalFor(options.active())));
+      await start(activeDomainSet.value);
     } catch (error) {
       logger.error(`Failed to activate ${feature.id} sync domains`, error);
       options.onError?.(error);
@@ -906,9 +997,9 @@ export function useShopifySyncSession(
   }
 
   /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
-  watch(() => options.active(), (active) => {
+  watch(activeDomainSet, (domains) => {
     if (!isPageActive.value) return;
-    void start(domains(intervalFor(active))).catch((error) => {
+    void start(domains).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
@@ -938,65 +1029,9 @@ export function useShopifySyncSession(
   return { isPageActive, isRefreshing, manualRefresh, activate, deactivate };
 }
 
-/** What the signed-in user may do to one sync feature, as a computed over live permissions. */
-export function useShopifySyncCapabilities(
-  feature: ShopifySyncFeature,
-  permissions: MaybeRefOrGetter<PermissionInput>,
-): ComputedRef<SyncCapabilities> {
-  return computed(() => getSyncCapabilities(toValue(permissions), feature));
-}
-
 // =============================================================================================
 // 4. Product sync — the feature composable and the run join
 // =============================================================================================
-
-/**
- * PRODUCT SYNC — the cached half of the screen, assembled from the sync core.
- *
- * What this replaces, measured live on shop 10000 before the swap: the page issued 18 requests on
- * entry, of which ten were for data already sitting in IndexedDB. Three of those ten are the sharpest
- * illustration of why the descriptor exists — the page fetched
- * `admin/serviceJobs/sync_ShopifyProductUpdates`, `…_10000` AND `…_10010`, guessing at job names
- * because it had no way to tell which job was this shop's. `findSuitableSyncJob` answers that from
- * cached `serviceJobParameters` in zero requests, and gets it right in the case where the name lies.
- *
- * What is deliberately NOT here, because it cannot be cached:
- *   - `shopify/graphql` and `shopify/webhook-subscription` — remote truth, live by definition
- *   - `oms/products/{id}` — left alone for now, by decision
- *   - `admin/entityAuditLogs` — on-demand with a cursor, never prefetched (see `useEntityAuditLog`)
- */
-export function useShopifyProductSync(shopIdSource: ShopIdSource) {
-  const ctx = useShopifySyncContext(shopIdSource);
-
-  const {
-    templateJob, job, auxJobs, jobName, isConfigured, isPaused,
-    cronExpression, configurationState,
-  } = useShopifySyncJob(PRODUCT_SYNC_FEATURE, ctx);
-
-  const { records: messages, byType: messagesByType, newest: newestMessage, hydrated } =
-    useShopifySyncMessages(PRODUCT_SYNC_FEATURE, ctx);
-
-  const { records: imports, bySystemMessageId: importsBySystemMessageId, failed: failedImports } =
-    useShopifySyncImports(PRODUCT_SYNC_FEATURE);
-
-  /**
-   * Whether this run reached Shopify, and which operation it became.
-   *
-   * The bulk-operation id is carried on the message's `remoteMessageId`, so a run's Shopify identity
-   * is derivable from cache alone — no descriptor flag and no probe request needed to know whether an
-   * operation exists.
-   */
-  const bulkOperationId = computed(() => getSystemMessageBulkOperationId(newestMessage.value) || "");
-  const hasBulkOperation = computed(() => Boolean(bulkOperationId.value));
-
-  return {
-    ...ctx,
-    templateJob, job, auxJobs, jobName, isConfigured, isPaused, cronExpression, configurationState,
-    messages, messagesByType, newestMessage, hydrated,
-    imports, importsBySystemMessageId, failedImports,
-    bulkOperationId, hasBulkOperation,
-  };
-}
 
 /** One product-sync run as the summary cards read it: the message, plus its import's counts. */
 export interface ProductSyncRunSummaryRow extends Record<string, any> {
@@ -1032,7 +1067,7 @@ const CONSUMED_STATUSES = new Set(["smsgconsumed", "consumed", "smsgconfirmed", 
  *
  * REACTIVE, so a screen binds to it once and new runs appear as the worker commits — there is nothing
  * to re-invoke and no loading state between states. The screen must activate the `systemMessage` and
- * `dataManagerLog` domains (see `useShopifyProductSyncSession`), otherwise this is legitimately empty.
+ * `dataManagerLog` domains (see `useShopifyConnectionSyncSession`), otherwise this is legitimately empty.
  */
 export function useShopifyProductSyncRunState(shopIdSource: ShopIdSource) {
   const ctx = useShopifySyncContext(shopIdSource);
@@ -1188,37 +1223,29 @@ export async function fetchUnsyncedProductUpdateCount(
 }
 
 /**
- * The product-sync worker session — the feature's own jobs are watched too.
+ * Product sync's domains BEYOND its messages and imports.
  *
- * `serviceJobRun` has no route that lists runs across jobs, so the domain must be told which job
- * names to watch. Passing this shop's job plus the two pipeline helpers turns three per-entry
- * `…/runs` requests into cached reads.
+ * Used by the connection details session. `ShopifyProductSync.vue` still hand-rolls its own
+ * equivalent list (see the tracker) rather than calling this, which runs this feature
+ * alongside order sync on one worker — so the run cursor and job-run watch are defined once.
  */
-export function useShopifyProductSyncSession(
-  jobNames: () => string[],
-  options: Omit<ShopifySyncSessionOptions, "extraDomains">,
-) {
-  return useShopifySyncSession(PRODUCT_SYNC_FEATURE, {
-    ...options,
-    extraDomains: (intervalMs) => {
-      const names = jobNames().filter(Boolean);
-      return [
-        /**
-         * The shop-scoped cursor. It decides WHICH runs this shop has and enriches the message and log
-         * records they name, so the message⋈log join no longer depends on two shared windows lining up.
-         */
-        {
-          name: "syncRun",
-          intervalMs,
-          args: {
-            systemMessageTypeIds: [PRODUCT_SYNC_REQUEST_MESSAGE_TYPE],
-            total: PRODUCT_SYNC_RUN_WINDOW,
-          },
-        },
-        ...(names.length ? [{ name: "serviceJobRun", intervalMs, args: { jobNames: names } }] : []),
-      ];
+export function productSyncExtraDomains(intervalMs: number, jobNames: readonly string[] = []): ActiveDomain[] {
+  const names = jobNames.filter(Boolean);
+  return [
+    /**
+     * The shop-scoped cursor. It decides WHICH runs this shop has and enriches the message and log
+     * records they name, so the message⋈log join no longer depends on two shared windows lining up.
+     */
+    {
+      name: "syncRun",
+      intervalMs,
+      args: {
+        systemMessageTypeIds: [PRODUCT_SYNC_REQUEST_MESSAGE_TYPE],
+        total: PRODUCT_SYNC_RUN_WINDOW,
+      },
     },
-  });
+    ...(names.length ? [{ name: "serviceJobRun", intervalMs, args: { jobNames: names } }] : []),
+  ];
 }
 
 /**
@@ -1442,72 +1469,6 @@ export function useShopifyProductSyncRun() {
   const clearSyncRun = () => { targetMessageId.value = ''; };
 
   return { currentSyncRun, loading, fetchSyncRun, clearSyncRun, systemMessage, bulkOperation, mdmLog };
-}
-
-/**
- * The newest N runs for a remote + message type — the history list, as a join.
- *
- * The compound index `[systemMessageRemoteId+systemMessageTypeId+initDate]` does the narrowing and
- * each message's MDM log is matched locally, so an N-row history costs ZERO requests where it
- * previously cost 3N. Bulk-operation detail is deliberately not primed per row: that is a per-run
- * Shopify call and a list does not need it — opening a run fetches it once and caches it.
- */
-export function useShopifyProductSyncRuns(
-  systemMessageRemoteId?: MaybeRefOrGetter<string | undefined>,
-  systemMessageTypeId?: string,
-  limit = 10,
-) {
-  const { labelFor } = useStatuses();
-
-  /**
-   * ⚠️ The remote is REACTIVE, and the scope is applied in a computed rather than in the live query.
-   *
-   * Two reasons, both of which produced wrong data:
-   *
-   *  - `useCachedList` reads its options ONCE at construction. A caller with `remoteId.value` passes
-   *    `""` on a cold cache (the remote is itself a cached join), the scope is omitted, and the query
-   *    reads EVERY remote's messages. Live symptom: shop 10000 displayed shop 10010's last sync,
-   *    because the newest message with an import anywhere belonged to 10010.
-   *  - the same staleness bites on SPA navigation between shops — the query keeps the remote it was
-   *    built with.
-   *
-   * `limit` is applied after filtering for the same reason: limiting first would take the newest N
-   * across all remotes and then narrow, which yields fewer than N for the shop actually asked about.
-   */
-  const { records: messages, hydrated } = useCachedList<any>(systemMessageCache, {
-    dateField: 'initDate',
-    ...(systemMessageTypeId ? { equals: { systemMessageTypeId } } : {}),
-  });
-
-  const scopedMessages = computed<any[]>(() => {
-    const remoteId = String(toValue(systemMessageRemoteId) ?? '');
-    if (!remoteId) return [];
-    return messages.value
-      .filter((row: any) => String(row.systemMessageRemoteId) === remoteId)
-      .slice(0, limit);
-  });
-  const { records: mdmLogs } = useCachedList<any>(dataManagerLogCache, { dateField: 'createdDate' });
-
-  const runs = computed(() => scopedMessages.value.map((message: any) => {
-    const referenced = getReferencedBulkOperationSystemMessageIds(message) ?? [];
-    const candidates = new Set([message.systemMessageId, ...referenced].filter(Boolean).map(String));
-    const log = mdmLogs.value.find((row: any) => candidates.has(String(row.systemMessageId)));
-
-    return {
-      systemMessageId: message.systemMessageId,
-      systemMessage: message,
-      bulkOperationId: getSystemMessageBulkOperationId(message) || '',
-      mdmLog: log,
-      statusId: log?.statusId || message.statusId,
-      statusLabel: labelFor(log?.statusId || message.statusId) || message.statusId,
-      initDate: message.initDate,
-      totalRecordCount: log?.totalRecordCount,
-      failedRecordCount: log?.failedRecordCount,
-      successRecordCount: log?.successRecordCount,
-    };
-  }));
-
-  return { runs, hydrated };
 }
 
 // =============================================================================================
@@ -2205,17 +2166,6 @@ export function searchLoadedOrderErrors(rows: readonly RecentOrderError[], query
   ], query));
 }
 
-export function getSyncPollingDelay(input: {
-  pageActive: boolean;
-  batchActive: boolean;
-  /** Cadence comes from the feature; order sync is the default for existing callers. */
-  feature?: ShopifySyncFeature;
-}): number | null {
-  if (!input.pageActive) return null;
-  const feature = input.feature ?? ORDER_SYNC_FEATURE;
-  return input.batchActive ? feature.activePollMs : feature.idlePollMs;
-}
-
 export type PermissionInput =
   | readonly string[]
   | ReadonlySet<string>
@@ -2411,6 +2361,163 @@ export function filterRecentOrders<T extends Record<string, any>>(
   query: string,
 ): T[] {
   return searchLoadedProcessedOrders((orders ?? []) as any, query) as unknown as T[];
+}
+
+/**
+ * The Order Sync summary card, as rendered on the Shopify connection details page.
+ *
+ * THE CONTRACT IS THE COMPONENT'S. `ShopifyOrderSyncCard.vue` imports this type rather than declaring
+ * its own copy, so a field rename here is a compile error there instead of a silently blank row.
+ */
+export interface ShopifyOrderSyncCardSnapshot {
+  shopId: string;
+  configurationState: "missing" | "configured-paused" | "configured-active";
+  subtitle?: string;
+  processedCount: number;
+  pendingCount: number;
+  nextRunLabel?: string;
+  lastCompletedLabel?: string;
+  actionable: boolean;
+  batchStatus: string;
+  batchDetail: string;
+  importStatus: string;
+  importDetail: string;
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * Badge text per progress state.
+ *
+ * NOT `SyncProgressRow.stateLabel`, which the deleted store used: that reads
+ * `"Completed · 5 orders"` — too long for a badge, and it carries the ` · ` separator this app's UI
+ * conventions prohibit. The counts belong on the detail line, which is where they already are.
+ *
+ * The wording is also load-bearing for COLOUR: the card resolves a badge colour by matching this text
+ * (`failed|error` → danger, `partial|paused` → warning, `completed|success` → success,
+ * `active|processing|running` → primary). "Partially completed" must therefore keep the word
+ * "partial", and is tested against exactly that.
+ */
+export const ORDER_SYNC_PROGRESS_BADGE_LABELS: Record<SyncProgressState, string> = {
+  pending: "Waiting",
+  active: "Processing",
+  completed: "Completed",
+  partial: "Partially completed",
+  failed: "Failed",
+};
+
+export interface OrderSyncCardInput {
+  shopId: string;
+  summary: OrderSyncSummary;
+  job?: ServiceJobLike | null;
+  /** False until every cached table the summary joins has emitted — drives the card's skeleton. */
+  hydrated?: boolean;
+  error?: string | null;
+}
+
+/**
+ * Build the card snapshot from an already-computed summary. PURE — no Vue, no cache, no requests.
+ *
+ * Reproduces the shape the card was built against when `store/shopifyOrderSync` still fed it
+ * (`cardFromSummary`), so the two detail strings the component special-cases —
+ * `"No batch request yet"` / `"No import yet"` and the `"N imports"` form — are emitted verbatim.
+ */
+export function orderSyncCardSnapshot(input: OrderSyncCardInput): ShopifyOrderSyncCardSnapshot {
+  const { summary, job } = input;
+  const [batchRow, importRow] = summary.progressRows;
+  const paused = job ? isServiceJobPaused(job) : false;
+
+  return {
+    shopId: input.shopId,
+    configurationState: !job ? "missing" : paused ? "configured-paused" : "configured-active",
+    processedCount: summary.processedOrderCount,
+    pendingCount: summary.pendingBatchRequests,
+    nextRunLabel: paused
+      ? "Paused"
+      : summary.nextRunTime
+        ? String(summary.nextRunTime)
+        : undefined,
+    lastCompletedLabel: summary.lastCompletedAt === undefined
+      ? undefined
+      : String(summary.lastCompletedAt),
+    // The order-sync routes exist for every state — `missing` opens the configure screen, the rest
+    // open monitoring — so the card is actionable as soon as there is a shop to open it for.
+    actionable: Boolean(input.shopId),
+    batchStatus: ORDER_SYNC_PROGRESS_BADGE_LABELS[batchRow.state],
+    batchDetail: summary.latestBatch?.systemMessageId || "No batch request yet",
+    importStatus: ORDER_SYNC_PROGRESS_BADGE_LABELS[importRow.state],
+    importDetail: importRow.logCount
+      ? `${importRow.logCount} import${importRow.logCount === 1 ? "" : "s"}`
+      : "No import yet",
+    loading: input.hydrated === false,
+    error: input.error ?? null,
+  };
+}
+
+/**
+ * The Order Sync card for ONE shop, live from the cache — the order-sync twin of
+ * `useShopifyProductSyncRunState`.
+ *
+ * SHOP-SCOPED AND STATELESS, which is the whole reason it exists rather than the card reusing
+ * `useShopifyOrderSync()`. That composable is a module-level singleton keyed on `state.selectedShopId`,
+ * written by the three order-sync screens through `resetForShop`; a card rendering `props.id` on the
+ * connection details page cannot drive it without fighting whichever screen owns the session. Every
+ * input below is already shop-parameterised, so the card just composes them itself and owns nothing.
+ *
+ * REACTIVE, so the card follows a shop switch and a new batch arriving with nothing to re-invoke and
+ * no loading state between states. The page must activate order sync's class-A domains (see
+ * `useShopifyConnectionSyncSession`), otherwise these tables are legitimately empty and the card
+ * would report "no batch request yet" for a shop with a long history.
+ *
+ * Reads the same two windows `useShopifyOrderSync()` does — messages by remote, imports by config —
+ * deliberately, rather than the shop-scoped `syncRun` spine that product sync uses. The card links
+ * straight to the monitoring screen, and a card reporting "3 pending" over a page reporting "1" is a
+ * worse failure than the shared-window limitation both then share. Moving order sync onto the spine
+ * should move the card and the screen together.
+ */
+export function useShopifyOrderSyncCard(
+  shopIdSource: ShopIdSource,
+  options: { error?: MaybeRefOrGetter<string | null | undefined> } = {},
+) {
+  const ctx = useShopifySyncContext(shopIdSource);
+
+  const { job, isPaused, isConfigured, hydrated: jobsHydrated } =
+    useShopifySyncJob(ORDER_SYNC_FEATURE, ctx);
+
+  const { records: batches, hydrated: messagesHydrated } =
+    useShopifySyncMessages(ORDER_SYNC_FEATURE, ctx, { limit: SHOPIFY_ORDER_SYNC_RESULT_LIMIT });
+
+  const { bySystemMessageId: importsBySystemMessageId, hydrated: importsHydrated } =
+    useShopifySyncImports(ORDER_SYNC_FEATURE);
+
+  /** Every table the join touches, for the same reason `useShopifySyncContext` gates on all three. */
+  const hydrated = computed(() =>
+    ctx.hydrated.value && jobsHydrated.value && messagesHydrated.value && importsHydrated.value);
+
+  const summary = computed(() => orderSyncSummary(
+    batches.value,
+    importsBySystemMessageId.value,
+    job.value,
+    ctx.productStore.value,
+  ));
+
+  /** Drives the worker's fast cadence while a batch is moving. */
+  const batchActive = computed(() => isOrderSyncBatchActive(summary.value));
+
+  const snapshot = computed<ShopifyOrderSyncCardSnapshot>(() => orderSyncCardSnapshot({
+    shopId: ctx.shopId.value,
+    summary: summary.value,
+    job: job.value,
+    hydrated: hydrated.value,
+    error: toValue(options.error) ?? null,
+  }));
+
+  return {
+    ...ctx,
+    job, isPaused, isConfigured,
+    batches, importsBySystemMessageId,
+    summary, batchActive, snapshot, hydrated,
+  };
 }
 
 
@@ -3324,5 +3431,54 @@ export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
+  });
+}
+
+export interface ConnectionSyncSessionOptions {
+  /** Job names whose runs the product-sync column needs. */
+  productSyncJobNames?: () => string[];
+  /** True while an order-sync batch is moving — selects order sync's fast cadence only. */
+  orderSyncActive?: () => boolean;
+  onError?: (error: unknown) => void;
+}
+
+/**
+ * The Shopify connection details page's session — BOTH sync features on ONE worker.
+ *
+ * Why this exists instead of the page composing two separate sessions and
+ * `useShopifyOrderSyncPolling` side by side: each `useCacheSync()` owns its own `SyncService`, so two
+ * sessions spawn two workers with two independent timers, both polling on behalf of one screen. This
+ * composes the two features' domain lists and hands them to a single session instead.
+ *
+ * Cadence stays PER FEATURE. `intervalMs` is stamped on each `ActiveDomain` and `effectiveInterval`
+ * prefers it over the registered default, so order sync can run its 10s active cadence while product
+ * sync — which this page only summarises — stays on its 60s idle one. The page never needs product
+ * sync live, so its `active` is fixed false; only order sync escalates.
+ *
+ * Import windows do not collide: they are keyed per `configId`, and the two features write under
+ * different ones (`SYNC_SHOPIFY_PRODUCT` vs `SYNC_SHOPIFY_ORDER`/`UPDATE_SHOPIFY_ORDER`).
+ */
+export function useShopifyConnectionSyncSession(options: ConnectionSyncSessionOptions = {}) {
+  const orderSyncActive = options.orderSyncActive ?? (() => false);
+
+  return useShopifySyncSession(PRODUCT_SYNC_FEATURE, {
+    // Product sync is a summary on this page — never the reason to poll fast.
+    active: () => false,
+    onError: options.onError,
+    // 200 to match what the card reads: the summary picks the newest run that actually imported, and
+    // the newest few frequently imported nothing.
+    messageTotal: PRODUCT_SYNC_RUN_WINDOW,
+    // Logs are NOT keyable by shop — no endpoint offers it — so this window is shared across shops
+    // and depth is the only lever. 300 keeps a quiet shop's logs inside it when a busy shop dominates.
+    importTotal: 300,
+    extraDomains: (productIntervalMs) => [
+      ...productSyncExtraDomains(productIntervalMs, options.productSyncJobNames?.() ?? []),
+      // Order sync's own messages and imports, on order sync's own cadence.
+      ...syncFeatureDomains(
+        ORDER_SYNC_FEATURE,
+        syncFeatureInterval(ORDER_SYNC_FEATURE, orderSyncActive()),
+        { messageTotal: SHOPIFY_ORDER_SYNC_RESULT_LIMIT, importTotal: 300 },
+      ),
+    ],
   });
 }
