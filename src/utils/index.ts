@@ -109,10 +109,18 @@ const formatDateTime = (value: any, format?: string) => {
   return format ? dateTime.toFormat(format) : dateTime.toLocaleString(DateTime.DATETIME_MED);
 }
 
-const parseDateTimeValue = (value: string | number) => {
+const parseDateTimeValue = (value: string | number | Date | null | undefined) => {
   if (!value) return null;
 
   if (DateTime.isDateTime(value)) return value;
+
+  // A native Date used to fall through to the `typeof !== "string"` bail below and format as "",
+  // which is how the Order Sync "next batch sync" preview rendered "Not available" for a schedule
+  // that was previewing correctly — `getNextSyncRun` returns a Date.
+  if (value instanceof Date) {
+    const dateTime = DateTime.fromJSDate(value);
+    return dateTime.isValid ? dateTime : null;
+  }
 
   if (typeof value === "number") {
     const dateTime = DateTime.fromMillis(value);
