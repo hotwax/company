@@ -23,17 +23,18 @@ import {
 } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from "@common";
 import AddLocationModal from "./AddLocationModal.vue";
-import { useFacilityStore } from "@/store/facility";
-import { computed } from "vue";
+import { useFacilityMutations } from "@/composables/useFacilities";
 
 const props = defineProps(["location"]);
-const facilityStore = useFacilityStore();
-const current = computed(() => facilityStore.getCurrent);
+
+// The location row carries its own facilityId, so this popover never needed the store's `current`
+// — which the detail page no longer populates anyway.
+const mutations = useFacilityMutations(props.location.facilityId);
 
 async function addLocationModal() {
   const modal = await modalController.create({
     component: AddLocationModal,
-    componentProps: { location: props.location }
+    componentProps: { location: props.location, facilityId: props.location.facilityId }
   });
   await popoverController.dismiss();
   modal.present();
@@ -42,13 +43,10 @@ async function addLocationModal() {
 async function removeLocation() {
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.deleteFacilityLocation({
-      facilityId: props.location.facilityId,
-      locationSeqId: props.location.locationSeqId
-    });
+    const resp = await mutations.deleteLocation({ locationSeqId: props.location.locationSeqId });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Facility location removed successfully'));
-      await facilityStore.fetchFacilityLocations({ facilityId: current.value.facilityId });
+      // Locations are live-fetched, not cached — the opener reloads them on dismiss.
     } else {
       throw resp.data;
     }

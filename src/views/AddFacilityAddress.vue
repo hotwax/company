@@ -42,6 +42,7 @@
                 :label="translate('Country')"
                 label-placement="floating"
                 interface="popover"
+                :disabled="!geosReady"
                 :placeholder="translate('Select country')"
                 @ionChange="onCountryChange($event)"
                 v-model="formData.countryGeoId"
@@ -156,12 +157,11 @@ import {
 import { computed, ref } from "vue";
 import { colorWandOutline, locationOutline } from "ionicons/icons";
 import { api, commonUtil, logger, translate } from "@common";
-import { useUtilStore } from "@/store/util";
+import { useGeocode, useGeos } from "@/composables/useSeed";
 import router from "@/router";
 
 const props = defineProps<{ facilityId: string }>();
 
-const utilStore = useUtilStore();
 
 const formData = ref({
   toName: "",
@@ -179,31 +179,26 @@ const contactNumber = ref("");
 const countryCode = ref("");
 const emailAddress = ref("");
 
-const countries = computed(() => utilStore.getOperatingCountries);
-const statesForCountry = computed(() => utilStore.getStates[formData.value.countryGeoId] ?? []);
-
-onIonViewWillEnter(async () => {
-  await utilStore.fetchOperatingCountries();
-});
+// Countries and states both come from the login-time geo cache, so there is nothing to fetch on
+// entry. (`fetchOperatingCountries` was, despite the name, an unfiltered GEOT_COUNTRY list.)
+const { countries, statesOf, hydrated: geosReady } = useGeos();
+const { latLongForPostalCode } = useGeocode();
+const statesForCountry = computed(() => statesOf(formData.value.countryGeoId));
 
 function inputValidation(event: any) {
   if (/[^0-9-]/.test(event.key) && event.key !== "Backspace") event.preventDefault();
 }
 
-async function onCountryChange(event: CustomEvent) {
+function onCountryChange(event: CustomEvent) {
   const geoId = event.detail.value;
-  await utilStore.fetchStates({ geoId });
   const country = countries.value.find((country: any) => country.geoId === geoId);
   countryCode.value = country ? (commonUtil.getTelecomCountryCode(country.geoCodeAlpha2) || commonUtil.getTelecomCountryCode(country.geoCode) || "") : "";
 }
 
 async function generateLatLong() {
-  const postalCode = formData.value.postalCode;
-  const query = postalCode.startsWith("0") ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
   try {
-    const resp = await utilStore.generateLatLong({ json: { params: { q: `postcode: ${query}` } } });
-    if (resp?.response?.docs?.length > 0) {
-      const result = resp.response.docs[0];
+    const result = await latLongForPostalCode(formData.value.postalCode);
+    if (result) {
       formData.value.latitude = result.latitude;
       formData.value.longitude = result.longitude;
     } else {

@@ -23,13 +23,14 @@ import {
   alertController,
   popoverController
 } from "@ionic/vue";
-import { api, commonUtil, logger, translate } from "@common";
-import { DateTime } from "luxon";
-import { useFacilityStore } from "@/store/facility";
+import { commonUtil, translate } from "@common";
+import { useFacilityArchive } from "@/composables/useFacilities";
 
 const props = defineProps<{ facility: any }>();
 
-const facilityStore = useFacilityStore();
+// The archive composable owns resolving (and, once, creating) the ARCHIVE group and refreshing the
+// cached memberships both lists on the Parking page are derived from.
+const { archive } = useFacilityArchive();
 
 async function renameVirtualFacility() {
   const alert = await alertController.create({
@@ -47,53 +48,14 @@ async function renameVirtualFacility() {
 }
 
 async function archiveVirtualFacility() {
-  let facilityGroupId = await ensureArchiveGroup();
-  if (!facilityGroupId) {
+  const resp: any = await archive(props.facility.facilityId);
+  if (commonUtil.hasError(resp)) {
     commonUtil.showToast(translate('Failed to archive parking.'));
-    return;
-  }
-  try {
-    const resp = await api({
-      url: `admin/facilityGroups/${facilityGroupId}/facilities/${props.facility.facilityId}/association`,
-      method: "post",
-      data: { fromDate: DateTime.now().toMillis() }
-    });
-    if (!commonUtil.hasError(resp)) {
-      (facilityStore as any).updateVirtualFacilities(
-        (facilityStore as any).getVirtualFacilities.filter((facility: any) => facility.facilityId !== props.facility.facilityId)
-      );
-      await (facilityStore as any).fetchArchivedFacilities();
-      commonUtil.showToast(translate("Parking archived successfully."));
-    } else {
-      throw resp.data;
-    }
-  } catch (error) {
-    commonUtil.showToast(translate('Failed to archive parking.'));
-    logger.error('Failed to archive parking.', error);
+  } else {
+    // No list surgery here: the composable re-listed the ARCHIVE group, so the parking moves out of
+    // the active list and into the archived modal on its own.
+    commonUtil.showToast(translate("Parking archived successfully."));
   }
   popoverController.dismiss();
-}
-
-async function ensureArchiveGroup(): Promise<string> {
-  try {
-    const checkResp = await api({ url: "oms/facilityGroups/ARCHIVE", method: "get" });
-    if (!commonUtil.hasError(checkResp) && checkResp.data?.facilityGroupId) {
-      return checkResp.data.facilityGroupId;
-    }
-  } catch { /* group doesn't exist, create it */ }
-
-  try {
-    const createResp = await api({
-      url: "oms/facilityGroups",
-      method: "post",
-      data: { facilityGroupId: 'ARCHIVE', facilityGroupName: 'Archive' }
-    });
-    if (!commonUtil.hasError(createResp)) {
-      return 'ARCHIVE';
-    }
-  } catch (error) {
-    logger.error('Failed to create archive group', error);
-  }
-  return '';
 }
 </script>

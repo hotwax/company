@@ -32,12 +32,13 @@ import { removeCircleOutline, keyOutline, mailOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
 import router from "@/router";
-import { useFacilityStore } from "@/store/facility";
-import { useUserStore } from "@/store/user";
+import { useFacilityMutations } from "@/composables/useFacilities";
+import { useUserAccountActions } from "@/composables/useSecurity";
 
 const props = defineProps(['currentFacility', 'currentFacilityUser', 'facilityTypeDesc']);
-const facilityStore = useFacilityStore();
-const userStore = useUserStore();
+// Scoped to the user's facility — the party row carries its own facilityId.
+const mutations = useFacilityMutations(props.currentFacilityUser?.facilityId);
+const { sendResetPasswordEmail: sendResetPassword } = useUserAccountActions();
 
 function viewDetails() {
   popoverController.dismiss();
@@ -47,7 +48,7 @@ function viewDetails() {
 async function sendResetPasswordEmail() {
   emitter.emit('presentLoader');
   try {
-    const resp = await userStore.sendResetPasswordEmail({ userLoginId: props.currentFacilityUser.userLoginId });
+    const resp = await sendResetPassword(props.currentFacilityUser.userLoginId);
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Password reset email sent successfully.'));
     } else {
@@ -83,8 +84,8 @@ async function sendResetPasswordEmail() {
 async function unlinkFacilityLogin() {
   emitter.emit('presentLoader');
   try {
-    const resp = await (facilityStore as any).removePartyFromFacility({
-      facilityId: props.currentFacilityUser.facilityId,
+    // Removal closes the party association with a thruDate.
+    const resp = await mutations.removeParty({
       partyId: props.currentFacilityUser.partyId,
       roleTypeId: props.currentFacilityUser.roleTypeId,
       fromDate: props.currentFacilityUser.fromDate,
@@ -109,7 +110,7 @@ async function unlinkFacilityLogin() {
     //   throw blockResp.data;
     // }
 
-    await facilityStore.fetchFacilityParties({ facilityId: props.currentFacility?.facilityId });
+    // Parties are live per visit; the opener reloads them on dismiss.
   } catch (err) {
     commonUtil.showToast(translate("Failed to remove facility login."));
     logger.error('Failed to remove facility login', err);

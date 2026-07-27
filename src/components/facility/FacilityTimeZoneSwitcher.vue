@@ -85,21 +85,23 @@ import { closeOutline, saveOutline } from "ionicons/icons";
 import { computed, onMounted, ref } from "vue";
 import { commonUtil, logger, translate } from "@common";
 import { DateTime } from 'luxon';
-import { useFacilityStore } from "@/store/facility";
-import { useUserStore } from '@/store/user';
+import { useFacilityMutations, useFacilityRecord } from "@/composables/useFacilities";
+import { useTimeZones } from "@/composables/useSeed";
 
 const props = defineProps({
+  facilityId: { type: String, required: true },
   showBrowserTimeZone: { type: Boolean, default: true },
   showDateTime: { type: Boolean, default: true },
   dateTimeFormat: { type: String, default: 't ZZZZ' }
 });
 
-const facilityStore = useFacilityStore();
-const userStore = useUserStore();
-
-const currentFacility = computed(() => facilityStore.getCurrent);
+// `facilityId` is a prop; the facility itself is read from the cache. Previously both came from
+// `facilityStore.current`, which the detail page no longer populates.
+const mutations = useFacilityMutations(props.facilityId);
+const { record } = useFacilityRecord(props.facilityId);
+const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
 const currentTimeZoneId = computed(() => currentFacility.value?.facilityTimeZone);
-const timeZones = computed(() => userStore.getTimeZones);
+const { timeZones, loadTimeZones } = useTimeZones();
 
 const isLoading = ref(true);
 const queryString = ref('');
@@ -129,7 +131,7 @@ function findTimeZone() {
 
 onMounted(async () => {
   isLoading.value = true;
-  await userStore.fetchAvailableTimeZones();
+  await loadTimeZones();
   timeZoneId.value = currentFacility.value?.facilityTimeZone;
 
   if (props.showBrowserTimeZone) {
@@ -144,12 +146,9 @@ onMounted(async () => {
 
 async function setFacilityTimeZone() {
   try {
-    const resp = await facilityStore.updateFacilityTimeZone({
-      facilityId: currentFacility.value.facilityId,
-      facilityTimeZone: timeZoneId.value
-    });
+    // Same endpoint as any other facility field edit — the mutation re-reads the row into cache.
+    const resp = await mutations.updateFacility({ facilityTimeZone: timeZoneId.value });
     if (!commonUtil.hasError(resp)) {
-      facilityStore.updateCurrentFacility({ ...currentFacility.value, facilityTimeZone: timeZoneId.value });
       commonUtil.showToast(translate('Facility timezone updated successfully.'));
     } else {
       throw resp.data;

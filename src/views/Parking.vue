@@ -28,10 +28,6 @@
               <ion-label>{{ translate('Pending allocation') }}</ion-label>
               <ion-note slot="end">{{ facility.orderCount }}</ion-note>
             </ion-item>
-            <ion-item lines="none">
-              <ion-label>{{ translate('Next brokering') }}</ion-label>
-              <ion-note slot="end">{{ facility?.brokeringJob?.runTime ? commonUtil.getDateAndTime(facility?.brokeringJob?.runTime) : translate("Not scheduled") }}</ion-note>
-            </ion-item>
           </template>
           <ion-item v-else :lines="isFacilityDescriptionAvailable(facility) ? 'inset' : 'none'">
             <ion-label>{{ translate('Orders') }}</ion-label>
@@ -158,24 +154,38 @@ import {
   IonText,
   IonTitle,
   IonToolbar,
-  onIonViewWillEnter,
   popoverController
 } from '@ionic/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { addOutline, archiveOutline, closeOutline, ellipsisVerticalOutline, gitPullRequestOutline, saveOutline } from 'ionicons/icons';
-import { api, commonUtil, logger, translate } from '@common';
-import { DateTime } from 'luxon';
-import { useFacilityStore } from '@/store/facility';
-import { useUtilStore } from '@/store/util';
+import { commonUtil, logger, translate } from '@common';
+import { useArchivedFacilities, useFacilityPartitions, useFacilityArchive, useFacilityCreation, useFacilityMutations, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useOrganization } from '@/composables/useSeed';
 import { generateInternalId } from '@/utils';
 import VirtualFacilityActionsPopover from '@/components/facility/VirtualFacilityActionsPopover.vue';
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
+// Only the VOLATILE read (order counts) still uses the store — it is deliberately never cached.
+// The lists are cached and the writes go through the facility mutation composables, which own the
+// cache consequence of each write.
 
-const virtualFacilities = computed(() => (facilityStore as any).getVirtualFacilities);
-const isScrollable = computed(() => (facilityStore as any).isVirtualFacilitiesScrollable);
-const archivedFacilities = computed(() => (facilityStore as any).getArchivedFacilities);
+const { virtualFacilities: cachedVirtualFacilities } = useFacilityPartitions();
+const { archivedFacilities } = useArchivedFacilities();
+const { createVirtualFacility: createVirtualFacilityRecord } = useFacilityCreation();
+const { unarchive } = useFacilityArchive();
+const { fetchOrderCounts } = useFacilityOrderCounts();
+const { organizationPartyId, loadOrganizationPartyId } = useOrganization();
+
+/** Volatile per-facility order counts — fetched when the list arrives, never cached. */
+const volatileDetail = ref<Record<string, any>>({});
+
+const virtualFacilities = computed(() => cachedVirtualFacilities.value.map((facility: any) => ({
+  ...facility,
+  ...(volatileDetail.value[facility.facilityId] ?? {}),
+})));
+
+// The whole set is local, so there is nothing left to page through.
+const isScrollable = computed(() => false);
+
 
 const showArchivedFacilityModal = ref(false);
 const showCreateVirtualFacilityModal = ref(false);
@@ -193,18 +203,26 @@ const sortedFacilities = computed(() => {
   });
 });
 
-onIonViewWillEnter(async () => {
-  await (facilityStore as any).fetchArchivedFacilities();
-  await (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: 0 });
-});
+/**
+ * Fetch the volatile order counts once the cached list is available.
+ *
+ * A `onIonViewWillEnter` hook is too early: the list arrives asynchronously from IndexedDB, so at
+ * view-enter there are no ids yet and the fetch would be skipped, leaving every card without a
+ * count. Watching the cached list covers both the first emit and any later cache write.
+ */
+watch(cachedVirtualFacilities, async (facilities: any[]) => {
+  const ids = facilities.map((facility: any) => facility.facilityId);
+  if (!ids.length) return;
+  const counts = await fetchOrderCounts(ids);
+  volatileDetail.value = Object.fromEntries(ids.map((id: string) => [id, { orderCount: counts[id] ?? 0 }]));
+}, { immediate: true });
 
 function isFacilityDescriptionAvailable(facility: any) {
   return facility.description && facility.facilityId !== '_NA_';
 }
 
 async function loadMoreFacilities(event: any) {
-  const nextIndex = Math.ceil(virtualFacilities.value.length / import.meta.env.VITE_VIEW_SIZE);
-  await (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: nextIndex });
+  // Nothing to load: the complete set is cached and rendered.
   event.target.complete();
 }
 
@@ -253,16 +271,17 @@ async function createVirtualFacility() {
     formData.value.facilityId = generateInternalId(formData.value.facilityName);
   }
   try {
-    const payload = {
+    // Loaded lazily: the org partyId is only needed to stamp a new facility, so a page visit that
+    // creates nothing costs no request. The composable memoises it for the session.
+    await loadOrganizationPartyId();
+    const resp = await createVirtualFacilityRecord({
       ...formData.value,
-      facilityTypeId: 'VIRTUAL_FACILITY',
-      ownerPartyId: utilStore.organizationPartyId
-    };
-    const resp = await (facilityStore as any).createVirtualFacility(payload);
+      ownerPartyId: organizationPartyId.value
+    });
     if (!commonUtil.hasError(resp)) {
+      // No local list append: the composable re-read the new row into the cache, and the list is
+      // rendered from that cache, so it updates on its own.
       commonUtil.showToast(translate("New parking created successfully."));
-      const created = { ...formData.value, facilityTypeId: 'VIRTUAL_FACILITY', orderCount: 0 };
-      (facilityStore as any).updateVirtualFacilities([...(facilityStore as any).getVirtualFacilities, created]);
     } else {
       throw resp.data;
     }
@@ -290,17 +309,8 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
   const result = await popover.onDidDismiss();
   if (result.data && result.data !== facility.facilityName) {
     try {
-      const resp = await api({
-        url: `oms/facilities/${facility.facilityId}`,
-        method: "put",
-        data: { facilityName: result.data }
-      });
+      const resp = await useFacilityMutations(facility.facilityId).updateFacility({ facilityName: result.data });
       if (!commonUtil.hasError(resp)) {
-        (facilityStore as any).updateVirtualFacilities(
-          virtualFacilities.value.map((f: any) =>
-            f.facilityId === facility.facilityId ? { ...f, facilityName: result.data } : f
-          )
-        );
         commonUtil.showToast(translate('Parking renamed successfully.'));
       } else {
         throw resp.data;
@@ -317,25 +327,21 @@ function openArchivedFacilityModal() {
 }
 
 function closeArchivedFacilityModal() {
+  // Pure UI. Archiving and unarchiving each refresh the membership cache themselves, so there is
+  // nothing to re-snapshot on close — this used to force a full facility re-sync to paper over the
+  // fact that the writes left the cache untouched.
   showArchivedFacilityModal.value = false;
-  (facilityStore as any).fetchVirtualFacilities({ viewSize: import.meta.env.VITE_VIEW_SIZE, viewIndex: 0 });
 }
 
 async function unarchiveFacility(archivedFacility: any) {
   try {
-    const resp = await api({
-      url: `admin/facilityGroups/ARCHIVE/facilities/${archivedFacility.facilityId}/association`,
-      method: "post",
-      data: {
-        fromDate: archivedFacility.fromDate,
-        thruDate: DateTime.now().toMillis()
-      }
-    });
+    // `fromDate` comes from the cached MEMBERSHIP row (see `useArchivedFacilities`) — it identifies
+    // which date-effective association to close.
+    const resp = await unarchive(archivedFacility.facilityId, archivedFacility.fromDate);
     if (!commonUtil.hasError(resp)) {
+      // Both lists re-derive from the refreshed membership cache: the parking leaves the archived
+      // modal and reappears in the active list.
       commonUtil.showToast(translate("Parking unarchived successfully."));
-      (facilityStore as any).updateArchivedFacilities(
-        archivedFacilities.value.filter((facility: any) => facility.facilityId !== archivedFacility.facilityId)
-      );
     } else {
       throw resp.data;
     }

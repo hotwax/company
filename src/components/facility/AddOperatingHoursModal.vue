@@ -67,20 +67,22 @@ import {
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
-import { useFacilityStore } from "@/store/facility";
-import { ref, computed, onBeforeMount } from "vue";
+import { useFacilityCalendars, useFacilityMutations } from "@/composables/useFacilities";
+import { ref, onBeforeMount } from "vue";
 
 const props = defineProps(["facilityId"]);
-const facilityStore = useFacilityStore();
+const mutations = useFacilityMutations(props.facilityId);
+const { calendarOptions: calendars, loadCalendarOptions, fetchFacilityCalendar } = useFacilityCalendars();
 
 const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const selectedCalendarId = ref('' as any);
+const facilityCalendar = ref<Record<string, any>>({});
 
-const calendars = computed(() => facilityStore.getCalendars);
-const facilityCalendar = computed(() => facilityStore.getFacilityCalendar);
-
-onBeforeMount(() => {
-  selectedCalendarId.value = facilityCalendar.value.calendarId;
+onBeforeMount(async () => {
+  // The catalog is empty until the techData routes land — see `useFacilityCalendars`.
+  const [current] = await Promise.all([fetchFacilityCalendar(props.facilityId), loadCalendarOptions()]);
+  facilityCalendar.value = current;
+  selectedCalendarId.value = current.calendarId;
 });
 
 function closeModal() {
@@ -98,15 +100,13 @@ function saveOperatingHours() {
 async function addOperatingHours() {
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.associateCalendarToFacility({
-      facilityId: props.facilityId,
+    const resp = await mutations.saveCalendar({
       calendarId: selectedCalendarId.value,
       fromDate: DateTime.now().toMillis(),
       facilityCalendarTypeId: 'OPERATING_HOURS'
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Successfully associated calendar to the facility."));
-      await facilityStore.fetchFacilityCalendar({ facilityId: props.facilityId });
     } else {
       throw resp.data;
     }
@@ -121,22 +121,19 @@ async function addOperatingHours() {
 async function updateOperatingHours() {
   emitter.emit('presentLoader');
   try {
-    let resp = await facilityStore.removeFacilityCalendar({
-      facilityId: props.facilityId,
+    // Swap = close the effective association, then open a new one.
+    let resp = await mutations.removeCalendar({
       calendarId: facilityCalendar.value.calendarId,
-      facilityCalendarTypeId: facilityCalendar.value.facilityCalendarTypeId,
       fromDate: facilityCalendar.value.fromDate
     });
     if (!commonUtil.hasError(resp)) {
-      resp = await facilityStore.associateCalendarToFacility({
-        facilityId: props.facilityId,
+      resp = await mutations.saveCalendar({
         calendarId: selectedCalendarId.value,
         fromDate: DateTime.now().toMillis(),
         facilityCalendarTypeId: 'OPERATING_HOURS'
       });
       if (!commonUtil.hasError(resp)) {
         commonUtil.showToast(translate("Successfully associated calendar to the facility."));
-        await facilityStore.fetchFacilityCalendar({ facilityId: props.facilityId });
       } else {
         throw resp.data;
       }

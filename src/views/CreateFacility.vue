@@ -82,32 +82,34 @@ import {
 } from "@ionic/vue";
 import { computed, ref } from "vue";
 import { addOutline } from "ionicons/icons";
-import { api, commonUtil, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
+import { commonUtil, logger, translate } from "@common";
+import { useFacilityCreation, useFacilityMutations, useFacilityTypes } from "@/composables/useFacilities";
+import { useOrganization } from "@/composables/useSeed";
 import { generateInternalId } from "@/utils";
 import router from "@/router";
-import { DateTime } from "luxon";
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
+const { createFacility: createFacilityRecord } = useFacilityCreation();
 
 const facilityIdRef = ref<any>(null);
 const isAutoGenerateId = ref(true);
 const selectedFacilityTypeId = ref("");
 const formData = ref({ facilityName: "", facilityId: "", externalId: "" });
 
+// Facility types are cached at login; the org partyId is memoised on first use.
+const { facilityTypes } = useFacilityTypes();
+const { organizationPartyId, loadOrganizationPartyId } = useOrganization();
+
 const facilityTypeMap = computed<Record<string, any>>(() =>
-  Object.fromEntries(facilityStore.facilityTypes.map((facilityType: any) => [facilityType.facilityTypeId, facilityType]))
+  Object.fromEntries(facilityTypes.value.map((facilityType: any) => [facilityType.facilityTypeId, facilityType]))
 );
 
-const facilityTypeOptions = computed(() => facilityStore.facilityTypes);
+const facilityTypeOptions = computed(() => facilityTypes.value);
 
 onIonViewWillEnter(async () => {
   formData.value = { facilityName: "", facilityId: "", externalId: "" };
   isAutoGenerateId.value = true;
-  await facilityStore.fetchFacilityTypes();
-  const types = facilityStore.facilityTypes;
+  void loadOrganizationPartyId();
+  const types = facilityTypes.value;
   const queryType = router.currentRoute.value.query.type as string | undefined;
   selectedFacilityTypeId.value = (queryType && types.find((facilityType: any) => facilityType.facilityTypeId === queryType)?.facilityTypeId)
     ?? types.find((facilityType: any) => facilityType.facilityTypeId === "RETAIL_STORE")?.facilityTypeId
@@ -155,26 +157,23 @@ async function createFacility() {
     const payload = {
       ...formData.value,
       facilityTypeId: selectedFacilityTypeId.value,
-      ownerPartyId: utilStore.organizationPartyId
+      ownerPartyId: organizationPartyId.value
     };
-    const resp = await api({ url: "oms/facilities", method: "post", data: payload });
+    // Goes through the composable so the new facility lands in the cache the list pages read; a
+    // bare POST here left every facility list stale until the next login sync.
+    const resp = await createFacilityRecord(payload);
     if (!commonUtil.hasError(resp)) {
       const facilityId = resp.data?.facilityId || formData.value.facilityId;
       commonUtil.showToast(translate("Facility created successfully."));
 
-      // create default pick location
-      await api({
-        url: `oms/facilities/${facilityId}/locations`,
-        method: "post",
-        data: {
-          facilityId,
-          locationTypeEnumId: "FLT_PICKLOC",
-          areaId: "TL",
-          aisleId: "TL",
-          sectionId: "TL",
-          levelId: "LL",
-          positionId: "01"
-        }
+      // create default pick location (locations are live-read, so no cache consequence)
+      await useFacilityMutations(facilityId).saveLocation({
+        locationTypeEnumId: "FLT_PICKLOC",
+        areaId: "TL",
+        aisleId: "TL",
+        sectionId: "TL",
+        levelId: "LL",
+        positionId: "01"
       });
 
       router.replace(`/create-facility/address/${facilityId}`);

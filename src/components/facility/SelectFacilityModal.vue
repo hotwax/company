@@ -53,14 +53,17 @@
 
 <script setup lang="ts">
 import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonRadio, IonRadioGroup, IonSearchbar, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
+import type { PropType } from "vue";
 import { translate } from "@common";
-import { useUtilStore } from "@/store/util";
+import { useFacilities } from "@/composables/useFacilities";
 
 const props = defineProps({
   selectedFacilities: {
-    type: Array,
+    // Typed element: a bare `Array` erases it, so `selectedFacilities[0].facilityId` is an error
+    // and the template silently reads `undefined` for the pre-selected radio.
+    type: Array as PropType<Array<{ facilityId: string; [key: string]: any }>>,
     required: true
   },
   isFacilityLogin: {
@@ -69,17 +72,22 @@ const props = defineProps({
   }
 });
 
-const utilStore = useUtilStore();
 
 const queryString = ref("");
 const filteredFacilities = ref<any[]>([]);
 const selectedFacilityValues = ref<any[]>(JSON.parse(JSON.stringify(props.selectedFacilities)));
 
-const facilities = computed(() => utilStore.getFacilities);
+// Cached at login; `watch` covers the case where the cache emits after mount.
+const { facilities } = useFacilities();
 
-onMounted(async () => {
-  await utilStore.fetchFacilities();
+onMounted(() => {
   filteredFacilities.value = facilities.value;
+});
+
+// The cached list arrives asynchronously from IndexedDB, so seed the filtered list on each emit
+// until the user has typed a query.
+watch(facilities, (next: any[]) => {
+  if (!queryString.value) filteredFacilities.value = next;
 });
 
 const closeModal = () => {

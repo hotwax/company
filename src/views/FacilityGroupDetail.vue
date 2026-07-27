@@ -193,7 +193,11 @@
                 </ion-label>
               </ion-checkbox>
             </ion-item>
-            <ion-item v-if="!productStores.length" lines="none">
+            <ion-item v-if="!productStoresHydrated" lines="none">
+              <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+            </ion-item>
+            <!-- Only assert "none" once the seed sync has finished. -->
+            <ion-item v-else-if="!productStores.length" lines="none">
               <ion-label>{{ translate("No product stores found") }}</ion-label>
             </ion-item>
           </ion-list>
@@ -240,30 +244,43 @@ import {
   IonTextarea,
   IonTitle,
   IonToolbar,
-  onIonViewWillEnter
+  onIonViewWillEnter,
+  IonSkeletonText,
 } from '@ionic/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common";
-import { useFacilityStore } from '@/store/facility';
-import { useUtilStore } from '@/store/util';
-import { useProductStore } from '@/store/productStore';
+import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
+import { useProductStores } from '@/composables/useProductStores';
 import { api } from '@common';
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
 
 const props = defineProps<{ facilityGroupId: string }>();
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
-const productStoreStore = useProductStore();
+const groupMutations = useFacilityGroupMutations(props.facilityGroupId);
 
-const facilityGroupTypes = computed(() => facilityStore.getFacilityGroupTypes);
-const productStores = computed(() => productStoreStore.getProductStores);
+// All three lists come from the login-time cache — nothing to fetch on entry.
+const { facilityGroupTypes } = useFacilityGroupTypes();
+const { productStores, hydrated: productStoresHydrated } = useProductStores();
+// The group, its members and its product-store links are ALL cached domains — this screen makes no
+// requests. Mutations refresh those domains, so the cache is the current state, not a stale copy.
+const { record: cachedGroup } = useFacilityGroupRecord(props.facilityGroupId);
+const { members: cachedMembers } = useGroupFacilities(props.facilityGroupId);
+const { associations: cachedGroupProductStores } = useFacilityGroupProductStores(props.facilityGroupId);
+const { facilities: cachedFacilities } = useFacilities();
 
-const group = ref<any>({});
-const productStoreCount = ref<number | null>(null);
-const allFacilities = ref<any[]>([]);
-const memberFacilities = ref<any[]>([]);
+// Derived, not copied: the cache emits asynchronously, so a one-shot read on view-enter sees an
+// empty table and never updates. These recompute on every cache write.
+const group = computed<any>(() => (cachedGroup.value as any)?.raw ?? cachedGroup.value ?? {});
+const productStoreCount = computed(() => cachedGroupProductStores.value.length);
+const allFacilities = computed<any[]>(() => cachedFacilities.value ?? []);
+const memberFacilities = computed<any[]>(() => {
+  const byId = Object.fromEntries(allFacilities.value.map((f: any) => [f.facilityId, f]));
+  return (cachedMembers.value ?? []).map((m: any) => ({
+    ...m,
+    facilityName: byId[m.facilityId]?.facilityName || m.facilityId,
+  }));
+});
 const selectedFacilities = ref<any[]>([]);
 const filteredAvailableFacilities = ref<any[]>([]);
 const facilitySearch = ref("");
@@ -292,13 +309,7 @@ const isModified = computed(() => {
 onIonViewWillEnter(async () => {
   isSaving.value = false;
   facilitySearch.value = "";
-  await Promise.all([
-    facilityStore.fetchFacilityGroupTypes(),
-    loadGroup(),
-    loadAllFacilities(),
-    loadProductStoreCount()
-  ]);
-  await loadMemberFacilities();
+  seedSelection();
   filterAvailableFacilities();
 });
 
@@ -306,37 +317,21 @@ function getFacilityGroupTypeDescription(facilityGroupTypeId: string) {
   return facilityGroupTypes.value.find((type: any) => type.facilityGroupTypeId === facilityGroupTypeId)?.description;
 }
 
-async function loadProductStoreCount() {
-  try {
-    const resp = await api({
-      url: "oms/groupProductStores",
-      method: "get",
-      params: { facilityGroupId: props.facilityGroupId, filterByDate: "Y", pageNoLimit: true }
-    });
-    productStoreCount.value = (!commonUtil.hasError(resp) && resp.data?.length) ? resp.data.length : 0;
-  } catch (err) {
-    logger.error("Failed to fetch group product stores", err);
-  }
-}
+
 
 async function openProductStoreModal() {
   currentAssociations.value = [];
   selectedProductStoreIds.value = new Set();
   showProductStoreModal.value = true;
-  await productStoreStore.fetchProductStores();
-  await fetchCurrentAssociations();
+  fetchCurrentAssociations();
 }
 
-async function fetchCurrentAssociations() {
+function fetchCurrentAssociations() {
   try {
-    const resp = await api({
-      url: "oms/groupProductStores",
-      method: "get",
-      params: { facilityGroupId: group.value.facilityGroupId, filterByDate: "Y", pageNoLimit: true }
-    });
-    if (!commonUtil.hasError(resp) && resp.data?.length) {
-      currentAssociations.value = resp.data;
-      selectedProductStoreIds.value = new Set(resp.data.map((a: any) => a.productStoreId));
+    const rows = cachedGroupProductStores.value ?? [];
+    if (rows.length) {
+      currentAssociations.value = rows;
+      selectedProductStoreIds.value = new Set(rows.map((a: any) => a.productStoreId));
     } else {
       currentAssociations.value = [];
       selectedProductStoreIds.value = new Set();
@@ -371,28 +366,12 @@ async function saveProductStores() {
   const toAdd = [...selectedProductStoreIds.value].filter((id) => !currentIds.has(id));
   const toRemove = [...currentIds].filter((id) => !selectedProductStoreIds.value.has(id));
 
-  const addRequests = toAdd.map((productStoreId) =>
-    api({
-      url: `oms/productStores/${productStoreId}/facilityGroups`,
-      method: "post",
-      data: { facilityGroupId: group.value.facilityGroupId, fromDate: DateTime.now().toMillis() }
-    })
+  // The composable owns both directions (a removal is a POST closing the row with a thruDate) and
+  // refreshes the cached associations afterwards.
+  const { failed: anyFailed } = await groupMutations.saveProductStores(
+    toAdd,
+    toRemove.map((productStoreId) => ({ productStoreId, fromDate: associationByStoreId[productStoreId].fromDate })),
   );
-
-  const removeRequests = toRemove.map((productStoreId) =>
-    api({
-      url: `oms/productStores/${productStoreId}/facilityGroups`,
-      method: "post",
-      data: {
-        facilityGroupId: group.value.facilityGroupId,
-        fromDate: associationByStoreId[productStoreId].fromDate,
-        thruDate: DateTime.now().toMillis()
-      }
-    })
-  );
-
-  const results = await Promise.allSettled([...addRequests, ...removeRequests]);
-  const anyFailed = results.some((r) => r.status === "rejected");
 
   if (anyFailed) {
     commonUtil.showToast(translate("Failed to update some product store associations"));
@@ -400,7 +379,7 @@ async function saveProductStores() {
     commonUtil.showToast(translate("Product stores updated"));
   }
 
-  productStoreCount.value = selectedProductStoreIds.value.size;
+  // No optimistic patch: `saveProductStores` refreshes the cached domain and the count is derived.
   closeProductStoreModal();
 }
 
@@ -424,15 +403,12 @@ async function saveEditGroup() {
   }
 
   try {
-    const resp = await (facilityStore as any).updateFacilityGroup({
-      facilityGroupId: group.value.facilityGroupId,
-      ...formData.value
-    });
+    const resp = await groupMutations.updateGroup({ ...formData.value });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Group details updated"));
-      const updated = { ...group.value, ...formData.value };
-      group.value = { ...group.value, ...updated };
-      utilStore.patchFacilityGroup(props.facilityGroupId, updated);
+      // The cache refresh inside the composable is what updates the group lists. The local `group`
+      // No optimistic patch: `updateGroup` re-snapshots the facilityGroup domain and `group` is
+      // derived from that cache, so the edit shows up on its own.
       closeEditModal();
     } else {
       throw resp.data;
@@ -443,37 +419,18 @@ async function saveEditGroup() {
   }
 }
 
-async function loadGroup() {
-  try {
-    const resp = await facilityStore.fetchFacilityGroup(props.facilityGroupId);
-    if (!commonUtil.hasError(resp)) {
-      group.value = resp.data || {};
-    }
-  } catch (err) {
-    logger.error("Failed to fetch facility group", err);
-  }
+
+
+
+
+/** Reset the edit selection to what is currently stored. */
+function seedSelection() {
+  selectedFacilities.value = JSON.parse(JSON.stringify(memberFacilities.value));
+  filterAvailableFacilities();
 }
 
-async function loadAllFacilities() {
-  // Physical facilities come from the shared, login-time cache instead of a
-  // paged oms/facilities sweep.
-  if (!utilStore.facilities.length) await utilStore.fetchFacilities();
-  allFacilities.value = utilStore.getFacilities;
-}
-
-async function loadMemberFacilities() {
-  try {
-    const members = await (facilityStore as any).fetchGroupFacilities(props.facilityGroupId);
-    const facilityById = Object.fromEntries(allFacilities.value.map((facility: any) => [facility.facilityId, facility]));
-    memberFacilities.value = members.map((member: any) => ({
-      ...member,
-      facilityName: facilityById[member.facilityId]?.facilityName || member.facilityId
-    }));
-    selectedFacilities.value = JSON.parse(JSON.stringify(memberFacilities.value));
-  } catch (err) {
-    logger.error("Failed to load member facilities", err);
-  }
-}
+// Members arrive asynchronously and change after every save, so reseed on each emit.
+watch(memberFacilities, () => seedSelection(), { immediate: true });
 
 function filterAvailableFacilities() {
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
@@ -540,23 +497,14 @@ async function saveFacilityMemberships() {
       .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: memberByFacilityId[facility.facilityId].fromDate, sequenceNum: facility.sequenceNum }))
   ];
 
-  const requests: Promise<any>[] = [];
-  if (toCreate.length) {
-    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "post", data: toCreate }));
-  }
-  if (toStore.length) {
-    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "put", data: toStore }));
-  }
-
-  const results = await Promise.allSettled(requests);
-  const anyFailed = results.some((result) => result.status === "rejected");
+  const { failed: anyFailed } = await groupMutations.saveMembers(toCreate, toStore);
 
   if (anyFailed) {
     commonUtil.showToast(translate("Failed to update some facilities"));
   } else {
     commonUtil.showToast(translate("Facilities updated"));
     isFacilitiesModified.value = false;
-    await loadMemberFacilities();
+    seedSelection();
   }
   isSaving.value = false;
 }

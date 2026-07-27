@@ -64,15 +64,15 @@ import {
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { translate, commonUtil, logger } from "@common";
 import { generateInternalId } from "@/utils";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
-import { ref, computed, onMounted } from "vue";
+import { useFacilityGroupTypes, useFacilityGroupMutations } from '@/composables/useFacilities';
+import { ref, onMounted } from "vue";
 
 const props = defineProps(['selectedFacilityGroupTypeId']);
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
 
-const facilityGroupTypes = computed(() => utilStore.getFacilityGroupTypes);
+// Was `utilStore.getFacilityGroupTypes`, a getter that does not exist on that store — the type
+// dropdown was always empty. The types are a cached login snapshot, so read them from there.
+const { facilityGroupTypes } = useFacilityGroupTypes();
+const { createGroup } = useFacilityGroupMutations();
 
 const formData = ref({
   facilityGroupId: '',
@@ -114,7 +114,7 @@ async function createFacilityGroup() {
   }
 
   try {
-    const resp = await facilityStore.createFacilityGroup({ ...formData.value });
+    const resp = await createGroup({ ...formData.value });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Facility group created."));
     } else {

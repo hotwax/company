@@ -28,16 +28,16 @@ import { translate } from "@common";
 import FacilityMappingModal from "./FacilityMappingModal.vue";
 import FacilityShopifyMappingModal from "./FacilityShopifyMappingModal.vue";
 import FacilityExternalIdModal from "./FacilityExternalIdModal.vue";
-import { useFacilityStore } from "@/store/facility";
-import { computed } from "vue";
+import { useFacilityIdentificationTypes } from "@/composables/useFacilities";
 
-const facilityStore = useFacilityStore();
-const externalMappingTypes = computed(() => facilityStore.getExternalMappingTypes);
+// FACILITY_IDENTITY enums only, minus Shopify (offered separately above). Template iterates a map.
+const props = defineProps(["facilityId"]);
+const { selectable: externalMappingTypes } = useFacilityIdentificationTypes();
 
 async function addMappingModal(type: any) {
   const modal = await modalController.create({
     component: FacilityMappingModal,
-    componentProps: { mappingId: type }
+    componentProps: { mappingId: type, facilityId: props.facilityId }
   });
   await popoverController.dismiss();
   await modal.present();
@@ -45,14 +45,20 @@ async function addMappingModal(type: any) {
 }
 
 async function createShopifyFacilityMappingModal() {
-  const modal = await modalController.create({ component: FacilityShopifyMappingModal });
+  const modal = await modalController.create({
+    component: FacilityShopifyMappingModal,
+    componentProps: { facilityId: props.facilityId },
+  });
   await popoverController.dismiss();
   await modal.present();
   setTimeout(() => { (document.querySelector("#inputElement") as any)?.setFocus(); }, 100);
 }
 
 async function createFacilityExternalId() {
-  const modal = await modalController.create({ component: FacilityExternalIdModal });
+  const modal = await modalController.create({
+    component: FacilityExternalIdModal,
+    componentProps: { facilityId: props.facilityId },
+  });
   await popoverController.dismiss();
   await modal.present();
   setTimeout(() => { (document.querySelector("#inputElement") as any)?.setFocus(); }, 100);

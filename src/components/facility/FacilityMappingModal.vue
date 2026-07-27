@@ -60,14 +60,17 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
+import { useFacilityMutations, useFacilityRecord } from "@/composables/useFacilities";
+import { useFacilityIdentificationTypes } from "@/composables/useFacilities";
 import { ref, computed, onMounted } from "vue";
 
-const props = defineProps(["mappingId", "mapping", "type"]);
-const facilityStore = useFacilityStore();
-
-const currentFacility = computed(() => facilityStore.getCurrent);
-const externalMappingTypes = computed(() => facilityStore.getExternalMappingTypes);
+// `facilityId` is a prop now — it used to come from `facilityStore.current`, which the detail page
+// no longer fills, so both writes below were posting to an undefined facility.
+const props = defineProps(["mappingId", "mapping", "type", "facilityId"]);
+const mutations = useFacilityMutations(props.facilityId);
+const { record } = useFacilityRecord(props.facilityId);
+const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const { byId: externalMappingTypes } = useFacilityIdentificationTypes();
 
 const mappingValue = ref('');
 
@@ -88,14 +91,13 @@ async function saveMapping() {
   }
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.createFacilityIdentification({
-      facilityId: currentFacility.value.facilityId,
+    const resp = await mutations.saveIdentification({
       facilityIdenTypeId: props.mappingId,
       idValue: mappingValue.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('External mapping created successfully'));
-      await facilityStore.fetchFacilityMappings({ facilityId: currentFacility.value.facilityId });
+      // saveIdentification re-snapshots the identification cache; the page renders from it.
       closeModal();
     } else {
       throw resp.data;
@@ -114,15 +116,14 @@ async function updateMapping() {
   }
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.updateFacilityIdentification({
-      facilityId: currentFacility.value.facilityId,
+    // Same upsert endpoint as create — `fromDate` is what targets the existing row.
+    const resp = await mutations.saveIdentification({
       facilityIdenTypeId: props.mappingId,
       fromDate: props.mapping.fromDate,
       idValue: mappingValue.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('External mapping updated successfully'));
-      await facilityStore.fetchFacilityMappings({ facilityId: currentFacility.value.facilityId });
       closeModal();
     } else {
       throw resp.data;

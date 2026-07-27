@@ -97,13 +97,16 @@ import {
 import { closeCircle, closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
 import { DateTime } from "luxon";
-import { useFacilityStore } from "@/store/facility";
-import { ref, computed } from "vue";
+import { useFacilityCalendars, useFacilityMutations } from "@/composables/useFacilities";
+import { ref, computed, onMounted } from "vue";
 
 const props = defineProps(['facilityId']);
-const facilityStore = useFacilityStore();
+const mutations = useFacilityMutations(props.facilityId);
+const { createCalendar, fetchFacilityCalendar } = useFacilityCalendars();
 
-const facilityCalendar = computed(() => facilityStore.getFacilityCalendar);
+// Read once on open: replacing a schedule needs the effective row's `fromDate` to close it.
+const facilityCalendar = ref<Record<string, any>>({});
+onMounted(async () => { facilityCalendar.value = await fetchFacilityCalendar(props.facilityId); });
 
 const isDailyTimingsChecked = ref(false);
 const days = ref(['Daily']);
@@ -137,7 +140,7 @@ function updateDailyTimings() {
 
 async function addCustomSchedule(payload: any) {
   try {
-    const resp = await facilityStore.createFacilityCalendar({
+    const resp = await createCalendar({
       ...payload,
       description: selectedTimesForWeek.value.description.trim(),
       facilityId: props.facilityId,
@@ -146,8 +149,7 @@ async function addCustomSchedule(payload: any) {
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Successfully created and associated calendar to the facility."));
-      await facilityStore.fetchFacilityCalendar({ facilityId: props.facilityId });
-      await facilityStore.fetchCalendars();
+      // The opener reloads live associations on dismiss.
       modalController.dismiss();
     } else {
       throw resp.data;
@@ -191,10 +193,8 @@ async function saveCustomSchedule() {
 
   if (facilityCalendar.value?.calendarId) {
     try {
-      const resp = await facilityStore.removeFacilityCalendar({
-        facilityId: props.facilityId,
+      const resp = await mutations.removeCalendar({
         calendarId: facilityCalendar.value.calendarId,
-        facilityCalendarTypeId: facilityCalendar.value.facilityCalendarTypeId,
         fromDate: facilityCalendar.value.fromDate
       });
       if (!commonUtil.hasError(resp)) {

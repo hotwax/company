@@ -71,23 +71,29 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
-import { ref, computed, onMounted } from "vue";
+import { useFacilityMutations, useFacilityRecord } from "@/composables/useFacilities";
+import { useShopifyShops } from "@/composables/useShopify";
+import { ref, computed, onMounted, watch } from "vue";
 
-const props = defineProps(["shopifyFacilityMapping", "type"]);
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
-const currentFacility = computed(() => facilityStore.getCurrent);
+// `facilityId` is a prop now; it used to come from `facilityStore.current`, which is no longer
+// populated. Shops come from the login-time cache instead of a per-open fetch.
+const props = defineProps(["shopifyFacilityMapping", "type", "facilityId"]);
+const mutations = useFacilityMutations(props.facilityId);
+const { record } = useFacilityRecord(props.facilityId);
+const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const { shops: shopifyShops } = useShopifyShops();
 
 const shopId = ref('');
 const shopifyLocationId = ref('');
-const shopifyShops = ref([] as any);
 
-onMounted(async () => {
+onMounted(() => {
   shopifyLocationId.value = props.shopifyFacilityMapping?.shopifyLocationId;
-  await fetchShopifyShops();
-  shopId.value = shopifyShops.value[0]?.shopId;
+  shopId.value = props.shopifyFacilityMapping?.shopId ?? shopifyShops.value[0]?.shopId;
+});
+
+// Shops come from the cache asynchronously; default the selection once they land.
+watch(shopifyShops, (shops: any[]) => {
+  if (!shopId.value) shopId.value = props.shopifyFacilityMapping?.shopId ?? shops[0]?.shopId;
 });
 
 function closeModal() {
@@ -101,14 +107,12 @@ async function saveMapping() {
   }
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.createShopifyShopLocation({
-      facilityId: currentFacility.value.facilityId,
+    const resp = await mutations.createShopifyLocation({
       shopId: shopId.value,
       shopifyLocationId: shopifyLocationId.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Shopify mapping created successfully'));
-      facilityStore.fetchShopifyFacilityMappings({ facilityId: currentFacility.value.facilityId });
       closeModal();
     } else {
       throw resp.data;
@@ -127,14 +131,12 @@ async function updateMapping() {
   }
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.updateShopifyShopLocation({
-      facilityId: currentFacility.value.facilityId,
+    const resp = await mutations.updateShopifyLocation({
       shopId: props.shopifyFacilityMapping.shopId,
       shopifyLocationId: shopifyLocationId.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Shopify mapping updated successfully'));
-      facilityStore.fetchShopifyFacilityMappings({ facilityId: currentFacility.value.facilityId });
       closeModal();
     } else {
       throw resp.data;
@@ -144,15 +146,5 @@ async function updateMapping() {
     logger.error('Failed to update shopify mapping', err);
   }
   emitter.emit('dismissLoader');
-}
-
-async function fetchShopifyShops() {
-  try {
-    const resp = await utilStore.fetchShopifyShops();
-    shopifyShops.value = resp;
-  } catch (error) {
-    commonUtil.showToast(translate('Failed to fetch shopify shops.'));
-    logger.error('Failed to fetch shopify shops.', error);
-  }
 }
 </script>

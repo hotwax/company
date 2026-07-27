@@ -92,13 +92,11 @@ import {
 import { close, downloadOutline } from 'ionicons/icons'
 import { commonUtil, logger, translate } from '@common'
 import { useShopifyStore } from '@/store/shopify'
-import { useProductStore } from '@/store/productStore'
+import { useProductStoreMutations } from "@/composables/useProductStores";
 import { computed, ref, onMounted } from 'vue'
 
 const props = defineProps<{ shopId: string, productStoreId?: string }>()
 const shopifyStore = useShopifyStore()
-const productStoreStore = useProductStore()
-
 const isLoading    = ref(true)
 const isImporting  = ref(false)
 const fetchError   = ref('')
@@ -261,10 +259,7 @@ async function associateImportedFacilities(facilityIds: string[]) {
 
   let associated = 0
   for (const facilityId of facilityIds) {
-    const resp = await productStoreStore.associateProductStoreFacility({
-      productStoreId: props.productStoreId,
-      facilityId
-    })
+    const resp = await useProductStoreMutations(props.productStoreId).addFacility({ facilityId })
     if (commonUtil.hasError(resp)) throw resp.data
     associated += 1
   }

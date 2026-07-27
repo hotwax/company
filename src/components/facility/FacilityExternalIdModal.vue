@@ -60,13 +60,28 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
-import { ref, computed } from "vue";
+import { useFacilityMutations, useFacilityRecord } from "@/composables/useFacilities";
+import { ref, computed, watch } from "vue";
 
-const facilityStore = useFacilityStore();
-const currentFacility = computed(() => facilityStore.getCurrent);
+// `facilityId` comes in as a prop. This used to read `facilityStore.current`, which the detail
+// page stopped populating when it moved to composables — so every save posted `undefined`.
+const props = defineProps(["facilityId"]);
+const mutations = useFacilityMutations(props.facilityId);
+const { record } = useFacilityRecord(props.facilityId);
+const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
 
 const externalId = ref(currentFacility.value.externalId || '');
+
+// The cached record arrives asynchronously from IndexedDB, so a value captured at setup is empty
+// on a cold read. Seed the field on the first emit that carries one, but never overwrite what the
+// user has already typed.
+let seeded = !!externalId.value;
+watch(currentFacility, (facility: any) => {
+  if (!seeded && facility?.externalId) {
+    externalId.value = facility.externalId;
+    seeded = true;
+  }
+});
 
 function closeModal() {
   modalController.dismiss();
@@ -79,13 +94,11 @@ async function updateExternalId() {
   }
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.updateFacility({
-      facilityId: currentFacility.value.facilityId,
-      externalId: externalId.value
-    });
+    const resp = await mutations.updateFacility({ externalId: externalId.value });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Facility external ID updated.'));
-      await facilityStore.updateCurrentFacility({ ...currentFacility.value, externalId: externalId.value });
+      // No local patch needed: the mutation re-reads the row into the cache and the page renders
+      // from that cache, so the new value propagates on its own.
       closeModal();
     } else {
       throw resp.data;

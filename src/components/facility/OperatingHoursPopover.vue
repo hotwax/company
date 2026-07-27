@@ -28,13 +28,17 @@ import {
 import { commonUtil, emitter, logger, translate } from "@common";
 import AddOperatingHoursModal from "@/components/facility/AddOperatingHoursModal.vue";
 import CustomScheduleModal from "@/components/common/CustomScheduleModal.vue";
-import { useFacilityStore } from "@/store/facility";
-import { computed } from "vue";
+import { useFacilityCalendars, useFacilityMutations } from "@/composables/useFacilities";
+import { onMounted, ref } from "vue";
 
 const props = defineProps(["facilityId"]);
-const facilityStore = useFacilityStore();
+const mutations = useFacilityMutations(props.facilityId);
+const { fetchFacilityCalendar } = useFacilityCalendars();
 
-const facilityCalendar = computed(() => facilityStore.getFacilityCalendar);
+// The active calendar is read here rather than taken from a store: `removeCalendar` needs the
+// exact `fromDate` of the effective row to close it.
+const facilityCalendar = ref<Record<string, any>>({});
+onMounted(async () => { facilityCalendar.value = await fetchFacilityCalendar(props.facilityId); });
 
 async function addOperatingHours() {
   const modal = await modalController.create({
@@ -57,15 +61,13 @@ async function addCustomSchedule() {
 async function removeCalendarFromFacility() {
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.removeFacilityCalendar({
-      facilityId: props.facilityId,
+    const resp = await mutations.removeCalendar({
       calendarId: facilityCalendar.value.calendarId,
-      facilityCalendarTypeId: facilityCalendar.value.facilityCalendarTypeId,
       fromDate: facilityCalendar.value.fromDate
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Successfully revoked calendar associativity with the facility."));
-      await facilityStore.fetchFacilityCalendar({ facilityId: props.facilityId });
+      // The opener reloads live associations on dismiss.
     } else {
       throw resp.data;
     }

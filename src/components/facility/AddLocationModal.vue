@@ -70,14 +70,16 @@ import {
 } from "@ionic/vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
+import { useFacilityMutations } from "@/composables/useFacilities";
+import { useTypedEnums } from "@/composables/useSeed";
 import { ref, computed, onBeforeMount } from "vue";
 
-const props = defineProps(["location"]);
-const facilityStore = useFacilityStore();
+const props = defineProps(["location", "facilityId"]);
 
-const current = computed(() => facilityStore.getCurrent);
-const locationTypes = computed(() => facilityStore.getLocationTypes);
+// `facilityId` arrives as a prop now. It used to be read from `facilityStore.current`, which the
+// detail page no longer populates — so every save here targeted `facilityId: undefined`.
+const mutations = useFacilityMutations(props.facilityId);
+const { descriptionById: locationTypes } = useTypedEnums("FACLOC_TYPE");
 
 const locationInfo = ref({} as any);
 
@@ -101,14 +103,13 @@ async function saveFacilityLocation() {
     await addFacilityLocation();
   }
 
-  await facilityStore.fetchFacilityLocations({ facilityId: current.value.facilityId });
 }
 
 async function addFacilityLocation() {
-  const params = { facilityId: current.value.facilityId, ...locationInfo.value };
+  const params = { ...locationInfo.value };
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.createFacilityLocation(params);
+    const resp = await mutations.saveLocation(params);
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Facility location created successfully'));
       closeModal();
@@ -123,10 +124,10 @@ async function addFacilityLocation() {
 }
 
 async function updateFacilityLocation() {
-  const params = { facilityId: current.value.facilityId, ...locationInfo.value };
+  const params = { ...locationInfo.value };
   emitter.emit('presentLoader');
   try {
-    const resp = await facilityStore.updateFacilityLocation(params);
+    const resp = await mutations.saveLocation(params);
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate('Facility location updated successfully'));
       closeModal();

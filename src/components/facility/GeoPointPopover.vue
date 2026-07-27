@@ -19,13 +19,16 @@ import {
   popoverController
 } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
+import { useFacilityMutations } from "@/composables/useFacilities";
+import { useGeocode } from "@/composables/useSeed";
 import { computed } from "vue";
 
-const props = defineProps(['facilityId', 'isRegenerationRequired']);
-const facilityStore = useFacilityStore();
-const postalAddress = computed(() => facilityStore.getPostalAddress);
+// The address is passed in by the opener. It used to be read from `facilityStore.current`, which
+// the detail page no longer populates — so the postcode lookup had nothing to work with.
+const props = defineProps(['facilityId', 'isRegenerationRequired', 'postalAddress']);
+const mutations = useFacilityMutations(props.facilityId);
+const { latLongForPostalCode } = useGeocode();
+const postalAddress = computed<any>(() => props.postalAddress ?? {});
 
 async function regenerateLatitudeAndLongitude() {
   let resp;
@@ -34,32 +37,19 @@ async function regenerateLatitudeAndLongitude() {
   emitter.emit('presentLoader');
 
   try {
-    const utilStore = useUtilStore();
-    const postalCode = postalAddress.value.postalCode;
-    const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
+    generatedLatLong = await latLongForPostalCode(postalAddress.value.postalCode);
 
-    resp = await utilStore.generateLatLong({
-      json: {
-        params: {
-          q: `postcode: ${query}`
-        }
-      }
-    });
-
-    if (resp.response.docs.length > 0) {
-      generatedLatLong = resp.response.docs[0];
-
-      if (generatedLatLong.latitude && generatedLatLong.longitude) {
-        resp = await facilityStore.updateFacilityPostalAddress({
+    if (generatedLatLong) {
+      {
+        resp = await mutations.updatePostalAddress({
           ...postalAddress.value,
-          facilityId: props.facilityId,
           latitude: generatedLatLong.latitude,
           longitude: generatedLatLong.longitude
         });
 
         if (!commonUtil.hasError(resp)) {
           commonUtil.showToast(translate("Successfully regenerated latitude and longitude for the facility."));
-          await facilityStore.fetchFacilityContactDetailsAndTelecom({ facilityId: props.facilityId });
+          // Contact mechs are live per visit; the opener reloads them on dismiss.
         } else {
           throw resp.data;
         }
@@ -80,16 +70,15 @@ async function removeLatitudeAndLongitude() {
   emitter.emit('presentLoader');
 
   try {
-    const resp = await facilityStore.updateFacilityPostalAddress({
+    const resp = await mutations.updatePostalAddress({
       ...postalAddress.value,
-      facilityId: props.facilityId,
       latitude: '',
       longitude: ''
     });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Facility latitude and longitude removed successfully."));
-      await facilityStore.fetchFacilityContactDetailsAndTelecom({ facilityId: props.facilityId });
+      // Contact mechs are live per visit; the opener reloads them on dismiss.
     } else {
       throw resp.data;
     }
