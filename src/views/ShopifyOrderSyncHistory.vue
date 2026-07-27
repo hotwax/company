@@ -6,17 +6,11 @@
           <ion-back-button :default-href="`/shopify-connection-details/${id}/order-sync`" />
         </ion-buttons>
         <ion-title>{{ translate("Order import history") }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button
-            fill="clear"
-            :disabled="isLoading"
-            :aria-label="translate('Refresh order import history')"
-            @click="loadHistory"
-          >
-            <ion-spinner v-if="isLoading" name="crescent" />
-            <ion-icon v-else slot="icon-only" :icon="refreshOutline" />
-          </ion-button>
-        </ion-buttons>
+        <!--
+          No refresh button: this list is a live projection of the cache, so a new run appears on its
+          own as the sync worker commits. A manual refresh would only re-render the same values while
+          flashing a spinner.
+        -->
       </ion-toolbar>
     </ion-header>
 
@@ -26,16 +20,6 @@
           <ion-card-title>{{ translate("Loading order import history") }}</ion-card-title>
         </ion-card-header>
         <ion-card-content><ion-spinner name="crescent" /></ion-card-content>
-      </ion-card>
-
-      <ion-card v-else-if="loadError">
-        <ion-card-header>
-          <ion-card-title>{{ translate("Order import history could not load") }}</ion-card-title>
-        </ion-card-header>
-        <ion-card-content>
-          <p>{{ loadError }}</p>
-          <ion-button fill="outline" @click="loadHistory">{{ translate("Retry") }}</ion-button>
-        </ion-card-content>
       </ion-card>
 
       <template v-else>
@@ -180,7 +164,6 @@
 </template>
 
 <script setup lang="ts">
-import { translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardTitle, IonChip, IonContent, IonHeader, IonIcon, IonInput,
@@ -188,38 +171,51 @@ import {
   IonTitle, IonToolbar, onIonViewWillEnter
 } from "@ionic/vue";
 import {
-  alertCircleOutline, checkmarkCircleOutline, helpCircleOutline, refreshOutline, syncCircleOutline
+  alertCircleOutline, checkmarkCircleOutline, helpCircleOutline, syncCircleOutline
 } from "ionicons/icons";
-import { computed, reactive, ref } from "vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
-import { type ShopifyOrderSyncBatch, type ShopifyOrderSyncImport, useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
-import { formatDateTime, parseDateTimeValue } from "@/utils";
 import {
-  type OrderSyncProgressRow,
-  type OrderSyncProgressState,
-  deriveShopifyOrderSyncOverallState,
-  deriveShopifyOrderSyncProgress,
-} from "@/utils/shopifyOrderSync";
+  deriveSyncOverallState,
+  deriveSyncProgress,
+  useShopifyOrderSync,
+  type SyncProgressRow,
+  type SyncProgressState,
+  type ShopifyOrderSyncBatch,
+  type ShopifyOrderSyncImport
+} from "@/composables/useShopify";
+import { translate } from "@common";
+import { formatDateTime, parseDateTimeValue } from "@/utils";
+import { computed, reactive, ref } from "vue";
 
 interface OrderSyncHistoryRun {
   id: string;
   batch: ShopifyOrderSyncBatch;
   imports: ShopifyOrderSyncImport[];
-  batchRow: OrderSyncProgressRow;
-  importRow: OrderSyncProgressRow;
-  overallState: OrderSyncProgressState;
+  batchRow: SyncProgressRow;
+  importRow: SyncProgressRow;
+  overallState: SyncProgressState;
   requestedTime: number;
 }
 
 const props = defineProps<{ id: string }>();
-const orderSyncStore = useShopifyOrderSyncStore();
-const isLoading = ref(true);
-const loadError = ref("");
-const batches = ref<ShopifyOrderSyncBatch[]>([]);
-const importsBySystemMessageId = ref<Record<string, ShopifyOrderSyncImport[]>>({});
+const orderSync = useShopifyOrderSync();
+/**
+ * Batches and their imports come straight from the cache, LIVE.
+ *
+ * This page used to hold them in local refs filled by `orderSync.loadHistory(id)` — a store-era
+ * contract that returned `{ batches, importsBySystemMessageId }`. That contract is gone: both values
+ * are now cached projections that re-derive themselves whenever the sync worker commits, so the page
+ * needs no fetch, no copy, and no re-entry to show a new run appearing.
+ *
+ * `isLoading` is the cache's own hydration flag rather than a request flag. On a revisit the cache is
+ * already hydrated, so no skeleton is shown at all.
+ */
+const batches = computed(() => orderSync.batches);
+const importsBySystemMessageId = computed(() => orderSync.importsBySystemMessageId);
+const isLoading = computed(() => !orderSync.hydrated);
 const showMdmLogModal = ref(false);
 const selectedMdmLog = ref<ShopifyOrderSyncImport | null>(null);
-const shopName = computed(() => orderSyncStore.shop?.name || translate("Shopify instance {id}", { id: props.id }));
+const shopName = computed(() => orderSync.shop?.name || translate("Shopify instance {id}", { id: props.id }));
 const selectedMdmLogDetails = computed(() => selectedMdmLog.value ? {
   statusId: selectedMdmLog.value.statusId,
   configId: selectedMdmLog.value.configId,
@@ -232,7 +228,7 @@ const selectedMdmLogDetails = computed(() => selectedMdmLog.value ? {
 } : {});
 
 const filters = reactive({
-  outcome: "" as "" | OrderSyncProgressState,
+  outcome: "" as "" | SyncProgressState,
   sortOrder: "newest" as "newest" | "oldest",
   requestedAfter: "",
   requestedBefore: "",
@@ -258,14 +254,14 @@ const SYSTEM_MESSAGE_STATUS_LABELS: Record<string, string> = {
 
 const allRuns = computed<OrderSyncHistoryRun[]>(() => batches.value.map((batch) => {
   const imports = importsBySystemMessageId.value[batch.systemMessageId] || [];
-  const [batchRow, importRow] = deriveShopifyOrderSyncProgress(batch, imports);
+  const [batchRow, importRow] = deriveSyncProgress(batch, imports);
   return {
     id: batch.systemMessageId,
     batch,
     imports,
     batchRow,
     importRow,
-    overallState: deriveShopifyOrderSyncOverallState(batchRow, importRow),
+    overallState: deriveSyncOverallState(batchRow, importRow),
     requestedTime: toMillis(batch.initDate),
   };
 }));
@@ -282,21 +278,8 @@ const runs = computed<OrderSyncHistoryRun[]>(() => {
   return filters.sortOrder === "oldest" ? [...filtered].reverse() : filtered;
 });
 
-onIonViewWillEnter(loadHistory);
-
-async function loadHistory() {
-  isLoading.value = true;
-  loadError.value = "";
-  try {
-    const result = await orderSyncStore.loadHistory(props.id);
-    batches.value = result?.batches || [];
-    importsBySystemMessageId.value = result?.importsBySystemMessageId || {};
-  } catch (error) {
-    loadError.value = error instanceof Error ? error.message : translate("Order import history could not load.");
-  } finally {
-    isLoading.value = false;
-  }
-}
+/** Bind the shared session to this shop; the reads above then resolve against it. */
+onIonViewWillEnter(() => orderSync.resetForShop(props.id));
 
 function toMillis(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -324,7 +307,7 @@ function batchStatusLabel(statusId: string): string {
   return label ? translate(label) : statusLabel(statusId);
 }
 
-function progressStateLabel(state: OrderSyncProgressState): string {
+function progressStateLabel(state: SyncProgressState): string {
   if (state === "completed") return translate("Completed");
   if (state === "partial") return translate("Partially completed");
   if (state === "failed") return translate("Failed");
@@ -340,7 +323,7 @@ function importCountsLabel(run: OrderSyncHistoryRun): string {
   return `${processed}, ${translate("{count} failed", { count: failedRecords })}`;
 }
 
-function progressColor(state: OrderSyncProgressState): string {
+function progressColor(state: SyncProgressState): string {
   if (state === "completed") return "success";
   if (state === "partial") return "warning";
   if (state === "failed") return "danger";
@@ -348,7 +331,7 @@ function progressColor(state: OrderSyncProgressState): string {
   return "medium";
 }
 
-function stateIcon(state: OrderSyncProgressState): string {
+function stateIcon(state: SyncProgressState): string {
   if (state === "completed") return checkmarkCircleOutline;
   if (state === "partial" || state === "failed") return alertCircleOutline;
   if (state === "active") return syncCircleOutline;

@@ -65,7 +65,7 @@
         </ion-card>
 
         <template v-else>
-          <ion-card v-if="!orderSyncStore.job" class="state-card">
+          <ion-card v-if="!orderSync.job" class="state-card">
             <ion-card-header>
               <ion-card-title>{{ translate("Order Sync needs setup") }}</ion-card-title>
               <ion-card-subtitle>
@@ -97,10 +97,10 @@
                 <ion-buttons>
                   <ion-button
                     fill="clear"
-                    :disabled="!canRunForSelectedShop || orderSyncStore.activeMutation === 'run-now'"
+                    :disabled="!canRunForSelectedShop || orderSync.activeMutation === 'run-now'"
                     @click="confirmRunNow"
                   >
-                    <ion-spinner v-if="orderSyncStore.activeMutation === 'run-now'" slot="start" name="crescent" />
+                    <ion-spinner v-if="orderSync.activeMutation === 'run-now'" slot="start" name="crescent" />
                     <ion-icon v-else slot="start" :icon="flashOutline" />
                     {{ translate("Run now") }}
                   </ion-button>
@@ -129,27 +129,27 @@
                     {{ translate("Next batch sync") }}
                     <p>{{ nextRunLabel }}</p>
                   </ion-label>
-                  <ion-badge v-if="orderSyncStore.job?.paused" slot="end" color="warning">
+                  <ion-badge v-if="orderSync.isPaused" slot="end" color="warning">
                     {{ translate("Paused") }}
                   </ion-badge>
                 </ion-item>
                 <ion-item>
                   <ion-label>{{ translate("Orders processed") }}</ion-label>
-                  <ion-note slot="end">{{ orderSyncStore.summary.processedOrderCount }}</ion-note>
+                  <ion-note slot="end">{{ summary.processedOrderCount }}</ion-note>
                 </ion-item>
                 <ion-item>
                   <ion-label>
                     {{ translate("Latest batch outcome") }}
                     <p>{{ latestBatch?.systemMessageId || translate("Awaiting first run") }}</p>
                   </ion-label>
-                  <ion-badge slot="end" :color="progressColor(orderSyncStore.summary.overallStatus)">
-                    {{ progressStateLabel(orderSyncStore.summary.overallStatus) }}
+                  <ion-badge slot="end" :color="progressColor(summary.overallStatus)">
+                    {{ progressStateLabel(summary.overallStatus) }}
                   </ion-badge>
                 </ion-item>
                 <ion-item>
                   <ion-label>{{ translate("Pending batch requests") }}</ion-label>
-                  <ion-badge slot="end" :color="orderSyncStore.summary.pendingBatchRequests ? 'primary' : 'medium'">
-                    {{ orderSyncStore.summary.pendingBatchRequests }}
+                  <ion-badge slot="end" :color="summary.pendingBatchRequests ? 'primary' : 'medium'">
+                    {{ summary.pendingBatchRequests }}
                   </ion-badge>
                 </ion-item>
                 <ion-item lines="none">
@@ -165,10 +165,10 @@
                 <p v-if="runNowExplanation">{{ runNowExplanation }}</p>
                 <p v-if="actionMessage" class="ion-text-success" role="status">{{ actionMessage }}</p>
                 <p v-if="actionError" class="ion-text-danger" role="alert">{{ actionError }}</p>
-                <p v-if="orderSyncStore.lastRunResult?.systemMessageId">
+                <p v-if="orderSync.lastRunResult?.systemMessageId">
                   {{ translate("Queued SystemMessage") }}:
-                  <ion-button fill="clear" size="small" @click="openSystemMessageDetails(orderSyncStore.lastRunResult.systemMessageId)">
-                    {{ orderSyncStore.lastRunResult.systemMessageId }}
+                  <ion-button fill="clear" size="small" @click="openSystemMessageDetails(orderSync.lastRunResult.systemMessageId)">
+                    {{ orderSync.lastRunResult.systemMessageId }}
                   </ion-button>
                 </p>
               </ion-card-content>
@@ -251,17 +251,17 @@
                 <ion-card-subtitle>{{ translate("Review the job that queues scheduled Shopify order requests") }}</ion-card-subtitle>
               </ion-card-header>
               <ion-list>
-                <ion-item button detail :disabled="!orderSyncStore.job" @click="showJobDetailsModal = true">
+                <ion-item button detail :disabled="!orderSync.job" @click="showJobDetailsModal = true">
                   <ion-label>
                     {{ translate("Queue order requests") }}
-                    <p>{{ formatDate(orderSyncStore.job?.lastRunTime) }}</p>
+                    <p>{{ formatDate(orderSync.job?.lastRunTime) }}</p>
                   </ion-label>
                   <ion-badge slot="end" :color="jobStateColor">{{ jobStateLabel }}</ion-badge>
                 </ion-item>
                 <ion-item button detail :router-link="configurationHref">
                   <ion-label>
                     {{ translate("Schedule") }}
-                    <p>{{ orderSyncStore.job?.cronExpression || translate("Not scheduled") }}</p>
+                    <p>{{ orderSync.job?.cronExpression || translate("Not scheduled") }}</p>
                   </ion-label>
                   <ion-note slot="end">{{ nextRunLabel }}</ion-note>
                 </ion-item>
@@ -282,15 +282,15 @@
                   <ion-label class="ion-text-wrap">
                     {{ landmark.title }}
                     <p>{{ landmark.description }}</p>
-                    <ion-badge v-if="!landmark.value && orderSyncStore.landmarkDates.status === 'ready'" color="warning">
+                    <ion-badge v-if="!landmark.value && orderSync.landmarkDates.status === 'ready'" color="warning">
                       {{ translate("Setup required") }}
                     </ion-badge>
                   </ion-label>
-                  <ion-label v-if="landmark.value || !orderSyncStore.capabilities.canConfigure" slot="end">
+                  <ion-label v-if="landmark.value || !capabilities.canConfigure" slot="end">
                     {{ landmarkDateLabel(landmark.value) }}
                   </ion-label>
                   <ion-button
-                    v-if="orderSyncStore.capabilities.canConfigure"
+                    v-if="capabilities.canConfigure"
                     slot="end"
                     fill="clear"
                     @click="openLandmarkDateModal(landmark.key)"
@@ -298,7 +298,7 @@
                     {{ landmark.value ? translate("Edit") : translate("Set date") }}
                   </ion-button>
                 </ion-item>
-                <ion-item v-if="orderSyncStore.landmarkDates.status === 'error'" lines="none">
+                <ion-item v-if="orderSync.landmarkDates.status === 'error'" lines="none">
                   <ion-label class="ion-text-wrap ion-text-danger" role="status">
                     <p>{{ translate("Landmark dates could not be loaded.") }}</p>
                   </ion-label>
@@ -317,20 +317,20 @@
                     {{ translate("Pending batch requests") }}
                     <p>{{ translate("Shopify requests waiting to be processed") }}</p>
                   </ion-label>
-                  <ion-label slot="end">{{ orderSyncStore.summary.pendingBatchRequests }}</ion-label>
+                  <ion-label slot="end">{{ summary.pendingBatchRequests }}</ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label>
                     {{ translate("Current Shopify request status") }}
                     <p>{{ latestBatch?.systemMessageId || translate("No recent request") }}</p>
                   </ion-label>
-                  <ion-badge slot="end" :color="progressColor(orderSyncStore.summary.batchStatus)">
-                    {{ progressStateLabel(orderSyncStore.summary.batchStatus) }}
+                  <ion-badge slot="end" :color="progressColor(summary.batchStatus)">
+                    {{ progressStateLabel(summary.batchStatus) }}
                   </ion-badge>
                 </ion-item>
                 <ion-item>
                   <ion-label>{{ translate("Order history records") }}</ion-label>
-                  <ion-label slot="end">{{ orderSyncStore.recentOrders.length }}</ion-label>
+                  <ion-label slot="end">{{ orderSync.recentOrders.length }}</ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label>
@@ -357,7 +357,7 @@
                   <h2 id="recent-orders-heading">{{ translate("Recent order sync history") }}</h2>
                   <p>{{ translate("Latest 100 records stitched from Shopify order history models, newest first") }}</p>
                 </ion-label>
-                <ion-badge slot="end" color="medium">{{ orderSyncStore.recentOrders.length }}</ion-badge>
+                <ion-badge slot="end" color="medium">{{ orderSync.recentOrders.length }}</ion-badge>
               </ion-item>
               <ion-searchbar
                 :value="ordersQuery"
@@ -592,7 +592,7 @@
           </ion-item>
           <ion-note v-if="replayDateRangeError" color="danger" class="replay-date-range-error">{{ replayDateRangeError }}</ion-note>
           <ion-note v-else class="replay-date-range-help">
-            {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSyncStore.runtimeTimeZone || "UTC" }) }}
+            {{ translate("Dates are inclusive and use the OMS runtime timezone: {timeZone}.", { timeZone: orderSync.runtimeTimeZone || "UTC" }) }}
           </ion-note>
           <ion-item lines="none" class="replay-actions">
             <ion-button fill="clear" :disabled="isReplayStarting" @click="showReplayOrdersModal = false">{{ translate("Cancel") }}</ion-button>
@@ -669,13 +669,13 @@
 
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
-      :job-name="orderSyncStore.job?.jobName || ''"
+      :job-name="orderSync.job?.jobName || ''"
       :title="translate('Queue order requests')"
       :allowed-parameter-names="['shopId', 'systemMessageRemoteId', 'systemMessageTypeId', 'runAsBatch']"
       :parameter-description="translate('Job and service parameters used by this Order Sync job.')"
       :can-run-now="canRunForSelectedShop"
       :can-edit="canEditJobFromModal"
-      :run-now-disabled-reason="orderSyncStore.runNowDisabledReason"
+      :run-now-disabled-reason="runNowDisabledReason"
       :edit-disabled-reason="editJobDisabledReason"
       :run-handler="confirmRunNow"
       :save-handler="saveJobFromModal"
@@ -738,29 +738,57 @@ import {
   IonToolbar,
   alertController,
 } from "@ionic/vue";
+import {
+  canRunOrderSyncNow,
+  filterRecentOrders,
+  isOrderSyncBatchActive,
+  ORDER_SYNC_FEATURE,
+  getSyncCapabilities,
+  orderSyncRunNowDisabledReason,
+  orderSyncSummary,
+  useShopifyOrderSyncPolling,
+  useShopifyOrderSync,
+  type SyncProgressRow,
+  type SyncProgressState,
+  type ShopifyOrderSyncImport,
+  type ShopifyOrderSyncRecentOrder,
+  type ShopifyOrderSyncSearchResult,
+} from "@/composables/useShopify";
 import { commonUtil, logger, translate } from "@common";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { formatDateTime } from "@/utils";
-import { useShopifyOrderSyncPolling } from "@/composables/useShopifyOrderSyncPolling";
+import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import ShopifyOrderSyncCustomRequestCard from "@/components/shopify-order-sync/ShopifyOrderSyncCustomRequestCard.vue";
-import {
-  useShopifyOrderSyncStore,
-  type ShopifyOrderSyncImport,
-  type ShopifyOrderSyncRecentOrder,
-  type ShopifyOrderSyncSearchResult,
-} from "@/store/shopifyOrderSync";
-import {
-  type OrderSyncProgressRow,
-  type OrderSyncProgressState,
-} from "@/utils/shopifyOrderSync";
+
+
+
+
+
+
+
+
+
 
 const props = defineProps<{ id: string }>();
-const orderSyncStore = useShopifyOrderSyncStore();
+const orderSync = useShopifyOrderSync();
+const userStore = useUserStore();
+
+// View-model derivations computed locally from the store's RAW entity state.
+const summary = computed(() => orderSyncSummary(
+  orderSync.batches,
+  orderSync.importsBySystemMessageId,
+  orderSync.job,
+  orderSync.productStore,
+));
+const capabilities = computed(() => getSyncCapabilities({ hasPermission: (permissionId: string) => userStore.hasPermission(permissionId) }, ORDER_SYNC_FEATURE));
+const canRunNow = computed(() => canRunOrderSyncNow(orderSync.job, orderSync.batches));
+const runNowDisabledReason = computed(() => orderSyncRunNowDisabledReason(capabilities.value, orderSync.job, summary.value));
+const isBatchActive = computed(() => isOrderSyncBatchActive(summary.value));
 
 const ordersQuery = ref("");
 const pollingError = ref("");
@@ -775,17 +803,17 @@ const selectedMdmLogId = ref("");
 async function refreshStore() {
   const shopId = props.id;
   try {
-    await orderSyncStore.loadMonitoring(shopId);
-    if (props.id === shopId && orderSyncStore.selectedShopId === shopId) pollingError.value = "";
+    await orderSync.loadMonitoring(shopId);
+    if (props.id === shopId && orderSync.selectedShopId === shopId) pollingError.value = "";
   } catch (error) {
-    if (props.id !== shopId || orderSyncStore.selectedShopId !== shopId) return;
+    if (props.id !== shopId || orderSync.selectedShopId !== shopId) return;
     pollingError.value = errorMessage(error, translate("Order Sync monitoring could not be refreshed."));
     throw error;
   }
 }
 
 const polling = useShopifyOrderSyncPolling({
-  batchActive: () => orderSyncStore.isBatchActive,
+  batchActive: () => isBatchActive.value,
   refresh: refreshStore,
   onError: (error) => {
     pollingError.value = errorMessage(error, translate("Order Sync monitoring could not be refreshed."));
@@ -799,7 +827,7 @@ watch(() => props.id, (nextId, previousId) => {
   pollingError.value = "";
   actionMessage.value = "";
   actionError.value = "";
-  orderSyncStore.resetForShop(nextId);
+  orderSync.resetForShop(nextId);
 
   if (!polling.isPageActive.value) return;
   const routeRefresh = polling.manualRefresh();
@@ -808,8 +836,8 @@ watch(() => props.id, (nextId, previousId) => {
       if (
         polling.isPageActive.value
         && props.id === nextId
-        && orderSyncStore.selectedShopId === nextId
-        && !orderSyncStore.monitoringLoadedAt
+        && orderSync.selectedShopId === nextId
+        && !orderSync.monitoringLoadedAt
       ) {
         void polling.manualRefresh();
       }
@@ -819,41 +847,41 @@ watch(() => props.id, (nextId, previousId) => {
 
 const connectionDetailsHref = computed(() => `/shopify-connection-details/${encodeURIComponent(props.id)}`);
 const configurationHref = computed(() => `${connectionDetailsHref.value}/order-sync/configure`);
-const hasLoadedMonitoring = computed(() => Boolean(orderSyncStore.monitoringLoadedAt));
-const isInitialLoading = computed(() => !hasLoadedMonitoring.value && !orderSyncStore.monitoringError);
-const isRefreshing = computed(() => orderSyncStore.monitoringRefreshing || polling.isRefreshing.value);
-const fatalLoadError = computed(() => hasLoadedMonitoring.value ? "" : (orderSyncStore.monitoringError || pollingError.value));
-const staleRefreshError = computed(() => hasLoadedMonitoring.value ? (orderSyncStore.monitoringError || pollingError.value) : "");
-const selectedShopMatchesRoute = computed(() => Boolean(props.id) && orderSyncStore.selectedShopId === props.id);
-const loadedShopMatchesRoute = computed(() => selectedShopMatchesRoute.value && orderSyncStore.shop?.shopId === props.id);
-const canRunForSelectedShop = computed(() => loadedShopMatchesRoute.value && orderSyncStore.canRunNow);
+const hasLoadedMonitoring = computed(() => Boolean(orderSync.monitoringLoadedAt));
+const isInitialLoading = computed(() => !hasLoadedMonitoring.value && !orderSync.monitoringError);
+const isRefreshing = computed(() => orderSync.monitoringRefreshing || polling.isRefreshing.value);
+const fatalLoadError = computed(() => hasLoadedMonitoring.value ? "" : (orderSync.monitoringError || pollingError.value));
+const staleRefreshError = computed(() => hasLoadedMonitoring.value ? (orderSync.monitoringError || pollingError.value) : "");
+const selectedShopMatchesRoute = computed(() => Boolean(props.id) && orderSync.selectedShopId === props.id);
+const loadedShopMatchesRoute = computed(() => selectedShopMatchesRoute.value && orderSync.shop?.shopId === props.id);
+const canRunForSelectedShop = computed(() => loadedShopMatchesRoute.value && canRunNow.value);
 const canEditJobFromModal = computed(() => loadedShopMatchesRoute.value
-  && orderSyncStore.capabilities.canEditSchedule
-  && orderSyncStore.capabilities.canActivate
-  && !orderSyncStore.activeMutation);
+  && capabilities.value.canEditSchedule
+  && capabilities.value.canActivate
+  && !orderSync.activeMutation);
 const editJobDisabledReason = computed(() => canEditJobFromModal.value
   ? ""
   : translate("COMMON_ADMIN permission is required to edit Order Sync."));
-const shopName = computed(() => orderSyncStore.shop?.name || translate("Shopify instance {id}", { id: props.id }));
-const shopifyShopId = computed(() => orderSyncStore.shop?.shopifyShopId || "");
-const productStoreId = computed(() => orderSyncStore.productStore?.productStoreId || orderSyncStore.shop?.productStoreId || "");
-const productStoreName = computed(() => orderSyncStore.productStore?.name || orderSyncStore.shop?.productStoreName || translate("Not linked"));
-const latestBatch = computed(() => orderSyncStore.summary.latestBatch);
-const latestCompletedBatchId = computed(() => orderSyncStore.summary.latestCompletedBatch?.systemMessageId || translate("None"));
-const progressRows = computed<readonly [OrderSyncProgressRow, OrderSyncProgressRow]>(() => orderSyncStore.summary.progressRows);
+const shopName = computed(() => orderSync.shop?.name || translate("Shopify instance {id}", { id: props.id }));
+const shopifyShopId = computed(() => orderSync.shop?.shopifyShopId || "");
+const productStoreId = computed(() => orderSync.productStore?.productStoreId || orderSync.shop?.productStoreId || "");
+const productStoreName = computed(() => orderSync.productStore?.name || orderSync.shop?.productStoreName || translate("Not linked"));
+const latestBatch = computed(() => summary.value.latestBatch);
+const latestCompletedBatchId = computed(() => summary.value.latestCompletedBatch?.systemMessageId || translate("None"));
+const progressRows = computed<readonly [SyncProgressRow, SyncProgressRow]>(() => summary.value.progressRows);
 const progressImports = computed<ShopifyOrderSyncImport[]>(() => {
   const systemMessageId = latestBatch.value?.systemMessageId;
-  return systemMessageId ? orderSyncStore.importsBySystemMessageId[systemMessageId] || [] : [];
+  return systemMessageId ? orderSync.importsBySystemMessageId[systemMessageId] || [] : [];
 });
 const selectedSystemMessageDetails = computed(() => {
-  const message = (orderSyncStore.systemMessages || [])
+  const message = (orderSync.systemMessages || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const imports = orderSyncStore.importsBySystemMessageId[selectedSystemMessageId.value] || [];
-  const successfulAudit = (orderSyncStore.recentAudits || [])
+  const imports = orderSync.importsBySystemMessageId[selectedSystemMessageId.value] || [];
+  const successfulAudit = (orderSync.recentAudits || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const requestFailure = (orderSyncStore.recentRequestErrors || [])
+  const requestFailure = (orderSync.recentRequestErrors || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
-  const importFailure = (orderSyncStore.recentErrors || [])
+  const importFailure = (orderSync.recentErrors || [])
     .find((row) => row.systemMessageId === selectedSystemMessageId.value);
   const totalRecordCount = imports.length
     ? imports.reduce((total, row) => total + row.totalRecordCount, 0)
@@ -891,11 +919,11 @@ const selectedSystemMessageDetails = computed(() => {
   };
 });
 const selectedMdmLogDetails = computed(() => {
-  const imports = Object.values(orderSyncStore.importsBySystemMessageId || {}).flat();
+  const imports = Object.values(orderSync.importsBySystemMessageId || {}).flat();
   const imported = imports.find((entry) => entry.logId === selectedMdmLogId.value);
-  const successfulAudits = (orderSyncStore.recentAudits || [])
+  const successfulAudits = (orderSync.recentAudits || [])
     .filter((order) => order.logId === selectedMdmLogId.value);
-  const failed = (orderSyncStore.recentErrors || [])
+  const failed = (orderSync.recentErrors || [])
     .find((error) => error.logId === selectedMdmLogId.value);
   const latestAudit = successfulAudits
     .slice()
@@ -911,32 +939,32 @@ const selectedMdmLogDetails = computed(() => {
     failedRecordCount: imported?.failedRecordCount ?? (successfulAudits.length ? 0 : failed ? 1 : undefined),
   };
 });
-const filteredOrders = computed(() => orderSyncStore.filteredRecentOrders(ordersQuery.value));
+const filteredOrders = computed(() => filterRecentOrders(orderSync.recentOrders, ordersQuery.value));
 const failedImportLogs = computed(() => {
-  return orderSyncStore.failedDataManagerLogs || [];
+  return orderSync.failedDataManagerLogs || [];
 });
 
 const jobStateLabel = computed(() => {
-  if (!orderSyncStore.job) return translate("Setup required");
-  return orderSyncStore.job.paused ? translate("Paused") : translate("Active");
+  if (!orderSync.job) return translate("Setup required");
+  return orderSync.isPaused ? translate("Paused") : translate("Active");
 });
-const jobStateColor = computed(() => !orderSyncStore.job ? "medium" : orderSyncStore.job.paused ? "warning" : "success");
-const lastCompletedBatchLabel = computed(() => orderSyncStore.summary.lastCompletedAt
-  ? formatDate(orderSyncStore.summary.lastCompletedAt)
+const jobStateColor = computed(() => !orderSync.job ? "medium" : orderSync.isPaused ? "warning" : "success");
+const lastCompletedBatchLabel = computed(() => summary.value.lastCompletedAt
+  ? formatDate(summary.value.lastCompletedAt)
   : translate("No completed batch recorded"));
 const nextRunLabel = computed(() => {
-  if (!orderSyncStore.job) return translate("Not configured");
-  if (orderSyncStore.job.paused) return translate("Paused");
-  return orderSyncStore.summary.nextRunTime ? formatDate(orderSyncStore.summary.nextRunTime) : translate("Not scheduled");
+  if (!orderSync.job) return translate("Not configured");
+  if (orderSync.isPaused) return translate("Paused");
+  return summary.value.nextRunTime ? formatDate(summary.value.nextRunTime) : translate("Not scheduled");
 });
 const batchRequestedLabel = computed(() => latestBatch.value?.initDate
   ? formatDate(latestBatch.value.initDate)
   : translate("Not requested yet"));
 const runNowExplanation = computed(() => {
-  if (orderSyncStore.canRunNow) {
+  if (canRunNow.value) {
     return translate("Queues the standard next batch window from the existing job configuration.");
   }
-  return orderSyncStore.runNowDisabledReason;
+  return runNowDisabledReason.value;
 });
 const recentOrdersEmptyMessage = computed(() => {
   return translate("No order sync history records were found for this Shopify instance.");
@@ -952,18 +980,18 @@ function formatDate(value: unknown): string {
 
 
 function landmarkDateLabel(value: string): string {
-  if (orderSyncStore.landmarkDates.status === "loading") return translate("Loading");
+  if (orderSync.landmarkDates.status === "loading") return translate("Loading");
   if (!value) return translate("Not set");
   return formatDateTime(value) || value;
 }
 
-function progressRowTitle(id: OrderSyncProgressRow["id"]): string {
+function progressRowTitle(id: SyncProgressRow["id"]): string {
   return id === "batch-request"
     ? translate("Shopify order batch request")
     : translate("HotWax order import");
 }
 
-function progressStateLabel(state: OrderSyncProgressState): string {
+function progressStateLabel(state: SyncProgressState): string {
   if (state === "completed") return translate("Completed");
   if (state === "partial") return translate("Partially completed");
   if (state === "failed") return translate("Failed");
@@ -971,7 +999,7 @@ function progressStateLabel(state: OrderSyncProgressState): string {
   return translate("Waiting");
 }
 
-function progressDetailLabel(row: OrderSyncProgressRow): string {
+function progressDetailLabel(row: SyncProgressRow): string {
   if (row.id === "batch-request") {
     if (row.state === "completed") return translate("Request completed");
     if (row.state === "failed") return translate("Request failed");
@@ -997,7 +1025,7 @@ function progressDetailLabel(row: OrderSyncProgressRow): string {
   return progressStateLabel(row.state);
 }
 
-function progressColor(state: OrderSyncProgressState): string {
+function progressColor(state: SyncProgressState): string {
   if (state === "completed") return "success";
   if (state === "partial") return "warning";
   if (state === "failed") return "danger";
@@ -1050,9 +1078,9 @@ function openMdmLogDetails(logId: unknown) {
   const id = String(logId || "").trim();
   if (!id) return;
   const safeLogIds = new Set([
-    ...Object.values(orderSyncStore.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
-    ...(orderSyncStore.recentAudits || []).map((order) => order.logId),
-    ...(orderSyncStore.recentErrors || []).map((error) => error.logId),
+    ...Object.values(orderSync.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
+    ...(orderSync.recentAudits || []).map((order) => order.logId),
+    ...(orderSync.recentErrors || []).map((error) => error.logId),
   ].filter(Boolean));
   if (!safeLogIds.has(id)) return;
   selectedMdmLogId.value = id;
@@ -1073,11 +1101,11 @@ const selectedOrders = computed(() => Object.values(selectedOrdersById.value));
 const allSelected = computed(() => orders.value.length > 0 && orders.value.every((order) => selectedOrdersById.value[order.legacyResourceId]));
 
 function openCustomOrderRequest() {
-  if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
+  if (!capabilities.value.canRetryIndividualOrder) {
     actionError.value = translate("Administrator permission is required to download specific orders.");
     return;
   }
-  if (!orderSyncStore.remote?.systemMessageRemoteId) {
+  if (!orderSync.remote?.systemMessageRemoteId) {
     commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
     return;
   }
@@ -1096,7 +1124,7 @@ async function searchOrders(after?: string) {
   isLoading.value = true;
   const currentRequestId = ++requestId;
   try {
-    const result = await orderSyncStore.searchShopifyOrders({ queryString: queryString.value.trim(), after, pageSize: 20 });
+    const result = await orderSync.searchShopifyOrders({ queryString: queryString.value.trim(), after, pageSize: 20 });
     if (currentRequestId !== requestId) return;
     orders.value = after ? orders.value.concat(result.orders) : result.orders;
     hasNextPage.value = result.hasNextPage;
@@ -1147,8 +1175,8 @@ async function submit() {
   actionMessage.value = "";
   actionError.value = "";
   try {
-    const result = await orderSyncStore.requestSelectedOrders({ shopifyOrderIds: selectedIds, shopId: requestedShopId });
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    const result = await orderSync.requestSelectedOrders({ shopifyOrderIds: selectedIds, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
     if (result.queued.length === 1 && result.failedOrderIds.length === 0) {
       actionMessage.value = translate("Shopify order {order} was queued as {id}.", {
         order: result.queued[0].shopifyOrderId,
@@ -1162,7 +1190,7 @@ async function submit() {
     }
     await polling.manualRefresh();
   } catch (error) {
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
     actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
   }
 }
@@ -1176,14 +1204,14 @@ const landmarkDateRows = computed(() => ([
     key: "launchDate" as LandmarkDateKey,
     title: translate("New order sync launch date"),
     description: translate("Orders created on or after this go-live date sync as live fulfillment work"),
-    value: orderSyncStore.landmarkDates.launchDate,
+    value: orderSync.landmarkDates.launchDate,
     last: false,
   },
   {
     key: "historyLastSyncDate" as LandmarkDateKey,
     title: translate("Order history synced through"),
     description: translate("Orders before the launch date are imported as historical records up to this point"),
-    value: orderSyncStore.landmarkDates.historyLastSyncDate,
+    value: orderSync.landmarkDates.historyLastSyncDate,
     last: true,
   },
 ]));
@@ -1198,19 +1226,19 @@ const landmarkSaveError = ref("");
 const activeLandmark = computed(() => landmarkDateRows.value.find((row) => row.key === activeLandmarkKey.value));
 
 async function openLandmarkDateModal(key: LandmarkDateKey) {
-  if (!orderSyncStore.capabilities.canConfigure) {
+  if (!capabilities.value.canConfigure) {
     actionError.value = translate("Administrator permission is required to set landmark dates.");
     return;
   }
   activeLandmarkKey.value = key;
   landmarkSaveError.value = "";
   landmarkSuggestedDate.value = "";
-  const existing = orderSyncStore.landmarkDates[key];
+  const existing = orderSync.landmarkDates[key];
   landmarkDateValue.value = existing ? toDatetimeInput(existing) : "";
   showLandmarkDateModal.value = true;
   landmarkSuggestionLoading.value = true;
   try {
-    const suggestion = await orderSyncStore.suggestOldestOrderDate();
+    const suggestion = await orderSync.suggestOldestOrderDate();
     landmarkSuggestedDate.value = suggestion;
     if (!landmarkDateValue.value && suggestion) landmarkDateValue.value = toDatetimeInput(suggestion);
   } finally {
@@ -1226,8 +1254,8 @@ async function saveLandmarkDate() {
   landmarkSaveError.value = "";
   try {
     const value = formatDateTime(landmarkDateValue.value, "yyyy-MM-dd HH:mm:ss") || landmarkDateValue.value;
-    await orderSyncStore.setLandmarkDate({ key, value, shopId: requestedShopId });
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    await orderSync.setLandmarkDate({ key, value, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
     showLandmarkDateModal.value = false;
     actionMessage.value = translate("Landmark date saved.");
     await polling.manualRefresh();
@@ -1254,11 +1282,11 @@ const replayDateRangeError = computed(() => {
 });
 
 function openOrdersReplay() {
-  if (!orderSyncStore.capabilities.canRetryIndividualOrder) {
+  if (!capabilities.value.canRetryIndividualOrder) {
     actionError.value = translate("Administrator permission is required to download specific orders.");
     return;
   }
-  if (!orderSyncStore.remote?.systemMessageRemoteId) {
+  if (!orderSync.remote?.systemMessageRemoteId) {
     commonUtil.showToast(translate("Shopify order search is unavailable for this shop."));
     return;
   }
@@ -1281,16 +1309,16 @@ async function startOrdersReplay() {
   actionMessage.value = "";
   actionError.value = "";
   try {
-    const zone = orderSyncStore.runtimeTimeZone || "UTC";
+    const zone = orderSync.runtimeTimeZone || "UTC";
     const fromDateTime = DateTime.fromISO(replayFromDate.value, { zone }).startOf("day").toUTC().toISO() || "";
     const thruDateTime = DateTime.fromISO(replayThruDate.value, { zone }).endOf("day").toUTC().toISO() || "";
     const basis = replayBasis.value;
-    const search = await orderSyncStore.searchShopifyOrders({
+    const search = await orderSync.searchShopifyOrders({
       queryString: `${basis}:>=${fromDateTime} ${basis}:<=${thruDateTime}`,
       pageSize: REPLAY_ORDER_LIMIT,
       shopId: requestedShopId,
     });
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
 
     const shopifyOrderIds = [...new Set(
       search.orders.map((order) => String(order.legacyResourceId || "").trim()).filter(Boolean),
@@ -1305,8 +1333,8 @@ async function startOrdersReplay() {
       return;
     }
 
-    const result = await orderSyncStore.requestSelectedOrders({ shopifyOrderIds, shopId: requestedShopId });
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    const result = await orderSync.requestSelectedOrders({ shopifyOrderIds, shopId: requestedShopId });
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
     actionMessage.value = translate("Queued {queued} selected Shopify orders; {failed} could not be queued.", {
       queued: result.queued.length,
       failed: result.failedOrderIds.length,
@@ -1314,14 +1342,14 @@ async function startOrdersReplay() {
     showReplayOrdersModal.value = false;
     await polling.manualRefresh();
   } catch (error) {
-    if (props.id !== requestedShopId || orderSyncStore.selectedShopId !== requestedShopId) return;
+    if (props.id !== requestedShopId || orderSync.selectedShopId !== requestedShopId) return;
     actionError.value = errorMessage(error, translate("The selected Shopify orders could not be queued."));
   } finally {
     isReplayStarting.value = false;
   }
 }
 
-function openProgressDetails(row: OrderSyncProgressRow) {
+function openProgressDetails(row: SyncProgressRow) {
   if (row.id === "batch-request" && latestBatch.value?.systemMessageId) {
     openSystemMessageDetails(latestBatch.value.systemMessageId);
     return;
@@ -1334,12 +1362,12 @@ function openProgressDetails(row: OrderSyncProgressRow) {
 function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
   if (
     order.shopId !== props.id
-    || orderSyncStore.shop?.shopId !== props.id
+    || orderSync.shop?.shopId !== props.id
     || order.shopifyFetchVerified !== true
     || !/^(?!0+$)[0-9]{1,30}$/.test(order.shopifyOrderId)
   ) return "";
 
-  const hostname = String(orderSyncStore.shop.myshopifyDomain || "").trim();
+  const hostname = String(orderSync.shop.myshopifyDomain || "").trim();
   if (
     hostname !== hostname.toLocaleLowerCase()
     || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(hostname)
@@ -1364,8 +1392,8 @@ function escapeAlertText(value: unknown): string {
 async function confirmRunNow() {
   if (!canRunForSelectedShop.value) return false;
   const routeShopId = props.id;
-  const loadedShopId = orderSyncStore.shop?.shopId || "";
-  const jobName = orderSyncStore.job?.jobName || "";
+  const loadedShopId = orderSync.shop?.shopId || "";
+  const jobName = orderSync.job?.jobName || "";
   if (loadedShopId !== routeShopId) return false;
   const confirmationShopName = shopName.value;
   const alert = await alertController.create({
@@ -1381,17 +1409,17 @@ async function confirmRunNow() {
   if (
     result.role !== "confirm"
     || props.id !== routeShopId
-    || orderSyncStore.selectedShopId !== routeShopId
-    || orderSyncStore.shop?.shopId !== loadedShopId
-    || orderSyncStore.job?.jobName !== jobName
-    || !orderSyncStore.canRunNow
+    || orderSync.selectedShopId !== routeShopId
+    || orderSync.shop?.shopId !== loadedShopId
+    || orderSync.job?.jobName !== jobName
+    || !canRunNow.value
   ) return false;
 
   actionMessage.value = "";
   actionError.value = "";
   try {
-    const queued = await orderSyncStore.runNow({ shopId: routeShopId });
-    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return false;
+    const queued = await orderSync.runNow({ shopId: routeShopId });
+    if (props.id !== routeShopId || orderSync.selectedShopId !== routeShopId) return false;
     const correlation = queued.systemMessageId || queued.jobRunId;
     actionMessage.value = correlation
       ? translate("The standard next batch was queued as {id}.", { id: correlation })
@@ -1399,7 +1427,7 @@ async function confirmRunNow() {
     await polling.manualRefresh();
     return true;
   } catch (error) {
-    if (props.id !== routeShopId || orderSyncStore.selectedShopId !== routeShopId) return false;
+    if (props.id !== routeShopId || orderSync.selectedShopId !== routeShopId) return false;
     actionError.value = errorMessage(error, translate("Order Sync could not be queued."));
     return false;
   }
@@ -1407,15 +1435,15 @@ async function confirmRunNow() {
 
 async function saveJobFromModal(input: { cronExpression: string; paused: boolean }) {
   const shopId = props.id;
-  const currentJob = orderSyncStore.job;
-  if (!shopId || !currentJob || orderSyncStore.selectedShopId !== shopId || currentJob.shopId !== shopId) {
+  const currentJob = orderSync.job;
+  if (!shopId || !currentJob || orderSync.selectedShopId !== shopId || currentJob.shopId !== shopId) {
     throw new Error("The loaded Order Sync job does not belong to the selected Shopify shop.");
   }
   if (input.cronExpression !== currentJob.cronExpression) {
-    await orderSyncStore.updateSchedule(input.cronExpression, shopId);
+    await orderSync.updateSchedule(input.cronExpression, shopId);
   }
-  if (input.paused !== orderSyncStore.job?.paused) {
-    await orderSyncStore.updateJobStatus(input.paused, shopId);
+  if (input.paused !== orderSync.isPaused) {
+    await orderSync.updateJobStatus(input.paused, shopId);
   }
 }
 

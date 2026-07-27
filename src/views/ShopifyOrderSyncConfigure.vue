@@ -487,7 +487,6 @@
 </template>
 
 <script setup lang="ts">
-import { DateTime } from "luxon";
 import {
   IonBackButton,
   IonBadge,
@@ -518,35 +517,46 @@ import {
   IonToolbar,
   alertController,
   onIonViewWillEnter,
-  onIonViewWillLeave
+  onIonViewWillLeave,
 } from "@ionic/vue";
+import {
+  SYNC_SCHEDULE_PRESETS,
+  SHOPIFY_ORDER_SYNC_TEMPLATE_JOB,
+  createSyncScheduleDraft,
+  deriveSyncConfigurationState,
+  deriveOrderSyncMappingReadiness,
+  describeSyncCronExpression,
+  getNextSyncRun,
+  isSyncScheduleDirty,
+  normalizeSyncCronExpression,
+  ORDER_SYNC_FEATURE,
+  getSyncCapabilities,
+  useShopifyOrderSync,
+  validateSyncCronExpression,
+  type SyncConfigurationState,
+  type OrderSyncMappingFamilyId,
+  type OrderSyncMappingReadiness,
+} from "@/composables/useShopify";
+import { DateTime } from "luxon";
+import { useUserStore } from "@/store/user";
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, refreshOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from "vue-router";
 
-import { useShopifyOrderSyncStore } from "@/store/shopifyOrderSync";
-import {
-  SHOPIFY_ORDER_SYNC_TEMPLATE_JOB,
-  deriveOrderSyncConfigurationState,
-  deriveOrderSyncMappingReadiness,
-  type OrderSyncConfigurationState,
-  type OrderSyncMappingFamilyId,
-  type OrderSyncMappingReadiness
-} from "@/utils/shopifyOrderSync";
-import {
-  SHOPIFY_ORDER_SYNC_SCHEDULE_PRESETS,
-  createShopifyOrderSyncScheduleDraft,
-  describeShopifyOrderSyncCronExpression,
-  getNextShopifyOrderSyncRun,
-  isShopifyOrderSyncScheduleDirty,
-  normalizeShopifyOrderSyncCronExpression,
-  validateShopifyOrderSyncCronExpression
-} from "@/utils/shopifyOrderSyncSchedule";
+
+
+
+
+
+
+
+
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
-const orderSyncStore = useShopifyOrderSyncStore();
+const orderSync = useShopifyOrderSync();
+const userStore = useUserStore();
 
 type SetupMutation = "configure" | "schedule" | "activate" | "";
 type ActivationTarget = {
@@ -584,20 +594,25 @@ const localLoadToken = ref(0);
 const connectionDetailsHref = computed(() => `/shopify-connection-details/${encodeURIComponent(activeShopId.value)}`);
 const monitorHref = computed(() => `/shopify-connection-details/${encodeURIComponent(activeShopId.value)}/order-sync`);
 
-const capabilities = computed(() => orderSyncStore.capabilities);
-const hasCurrentStoreContext = computed(() => orderSyncStore.selectedShopId === activeShopId.value);
-const configurationState = computed<OrderSyncConfigurationState>(() => hasCurrentStoreContext.value
-  ? orderSyncStore.configurationState
-  : deriveOrderSyncConfigurationState({ loading: true }));
+const capabilities = computed(() => getSyncCapabilities({ hasPermission: (permissionId: string) => userStore.hasPermission(permissionId) }, ORDER_SYNC_FEATURE));
+const hasCurrentStoreContext = computed(() => orderSync.selectedShopId === activeShopId.value);
+const configurationState = computed<SyncConfigurationState>(() => hasCurrentStoreContext.value
+  ? deriveSyncConfigurationState({ job: orderSync.job, loading: orderSync.loading, error: orderSync.error })
+  : deriveSyncConfigurationState({ loading: true }));
 const mappingReadiness = computed<OrderSyncMappingReadiness>(() => hasCurrentStoreContext.value
-  ? orderSyncStore.mappingReadiness
+  ? deriveOrderSyncMappingReadiness({
+      selectedShopId: activeShopId.value,
+      salesChannelMappings: orderSync.salesChannelMappings,
+      paymentMethodMappings: orderSync.paymentMethodMappings,
+      shippingMethodMappings: orderSync.shippingMethodMappings,
+    })
   : deriveOrderSyncMappingReadiness({ selectedShopId: activeShopId.value }));
 
-const shop = computed(() => hasCurrentStoreContext.value ? orderSyncStore.shop : null);
-const productStore = computed(() => hasCurrentStoreContext.value ? orderSyncStore.productStore : null);
-const remote = computed(() => hasCurrentStoreContext.value ? orderSyncStore.remote : null);
-const job = computed(() => hasCurrentStoreContext.value ? orderSyncStore.job : null);
-const templateJob = computed(() => hasCurrentStoreContext.value ? orderSyncStore.templateJob : null);
+const shop = computed(() => hasCurrentStoreContext.value ? orderSync.shop : null);
+const productStore = computed(() => hasCurrentStoreContext.value ? orderSync.productStore : null);
+const remote = computed(() => hasCurrentStoreContext.value ? orderSync.remote : null);
+const job = computed(() => hasCurrentStoreContext.value ? orderSync.job : null);
+const templateJob = computed(() => hasCurrentStoreContext.value ? orderSync.templateJob : null);
 const shopId = computed(() => String(shop.value?.shopId || activeShopId.value));
 const shopName = computed(() => String(shop.value?.name || activeShopId.value));
 const productStoreId = computed(() => String(
@@ -618,7 +633,7 @@ const templateCronExpression = computed(() => String(
 const isLoading = computed(() => {
   return initialLoadPending.value
     || configurationState.value.kind === "loading"
-    || Object.values(orderSyncStore.configurationResources || {}).some((resource: any) => resource?.status === "loading");
+    || orderSync.loading;
 });
 const isMissing = computed(() => configurationState.value.kind === "missing");
 const isConfiguredPaused = computed(() => configurationState.value.kind === "configured-paused");
@@ -626,30 +641,30 @@ const isConfiguredActive = computed(() => configurationState.value.kind === "con
 const isConfigured = computed(() => isConfiguredPaused.value || isConfiguredActive.value);
 const isRefreshing = computed(() => refreshPending.value);
 const activeMutation = computed<SetupMutation>(() => {
-  const mutation = String(orderSyncStore.activeMutation || localMutation.value || "");
+  const mutation = String(orderSync.activeMutation || localMutation.value || "");
   if (mutation === "save-schedule") return "schedule";
   if (mutation === "set-paused" || mutation === "status") return "activate";
   return ["configure", "schedule", "activate"].includes(mutation) ? mutation as SetupMutation : localMutation.value;
 });
-const isMutationLocked = computed(() => Boolean(orderSyncStore.activeMutation || localMutation.value));
+const isMutationLocked = computed(() => Boolean(orderSync.activeMutation || localMutation.value));
 
 const loadErrorMessage = computed(() => {
   const error = configurationState.value.kind === "error"
     ? configurationState.value.error
-    : orderSyncStore.configurationError;
+    : orderSync.error;
   if (!error) return "";
   return getErrorMessage(error, translate("Unable to load this shop's Order Sync setup."));
 });
 
 const timeZone = computed(() => String(
-  hasCurrentStoreContext.value ? orderSyncStore.runtimeTimeZone : ""
+  hasCurrentStoreContext.value ? orderSync.runtimeTimeZone : ""
 ).trim() || "UTC");
 
-const isScheduleDirty = computed(() => isShopifyOrderSyncScheduleDirty(
+const isScheduleDirty = computed(() => isSyncScheduleDirty(
   { cronExpression: originalCronExpression.value, active: false },
   { cronExpression: draftCronExpression.value, active: false }
 ));
-const scheduleValidation = computed(() => validateShopifyOrderSyncCronExpression(
+const scheduleValidation = computed(() => validateSyncCronExpression(
   draftCronExpression.value,
   { timeZone: timeZone.value }
 ));
@@ -662,22 +677,22 @@ const scheduleValidationMessage = computed(() => translate(
 const scheduleDescription = computed(() => {
   if (!isScheduleValid.value) return "";
   if (!isSchedulePreviewSupported.value) return serverAuthoritativePreviewMessage();
-  return describeShopifyOrderSyncCronExpression(draftCronExpression.value, { timeZone: timeZone.value })
+  return describeSyncCronExpression(draftCronExpression.value, { timeZone: timeZone.value })
     || serverAuthoritativePreviewMessage();
 });
 
 const templateScheduleDescription = computed(() => {
-  const validation = validateShopifyOrderSyncCronExpression(templateCronExpression.value, { timeZone: timeZone.value });
+  const validation = validateSyncCronExpression(templateCronExpression.value, { timeZone: timeZone.value });
   if (!validation.valid) return "";
   if (!validation.previewSupported) return serverAuthoritativePreviewMessage();
-  return describeShopifyOrderSyncCronExpression(templateCronExpression.value, { timeZone: timeZone.value })
+  return describeSyncCronExpression(templateCronExpression.value, { timeZone: timeZone.value })
     || serverAuthoritativePreviewMessage();
 });
 
 const nextRunLabel = computed(() => {
   if (!isScheduleValid.value) return translate("Invalid");
   if (!isSchedulePreviewSupported.value) return translate("OMS validates on save");
-  const nextRun = getNextShopifyOrderSyncRun(draftCronExpression.value, {
+  const nextRun = getNextSyncRun(draftCronExpression.value, {
     timeZone: timeZone.value,
     currentDate: new Date()
   });
@@ -758,7 +773,7 @@ const activationAcknowledgementLabel = computed(() => {
   return translate("I reviewed the shop, remote, schedule, and mappings and want to activate this job.");
 });
 
-const scheduleOptions = SHOPIFY_ORDER_SYNC_SCHEDULE_PRESETS;
+const scheduleOptions = SYNC_SCHEDULE_PRESETS;
 
 watch(
   () => String(job.value?.cronExpression || job.value?.cronString || ""),
@@ -823,12 +838,16 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
 
-async function loadConfiguration(targetShopId = activeShopId.value, showRefreshFailure = false) {
+async function loadConfiguration(target: string | Event = activeShopId.value, showRefreshFailure = false) {
+  // The Retry button binds `@click="loadConfiguration"`, so Vue invokes this with the DOM
+  // event as the first arg. Coerce a non-string arg back to the active shop so Retry
+  // actually reloads instead of silently failing the shop-id guard below.
+  const targetShopId = typeof target === "string" ? target : activeShopId.value;
   if (!targetShopId || targetShopId !== activeShopId.value || normalizeShopId(props.id) !== targetShopId) return false;
   const requestToken = ++localLoadToken.value;
   initialLoadPending.value = true;
   try {
-    await orderSyncStore.loadConfiguration(targetShopId);
+    await orderSync.loadConfiguration(targetShopId);
     if (!isCurrentShopContext(targetShopId) || requestToken !== localLoadToken.value) return false;
     syncScheduleDraft(targetShopId);
     return true;
@@ -866,7 +885,7 @@ async function configureJob() {
   if (!isCurrentShopContext(targetShopId) || !isMissing.value || !targetTemplateJobName || !capabilities.value.canConfigure || isMutationLocked.value) return;
   localMutation.value = "configure";
   try {
-    const configuredJob = await orderSyncStore.configure({ shopId: targetShopId });
+    const configuredJob = await orderSync.configure({ shopId: targetShopId });
     if (!isCurrentShopContext(targetShopId)
       || String(configuredJob?.shopId || "") !== targetShopId
       || String(templateJob.value?.jobName || "") !== targetTemplateJobName) {
@@ -888,10 +907,10 @@ async function saveSchedule() {
   const targetShopId = activeShopId.value;
   const targetJobName = currentJobName(targetShopId);
   if (!targetJobName || !isCurrentShopContext(targetShopId) || !capabilities.value.canEditSchedule || !isScheduleDirty.value || !isScheduleValid.value || isMutationLocked.value) return;
-  const cronExpression = normalizeShopifyOrderSyncCronExpression(draftCronExpression.value);
+  const cronExpression = normalizeSyncCronExpression(draftCronExpression.value);
   localMutation.value = "schedule";
   try {
-    const updatedJob = await orderSyncStore.updateSchedule(cronExpression, targetShopId);
+    const updatedJob = await orderSync.updateSchedule(cronExpression, targetShopId);
     if (!isCurrentJob(targetShopId, targetJobName)
       || String(updatedJob?.jobName || "") !== targetJobName
       || String(updatedJob?.cronExpression || updatedJob?.cronString || "") !== cronExpression) {
@@ -923,7 +942,7 @@ function openActivationReview() {
     shopName: shopName.value,
     jobName: targetJobName,
     remoteLabel: remoteLabel.value,
-    cronExpression: normalizeShopifyOrderSyncCronExpression(draftCronExpression.value),
+    cronExpression: normalizeSyncCronExpression(draftCronExpression.value),
     scheduleDescription: scheduleDescription.value,
     timeZone: timeZone.value
   };
@@ -945,7 +964,7 @@ function canDismissActivationModal() {
 async function activateJob() {
   const target = activationTarget.value;
   if (!target || !isCurrentJob(target.shopId, target.jobName) || !capabilities.value.canActivate || !activationAcknowledged.value || isMutationLocked.value) return;
-  if (normalizeShopifyOrderSyncCronExpression(draftCronExpression.value) !== target.cronExpression
+  if (normalizeSyncCronExpression(draftCronExpression.value) !== target.cronExpression
     || timeZone.value !== target.timeZone) {
     closeActivationReview();
     commonUtil.showToast(translate("Order Sync setup changed. Review activation again."));
@@ -953,7 +972,7 @@ async function activateJob() {
   }
   localMutation.value = "activate";
   try {
-    const updatedJob = await orderSyncStore.updateJobStatus(false, target.shopId);
+    const updatedJob = await orderSync.updateJobStatus(false, target.shopId);
     if (!isCurrentJob(target.shopId, target.jobName)
       || String(updatedJob?.jobName || "") !== target.jobName
       || updatedJob?.paused !== false) {
@@ -989,7 +1008,7 @@ async function openMapping(mapping: MappingRow) {
 function syncScheduleDraft(targetShopId = activeShopId.value) {
   if (!hasCurrentStoreContext.value || activeShopId.value !== targetShopId) return;
   const cronExpression = String(job.value?.cronExpression || job.value?.cronString || "");
-  const scheduleDraft = createShopifyOrderSyncScheduleDraft(cronExpression);
+  const scheduleDraft = createSyncScheduleDraft(cronExpression);
   originalCronExpression.value = String(scheduleDraft.cronExpression || "");
   draftCronExpression.value = String(scheduleDraft.cronExpression || "");
 }
@@ -1012,7 +1031,7 @@ function isCurrentRouteShop(targetShopId: string) {
 function isCurrentShopContext(targetShopId: string) {
   return isPageActive.value
     && isCurrentRouteShop(targetShopId)
-    && orderSyncStore.selectedShopId === targetShopId;
+    && orderSync.selectedShopId === targetShopId;
 }
 
 function currentJobName(targetShopId: string) {
@@ -1038,7 +1057,7 @@ function prepareForShop(targetShopId: string) {
   activationAcknowledged.value = false;
   activationTarget.value = null;
   allowRouteLeave.value = false;
-  orderSyncStore.resetForShop(targetShopId);
+  orderSync.resetForShop(targetShopId);
 }
 
 async function confirmDiscardChanges() {

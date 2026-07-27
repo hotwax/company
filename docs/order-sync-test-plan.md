@@ -160,7 +160,7 @@ Status legend: ⬜ Planned · 🟡 Implemented (focused test green) · ✅ Prove
 
 | Behavior | Entity | Invariants to test | Rows | Exists today | Status |
 |---|---|---|---|---|---|
-| `messageState(statusId)` | SystemMessage | all 11 real `Smsg*` → correct enum; only in-progress verbs (`Sending`/`Consuming`) are active; staged (`Triggered`/`Produced`/`Received`) pending; `Sent`/`Consumed`/`Confirmed` completed; `Rejected`/`Cancelled`/`Error` failed | M2, M5 | **private** `systemMessageProgressState` → **hoist + export** | 🟡 (tested via progress) |
+| `messageState(statusId)` | SystemMessage | all 11 real `Smsg*` → correct enum; only in-progress verbs (`Sending`/`Consuming`) are active; staged (`Triggered`/`Produced`/`Received`) pending; `Sent`/`Consumed`/`Confirmed` completed; `Rejected`/`Cancelled`/`Error` failed | M2, M5 | ✅ `utils/systemMessage.ts` (explicit map) | 🟡 |
 | `isTerminal` / `isSuccess` / `isFailure` | SystemMessage | terminal set = completed+failed; success ≠ failure | M18, M19 | ⬜ new | ⬜ |
 | `belongsToRemote(msg, remoteId)` | SystemMessage | rejects cross-remote messages | X1, M1 | ⬜ new | ⬜ |
 | `logOutcome(log)` | DataManagerLog | all 7 real `Dmls*` → correct `{state,total,success,failed}`; `DmlsFinished`→completed; `DmlsFailed`/`Crashed`/`Cancelled`→failed; partial when success>0 & failed>0; success derives from counts | M3, M6 | **private** `normalizeLogOutcome` → **hoist + export** | ⬜ |
@@ -270,16 +270,26 @@ Status legend: ⬜ Planned · 🟡 Implemented (focused test green) · ✅ Prove
 
 ## 10. Progress & build order
 
-| Node | Test file | Tests | Status |
-|---|---|---|---|
-| `overallState` composition | `tests/utils/deriveShopifyOrderSyncOverallState.spec.ts` | 11 | 🟡 |
-| SystemMessage `messageState` (via progress) | `tests/utils/deriveShopifyOrderSyncProgress.batchRequest.spec.ts` | 12 | 🟡 |
+**Layer homes** (decided): pure behaviors → `utils/` (Vue-free); reactive logic →
+`composables/use*` (import the behaviors); shared app state → `store/`; UI → `views/`.
+No `domain/` directory — `utils/` is the pure-logic leaf.
+
+| Node | File | Test | Tests | Status |
+|---|---|---|---|---|
+| `overallState` composition | `utils/shopifyOrderSync.ts` | `tests/utils/deriveShopifyOrderSyncOverallState.spec.ts` | 11 | 🟡 |
+| `composeProgress` + `overallState` (SystemMessage ⋈ DataManagerLog ⋈ ShopifyBulkOperation → request → [bulkOperation] → import → overall; **presence-driven** stage inclusion, per-import detail, data-only) | `utils/syncProgress.ts` | `tests/utils/syncProgress.spec.ts` | 26 | 🟡 |
+| ~~`deriveShopifyOrderSyncProgress`~~ (loose predecessor, still wired — deleted when the store adopts `composeProgress`) | `utils/shopifyOrderSync.ts` | `tests/utils/deriveShopifyOrderSyncProgress.spec.ts` | 8 | ♻️ retire |
+| SystemMessage behaviors (`messageState`, `isTerminal`, `isSuccess`, `isFailure`, `belongsToRemote`, `resolveRemoteId`) + `SystemMessageRemote` type | `utils/systemMessage.ts` | `tests/utils/systemMessage.spec.ts` | 21 | 🟡 |
+| DataManagerLog behaviors (`logState`, `logOutcome`, `isTerminal`, `aggregateCounts`, `correlateByMessage`) | `utils/dataManagerLog.ts` | `tests/utils/dataManagerLog.spec.ts` | 19 | 🟡 |
+| ServiceJob behaviors (`parameterMap`, `isPaused`, `isSuitable`, `findSuitable`, `lifecycleState`) | `utils/serviceJob.ts` | `tests/utils/serviceJob.spec.ts` | 12 | 🟡 |
+| ShopifyShop behaviors (`isInShop`) | `utils/shopifyShop.ts` | `tests/utils/shopifyShop.spec.ts` | 2 | 🟡 |
+| ShopifyBulkOperation behaviors (`bulkOperationState`, `expectsBulkOperation`) + type | `utils/shopifyBulkOperation.ts` | `tests/utils/shopifyBulkOperation.spec.ts` | 11 | 🟡 |
 
 **Build order (vertical slices, entity by entity):**
-1. **SystemMessage module** — hoist/export `messageState` + add `isTerminal`/`belongsToRemote`; `useSystemMessageStore`; re-point Order Sync batch row. *(proves the pattern end-to-end)*
-2. **DataManagerLog module** — hoist/export `logOutcome`; `aggregateCounts`/`correlateByMessage`; `useDataManagerStore`; test vs real `Dmls*`.
-3. **ServiceJob module** — behaviors already exist; wrap in `useServiceJobStore`; schedule + clone/run-now guards.
-4. **ShopifyShop module** — `resolveRemoteId` + scope guard; `useShopifyShopStore` as the tenant context.
-5. **Compositions** — `composeProgress`, `recentProcessed`, `recentErrors`, `capabilities`.
-6. **Feature view-model** — thin `useShopifyOrderSyncStore` over the four stores.
+1. **SystemMessage — ✅ pure behaviors done.** `messageState` (exact `Smsg*` map) + predicates in `utils/systemMessage.ts`; `deriveShopifyOrderSyncProgress` re-pointed; old fuzzy-token logic + `SYSTEM_MESSAGE_COMPLETE` removed.
+2. **DataManagerLog — ✅ pure behaviors done.** `logState`/`logOutcome` (exact 7-`Dmls*` map, phantom `DmlsError` token dropped) + `aggregateCounts`/`correlateByMessage` in `utils/dataManagerLog.ts`; `normalizeLogOutcome` re-pointed; dead fuzzy-token constants removed. **Next (both):** `composables/useSystemMessage.ts` + `useDataManager.ts` reactive loaders.
+3. **ServiceJob — ✅ canonical behaviors done.** Exact `ServiceJob` type + `parameterMap`/`isPaused`/`isSuitable`/`findSuitable`/`lifecycleState` in `utils/serviceJob.ts` (generic — a feature parameterizes the template + message type). **Deferred wiring:** the feature's loose `isSuitableShopifyOrderSyncJob`/`findSuitableShopifyOrderSyncJob` stay until the store adopts the exact `ServiceJob` type — that path is correctness-critical (duplicate-clone detection) with no current integration coverage, so it's not force-rewired blind.
+4. **ShopifyShop — ✅ canonical behaviors done.** Exact `ShopifyShop`/`SystemMessageRemote` types + `resolveRemoteId`/`isInShop` in `utils/shopifyShop.ts`.
+5. **Compositions** (pure, `utils/`) — `composeProgress`, `recentProcessed`, `recentErrors`, `capabilities`.
+6. **Feature view-model** — thin `useShopifyOrderSync` **composable** over the entity composables (retires the 1,959-line store).
 7. **Components (L3)**, then **live (L4)**.
