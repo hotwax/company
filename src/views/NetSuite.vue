@@ -175,7 +175,7 @@
           </ion-item>
 
           <ion-item lines="full" class="ion-margin-top">
-            <ion-select v-model="selectedProductStoreId" interface="popover" :label="translate('Product Store')" :placeholder="translate('Select')" @ionChange="updatedStoreSubsidiaryId">
+            <ion-select v-model="selectedProductStoreId" :disabled="!storesReady" interface="popover" :label="translate('Product Store')" :placeholder="translate('Select')" @ionChange="updatedStoreSubsidiaryId">
               <ion-select-option v-for="store in productStores" :key="store" :value="store.productStoreId">
                 {{ store.storeName ? store.storeName : store.productStoreId }}
               </ion-select-option>
@@ -294,24 +294,23 @@
 </template>
 
 <script setup lang="ts">
+import { useNetSuiteProductStore, useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
+import { useIntegrationTypeMappings } from "@/composables/useNetSuite";
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline, search } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
-import { useProductStore } from '@/store/productStore';
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { useNetSuite } from "@/composables/useNetSuite";
 import { computed, ref } from "vue";
 
-const productStoreStore = useProductStore();
-const netSuiteStore = useNetSuiteStore();
 
 const priceLevelTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
 const discountTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.DISCOUNT_TYPE_ID
-const { updateNetSuiteId: updatePriceLevelNetSuiteId } = useNetSuiteComposables(priceLevelTypeId);
-const { addNetSuiteId: addDiscountNetSuiteId, updateNetSuiteId: updateDiscountNetSuiteId } = useNetSuiteComposables(discountTypeId);
+const { updateNetSuiteId: updatePriceLevelNetSuiteId, mappings: priceLevelMappings } = useNetSuite(priceLevelTypeId);
+const { addNetSuiteId: addDiscountNetSuiteId, updateNetSuiteId: updateDiscountNetSuiteId } = useNetSuite(discountTypeId);
 
-const netSuiteProductStore = computed(() => productStoreStore.netSuiteProductStore)
+const { updateSftpConfig } = useNetSuite();
+const { netSuiteProductStore } = useNetSuiteProductStore();
 
 function openShipmentMethod() {
   router.push("/netsuite/shipment-methods")
@@ -379,7 +378,7 @@ async function saveSftpConfig() {
       defaultDirectory: sftpFormData.value.defaultDirectory
     };
 
-    const resp = await netSuiteStore.updateSftpConfig(payload);
+    const resp = await updateSftpConfig(payload);
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("SFTP configurations updated successfully"))
@@ -401,7 +400,7 @@ function openSftpDoc() {
 
 // Product Store modal
 const showProductStoreModal = ref(false);
-const productStores = computed(() => productStoreStore.productStores)
+const { productStores, hydrated: storesReady } = useProductStores();
 const selectedProductStoreId = ref("");
 const subsidiaryId = ref("")
 
@@ -409,7 +408,6 @@ async function openProductStoreModal() {
   selectedProductStoreId.value = "";
   subsidiaryId.value = "";
   showProductStoreModal.value = true;
-  await productStoreStore.fetchProductStores();
   if(netSuiteProductStore.value) {
     selectedProductStoreId.value = netSuiteProductStore.value.productStoreId;
     subsidiaryId.value = netSuiteProductStore.value.subsidiaryId;
@@ -434,13 +432,12 @@ async function updateSubsidiaryId() {
       productStoreId: selectedProductStoreId.value
     };
 
-    const resp = await productStoreStore.updateProductStore(updatedStore);
+    const resp = await useProductStoreMutations(updatedStore.productStoreId).updateStore(updatedStore);
     if(!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Product store setting updated successfully"))   // We are updating the selected product store in the state
-      await productStoreStore.updateSelectedProductStore({
-        productStoreId: selectedProductStoreId.value,
-        subsidiaryId: subsidiaryId.value
-      });
+      commonUtil.showToast(translate("Product store setting updated successfully"))
+      // No cache refresh here: `updateStore` already re-reads the store into the cache on success,
+      // and `netSuiteProductStore` is derived from that row. Refreshing again just paid for a second
+      // identical GET per save.
     } else {
       throw resp.data;
     }
@@ -470,11 +467,8 @@ async function openPriceLevelModal() {
   selectedPriceLevel.value = "";
   priceLevelIntegrationMapping.value = "";
   showPriceLevelModal.value = true;
-  await netSuiteStore.fetchIntegrationTypeMappings({
-    integrationTypeId: priceLevelTypeId,
-    mappingKey: "PRICE_LEVEL"
-  })
-  const integrationMappings = netSuiteStore.getIntegrationTypeMappings(priceLevelTypeId);
+  // Mappings are cached (synced at login), so opening this modal needs no request.
+  const integrationMappings = priceLevelMappings.value;
   selectedPriceLevel.value = (priceLevelIntegrationMapping.value = integrationMappings[0]).mappingValue || "";
 }
 
@@ -503,7 +497,7 @@ function openPriceLevelDoc() {
 
 // Discounts modal
 const showDiscountsModal = ref(false);
-const discountIntegrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(discountTypeId))
+const { mappings: discountIntegrationTypeMappings } = useIntegrationTypeMappings(discountTypeId);
 const orderLevelDiscount = ref("");
 const itemLevelDiscount = ref("");
 const integrationMappingByKey = ref({}) as any
@@ -516,7 +510,6 @@ async function openDiscountsModal() {
   orderLevelDiscount.value = "";
   itemLevelDiscount.value = "";
   showDiscountsModal.value = true;
-  await netSuiteStore.fetchIntegrationTypeMappings({ integrationTypeId: discountTypeId });
   // Set orderLevelDiscount and itemLevelDiscount based on their corresponding mapping keys in integration type mappings.
   discountIntegrationTypeMappings.value.map((mapping: any) => {
     integrationMappingByKey[mapping.mappingKey] = mapping

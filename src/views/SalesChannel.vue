@@ -21,6 +21,14 @@
         </ion-item>
       </div>
 
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-padding-end ion-margin-top" v-for="channel in salesChannel" :key="channel.enumId">
         <ion-item lines="none">
           <ion-label>
@@ -67,21 +75,18 @@
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
+import { useNetSuite } from '@/composables/useNetSuite';
+import { useTypedEnums } from '@/composables/useSeed';
+import { useShopifyTypeMappings } from '@/composables/useShopify';
 
+// Sales channels are ORDER_SALES_CHANNEL enums; the mappings are read across all shops (this page
+// is not shop-scoped). `updateEnumCode` resyncs the enum cache itself.
+const { updateEnumCode } = useNetSuite();
 
-const netSuiteStore = useNetSuiteStore();
-const shopifyStore = useShopifyStore();
+const { values: salesChannel, hydrated } = useTypedEnums("ORDER_SALES_CHANNEL");
+const { mappings: shopifyTypeMappings } = useShopifyTypeMappings(undefined, "SHOPIFY_ORDER_SOURCE");
 
-const salesChannel = computed(() => netSuiteStore.salesChannel)
-const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_ORDER_SOURCE"))
-
-onIonViewDidEnter(async () => {
-  await netSuiteStore.fetchSalesChannel()
-  await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_ORDER_SOURCE")
-})
 
 function getShopifyMappingId(salesChannelEnumId: any) {
   const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === salesChannelEnumId);
@@ -128,11 +133,10 @@ async function updateSalesChannelNetSuiteId(channel: any, netSuiteId: any) {
 
   try {
     channel.enumCode = netSuiteId;
-    resp = await netSuiteStore.updateEnumCode(channel);
+    resp = await updateEnumCode(channel);
 
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("NetSuite Id updated successfully"));
-      await netSuiteStore.fetchSalesChannel();
     } else {
       throw resp.data;
     }

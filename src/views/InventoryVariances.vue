@@ -19,6 +19,14 @@
         </ion-item>
       </div>
 
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-margin-top" v-for="variance in inventoryVariances" :key="variance.enumId">
         <ion-item lines="none">
           <ion-label>
@@ -106,20 +114,26 @@
 import { IonBackButton, IonButton, IonButtons, IonChip, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { businessOutline, closeCircleOutline, closeOutline, informationCircleOutline, openOutline, saveOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useNetSuiteStore } from '@/store/netSuite';
 import { computed, ref } from 'vue';
-import { useUtilStore } from '@/store/util';
 import { DateTime } from 'luxon';
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { useEnumGroupMembers, useNetSuite } from "@/composables/useNetSuite";
+import { useTypedEnums } from "@/composables/useSeed";
 
-const netSuiteStore = useNetSuiteStore();
-const utilStore = useUtilStore();
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
-const { addNetSuiteId, removeNetSuiteId, updateNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
-const inventoryVariances = computed(() => netSuiteStore.inventoryVariances);
-const enumsInEnumGroup = computed(() => netSuiteStore.getEnumGroups)
-const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(inventoryVarianceTypeId))
+// Reads all come from the cache; the CRUD helpers resync the mapping domain after each write.
+const {
+  mappings: integrationTypeMappings, addNetSuiteId, removeNetSuiteId, updateNetSuiteId,
+  setEnumGroupMembership,
+} = useNetSuite(inventoryVarianceTypeId);
+
+// Variance reasons are IID_REASON enums; the reason group is its own cached reference set.
+const { values: inventoryVariances, hydrated } = useTypedEnums("IID_REASON");
+const { members: enumGroupMembers } = useEnumGroupMembers();
+
+/** enumId → whether it belongs to the NetSuite reason group (was `getEnumGroups`). */
+const enumsInEnumGroup = computed(() => (enumId: any) =>
+  enumGroupMembers.value.find((member: any) => member.enumId === enumId))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
@@ -133,10 +147,6 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-onIonViewWillEnter(async () => {
-  await netSuiteStore.fetchInventoryVariances();
-  await netSuiteStore.fetchEnumGroupMember()
-});
 
 const transferLocationId = ref("");
 const showTransferInventoryModal = ref(false);
@@ -200,9 +210,8 @@ async function addVarianceToGroup(enumId: any, event: any) {
       }
     }
     
-    resp = await utilStore.addEnumToEnumGroup(payload);
+    resp = await setEnumGroupMembership(payload);
     if(!commonUtil.hasError(resp)) {
-      await netSuiteStore.fetchEnumGroupMember();
     } else {
       throw resp.data;
     }

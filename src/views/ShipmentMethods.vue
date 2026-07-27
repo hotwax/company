@@ -33,6 +33,14 @@
         <ion-label>{{ translate("Add more shipment methods") }}</ion-label>
       </ion-button> -->
       
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-padding-end" v-for="shipmentMethod in productStoreShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="airplaneOutline" />
@@ -83,22 +91,21 @@
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
-import { useUtilStore } from '@/store/util';
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { useNetSuite } from "@/composables/useNetSuite";
+import { useShipmentMethodTypes } from "@/composables/useSeed";
+import { useProductStoreShippingMethods } from "@/composables/useProductStores";
+import { useShopifyCarrierShipments } from "@/composables/useShopify";
 
-const utilStore = useUtilStore();
-const netSuiteStore = useNetSuiteStore();
-const shopifyStore = useShopifyStore();
 const shipmentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
-const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(shipmentMethodTypeId);
+const { mappings: integrationTypeMappings, editNetSuiteId, removeNetSuiteId } = useNetSuite(shipmentMethodTypeId);
 
-const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
-const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
-const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(shipmentMethodTypeId))
-const shopifyShopsCarrierShipments = computed(() => shopifyStore.shopifyShopsCarrierShipments)
+// Every read is cached. The store's shipping methods come from one fixed product store for now
+// (see PRODUCT_STORE_ID_FOR_SHIPPING_METHODS) — this page previously requested
+// `admin/productStores/undefined/shippingMethods` because the id was never resolved.
+const { shipmentMethodTypes } = useShipmentMethodTypes();
+const { shippingMethods: productStoreShipmentMethods, hydrated } = useProductStoreShippingMethods();
+const { byCarrierAndMethod: shopifyShopsCarrierShipments } = useShopifyCarrierShipments(undefined);
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_SHP_MTHD)
@@ -112,11 +119,6 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-onIonViewWillEnter(async () => {
-  await utilStore.fetchShipmentMethodTypes();
-  await netSuiteStore.fetchProductStoreShipmentMethods({})
-  await shopifyStore.fetchShopifyShopsCarrierShipments({})
-})
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {
   const shipmentMethodType = shipmentMethodTypes.value.find((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
