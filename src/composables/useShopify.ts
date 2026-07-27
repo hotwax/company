@@ -1119,6 +1119,23 @@ export function useShopifyProductSyncRunState(shopIdSource: ShopIdSource) {
   return { ...ctx, runState, systemMessages, pendingRequests, hydrated };
 }
 
+/**
+ * Normalise a cached date to the ISO 8601 form Shopify's search syntax accepts.
+ *
+ * Cached date fields are millis (the projection's `date` coercion), API payloads are ISO strings, and
+ * a few carry `yyyy-MM-dd HH:mm:ss`. All three reach here, so all three are handled; anything
+ * unparseable returns "" so the caller omits the filter rather than sending a malformed query.
+ */
+function toShopifyTimestamp(value: string | number | undefined | null): string {
+  if (value === undefined || value === null || value === "") return "";
+
+  const millis = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(millis) && millis > 0) return new Date(millis).toISOString();
+
+  const parsed = new Date(String(value).replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
 /** Escapes a value for interpolation into a Shopify GraphQL string literal. */
 const escapeShopifyQueryValue = (value: string) => String(value).replace(/(["\\])/g, "\\$1");
 
@@ -1139,8 +1156,17 @@ export async function fetchUnsyncedProductUpdateCount(
 ): Promise<number> {
   if (!systemMessageRemoteId) return 0;
 
-  const filter = lastSyncedAt
-    ? `(query: "updated_at:>'${escapeShopifyQueryValue(String(lastSyncedAt))}'")`
+  /**
+   * ⚠️ Shopify needs an ISO 8601 timestamp here, NOT epoch millis.
+   *
+   * The cache projection coerces every date field to millis, so passing a cached `initDate` straight
+   * through produced `updated_at:>'1784618182975'` and Shopify answered 400
+   * `INTERNAL_SERVER_ERROR` — which this function's own catch turned into a count of 0. A wrong
+   * number that looks like a real one, with a swallowed error behind it.
+   */
+  const isoLastSyncedAt = toShopifyTimestamp(lastSyncedAt);
+  const filter = isoLastSyncedAt
+    ? `(query: "updated_at:>'${escapeShopifyQueryValue(isoLastSyncedAt)}'")`
     : "";
   const resp: any = await api({
     url: "shopify/graphql",
@@ -1152,6 +1178,11 @@ export async function fetchUnsyncedProductUpdateCount(
   });
 
   const payload = resp?.data?.response ?? resp?.data?.data ?? resp?.data ?? resp;
+  const errors = resp?.data?.errors ?? payload?.errors;
+  // Reported, not swallowed: a failed count is indistinguishable from a genuine zero otherwise, which
+  // is how a 400 sat unnoticed behind "Unsynced events 0".
+  if (errors) throw new Error(`Shopify unsynced product count failed: ${JSON.stringify(errors)}`);
+
   const count = payload?.data?.productsCount?.count ?? payload?.productsCount?.count;
   return Number(count ?? 0) || 0;
 }
