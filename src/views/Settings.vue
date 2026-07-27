@@ -90,15 +90,17 @@
             <div class="card-header">
               <div>
                 <ion-card-title>{{ translate('Data Fetch Status') }}</ion-card-title>
-                <ion-card-subtitle v-if="oldestSyncTime">{{ translate("Oldest sync:") }} {{ oldestSyncTime }}</ion-card-subtitle>
+                <ion-card-subtitle v-if="cacheSubtitle">{{ cacheSubtitle }}</ion-card-subtitle>
               </div>
-              <ion-button fill="clear" @click="refreshCache()" size="small">
-                <ion-icon slot="icon-only" :icon="syncOutline" />
+              <ion-button fill="clear" size="small" :disabled="!!refreshing" @click="refreshAll()">
+                <ion-spinner v-if="refreshing === '*'" name="dots" />
+                <ion-icon v-else slot="icon-only" :icon="syncOutline" />
               </ion-button>
             </div>
           </ion-card-header>
           <ion-list lines="none">
-            <ion-item v-for="item in harmonizedFetchStatus" :key="item.label">
+            <!-- Session data: held in memory, not in the local cache. -->
+            <ion-item v-for="item in sessionFetchStatus" :key="item.label">
               <ion-icon slot="start" :icon="getStatusIcon(item.status)" :color="getStatusColor(item.status)" />
               <ion-label>
                 {{ item.label }}
@@ -109,6 +111,27 @@
                 <ion-icon slot="icon-only" :icon="syncOutline" />
               </ion-button>
             </ion-item>
+
+            <!-- Local cache (IndexedDB): live row counts straight from the database. -->
+            <ion-item-divider>
+              <ion-label>{{ translate("Local cache") }} · {{ totalRows }} {{ translate("records") }}</ion-label>
+            </ion-item-divider>
+            <ion-item v-for="domain in domains" :key="domain.name">
+              <ion-icon slot="start" :icon="getStatusIcon(domain.status)" :color="getStatusColor(domain.status)" />
+              <ion-label>
+                {{ translate(domain.label) }}
+                <p>
+                  {{ domain.count }} {{ translate("records") }}
+                  <template v-if="domain.syncedAt"> · {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
+                  <template v-else-if="domain.syncClass === 'A'"> · {{ translate("live while in use") }}</template>
+                  <template v-else> · {{ translate("not synced yet") }}</template>
+                </p>
+              </ion-label>
+              <ion-button slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
+                <ion-spinner v-if="refreshing === domain.name" name="dots" />
+                <ion-icon v-else slot="icon-only" :icon="syncOutline" />
+              </ion-button>
+            </ion-item>
           </ion-list>
         </ion-card>
       </section>
@@ -117,12 +140,10 @@
 </template>
 
 <script setup lang="ts">
-import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonAvatar, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonMenuButton, IonPage, IonSpinner, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 
 import { computed, onMounted, ref , defineProps} from "vue";
 import { useUserStore } from '@/store/user';
-import { useProductStore } from '@/store/productStore';
-import { useShopifyStore } from '@/store/shopify';
 import { useUtilStore } from '@/store/util';
 import { useAuth } from '@common/composables/useAuth';
 import TimeZoneModal from "@/components/common/TimezoneModal.vue";
@@ -134,14 +155,13 @@ import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import useServiceJob from "@/composables/useServiceJob";
+import { useCacheStatus } from "@/composables/useCacheStatus";
+import { useMaargConfig } from "@/composables/useSeed";
 const userStore = useUserStore();
-const productStoreStore = useProductStore();
-const shopifyStore = useShopifyStore();
 const utilStore = useUtilStore();
 const { isAuthenticated } = useAuth();
-const { jobs, loading: loadingJobs, fetchJobs } = useServiceJob();
-const maargInfo = computed(() => utilStore.maargInfo)
+const { config: maargConfig, load: loadMaargConfig } = useMaargConfig();
+const maargInfo = computed(() => maargConfig.value)
 const omsVersion = computed(() => String(maargInfo.value?.instanceInfo?.componentRelease || "").trim())
 
 const userProfile = computed(() => userStore.getUserProfile)
@@ -151,27 +171,29 @@ const openOms = () => window.open(commonUtil.getMaargURL(), '_blank')
 
 const omsVersionLabel = computed(() => omsVersion.value || translate("Not available"))
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
-const statusItems = computed(() => utilStore.statusItems)
-const facilities = computed(() => utilStore.facilities)
-const fetchStatus = computed(() => utilStore.fetchStatus)
 const userFetchStatus = computed(() => userStore.fetchStatus)
-const productStoreFetchStatus = computed(() => productStoreStore.fetchStatus)
-const shopifyFetchStatus = computed(() => shopifyStore.fetchStatus)
 
-const oldestSyncTime = computed(() => {
-  const timestamps = [
-    userFetchStatus.value.lastFetched,
-    fetchStatus.value.lastFetched,
-    productStoreFetchStatus.value.lastFetched,
-    shopifyFetchStatus.value.lastFetched
-  ].filter(t => t > 0);
-  
-  if (!timestamps.length) return '';
-  const oldest = Math.min(...timestamps);
-  return DateTime.fromMillis(oldest).toLocaleString(DateTime.DATETIME_MED);
-})
 
-const harmonizedFetchStatus = computed(() => [
+// Live IndexedDB state: per-domain row counts + last sync, and the force-refresh actions.
+const {
+  domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
+} = useCacheStatus();
+
+const formatSyncTime = (millis: number) =>
+  DateTime.fromMillis(millis).toLocaleString(DateTime.DATETIME_MED);
+
+const cacheSubtitle = computed(() => {
+  if (!lastSyncedAt.value) return translate("Cache not synced yet");
+  const parts = [`${translate("Last sync:")} ${formatSyncTime(lastSyncedAt.value)}`];
+  // Reference data syncs once per login, so the oldest snapshot bounds how stale the cache can be.
+  if (oldestSyncedAt.value && oldestSyncedAt.value !== lastSyncedAt.value) {
+    parts.push(`${translate("oldest:")} ${formatSyncTime(oldestSyncedAt.value)}`);
+  }
+  return parts.join(" · ");
+});
+
+// Session-scoped data (auth/profile) is NOT in the local cache, so it keeps its store-based status.
+const sessionFetchStatus = computed(() => [
   {
     label: translate("User Profile"),
     status: userFetchStatus.value.profile,
@@ -183,72 +205,6 @@ const harmonizedFetchStatus = computed(() => [
     status: userFetchStatus.value.permissions,
     count: userStore.permissions?.length || 0,
     refresh: () => userStore.fetchPermissions()
-  },
-  {
-    label: translate("Product Stores"),
-    status: productStoreFetchStatus.value.productStores,
-    count: productStoreStore.productStores?.length || 0,
-    refresh: () => productStoreStore.fetchProductStores()
-  },
-  {
-    label: translate("Shopify Shops"),
-    status: shopifyFetchStatus.value.shops,
-    count: shopifyStore.shops?.length || 0,
-    refresh: () => shopifyStore.fetchShopifyShops()
-  },
-  {
-    label: translate("Statuses"),
-    status: fetchStatus.value.statuses,
-    count: Object.keys(statusItems.value).length,
-    refresh: () => utilStore.fetchStatusItems()
-  },
-  {
-    label: translate("Facilities"),
-    status: fetchStatus.value.facilities,
-    count: facilities.value.length,
-    refresh: () => utilStore.fetchFacilities()
-  },
-  {
-    label: translate("Organization"),
-    status: fetchStatus.value.organizationPartyId,
-    count: utilStore.organizationPartyId ? 1 : 0,
-    refresh: () => utilStore.fetchOrganizationPartyId()
-  },
-  {
-    label: translate("Facility Groups"),
-    status: fetchStatus.value.facilityGroups,
-    count: utilStore.facilityGroups?.length || 0,
-    refresh: () => utilStore.fetchFacilityGroups()
-  },
-  {
-    label: translate("DBIC Countries"),
-    status: fetchStatus.value.dbicCountries,
-    count: utilStore.dbicCountries?.list?.length || 0,
-    refresh: () => utilStore.fetchDBICCountries()
-  },
-  {
-    label: translate("Operating Countries"),
-    status: fetchStatus.value.operatingCountries,
-    count: utilStore.operatingCountries?.length || 0,
-    refresh: () => utilStore.fetchOperatingCountries()
-  },
-  {
-    label: translate("Product Identifiers"),
-    status: fetchStatus.value.productIdentifiers,
-    count: utilStore.productIdentifiers?.length || 0,
-    refresh: () => utilStore.fetchProductIdentifiers()
-  },
-  {
-    label: translate("Shipment Method Types"),
-    status: fetchStatus.value.shipmentMethodTypes,
-    count: utilStore.shipmentMethodTypes?.length || 0,
-    refresh: () => utilStore.fetchShipmentMethodTypes()
-  },
-  {
-    label: translate("Jobs"),
-    status: loadingJobs.value ? 'pending' : (jobs.value.length ? 'success' : 'none'),
-    count: jobs.value.length,
-    refresh: () => fetchJobs()
   }
 ])
 
@@ -284,21 +240,6 @@ const browserTimeZone = ref({
   id: Intl.DateTimeFormat().resolvedOptions().timeZone
 })
 
-function refreshCache() {
-  userStore.fetchUserProfile();
-  userStore.fetchPermissions();
-  utilStore.fetchStatusItems();
-  utilStore.fetchFacilities();
-  utilStore.fetchOrganizationPartyId();
-  utilStore.fetchFacilityGroups();
-  utilStore.fetchDBICCountries();
-  utilStore.fetchOperatingCountries();
-  utilStore.fetchProductIdentifiers();
-  utilStore.fetchShipmentMethodTypes();
-  productStoreStore.fetchProductStores();
-  shopifyStore.fetchShopifyShops();
-  fetchJobs();
-}
 
 defineProps({
   showBrowserTimeZone: {
@@ -320,7 +261,7 @@ onMounted(() => {
   // where the initial dispatch failed; the action itself is idempotent.
   // Failures are surfaced via the empty omsVersion label, so swallow the
   // rejection here to avoid an unhandled promise warning.
-  utilStore.fetchMaargInfo().catch(() => { /* noop */ });
+  void loadMaargConfig();
 })
 
 async function changeTimeZone() {

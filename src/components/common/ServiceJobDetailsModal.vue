@@ -186,7 +186,7 @@ import cronstrue from 'cronstrue';
 import { computed, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
-import useServiceJob from '@/composables/useServiceJob';
+import { useServiceJob } from '@/composables/useServiceJobs';
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
