@@ -33,8 +33,6 @@ export const useUtilStore = defineStore("util", {
     statusItems: {} as any,
     maargInfo: null as any,
     currencies: [] as any[],
-    states: {} as any,
-    shopifyShopForProductStore: {} as any,
     fetchStatus: {
       facilities: "none",
       statuses: "none",
@@ -54,30 +52,14 @@ export const useUtilStore = defineStore("util", {
   }),
 
   getters: {
-    getFacilityGroups: (state) => state.facilityGroups,
-    getInventoryGroups: (state) => state.facilityGroups.filter((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"),
     getFacilities: (state) => state.facilities,
-    getOperatingCountries: (state) => state.operatingCountries,
     getDBICCountriesCount: (state) => state.dbicCountries.total,
-    getProductIdentifiers: (state) => state.productIdentifiers,
-    getProductTypes: (state) => state.productTypes,
-    getShipmentMethodTypes: (state) => state.shipmentMethodTypes,
-    getPaymentMethodTypes: (state) => state.paymentMethodTypes,
-    getEmailTypes: (state) => state.emailTypes,
     getUserGroups: (state): any[] => state.userGroups,
     getShopifyShops: (state): any[] => state.shopifyShops,
-    getRoles: (state): any[] => state.roles,
     getProductStores: (state): any[] => state.productStores,
     getRoleTypeDesc: (state) => (roleTypeId: string): string | undefined => {
       return state.roles.find((role: any) => role.roleTypeId === roleTypeId)?.description
     },
-    getOrganizationPartyId: (state) => state.organizationPartyId,
-    getStatusItems: (state) => state.statusItems,
-    getMaargInfo: (state) => state.maargInfo,
-    getCurrencies: (state) => state.currencies,
-    getStates: (state) => state.states,
-    getShopifyShopIdForProductStore: (state) => (productStoreId: string) => state.shopifyShopForProductStore[productStoreId] || '',
-    getFetchStatus: (state) => state.fetchStatus
   },
 
   actions: {
@@ -136,13 +118,7 @@ export const useUtilStore = defineStore("util", {
       this.facilities = facilities
     },
 
-    patchFacility(facilityId: string, patch: any) {
-      this.facilities = this.facilities.map((facility: any) => facility.facilityId === facilityId ? { ...facility, ...patch } : facility)
-    },
 
-    patchFacilityGroup(facilityGroupId: string, patch: any) {
-      this.facilityGroups = this.facilityGroups.map((group: any) => group.facilityGroupId === facilityGroupId ? { ...group, ...patch } : group)
-    },
 
     async createFacility(payload: {
       facilityId: string
@@ -260,73 +236,11 @@ export const useUtilStore = defineStore("util", {
       this.shipmentMethodTypes = shipmentMethodTypes
     },
 
-    async createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
-      return api({
-        url: "oms/shippingGateways/shipmentMethodTypes",
-        method: "post",
-        data: payload
-      })
-    },
 
-    upsertShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
-      const shipmentMethodTypes = this.shipmentMethodTypes.filter(
-        (type: any) => type.shipmentMethodTypeId !== payload.shipmentMethodTypeId
-      )
-      shipmentMethodTypes.push(payload)
-      this.shipmentMethodTypes = shipmentMethodTypes
-    },
 
-    async fetchPaymentMethodTypes() {
-      if(this.paymentMethodTypes.length) {return}
-      this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "pending" }
-      let paymentMethodTypes: any[] = [], pageIndex = 0, resp: any
 
-      try {
-        do {
-          resp = await api({ url: "oms/paymentMethodTypes", method: "get", params: { pageSize: 100, pageIndex } })
-          if(!commonUtil.hasError(resp)) {
-            paymentMethodTypes = paymentMethodTypes.concat(resp.data)
-          } else {
-            throw resp.data
-          }
-          pageIndex++
-        } while(resp.data.length >= 100)
-        this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "success", lastFetched: Date.now() }
-      } catch (error: any) {
-        logger.error(error)
-        this.fetchStatus = { ...this.fetchStatus, paymentMethodTypes: "error" }
-      }
-      this.paymentMethodTypes = paymentMethodTypes
-    },
 
-    async createPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }): Promise<any> {
-      return api({
-        url: "oms/paymentMethodTypes",
-        method: "post",
-        data: payload
-      })
-    },
 
-    upsertPaymentMethodType(payload: { paymentMethodTypeId: string; description: string }) {
-      const paymentMethodTypes = this.paymentMethodTypes.filter(
-        (type: any) => type.paymentMethodTypeId !== payload.paymentMethodTypeId
-      )
-      paymentMethodTypes.push(payload)
-      this.paymentMethodTypes = paymentMethodTypes
-    },
-
-    async createProductStoreShipmentMethod(payload: {
-      productStoreId: string
-      shipmentMethodTypeId: string
-      partyId: string
-      roleTypeId?: string
-    }): Promise<any> {
-      return api({
-        url: `admin/productStores/${payload.productStoreId}/shippingMethods`,
-        method: "post",
-        data: { roleTypeId: "CARRIER", ...payload }
-      })
-    },
 
     async fetchOrganizationPartyId() {
       this.fetchStatus = { ...this.fetchStatus, organizationPartyId: "pending" }
@@ -434,48 +348,7 @@ export const useUtilStore = defineStore("util", {
       this.statusItems = statusItems
     },
 
-    async fetchMaargInfo() {
-      if(this.maargInfo) {return this.maargInfo}
-      if(inflightMaargFetch) {return inflightMaargFetch}
 
-      this.fetchStatus = { ...this.fetchStatus, maargInfo: "pending" }
-      inflightMaargFetch = (async () => {
-        try {
-          const resp: any = await api({ url: "admin/maarg", method: "get" })
-          if(!resp?.data || typeof resp.data !== "object" || commonUtil.hasError(resp)) {
-            throw new Error("Maarg version response is unavailable.")
-          }
-          this.maargInfo = resp.data
-          this.fetchStatus = { ...this.fetchStatus, maargInfo: "success", lastFetched: Date.now() }
-
-          return resp.data
-        } catch (error) {
-          logger.warn("Failed to fetch maarg info", error)
-          this.fetchStatus = { ...this.fetchStatus, maargInfo: "error" }
-          throw error
-        } finally {
-          inflightMaargFetch = null
-        }
-      })()
-
-      return inflightMaargFetch
-    },
-
-    async addEnumToEnumGroup(payload: any) {
-      try {
-        const resp = await api({
-          url: `admin/enumGroups/${payload.enumerationGroupId}/members`,
-          method: "post",
-          data: payload
-        })
-
-        return resp
-      } catch (error: any) {
-        logger.error("addEnumToEnumGroup", error)
-
-        return Promise.reject(error)
-      }
-    },
 
     async fetchProductTypes() {
       this.fetchStatus = { ...this.fetchStatus, productTypes: "pending" }
@@ -515,82 +388,9 @@ export const useUtilStore = defineStore("util", {
       }
     },
 
-    async fetchShopifyShopForProductStores(productStoreIds: string[]) {
-      let shopifyShopId = ''
-      try {
-        const resp = await api({
-          url: 'oms/shopifyShops/shops',
-          method: 'get',
-          params: { productStoreId: productStoreIds, productStoreId_op: 'in', pageSize: productStoreIds.length }
-        })
-        if (!commonUtil.hasError(resp) && resp.data?.length) {
-          const shops = resp.data
-          this.shopifyShopForProductStore = {
-            ...this.shopifyShopForProductStore,
-            ...shops.reduce((acc: any, shop: any) => { acc[shop.productStoreId] = shop.shopifyShopId; return acc; }, {})
-          }
-          shopifyShopId = shops[0]?.shopifyShopId || ''
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-      }
-      return shopifyShopId
-    },
 
-    async fetchStates(payload: { geoId: string }) {
-      if (payload.geoId in this.states) return
-      let states: any[] = []
 
-      try {
-        const resp = await api({
-          url: "admin/geos/assocs/to",
-          method: "get",
-          params: { geoId: payload.geoId, geoAssocTypeEnumId: "GAT_REGIONS", pageNoLimit: true }
-        })
-        if (!commonUtil.hasError(resp) && resp.data?.length) {
-          states = resp.data
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-      }
-      this.states[payload.geoId] = states
-    },
 
-    async generateLatLong(payload: any) {
-      try {
-        const resp = await api({
-          url: "api/geocode",
-          method: "POST",
-          data: payload,
-        });
-        if (resp.data) {
-          return Promise.resolve(resp.data);
-        } else {
-          throw resp.data;
-        }
-      } catch (error) {
-        logger.error(error);
-        return Promise.reject(error);
-      }
-    },
-
-    async fetchShopifyShops() {
-      try {
-        const resp = await api({ url: "oms/shopifyShops/shops", method: "get", params: { pageNoLimit: true } });
-        if (!commonUtil.hasError(resp) && resp.data?.length) {
-          return Promise.resolve(resp.data);
-        } else {
-          throw resp.data;
-        }
-      } catch (error) {
-        logger.error(error);
-        return Promise.reject(error);
-      }
-    },
 
     // This app only ever manages login-capable groups, so this is scoped to groupTypeEnumId=UgtUserAccess
     // (excludes framework/system groups like UgtMoquiAdmin, UgtRemoteSystems).

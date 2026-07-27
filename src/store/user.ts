@@ -6,8 +6,7 @@ import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useUtilStore } from "@/store/util"
 import { useProductStore } from "@/store/productStore"
 import { useShopifyStore } from "@/store/shopify"
-import { useFacilityStore } from "@/store/facility"
-import useServiceJob from "@/composables/useServiceJob"
+import { useServiceJob } from "@/composables/useServiceJobs"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -657,7 +656,7 @@ export const useUserStore = defineStore("user", {
           })
 
           if(selectedUser.partyTypeId === "PARTY_GROUP") {
-            const facilityId = [...selectedFacilityIds][0]
+            const facilityId = [...selectedFacilityIds][0] as string
 
             promises.push(this.addPartyToFacility({
               partyId,
@@ -903,53 +902,53 @@ export const useUserStore = defineStore("user", {
         return Promise.reject(new Error(error))
       }
 
-      // Hydrate remaining reference data lazily in the background. Not
-      // awaited so login doesn't wait on it; each store tracks its own
-      // fetchStatus (see Settings.vue's Data Fetch Status panel) and
-      // swallows its own errors.
-      this.prefetchReferenceData()
+      // Seed the cache HERE, not only from the `isAuthenticated` watcher in App.vue.
+      //
+      // That computed mixes reactive refs (token, expirationTime) with plain COOKIE reads (oms,
+      // userId). Login sets the token first and establishes the user afterwards, so by the time
+      // the last piece lands the change arrives via a cookie write, which invalidates nothing —
+      // the computed can be "true" when read yet never notify, so the watcher never fires and the
+      // app runs on an empty cache until the user reloads. Verified from a session recording: no
+      // seed request at all between login and a manual Cmd-R.
+      //
+      // This hook runs exactly once per login, after the profile and permissions exist (which the
+      // cache identity check needs). `startReferenceSync` is idempotent, so the watcher still
+      // covering the page-refresh case is harmless.
+      try {
+        const { startReferenceSync } = await import("@/services/appCacheBootstrap")
+        void startReferenceSync()
+      } catch (error) {
+        logger.error("Failed to start the reference cache sync after login", error)
+      }
     },
 
-    async prefetchReferenceData() {
-      const utilStore = useUtilStore()
-      const { fetchJobs } = useServiceJob()
-
-      await Promise.allSettled([
-        useProductStore().fetchProductStores(),
-        useShopifyStore().fetchShopifyShops(),
-        useFacilityStore().fetchFacilityGroupTypes(),
-        utilStore.fetchStatusItems(),
-        utilStore.fetchFacilities(),
-        utilStore.fetchOrganizationPartyId(),
-        utilStore.fetchFacilityGroups(),
-        utilStore.fetchDBICCountries(),
-        utilStore.fetchOperatingCountries(),
-        utilStore.fetchProductIdentifiers(),
-        utilStore.fetchShipmentMethodTypes(),
-        fetchJobs()
-      ])
-    },
 
     // Called by @common's initialiseConfig after logout
     async postLogout() {
       this.$reset()
       useAuth().clearAuth()
 
+      // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
+      // sessions yet, so one user's cached data can never surface in another's session.
+      const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
+      stopReferenceSync()
+      const { clearAllCaches } = await import("@/utils/appCacheDb")
+      await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
+      // Maarg config lives in localStorage, not the cache, so it is cleared separately.
+      const { useMaargConfig } = await import("@/composables/useSeed")
+      useMaargConfig().clear()
+
       // Reset all other persisted stores so no data leaks across sessions
       const { useProductStore } = await import("./productStore")
       const { useUtilStore } = await import("./util")
-      const { useNetSuiteStore } = await import("./netSuite")
       const { useShopifyStore } = await import("./shopify")
       const { useKlaviyoStore } = await import("./klaviyo")
       const { useComposerStore } = await import("./composer")
       const { useWorkforceStore } = await import("./workforce")
       const { useAuthorizationStore } = await import("./authorization")
-      const { useShopifyOrderSyncStore } = await import("./shopifyOrderSync")
 
-      useShopifyOrderSyncStore().clearShopifyOrderSyncState()
       useProductStore().clearProductStoreState()
       useUtilStore().clearUtilState()
-      useNetSuiteStore().clearNetSuiteState()
       useShopifyStore().clearShopifyState()
       useKlaviyoStore().clear()
       useComposerStore().clearComposerState()

@@ -425,7 +425,6 @@ export const useProductStore = defineStore('productStore', {
     currentShopifyJobStatus: null as any,
     productStores: [] as any[],
     company: {} as any,
-    netSuiteProductStore: null as any,
     fetchStatus: {
       productStores: 'none',
       shopifyJobStatus: 'none',
@@ -441,7 +440,6 @@ export const useProductStore = defineStore('productStore', {
     getProductStores: (state) => state.productStores,
     getProductStoreById: (state) => (productStoreId: string) => state.productStores.find((productStore: any) => productStore.productStoreId === productStoreId),
     getCompany: (state) => state.company,
-    getNetSuiteProductStore: (state) => state.netSuiteProductStore,
     getFetchStatus: (state) => state.fetchStatus
   },
 
@@ -559,40 +557,6 @@ export const useProductStore = defineStore('productStore', {
       }
       this.currentFacilities = facilities
       return facilities
-    },
-
-    async associateProductStoreFacility(payload: {
-      productStoreId: string
-      facilityId: string
-      fromDate?: number
-    }) {
-      return api({
-        url: `admin/productStores/${payload.productStoreId}/facilities/${payload.facilityId}/association`,
-        method: "post",
-        data: {
-          productStoreId: payload.productStoreId,
-          facilityId: payload.facilityId,
-          fromDate: payload.fromDate || Date.now()
-        }
-      })
-    },
-
-    async createProductStoreShipmentMethod(payload: {
-      productStoreId: string
-      productStoreShipMethId: string
-      shipmentMethodTypeId: string
-      partyId: string
-      roleTypeId?: string
-      sequenceNumber?: number
-    }) {
-      return api({
-        url: `oms/productStores/${payload.productStoreId}/shipmentMethods`,
-        method: "post",
-        data: {
-          ...payload,
-          roleTypeId: payload.roleTypeId || "CARRIER"
-        }
-      })
     },
 
     async fetchProductStoreShopifyJobStatus(productStoreId: string) {
@@ -897,66 +861,12 @@ export const useProductStore = defineStore('productStore', {
       this.currentStoreSettings = payload
     },
 
-    async createProductStore(payload: any): Promise<any> {
-      return api({
-        url: "admin/productStores",
-        method: "post",
-        data: payload
-      })
-    },
-
-    async updateProductStore(payload: any): Promise<any> {
-      return api({
-        url: `admin/productStores/${payload.productStoreId}`,
-        method: "put",
-        data: payload
-      })
-    },
-
-    async addDBICCountries(payload: any): Promise<any> {
-      return api({
-        url: "admin/geos/assocs",
-        method: "post",
-        data: payload
-      })
-    },
-
-    async updateCompany(payload: any): Promise<any> {
-      try {
-        const resp = await api({
-          url: `admin/organizations/${payload.partyId}`,
-          method: "post",
-          data: payload
-        }) as any
-        if (!commonUtil.hasError(resp)) {
-          return Promise.resolve(resp.data)
-        } else {
-          throw resp.data
-        }
-      } catch (error: any) {
-        logger.error(error)
-        return Promise.resolve({})
-      }
-    },
-
-    async saveCurrentStoreSettings(payload: any): Promise<any> {
-      return api({
-        url: `admin/productStores/${payload.productStoreId}/settings`,
-        method: "post",
-        data: payload
-      })
-    },
-
     updateCurrent(current: any) {
       this.current = current
     },
 
     clearProductStoreState() {
       this.$reset()
-    },
-
-    updateSelectedProductStore(netSuiteProductStore: any) {
-      this.netSuiteProductStore = netSuiteProductStore
     }
   },
 

@@ -82,28 +82,6 @@ export const useShopifyStore = defineStore('shopify', {
       return shipments
     },
 
-    async fetchShopifyShopLocations(payload: any = {}) {
-      let shopifyShopLocations: any = {}, pageIndex = 0, resp: any
-      try {
-        do {
-          resp = await api({ url: "oms/shopifyShops/locations", method: "get", params: { ...payload, pageSize: 100, pageIndex } })
-          if (!commonUtil.hasError(resp)) {
-            const newLocations = resp.data.reduce((acc: any, item: any) => {
-              acc[item.facilityId] = item.shopifyLocationId
-              return acc
-            }, {})
-            shopifyShopLocations = { ...shopifyShopLocations, ...newLocations }
-          } else {
-            throw resp.data
-          }
-          pageIndex++
-        } while (resp.data.length >= 100)
-      } catch (error: any) {
-        logger.error(error)
-      }
-      this.shopifyShopsLocations = shopifyShopLocations
-      return shopifyShopLocations
-    },
 
     async fetchShopifyTypeMappings(payload: string | { mappedTypeId: string, shopId?: string }) {
       const mappedTypeId = typeof payload === "string" ? payload : payload.mappedTypeId
@@ -135,46 +113,6 @@ export const useShopifyStore = defineStore('shopify', {
       }
       this.shopifyTypeMappings = { ...this.shopifyTypeMappings, ...shopifyTypeMappings }
       return shopifyTypeMappings[mappedTypeId] || []
-    },
-
-    async updateShopifyShop(payload: any) {
-      return api({
-        url: `oms/shopifyShops/shops/${payload.shopId}`,
-        method: "put",
-        data: payload
-      })
-    },
-
-    async createShopifyShopTypeMapping(payload: any) {
-      return api({
-        url: "oms/shopifyShops/typeMappings",
-        method: "post",
-        data: payload
-      })
-    },
-
-    async deleteShopifyShopTypeMapping(payload: any) {
-      return api({
-        url: "oms/shopifyShops/typeMappings",
-        method: "delete",
-        data: payload
-      })
-    },
-
-    async createShopifyShopCarrierShipment(payload: any) {
-      return api({
-        url: "oms/shopifyShops/carrierShipments",
-        method: "post",
-        data: payload
-      })
-    },
-
-    async createShopifyShopLocation(payload: any) {
-      return api({
-        url: "oms/shopifyShops/locations",
-        method: "post",
-        data: payload
-      })
     },
 
     async fetchLocationsFromShopify(payload: any) {
