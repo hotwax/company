@@ -196,11 +196,11 @@ import { appPermissionCatalogs } from "@/config/appPermissions"
 import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/appPermissions"
 import router from "@/router"
 import { useAppPermissionsStore } from "@/store/appPermissions"
-import { useUserStore } from "@/store/user"
 import { toEpochMillis } from "@/utils/appPermissionTime"
+import { useAuth } from "@/composables/useSecurity"
 
 const appPermissionsStore = useAppPermissionsStore()
-const userStore = useUserStore()
+const { hasPermission } = useAuth();
 const loading = ref(false)
 const loadError = ref(false)
 const query = ref("")
@@ -215,8 +215,8 @@ const getAppId = (appId: unknown) => {
 
 const selectedAppId = ref<string>(getAppId(router.currentRoute.value.query.appId))
 
-const canCreate = computed(() => userStore.hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
-const canUpdate = computed(() => userStore.hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
+const canCreate = computed(() => hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
+const canUpdate = computed(() => hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
 const canManage = computed(() => canCreate.value || canUpdate.value)
 const selectedApp = computed<AppPermissionCatalog | undefined>(() => appPermissionCatalogs.find((app) => app.appId === selectedAppId.value) || appPermissionCatalogs[0])
 

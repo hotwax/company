@@ -93,10 +93,10 @@ import {
 import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import router from "@/router";
-import { useUserStore } from "@/store/user";
+import { useAuth as useAppAuth } from "@/composables/useSecurity";
 
 const { isAuthenticated } = useAuth();
-const userStore = useUserStore();
+const { hasPermission } = useAppAuth();
 const appPages = [
   {
     title: "Product Store",
@@ -178,7 +178,7 @@ const facilitiesPages = [
   }
 ];
 
-const visibleUserPages = computed(() => userPages.filter((screen) => userStore.hasPermission(screen.permission)))
+const visibleUserPages = computed(() => userPages.filter((screen) => hasPermission(screen.permission)))
 
 const agentPages = [
   {

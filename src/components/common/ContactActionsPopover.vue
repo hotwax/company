@@ -170,6 +170,8 @@ const deleteContactField = async () => {
         const updatedSelectedUser = JSON.parse(JSON.stringify(selectedUser.value));
         try {
           if(props.type === "email") {
+            // `contactMechId` is an optional prop; deleting without one would post `undefined`.
+            if (!props.contactMechId) throw new Error("Missing contactMechId for delete");
             const resp = await userStore.deletePartyContactMech({
               contactMechId: props.contactMechId,
               partyId: selectedUser.value.partyId
@@ -177,6 +179,8 @@ const deleteContactField = async () => {
             if(commonUtil.hasError(resp)) {throw resp.data;}
             delete updatedSelectedUser.emailDetails;
           } else if(props.type === "phoneNumber") {
+            // `contactMechId` is an optional prop; deleting without one would post `undefined`.
+            if (!props.contactMechId) throw new Error("Missing contactMechId for delete");
             const resp = await userStore.deletePartyContactMech({
               contactMechId: props.contactMechId,
               partyId: selectedUser.value.partyId

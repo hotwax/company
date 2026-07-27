@@ -44,13 +44,13 @@ import { IonContent, IonHeader, IonIcon, IonItem, IonList, IonMenu, IonSelect, I
 import { idCardOutline, toggleOutline } from "ionicons/icons"
 import { translate } from "@common";
 import { useUserStore } from "@/store/user";
-import { useUtilStore } from "@/store/util";
+import { useUserGroups } from "@/composables/useSecurity";
 
 const userStore = useUserStore();
-const utilStore = useUtilStore();
+const { userGroups: cachedUserGroups } = useUserGroups();
 
 const query = computed(() => userStore.getQuery);
-const userGroups = computed(() => utilStore.getUserGroups);
+const userGroups = computed(() => cachedUserGroups.value);
 
 const closeMenu = () => {
   // Query updation and fetchUsers action automatically gets handled by the event handlers on Users page.

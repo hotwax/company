@@ -81,17 +81,18 @@ import {
 } from "@ionic/vue";
 import { computed, onBeforeMount, ref ,defineProps} from "vue";
 import { close, save } from "ionicons/icons";
-import { useUserStore } from '@/store/user';
+import { useAuth } from "@/composables/useSecurity";
+import { useTimeZones } from "@/composables/useSeed";
 import { getCurrentTime } from '@/utils'
 import { logger, translate } from '@common'
 
-const userStore = useUserStore();
+const { userProfile } = useAuth();
+const { loadTimeZones } = useTimeZones();
 let queryString = ref("")
-let filteredTimeZones = ref([])
-let timeZones =  ref([])
+let filteredTimeZones = ref<any[]>([])
+let timeZones = ref<any[]>([])
 let timeZoneId = ref("")
 let isLoading = ref(true)
-const userProfile = computed(() => userStore.getUserProfile)
 // Fetching timeZone of the browser
 const browserTimeZone = ref({
   label: '',
@@ -116,8 +117,8 @@ const props = defineProps({
 onBeforeMount(async() => {
   isLoading.value = true;
   try {
-    await userStore.fetchAvailableTimeZones();
-    timeZones.value = userStore.availableTimeZones;
+    // Memoised for the session — the second consumer (facility switcher) shares the same list.
+    timeZones.value = await loadTimeZones();
   } catch(error) {
     logger.error(error);
   }

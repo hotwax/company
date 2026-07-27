@@ -607,6 +607,7 @@ import { useUserStore } from "@/store/user";
 import { useUtilStore } from "@/store/util";
 import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, closeOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, lockClosedOutline, mailOutline, saveOutline, timeOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
+import { useRoleTypes } from '@/composables/useSeed';
 import ContactActionsPopover from "@/components/common/ContactActionsPopover.vue";
 import ProductStoreActionsPopover from "@/components/product-store/ProductStoreActionsPopover.vue";
 import SecurityGroupActionsPopover from "@/components/security/SecurityGroupActionsPopover.vue";
@@ -652,7 +653,9 @@ const isUserFulfillmentAdmin = ref(false);
 const selectedUser = computed(() => userStore.selectedUser);
 const userProductStores = computed(() => userStore.getSelectedUserProductStores);
 const userSecurityGroups = computed(() => userStore.getSelectedUserSecurityGroups);
-const getRoleTypeDesc = (roleTypeId: string) => utilStore.getRoleTypeDesc(roleTypeId);
+// Role types are cached at login; this used to depend on `prefetchReferenceData` having run.
+const { descriptionById: roleTypeDescriptions } = useRoleTypes();
+const getRoleTypeDesc = (roleTypeId: string) => roleTypeDescriptions.value[roleTypeId] ?? roleTypeId;
 const userProfile = computed(() => userStore.getUserProfile);
 const shopifyShops = computed(() => utilStore.getShopifyShops);
 const redirectedFromUrl = computed(() => userStore.getRedirectedFromUrl);
