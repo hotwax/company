@@ -8,10 +8,16 @@
     </ion-header>
 
     <ion-content>
-      <ion-searchbar v-model="query.queryString" :placeholder="translate('Search security groups')" @keyup.enter="updateQuery()" />
+      <!-- Filters the complete cached set as you type — no server round-trip. -->
+      <ion-searchbar v-model="query.queryString" :placeholder="translate('Search security groups')" />
 
-      <div v-if="userGroups?.length">
-        <ion-item v-for="(group, index) in userGroups" :key="index" detail class="pointer" @click="viewGroupDetails(group)">
+      <div v-if="!hydrated">
+        <ion-item v-for="n in 5" :key="`sk-${n}`" lines="full">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div>
+      <div v-else-if="userGroups.length">
+        <ion-item v-for="group in userGroups" :key="group.userGroupId" detail class="pointer" @click="viewGroupDetails(group)">
           <ion-label>
             {{ group.description || group.userGroupId }}
             <p>{{ group.userGroupId }}</p>
@@ -23,62 +29,26 @@
           {{ translate("No user groups found") }}
         </p>
       </div>
-
-      <ion-infinite-scroll
-        v-if="isScrollable"
-        threshold="100px"
-        @ion-infinite="loadMoreGroups($event)"
-      >
-        <ion-infinite-scroll-content
-          loading-spinner="crescent"
-          :loading-text="translate('Loading')"
-        />
-      </ion-infinite-scroll>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { translate } from "@common";
-import { IonContent, IonHeader, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonContent, IonHeader, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonSkeletonText, IonTitle, IonToolbar } from "@ionic/vue";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useAuthorizationStore } from "@/store/authorization";
+import { useUserGroups } from "@/composables/useSecurity";
 
-const authorizationStore = useAuthorizationStore();
+// No store: the complete user-group set is cached, so search filters locally and instantly.
+const { search, hydrated } = useUserGroups();
 
 const query = ref({ queryString: "" });
+const userGroups = computed(() => search(query.value.queryString));
 
-const userGroups = computed(() => authorizationStore.getUserGroupList);
-const isScrollable = computed(() => authorizationStore.isUserGroupListScrollable);
-
-onIonViewWillEnter(async () => {
-  await fetchUserGroups();
-});
-
-const updateQuery = async () => {
-  await authorizationStore.updateUserGroupListQuery(query.value);
-  fetchUserGroups();
-};
-
-const fetchUserGroups = async (pSize?: any, pIndex?: any) => {
-  const pageSize = pSize || import.meta.env.VITE_VIEW_SIZE;
-  const pageIndex = pIndex || 0;
-
-  await authorizationStore.fetchFilteredUserGroups({ pageSize, pageIndex });
-};
 
 const viewGroupDetails = (group: any) => {
   router.push({ path: `/security-group-detail/${group.userGroupId}` });
-};
-
-const loadMoreGroups = (event: any) => {
-  fetchUserGroups(
-    undefined,
-    Math.ceil(userGroups.value?.length / (import.meta.env.VITE_VIEW_SIZE as any)).toString()
-  ).then(async () => {
-    await event.target.complete();
-  });
 };
 </script>
 

@@ -311,208 +311,29 @@
           </ion-footer>
         </ion-modal>
 
-        <ion-modal :is-open="showSyncJobDetailsModal" :backdrop-dismiss="false" :can-dismiss="canDismissSyncJobDetailsModal" @didDismiss="handleSyncJobDetailsDidDismiss">
-          <ion-header>
-            <ion-toolbar>
-              <ion-buttons slot="start">
-                <ion-button @click="requestCloseSyncJobDetailsModal" :aria-label="translate('Close')">
-                  <ion-icon slot="icon-only" :icon="closeOutline" />
-                </ion-button>
-              </ion-buttons>
-              <ion-title>{{ syncJobDetailsTitle }}</ion-title>
-              <ion-buttons slot="end">
-                <ion-button @click="requestRefreshSyncJobDetails" :disabled="isSyncJobDetailsLoading || isSyncJobDetailsSaving || !selectedSyncJobDetailsJob?.jobName" :aria-label="translate('Refresh')">
-                  <ion-icon slot="icon-only" :icon="refreshOutline" />
-                </ion-button>
-              </ion-buttons>
-            </ion-toolbar>
-          </ion-header>
-          <ion-content>
-            <ion-list v-if="isSyncJobDetailsLoading" lines="none">
-              <ion-item>
-                <ion-spinner name="crescent" />
-              </ion-item>
-            </ion-list>
-
-            <template v-else>
-              <template v-if="syncJobDetails.jobName">
-                <ion-list lines="full">
-                  <ion-item>
-                    <ion-label>
-                      {{ syncJobDetailsTitle }}
-                      <p>{{ syncJobDetails.jobName }}</p>
-                      <p>{{ syncJobDetails.serviceName || translate("Unavailable") }}</p>
-                    </ion-label>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Run now") }}
-                      <p>{{ translate("Create an immediate execution of this service job without changing its schedule.") }}</p>
-                    </ion-label>
-                    <ion-button slot="end" fill="outline" color="primary" :disabled="isSyncJobDetailsSaving || isSyncJobRunNowLoading(selectedSyncJobDetailsJob)" @click="runSyncJob(selectedSyncJobDetailsJob)">
-                      <ion-spinner v-if="isSyncJobRunNowLoading(selectedSyncJobDetailsJob)" name="crescent" />
-                      <span v-else>{{ translate("Run now") }}</span>
-                    </ion-button>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>{{ translate("Active") }}</ion-label>
-                    <ion-toggle
-                      slot="end"
-                      :checked="syncJobDraftActive"
-                      :disabled="isSyncJobDetailsSaving"
-                      @ionChange="handleSyncJobActiveChange($event.detail.checked)"
-                    />
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>{{ translate("Last run") }}</ion-label>
-                    <ion-label slot="end">{{ syncJobDetailsLastRunLabel }}</ion-label>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>{{ translate("Instance of product") }}</ion-label>
-                    <ion-label slot="end">{{ syncJobProductLabel }}</ion-label>
-                  </ion-item>
-                </ion-list>
-
-                <ion-accordion-group>
-                  <ion-accordion value="schedule">
-                    <ion-item slot="header">
-                      <ion-label>
-                        {{ translate("Schedule") }}
-                        <p>{{ syncJobDraftScheduleDescription || translate("Not scheduled") }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ syncJobDraftNextRunRelativeLabel }}</ion-note>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item>
-                        <ion-input
-                          label-placement="stacked"
-                          :label="translate('Quartz cron expression')"
-                          v-model="syncJobDraftCronExpression"
-                        />
-                      </ion-item>
-                      <ion-item>
-                        <ion-label>
-                          <p class="overline" >{{ translate("Schedule preview") }}</p>
-                          {{ isSyncJobDraftScheduleValid ? syncJobDraftScheduleDescription : translate("Provide a valid cron expression") }}
-                        </ion-label>
-                        <ion-note slot="end">{{ syncJobDraftNextRunTimeLabel }}</ion-note>
-                      </ion-item>
-                      <ion-list-header>{{ translate("Schedule Options") }}</ion-list-header>
-                      <ion-radio-group v-model="syncJobDraftCronExpression">
-                        <ion-item v-for="option in syncJobScheduleOptions" :key="option.expression">
-                          <ion-radio label-placement="end" justify="start" :value="option.expression">{{ translate(option.label) }}</ion-radio>
-                        </ion-item>
-                      </ion-radio-group>
-                    </ion-list>
-                  </ion-accordion>
-                  <ion-accordion value="parameters">
-                    <ion-item slot="header">
-                      <ion-label>
-                        {{ translate("Parameters") }}
-                        <p>{{ translate("Job and service parameters used for this Shopify product sync.") }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ syncJobParameters.length }}</ion-note>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item v-for="parameter in syncJobParameters" :key="parameter.key">
-                        <ion-label>
-                          {{ parameter.label }}
-                          <p>{{ parameter.source }}</p>
-                        </ion-label>
-                        <ion-label slot="end">{{ parameter.value }}</ion-label>
-                      </ion-item>
-                      <ion-item v-if="!syncJobParameters.length">
-                        <ion-label>{{ translate("No parameters found") }}</ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                  <ion-accordion value="recent-runs">
-                    <ion-item slot="header">
-                      <ion-label>
-                        {{ translate("Recent runs") }}
-                        <p>{{ translate("Last 5 executions for this service job.") }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ syncJobDetailsRecentRuns.length }}</ion-note>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item v-for="run in syncJobDetailsRecentRuns" :key="getSyncJobRunKey(run)">
-                        <ion-label>
-                          {{ getSyncJobRunTitle(run) }}
-                          <p>{{ formatDateTime(getSyncJobRunStartedAt(run)) }}</p>
-                          <p v-if="getSyncJobRunCompletedAt(run)">{{ translate("Completed") }} {{ formatDateTime(getSyncJobRunCompletedAt(run)) }}</p>
-                          <p v-if="run.startTime || run.endTime || run.elapsedTime || run.runtime">{{ translate("Duration") }} <AnimatedDuration :start-time="getSyncJobRunStartedAt(run)" :end-time="getSyncJobRunCompletedAt(run)" :runtime="run.runtime" :elapsed-time="run.elapsedTime" /></p>
-                          <p v-if="getSyncJobRunUser(run)">{{ translate("User") }} {{ getSyncJobRunUser(run) }}</p>
-                          <p v-if="getSyncJobRunCount(run)">{{ getSyncJobRunCount(run) }}</p>
-                          <p>{{ translate("Output") }}: {{ getSyncJobRunMessage(run) || translate("No output message") }}</p>
-                        </ion-label>
-                        <ion-badge slot="end" :color="getSyncJobRunStatusColor(run)">{{ getSyncJobRunStatus(run) }}</ion-badge>
-                      </ion-item>
-                      <ion-item v-if="!syncJobDetailsRecentRuns.length">
-                        <ion-label>{{ translate("No recent runs found") }}</ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                  <ion-accordion value="edit-history">
-                    <ion-item slot="header">
-                      <ion-label>
-                        {{ translate("Edit history") }}
-                        <p>{{ translate("User changes recorded in EntityAuditLog.") }}</p>
-                      </ion-label>
-                      <ion-note slot="end">{{ syncJobAuditHistoryError ? translate("Unavailable") : syncJobAuditHistory.length }}</ion-note>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item v-if="isSyncJobAuditHistoryLoading">
-                        <ion-spinner name="crescent" />
-                      </ion-item>
-                      <ion-item v-else-if="syncJobAuditHistoryError">
-                        <ion-label>
-                          {{ translate("Edit history unavailable") }}
-                          <p>{{ syncJobAuditHistoryError }}</p>
-                        </ion-label>
-                      </ion-item>
-                      <ion-item v-else-if="!syncJobAuditHistory.length">
-                        <ion-label>{{ translate("No edit history found") }}</ion-label>
-                      </ion-item>
-                      <template v-else>
-                        <ion-item v-for="auditLog in syncJobAuditHistory" :key="getSyncJobAuditHistoryKey(auditLog)">
-                          <ion-label>
-                            {{ getSyncJobAuditFieldLabel(auditLog) }}
-                            <p v-if="getSyncJobAuditChangedBy(auditLog)">{{ translate("Changed by") }}: {{ getSyncJobAuditChangedByLabel(auditLog) }}</p>
-                            <p>{{ getSyncJobAuditChangeLabel(auditLog) }}</p>
-                          </ion-label>
-                          <ion-note slot="end">{{ formatDateTime(getSyncJobAuditChangedAt(auditLog)) }}</ion-note>
-                        </ion-item>
-                      </template>
-                    </ion-list>
-                  </ion-accordion>
-                </ion-accordion-group>
-              </template>
-
-              <ion-list v-else lines="full">
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Sync job details unavailable") }}
-                    <p>{{ translate("Failed to load sync job details.") }}</p>
-                  </ion-label>
-                </ion-item>
-              </ion-list>
-            </template>
-            <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-              <ion-fab-button
-                v-if="!isSyncJobDetailsSaving"
-                @click="saveSyncJobDetails"
-                :disabled="!syncJobDetailsDirty || !isSyncJobDraftScheduleValid"
-                :aria-label="translate('Save')"
-              >
-                <ion-icon :icon="saveOutline" />
-              </ion-fab-button>
-              <ion-fab-button v-else disabled :aria-label="translate('Saving')">
-                <ion-spinner name="crescent" />
-              </ion-fab-button>
-            </ion-fab>
-          </ion-content>
-        </ion-modal>
-        <ion-modal :is-open="showStepDetailsModal" :backdrop-dismiss="false" @didDismiss="showStepDetailsModal = false">
+        <ServiceJobDetailsModal
+          :is-open="showSyncJobDetailsModal"
+          :job-name="selectedSyncJobDetailsJob?.jobName || ''"
+          :title="syncJobDetailsTitle"
+          @updated="handleRefresh"
+          @close="handleSyncJobDetailsDidDismiss"
+        />
+        <SystemMessageDetailsModal
+          :is-open="showStepDetailsModal && currentStepDetail?.type === 'systemMessage'"
+          :message-id="currentStepDetail?.type === 'systemMessage' ? currentStepDetail.id : ''"
+          :details="productSystemMessageDetails"
+          :primary-action="systemMessageFsmState.primaryAction"
+          :secondary-actions="systemMessageFsmState.secondaryActions"
+          :action-loading-id="systemMessageActionLoadingId"
+          @action="handleProductSystemMessageAction"
+          @refresh="refreshAfterSystemMessageAction"
+          @close="showStepDetailsModal = false"
+        />
+        <ion-modal
+          :is-open="showStepDetailsModal && currentStepDetail?.type !== 'systemMessage'"
+          :backdrop-dismiss="false"
+          @didDismiss="showStepDetailsModal = false"
+        >
           <ion-header>
             <ion-toolbar>
               <ion-buttons slot="start">
@@ -531,85 +352,6 @@
             </ion-card>
             
             <template v-else-if="currentStepDetail">
-              <!-- System Message Details -->
-              <template v-if="currentStepDetail.type === 'systemMessage'">
-                <ion-list lines="full">
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Status") }}
-                      <p>{{ translate("Message ID") }}: {{ currentStepDetail.id }}</p>
-                    </ion-label>
-                    <ion-label slot="end">{{ currentSyncRun?.systemMessage?.statusLabel || getStatusDescription(latestSystemMessage?.statusId) }}</ion-label>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Next step") }}
-                      <p>{{ systemMessageFsmState.nextJobReason }}</p>
-                      <p v-if="systemMessageFsmState.nextJob">
-                        {{ systemMessageFsmState.nextJob.label }} · {{ systemMessageFsmState.nextJob.nextRunLabel }}
-                      </p>
-                    </ion-label>
-                    <ion-buttons slot="end">
-                      <ion-button
-                        v-if="systemMessageFsmState.primaryAction"
-                        fill="clear"
-                        :disabled="!!systemMessageActionLoadingId"
-                        @click="runSystemMessageAction(systemMessageFsmState.primaryAction.id)"
-                      >
-                        <ion-spinner v-if="systemMessageActionLoadingId === systemMessageFsmState.primaryAction.id" slot="start" name="crescent" />
-                        <span v-else>{{ systemMessageFsmState.primaryAction.label }}</span>
-                      </ion-button>
-                      <ion-button
-                        v-for="action in systemMessageFsmState.secondaryActions"
-                        :key="action.id"
-                        fill="clear"
-                        color="medium"
-                        :disabled="!!systemMessageActionLoadingId"
-                        @click="runSystemMessageAction(action.id)"
-                      >
-                        <ion-spinner v-if="systemMessageActionLoadingId === action.id" slot="start" name="crescent" />
-                        <span v-else>{{ action.label }}</span>
-                      </ion-button>
-                    </ion-buttons>
-                  </ion-item>
-                  <ion-item>
-                    <ion-label>
-                      {{ translate("Bulk operation ID") }}
-                      <p>{{ translate("Shopify returns this after it accepts the bulk operation.") }}</p>
-                    </ion-label>
-                    <ion-label slot="end">
-                      {{ latestBulkOperationId || translate("Pending") }}
-                    </ion-label>
-                  </ion-item>
-                </ion-list>
-                <ion-accordion-group>
-                  <ion-accordion v-if="currentSyncRun?.systemMessage?.messageText" value="system-message-text">
-                    <ion-item slot="header">
-                      <ion-label>{{ translate("Message Text") }}</ion-label>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item>
-                        <ion-label>
-                          <p>{{ currentSyncRun.systemMessage.messageText }}</p>
-                        </ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                  <ion-accordion v-if="currentSyncRun?.systemMessage?.errorText" value="system-message-error-text">
-                    <ion-item slot="header">
-                      <ion-label>{{ translate("Error Text") }}</ion-label>
-                    </ion-item>
-                    <ion-list slot="content" lines="full">
-                      <ion-item>
-                        <ion-label>
-                          <p>{{ currentSyncRun.systemMessage.errorText }}</p>
-                        </ion-label>
-                      </ion-item>
-                    </ion-list>
-                  </ion-accordion>
-                </ion-accordion-group>
-              </template>
-
               <!-- Bulk Operation Details -->
               <template v-if="currentStepDetail.type === 'bulkOperation'">
                 <ion-list lines="full">
@@ -691,17 +433,145 @@
           </ion-content>
         </ion-modal>
 
+        <ion-modal :is-open="showProductsPickerModal" @didPresent="onProductsPickerDidPresent" @didDismiss="closeProductsPickerModal">
+          <ion-header>
+            <ion-toolbar>
+              <ion-buttons slot="start">
+                <ion-button data-testid="product-sync-products-modal-close-btn" @click="showProductsPickerModal = false">
+                  <ion-icon slot="icon-only" :icon="closeOutline" />
+                </ion-button>
+              </ion-buttons>
+              <ion-title>{{ modalTitle }}</ion-title>
+              <ion-buttons slot="end" v-if="!isSearchMode">
+                <ion-button @click="loadProducts" :disabled="productsPickerIsLoading" :aria-label="translate('Refresh')">
+                  <ion-icon slot="icon-only" :icon="refreshOutline" />
+                </ion-button>
+              </ion-buttons>
+              <ion-buttons slot="end" v-else-if="productsPickerIsLoading">
+                <ion-spinner data-testid="product-sync-products-toolbar-loader" name="crescent" />
+              </ion-buttons>
+            </ion-toolbar>
+            <ion-toolbar v-if="isSearchMode">
+              <ion-searchbar
+                data-testid="product-sync-products-search-input"
+                @ionFocus="selectSearchBarText($event)"
+                v-model="queryString"
+                :placeholder="translate('Search SKU, product name, or Shopify ID')"
+                @keyup.enter="handleSearch"
+                @ionInput="handleInput"
+              />
+            </ion-toolbar>
+          </ion-header>
+
+          <ion-content data-testid="product-sync-products-modal-content" ref="contentRef" :scroll-events="true" @ionScroll="enableScrolling()">
+            <ion-list v-if="limitExceeded" lines="full">
+              <ion-item>
+                <ion-label>{{ translate("Showing the first 100 updated products.") }}</ion-label>
+                <ion-note slot="end">{{ translate("100+") }}</ion-note>
+              </ion-item>
+            </ion-list>
+
+            <template v-if="productsPickerProducts.length">
+              <ion-list lines="full">
+                <ion-list-header v-if="showDefaultProductsHeader">
+                  <ion-label>{{ translate("Recently updated products from Shopify") }}</ion-label>
+                </ion-list-header>
+
+                <ion-item button data-testid="product-sync-products-select-all-row" @click="toggleAllVisibleProducts">
+                  <ion-label>
+                    {{ translate("Select all") }}
+                    <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
+                  </ion-label>
+                  <ion-checkbox
+                    slot="end"
+                    :checked="areAllVisibleProductsSelected"
+                    :indeterminate="areSomeVisibleProductsSelected"
+                    data-testid="product-sync-products-select-all-checkbox"
+                    @click.stop="toggleAllVisibleProducts"
+                  />
+                </ion-item>
+
+                <ion-item v-for="product in productsPickerProducts" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
+                  <ion-thumbnail v-if="product.imageUrl" slot="start">
+                    <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
+                  </ion-thumbnail>
+                  <ion-label>
+                    <h2>{{ product.title }}</h2>
+                    <p>{{ product.handle }}</p>
+                    <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
+                    <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
+                    <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
+                  </ion-label>
+                  <ion-note slot="end">
+                    {{ product.variantsCount }} {{ translate("variants") }}
+                    <p>{{ product.status }}</p>
+                    <p>{{ translate("Inventory") }} {{ product.totalInventory ?? 0 }}</p>
+                  </ion-note>
+                  <ion-checkbox
+                    slot="end"
+                    :checked="isProductSelected(product.id)"
+                    :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
+                    @click.stop="toggleProduct(product)"
+                  />
+                </ion-item>
+              </ion-list>
+
+              <ion-infinite-scroll data-testid="product-sync-products-infinite-scroll" @ionInfinite="loadMoreProducts($event)" threshold="100px" v-show="hasNextPage" ref="infiniteScrollRef">
+                <ion-infinite-scroll-content loading-spinner="crescent" :loading-text="translate('Loading')" />
+              </ion-infinite-scroll>
+            </template>
+
+            <ion-list v-else-if="productsPickerIsLoading" lines="none">
+              <ion-item>
+                <ion-spinner name="crescent" />
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else-if="queryString && isSearching" data-testid="product-sync-products-search-empty-state">
+              <ion-item>
+                <ion-label>{{ translate("No products found") }}</ion-label>
+              </ion-item>
+            </ion-list>
+
+            <ion-list v-else data-testid="product-sync-products-empty-state">
+              <ion-item>
+                <ion-label>{{ emptyStateLabel }}</ion-label>
+              </ion-item>
+            </ion-list>
+          </ion-content>
+
+          <ion-footer>
+            <ion-toolbar>
+              <ion-buttons slot="start">
+                <ion-button fill="clear" :disabled="!selectedProducts.length" @click="clearSelectedProducts">
+                  {{ translate("Clear") }}
+                </ion-button>
+              </ion-buttons>
+              <ion-buttons slot="end">
+                <ion-button
+                  data-testid="product-sync-products-submit-btn"
+                  fill="solid"
+                  color="primary"
+                  :disabled="!selectedProducts.length"
+                  @click="submitSelectedProducts"
+                >
+                  {{ translate("Sync selected products") }}{{ selectedProducts.length ? ` (${selectedProducts.length})` : "" }}
+                </ion-button>
+              </ion-buttons>
+            </ion-toolbar>
+          </ion-footer>
+        </ion-modal>
+
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
 import { CronExpressionParser } from "cron-parser";
+import { useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
 import { DateTime } from "luxon";
 import {
   IonBackButton,
-  IonAccordion,
-  IonAccordionGroup,
   IonBadge,
   IonButton,
   IonButtons,
@@ -709,16 +579,18 @@ import {
   IonCardContent,
   IonCardHeader,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
-  IonFooter,
-  IonFab,
-  IonFabButton,
-  IonHeader,
   IonDatetime,
   IonDatetimeButton,
-  IonPopover,
-  IonProgressBar,
+  IonFab,
+  IonFabButton,
+  IonFooter,
+  IonHeader,
   IonIcon,
+  IonImg,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
   IonInput,
   IonItem,
   IonLabel,
@@ -726,89 +598,169 @@ import {
   IonListHeader,
   IonModal,
   IonNote,
-  onIonViewWillEnter,
   IonPage,
+  IonPopover,
+  IonProgressBar,
   IonRadio,
   IonRadioGroup,
+  IonSearchbar,
   IonSegment,
   IonSegmentButton,
   IonSpinner,
+  IonThumbnail,
   IonTitle,
   IonToggle,
   IonToolbar,
   alertController,
-  modalController
+  onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
-import cronstrue from "cronstrue";
+import { commonUtil, logger, translate } from "@common";
+import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
+import { useUserStore } from "@/store/user";
 
-import { commonUtil, hasError, logger, translate } from '@common'
-import { computed, defineProps, onBeforeUnmount, ref, watch } from "vue";
-import { useShopifyStore } from '@/store/shopify';
-import { useUserStore } from '@/store/user';
-import { useProductStore } from '@/store/productStore';
-import { useUtilStore } from '@/store/util';
-import router from "@/router";
-import ShopifyProductSyncReturningView from "@/components/ShopifyProductSyncReturningView.vue";
-import ShopifyProductSyncProductsModal from "@/components/ShopifyProductSyncProductsModal.vue";
-import ShopifyProductSyncWizardView from "@/components/ShopifyProductSyncWizardView.vue";
-import AnimatedDuration from "@/components/AnimatedDuration.vue";
-import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
-import type { ShopifyProductSyncDashboardSummary } from "@/store/shopifyProductSync";
 import {
+  ProductSyncExperienceMode,
+  ProductSyncWizardStep,
   canAdvanceProductSyncStep,
-
   canStartProductSync,
   createProductSyncWizardDraft,
-  getReviewImportAction,
   getRawShopifyFileName,
+  getReviewImportAction,
   nextProductSyncStep,
   normalizeProductSyncStatus,
   previousProductSyncStep,
   productSyncWizardSteps,
-  ProductSyncExperienceMode,
-  ProductSyncWizardStep,
   requiresPreflightConfirmation,
   resolveProductSyncExperienceMode,
-  selectProductStore
+  selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
-import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from '@/utils';
-import useServiceJob from "@/composables/useServiceJob";
-import { useDataManagerLog } from "@/composables/useDataManagerLog";
-import { useLiveDashboard } from "@/composables/useLiveDashboard";
-import { useProductUpdateHistory } from "@/composables/useProductUpdateHistory";
-import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun";
+import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
+import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
+import { useCacheSync } from "@/composables/useCacheSync";
+import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
+import {
+  cancelSystemMessage,
+  configureProductSyncJob,
+  fetchPreflight,
+  fetchRecentlyUpdatedShopifyProducts,
+  fetchReviewStats,
+  fetchSetupState,
+  fetchShopSystemMessageRemoteId,
+  fetchSyncJobConfig,
+  fetchUnsyncedProductUpdates,
+  fetchWebhookSubscriptions,
+  searchShopifyProducts,
+  subscribeWebhook,
+  syncShopifyProducts,
+  syncShopifyProductsOnDemand,
+  unsubscribeWebhook,
+  PRODUCT_SYNC_FEATURE,
+  useShopifyProductSyncRunState,
+  fetchRunningBulkOperation,
+  fetchShopifyShopProductCount,
+  fetchUpdateFilesToProcessCount,
+  PRODUCT_SYNC_RUN_WINDOW,
+  productSyncExtraDomains,
+  syncFeatureDomains,
+  useShopifyProductSyncRun,
+  useShopifyShop,
+  useShopifyShopMutations,
+  useShopifyShops,
+  type ShopifyProductSyncProductSearchResult,
+} from "@/composables/useShopify";
 import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 import { getProductSyncFsmState, type ProductSyncFsmActionId } from "@/utils/shopifyProductSyncFsm";
+import { useStatuses } from "@/composables/useSeed";
+
+
+
+
+import cronstrue from "cronstrue";
+
+
+
+
+
+import router from "@/router";
+import ShopifyProductSyncReturningView from "@/components/shopify-product-sync/ShopifyProductSyncReturningView.vue";
+import ShopifyProductSyncWizardView from "@/components/shopify-product-sync/ShopifyProductSyncWizardView.vue";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
+import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const props = defineProps(["id"]);
-const shopifyStore = useShopifyStore();
-const shopifyProductSyncStore = useShopifyProductSyncStore();
-const productStoreStore = useProductStore();
-const utilStore = useUtilStore();
 const userStore = useUserStore();
 const {
-  jobs,
   products,
-  fetchJobs,
   fetchJobDetail,
   fetchJobRuns,
   fetchJobAuditHistory,
   updateJob,
   runNow
 } = useServiceJob();
-const { downloadDataManagerFile, fetchLogDetails, fetchRecentLogsByConfigId, currentMdmLog, recentMdmLogs, errorLogs, fetchAllRecentFailedRecords, clearStorage, loading: isErrorLogsLoading } = useDataManagerLog();
-const { productUpdateHistories, fetchProductUpdateHistory, setProductUpdateHistory } = useProductUpdateHistory();
-const { currentSyncRun, fetchSyncRun } = useShopifyProductSyncRun();
+/**
+ * Job definitions come from the CACHE.
+ *
+ * This used to be `useServiceJob().jobs` — a live working set filled by `fetchJobs({})` and then
+ * topped up with one `admin/serviceJobs/{name}` request PER product-sync job, because the caller
+ * assumed the list response omitted `serviceJobParameters`. It does not: the list returns them (144
+ * of 156 jobs carry them), and the cache projection now stores them, so every parameter the page
+ * matches on is already here. That removed three requests per entry — including the two that
+ * existed only to disambiguate `sync_ShopifyProductUpdates_10000` from `…_10010`.
+ */
+const { jobs } = useServiceJobs();
+const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
+const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
+const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetchAllRecentFailedRecords, clearStorage, loading: isErrorLogsLoading } = useDataManager();
+/**
+ * Recent product imports, LIVE from the cache.
+ *
+ * The `dataManagerLog` domain is activated for this config a few lines below, so these rows are
+ * already in IndexedDB — `fetchRecentLogsByConfigId` was re-requesting them on entry and again after
+ * every action that might have produced one.
+ */
+const { logs: recentMdmLogs } = useRecentDataManagerLogs(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT);
+// Reactive cached read — the `productUpdateHistory` worker domain keeps it current, so there is
+// nothing to fetch and no loading state between updates.
+const { productUpdateHistories } = useProductUpdateHistories(props.id);
+const { currentSyncRun, fetchSyncRun, clearSyncRun } = useShopifyProductSyncRun();
 const PRODUCT_UPDATE_SYNC_SERVICE_NAME = "sync_ShopifyProductUpdates";
 const BULK_OPERATION_SEND_JOB_NAME = "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery";
 const BULK_OPERATION_POLL_JOB_NAME = "poll_ShopifyBulkOperationResult";
-const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
-const PRODUCT_SYNC_ERROR_LOG_LIMIT = 10;
-const latestSystemMessage = ref<any>(null);
-const latestConfirmedSystemMessage = ref<any>(null);
-const latestConsumedSystemMessage = ref<any>(null);
-const lastProductUpdateSyncedAt = ref("");
+/**
+ * Run state, LIVE from the shop-scoped spine — the same source the connection-details card reads.
+ *
+ * These four were refs filled by `fetchDashboardSummary`, whose run-state half joined two
+ * independently-windowed tables; this page and the connection-details card could therefore DISAGREE
+ * about whether the same shop had ever synced (measured live: card said "Last synced Jul 21",
+ * this page said "No completed sync recorded"). One source now, and it updates itself as the worker
+ * commits — triggering a sync needs no re-fetch to observe progress.
+ */
+const {
+  runState: spineRunState,
+  pendingRequests: spinePendingRequests,
+} = useShopifyProductSyncRunState(() => props.id);
+
+const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystemMessage);
+const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
+const latestConsumedSystemMessage = computed<any>(() => spineRunState.value.latestConsumedSystemMessage);
+const lastProductUpdateSyncedAt = computed(() => spineRunState.value.lastSyncedAt || "");
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
 const hasEverLoadedSecondary = ref(false);
@@ -837,29 +789,44 @@ const scheduledJobName = ref("");
 const currentStepDetail = ref<any>(null);
 const bulkOperationSendJob = ref<any>({});
 const bulkOperationPollJob = ref<any>({});
-const bulkOperationSendJobRecentRuns = ref<any[]>([]);
-const bulkOperationPollJobRecentRuns = ref<any[]>([]);
+/**
+ * Job runs come from the CACHE, not from three requests on entry.
+ *
+ * The `serviceJobRun` worker domain is already activated with exactly these job names (see
+ * `startNextSyncRefreshPolling`), so the rows are in IndexedDB before the page asks. Each of these
+ * used to be a `fetchJobRuns(name, { pageSize: 1 })` on load, and had to be re-fetched to observe a
+ * run finishing; as cached reads they update themselves when the worker commits.
+ */
+const watchedJobNames = computed(() => [
+  syncJobObj.value?.jobName,
+  bulkOperationSendJob.value?.jobName,
+  bulkOperationPollJob.value?.jobName,
+  selectedSyncJobDetailsJob.value?.jobName,
+].filter(Boolean) as string[]);
+const { runsFor: cachedRunsFor } = useServiceJobRunsByJob(() => watchedJobNames.value);
+
+const bulkOperationSendJobRecentRuns = computed(() => cachedRunsFor(bulkOperationSendJob.value?.jobName));
+const bulkOperationPollJobRecentRuns = computed(() => cachedRunsFor(bulkOperationPollJob.value?.jobName));
 const runningShopifyBulkOperation = ref<any>(null);
 const runningShopifyBulkOperationError = ref("");
 const preflightLoaded = ref(false);
 const preflightAccepted = ref(false);
 const preflightWarningConfirmed = ref(false);
-const productStoreContextError = ref("");
 const experienceMode = ref<ProductSyncExperienceMode>("auto");
 const currentStep = ref<ProductSyncWizardStep>("home");
 const draft = ref(createProductSyncWizardDraft());
-const relatedShops = ref<any[]>([]);
 const shopifyShopProductCount = ref(0);
-const pendingUpdateRequestsCount = ref(0);
+const pendingUpdateRequestsCount = computed(() => spinePendingRequests.value.length);
 const updateFilesToProcessCount = ref(0);
-const pendingUpdateRequestsLastCreatedAt = ref("");
+const pendingUpdateRequestsLastCreatedAt = computed(() =>
+  spinePendingRequests.value[0]?.initDate || spinePendingRequests.value[0]?.lastUpdatedStamp || "");
 const errorRecordCount = computed(() => {
   return recentMdmLogs.value.reduce((acc: number, log: any) => acc + Number(log.failedRecordCount || 0), 0);
 });
 const syncJobDetails = ref<any>({});
 const syncJobDraftCronExpression = ref("");
 const syncJobDraftActive = ref(true);
-const syncJobDetailsRecentRuns = ref<any[]>([]);
+const syncJobDetailsRecentRuns = computed(() => cachedRunsFor(selectedSyncJobDetailsJob.value?.jobName));
 const syncJobAuditHistory = ref<any[]>([]);
 const syncJobAuditUsers = ref<Record<string, any>>({});
 const latestPauseAuditByJobName = ref<Record<string, any>>({});
@@ -904,7 +871,7 @@ const progressState = ref<any>({
   queuedJobsAhead: 0
 });
 
-const syncJobRecentRuns = ref<any[]>([]);
+const syncJobRecentRuns = computed(() => cachedRunsFor(syncJobObj.value?.jobName));
 const detailedErrorSearchQuery = ref("");
 const selectedErrorRecord = ref<any>(null);
 const showErrorDetailsModal = ref(false);
@@ -913,30 +880,38 @@ const webhookSubscriptions = ref<any[]>([]);
 const isWebhookLoading = ref(false);
 const isWebhookSupported = ref(false);
 let progressPoll: number | undefined;
-let scheduledJobRefreshAtMs: number | null = null;
-let scheduledJobRefreshGraceUntilMs: number | null = null;
-let lastKnownJobRunStartTime = 0;
-let lastKnownJobRunEndTime = 0;
 
-const liveDashboard = useLiveDashboard({
-  tickIntervalMs: 15000,
-  onTick: () => evaluateScheduledRefresh(),
-  onVisible: () => evaluateScheduledRefresh({ forceProbe: true })
-});
-const { currentTimeMs, isRefreshInFlight } = liveDashboard;
+/**
+ * Clock for RELATIVE-TIME LABELS only ("2 min ago") — it drives no data loading.
+ *
+ * The 15s main-thread refresh scheduler that used to live here is gone: the class-A worker domains
+ * activated below poll in their own thread and write to IndexedDB, and every read on this page is a
+ * `liveQuery`, so new data appears reactively. There is nothing for the main thread to re-fetch and
+ * therefore no refresh indicator and no loading flash between updates.
+ */
+const currentTimeMs = ref(Date.now());
+let labelClock: number | undefined;
 
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+/** Retained as a no-op binding: templates still reference it, and nothing is ever in flight now. */
+const isRefreshInFlight = computed(() => false);
+
+const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+
+const { shops: cachedShops, hydrated: shopsHydrated } = useShopifyShops();
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => shopRecord.value ?? {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
-const statusItems = computed(() => utilStore.statusItems || {});
+const { statusItems } = useStatuses();
 const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
 const productSyncBackHref = computed(() => {
   return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
 });
 
 function getStatusDescription(statusId: string) {
-  return statusItems.value[statusId]?.description || statusId;
+  // Cached `statusItems` maps statusId → description directly.
+  return statusItems.value[statusId] || statusId;
 }
-const productStores = computed(() => productStoreStore.productStores || []);
+const { productStores } = useProductStores();
 const selectedProductStore = computed(() => {
   return productStores.value.find((productStore: any) => productStore.productStoreId === draft.value.selectedProductStoreId) || {};
 });
@@ -1154,6 +1129,25 @@ const systemMessageFsmState = computed(() => {
     isPollJobPaused: isBulkOperationPollJobPaused.value
   });
 });
+const productSystemMessageDetails = computed(() => {
+  const message = currentSyncRun.value?.systemMessage || latestSystemMessage.value || {};
+  const completed = !!currentSyncRun.value?.completed;
+
+  return {
+    statusId: message.statusId || progressState.value?.systemMessageState,
+    statusLabel: message.statusLabel || getStatusDescription(message.statusId || progressState.value?.systemMessageState),
+    systemMessageTypeId: message.systemMessageTypeId,
+    systemMessageRemoteId: message.systemMessageRemoteId,
+    requestedAt: message.initDate || message.createdDate,
+    completedAt: completed ? getSystemMessageStatusAt(message) : undefined,
+    totalRecordCount: message.totalRecordCount ?? currentSyncRun.value?.bulkOperation?.objectCount,
+    failureCount: message.failureCount ?? currentSyncRun.value?.mdmLog?.failedRecordCount,
+    bulkOperationId: latestBulkOperationId.value || translate("Pending"),
+    nextStepReason: systemMessageFsmState.value.nextJobReason,
+    nextJobLabel: systemMessageFsmState.value.nextJob?.label,
+    nextJobRunLabel: systemMessageFsmState.value.nextJob?.nextRunLabel,
+  };
+});
 const systemMessageProgressLabel = computed(() => {
   const statusLabel = currentSyncRun.value?.systemMessage?.statusLabel || translate("Pending");
   const statusTimeLabel = getRelativeOrAbsoluteLabel(getSystemMessageStatusAt(currentSyncRun.value?.systemMessage));
@@ -1297,7 +1291,11 @@ const syncJobDraftNextRunRelativeLabel = computed(() => {
   if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
   const nextRun = getNextRunDateTime({ cronExpression: syncJobDraftCronExpression.value });
   if (!nextRun) return translate("Not scheduled");
-  return `${translate("next run in")} ${nextRun.toRelative({ base: DateTime.fromMillis(currentTimeMs.value), style: "long" }).replace("in ", "")}`;
+  // `toRelative` returns null for an invalid base or target; treat that as unschedulable rather
+  // than calling `.replace` on null.
+  const relative = nextRun.toRelative({ base: DateTime.fromMillis(currentTimeMs.value), style: "long" });
+  if (!relative) return translate("Not scheduled");
+  return `${translate("next run in")} ${relative.replace("in ", "")}`;
 });
 const syncJobDraftNextRunTimeLabel = computed(() => {
   if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
@@ -1367,7 +1365,6 @@ const reviewReady = computed(() => {
   return !!reviewStats.value.loaded && !isReviewLoading.value;
 });
 const nextDisabled = computed(() => {
-  if (productStoreContextError.value) return true;
   return !canAdvanceProductSyncStep(currentStep.value, {
     draft: draft.value,
     productStoreLocked: productStoreLocked.value,
@@ -1555,8 +1552,10 @@ function getShopifyBulkOperationStatusColor(status: string) {
 }
 
 function isProductUpdateSyncServiceJob(job: any = {}) {
-  const serviceName = String(job.serviceName || "");
-  const jobName = String(job.jobName || "");
+  // `job` can be NULL, not just undefined, so the parameter default does not protect this — the
+  // computeds that call it run before the job data resolves.
+  const serviceName = String(job?.serviceName || "");
+  const jobName = String(job?.jobName || "");
 
   return serviceName === PRODUCT_UPDATE_SYNC_SERVICE_NAME ||
     jobName === PRODUCT_UPDATE_SYNC_SERVICE_NAME ||
@@ -1573,8 +1572,9 @@ function getLoadedServiceJob(jobName: string) {
 }
 
 function isSelectedShopProductSyncJob(job: any = {}) {
+  if (!job) return false;
   const selectedShopIds = [
-    shop.value.shopId,
+    shop.value?.shopId,
     props.id
   ].filter(Boolean).map(String);
 
@@ -1650,46 +1650,88 @@ const preflightSubtitle = computed(() => {
   });
 });
 
-onIonViewWillEnter(async () => {
+/**
+ * Wait for the shop cache to hydrate before loading, rather than asserting on it.
+ *
+ * `onIonViewWillEnter` fires before `liveQuery` has emitted its first batch, so `shopsHydrated` is
+ * still false on a cold entry — `assertShopifyShopsLoaded()` threw and the page rendered "Shopify
+ * shop list is unavailable" without issuing a single request. The flag flips within a tick, so
+ * watching it (immediate, once) loads exactly as soon as the data is really there, and instantly on
+ * a revisit where the cache is already warm.
+ */
+/**
+ * The real precondition is THIS SHOP, not merely a hydrated shop table.
+ *
+ * `shopsHydrated` flips when the table emits, which can happen a tick before this shop's row is
+ * readable through its own subscription. Loading on the table alone let `loadWizard` run against an
+ * empty `shop`, which fails the page with "Product sync could not load" and needs a second visit to
+ * recover — intermittent, and only under rapid navigation.
+ */
+const shopReady = computed(() => shopsHydrated.value && Boolean(shop.value?.shopId));
+
+onIonViewWillEnter(() => {
   startNextSyncRefreshPolling();
-  await loadWizard();
+  whenHydrated(shopReady, loadWizard);
+
+  /**
+   * A shop that is still missing once the table has settled genuinely does not exist, and that is a
+   * real error rather than something to keep waiting on. Checked separately so "not loaded yet" and
+   * "not there" never collapse into the same message.
+   */
+  whenHydrated(shopsHydrated, () => {
+    if (!shop.value?.shopId) {
+      loadErrorMessage.value = translate("Shopify shop list is unavailable.");
+      isLoading.value = false;
+    }
+  });
 });
 
-watch(() => draft.value.selectedProductStoreId, async (productStoreId) => {
-  if (productStoreId) {
-    await loadProductStoreContext(productStoreId);
-  } else {
-    relatedShops.value = [];
-    productStoreContextError.value = "";
-  }
-});
+/**
+ * Run `then` as soon as `source` is true — now if it already is, otherwise on the first flip.
+ *
+ * ⚠️ Written as a helper because the obvious inline form is a TDZ trap:
+ *
+ *     const stop = watch(src, (ready) => { if (!ready) return; stop(); ... }, { immediate: true })
+ *
+ * With `immediate` the callback runs DURING the `watch()` call, before `stop` is assigned, so
+ * touching it throws `ReferenceError`. That only bites when the source is already true — a warm
+ * cache — which is why this page loaded fine on a cold visit and failed with "Shopify shop list is
+ * unavailable" on every navigation back to it.
+ */
+function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => unknown) {
+  if (source.value) { void then(); return; }
+  const stop = watch(source, (ready) => {
+    if (!ready) return;
+    stop();
+    void then();
+  });
+}
+
+
 
 onBeforeUnmount(() => {
   stopProgressPolling();
   stopNextSyncRefreshPolling();
+  clearSearchDebounce();
 });
 
 async function loadWizard() {
   isLoading.value = true;
   loadErrorMessage.value = "";
   try {
-    await shopifyStore.fetchShopifyShops();
     assertShopifyShopsLoaded();
 
-    await productStoreStore.fetchProductStores();
 
-    if (shop.value.productStoreId) {
-      await productStoreStore.fetchProductStoreDetails(shop.value.productStoreId);
-    }
+    // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
+    // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
     await loadSelectedShopSystemMessageRemoteId();
 
-    setupState.value = await shopifyProductSyncStore.fetchSetupState({
+    setupState.value = await fetchSetupState({
       shopId: props.id,
       shop: shop.value,
       productStore: selectedProductStore.value
     });
     assertBackendDataAvailable(setupState.value, translate("Product sync setup is unavailable."));
-    setProductUpdateHistory([]);
 
     draft.value = createProductSyncWizardDraft({
       selectedProductStoreId: setupState.value.selectedProductStoreId || shop.value.productStoreId || "",
@@ -1714,10 +1756,7 @@ async function loadWizard() {
       currentStep.value = "home";
     }
 
-    if (draft.value.selectedProductStoreId) {
-      await loadProductStoreContext(draft.value.selectedProductStoreId);
-    }
-
+    // `relatedShops` is a computed over the cached shop list — nothing to load.
     await loadWebhookSubscriptions();
 
     const requestedStep = getQueryProductSyncWizardStep(router.currentRoute.value.query.step);
@@ -1790,46 +1829,28 @@ function applyProductSyncRouteContext() {
 }
 
 async function loadSecondaryData(opts: { silent?: boolean } = {}) {
-  // On cold start we surface skeletons via isSecondaryLoading. Every subsequent
-  // refresh keeps the last-known-good data visible — the subtle indicator driven
-  // by liveDashboard.isRefreshInFlight is the only loading affordance.
+  // Cold start surfaces skeletons via isSecondaryLoading. There are no subsequent main-thread
+  // refreshes to indicate: the worker writes to IndexedDB and the reads here are live queries, so
+  // updates arrive without a loading affordance at all.
   const isColdStart = !hasEverLoadedSecondary.value;
   if (isColdStart && !opts.silent) {
     isSecondaryLoading.value = true;
   }
   latestPauseAuditByJobName.value = {};
   try {
-    const summary = await shopifyProductSyncStore.fetchDashboardSummary({
-      shopId: props.id,
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shop: shop.value
-    });
-    applyDashboardSummary(summary);
+    // Run state is a spine computed — only the three live counts are fetched here.
+    await loadLiveDashboardCounts();
 
     try {
       if (latestSystemMessage.value?.systemMessageId) {
         await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
       } else {
-        currentSyncRun.value = {} as any;
+        clearSyncRun();
       }
     } catch (e) {
       logger.error("Failed to fetch sync run monitoring data", e);
     }
 
-    try {
-      await fetchJobs({});
-      const syncJobs = jobs.value.filter((job: any) => isProductUpdateSyncServiceJob(job) || (syncJobId.value && job.jobName === syncJobId.value));
-      await Promise.all(syncJobs.map(async (job: any) => {
-        try {
-          const details = await fetchJobDetail(job.jobName);
-          Object.assign(job, details);
-        } catch (e) {
-          logger.error(`Failed to fetch details for job ${job.jobName}`, e);
-        }
-      }));
-    } catch (e) {
-      logger.error("Failed to fetch service jobs", e);
-    }
 
     try {
       await loadBulkOperationMonitoringJobs();
@@ -1843,13 +1864,7 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
       logger.error("Failed to load paused job audit summaries", e);
     }
 
-    await Promise.all([
-      loadSyncJobLatestRun().catch(e => logger.error("Failed to load sync job latest run", e)),
-      loadBulkOperationSendJobLatestRun().catch(e => logger.error("Failed to load bulk operation send job latest run", e)),
-      loadBulkOperationPollJobLatestRun().catch(e => logger.error("Failed to load bulk operation poll job latest run", e)),
-      fetchProductUpdateHistory({ shopId: props.id, pageSize: 10 }).catch(e => logger.error("Failed to fetch product update history", e)),
-      fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT).catch(e => logger.error("Failed to fetch recent MDM logs", e))
-    ]);
+    // Recent imports and job runs are cached projections now — nothing to fetch here.
 
     if (recentMdmLogs.value.length) {
       try {
@@ -1869,19 +1884,28 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   }
 }
 
-function applyDashboardSummary(summary: ShopifyProductSyncDashboardSummary) {
-  latestSystemMessage.value = summary.syncRunState.latestSystemMessage || null;
-  latestConfirmedSystemMessage.value = summary.syncRunState.latestConfirmedSystemMessage || null;
-  latestConsumedSystemMessage.value = summary.syncRunState.latestConsumedSystemMessage || null;
-  lastProductUpdateSyncedAt.value = summary.syncRunState.lastSyncedAt || "";
-  pendingUpdateRequestsCount.value = Number(summary.pendingRequests.count || 0);
-  pendingUpdateRequestsLastCreatedAt.value = summary.pendingRequests.latestSystemMessage?.initDate ||
-    summary.pendingRequests.latestSystemMessage?.createdDate ||
-    summary.pendingRequests.latestSystemMessage?.lastUpdatedStamp ||
-    "";
-  runningShopifyBulkOperation.value = summary.runningOperation;
-  shopifyShopProductCount.value = Number(summary.unsyncedUpdates?.count || 0);
-  updateFilesToProcessCount.value = Number(summary.updateFilesToProcess || 0);
+/**
+ * The three dashboard values that are GENUINELY live — everything else on the dashboard is a spine
+ * computed now. Each is remote truth with no cacheable equivalent: what Shopify is running, what
+ * changed on Shopify's side since the last sync, and the DataManager backlog count.
+ *
+ * `allSettled`, not `all`: one Shopify hiccup must not blank the other two numbers.
+ */
+async function loadLiveDashboardCounts() {
+  const payload = {
+    shopId: props.id,
+    systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
+    shop: shop.value,
+    lastSyncedAt: lastProductUpdateSyncedAt.value,
+  };
+  const [running, unsynced, backlog] = await Promise.allSettled([
+    fetchRunningBulkOperation(payload),
+    fetchShopifyShopProductCount(payload),
+    fetchUpdateFilesToProcessCount(payload),
+  ]);
+  runningShopifyBulkOperation.value = running.status === "fulfilled" ? running.value : null;
+  shopifyShopProductCount.value = unsynced.status === "fulfilled" ? Number(unsynced.value?.count || 0) : 0;
+  updateFilesToProcessCount.value = backlog.status === "fulfilled" ? Number(backlog.value || 0) : 0;
 }
 
 async function loadBulkOperationMonitoringJobs() {
@@ -1889,38 +1913,10 @@ async function loadBulkOperationMonitoringJobs() {
   bulkOperationPollJob.value = getLoadedServiceJob(BULK_OPERATION_POLL_JOB_NAME);
 }
 
-async function loadBulkOperationSendJobLatestRun() {
-  if (!bulkOperationSendJob.value?.jobName) {
-    bulkOperationSendJobRecentRuns.value = [];
-    return;
-  }
 
-  try {
-    const jobRuns = await fetchJobRuns(bulkOperationSendJob.value.jobName, { pageSize: 1, pageIndex: 0 });
-    bulkOperationSendJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
-  } catch (error: any) {
-    logger.error(error);
-    bulkOperationSendJobRecentRuns.value = [];
-  }
-}
-
-async function loadBulkOperationPollJobLatestRun() {
-  if (!bulkOperationPollJob.value?.jobName) {
-    bulkOperationPollJobRecentRuns.value = [];
-    return;
-  }
-
-  try {
-    const jobRuns = await fetchJobRuns(bulkOperationPollJob.value.jobName, { pageSize: 1, pageIndex: 0 });
-    bulkOperationPollJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
-  } catch (error: any) {
-    logger.error(error);
-    bulkOperationPollJobRecentRuns.value = [];
-  }
-}
 
 async function loadSelectedShopSystemMessageRemoteId() {
-  selectedShopSystemMessageRemoteId.value = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
+  selectedShopSystemMessageRemoteId.value = await fetchShopSystemMessageRemoteId({
     shopId: props.id,
     shop: shop.value
   });
@@ -1943,28 +1939,282 @@ async function openStepDetails(step: any) {
   }
 }
 
+type ProductPickerMode = "search" | "unsynced";
+const SEARCH_DEBOUNCE_MS = 600;
+
+const showProductsPickerModal = ref(false);
+const productsPickerMode = ref<ProductPickerMode | undefined>();
+const productsPickerSystemMessageRemoteId = ref("");
+const productsPickerShopId = ref<string | undefined>();
+const productsPickerLastSyncedAt = ref<string | undefined>();
+const productsPickerShopifyShopProductCount = ref<number | undefined>();
+const queryString = ref("");
+const productsPickerProducts = ref<ShopifyProductSyncProductSearchResult[]>([]);
+const selectedProductsById = ref<Record<string, ShopifyProductSyncProductSearchResult>>({});
+const isScrollingEnabled = ref(false);
+const isSearching = ref(false);
+const productsPickerIsLoading = ref(false);
+const hasNextPage = ref(false);
+const endCursor = ref("");
+const contentRef = ref(null as any);
+const infiniteScrollRef = ref(null as any);
+let scrollElement: HTMLElement | null = null;
+let searchDebounceTimer: number | undefined;
+let productSearchRequestId = 0;
+
+const isSearchMode = computed(() => productsPickerMode.value !== "unsynced");
+const modalTitle = computed(() => isSearchMode.value ? translate("Select products") : translate("Un-synced updates"));
+const selectedProducts = computed(() => Object.values(selectedProductsById.value));
+const areAllVisibleProductsSelected = computed(() => {
+  return !!productsPickerProducts.value.length && productsPickerProducts.value.every((product) => selectedProductsById.value[product.id]);
+});
+const areSomeVisibleProductsSelected = computed(() => {
+  return productsPickerProducts.value.some((product) => selectedProductsById.value[product.id]) && !areAllVisibleProductsSelected.value;
+});
+const showDefaultProductsHeader = computed(() => {
+  return isSearchMode.value && !isSearching.value && !queryString.value.trim();
+});
+const limitExceeded = computed(() => {
+  return !isSearchMode.value && Number(productsPickerShopifyShopProductCount.value || 0) > productsPickerProducts.value.length && productsPickerProducts.value.length >= 100;
+});
+const emptyStateLabel = computed(() => {
+  if (isSearchMode.value) return translate("Enter a SKU, or product name to search a product");
+  return translate("No un-synced product updates");
+});
+
+function resetProductsPickerState() {
+  clearSearchDebounce();
+  queryString.value = "";
+  productsPickerProducts.value = [];
+  selectedProductsById.value = {};
+  isScrollingEnabled.value = false;
+  isSearching.value = false;
+  hasNextPage.value = false;
+  endCursor.value = "";
+  scrollElement = null;
+  productsPickerIsLoading.value = true;
+}
+
+function onProductsPickerDidPresent() {
+  void initializeScrollElement();
+  void loadProducts();
+}
+
+function closeProductsPickerModal() {
+  showProductsPickerModal.value = false;
+  clearSearchDebounce();
+}
+
+async function loadProducts() {
+  if (isSearchMode.value && queryString.value.trim()) {
+    await searchProducts();
+    return;
+  }
+
+  isSearching.value = false;
+  productsPickerIsLoading.value = true;
+  const requestId = ++productSearchRequestId;
+  try {
+    const response = isSearchMode.value
+      ? await fetchRecentlyUpdatedShopifyProducts({
+          systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+          pageSize: 15
+        })
+      : {
+          products: await fetchUnsyncedProductUpdates({
+            systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+            shopId: productsPickerShopId.value,
+            lastSyncedAt: productsPickerLastSyncedAt.value,
+            pageSize: 100
+          }) as ShopifyProductSyncProductSearchResult[],
+          hasNextPage: false,
+          endCursor: ""
+        };
+
+    if (requestId !== productSearchRequestId) return;
+    productsPickerProducts.value = response.products;
+    hasNextPage.value = response.hasNextPage;
+    endCursor.value = response.endCursor;
+  } catch (error: any) {
+    if (requestId !== productSearchRequestId) return;
+    logger.error(error);
+    commonUtil.showToast(isSearchMode.value ? translate("Failed to load recently updated products.") : translate("Failed to load un-synced product updates."));
+    productsPickerProducts.value = [];
+    hasNextPage.value = false;
+    endCursor.value = "";
+  } finally {
+    if (requestId === productSearchRequestId) {
+      productsPickerIsLoading.value = false;
+    }
+  }
+}
+
+async function searchProducts(after?: string) {
+  productsPickerIsLoading.value = true;
+  const requestId = ++productSearchRequestId;
+  try {
+    const response = await searchShopifyProducts({
+      systemMessageRemoteId: productsPickerSystemMessageRemoteId.value,
+      queryString: queryString.value.trim(),
+      pageSize: 20,
+      after
+    });
+
+    if (requestId !== productSearchRequestId) return;
+    productsPickerProducts.value = after ? productsPickerProducts.value.concat(response.products) : response.products;
+    hasNextPage.value = response.hasNextPage;
+    endCursor.value = response.endCursor;
+  } catch (error: any) {
+    if (requestId !== productSearchRequestId) return;
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to search Shopify products."));
+    productsPickerProducts.value = after ? productsPickerProducts.value : [];
+    hasNextPage.value = false;
+    endCursor.value = "";
+  } finally {
+    if (requestId === productSearchRequestId) {
+      productsPickerIsLoading.value = false;
+    }
+  }
+}
+
+async function handleSearch() {
+  clearSearchDebounce();
+  if (!queryString.value.trim()) {
+    commonUtil.showToast(translate("Enter product sku to search"));
+    await loadProducts();
+    return;
+  }
+
+  isSearching.value = true;
+  await searchProducts();
+}
+
+function handleInput() {
+  clearSearchDebounce();
+  productSearchRequestId++;
+
+  searchDebounceTimer = window.setTimeout(async () => {
+    if (!queryString.value.trim()) {
+      await loadProducts();
+      return;
+    }
+
+    isSearching.value = true;
+    await searchProducts();
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+function clearSearchDebounce() {
+  if (!searchDebounceTimer) return;
+  window.clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = undefined;
+}
+
+async function initializeScrollElement() {
+  scrollElement = await contentRef.value?.$el?.getScrollElement?.();
+}
+
+function enableScrolling() {
+  if (!scrollElement) return;
+  const scrollHeight = scrollElement.scrollHeight;
+  const infiniteHeight = infiniteScrollRef.value?.$el?.offsetHeight || 0;
+  const scrollTop = scrollElement.scrollTop;
+  const threshold = 100;
+  const height = scrollElement.offsetHeight;
+  const distanceFromInfinite = scrollHeight - infiniteHeight - scrollTop - threshold - height;
+  isScrollingEnabled.value = distanceFromInfinite >= 0;
+}
+
+async function loadMoreProducts(event: any) {
+  if (!(isScrollingEnabled.value && hasNextPage.value && endCursor.value)) {
+    await event.target.complete();
+    return;
+  }
+
+  await searchProducts(endCursor.value);
+  await event.target.complete();
+}
+
+function getProductId(product: ShopifyProductSyncProductSearchResult) {
+  return product.legacyResourceId || product.id;
+}
+
+function formatShopifyDate(value: string) {
+  if (!value) return translate("Recent");
+  return formatDateTime(value);
+}
+
+function isProductSelected(productId: string) {
+  return !!selectedProductsById.value[productId];
+}
+
+function toggleProduct(product: ShopifyProductSyncProductSearchResult) {
+  if (selectedProductsById.value[product.id]) {
+    const updatedProducts = { ...selectedProductsById.value };
+    delete updatedProducts[product.id];
+    selectedProductsById.value = updatedProducts;
+    return;
+  }
+
+  selectedProductsById.value = {
+    ...selectedProductsById.value,
+    [product.id]: product
+  };
+}
+
+function toggleAllVisibleProducts() {
+  if (areAllVisibleProductsSelected.value) {
+    const updatedProducts = { ...selectedProductsById.value };
+    productsPickerProducts.value.forEach((product) => {
+      delete updatedProducts[product.id];
+    });
+    selectedProductsById.value = updatedProducts;
+    return;
+  }
+
+  const updatedProducts = { ...selectedProductsById.value };
+  productsPickerProducts.value.forEach((product) => {
+    updatedProducts[product.id] = product;
+  });
+  selectedProductsById.value = updatedProducts;
+}
+
+function clearSelectedProducts() {
+  selectedProductsById.value = {};
+}
+
+function submitSelectedProducts() {
+  const selected = selectedProducts.value;
+  const data = {
+    dismissed: true,
+    products: selected,
+    productIds: selected.map((product) => product.id),
+    legacyResourceIds: selected.map((product) => product.legacyResourceId).filter(Boolean)
+  };
+  handleSelectedProductsForSync(data);
+  showProductsPickerModal.value = false;
+}
+
+function selectSearchBarText(event: any) {
+  event.target.getInputElement().then((element: any) => {
+    element.select();
+  });
+}
+
 async function openUnsyncedUpdatesModal() {
   if (!selectedShopSystemMessageRemoteId.value) {
     commonUtil.showToast(translate("Shopify product search is unavailable for this shop."));
     return;
   }
 
-  const productsModal = await modalController.create({
-    component: ShopifyProductSyncProductsModal,
-    componentProps: {
-      mode: "unsynced",
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-      shopId: props.id,
-      lastSyncedAt: lastProductUpdateSyncedAt.value,
-      shopifyShopProductCount: shopifyShopProductCount.value
-    },
-    showBackdrop: true,
-    swipeToClose: true
-  });
-
-  await productsModal.present();
-  const { data } = await productsModal.onDidDismiss();
-  handleSelectedProductsForSync(data);
+  productsPickerMode.value = "unsynced";
+  productsPickerSystemMessageRemoteId.value = selectedShopSystemMessageRemoteId.value;
+  productsPickerShopId.value = props.id;
+  productsPickerLastSyncedAt.value = String(lastProductUpdateSyncedAt.value || "") || undefined;
+  productsPickerShopifyShopProductCount.value = shopifyShopProductCount.value;
+  resetProductsPickerState();
+  showProductsPickerModal.value = true;
 }
 
 async function openSpecificProductsSyncModal() {
@@ -1973,19 +2223,13 @@ async function openSpecificProductsSyncModal() {
     return;
   }
 
-  const productsModal = await modalController.create({
-    component: ShopifyProductSyncProductsModal,
-    componentProps: {
-      mode: "search",
-      systemMessageRemoteId: selectedShopSystemMessageRemoteId.value
-    },
-    showBackdrop: true,
-    swipeToClose: true
-  });
-
-  await productsModal.present();
-  const { data } = await productsModal.onDidDismiss();
-  handleSelectedProductsForSync(data);
+  productsPickerMode.value = "search";
+  productsPickerSystemMessageRemoteId.value = selectedShopSystemMessageRemoteId.value;
+  productsPickerShopId.value = undefined;
+  productsPickerLastSyncedAt.value = undefined;
+  productsPickerShopifyShopProductCount.value = undefined;
+  resetProductsPickerState();
+  showProductsPickerModal.value = true;
 }
 
 async function openResyncEntireCatalogModal() {
@@ -2006,7 +2250,7 @@ async function handleSelectedProductsForSync(data: any) {
 
   isSaving.value = true;
   try {
-    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
+    const result = await syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: shopifyProductIds
     });
@@ -2044,22 +2288,16 @@ function getSelectedProductSyncResultMessage(result: any, requestedCount: number
 }
 
 async function loadLatestSystemMessage() {
-  const summary = await shopifyProductSyncStore.fetchDashboardSummary({
-    shopId: props.id,
-    systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-    shop: shop.value
-  });
-  applyDashboardSummary(summary);
+  // The latest message is a spine computed; refresh only the live counts, then point the run join.
+  await loadLiveDashboardCounts();
 
   if (latestSystemMessage.value?.systemMessageId) {
     await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
   } else {
-    currentSyncRun.value = {} as any;
+    clearSyncRun();
   }
 
   await Promise.all([
-    fetchProductUpdateHistory({ shopId: props.id, pageSize: 10 }),
-    fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT)
   ]);
   
   if (recentMdmLogs.value.length) {
@@ -2103,7 +2341,6 @@ async function refreshErrorRecords() {
   detailedErrorSearchQuery.value = "";
   
   // Re-fetch everything fresh
-  await fetchRecentLogsByConfigId(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT);
   if (recentMdmLogs.value.length) {
     await fetchAllRecentFailedRecords(PRODUCT_SYNC_MDM_CONFIG_ID, recentMdmLogs.value);
   }
@@ -2118,7 +2355,7 @@ async function resyncProduct(record: any) {
 
   isSaving.value = true;
   try {
-    const result = await shopifyProductSyncStore.syncShopifyProductsOnDemand({
+    const result = await syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
     });
@@ -2133,24 +2370,19 @@ async function resyncProduct(record: any) {
   }
 }
 
-async function loadProductStoreContext(productStoreId: string) {
-  try {
-    assertShopifyShopsLoaded();
-    const context = await shopifyProductSyncStore.fetchProductStoreContext({
-      shopId: props.id,
-      productStoreId,
-      shops: shopifyStore.shops || []
-    });
-    assertBackendDataAvailable(context, translate("Product store sync context is unavailable."));
-    relatedShops.value = context.relatedShops || [];
-    productStoreContextError.value = "";
-  } catch (error: any) {
-    logger.error(error);
-    relatedShops.value = [];
-    productStoreContextError.value = getErrorMessage(error, translate("Failed to load product store sync context."));
-    commonUtil.showToast(translate("Failed to load product store sync context."));
-  }
-}
+/**
+ * Shops sharing the selected product store — a FILTER over the cached shop list.
+ *
+ * `fetchProductStoreContext` made no request at all: it took `shops` (which this view already had from
+ * `useShopifyShops`) and returned those whose `productStoreId` matched. That is store indirection over
+ * data already in hand, so it is a computed, not a load — which also removes the failure path and the
+ * toast, because a local filter cannot fail.
+ */
+const relatedShops = computed(() => {
+  const productStoreId = draft.value.selectedProductStoreId;
+  if (!productStoreId) return [];
+  return (cachedShops.value || []).filter((shop: any) => shop?.productStoreId === productStoreId);
+});
 
 function getProductStoreName(productStore: any) {
   if (!productStore?.productStoreId) return "";
@@ -2158,14 +2390,15 @@ function getProductStoreName(productStore: any) {
 }
 
 function assertShopifyShopsLoaded() {
-  const status = shopifyStore.fetchStatus;
-  if (status?.shops !== "success") {
+  // The cache's `hydrated` flag replaces the store's fetchStatus: it means the shop table has emitted
+  // at least once, which is the same guarantee ("we know what the shop list is") without a fetch.
+  if (!shopsHydrated.value) {
     throw new Error(translate("Shopify shop list is unavailable."));
   }
 }
 
 function getConnectedShopLabel(productStoreId: string) {
-  const count = (shopifyStore.shops || []).filter((shopifyShop: any) => {
+  const count = (cachedShops.value || []).filter((shopifyShop: any) => {
     return shopifyShop.productStoreId === productStoreId;
   }).length;
   return translate("{count} Shopify stores connected", { count });
@@ -2281,11 +2514,19 @@ function handleIdentifierChange(identifierEnumId: string) {
   draft.value.selectedIdentifierEnumId = identifierEnumId;
 }
 
-function handleExperienceModeChange(mode: ProductSyncExperienceMode) {
-  if (!mode) return;
+const PRODUCT_SYNC_EXPERIENCE_MODES: readonly string[] = ["first-time", "returning", "auto"];
+
+/**
+ * `ion-segment` types `$event.detail.value` as `string | number | undefined`, so the incoming value
+ * is NARROWED against the known modes rather than cast. An unrecognised value is ignored instead of
+ * being written to state, which is what a cast would have allowed.
+ */
+function handleExperienceModeChange(mode: string | number | undefined) {
+  if (typeof mode !== "string" || !PRODUCT_SYNC_EXPERIENCE_MODES.includes(mode)) return;
+  const nextMode = mode as ProductSyncExperienceMode;
   showModeModal.value = false;
   window.setTimeout(() => {
-    experienceMode.value = mode;
+    experienceMode.value = nextMode;
   }, 250);
 }
 
@@ -2335,7 +2576,9 @@ function isSyncJobRunNowLoading(job: any) {
 }
 
 async function refreshAfterRunNow(job: any) {
-  const refreshTasks = [loadSyncJobLatestRun()];
+  // No latest-run reload: `syncJobRecentRuns` is a cached projection and the worker is already
+  // watching this job, so the new run appears on its own moments after it starts.
+  const refreshTasks: Array<Promise<any>> = [];
 
   if (activeExperienceMode.value === "returning") {
     refreshTasks.push(loadSecondaryData({ silent: true }));
@@ -2381,10 +2624,7 @@ async function completeSetupAndOpenReturningView() {
       if (!updated) return;
     }
 
-    await Promise.all([
-      loadSecondaryData(),
-      loadSyncJobLatestRun()
-    ]);
+    await loadSecondaryData();
 
     experienceMode.value = "returning";
   } finally {
@@ -2409,7 +2649,7 @@ async function updateSyncJob(payload: any, successMessage: string) {
       throw response.data;
     }
 
-    const updatedJob = await fetchJobDetail(payload.jobName);
+    const updatedJob = await fetchJobDetail(payload.jobName, shop.value.productStoreId);
     const loadedJob = jobs.value.find((job: any) => job.jobName === payload.jobName);
     const jobToUpdate = loadedJob || selectedSyncJobDetailsJob.value;
     if (jobToUpdate) {
@@ -2456,10 +2696,13 @@ function handleSyncJobDetailsDidDismiss() {
   resetSyncJobDetailsDraft();
   selectedSyncJobDetailsJob.value = null;
   syncJobDetails.value = {};
-  syncJobDetailsRecentRuns.value = [];
   syncJobAuditHistory.value = [];
   syncJobAuditHistoryError.value = "";
   isSyncJobAuditHistoryLoading.value = false;
+}
+
+async function handleRefresh() {
+  await loadSecondaryData({ silent: true });
 }
 
 async function canDismissSyncJobDetailsModal() {
@@ -2504,13 +2747,9 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
     syncJobAuditHistoryError.value = "";
   }
   try {
-    const [jobDetails, jobRuns] = await Promise.all([
-      fetchJobDetail(selectedSyncJobDetailsJob.value.jobName),
-      fetchJobRuns(selectedSyncJobDetailsJob.value.jobName, { pageSize: 5, pageIndex: 0 })
-    ]);
+    const jobDetails = await fetchJobDetail(selectedSyncJobDetailsJob.value.jobName, shop.value.productStoreId);
 
     syncJobDetails.value = jobDetails || {};
-    syncJobDetailsRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
     setSyncJobDetailsDraft(syncJobDetails.value);
 
 
@@ -2519,7 +2758,6 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
     logger.error(error);
     if (!opts.silent) {
       syncJobDetails.value = {};
-      syncJobDetailsRecentRuns.value = [];
       syncJobAuditHistory.value = [];
       syncJobAuditHistoryError.value = "";
       resetSyncJobDetailsDraft();
@@ -2597,20 +2835,6 @@ async function confirmDiscardSyncJobDetailsChanges() {
   });
 }
 
-async function loadSyncJobLatestRun() {
-  if (!syncJobObj.value?.jobName) {
-    syncJobRecentRuns.value = [];
-    return;
-  }
-
-  try {
-    const jobRuns = await fetchJobRuns(syncJobObj.value.jobName, { pageSize: 1, pageIndex: 0 });
-    syncJobRecentRuns.value = Array.isArray(jobRuns) ? jobRuns : [];
-  } catch (error: any) {
-    logger.error(error);
-    syncJobRecentRuns.value = [];
-  }
-}
 
 function openHistory() {
 
@@ -2650,14 +2874,12 @@ async function persistProductStoreSelection() {
   if (shop.value.productStoreId === draft.value.selectedProductStoreId) return true;
   isSaving.value = true;
   try {
-    const resp = await shopifyStore.updateShopifyShop({
-      shopId: props.id,
+    const resp = await useShopifyShopMutations(props.id).updateShop({
       productStoreId: draft.value.selectedProductStoreId
     });
 
     if (!commonUtil.hasError(resp)) {
-      await shopifyStore.fetchShopifyShops();
-      isSaving.value = false;
+        isSaving.value = false;
       return true;
     } else {
       throw resp.data;
@@ -2679,10 +2901,11 @@ async function persistIdentifierSelection() {
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
     };
-    const resp = await productStoreStore.updateProductStore(payload);
+    const resp = await useProductStoreMutations(payload.productStoreId).updateStore(payload);
 
     if (!commonUtil.hasError(resp)) {
-      productStoreStore.updateCurrent(payload);
+      // No Pinia `updateCurrent` write here: nothing in this view reads that state, and
+      // `useProductStoreMutations` already write-through refreshes the cached product store.
       isSaving.value = false;
       return true;
     } else {
@@ -2699,7 +2922,7 @@ async function persistIdentifierSelection() {
 async function loadReviewStats() {
   isReviewLoading.value = true;
   try {
-    reviewStats.value = await shopifyProductSyncStore.fetchReviewStats({
+    reviewStats.value = await fetchReviewStats({
       shopId: props.id,
       productStoreId: draft.value.selectedProductStoreId,
       linkedShopCount: relatedShops.value.length,
@@ -2738,7 +2961,7 @@ function toggleStartConfirmation() {
 }
 
 async function loadPreflight() {
-  const rawItems = await shopifyProductSyncStore.fetchPreflight({
+  const rawItems = await fetchPreflight({
     systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
     productStoreId: draft.value.selectedProductStoreId,
     productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2812,7 +3035,7 @@ async function checkSyncJobConfig() {
   isSyncJobConfigLoaded.value = false;
   try {
     const shopId = props.id; 
-    const result = await shopifyProductSyncStore.fetchSyncJobConfig({ shopId });
+    const result = await fetchSyncJobConfig({ shopId });
     
     syncJobConfigured.value = result.isConfigured;
     if (result.isConfigured) {
@@ -2831,7 +3054,7 @@ async function configureSyncJob() {
     const shopId = shop.value?.shopId;
     if (!shopId) throw new Error("Shop ID not available");
 
-    await shopifyProductSyncStore.configureSyncJob({
+    await configureProductSyncJob({
       shopId,
       productStoreId: draft.value.selectedProductStoreId,
       productIdentifierEnumId: draft.value.selectedIdentifierEnumId
@@ -2839,7 +3062,9 @@ async function configureSyncJob() {
     
     syncJobConfigured.value = true;
     commonUtil.showToast(translate("Product sync job scheduled successfully."));
-    await fetchJobs(); // Refresh job list
+    // Write-through: pull just the job that was created back into the cache. `jobs` is a live
+    // cached read, so the new job appears in the list the moment this resolves.
+    await refreshAfterMutation("serviceJob", { jobName: `sync_ShopifyProductUpdates_${shopId}` });
     await checkSyncJobConfig(); // Refresh state
   } catch (error) {
     logger.error("Failed to configure sync job", error);
@@ -2866,7 +3091,7 @@ async function startProductSync() {
       await loadSelectedShopSystemMessageRemoteId();
     }
 
-    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({ 
+    const resp: any = await syncShopifyProducts({ 
       shopId: props.id,
       includeAll: true 
     });
@@ -2882,7 +3107,7 @@ async function startProductSync() {
     // which is useful for progress state but cannot replace the shop-level remote id used by
     // subsequent run-state and GraphQL lookups.
     if (resp.systemMessageId) {
-      currentSyncRun.value = {} as any;
+      clearSyncRun();
       progressState.value = {
         ...progressState.value,
         systemMessageId: resp.systemMessageId,
@@ -2964,7 +3189,7 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
 
   systemMessageActionLoadingId.value = actionId;
   try {
-    await shopifyProductSyncStore.cancelSystemMessage(systemMessageId);
+    await cancelSystemMessage(systemMessageId);
     commonUtil.showToast(translate("Product sync run cancelled."));
     await refreshAfterSystemMessageAction();
   } catch (err) {
@@ -2975,19 +3200,23 @@ async function runSystemMessageAction(actionId: ProductSyncFsmActionId) {
   }
 }
 
+function handleProductSystemMessageAction(actionId: string) {
+  return runSystemMessageAction(actionId as ProductSyncFsmActionId);
+}
+
 async function performSync(params: any, successMsg: string, modalRef: any, loadingRef: any) {
   loadingRef.value = true;
   try {
-    currentSyncRun.value = {} as any;
+    clearSyncRun();
     const job = syncJobObj.value;
-    const resp: any = await shopifyProductSyncStore.syncShopifyProducts({
+    const resp: any = await syncShopifyProducts({
       shopId: props.id,
       ...params
     });
 
     if (resp._ERROR_MESSAGE_ || resp._ERROR_MESSAGE_LIST_) throw resp;
 
-    currentSyncRun.value = {} as any;
+    clearSyncRun();
     progressState.value = {
       ...progressState.value,
       syncJobId: job?.jobName || "",
@@ -3036,16 +3265,11 @@ async function loadProgress() {
   if (!selectedShopSystemMessageRemoteId.value) return false;
   let loadedRunState = false;
   try {
-    const [syncRunStateResult, sendJobResult, pollJobResult, sendJobRunsResult, pollJobRunsResult] = await Promise.allSettled([
-      shopifyProductSyncStore.fetchProductUpdateSyncRunState({
-        systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
-        shopId: props.id,
-        systemMessageId: progressState.value?.systemMessageId
-      }),
-      fetchJobDetail(BULK_OPERATION_SEND_JOB_NAME),
-      fetchJobDetail(BULK_OPERATION_POLL_JOB_NAME),
-      fetchJobRuns(BULK_OPERATION_SEND_JOB_NAME, { pageSize: 1, pageIndex: 0 }),
-      fetchJobRuns(BULK_OPERATION_POLL_JOB_NAME, { pageSize: 1, pageIndex: 0 })
+    // Run state comes off the SPINE, synchronously — the worker keeps it current on a 10s cadence,
+    // so a poll here reads the freshest committed state without a request. Only job detail is live.
+    const [sendJobResult, pollJobResult] = await Promise.allSettled([
+      fetchJobDetail(BULK_OPERATION_SEND_JOB_NAME, shop.value.productStoreId),
+      fetchJobDetail(BULK_OPERATION_POLL_JOB_NAME, shop.value.productStoreId)
     ]);
 
     if (sendJobResult.status === "fulfilled") {
@@ -3062,19 +3286,8 @@ async function loadProgress() {
       bulkOperationPollJob.value = {};
     }
 
-    bulkOperationSendJobRecentRuns.value = sendJobRunsResult.status === "fulfilled" && Array.isArray(sendJobRunsResult.value)
-      ? sendJobRunsResult.value
-      : [];
-    bulkOperationPollJobRecentRuns.value = pollJobRunsResult.status === "fulfilled" && Array.isArray(pollJobRunsResult.value)
-      ? pollJobRunsResult.value
-      : [];
 
-    if (syncRunStateResult.status !== "fulfilled") {
-      throw syncRunStateResult.reason;
-    }
-
-    const syncRunState = syncRunStateResult.value;
-    assertBackendDataAvailable(syncRunState, translate("Product sync run state is unavailable."));
+    const syncRunState = spineRunState.value;
     loadedRunState = true;
 
     // Prioritize the system message ID we already have in state if it's still active
@@ -3133,9 +3346,15 @@ async function loadProgress() {
   }
 }
 
+/**
+ * No-op: progress is now reactive.
+ *
+ * This used to re-run `loadProgress` every 5 seconds from the main thread. Progress is derived from
+ * cached system messages, bulk operations and MDM logs, all of which the worker refreshes, so the
+ * derived state advances on its own. Kept as a function so the existing call sites read unchanged.
+ */
 function startProgressPolling() {
   stopProgressPolling();
-  progressPoll = window.setInterval(loadProgress, 5000);
 }
 
 function stopProgressPolling() {
@@ -3145,16 +3364,67 @@ function stopProgressPolling() {
   }
 }
 
-function startNextSyncRefreshPolling() {
-  updateScheduledJobRefreshAt();
-  liveDashboard.start();
+/**
+ * The full domain set this page reads, built from the SAME builders every other sync screen uses.
+ *
+ * This used to be two hand-rolled copies of this list (initial activation + the job-set watcher),
+ * which had already drifted from each other's siblings: the message window was pinned at 25 while
+ * `PRODUCT_SYNC_RUN_WINDOW` reads expect 200 — the exact fetch-depth-vs-read-limit mismatch that made
+ * a shop with a completed sync report "never synced" elsewhere. Composing from `syncFeatureDomains` +
+ * `productSyncExtraDomains` means the descriptor owns the shape and this page can no longer drift:
+ *
+ *  - `systemMessage` per feature type at `PRODUCT_SYNC_RUN_WINDOW` depth
+ *  - `dataManagerLog` per import config (REQUIRED for the run join — a run's MDM half is matched by
+ *    `systemMessageId`, and without logs this page concludes nothing ever synced and drops into the
+ *    first-time wizard even for a shop with history)
+ *  - the `syncRun` spine — the only shop-scoped source of the message↔import pairing
+ *  - `serviceJobRun` scoped to the jobs the cards display
+ *  - `productUpdateHistory` for the recently-synced-products list, the one page-specific domain
+ */
+function productSyncPageDomains(jobNames: readonly string[]) {
+  const intervalMs = PRODUCT_SYNC_FEATURE.activePollMs;
+  return [
+    ...syncFeatureDomains(PRODUCT_SYNC_FEATURE, intervalMs, {
+      messageTotal: PRODUCT_SYNC_RUN_WINDOW,
+      // Shared across shops (no endpoint keys logs to a shop), so depth is the only lever — matches
+      // the connection-details session so the two pages agree on the window.
+      importTotal: 300,
+    }),
+    ...productSyncExtraDomains(intervalMs, jobNames),
+    { name: "productUpdateHistory", intervalMs: 15_000, args: { shopIds: [props.id] } },
+  ];
+}
+
+/**
+ * Activate the live (class-A) domains this page reads, and start the label clock.
+ *
+ * Domains stop on view exit, which terminates the worker and its timer — the cache stays behind so a
+ * revisit paints instantly.
+ */
+async function startNextSyncRefreshPolling() {
+  labelClock = window.setInterval(() => { currentTimeMs.value = Date.now(); }, 15000);
+  await startSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)));
 }
 
 function stopNextSyncRefreshPolling() {
-  liveDashboard.stop();
-  scheduledJobRefreshAtMs = null;
-  scheduledJobRefreshGraceUntilMs = null;
+  if (labelClock) {
+    window.clearInterval(labelClock);
+    labelClock = undefined;
+  }
+  stopSyncDomains();
 }
+
+/**
+ * Re-activate `serviceJobRun` when the tracked job set changes.
+ *
+ * The job names are only known after the job data loads, so the initial activation may pass an empty
+ * list; this keeps the worker's scope in step without restarting the other domains.
+ */
+watch(() => getTrackedRefreshJobs().map((job: any) => job.jobName).join(","), (names) => {
+  if (!names) return;
+  // Same single builder — `start` swaps the domain set on the running worker rather than respawning.
+  void startSyncDomains(productSyncPageDomains(names.split(",")));
+});
 
 function getTrackedRefreshJobs() {
   const trackedJobs = [
@@ -3169,101 +3439,15 @@ function getTrackedRefreshJobs() {
   });
 }
 
-function updateScheduledJobRefreshAt() {
-  const nextRunTimes = getTrackedRefreshJobs()
-    .map((job: any) => getNextRunDateTime(job)?.toMillis() || 0)
-    .filter((time: number) => time > currentTimeMs.value);
+/**
+ * No-op: nothing schedules a main-thread refresh any more.
+ *
+ * This computed the next scheduled job run so the old 15s tick knew when to re-fetch. The worker
+ * polls regardless of job schedules, so the answer is no longer needed. Kept as a function because
+ * two call sites read naturally as "the schedule may have changed".
+ */
+function updateScheduledJobRefreshAt() {}
 
-  scheduledJobRefreshAtMs = nextRunTimes.length ? Math.min(...nextRunTimes) : null;
-  if (scheduledJobRefreshAtMs && currentTimeMs.value < scheduledJobRefreshAtMs) {
-    scheduledJobRefreshGraceUntilMs = null;
-  }
-}
-
-async function evaluateScheduledRefresh(opts: { forceProbe?: boolean } = {}) {
-  if (isRefreshInFlight.value) return;
-
-  const shouldRefreshForScheduledRun = !!scheduledJobRefreshAtMs && currentTimeMs.value >= scheduledJobRefreshAtMs;
-  const shouldRefreshDuringGraceWindow = !!scheduledJobRefreshGraceUntilMs && currentTimeMs.value <= scheduledJobRefreshGraceUntilMs;
-
-  let needsRefresh = false;
-
-  if (shouldRefreshForScheduledRun || shouldRefreshDuringGraceWindow) {
-    const isCompleted = currentSyncRun.value?.completed;
-    const hasPendingUpdates = pendingUpdateRequestsCount.value > 0;
-    const hasRunningShopifyOperation = hasRunningShopifyBulkOperation.value;
-
-    if (!isCompleted || hasPendingUpdates || hasRunningShopifyOperation) {
-      needsRefresh = true;
-    }
-  }
-
-  if (!needsRefresh && syncJobObj.value?.jobName) {
-    try {
-      const recentRuns = await fetchJobRuns(syncJobObj.value.jobName, { pageSize: 1 });
-      if (recentRuns && recentRuns.length > 0) {
-        const latestRun = recentRuns[0];
-        const runStartTime = latestRun.startTime ? new Date(latestRun.startTime).getTime() : 0;
-        const runEndTime = latestRun.endTime ? new Date(latestRun.endTime).getTime() : 0;
-
-        let hasNewActivity = false;
-
-        if (lastKnownJobRunStartTime === 0) {
-          lastKnownJobRunStartTime = runStartTime;
-          lastKnownJobRunEndTime = runEndTime;
-        } else {
-          if (runStartTime > lastKnownJobRunStartTime) {
-            lastKnownJobRunStartTime = runStartTime;
-            hasNewActivity = true;
-          }
-          if (runEndTime > lastKnownJobRunEndTime) {
-            lastKnownJobRunEndTime = runEndTime;
-            hasNewActivity = true;
-          }
-        }
-
-        if (hasNewActivity) {
-          const infoMessage = latestRun.infoMessage || latestRun.errorMessages || latestRun.messages || "";
-          const hasNoActivity = infoMessage.includes("No bulk operation currently in progress") ||
-                                infoMessage.includes("Aborting, no ShopifyBulkQuery Operation System Messages found to process");
-
-          if (!hasNoActivity || !runEndTime) {
-            needsRefresh = true;
-          }
-        }
-      }
-    } catch (err) {
-      logger.error("Failed to check background job runs for auto-refresh", err);
-    }
-  }
-
-  // Tab-focus refresh: once we've loaded once in this session, returning to the tab kicks a refresh
-  // so the user sees fresh state without waiting for the next tick.
-  if (!needsRefresh && opts.forceProbe && hasEverLoadedSecondary.value) {
-    needsRefresh = true;
-  }
-
-  if (!needsRefresh) return;
-
-  if (shouldRefreshForScheduledRun && scheduledJobRefreshAtMs) {
-    scheduledJobRefreshGraceUntilMs = scheduledJobRefreshAtMs + 2 * 60 * 1000;
-  }
-  scheduledJobRefreshAtMs = null;
-
-  await liveDashboard.runRefresh(async () => {
-    if (activeExperienceMode.value === "returning" && !isLoading.value) {
-      await loadSecondaryData({ silent: true });
-    }
-    if (showSyncJobDetailsModal.value && selectedSyncJobDetailsJob.value?.jobName && !syncJobDetailsDirty.value) {
-      await refreshSyncJobDetails({ silent: true });
-    }
-  });
-
-  updateScheduledJobRefreshAt();
-  if (!scheduledJobRefreshAtMs && scheduledJobRefreshGraceUntilMs && currentTimeMs.value > scheduledJobRefreshGraceUntilMs) {
-    scheduledJobRefreshGraceUntilMs = null;
-  }
-}
 
 
 
@@ -3590,7 +3774,7 @@ async function loadWebhookSubscriptions() {
   if (!selectedShopSystemMessageRemoteId.value) return;
   isWebhookLoading.value = true;
   try {
-    webhookSubscriptions.value = await shopifyProductSyncStore.fetchWebhookSubscriptions({
+    webhookSubscriptions.value = await fetchWebhookSubscriptions({
       systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
       topic: "BULK_OPERATIONS_FINISH"
     });
@@ -3611,7 +3795,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
   isWebhookLoading.value = true;
   try {
     if (subscribe) {
-      await shopifyProductSyncStore.subscribeWebhook({
+      await subscribeWebhook({
         systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
         topic: "BULK_OPERATIONS_FINISH",
       });
@@ -3619,7 +3803,7 @@ async function toggleWebhookSubscription(subscribe: boolean) {
     } else {
       const subscription = webhookSubscriptions.value.find((s: any) => s.node.topic === "BULK_OPERATIONS_FINISH");
       if (subscription) {
-        await shopifyProductSyncStore.unsubscribeWebhook({
+        await unsubscribeWebhook({
           systemMessageRemoteId: selectedShopSystemMessageRemoteId.value,
           webhookSubscriptionId: subscription.node.id
         });

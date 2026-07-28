@@ -19,6 +19,14 @@
         </ion-item>
       </div>
 
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-margin-top" v-for="variance in inventoryVariances" :key="variance.enumId">
         <ion-item lines="none">
           <ion-label>
@@ -55,29 +63,77 @@
           <ion-checkbox :checked="enumsInEnumGroup(variance.enumId)" @click="addVarianceToGroup(variance.enumId, $event)"></ion-checkbox>
         </div>
       </div>
+
+      <ion-modal :is-open="showTransferInventoryModal" @didDismiss="closeTransferInventoryModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeTransferInventoryModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Transfer Inventory") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-item class="ion-margin-top">
+            <ion-icon slot="start" :icon="informationCircleOutline" />
+            <ion-label>
+              {{ translate("Learn more about creating inventory transfers from inventory variances") }}
+            </ion-label>
+            <ion-button fill="clear" size="small" color="medium">
+              <ion-icon :icon="openOutline" slot="icon-only" />
+            </ion-button>
+          </ion-item>
+
+          <ion-item>
+            <ion-icon slot="start" :icon="businessOutline" />
+            <ion-label>
+              {{ translate("Facility wise inventory transfer") }}
+              <p>{{ translate("If each facility has its own dedicated inventory transfer location for this variance, configure the transfer location from the facility configuration section") }}</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item lines="none" class="ion-margin-top">
+            <ion-input v-model="transferLocationId" :label="translate('Transfer location')" :placeholder="translate('NetSuite facility ID')" :helperText="selectedVarianceEnumId"/>
+          </ion-item>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button @click="saveTransferInventoryNetSuiteId" :disabled="!transferLocationId || transferLocationId === (selectedIntegrationMapping?.mappingValue)">
+              <ion-icon :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter, modalController } from "@ionic/vue";
-import { closeCircleOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
-import TransferInventoryModal from '@/components/TransferInventoryModal.vue';
+import { IonBackButton, IonButton, IonButtons, IonChip, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { businessOutline, closeCircleOutline, closeOutline, informationCircleOutline, openOutline, saveOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useNetSuiteStore } from '@/store/netSuite';
-import { computed } from 'vue';
-import { useUtilStore } from '@/store/util';
+import { computed, ref } from 'vue';
 import { DateTime } from 'luxon';
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { useEnumGroupMembers, useNetSuite } from "@/composables/useNetSuite";
+import { useTypedEnums } from "@/composables/useSeed";
 
-const netSuiteStore = useNetSuiteStore();
-const utilStore = useUtilStore();
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
-const { removeNetSuiteId } = useNetSuiteComposables(inventoryVarianceTypeId);
 
-const inventoryVariances = computed(() => netSuiteStore.inventoryVariances);
-const enumsInEnumGroup = computed(() => netSuiteStore.getEnumGroups)
-const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(inventoryVarianceTypeId))
+// Reads all come from the cache; the CRUD helpers resync the mapping domain after each write.
+const {
+  mappings: integrationTypeMappings, addNetSuiteId, removeNetSuiteId, updateNetSuiteId,
+  setEnumGroupMembership,
+} = useNetSuite(inventoryVarianceTypeId);
+
+// Variance reasons are IID_REASON enums; the reason group is its own cached reference set.
+const { values: inventoryVariances, hydrated } = useTypedEnums("IID_REASON");
+const { members: enumGroupMembers } = useEnumGroupMembers();
+
+/** enumId → whether it belongs to the NetSuite reason group (was `getEnumGroups`). */
+const enumsInEnumGroup = computed(() => (enumId: any) =>
+  enumGroupMembers.value.find((member: any) => member.enumId === enumId))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
@@ -91,21 +147,47 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-onIonViewWillEnter(async () => {
-  await netSuiteStore.fetchInventoryVariances();
-  await netSuiteStore.fetchEnumGroupMember()
-});
 
-async function openTransferInventoryModal(variance: any) {
-  const transferInventoryModal = await modalController.create({
-    component: TransferInventoryModal,
-    componentProps: { 
-      varianceEnumId: variance.enumId,
-      integrationMapping: updatedNetSuiteIds.value[variance.enumId] ? updatedNetSuiteIds.value[variance.enumId] : ""
-    }
-  });
+const transferLocationId = ref("");
+const showTransferInventoryModal = ref(false);
+const selectedVarianceEnumId = ref("");
+const selectedIntegrationMapping = ref<any>("");
 
-  transferInventoryModal.present();
+function openTransferInventoryModal(variance: any) {
+  selectedVarianceEnumId.value = variance.enumId;
+  selectedIntegrationMapping.value = updatedNetSuiteIds.value[variance.enumId] ? updatedNetSuiteIds.value[variance.enumId] : "";
+  transferLocationId.value = selectedIntegrationMapping.value?.mappingValue || "";
+  showTransferInventoryModal.value = true;
+}
+
+// Validates the input data, saves or updates NetSuite facility ID for inventory transfers associated with the integration type ID: NETSUITE_VAR_TRAN.
+async function saveTransferInventoryNetSuiteId() {
+  if(!transferLocationId.value) {
+    commonUtil.showToast(translate("Please enter a valid NetSuite ID"));
+    return false;
+  }
+
+  if(selectedIntegrationMapping.value?.mappingValue === transferLocationId.value) {
+    commonUtil.showToast(translate("Please update the NetSuite ID"));
+    return false;
+  }
+
+  const payload = {
+    integrationTypeId: inventoryVarianceTypeId,
+    mappingKey: selectedVarianceEnumId.value,
+    mappingValue: transferLocationId.value
+  };
+
+  if(selectedIntegrationMapping.value.integrationMappingId) {
+    await updateNetSuiteId(payload, selectedIntegrationMapping.value.integrationMappingId)
+  } else {
+    await addNetSuiteId(payload)
+  }
+  closeTransferInventoryModal();
+}
+
+function closeTransferInventoryModal() {
+  showTransferInventoryModal.value = false;
 }
 
 // adding & updating the enum with enumGroup
@@ -128,13 +210,26 @@ async function addVarianceToGroup(enumId: any, event: any) {
       }
     }
     
-    resp = await utilStore.addEnumToEnumGroup(payload);
-    if(!commonUtil.hasError(resp)) {
-      await netSuiteStore.fetchEnumGroupMember();
-    } else {
-      throw resp.data;
+    const wasMember = !!enumsInEnumGroup.value(enumId);
+
+    resp = await setEnumGroupMembership(payload);
+    if(commonUtil.hasError(resp)) throw resp.data;
+
+    // `:checked` is a one-way binding, so the native click has already flipped the DOM box while
+    // the cache is the real source of truth. Re-assert the box from the cache once the resync has
+    // landed, otherwise a write that returns 200 without actually persisting leaves the row ticked
+    // forever — the state silently reverts on the next load and the user is never told.
+    const isMember = !!enumsInEnumGroup.value(enumId);
+    checkbox.checked = isMember;
+
+    if(isMember === wasMember) {
+      commonUtil.showToast(translate("The server accepted the change but did not save it."));
+      logger.error(`enumGroupMember for ${enumId} did not persist; NETSUITE_IIV_REASON may not exist as an EnumerationGroup`);
     }
   } catch (err) {
+    // Reverting the checkbox shows *something* happened but not that it failed — a user who looks
+    // away during the request sees only the original state and assumes the toggle never took.
+    commonUtil.showToast(translate("Failed to update variance reason"));
     logger.error(err);
     checkbox.checked = !checkbox.checked;
   }

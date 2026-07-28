@@ -42,3 +42,6 @@ auth-*.json
 
 .history
 .firebase
+
+# Routing stress-test output
+tests/e2e/.results/

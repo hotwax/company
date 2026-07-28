@@ -95,7 +95,9 @@ const downloadTextFile = (content: string, fileName: string) => {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Chromium may still be reading the object URL after the synthetic click.
+  // Revoking it in the same task starts the download and then cancels it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const formatDateTime = (value: any, format?: string) => {
@@ -107,10 +109,18 @@ const formatDateTime = (value: any, format?: string) => {
   return format ? dateTime.toFormat(format) : dateTime.toLocaleString(DateTime.DATETIME_MED);
 }
 
-const parseDateTimeValue = (value: string | number) => {
+const parseDateTimeValue = (value: string | number | Date | null | undefined) => {
   if (!value) return null;
 
   if (DateTime.isDateTime(value)) return value;
+
+  // A native Date used to fall through to the `typeof !== "string"` bail below and format as "",
+  // which is how the Order Sync "next batch sync" preview rendered "Not available" for a schedule
+  // that was previewing correctly — `getNextSyncRun` returns a Date.
+  if (value instanceof Date) {
+    const dateTime = DateTime.fromJSDate(value);
+    return dateTime.isValid ? dateTime : null;
+  }
 
   if (typeof value === "number") {
     const dateTime = DateTime.fromMillis(value);

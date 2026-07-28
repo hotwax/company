@@ -141,13 +141,12 @@ import { commonUtil, translate } from "@common";
 import { IonBadge, IonCard, IonCardContent, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import router from "@/router";
+import { useUserGroups } from "@/composables/useSecurity";
 import { useUserStore } from "@/store/user";
-import { useUtilStore } from "@/store/util";
 
 const userStore = useUserStore();
-const utilStore = useUtilStore();
 const USERS_PAGE_SIZE = 25;
 
 // The logged-in user's own record, pinned at the top of the list. The profile is already available from
@@ -155,17 +154,17 @@ const USERS_PAGE_SIZE = 25;
 const currentUser = ref<any>({});
 
 const users = computed(() => userStore.getUsers);
-const userGroups = computed(() => utilStore.getUserGroups);
+// Cached, reactive — the filter dropdown fills as the table hydrates, no fetch needed. This app
+// only ever manages login-capable groups, and the cache holds EVERY group (framework/system ones
+// like UgtMoquiAdmin included), so the old server-side UgtUserAccess scope is kept client-side.
+const { userGroups: cachedUserGroups } = useUserGroups();
+const userGroups = computed(() => cachedUserGroups.value.filter((group: any) => group.groupTypeEnumId === "UgtUserAccess"));
 const isScrollable = computed(() => userStore.isScrollable);
 const userProfile = computed(() => userStore.getUserProfile)
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 
 onIonViewWillEnter(async () => {
   await fetchUsers();
-});
-
-onMounted(async () => {
-  await utilStore.fetchUserGroups();
 });
 
 const createUser = () => {

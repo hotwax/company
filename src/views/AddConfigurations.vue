@@ -9,7 +9,7 @@
             <ion-icon :icon="informationCircleOutline" />
           </ion-button>
         </ion-buttons>
-        <ion-progress-bar value="0.75" />
+        <ion-progress-bar :value="0.75" />
       </ion-toolbar>
     </ion-header>
 
@@ -34,7 +34,7 @@
 
           <ion-item>
             <ion-icon slot="start" :icon="shirtOutline"/>
-            <ion-select interface="popover" :label="translate('Product Identifier')" v-model="formData.productIdentifierEnumId">
+            <ion-select interface="popover" :disabled="!identifiersReady" :label="translate('Product Identifier')" v-model="formData.productIdentifierEnumId">
               <ion-select-option v-for="identifier in productIdentifiers" :key="identifier.enumId" :value="identifier.enumId">{{ identifier.description || identifier.enumId }}</ion-select-option>
             </ion-select>
           </ion-item>
@@ -82,14 +82,14 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonSegment, IonSegmentButton, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, hasError, logger, translate } from '@common'
+import { api, commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
-import { useProductStore } from '@/store/productStore';
+import { useProductStores } from "@/composables/useProductStores";
+import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
-import { useUtilStore } from '@/store/util';
+import { useProductStoreMutations } from "@/composables/useProductStores";
 
-const utilStore = useUtilStore();
-const productStoreStore = useProductStore();
+const { productStores: cachedProductStores } = useProductStores();
 
 const props = defineProps(["productStoreId"]);
 
@@ -138,13 +138,12 @@ const CATEGORY_MAP = {
   }
 } as any;
 
-const productIdentifiers = computed(() => utilStore.productIdentifiers)
-const productStores = computed(() => productStoreStore.productStores.filter((s: any) => s.productStoreId !== props.productStoreId))
+// SHOP_PROD_IDENTITY enums — already in the cached enum table, so no dedicated fetch.
+const { values: productIdentifiers, hydrated: identifiersReady } = useTypedEnums('SHOP_PROD_IDENTITY')
+const productStores = computed(() => cachedProductStores.value.filter((s: any) => s.productStoreId !== props.productStoreId))
 
 onIonViewWillEnter(async () => {
-  utilStore.fetchProductIdentifiers();
   fetchProductStore();
-  productStoreStore.fetchProductStores();
 })
 
 async function fetchProductStore() {
@@ -202,7 +201,7 @@ async function setupProductStore() {
       });
 
       // Update target store details
-      const updateDetailsResp = await productStoreStore.updateProductStore(targetPayload);
+      const updateDetailsResp = await useProductStoreMutations(targetPayload.productStoreId).updateStore(targetPayload);
       if (commonUtil.hasError(updateDetailsResp)) {
         throw updateDetailsResp.data;
       }
@@ -218,7 +217,7 @@ async function setupProductStore() {
           
           settingsToClone.forEach((setting: any) => {
             settingsPromises.push(
-              productStoreStore.saveCurrentStoreSettings({
+              useProductStoreMutations(props.productStoreId).saveSettings({
                 fromDate: Date.now(),
                 productStoreId: props.productStoreId,
                 settingTypeEnumId: setting.settingTypeEnumId,
@@ -243,7 +242,7 @@ async function setupProductStore() {
         productIdentifierEnumId: formData.value.productIdentifierEnumId
       }
 
-      const resp = await productStoreStore.updateProductStore(payload);
+      const resp = await useProductStoreMutations(payload.productStoreId).updateStore(payload);
       if (commonUtil.hasError(resp)) {
         throw resp.data;
       }

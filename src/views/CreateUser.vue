@@ -65,15 +65,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref } from "vue";
 import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonItem, IonPage, IonText, IonTitle, IonToolbar, IonToggle, IonInput, IonSelect, IonSelectOption, onIonViewWillEnter } from "@ionic/vue";
 import router from "@/router";
-import { useUtilStore } from "@/store/util";
+import { useFacilities } from "@/composables/useFacilities";
 import { useUserStore } from "@/store/user";
 import { businessOutline, desktopOutline, arrowForwardOutline } from "ionicons/icons";
 import { commonUtil, translate, logger } from "@common";
 
-const utilStore = useUtilStore();
 const userStore = useUserStore();
 
 const isFacilityLogin = ref(false);
@@ -87,11 +86,12 @@ const formData = ref({
   contactNumber: "",
 });
 
-const facilities = computed(() => utilStore.getFacilities);
+// Cached, reactive — the select fills as the facility table hydrates, no fetch needed. The old
+// store fetch excluded virtual (parking) facilities server-side; `excludeVirtual` keeps that rule.
+const { facilities } = useFacilities({ excludeVirtual: true });
 
-onIonViewWillEnter(async () => {
+onIonViewWillEnter(() => {
   clearFormData();
-  await utilStore.fetchFacilities();
 });
 
 const clearFormData = () => {

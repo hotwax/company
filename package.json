@@ -9,6 +9,7 @@
     "serve": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:unit": "vitest run --no-cache",
     "typecheck": "vue-tsc -p tsconfig.json --noEmit",
     "lint": "eslint ."
   },

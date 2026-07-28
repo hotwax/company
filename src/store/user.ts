@@ -3,11 +3,7 @@ import { DateTime, Settings } from "luxon"
 import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
-import { useUtilStore } from "@/store/util"
-import { useProductStore } from "@/store/productStore"
-import { useShopifyStore } from "@/store/shopify"
-import { useFacilityStore } from "@/store/facility"
-import useServiceJob from "@/composables/useServiceJob"
+import { useServiceJob } from "@/composables/useServiceJobs"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -87,8 +83,10 @@ export const useUserStore = defineStore("user", {
       } catch (error: any) {
         this.fetchStatus.profile = "error"
         commonUtil.showToast(translate("Failed to fetch user profile"))
-        logger.error("fetchUserProfile", error)
-        useAuth().clearAuth()
+        logger.error("fetchUserProfile", {
+          message: String(error?.message || "Failed to fetch user profile"),
+          status: error?.response?.status
+        })
 
         return Promise.reject(new Error(error))
       }
@@ -399,13 +397,18 @@ export const useUserStore = defineStore("user", {
           params: { partyId }
         }) as any
 
-        const utilStore = useUtilStore()
-        await Promise.allSettled([utilStore.fetchProductStores(), utilStore.fetchRoles()])
+        /**
+         * Store names come from the CACHED productStores table (class-B snapshot, filled at login)
+         * rather than the retired util store. The old code also fetched roles here and never read
+         * them — dropped with the store.
+         */
+        const { productStoreCache } = await import("@/utils/cacheEntities")
+        const cachedStores = await productStoreCache.all().catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
           const storeNameByProductStoreId = {} as any
-          utilStore.getProductStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
+          cachedStores.forEach((store: any) => { storeNameByProductStoreId[store.productStoreId] = store.storeName })
 
           productStores = (resp.data || [])
             .filter((productStoreRole: any) => !productStoreRole.thruDate || productStoreRole.thruDate > now)
@@ -655,7 +658,7 @@ export const useUserStore = defineStore("user", {
           })
 
           if(selectedUser.partyTypeId === "PARTY_GROUP") {
-            const facilityId = [...selectedFacilityIds][0]
+            const facilityId = [...selectedFacilityIds][0] as string
 
             promises.push(this.addPartyToFacility({
               partyId,
@@ -901,56 +904,58 @@ export const useUserStore = defineStore("user", {
         return Promise.reject(new Error(error))
       }
 
-      // Hydrate remaining reference data lazily in the background. Not
-      // awaited so login doesn't wait on it; each store tracks its own
-      // fetchStatus (see Settings.vue's Data Fetch Status panel) and
-      // swallows its own errors.
-      this.prefetchReferenceData()
+      // Seed the cache HERE, not only from the `isAuthenticated` watcher in App.vue.
+      //
+      // That computed mixes reactive refs (token, expirationTime) with plain COOKIE reads (oms,
+      // userId). Login sets the token first and establishes the user afterwards, so by the time
+      // the last piece lands the change arrives via a cookie write, which invalidates nothing —
+      // the computed can be "true" when read yet never notify, so the watcher never fires and the
+      // app runs on an empty cache until the user reloads. Verified from a session recording: no
+      // seed request at all between login and a manual Cmd-R.
+      //
+      // This hook runs exactly once per login, after the profile and permissions exist (which the
+      // cache identity check needs). `startReferenceSync` is idempotent, so the watcher still
+      // covering the page-refresh case is harmless.
+      try {
+        const { startReferenceSync } = await import("@/services/appCacheBootstrap")
+        void startReferenceSync()
+      } catch (error) {
+        logger.error("Failed to start the reference cache sync after login", error)
+      }
     },
 
-    async prefetchReferenceData() {
-      const utilStore = useUtilStore()
-      const { fetchJobs } = useServiceJob()
-
-      await Promise.allSettled([
-        useProductStore().fetchProductStores(),
-        useShopifyStore().fetchShopifyShops(),
-        useFacilityStore().fetchFacilityGroupTypes(),
-        utilStore.fetchStatusItems(),
-        utilStore.fetchFacilities(),
-        utilStore.fetchOrganizationPartyId(),
-        utilStore.fetchFacilityGroups(),
-        utilStore.fetchDBICCountries(),
-        utilStore.fetchOperatingCountries(),
-        utilStore.fetchProductIdentifiers(),
-        utilStore.fetchShipmentMethodTypes(),
-        fetchJobs()
-      ])
-    },
 
     // Called by @common's initialiseConfig after logout
     async postLogout() {
       this.$reset()
       useAuth().clearAuth()
 
-      // Reset all other persisted stores so no data leaks across sessions
-      const { useProductStore } = await import("./productStore")
-      const { useUtilStore } = await import("./util")
-      const { useNetSuiteStore } = await import("./netSuite")
-      const { useShopifyStore } = await import("./shopify")
-      const { useKlaviyoStore } = await import("./klaviyo")
+      // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
+      // sessions yet, so one user's cached data can never surface in another's session.
+      const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
+      stopReferenceSync()
+      const { clearAllCaches } = await import("@/utils/appCacheDb")
+      await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
+      // Maarg config lives in localStorage, not the cache, so it is cleared separately.
+      const { useMaargConfig } = await import("@/composables/useSeed")
+      useMaargConfig().clear()
+
+      /**
+       * Reset the remaining persisted stores AND composable module state.
+       *
+       * The retired stores (shopify, klaviyo, productStore, util, authorization) were replaced by
+       * composables holding MODULE-level session state — which an SPA logout does not unmount, so
+       * without the sessionScope sweep user B would read user A's landmark dates and access scopes.
+       * Composables register their own resets with `onSessionCleared`; this stays one call no matter
+       * how many composables carry session state.
+       */
+      const { clearSessionScopedState } = await import("@/composables/sessionScope")
+      clearSessionScopedState()
+
       const { useComposerStore } = await import("./composer")
       const { useWorkforceStore } = await import("./workforce")
-      const { useAuthorizationStore } = await import("./authorization")
-
-      useProductStore().clearProductStoreState()
-      useUtilStore().clearUtilState()
-      useNetSuiteStore().clearNetSuiteState()
-      useShopifyStore().clearShopifyState()
-      useKlaviyoStore().clear()
       useComposerStore().clearComposerState()
       useWorkforceStore().clearWorkforceState()
-      useAuthorizationStore().$reset()
     }
   },
 

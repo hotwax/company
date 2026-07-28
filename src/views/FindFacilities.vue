@@ -46,7 +46,14 @@
           {{ selectMode ? translate('Done') : translate('Select') }}
         </ion-button>
       </ion-list-header>
-      <main v-if="facilities?.length">
+      <!-- While the login seed is still running the cache is legitimately empty; showing the
+           "No facilities found" branch then would be wrong. -->
+      <main v-if="!hydrated">
+        <ion-item v-for="n in 6" :key="`sk-${n}`" lines="full">
+          <ion-label><ion-skeleton-text animated style="width: 40%" /></ion-label>
+        </ion-item>
+      </main>
+      <main v-else-if="facilities?.length">
         <div class="list-item" v-for="facility in facilities" :key="facility.facilityId" @click="selectMode ? toggleFacilitySelection(facility.facilityId) : viewFacilityDetails(facility.facilityId)">
           <ion-item lines="none">
             <ion-checkbox
@@ -165,6 +172,12 @@
 
 <script setup lang="ts">
 import {
+  useFacilities, useFacilityGroups, useFacilityTypes, useGroupMembershipIndex,
+  useFacilityMutations, useFacilityOrderCounts, useFacilitySearchQuery, useFacilityGroupMembershipReader,
+  useFacilitySellOnline,
+} from "@/composables/useFacilities";
+import { useProductStores } from "@/composables/useProductStores";
+import {
   IonButton,
   IonButtons,
   IonCheckbox,
@@ -198,26 +211,30 @@ import { addOutline, businessOutline, lockClosedOutline, lockOpenOutline, shareO
 import { DateTime } from 'luxon';
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common"
-import { useFacilityStore } from '@/store/facility';
-import { useUtilStore } from '@/store/util';
-import { useProductStore } from '@/store/productStore';
 import SearchFilterCard from '@/components/common/SearchFilterCard.vue';
 import UniformFilterLayout from '@/components/common/UniformFilterLayout.vue';
 import router from '@/router';
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
-const productStoreStore = useProductStore();
 
-const query = computed(() => facilityStore.getFacilityQuery);
-const productStores = computed(() => productStoreStore.getProductStores);
-const facilityTypes = computed(() => facilityStore.getFacilityTypes);
-const facilityGroups = computed(() => utilStore.getFacilityGroups);
-const inventoryGroups = computed(() => utilStore.getInventoryGroups);
+// Physical facilities only. The cache holds parkings too, which this screen never showed —
+// its previous fetch excluded the VIRTUAL_FACILITY hierarchy server-side.
+const { facilities: allCachedFacilities, hydrated } = useFacilities({ excludeVirtual: true });
+// The Type filter offers physical types only — the parking hierarchy is not selectable here.
+const { facilityTypes } = useFacilityTypes({ excludeVirtual: true });
+const { facilityGroups: allCachedGroups } = useFacilityGroups();
+const { productStores } = useProductStores();
+const { groupsByFacility, facilityIdsByGroup } = useGroupMembershipIndex();
+
+const { query, setQuery, resetQuery } = useFacilitySearchQuery();
+const { fetchOrderCounts } = useFacilityOrderCounts();
+const { fetchGroupMemberships } = useFacilityGroupMembershipReader();
+const { setGroupMembership } = useFacilitySellOnline();
+const facilityGroups = computed(() => allCachedGroups.value);
+const inventoryGroups = computed(() => allCachedGroups.value.filter((group: any) => group.facilityGroupTypeId === "CHANNEL_FAC_GROUP"));
 
 // Base list is the shared, already-cached facility list (fetched at login);
 // filtering/pagination below happen client-side instead of a dedicated search API call.
-const allFacilities = computed(() => utilStore.getFacilities);
+const allFacilities = computed(() => allCachedFacilities.value);
 // Per-facility group membership for the currently selected group filter, so
 // "Group" filtering matches real membership, not just a facility's primary group.
 const groupFacilityIds = ref<Set<string> | null>(null);
@@ -265,20 +282,22 @@ watch(filteredFacilities, (updatedFacilities: any[]) => {
 });
 
 onIonViewWillEnter(async () => {
-  // Seed caches are hydrated at login; fetch only whichever is still empty
-  // (e.g. first visit right after a fresh login on a slow connection).
-  await Promise.all([
-    facilityStore.fetchFacilityTypes(),
-    utilStore.facilityGroups.length ? Promise.resolve() : utilStore.fetchFacilityGroups(),
-    productStoreStore.productStores.length ? Promise.resolve() : productStoreStore.fetchProductStores(),
-    utilStore.facilities.length ? Promise.resolve() : utilStore.fetchFacilities(),
-    updateGroupFilter()
-  ]);
-  await enrichVisibleFacilities();
+  // Nothing to fetch but the volatile order counts — every list and lookup is already cached.
+  await updateGroupFilter();
 });
 
+/**
+ * Enrich whenever the visible set changes — on first cache emit, on filter change, and on paging.
+ *
+ * This CANNOT live in `onIonViewWillEnter` alone: the list now arrives asynchronously from
+ * IndexedDB, so at view-enter `facilities` is still empty, `pending` is empty, and the enrichment
+ * returns without fetching — leaving every row on a skeleton forever.
+ */
+watch(visibleFacilityIds, (ids: string[]) => {
+  if (ids.length) void enrichVisibleFacilities();
+}, { immediate: true });
+
 async function updateQuery() {
-  await facilityStore.updateFacilityQuery(query.value);
   visibleCount.value = Number(import.meta.env.VITE_VIEW_SIZE);
   await updateGroupFilter();
   await enrichVisibleFacilities();
@@ -288,14 +307,14 @@ function onSearchInput() {
   visibleCount.value = Number(import.meta.env.VITE_VIEW_SIZE);
   clearTimeout(searchDebounceHandle);
   searchDebounceHandle = setTimeout(async () => {
-    await facilityStore.updateFacilityQuery({ ...query.value, queryString: searchText.value });
+    setQuery({ queryString: searchText.value });
     await enrichVisibleFacilities();
   }, 300);
 }
 
 function flushSearch() {
   clearTimeout(searchDebounceHandle);
-  facilityStore.updateFacilityQuery({ ...query.value, queryString: searchText.value });
+  setQuery({ queryString: searchText.value });
   enrichVisibleFacilities();
 }
 
@@ -303,7 +322,7 @@ async function clearFilters() {
   clearTimeout(searchDebounceHandle);
   searchText.value = "";
   selectedFacilityIds.value = [];
-  facilityStore.updateFacilityQuery({ queryString: "", productStoreId: "", facilityTypeId: "", facilityGroupId: "" });
+  resetQuery();
   groupFacilityIds.value = null;
   visibleCount.value = Number(import.meta.env.VITE_VIEW_SIZE);
   await enrichVisibleFacilities();
@@ -372,18 +391,19 @@ async function openBulkCustomCapacityAlert() {
 
 async function applyBulkCapacity(maximumOrderLimit: number | string) {
   const facilityIds = [...selectedFacilityIds.value];
-  const results = await Promise.allSettled(facilityIds.map((facilityId: string) => facilityStore.updateFacility({ facilityId, maximumOrderLimit })));
+  const results = await Promise.allSettled(facilityIds.map((facilityId: string) => useFacilityMutations(facilityId).updateFacility({ facilityId, maximumOrderLimit })));
 
+  // `updateFacility` already refreshed each cached row, so this loop only reports failures.
+  // It used to re-refresh every success as well, which doubled the request count of a bulk edit —
+  // 50 selected facilities meant 100 refetches, the second half of them strictly sequential.
   const failedNames: string[] = [];
-  results.forEach((result: any, index: number) => {
+  for (const [index, result] of results.entries() as any) {
     const facilityId = facilityIds[index];
-    if (result.status === "fulfilled" && !commonUtil.hasError(result.value)) {
-      utilStore.patchFacility(facilityId, { maximumOrderLimit: maximumOrderLimit === "" ? null : maximumOrderLimit });
-    } else {
+    if (result.status !== "fulfilled" || commonUtil.hasError(result.value)) {
       failedNames.push(getFacilityName(facilityId));
       logger.error("Failed to update facility", result.status === "rejected" ? result.reason : result.value?.data);
     }
-  });
+  }
 
   if (failedNames.length) {
     commonUtil.showToast(translate("Failed to update fulfillment capacity for ", { facilityName: failedNames.join(", ") }));
@@ -417,19 +437,19 @@ async function applyBulkSellOnline(facilityGroupId: string, enable: boolean) {
   const facilityIds = [...selectedFacilityIds.value];
   const failedNames: string[] = [];
 
-  // Read current membership from the server rather than row enrichment: a
-  // selected facility may not be enriched (or visible) anymore, and adding an
-  // existing association would duplicate it.
-  const membershipsByFacility = await facilityStore.fetchFacilityGroupMemberships(facilityIds);
+  // Deliberately a SERVER read, not the cache: this guards against creating a duplicate
+  // association, and the login-time cache could be stale if a membership changed elsewhere.
+  // It runs only on this write path, so it does not affect page-load requests.
+  const membershipsByFacility = await fetchGroupMemberships(facilityIds);
 
   await Promise.all(facilityIds.map(async (facilityId: string) => {
     const membership = (membershipsByFacility[facilityId] || []).find((group: any) => group.facilityGroupId === facilityGroupId);
     try {
       let resp;
       if (enable && !membership) {
-        resp = await facilityStore.addFacilityToGroup({ facilityId, facilityGroupId, fromDate: DateTime.now().toMillis() });
+        resp = await useFacilityMutations(facilityId).addToGroup({ facilityGroupId, fromDate: DateTime.now().toMillis() });
       } else if (!enable && membership) {
-        resp = await facilityStore.updateFacilityToGroup({ facilityId, facilityGroupId, fromDate: membership.fromDate, thruDate: DateTime.now().toMillis() });
+        resp = await useFacilityMutations(facilityId).updateGroupAssociation({ facilityGroupId, fromDate: membership.fromDate, thruDate: DateTime.now().toMillis() });
       }
       if (resp && commonUtil.hasError(resp)) throw resp.data;
     } catch (err) {
@@ -439,7 +459,7 @@ async function applyBulkSellOnline(facilityGroupId: string, enable: boolean) {
   }));
 
   // Resync membership for everything touched so rows reflect server state.
-  const groupsByFacility = await facilityStore.fetchFacilityGroupMemberships(facilityIds);
+  const groupsByFacility = await fetchGroupMemberships(facilityIds);
   facilityIds.forEach((facilityId: string) => {
     const groupInformation = groupsByFacility[facilityId] || [];
     enrichmentById[facilityId] = {
@@ -470,21 +490,20 @@ async function updateGroupFilter() {
     groupFacilityIds.value = null;
     return;
   }
-  const members = await facilityStore.fetchGroupFacilities(query.value.facilityGroupId);
-  groupFacilityIds.value = new Set(members.map((member: any) => member.facilityId));
+  // Memberships are cached, so the group filter needs no request.
+  groupFacilityIds.value = new Set(facilityIdsByGroup.value[query.value.facilityGroupId] ?? []);
 }
 
 async function enrichVisibleFacilities() {
   const pending = facilities.value.filter((facility: any) => !facility.isEnriched).map((facility: any) => facility.facilityId);
   if (!pending.length) return;
 
-  const [orderCounts, groupsByFacility] = await Promise.all([
-    facilityStore.fetchFacilityOrderCounts(pending),
-    facilityStore.fetchFacilityGroupMemberships(pending)
-  ]);
+  // Order counts are volatile and never cached (they change constantly), so they are always
+  // fetched. Group memberships come from the cache, removing the second request.
+  const orderCounts = await fetchOrderCounts(pending);
 
   pending.forEach((facilityId: string) => {
-    const groupInformation = groupsByFacility[facilityId] || [];
+    const groupInformation = groupsByFacility.value[facilityId] || [];
     enrichmentById[facilityId] = {
       orderCount: orderCounts[facilityId] || 0,
       groupInformation,
@@ -516,13 +535,13 @@ async function updateSellInventoryOnlineSetting(event: any, facility: any, facil
   event.stopImmediatePropagation();
   // Using `not` as the click event returns the current status of toggle, but on click we want to change the toggle status
   const isChecked = !event.target.checked;
-  const result = await facilityStore.updateFacilityGroupAssociation(facility, facilityGroup, isChecked);
+  const result = await setGroupMembership(facility, facilityGroup, isChecked);
   if (result) enrichmentById[facility.facilityId] = { ...enrichmentById[facility.facilityId], ...result, isEnriched: true };
 }
 
 async function toggleSingleInventoryGroup(facility: any) {
   const isGroupAdded = !facility.groupInformation?.some((info: any) => info.facilityGroupId === inventoryGroups.value[0].facilityGroupId);
-  const result = await facilityStore.updateFacilityGroupAssociation(facility, inventoryGroups.value[0], isGroupAdded);
+  const result = await setGroupMembership(facility, inventoryGroups.value[0], isGroupAdded);
   if (result) enrichmentById[facility.facilityId] = { ...enrichmentById[facility.facilityId], ...result, isEnriched: true };
 }
 
@@ -590,9 +609,9 @@ async function onOrderLimitPopoverDismiss(event: any, facility: any) {
 
 async function updateFacilityOrderLimit(maximumOrderLimit: number | string, facility: any) {
   try {
-    const resp = await facilityStore.updateFacility({ facilityId: facility.facilityId, maximumOrderLimit });
+    // `updateFacility` refreshes the cached facility row itself, so this must not refresh again.
+    const resp = await useFacilityMutations(facility.facilityId).updateFacility({ maximumOrderLimit });
     if (!commonUtil.hasError(resp)) {
-      utilStore.patchFacility(facility.facilityId, { maximumOrderLimit: maximumOrderLimit === "" ? null : maximumOrderLimit });
       commonUtil.showToast(translate('Fulfillment capacity updated successfully for ', { facilityName: facility.facilityName }));
     } else {
       throw resp.data;

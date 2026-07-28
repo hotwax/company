@@ -99,6 +99,116 @@
           <ion-icon :icon="saveOutline" />
         </ion-fab-button>
       </ion-fab>
+
+      <ion-modal :is-open="showEditModal" @didDismiss="closeEditModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeEditModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Edit group") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <form @keyup.enter="saveEditGroup">
+            <ion-list>
+              <ion-item>
+                <ion-input
+                  label-placement="floating"
+                  :label="translate('Name')"
+                  v-model="formData.facilityGroupName"
+                />
+              </ion-item>
+              <ion-item>
+                <ion-input
+                  label-placement="floating"
+                  :label="translate('Internal ID')"
+                  :value="group.facilityGroupId"
+                  readonly
+                />
+              </ion-item>
+              <ion-item lines="none">
+                <ion-select
+                  :label="translate('Group type')"
+                  interface="popover"
+                  v-model="formData.facilityGroupTypeId"
+                >
+                  <ion-select-option value="">{{ translate("None") }}</ion-select-option>
+                  <ion-select-option
+                    v-for="type in facilityGroupTypes"
+                    :key="type.facilityGroupTypeId"
+                    :value="type.facilityGroupTypeId"
+                  >
+                    {{ type.description || type.facilityGroupTypeId }}
+                  </ion-select-option>
+                </ion-select>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-textarea
+                  :label="translate('Description')"
+                  label-placement="floating"
+                  :auto-grow="true"
+                  :counter="true"
+                  :maxlength="255"
+                  v-model="formData.description"
+                />
+              </ion-item>
+            </ion-list>
+
+            <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+              <ion-fab-button @click="saveEditGroup" @keyup.enter.stop>
+                <ion-icon :icon="saveOutline" />
+              </ion-fab-button>
+            </ion-fab>
+          </form>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="showProductStoreModal" @didDismiss="closeProductStoreModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeProductStoreModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Product stores") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-list>
+            <ion-item
+              v-for="productStore in productStores"
+              :key="productStore.productStoreId"
+              @click="toggleSelection(productStore)"
+            >
+              <ion-checkbox :checked="isSelected(productStore.productStoreId)">
+                <ion-label>
+                  {{ productStore.storeName || productStore.productStoreId }}
+                  <p>{{ productStore.productStoreId }}</p>
+                </ion-label>
+              </ion-checkbox>
+            </ion-item>
+            <ion-item v-if="!productStoresHydrated" lines="none">
+              <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+            </ion-item>
+            <!-- Only assert "none" once the seed sync has finished. -->
+            <ion-item v-else-if="!productStores.length" lines="none">
+              <ion-label>{{ translate("No product stores found") }}</ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button :disabled="!isModified" @click="saveProductStores()">
+              <ion-icon :icon="saveOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -107,66 +217,99 @@
 import {
   IonBackButton,
   IonButton,
+  IonButtons,
   IonCard,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
+  IonCheckbox,
   IonContent,
   IonFab,
   IonFabButton,
   IonHeader,
   IonIcon,
+  IonInput,
   IonItem,
   IonLabel,
   IonList,
   IonListHeader,
+  IonModal,
   IonNote,
   IonPage,
   IonReorder,
   IonReorderGroup,
   IonSearchbar,
+  IonSelect,
+  IonSelectOption,
+  IonTextarea,
   IonTitle,
   IonToolbar,
-  modalController,
-  onIonViewWillEnter
+  onIonViewWillEnter,
+  IonSkeletonText,
 } from '@ionic/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common";
-import { useFacilityStore } from '@/store/facility';
-import { useUtilStore } from '@/store/util';
+import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
+import { useProductStores } from '@/composables/useProductStores';
 import { api } from '@common';
 import { DateTime } from 'luxon';
-import { addCircleOutline, arrowForwardOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
-import EditFacilityGroupModal from '@/components/EditFacilityGroupModal.vue';
-import AddProductStoreToGroupModal from '@/components/AddProductStoreToGroupModal.vue';
+import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
 
 const props = defineProps<{ facilityGroupId: string }>();
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
+const groupMutations = useFacilityGroupMutations(props.facilityGroupId);
 
-const facilityGroupTypes = computed(() => facilityStore.getFacilityGroupTypes);
+// All three lists come from the login-time cache — nothing to fetch on entry.
+const { facilityGroupTypes } = useFacilityGroupTypes();
+const { productStores, hydrated: productStoresHydrated } = useProductStores();
+// The group, its members and its product-store links are ALL cached domains — this screen makes no
+// requests. Mutations refresh those domains, so the cache is the current state, not a stale copy.
+const { record: cachedGroup } = useFacilityGroupRecord(props.facilityGroupId);
+const { members: cachedMembers } = useGroupFacilities(props.facilityGroupId);
+const { associations: cachedGroupProductStores } = useFacilityGroupProductStores(props.facilityGroupId);
+const { facilities: cachedFacilities } = useFacilities();
 
-const group = ref<any>({});
-const productStoreCount = ref<number | null>(null);
-const allFacilities = ref<any[]>([]);
-const memberFacilities = ref<any[]>([]);
+// Derived, not copied: the cache emits asynchronously, so a one-shot read on view-enter sees an
+// empty table and never updates. These recompute on every cache write.
+const group = computed<any>(() => (cachedGroup.value as any)?.raw ?? cachedGroup.value ?? {});
+const productStoreCount = computed(() => cachedGroupProductStores.value.length);
+const allFacilities = computed<any[]>(() => cachedFacilities.value ?? []);
+const memberFacilities = computed<any[]>(() => {
+  const byId = Object.fromEntries(allFacilities.value.map((f: any) => [f.facilityId, f]));
+  return (cachedMembers.value ?? []).map((m: any) => ({
+    ...m,
+    facilityName: byId[m.facilityId]?.facilityName || m.facilityId,
+  }));
+});
 const selectedFacilities = ref<any[]>([]);
 const filteredAvailableFacilities = ref<any[]>([]);
 const facilitySearch = ref("");
 const isFacilitiesModified = ref(false);
 const isSaving = ref(false);
 
+// Edit facility group modal
+const showEditModal = ref(false);
+const formData = ref({
+  facilityGroupName: "",
+  facilityGroupTypeId: "",
+  description: ""
+});
+
+// Add product stores to group modal
+const showProductStoreModal = ref(false);
+const currentAssociations = ref<any[]>([]);
+const selectedProductStoreIds = ref<Set<string>>(new Set());
+const isModified = computed(() => {
+  const currentIds = new Set(currentAssociations.value.map((a: any) => a.productStoreId));
+  if (currentIds.size !== selectedProductStoreIds.value.size) return true;
+  for (const id of selectedProductStoreIds.value) if (!currentIds.has(id)) return true;
+  return false;
+});
+
 onIonViewWillEnter(async () => {
   isSaving.value = false;
   facilitySearch.value = "";
-  await Promise.all([
-    facilityStore.fetchFacilityGroupTypes(),
-    loadGroup(),
-    loadAllFacilities(),
-    loadProductStoreCount()
-  ]);
-  await loadMemberFacilities();
+  seedSelection();
   filterAvailableFacilities();
 });
 
@@ -174,79 +317,120 @@ function getFacilityGroupTypeDescription(facilityGroupTypeId: string) {
   return facilityGroupTypes.value.find((type: any) => type.facilityGroupTypeId === facilityGroupTypeId)?.description;
 }
 
-async function loadProductStoreCount() {
+
+
+async function openProductStoreModal() {
+  currentAssociations.value = [];
+  selectedProductStoreIds.value = new Set();
+  showProductStoreModal.value = true;
+  fetchCurrentAssociations();
+}
+
+function fetchCurrentAssociations() {
   try {
-    const resp = await api({
-      url: "oms/groupProductStores",
-      method: "get",
-      params: { facilityGroupId: props.facilityGroupId, filterByDate: "Y", pageNoLimit: true }
-    });
-    productStoreCount.value = (!commonUtil.hasError(resp) && resp.data?.length) ? resp.data.length : 0;
+    const rows = cachedGroupProductStores.value ?? [];
+    if (rows.length) {
+      currentAssociations.value = rows;
+      selectedProductStoreIds.value = new Set(rows.map((a: any) => a.productStoreId));
+    } else {
+      currentAssociations.value = [];
+      selectedProductStoreIds.value = new Set();
+    }
   } catch (err) {
     logger.error("Failed to fetch group product stores", err);
   }
 }
 
-async function openProductStoreModal() {
-  const modal = await modalController.create({
-    component: AddProductStoreToGroupModal,
-    componentProps: { facilityGroup: group.value }
-  });
-
-  modal.onDidDismiss().then(({ data }: any) => {
-    if (data?.updatedCount !== undefined) productStoreCount.value = data.updatedCount;
-  });
-
-  modal.present();
+function isSelected(productStoreId: string) {
+  return selectedProductStoreIds.value.has(productStoreId);
 }
 
-async function openEditModal() {
-  const modal = await modalController.create({
-    component: EditFacilityGroupModal,
-    componentProps: { facilityGroup: group.value }
-  });
-
-  modal.onDidDismiss().then(({ data }: any) => {
-    if (data?.updated) {
-      group.value = { ...group.value, ...data.updated };
-      utilStore.patchFacilityGroup(props.facilityGroupId, data.updated);
-    }
-  });
-
-  modal.present();
+function toggleSelection(store: any) {
+  const next = new Set(selectedProductStoreIds.value);
+  if (next.has(store.productStoreId)) {
+    next.delete(store.productStoreId);
+  } else {
+    next.add(store.productStoreId);
+  }
+  selectedProductStoreIds.value = next;
 }
 
-async function loadGroup() {
+function closeProductStoreModal() {
+  showProductStoreModal.value = false;
+}
+
+async function saveProductStores() {
+  const currentIds = new Set(currentAssociations.value.map((a: any) => a.productStoreId));
+  const associationByStoreId = Object.fromEntries(currentAssociations.value.map((a: any) => [a.productStoreId, a]));
+
+  const toAdd = [...selectedProductStoreIds.value].filter((id) => !currentIds.has(id));
+  const toRemove = [...currentIds].filter((id) => !selectedProductStoreIds.value.has(id));
+
+  // The composable owns both directions (a removal is a POST closing the row with a thruDate) and
+  // refreshes the cached associations afterwards.
+  const { failed: anyFailed } = await groupMutations.saveProductStores(
+    toAdd,
+    toRemove.map((productStoreId) => ({ productStoreId, fromDate: associationByStoreId[productStoreId].fromDate })),
+  );
+
+  if (anyFailed) {
+    commonUtil.showToast(translate("Failed to update some product store associations"));
+  } else {
+    commonUtil.showToast(translate("Product stores updated"));
+  }
+
+  // No optimistic patch: `saveProductStores` refreshes the cached domain and the count is derived.
+  closeProductStoreModal();
+}
+
+function openEditModal() {
+  formData.value = {
+    facilityGroupName: group.value.facilityGroupName || "",
+    facilityGroupTypeId: group.value.facilityGroupTypeId || "",
+    description: group.value.description || ""
+  };
+  showEditModal.value = true;
+}
+
+function closeEditModal() {
+  showEditModal.value = false;
+}
+
+async function saveEditGroup() {
+  if (!formData.value.facilityGroupName?.trim()) {
+    commonUtil.showToast(translate("Please fill all the required fields"));
+    return;
+  }
+
   try {
-    const resp = await facilityStore.fetchFacilityGroup(props.facilityGroupId);
+    const resp = await groupMutations.updateGroup({ ...formData.value });
     if (!commonUtil.hasError(resp)) {
-      group.value = resp.data || {};
+      commonUtil.showToast(translate("Group details updated"));
+      // The cache refresh inside the composable is what updates the group lists. The local `group`
+      // No optimistic patch: `updateGroup` re-snapshots the facilityGroup domain and `group` is
+      // derived from that cache, so the edit shows up on its own.
+      closeEditModal();
+    } else {
+      throw resp.data;
     }
   } catch (err) {
-    logger.error("Failed to fetch facility group", err);
+    logger.error("Failed to update group details", err);
+    commonUtil.showToast(translate("Failed to update group details"));
   }
 }
 
-async function loadAllFacilities() {
-  // Physical facilities come from the shared, login-time cache instead of a
-  // paged oms/facilities sweep.
-  if (!utilStore.facilities.length) await utilStore.fetchFacilities();
-  allFacilities.value = utilStore.getFacilities;
+
+
+
+
+/** Reset the edit selection to what is currently stored. */
+function seedSelection() {
+  selectedFacilities.value = JSON.parse(JSON.stringify(memberFacilities.value));
+  filterAvailableFacilities();
 }
 
-async function loadMemberFacilities() {
-  try {
-    const members = await (facilityStore as any).fetchGroupFacilities(props.facilityGroupId);
-    const facilityById = Object.fromEntries(allFacilities.value.map((facility: any) => [facility.facilityId, facility]));
-    memberFacilities.value = members.map((member: any) => ({
-      ...member,
-      facilityName: facilityById[member.facilityId]?.facilityName || member.facilityId
-    }));
-    selectedFacilities.value = JSON.parse(JSON.stringify(memberFacilities.value));
-  } catch (err) {
-    logger.error("Failed to load member facilities", err);
-  }
-}
+// Members arrive asynchronously and change after every save, so reseed on each emit.
+watch(memberFacilities, () => seedSelection(), { immediate: true });
 
 function filterAvailableFacilities() {
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
@@ -313,23 +497,14 @@ async function saveFacilityMemberships() {
       .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: memberByFacilityId[facility.facilityId].fromDate, sequenceNum: facility.sequenceNum }))
   ];
 
-  const requests: Promise<any>[] = [];
-  if (toCreate.length) {
-    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "post", data: toCreate }));
-  }
-  if (toStore.length) {
-    requests.push(api({ url: `oms/facilityGroups/${props.facilityGroupId}/facilities`, method: "put", data: toStore }));
-  }
-
-  const results = await Promise.allSettled(requests);
-  const anyFailed = results.some((result) => result.status === "rejected");
+  const { failed: anyFailed } = await groupMutations.saveMembers(toCreate, toStore);
 
   if (anyFailed) {
     commonUtil.showToast(translate("Failed to update some facilities"));
   } else {
     commonUtil.showToast(translate("Facilities updated"));
     isFacilitiesModified.value = false;
-    await loadMemberFacilities();
+    seedSelection();
   }
   isSaving.value = false;
 }

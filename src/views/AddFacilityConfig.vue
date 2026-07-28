@@ -109,18 +109,17 @@ import {
 import { ref } from "vue";
 import { addCircleOutline, ellipsisVerticalOutline, locationOutline, removeCircleOutline, star, starOutline } from "ionicons/icons";
 import { api, commonUtil, logger, translate } from "@common";
-import { useFacilityStore } from "@/store/facility";
-import { useUtilStore } from "@/store/util";
-import { useProductStore } from "@/store/productStore";
-import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
+import { useFacilityGroupMutations, useFacilityMutations } from "@/composables/useFacilities";
+import { useShopifyShopIdForProductStore } from "@/composables/useShopify";
+import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
 import router from "@/router";
 import { DateTime } from "luxon";
 
 const props = defineProps<{ facilityId: string }>();
 
-const facilityStore = useFacilityStore();
-const utilStore = useUtilStore();
-const productStoreStore = useProductStore();
+const facilityMutations = useFacilityMutations(props.facilityId);
+const { shopifyShopIdFor } = useShopifyShopIdForProductStore();
+const groupMutations = useFacilityGroupMutations();
 
 const selectedProductStores = ref<any[]>([]);
 const primaryProductStoreId = ref("");
@@ -130,7 +129,6 @@ onIonViewWillEnter(async () => {
   selectedProductStores.value = [];
   primaryProductStoreId.value = "";
   fulfillmentSettings.value = { FAC_GRP: false, PICKUP: false, OMS_FULFILLMENT: false };
-  if (!productStoreStore.productStores.length) await productStoreStore.fetchProductStores();
 });
 
 function updatePrimary(productStoreId: string) {
@@ -160,13 +158,13 @@ async function saveFulfillmentSettings() {
     .filter(([, enabled]) => enabled)
     .map(([groupId]) => groupId);
 
+  // NOT `oms/facilityGroups/{groupId}/facilities` — that route does not exist (no nested
+  // `facilities` resource under `oms/facilityGroups/{id}` in oms.rest.xml), so this silently 404'd
+  // and no fulfillment setting was ever applied. The real route is per-facility, and `addToGroup`
+  // also refreshes the cached memberships.
   const results = await Promise.allSettled(
-    groupsToAdd.map((groupId) =>
-      api({
-        url: `oms/facilityGroups/${groupId}/facilities`,
-        method: "post",
-        data: { facilityId: props.facilityId, fromDate: DateTime.now().toMillis() }
-      })
+    groupsToAdd.map((facilityGroupId) =>
+      facilityMutations.addToGroup({ facilityGroupId, fromDate: DateTime.now().toMillis() })
     )
   );
   if (results.some((result) => result.status === "rejected")) {
@@ -177,8 +175,7 @@ async function saveFulfillmentSettings() {
 async function addProductStoresToFacility() {
   const results = await Promise.allSettled(
     selectedProductStores.value.map((store: any) =>
-      facilityStore.createProductStoreFacility({
-        facilityId: props.facilityId,
+      facilityMutations.addProductStore({
         productStoreId: store.productStoreId,
         fromDate: DateTime.now().toMillis()
       })
@@ -190,7 +187,7 @@ async function addProductStoresToFacility() {
 }
 
 async function makeProductStorePrimary() {
-  const shopifyShopId = await utilStore.fetchShopifyShopForProductStores([primaryProductStoreId.value]);
+  const shopifyShopId = shopifyShopIdFor(primaryProductStoreId.value);
   if (!shopifyShopId) return;
 
   // ensure the FEATURING facility group exists
@@ -199,19 +196,15 @@ async function makeProductStorePrimary() {
     const checkResp = await api({ url: `oms/facilityGroups/${shopifyShopId}`, method: "get" });
     if (commonUtil.hasError(checkResp) || !checkResp.data?.facilityGroupId) {
       const storeName = selectedProductStores.value.find((productStore: any) => productStore.productStoreId === primaryProductStoreId.value)?.storeName || primaryProductStoreId.value;
-      await api({
-        url: "oms/facilityGroups",
-        method: "post",
-        data: { facilityGroupId: shopifyShopId, facilityGroupTypeId: "FEATURING", facilityGroupName: storeName }
+      await groupMutations.createGroup({
+        facilityGroupId: shopifyShopId,
+        facilityGroupTypeId: "FEATURING",
+        facilityGroupName: storeName
       });
     }
   } catch { /* group creation failed — still try to set primary */ }
 
-  const resp = await api({
-    url: `oms/facilities/${props.facilityId}`,
-    method: "put",
-    data: { primaryFacilityGroupId: facilityGroupId }
-  });
+  const resp = await facilityMutations.updateFacility({ primaryFacilityGroupId: facilityGroupId });
   if (commonUtil.hasError(resp)) {
     throw new Error(translate("Failed to make product store as primary."));
   }

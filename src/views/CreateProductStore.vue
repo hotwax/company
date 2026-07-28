@@ -4,7 +4,7 @@
       <ion-toolbar>
         <ion-back-button default-href="/product-store" slot="start"></ion-back-button>
         <ion-title>{{ translate("Create product store") }}</ion-title>
-        <ion-progress-bar value="0.25" />
+        <ion-progress-bar :value="0.25" />
       </ion-toolbar>
     </ion-header>
 
@@ -24,7 +24,7 @@
           <ion-input ref="storeId" v-model="formData.productStoreId" @ionChange="validateGroupId($event.detail.value)" @ionBlur="markGroupIdTouched" label-placement="floating" :label="translate('ID')" :errorText="translate('Product store ID cannot be more than 20 characters.')" :helper-text="translate('Product store ID represents an unique ID for your product store')" :clear-input="true" />
         </ion-item>
         <ion-item lines="none">
-          <ion-select interface="popover" :placeholder="translate('Select')" v-model="formData.defaultCurrencyUomId">
+          <ion-select interface="popover" :disabled="!currenciesReady" :placeholder="translate('Select')" v-model="formData.defaultCurrencyUomId">
             <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
             <ion-select-option v-for="currency in currencies" :key="currency.uomId" :value="currency.uomId">{{ currency.description}} ({{ currency.abbreviation }})</ion-select-option>
           </ion-select>
@@ -53,23 +53,55 @@
           <ion-icon slot="end" :icon="arrowForwardOutline"/>
         </ion-button>
       </main>
+
+      <ion-modal :is-open="showSelectOperatingCountriesModal" @didDismiss="closeSelectOperatingCountriesModal">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="closeSelectOperatingCountriesModal()">
+                <ion-icon slot="icon-only" :icon="closeOutline" />
+              </ion-button>
+            </ion-buttons>
+            <ion-title>{{ translate("Select operating countries") }}</ion-title>
+          </ion-toolbar>
+        </ion-header>
+
+        <ion-content>
+          <ion-searchbar :placeholder="translate('Search country')" v-model="queryString" @keydown.enter="updateQuery()" />
+
+          <ion-list>
+            <ion-item v-for="country in filteredCountries" :key="country.geoId" @click="toggleCountrySelection(country)">
+              <ion-checkbox :checked="isAlreadySelected(country.geoId)" justify="space-between">
+                <ion-label>
+                  <p class="overline">{{ country.geoId }}</p>
+                  {{ country.geoName ? country.geoName : country.geoId }}
+                </ion-label>
+              </ion-checkbox>
+            </ion-item>
+          </ion-list>
+
+          <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+            <ion-fab-button :disabled="!areCountriesUpdated()" @click="saveCountries()">
+              <ion-icon :icon="checkmarkOutline" />
+            </ion-fab-button>
+          </ion-fab>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonButton, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
-import { arrowForwardOutline, closeCircleOutline, mapOutline } from "ionicons/icons";
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonProgressBar, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonText, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { arrowForwardOutline, checkmarkOutline, closeCircleOutline, closeOutline, mapOutline } from "ionicons/icons";
+import { commonUtil, emitter, logger, translate } from '@common'
+import { useCurrencies, useGeos, useOrganization } from '@/composables/useSeed';
 import router from "@/router";
-import { useProductStore } from '@/store/productStore';
-import { useUtilStore } from '@/store/util';
 import { computed, ref } from "vue";
-import SelectOperatingCountriesModal from "@/components/SelectOperatingCountriesModal.vue";
 import { generateInternalId } from '@/utils';
+import { useProductStoreCreation, useProductStores } from "@/composables/useProductStores";
 
-const productStoreStore = useProductStore();
-const utilStore = useUtilStore();
+const { addDbicCountries, createStore, updateCompany } = useProductStoreCreation();
 
 const formData = ref({
   companyName: "",
@@ -79,18 +111,32 @@ const formData = ref({
 }) as any;
 const selectedCountries = ref([]) as any;
 const storeId = ref({}) as any;
-const currencies = computed(() => utilStore.currencies)
 
-const productStores = computed(() => productStoreStore.productStores)
-const dbicCountriesCount = computed(() => utilStore.getDBICCountriesCount)
-const company = computed(() => productStoreStore.company)
-const organizationPartyId = computed(() => utilStore.organizationPartyId)
+// All reference data below is cached at login. `organizationPartyId` used to be read from util
+// state that `prefetchReferenceData` populated — an invisible dependency; it is now loaded
+// explicitly on entry and memoised for the session.
+const { currencies, hydrated: currenciesReady } = useCurrencies()
+const { countries, dbicCountries } = useGeos()
+const { organizationPartyId, company, loadCompany, clearCompany } = useOrganization()
+
+// From the cache — this guard ("is this the first store?") previously depended on
+// `prefetchReferenceData` having populated the store, and would have read empty without it.
+const { productStores } = useProductStores()
+// Derived from the cached geoAssoc table rather than its own `toGeoId=DBIC` request.
+const dbicCountriesCount = computed(() => dbicCountries.value.length)
+
+const showSelectOperatingCountriesModal = ref(false);
+const queryString = ref("");
+const filteredCountries = ref([]) as any;
+const selectedCountryValues = ref([]) as any;
+const operatingCountries = countries;
 
 onIonViewWillEnter(async () => {
-  await utilStore.fetchDBICCountries();
-  productStoreStore.fetchCompany();
-  if(!dbicCountriesCount.value) await utilStore.fetchOperatingCountries();
-  await utilStore.fetchCurrencies({ uomTypeEnumId: 'UT_CURRENCY_MEASURE', pageSize: 250 });
+  // Countries, DBIC associations and currencies are all cached at login. The organization record
+  // is the only live read left, and it resolves the partyId first — the store version read that id
+  // from state something else was expected to populate, and requested `organizations/?partyId=`
+  // once that went away.
+  await loadCompany();
 })
 
 async function manageConfigurations() {
@@ -125,13 +171,13 @@ async function manageConfigurations() {
       payload["companyName"] = formData.value.companyName
     }
 
-    resp = await productStoreStore.createProductStore(payload);
+    resp = await createStore(payload);
 
     if(!commonUtil.hasError(resp)) {
       const productStoreId = resp.data.productStoreId;
       
       if(!dbicCountriesCount.value) {
-        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => productStoreStore.addDBICCountries({
+        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => addDbicCountries({
             geoId: country.geoId,
             toGeoId: "DBIC",
             geoAssocTypeEnumId: "GROUP_MEMBER"
@@ -145,7 +191,8 @@ async function manageConfigurations() {
       }
       
       if(!productStores.value.length && formData.value.companyName) {
-        await productStoreStore.updateCompany({ ...company.value, groupName: formData.value.companyName });
+        await updateCompany({ ...company.value, partyId: organizationPartyId.value, groupName: formData.value.companyName });
+        clearCompany(); // the memo now holds the old name
       }
 
       commonUtil.showToast(translate("Product store created successfully."))
@@ -162,21 +209,42 @@ async function manageConfigurations() {
   emitter.emit("dismissLoader");
 }
 
-async function openSelectOperatingCountriesModal() {
-  const modal = await modalController.create({
-    component: SelectOperatingCountriesModal,
-    componentProps: {
-      selectedCountries: selectedCountries.value
-    }
-  })
+function openSelectOperatingCountriesModal() {
+  selectedCountryValues.value = selectedCountries.value.length ? JSON.parse(JSON.stringify(selectedCountries.value)) : [];
+  filteredCountries.value = JSON.parse(JSON.stringify(operatingCountries.value));
+  queryString.value = "";
+  showSelectOperatingCountriesModal.value = true;
+}
 
-  modal.onDidDismiss().then((result: any) => {
-    if(result.data?.selectedCountries) {
-      selectedCountries.value = result.data?.selectedCountries
-    }
-  })
+function updateQuery() {
+  filteredCountries.value = operatingCountries.value.filter((country: any) => (country.geoName.toLowerCase().includes(queryString.value.toLowerCase()) || country.geoId.toLowerCase().includes(queryString.value.toLowerCase())))
+}
 
-  modal.present()
+function isAlreadySelected(geoId: any) {
+  return selectedCountryValues.value.some((country: any) => country.geoId === geoId);
+}
+
+function toggleCountrySelection(selectedCountry: any) {
+  if(isAlreadySelected(selectedCountry.geoId)) {
+    selectedCountryValues.value = selectedCountryValues.value.filter((country: any) => country.geoId !== selectedCountry.geoId)
+  } else {
+    selectedCountryValues.value.push(selectedCountry);
+  }
+}
+
+function areCountriesUpdated() {
+  if(selectedCountries.value.length !== selectedCountryValues.value.length) return true;
+
+  return selectedCountryValues.value.some((selectedCountry: any) => !selectedCountries.value.find((country: any) => country.geoId === selectedCountry.geoId));
+}
+
+function saveCountries() {
+  selectedCountries.value = selectedCountryValues.value;
+  closeSelectOperatingCountriesModal();
+}
+
+function closeSelectOperatingCountriesModal() {
+  showSelectOperatingCountriesModal.value = false;
 }
 
 function removeCountry(geoId: string) {
@@ -210,5 +278,9 @@ function markGroupIdTouched() {
       max-width: 375px;
       margin: auto;
     }
+  }
+
+  ion-modal ion-content {
+    --padding-bottom: 80px;
   }
 </style>

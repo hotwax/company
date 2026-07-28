@@ -1,4 +1,4 @@
-import type { ProductStoreEmailSetting } from "@/store/klaviyo";
+import type { ProductStoreEmailSetting } from "@/composables/useKlaviyo";
 
 export const KLAVIYO_SUPPORTED_EMAIL_TYPES: { enumId: string; fallbackLabel: string }[] = [
   { enumId: "READY_FOR_PICKUP", fallbackLabel: "BOPIS Order Ready for Pickup" },

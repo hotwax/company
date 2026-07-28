@@ -1,0 +1,133 @@
+<template>
+  <ion-content>
+    <ion-list>
+      <ion-list-header>{{ currentFacilityUser?.groupName }}</ion-list-header>
+      <ion-item button @click="viewDetails()">
+        {{ translate("View details") }}
+        <ion-icon slot="end" :icon="keyOutline" />
+      </ion-item>
+      <ion-item button @click="sendResetPasswordEmail()">
+        {{ translate("Reset password email") }}
+        <ion-icon slot="end" :icon="mailOutline" />
+      </ion-item>
+      <ion-item button lines="none" @click="unlinkFacilityLoginAlert()">
+        {{ translate("Unlink") }}
+        <ion-icon slot="end" :icon="removeCircleOutline" />
+      </ion-item>
+    </ion-list>
+  </ion-content>
+</template>
+
+<script setup lang="ts">
+import {
+  IonContent,
+  IonIcon,
+  IonItem,
+  IonList,
+  IonListHeader,
+  alertController,
+  popoverController
+} from "@ionic/vue";
+import { removeCircleOutline, keyOutline, mailOutline } from "ionicons/icons";
+import { commonUtil, emitter, logger, translate } from "@common";
+import { DateTime } from "luxon";
+import router from "@/router";
+import { useFacilityMutations } from "@/composables/useFacilities";
+import { useUserAccountActions } from "@/composables/useSecurity";
+
+const props = defineProps(['currentFacility', 'currentFacilityUser', 'facilityTypeDesc']);
+// Scoped to the user's facility — the party row carries its own facilityId.
+const mutations = useFacilityMutations(props.currentFacilityUser?.facilityId);
+const { sendResetPasswordEmail: sendResetPassword } = useUserAccountActions();
+
+function viewDetails() {
+  popoverController.dismiss();
+  router.push(`/user-details/${props.currentFacilityUser.partyId}`);
+}
+
+async function sendResetPasswordEmail() {
+  emitter.emit('presentLoader');
+  try {
+    const resp = await sendResetPassword(props.currentFacilityUser.userLoginId);
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate('Password reset email sent successfully.'));
+    } else {
+      throw resp.data;
+    }
+  } catch (error) {
+    commonUtil.showToast(translate('Failed to send password reset email.'));
+    logger.error('Failed to send password reset email', error);
+  }
+  emitter.emit('dismissLoader');
+  popoverController.dismiss();
+}
+
+// TODO: Enable when moqui UserAccount disabling is supported in the backend
+// async function removePartyFromFacilityCompletely(payload: any) {
+//   try {
+//     const resp = await (facilityStore as any).fetchFacilityPartyRoles({ facilityId: payload.facilityId, partyId: payload.partyId });
+//     if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
+//       const responses = await Promise.all(resp.data.map((facilityParty: any) =>
+//         (facilityStore as any).removePartyFromFacility({ ...facilityParty, thruDate: DateTime.now().toMillis() })
+//       ));
+//       responses.forEach(r => { if (commonUtil.hasError(r)) throw r.data; });
+//     } else {
+//       throw resp.data;
+//     }
+//   } catch (err) {
+//     commonUtil.showToast(translate('Failed to remove party from facility'));
+//     logger.error('Failed to remove party from facility', err);
+//     return;
+//   }
+// }
+
+async function unlinkFacilityLogin() {
+  emitter.emit('presentLoader');
+  try {
+    // Removal closes the party association with a thruDate.
+    const resp = await mutations.removeParty({
+      partyId: props.currentFacilityUser.partyId,
+      roleTypeId: props.currentFacilityUser.roleTypeId,
+      fromDate: props.currentFacilityUser.fromDate,
+      thruDate: DateTime.now().toMillis()
+    });
+    if (!commonUtil.hasError(resp)) {
+      commonUtil.showToast(translate("Facility login removed."));
+    } else {
+      throw resp.data;
+    }
+
+    // TODO: Enable when moqui UserAccount disabling is supported in the backend
+    // await removePartyFromFacilityCompletely({ facilityId: props.currentFacility.facilityId, partyId: props.currentFacilityUser.partyId });
+    // const blockResp = await (facilityStore as any).updateUserLoginStatus({
+    //   enabled: 'N',
+    //   partyId: props.currentFacilityUser.partyId,
+    //   userLoginId: props.currentFacilityUser.userLoginId
+    // });
+    // if (!commonUtil.hasError(blockResp)) {
+    //   commonUtil.showToast(translate("Facility login removed."));
+    // } else {
+    //   throw blockResp.data;
+    // }
+
+    // Parties are live per visit; the opener reloads them on dismiss.
+  } catch (err) {
+    commonUtil.showToast(translate("Failed to remove facility login."));
+    logger.error('Failed to remove facility login', err);
+  }
+  emitter.emit('dismissLoader');
+  popoverController.dismiss();
+}
+
+async function unlinkFacilityLoginAlert() {
+  const alert = await alertController.create({
+    header: translate(`Unlink ${props.facilityTypeDesc} login`),
+    message: translate('Are you sure you want to unlink this login from the facility?'),
+    buttons: [
+      { text: translate("Cancel") },
+      { text: translate("Confirm"), handler: async () => { await unlinkFacilityLogin(); } }
+    ]
+  });
+  return alert.present();
+}
+</script>

@@ -102,15 +102,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch, type ComputedRef, type Ref } from "vue";
 import { IonBackButton, IonButton, IonCheckbox, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonSelect, IonSelectOption, IonText, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewWillEnter } from "@ionic/vue";
 import router from "@/router";
+import { useFacilities } from "@/composables/useFacilities";
+import { useProductStores } from "@/composables/useProductStores";
 import { useUserStore } from "@/store/user";
-import { useUtilStore } from "@/store/util";
 import { addCircleOutline, arrowForwardOutline, documentTextOutline, eyeOffOutline, eyeOutline } from "ionicons/icons";
 import { commonUtil, translate, logger } from "@common";
-import SelectFacilityModal from "@/components/SelectFacilityModal.vue";
-import SelectProductStoreModal from "@/components/SelectProductStoreModal.vue";
+import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
+import SelectProductStoreModal from "@/components/product-store/SelectProductStoreModal.vue";
 import { getResponseErrorMessage } from "@/utils";
 
 const props = defineProps({
@@ -121,7 +122,6 @@ const props = defineProps({
 });
 
 const userStore = useUserStore();
-const utilStore = useUtilStore();
 
 const passwordRef = ref<any>(null);
 
@@ -199,8 +199,12 @@ const userTemplates = [
 ];
 
 const selectedUser = computed(() => userStore.selectedUser);
-const productStores = computed(() => utilStore.getProductStores);
-const allFacilities = computed(() => utilStore.getFacilities);
+// Cached, reactive — no fetch needed. Both tables hydrate asynchronously, so the view-enter
+// defaults below wait on the `hydrated` flags instead of assuming the data is already present.
+// The old store fetch excluded virtual (parking) facilities server-side; `excludeVirtual` keeps
+// that rule.
+const { productStores, hydrated: productStoresHydrated } = useProductStores();
+const { facilities: allFacilities, hydrated: facilitiesHydrated } = useFacilities({ excludeVirtual: true });
 
 onMounted(() => {
   if(!isFacilityLogin()) {
@@ -212,19 +216,35 @@ onMounted(() => {
 onIonViewWillEnter(async () => {
   clearFormData();
   await userStore.getSelectedUserDetails({ partyId: props.partyId });
-  await utilStore.fetchFacilities();
-  await utilStore.fetchProductStores();
-  // Initially all product stores come selected, this must run after the fetch above resolves
+  // Initially all product stores come selected, this must run once the cached table has hydrated
   // so the count on the "Product stores" button reflects the actual list, not an empty snapshot.
-  selectedProductStores.value = productStores.value;
-  if(isFacilityLogin()) {
-    const addedFacilityIds = selectedUser.value.facilities?.map((facility: any) => facility.facilityId) || [];
-    const addedFacilities = allFacilities.value.filter((facility: any) => addedFacilityIds.includes(facility.facilityId));
-    facilities.value = addedFacilities;
-    selectedFacilities.value = addedFacilities;
-  }
+  whenHydrated(productStoresHydrated, () => {
+    selectedProductStores.value = productStores.value;
+  });
+  whenHydrated(facilitiesHydrated, () => {
+    if(isFacilityLogin()) {
+      const addedFacilityIds = selectedUser.value.facilities?.map((facility: any) => facility.facilityId) || [];
+      const addedFacilities = allFacilities.value.filter((facility: any) => addedFacilityIds.includes(facility.facilityId));
+      facilities.value = addedFacilities;
+      selectedFacilities.value = addedFacilities;
+    }
+  });
   await initializeFormData();
 });
+
+/**
+ * Run `then` as soon as `source` is true — now if it already is, otherwise on the first flip.
+ * Same helper as ShopifyProductSync.vue: the obvious inline `watch(..., { immediate: true })`
+ * form is a TDZ trap on a warm cache, where the callback runs before `stop` is assigned.
+ */
+function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => unknown) {
+  if(source.value) { void then(); return; }
+  const stop = watch(source, (ready) => {
+    if(!ready) return;
+    stop();
+    void then();
+  });
+}
 
 const isFacilityLogin = () => {
   return selectedUser.value && selectedUser.value.partyTypeId === "PARTY_GROUP";

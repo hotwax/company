@@ -29,7 +29,7 @@ const STUB_FILE = path.resolve(projectRoot, 'src/stubs/external.js')
 function resolveCommonDeps() {
   return {
     name: 'resolve-common-deps',
-    resolveId(id, importer) {
+    resolveId(id: string, importer: string | undefined) {
       // Stub unused packages with a real stub file in dev; build uses rollupOptions.external
       if (COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))) {
         return STUB_FILE
@@ -75,7 +75,12 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['luxon', 'mitt', 'pinia', 'vue-i18n', 'vue-logger-plugin', 'cron-parser', 'axios', 'axios-cache-adapter'],
+    // `vue-router` is imported directly by several lazily-loaded views (useRouter,
+    // onBeforeRouteLeave) while the router module itself uses @ionic/vue-router. Because the plain
+    // package was only discovered during a dynamic import, the dev server answered its dep request
+    // with 504 "Outdated Optimize Dep" and those routes failed to mount. Prebundling it up front
+    // removes that whole class of failure.
+    include: ['luxon', 'mitt', 'pinia', 'vue-router', 'vue-i18n', 'vue-logger-plugin', 'cron-parser', 'axios', 'axios-cache-adapter'],
     // Force CommonJS → ESM interop for packages with CJS-only default exports
     esbuildOptions: {
       target: 'esnext'
