@@ -218,25 +218,32 @@ concept is the smell this rule prevents.
 | [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups and the permission catalog |
 | [`useNetSuite.ts`](src/composables/useNetSuite.ts) | The NetSuite surface: cached reads + direct REST writes with a domain resync |
 | [`useProductUpdateHistory.ts`](src/composables/useProductUpdateHistory.ts) | Product-update history rows |
+| [`useProductStoreData.ts`](src/composables/useProductStoreData.ts) | The product-store SETUP surface the onboarding wizard drives: store settings, its facilities, and the Shopify job status. Replaced `store/productStore` |
+| [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |
+| [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
+| [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
+| [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
-| [`useLiveDashboard.ts`](src/composables/useLiveDashboard.ts) | Tick/visibility/in-flight guard for dashboard-feel pages. **Currently unused** — the cache layer replaced most of its job |
+| [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |
 
 ## 6. Pinia stores — what survives
 
-Stores are **not** the place for server data any more. What legitimately remains:
+Stores are **not** the place for server data any more. **Three remain, and that is the whole list:**
 
-- Session and identity: [`user.ts`](src/store/user.ts) (also the `postLogin`/`postLogout` hooks),
-  [`authorization.ts`](src/store/authorization.ts), [`appPermissions.ts`](src/store/appPermissions.ts).
-- Multi-step UI/wizard state: [`productStoreOnboarding.ts`](src/store/productStoreOnboarding.ts).
+- Session and identity: [`user.ts`](src/store/user.ts) (also the `postLogin`/`postLogout` hooks).
 - The AI agent surface: [`composer.ts`](src/store/composer.ts), [`workforce.ts`](src/store/workforce.ts).
-- **Not yet converted** (server data still in a store; read them, don't extend them):
-  [`productStore.ts`](src/store/productStore.ts), [`shopify.ts`](src/store/shopify.ts),
-  [`shopifyProductSync.ts`](src/store/shopifyProductSync.ts),
-  [`shopifyProductSyncMigration.ts`](src/store/shopifyProductSyncMigration.ts),
-  [`klaviyo.ts`](src/store/klaviyo.ts), [`util.ts`](src/store/util.ts).
 
-`store/facility.ts`, `store/netSuite.ts`, and `store/shopifyOrderSync.ts` were deleted when their
-composables landed. **Do not add a new store for server data** — add or extend the entity composable.
+Everything else is gone. `facility.ts`, `netSuite.ts` and `shopifyOrderSync.ts` went first; then
+`shopify.ts`, `shopifyProductSync.ts`, `shopifyProductSyncMigration.ts`, `productStore.ts`,
+`productStoreOnboarding.ts`, `klaviyo.ts`, `appPermissions.ts`, `authorization.ts` and `util.ts` — see
+§5 for where each one's logic now lives. Wizard state did NOT need a store to survive: it moved to a
+composable with explicit `localStorage` persistence.
+
+Logout no longer imports stores in order to `$reset()` them; it calls `clearSessionScopedState()`
+once, and each composable holding module-level session state registers its own reset (§5,
+`sessionScope.ts`). That indirection is what allowed the stores to be deleted at all.
+
+**Do not add a new store for server data** — add or extend the entity composable.
 
 ## 7. Views, components, routing
 
@@ -284,18 +291,21 @@ composables landed. **Do not add a new store for server data** — add or extend
   Async views that clear a flag in a `finally` need **two** `await flushPromises()`.
 - Assert visible facts and delegated intents. Never assert source text or CSS.
 
-## 10. State of the migration (as of 2026-07-27)
+## 10. State of the migration (as of 2026-07-28)
 
-The cache/worker data layer is built and in use; the conversion of screens onto it is partly done.
+The cache/worker data layer is built and in use, and **the screen conversion is done.**
 
-- 41 views read through composables. 17 still import a Pinia store — of those, 3
-  (`ShopifyOrderSync`, `ShopifyOrderSyncConfigure`, `UserConfirmation`) only touch the session store,
-  which is correct. The other **14 still read server data from a store**: the product-sync family,
-  Klaviyo, onboarding, `AppPermissions`, and the user/security pages.
-- **`store/util.ts` should already be gone** — `useSeed` replaced it, but 9 views still import it for
-  lookups and `maargInfo`. Highest-leverage cleanup left.
-- `ShopifyProductSync.vue` still carries its own `progressPoll` interval and is the largest
-  remaining pre-cache view.
+- **No view reads server data from a store.** 16 view/component files still import a store: 14 the
+  session store (`user`), one `workforce`, one `composer` — all three are the stores that legitimately
+  survive (§6), so every one of those imports is correct rather than debt.
+- `store/util.ts` is deleted. Its reference reads live in `useSeed`/`useFacilities` and
+  `bootstrapOrganization` in `useOrganization`; `ProductStoreOnboarding.vue` was its last consumer.
+- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval is
+  gone — progress is derived from cached messages, bulk operations and MDM logs that the worker
+  refreshes. **Vestigial scaffolding remains** and is worth removing: `startProgressPolling()` is now a
+  documented no-op, `progressPoll` is declared but never assigned, and nine call sites still invoke
+  the pair. The only surviving interval on that page is a 15s clock for relative-time labels, which
+  loads no data.
 - Explicitly **out of scope** for now: offline write queue / mutation replay, cross-tab and
   cross-session cache persistence, class-A retention/pruning, service-worker background sync, and
   converting Solr-backed relevance search (`Users.vue`) to a client-side snapshot.

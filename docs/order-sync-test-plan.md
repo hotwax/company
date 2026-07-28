@@ -223,7 +223,7 @@ Status legend: ⬜ Planned · 🟡 Implemented (focused test green) · ✅ Prove
 | M5 | `composeProgress` + `overallState` | L1b | 🟡 |
 | M6, M8 | Log `logOutcome`/`aggregate` + `recentProcessed` | L1a/L1b | ⬜ |
 | M7, M9 | `recentErrors` | L1b | ⬜ |
-| M10 | `orderSync.refresh` + `useLiveDashboard` | L2b | ⬜ |
+| M10 | `orderSync.refresh` + `useShopifyOrderSyncPolling` (was `useLiveDashboard`, deleted 2026-07-28) | L2b | ⬜ |
 | M11 | store projections + modals | L1/L2/L3 | ⬜ |
 | M12 | `pollingDelay` + `useShopifyOrderSyncPolling` | L1b/L2 | ⬜ |
 | M13, M15 | `useServiceJobStore.runNow` + guards | L2a | ⬜ |
