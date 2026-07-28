@@ -469,7 +469,7 @@ export function useOrganization() {
       for (const roleTypeId of DEFAULT_COMPANY_ROLE_TYPE_IDS) {
         const roleResp: any = await api({
           url: `admin/organizations/${partyId}/roles`,
-          method: "put",
+          method: "post",
           data: { partyId, roleTypeId },
         });
         if (commonUtil.hasError(roleResp)) throw roleResp.data;
