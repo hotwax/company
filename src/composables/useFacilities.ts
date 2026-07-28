@@ -266,6 +266,47 @@ export function useFacilityGroupTypes() {
   return { facilityGroupTypes, hydrated };
 }
 
+/**
+ * Types the app must be able to assign to a group that does not exist yet.
+ *
+ * Derivation can only ever surface a type some group already uses, so on its own it makes the FIRST
+ * group of a type impossible to create — the type is absent from the picker until a group already
+ * has it. These ids are the ones the OMS and the sibling apps act on, so they stay assignable on an
+ * instance that has no group of that type yet.
+ */
+const ASSIGNABLE_FACILITY_GROUP_TYPE_IDS = [
+  // order brokering / routing groups
+  "BROKERING_GROUP",
+  // inventory channel ("sell online") groups
+  "CHANNEL_FAC_GROUP",
+  "FEATURING",
+  "PICKUP",
+];
+
+/**
+ * The types offered when creating or editing a group.
+ *
+ * Deliberately not the same list as `useFacilityGroupTypes`: that one describes what the instance
+ * actually has and so is right for the type *filter*, where an option matching no group is a dead
+ * end. Assigning a type is the opposite case — the whole point is to use a type no group has yet.
+ */
+export function useFacilityGroupTypeOptions() {
+  const { facilityGroupTypes, hydrated } = useFacilityGroupTypes();
+  const facilityGroupTypeOptions = computed(() => {
+    const seen = new Set<string>(ASSIGNABLE_FACILITY_GROUP_TYPE_IDS);
+
+    for (const type of facilityGroupTypes.value) {
+      seen.add(type.facilityGroupTypeId);
+    }
+
+    return [...seen].sort().map((facilityGroupTypeId) => ({
+      facilityGroupTypeId,
+      description: facilityGroupTypeLabel(facilityGroupTypeId),
+    }));
+  });
+  return { facilityGroupTypeOptions, hydrated };
+}
+
 
 /**
  * Facility ↔ product store associations, cached at app load (fanned out over product stores).

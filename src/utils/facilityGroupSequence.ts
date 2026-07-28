@@ -43,26 +43,17 @@ export function sortMembersBySequence<T extends SequencedMember>(members: T[]): 
 }
 
 /**
- * The sequence number a newly added member should take.
+ * Number an arranged list `1..N`, so the positions on screen are the positions that get stored.
  *
- * Max + 1, deliberately NOT `last-in-the-list + 1`. The list is rendered in sequence order, but a
- * group whose numbers are sparse or duplicated has no guarantee the last ROW holds the highest
- * NUMBER — and reading the last row is what produced two members sharing `sequenceNum: 3` when
- * "Include all" ran against a group that already had members.
+ * Applied to the WHOLE list on save rather than to one gesture at a time, and that is deliberate.
+ * The screen renders the arranged array, but a reload re-derives the order from stored numbers, and
+ * a member left unsequenced ranks last however it was displayed — so picking a number for a single
+ * new facility could not keep it where the user saw it. Numbering everything closes that gap for
+ * drag, add and remove alike, and heals the absent and duplicate numbers already in the data,
+ * because every position ends up with an explicit, distinct value.
  *
- * Non-numeric and absent values count as 0, so the first member of an unsequenced group gets 1.
- */
-export function nextSequenceNum(members: SequencedMember[]): number {
-  return Math.max(0, ...members.map((member) => Number(member.sequenceNum) || 0)) + 1;
-}
-
-/**
- * Renumber a reordered list to `1..N`, matching the positions the user just arranged.
- *
- * Assigning fresh consecutive numbers rather than recycling the previous ones is what makes the
- * saved order equal the shown order. It also heals the two states the dev data is already in —
- * absent numbers and duplicates — on the next save, because every position gets an explicit,
- * distinct value.
+ * There is deliberately no "next number for one addition" helper: any number assigned to a facility
+ * appended below unsequenced members would sort it above them.
  *
  * Returns new objects; the caller diffs these against the stored members to decide what to write.
  */

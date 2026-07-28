@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextSequenceNum, renumberSequence, sortMembersBySequence } from "@/utils/facilityGroupSequence";
+import { renumberSequence, sortMembersBySequence } from "@/utils/facilityGroupSequence";
 
 /**
  * The facility group sequence screen showed one order and saved a different one.
@@ -70,29 +70,6 @@ describe("sortMembersBySequence", () => {
   });
 });
 
-describe("nextSequenceNum", () => {
-  it("takes max + 1, not last-row + 1", () => {
-    // The regression: reading the LAST ROW of a group whose highest number sits earlier handed the
-    // new member a number already in use. Live, "Include all" gave a second member sequenceNum 3.
-    const members = [{ facilityId: "CENTRAL_WAREHOUSE", sequenceNum: 3 }, { facilityId: "OREM", sequenceNum: 2 }];
-
-    expect(nextSequenceNum(members)).toBe(4);
-  });
-
-  it("clears the whole range when numbering is sparse", () => {
-    expect(nextSequenceNum([{ sequenceNum: 3 }, { sequenceNum: 5 }, { sequenceNum: 10 }])).toBe(11);
-  });
-
-  it("starts at 1 for a group with no numbers at all", () => {
-    expect(nextSequenceNum([{ sequenceNum: null }, { sequenceNum: undefined }])).toBe(1);
-  });
-
-  it("starts at 1 for an empty group", () => {
-    // Math.max over nothing is -Infinity without the seed — this guards that.
-    expect(nextSequenceNum([])).toBe(1);
-  });
-});
-
 describe("renumberSequence", () => {
   it("numbers the arranged positions 1..N", () => {
     const dragged = [{ facilityId: "OREM" }, { facilityId: "CENTRAL_WAREHOUSE" }, { facilityId: "GARDEN_CITY" }];
@@ -118,6 +95,21 @@ describe("renumberSequence", () => {
     expect(saved[0]).toMatchObject({ facilityId: "OREM", sequenceNum: 1 });
     expect(sortMembersBySequence(saved).map((m) => m.facilityId))
       .toEqual(["OREM", "CENTRAL_WAREHOUSE", "GARDEN_CITY"]);
+  });
+
+  it("keeps a facility added below unsequenced members where it was shown", () => {
+    // Numbering only the NEW facility cannot work: unsequenced members rank last, so any number
+    // given to a facility appended beneath them sorted it to the TOP after saving — the list jumped
+    // even though nothing was dragged. Numbering the whole arranged list is what holds the position.
+    const arranged = [
+      { facilityId: "BROADWAY", sequenceNum: null },
+      { facilityId: "CENTERVILLE", sequenceNum: null },
+      { facilityId: "NEWLY_ADDED" },
+    ];
+    const saved = renumberSequence(arranged);
+
+    expect(sortMembersBySequence(saved).map((m) => m.facilityId))
+      .toEqual(["BROADWAY", "CENTERVILLE", "NEWLY_ADDED"]);
   });
 
   it("heals duplicates and gaps into distinct consecutive numbers", () => {
