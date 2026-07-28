@@ -5,6 +5,7 @@ import { createTokenPublisher } from "@/utils/pollingTokenChannel";
 import { deleteLegacyCaches } from "@/utils/appCacheDb";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 import type { SyncHarness } from "@/workers/pollingWorkerHarness";
+import appSyncUrl from '../workers/appSync.worker.ts?worker&url';
 
 /**
  * Main-thread half of the sync service (app-local; promotes to `@common/core`).
@@ -77,9 +78,10 @@ export function createSyncService(opts: SyncServiceOptions): SyncService {
     // Best-effort: drop the superseded single-purpose cache DB from before CompanyCacheDB.
     void deleteLegacyCaches();
 
-    const { api, terminate: term, worker } = WorkerFactory.createWorker<SyncHarness>(
-      new URL("@/workers/appSync.worker.ts", import.meta.url),
-    );
+    // const { api, terminate: term, worker } = WorkerFactory.createWorker<SyncHarness>(
+    //   new URL("@/workers/appSync.worker.ts", import.meta.url),
+    // );
+    const { api, terminate: term, worker } = WorkerFactory.createWorker<SyncHarness>(new URL(appSyncUrl, import.meta.url))
     harness = api;
     terminate = term;
     worker.onmessage = handleMessage;
