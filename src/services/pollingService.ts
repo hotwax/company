@@ -77,8 +77,16 @@ export function createSyncService(opts: SyncServiceOptions): SyncService {
     // Best-effort: drop the superseded single-purpose cache DB from before CompanyCacheDB.
     void deleteLegacyCaches();
 
-    const { api, terminate: term, worker } = WorkerFactory.createWorker<SyncHarness>(
-      new URL("@/workers/appSync.worker.ts", import.meta.url),
+    // Construct the Worker here (not inside WorkerFactory) so Vite's worker transform can
+    // statically analyze `new Worker(new URL(...))` and emit a real chunk. Passing a URL through
+    // a factory hides it from Vite, which then inlines the worker as a `data:video/mp2t` asset.
+    const appSyncWorker = new Worker(
+      new URL("../workers/appSync.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    const { api, terminate: term, worker } = WorkerFactory.fromWorker<SyncHarness>(
+      appSyncWorker,
+      "appSync.worker.ts",
     );
     harness = api;
     terminate = term;
