@@ -71,7 +71,12 @@ Each tier exposes a uniform shape:
   - `true` → render `data` with live transitions; `isFetching` drives only the section-level subtle indicator, never replaces content.
 - `lastFetchedAt` and `isFetching` are surfaced for debugging and for the activity probe to decide whether a tier needs a refresh.
 
-A single `useLiveDashboard` composable owns the tickers (§3) and exposes per-tier refs to the view. Views never own intervals directly.
+A single composable owns the tickers (§3) and exposes per-tier refs to the view. Views never own intervals directly.
+
+> **Superseded 2026-07-28.** This was implemented as `useLiveDashboard`, which has since been deleted:
+> the Web Worker owns the cadence (per-domain intervals from the sync registry) and the pages take
+> their manual path through `useShopifyOrderSyncPolling`/`useCacheSync`. The principle in this
+> paragraph still holds — a view still never owns an interval — only the owner changed.
 
 ## 6. What's being replaced
 

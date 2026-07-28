@@ -250,8 +250,14 @@ dangerous, since the whole-table read becomes "newest N across all tenants" — 
 1. **Two workers, not one.** Class B runs in an app-lifetime worker (`appCacheBootstrap`), class A in
    a view-scoped one (`useCacheSync`), because their lifecycles differ. Bounded and intentional;
    consolidating behind one long-lived worker with per-domain activation is the candidate cleanup.
-2. **`useLiveDashboard.ts` has no consumers.** The cache layer took over most of its job. Either wire
-   `ShopifyProductSync.vue` to it during that conversion, or delete it.
+2. ~~**`useLiveDashboard.ts` has no consumers.**~~ **Resolved 2026-07-28 — deleted.** Its job was a
+   view-owned `setInterval` plus a `visibilitychange` listener plus an in-flight guard, which is
+   precisely what the worker now owns: cadence comes from the domain registry, and the sync pages take
+   their manual path through `useShopifyOrderSyncPolling`/`useCacheSync`. `ShopifyProductSync.vue` was
+   converted onto the worker instead of onto this composable, so nothing was left to wire. Deleted with
+   it: `utils/shopifyProductSync.ts`, whose only surviving function (`sortSystemMessagesNewestFirst`)
+   had already been re-homed to `utils/systemMessageHistory.ts`, and whose status-selection helpers are
+   `deriveSyncProgress`'s job.
 3. **Bootstrap request burst.** Every class-B domain snapshots at once on login. Staggering has not
    been implemented; confirm the load profile with backend owners.
 4. **Class-A registration lifetime.** Which screens activate `systemMessage` / `dataManagerLog` is
