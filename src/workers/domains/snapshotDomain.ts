@@ -56,6 +56,14 @@ export interface SnapshotDomainConfig {
    */
   byPk?: (pk: Record<string, unknown>) => { url: string; params?: Record<string, unknown> };
   /**
+   * Property holding the record when the by-PK route wraps it in a SINGLE-RECORD envelope, e.g.
+   * `admin/serviceJobs/{jobName}` answers `{ jobDetail: { … } }` while its list route answers
+   * `{ serviceJobList: [ … ] }`. Explicit per domain for the same reason as `collectionKey`: the
+   * envelope convention differs per endpoint, and guessing it wrong fails silently — the unwrapped
+   * envelope has no PK, so the projection cannot key it and the row is dropped without an error.
+   */
+  byPkRecordKey?: string;
+  /**
    * Fallback for domains with no by-PK route: re-list a narrow scope (e.g. all members of one
    * facility group) and snapshot-replace just that scope, so deletions inside it are pruned too.
    */
@@ -257,9 +265,14 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
 
       const { url, params } = config.byPk(pk);
       const resp = await workerGet(ctx, url, params ?? {});
-      const rows = unwrapCollection(resp, config.collectionKey);
+      const envelope = config.byPkRecordKey && resp && typeof resp === "object"
+        ? (resp as any)[config.byPkRecordKey]
+        : resp;
+      const rows = unwrapCollection(envelope, config.collectionKey);
       // A single-record GET may return the object itself rather than a one-item array.
-      const record = rows.length ? rows[0] : (resp && typeof resp === "object" && !Array.isArray(resp) ? resp : null);
+      const record = rows.length
+        ? rows[0]
+        : (envelope && typeof envelope === "object" && !Array.isArray(envelope) ? envelope : null);
       if (!record) {
         // The record is gone (deleted server-side) — drop it so the cache doesn't keep a ghost.
         const key = config.projection.buildKey

@@ -342,25 +342,25 @@ export function useShopifyShopMutations(shopId: string) {
     },
 
     /**
-     * ⚠️ NO DELETE ROUTE EXISTS. `oms.rest.xml` defines `shopifyShops/typeMappings` with `get` and
-     * `post` only — there are ZERO delete methods anywhere under `oms/shopifyShops`. The server
-     * answers this request with 405, verified live against a running instance.
+     * Retire a mapping key by CLEARING its value — the alternate to a delete route that does not
+     * exist.
      *
-     * What that means for callers, which is NOT what an earlier version of this note claimed: every
-     * caller awaits this BEFORE the replacement `saveTypeMapping`, so the 405 rejects the promise
-     * and the save never runs. Renaming a mapping therefore fails outright — it does not "leave a
-     * stale row behind"; nothing is written at all and the user gets a failure toast.
+     * `oms.rest.xml` defines `shopifyShops/typeMappings` with `get` and `post` only; there are zero
+     * delete methods anywhere under `oms/shopifyShops`, and `DELETE` answers 405. Path-scoped and
+     * `admin/`-prefixed variants 404 (probed live 2026-07-27). This used to issue that DELETE, which
+     * meant every RENAME of an existing mapping died on the 405 before its replacement `POST` ran —
+     * the edit wrote nothing at all, and the sales-channel screen showed no error while doing it.
      *
-     * So the safe-but-broken behaviour is deliberate: dropping this call would make renames appear
-     * to work while orphaning the old row, and since the PK is (shopId, mappedKey) two rows would
-     * then share one `mappedValue` and `getShopifyMappingId` would pick between them arbitrarily.
-     * A backend delete route is the only real fix.
+     * The endpoint is `store` and the PK is (shopId, mappedKey), so re-posting the old key with an
+     * empty `mappedValue` unmaps it in place: the row survives as a key with no value, which is
+     * exactly what the reader treats as unmapped (`keyByValue` skips value-less rows). Verified
+     * live: the read-back row keeps `mappedKey` and no longer carries `mappedValue`.
      */
-    async removeTypeMapping(payload: { mappedTypeId: string; mappedKey: string }, options?: WriteOptions) {
+    async retireTypeMapping(payload: { mappedTypeId: string; mappedKey: string }, options?: WriteOptions) {
       const resp: any = await api({
         url: "oms/shopifyShops/typeMappings",
-        method: "delete",
-        data: { ...payload, shopId },
+        method: "post",
+        data: { ...payload, shopId, mappedValue: "" },
       });
       if (!commonUtil.hasError(resp) && wants(options)) await refreshTypeMappings();
       return resp;
@@ -656,7 +656,9 @@ export function useShopifySyncJob(
   const configurationState = computed(() => deriveSyncConfigurationState({
     job: job.value as any,
     loading: Boolean(toValue(options.loading)),
-    error: toValue(options.error) || undefined,
+    // Passed raw: `deriveSyncConfigurationState` now treats a blank error as no error, so the local
+    // `|| undefined` that used to be needed here (and was missing everywhere else) is gone.
+    error: toValue(options.error),
   }));
 
   return {
@@ -860,10 +862,16 @@ export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
   const forShop = (rows: any[]) => rows.filter((row: any) => String(row.shopId) === shopId.value);
 
+  /**
+   * A row with no `mappedValue` is a RETIRED key, not a mapping — retiring is a value-clearing write
+   * because the endpoint has no delete (see `retireTypeMapping`). Counting those rows would report a
+   * family as ready after its only mapping was cleared.
+   */
+  const isMapped = (row: any) => Boolean(row?.mappedValue);
   const salesChannelMappings = computed(() =>
-    forShop(typeMappings.value).filter((row: any) => row.mappedTypeId === SHOPIFY_SALES_CHANNEL_MAPPED_TYPE));
+    forShop(typeMappings.value).filter((row: any) => row.mappedTypeId === SHOPIFY_SALES_CHANNEL_MAPPED_TYPE && isMapped(row)));
   const paymentMethodMappings = computed(() =>
-    forShop(typeMappings.value).filter((row: any) => row.mappedTypeId === SHOPIFY_PAYMENT_METHOD_MAPPED_TYPE));
+    forShop(typeMappings.value).filter((row: any) => row.mappedTypeId === SHOPIFY_PAYMENT_METHOD_MAPPED_TYPE && isMapped(row)));
   const shippingMethodMappings = computed(() => forShop(carrierShipments.value));
 
   const readiness = computed(() => deriveOrderSyncMappingReadiness({
@@ -1767,8 +1775,20 @@ export function deriveSyncConfigurationState(input: {
   error?: unknown;
   job?: ServiceJobLike | null;
 }): SyncConfigurationState {
-  // An API failure is never collapsed into the actionable "missing" state.
-  if (input.error !== undefined && input.error !== null) {
+  /**
+   * An API failure is never collapsed into the actionable "missing" state — but the ABSENCE of a
+   * failure has to be recognised, and the sync sessions spell that as `error: ""` (a string field
+   * reset on every load), not `undefined`.
+   *
+   * The old guard was `!== undefined && !== null`, which an empty string passes. Every caller that
+   * forwarded a session's `error` straight through therefore got `kind: "error"` permanently — so on
+   * the Order Sync configure screen the create-job button, the schedule editor and the activation
+   * review were dead code, and a fully configured active shop rendered as "Waiting for setup".
+   * Found by QA driving the page live; one caller had been masking it locally with `|| undefined`.
+   */
+  const hasError = input.error !== undefined && input.error !== null
+    && !(typeof input.error === "string" && input.error.trim() === "");
+  if (hasError) {
     return { kind: "error", configured: false, paused: null, error: input.error };
   }
   if (input.loading) return { kind: "loading", configured: false, paused: null, error: null };
@@ -1831,11 +1851,14 @@ function readinessCount(value: readonly unknown[] | number | boolean | undefined
 
 export function deriveOrderSyncMappingReadiness(input: OrderSyncMappingInput): OrderSyncMappingReadiness {
   const typeMappings = selectedShopRecords(input.typeMappings || [], input.selectedShopId);
+  // A value-less row is a retired key, not a mapping — see `retireTypeMapping`.
+  const mappedRowsOfType = (mappedTypeId: string) => typeMappings.filter((record) =>
+    firstText(record, ["mappedTypeId", "mappingTypeId"]) === mappedTypeId && Boolean(firstText(record, ["mappedValue"])));
   const salesCount = input.salesChannelMappings === undefined
-    ? typeMappings.filter((record) => firstText(record, ["mappedTypeId", "mappingTypeId"]) === "SHOPIFY_ORDER_SOURCE").length
+    ? mappedRowsOfType("SHOPIFY_ORDER_SOURCE").length
     : readinessCount(input.salesChannelMappings);
   const paymentCount = input.paymentMethodMappings === undefined
-    ? typeMappings.filter((record) => firstText(record, ["mappedTypeId", "mappingTypeId"]) === "SHOPIFY_PAYMENT_TYPE").length
+    ? mappedRowsOfType("SHOPIFY_PAYMENT_TYPE").length
     : readinessCount(input.paymentMethodMappings);
   const shippingInput = input.shippingMethodMappings ?? input.shipmentMethodMappings;
   const shippingRecords = Array.isArray(shippingInput)
@@ -3146,8 +3169,13 @@ export function useShopifyOrderSync() {
         variables: { query: input.queryString, first: input.pageSize ?? 25, after: input.after ?? null },
       },
     });
-    const edges = resp?.data?.data?.orders?.edges ?? resp?.data?.orders?.edges ?? [];
-    const pageInfo = resp?.data?.data?.orders?.pageInfo ?? resp?.data?.orders?.pageInfo ?? null;
+    // The live proxy wraps the GraphQL body under `response` (same envelope as
+    // `fetchUnsyncedProductUpdateCount`); a raw GraphQL reply nests it under `data`. Missing the
+    // `response` branch made every search return [] against the real backend — found by QA driving
+    // the modal live, while the `data`-shaped unit fixtures kept passing.
+    const payload = resp?.data?.response ?? resp?.data?.data ?? resp?.data ?? {};
+    const edges = payload?.orders?.edges ?? [];
+    const pageInfo = payload?.orders?.pageInfo ?? null;
     return {
       orders: edges.map((edge: any) => edge?.node).filter(Boolean) as any[],
       pageInfo,

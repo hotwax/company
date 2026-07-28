@@ -53,6 +53,14 @@ registerSnapshotDomain({
   listUrl: "admin/serviceJobs",
   collectionKey: "serviceJobList",
   byPk: (pk) => ({ url: `admin/serviceJobs/${encodeURIComponent(String(pk.jobName))}` }),
+  /**
+   * The by-PK route wraps the job in `jobDetail` (the LIST route uses `serviceJobList`). Without
+   * this the refresh stored the envelope, whose `jobName` is undefined, so the row was silently
+   * dropped: EVERY serviceJob write-through — configure, schedule save, pause/resume, product-sync
+   * setup — left the cache stale until the next login. Verified live: creating
+   * `queue_ShopifyOrderSync_99992` left the cache at its pre-write 156 rows.
+   */
+  byPkRecordKey: "jobDetail",
 });
 
 registerSnapshotDomain({
@@ -61,8 +69,21 @@ registerSnapshotDomain({
   projection: systemMessageRemoteProjection,
   listUrl: "oms/systemMessageRemotes",
   collectionKey: "systemMessageRemoteList",
-  byPk: (pk) => ({
-    url: `oms/systemMessageRemotes/${encodeURIComponent(String(pk.systemMessageRemoteId))}`,
+  /**
+   * Scoped re-list, NOT `byPk`: `GET oms/systemMessageRemotes/{id}` does not exist — it answers 405
+   * `Method get not supported` for every id, including ones that resolve fine through the list
+   * (probed live 2026-07-27). The by-PK route was configured anyway, so every
+   * `refreshAfterMutation("systemMessageRemote", …)` failed inside the worker and returned 0: a
+   * newly created Shopify connection's remote stayed absent from the cache until the next login, and
+   * the sync screens reported "Shopify remote: Unavailable" for a shop whose remote existed on the
+   * server. Found by QA setting a shop up from scratch.
+   *
+   * The list route DOES filter by id, so re-listing that one id and snapshot-replacing its scope
+   * gives the same one-row refresh (and still prunes the row if the server no longer returns it).
+   */
+  refetchScope: (pk) => ({
+    params: { systemMessageRemoteId: pk.systemMessageRemoteId },
+    scope: { field: "systemMessageRemoteId", value: pk.systemMessageRemoteId },
   }),
 });
 

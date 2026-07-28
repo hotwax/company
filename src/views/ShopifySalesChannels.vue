@@ -151,7 +151,7 @@ async function saveMapping(salesChannelEnumId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopMutations.removeTypeMapping({
+      await shopMutations.retireTypeMapping({
         mappedTypeId: "SHOPIFY_ORDER_SOURCE",
         mappedKey: oldMappedKey
       }, { refresh: false });
@@ -187,7 +187,7 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMappingId(id);
 
       if (oldMappedKey) {
-        await shopMutations.removeTypeMapping({
+        await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_ORDER_SOURCE",
           mappedKey: oldMappedKey
         }, { refresh: false });

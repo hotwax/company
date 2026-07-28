@@ -333,7 +333,7 @@ async function saveMapping(paymentMethodTypeId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopMutations.removeTypeMapping({
+      await shopMutations.retireTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: oldMappedKey
       }, { refresh: false });
@@ -369,7 +369,7 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMapping(id);
 
       if (oldMappedKey) {
-        await shopMutations.removeTypeMapping({
+        await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
           mappedKey: oldMappedKey
         }, { refresh: false });

@@ -882,7 +882,27 @@ async function requestRefresh() {
 async function configureJob() {
   const targetShopId = activeShopId.value;
   const targetTemplateJobName = String(templateJob.value?.jobName || "");
-  if (!isCurrentShopContext(targetShopId) || !isMissing.value || !targetTemplateJobName || !capabilities.value.canConfigure || isMutationLocked.value) return;
+  /**
+   * Say WHY nothing happened. This used to be one silent `return` over five preconditions, so a user
+   * could click an enabled button and get no toast, no error and no job — which is exactly what
+   * happened live when the template job had not reached the cache yet (QA, from-scratch shop setup).
+   * Each precondition now names itself; `isMutationLocked` stays silent because a spinner is already
+   * showing the reason.
+   */
+  const blocker = !isCurrentShopContext(targetShopId)
+    ? translate("The selected Shopify shop changed before configuration completed.")
+    : !capabilities.value.canConfigure
+      ? translate("Administrator permission is required to create the Order Sync job.")
+      : !isMissing.value
+        ? translate("This shop already has an Order Sync job.")
+        : !targetTemplateJobName
+          ? translate("The standard Order Sync job template is unavailable. Refresh and try again.")
+          : "";
+  if (blocker) {
+    commonUtil.showToast(blocker);
+    return;
+  }
+  if (isMutationLocked.value) return;
   localMutation.value = "configure";
   try {
     const configuredJob = await orderSync.configure({ shopId: targetShopId });

@@ -160,7 +160,7 @@ async function saveMapping(productTypeId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopMutations.removeTypeMapping({
+      await shopMutations.retireTypeMapping({
         mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
         mappedKey: oldMappedKey
       }, { refresh: false });
@@ -196,7 +196,7 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMappingId(id);
 
       if (oldMappedKey) {
-        await shopMutations.removeTypeMapping({
+        await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
           mappedKey: oldMappedKey
         }, { refresh: false });

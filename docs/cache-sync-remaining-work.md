@@ -202,6 +202,10 @@ first; they are recorded so the next attempt starts from the answer.
 | Does `runNow` accept parameter overrides in the body? | **No.** 200 + jobRunId, but the run records `fromDate:null` — the body is ignored | run M2399236's recorded parameters |
 | Can a job's `fromDate` parameter drive a targeted window import? | **Yes** — swap the parameter, `runNow`, restore. This is the retry alternate | run M2399240 (`hasError: N`) produced message M228628 with window `[2026-07-23T02:40Z, now]` |
 | What timestamp format does the job runner take? | `yyyy-MM-dd HH:mm:ss`, read as **UTC**. ISO fails the run | run M2399238 errored `Timestamp format must be yyyy-mm-dd hh:mm:ss[.fffffffff]`; the SQL-format retry recorded the intended UTC window |
+| What envelope does `shopify/graphql` return? | The body is under **`response`** (`resp.data.response.orders`), not `data` | every live order search returned 0 results while `data`-shaped unit fixtures passed; fixed in `searchShopifyOrders` |
+| Can a Shopify type mapping be deleted? | **No.** `DELETE oms/shopifyShops/typeMappings` → 405; `…/typeMappings/{key}`, `oms/shopifyShops/{shopId}/typeMappings/{key}` and `admin/shopifyShops/typeMappings` → 404 | so a RENAME retires the old key by re-posting it with an empty `mappedValue` (`retireTypeMapping`), and readers treat a value-less row as unmapped |
+| Is there a by-PK read for a SystemMessageRemote? | **No.** `GET oms/systemMessageRemotes/{id}` → 405 for every id, including ones the list returns | the domain uses `refetchScope` (list filtered by `systemMessageRemoteId`) instead; the misconfigured `byPk` had silently broken every remote write-through |
+| What does `GET admin/serviceJobs/{jobName}` return? | A **single-record envelope** `{ jobDetail: … }` — the list route uses `serviceJobList` | the domain declares `byPkRecordKey: "jobDetail"`; without it the refresh stored a key-less envelope and every serviceJob write-through was silently dropped |
 
 ## 3c. Cross-shop scope leaks outside the sync pages — nondeterminism fixed
 

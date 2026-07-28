@@ -341,6 +341,26 @@ describe("searchShopifyOrders", () => {
     expect(result.orders.map((order: any) => order.name)).toEqual(["#1001", "#1002"]);
   });
 
+  it("unwraps the LIVE proxy envelope, which nests the body under `response`, not `data`", async () => {
+    // The real `shopify/graphql` proxy returns `{ response: { orders: … } }`. The `data`-shaped
+    // fixtures above kept passing while every live search returned [] — found by QA driving the
+    // search modal against the running backend.
+    respondWith([[/shopify\/graphql/, {
+      response: {
+        orders: {
+          edges: [{ node: { id: "gid://shopify/Order/6475855265946", legacyResourceId: "6475855265946", name: "HC#2690" } }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      },
+    }]]);
+    const orderSync = boundOrderSync();
+
+    const result = await orderSync.searchShopifyOrders({ queryString: "name:HC#2690" });
+
+    expect(result.orders.map((order: any) => order.name)).toEqual(["HC#2690"]);
+    expect(result.hasNextPage).toBe(false);
+  });
+
   it("reports no next page as false/null when Shopify returns no pageInfo", async () => {
     respondWith([[/shopify\/graphql/, { data: { orders: { edges: [] } } }]]);
     const orderSync = boundOrderSync();
