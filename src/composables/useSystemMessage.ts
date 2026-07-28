@@ -6,12 +6,13 @@ import {
   systemMessageErrorCache,
   systemMessageRemoteCache,
 } from '@/utils/cacheEntities';
-import { useCachedList, useCachedRecord } from './useCachedList';
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
   getSystemMessageCandidateIds
 } from "@/utils/shopifyBulkOperation";
+import { onSessionCleared } from "./sessionScope";
+import { useCachedList, useCachedRecord } from "./useCachedList";
 
 const BULK_OPERATION_QUERY = `
   query BulkOperation($id: ID!) {
@@ -41,6 +42,12 @@ const BULK_OPERATION_QUERY = `
  * append-only against a terminal message, so "none" stays true for the session.
  */
 const messagesKnownToHaveNoErrors = new Set<string>();
+let noErrorMemoGeneration = 0;
+
+onSessionCleared(() => {
+  noErrorMemoGeneration += 1;
+  messagesKnownToHaveNoErrors.clear();
+});
 
 /**
  * Whether a message could carry errors at all.
@@ -154,6 +161,7 @@ export function useSystemMessage() {
   /** Fetch only if this message's errors are not cached yet — the on-demand entry point. */
   const ensureSystemMessageErrors = async (systemMessageId: string) => {
     if (!systemMessageId) return [];
+    const requestGeneration = noErrorMemoGeneration;
 
     // A confirmed-empty result is an answer, and re-asking for it is the whole N+1.
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
@@ -166,9 +174,18 @@ export function useSystemMessage() {
       // cache unavailable — fall through to the network
     }
 
-    const errors = await fetchSystemMessageErrors(systemMessageId).catch(() => []);
-    if (!errors.length) messagesKnownToHaveNoErrors.add(systemMessageId);
-    return errors;
+    try {
+      const errors = await fetchSystemMessageErrors(systemMessageId);
+      if(!errors.length && requestGeneration === noErrorMemoGeneration) {
+        messagesKnownToHaveNoErrors.add(systemMessageId);
+      }
+
+      return errors;
+    } catch {
+      // A failed request is not proof that the message has no errors. Keep the public fallback
+      // shape, but leave the id eligible for a later retry.
+      return [];
+    }
   };
 
   /**

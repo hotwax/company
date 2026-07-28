@@ -293,7 +293,7 @@ Product decision to keep explicit:
 | Status | Existing endpoints; UI/topic grouping work |
 | ProductStore endpoint | `PUT /rest/s1/admin/productStores/{productStoreId}` |
 | ProductStoreSetting endpoint | `POST /rest/s1/admin/productStores/{productStoreId}/settings` |
-| Existing grouping source | `src/views/AddConfigurations.vue` and `src/views/CloneProductStore.vue` already group ProductStore fields and ProductStoreSetting enum IDs by setup topic. If there is a separate canonical Markdown settings catalog, link it here when found. |
+| Existing grouping source | `src/views/CloneProductStore.vue` groups ProductStore fields and ProductStoreSetting enum IDs by setup topic. If there is a separate canonical Markdown settings catalog, link it here when found. |
 | Notes | Do not create one backend endpoint per feature such as BOPIS, Ship from Store, Store Inventory Management, or Pre-orders. The backend already has the needed raw writes for this part. Onboarding should present curated topic groups, write ProductStore fields/settings through the existing endpoints, and leave untouched settings out of the flow. |
 
 #### Topic Groups
