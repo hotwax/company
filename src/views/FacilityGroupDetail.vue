@@ -251,6 +251,7 @@ import { computed, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common";
 import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
 import { useProductStores } from '@/composables/useProductStores';
+import { nextSequenceNum, renumberSequence, sortMembersBySequence } from '@/utils/facilityGroupSequence';
 import { api } from '@common';
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
@@ -274,12 +275,15 @@ const { facilities: cachedFacilities } = useFacilities();
 const group = computed<any>(() => (cachedGroup.value as any)?.raw ?? cachedGroup.value ?? {});
 const productStoreCount = computed(() => cachedGroupProductStores.value.length);
 const allFacilities = computed<any[]>(() => cachedFacilities.value ?? []);
+// Sorted, not merely joined: the cache hands these back in primary-key order (alphabetical by
+// facilityId), which is unrelated to the sequence the group actually applies. Rendering that raw
+// order is what made "Manage sequence" show — and then save — the wrong order.
 const memberFacilities = computed<any[]>(() => {
   const byId = Object.fromEntries(allFacilities.value.map((f: any) => [f.facilityId, f]));
-  return (cachedMembers.value ?? []).map((m: any) => ({
+  return sortMembersBySequence((cachedMembers.value ?? []).map((m: any) => ({
     ...m,
     facilityName: byId[m.facilityId]?.facilityName || m.facilityId,
-  }));
+  })));
 });
 const selectedFacilities = ref<any[]>([]);
 const filteredAvailableFacilities = ref<any[]>([]);
@@ -429,8 +433,13 @@ function seedSelection() {
   filterAvailableFacilities();
 }
 
-// Members arrive asynchronously and change after every save, so reseed on each emit.
-watch(memberFacilities, () => seedSelection(), { immediate: true });
+// Members arrive asynchronously and change after every save, so reseed on each emit — but NOT over
+// edits that have not been saved yet. A background sync landing mid-edit would otherwise discard
+// the user's staged adds, removals and drag order with no warning. `saveFacilityMemberships`
+// clears the flag before its refresh emits, so the post-save reseed still runs.
+watch(memberFacilities, () => {
+  if (!isFacilitiesModified.value) seedSelection();
+}, { immediate: true });
 
 function filterAvailableFacilities() {
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
@@ -445,15 +454,14 @@ function filterAvailableFacilities() {
 }
 
 function addFacility(facility: any) {
-  const lastSeq = selectedFacilities.value.at(-1)?.sequenceNum || 0;
-  selectedFacilities.value = [...selectedFacilities.value, { ...facility, sequenceNum: lastSeq + 1 }];
+  selectedFacilities.value = [...selectedFacilities.value, { ...facility, sequenceNum: nextSequenceNum(selectedFacilities.value) }];
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
 }
 
 function addAll() {
-  const lastSeq = selectedFacilities.value.at(-1)?.sequenceNum || 0;
-  const toAdd = filteredAvailableFacilities.value.map((facility, index) => ({ ...facility, sequenceNum: lastSeq + index + 1 }));
+  const base = nextSequenceNum(selectedFacilities.value);
+  const toAdd = filteredAvailableFacilities.value.map((facility, index) => ({ ...facility, sequenceNum: base + index }));
   selectedFacilities.value = [...selectedFacilities.value, ...toAdd];
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
@@ -465,12 +473,12 @@ function removeFacility(facility: any) {
   isFacilitiesModified.value = true;
 }
 
+// Renumber 1..N from the arranged positions. Handing each position back the number it held BEFORE
+// the drag only works if the list was already in sequence order; over a sparse, duplicated or
+// unsequenced group it wrote numbers that did not match what the user just arranged.
 function doReorder(event: CustomEvent) {
-  const prev = JSON.parse(JSON.stringify(selectedFacilities.value));
   const updated = event.detail.complete(JSON.parse(JSON.stringify(selectedFacilities.value)));
-  const prevSeqNums = prev.map((facility: any) => facility.sequenceNum);
-  updated.forEach((facility: any, index: number) => { facility.sequenceNum = prevSeqNums[index]; });
-  selectedFacilities.value = updated;
+  selectedFacilities.value = renumberSequence(updated);
   isFacilitiesModified.value = true;
 }
 
