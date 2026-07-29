@@ -63,6 +63,7 @@ vi.mock("@/composables/useCachedList", () => ({
     const rows = scope
       ? harness.records[kind].filter((row: any) => row?.[scope.field] === scope.value)
       : harness.records[kind];
+
     return {
       records: ref(rows),
       rows: ref(rows.map((raw: any) => ({ ...raw, raw }))),
@@ -71,6 +72,7 @@ vi.mock("@/composables/useCachedList", () => ({
   },
   useCachedRecord: (entity: any, keyField: string, id: string | undefined) => {
     const records = harness.records[String(entity?.__kind ?? "")];
+
     return {
       record: computed(() => records.find((row: any) => String(row?.[keyField]) === String(id))),
       hydrated: ref(harness.hydrated[String(entity?.__kind ?? "")]),
@@ -301,6 +303,24 @@ describe("carrier cache-backed reads", () => {
     expect(catalog.readyForDisplay.value).toBe(false);
   });
 
+  it("surfaces a global bootstrap failure in both catalog and detail readiness", () => {
+    harness.bootstrapState.errors = {
+      __start: "cache worker failed to start",
+    };
+
+    const catalog = useCarriers();
+    const detail = useCarrier("FEDEX");
+
+    expect(catalog.catalogErrors.value).toEqual({
+      __start: "cache worker failed to start",
+    });
+    expect(catalog.readyForDisplay.value).toBe(false);
+    expect(detail.detailErrors.value).toEqual({
+      __start: "cache worker failed to start",
+    });
+    expect(detail.readyForMutation.value).toBe(false);
+  });
+
   it("refreshes both catalog domains behind the composable facade", async () => {
     const { refreshCarriers } = useCarriers();
 
@@ -335,7 +355,7 @@ describe("carrier cache-backed reads", () => {
       "systemMessageRemote",
     ];
 
-    for (const domain of requiredDomains) {
+    for(const domain of requiredDomains) {
       harness.bootstrapState.errors = { [domain]: `${domain} snapshot failed` };
       const detail = useCarrier("FEDEX");
 

@@ -7,6 +7,7 @@ import {
   resyncDomain,
 } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import {
   carrierCache,
   carrierFacilityCache,
@@ -20,6 +21,7 @@ import {
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { expireProductStoreShipmentMethod } from "./useProductStores";
 import { useCachedList, useCachedRecord } from "./useCachedList";
+import { useEffectiveNow } from "./useEffectiveNow";
 
 export const CARRIER_ROLE_TYPE_ID = "CARRIER";
 export const UNIGATE_REMOTE_ID = "UNIGATE_CONFIG";
@@ -68,11 +70,11 @@ export interface ProductStoreShipmentMethod {
 }
 
 export type CarrierReadinessStatus =
-  | "loading"
-  | "ready"
-  | "action-required"
-  | "verification-unavailable"
-  | "not-applicable";
+  | "loading" |
+  "ready" |
+  "action-required" |
+  "verification-unavailable" |
+  "not-applicable";
 
 export interface RemoteReadState {
   hydrated: boolean;
@@ -104,12 +106,11 @@ export function mergeCarrierShipmentMethods(
   shipmentMethodTypes: CarrierShipmentMethod[],
   configuredMethods: CarrierShipmentMethod[],
 ): CarrierShipmentMethod[] {
-  const configuredByType = new Map(
-    configuredMethods.map((method) => [method.shipmentMethodTypeId, method]),
-  );
+  const configuredByType = new Map(configuredMethods.map((method) => [method.shipmentMethodTypeId, method]),);
 
   return shipmentMethodTypes.map((type) => {
     const configured = configuredByType.get(type.shipmentMethodTypeId);
+
     return configured
       ? { ...configured, ...type, isConfigured: true }
       : { ...type, isConfigured: false };
@@ -121,12 +122,13 @@ export function orderedCarrierMethods<T extends CarrierShipmentMethod>(rows: T[]
   return rows
     .map((row, index) => {
       const parsed = Number(row.sequenceNumber);
-      const sequence = row.sequenceNumber === null
-        || row.sequenceNumber === undefined
-        || row.sequenceNumber === ""
-        || !Number.isFinite(parsed)
+      const sequence = row.sequenceNumber === null ||
+        row.sequenceNumber === undefined ||
+        row.sequenceNumber === "" ||
+        !Number.isFinite(parsed)
         ? Number.POSITIVE_INFINITY
         : parsed;
+
       return { row, index, sequence };
     })
     .sort((left, right) => left.sequence - right.sequence || left.index - right.index)
@@ -148,19 +150,17 @@ export function deriveCarrierReadiness(
   };
 
   let tenant: CarrierReadinessStatus;
-  if (!remote.hydrated) {
+  if(!remote.hydrated) {
     tenant = "loading";
-  } else if (remote.error) {
+  } else if(remote.error) {
     tenant = "verification-unavailable";
   } else {
-    const complete = Boolean(
-      String(unigateRemote?.internalId ?? "").trim()
-      && String(unigateRemote?.sendUrl ?? "").trim(),
-    );
+    const complete = Boolean(String(unigateRemote?.internalId ?? "").trim() &&
+      String(unigateRemote?.sendUrl ?? "").trim(),);
     tenant = complete ? "ready" : "action-required";
   }
 
-  if (!automaticAddressValidationCapable) {
+  if(!automaticAddressValidationCapable) {
     return {
       carrierPartyId,
       automaticAddressValidationCapable,
@@ -196,7 +196,8 @@ export function useCarriers() {
   const methodRead = useCachedList<CarrierShipmentMethod>(carrierShipmentMethodCache);
   const counts = computed<Record<string, number>>(() =>
     methodRead.records.value.reduce((byParty, method) => {
-      if (method.partyId) byParty[method.partyId] = (byParty[method.partyId] ?? 0) + 1;
+      if(method.partyId) {byParty[method.partyId] = (byParty[method.partyId] ?? 0) + 1;}
+
       return byParty;
     }, {} as Record<string, number>));
   const carriers = computed(() =>
@@ -205,12 +206,17 @@ export function useCarriers() {
       shipmentMethodCount: counts.value[carrier.partyId] ?? 0,
     })));
   const hydrated = computed(() => carrierRead.hydrated.value && methodRead.hydrated.value);
-  const catalogErrors = computed<Record<string, string>>(() =>
-    ["carrier", "carrierShipmentMethod"].reduce((errors, domain) => {
+  const catalogErrors = computed<Record<string, string>>(() => {
+    const errors = ["carrier", "carrierShipmentMethod"].reduce((next, domain) => {
       const message = bootstrapState.errors[domain];
-      if (message) errors[domain] = message;
-      return errors;
-    }, {} as Record<string, string>));
+      if(message) {next[domain] = message;}
+
+      return next;
+    }, {} as Record<string, string>);
+    if(bootstrapState.errors.__start) {errors.__start = bootstrapState.errors.__start;}
+
+    return errors;
+  });
   const readyForDisplay = computed(() =>
     hydrated.value && Object.keys(catalogErrors.value).length === 0);
   const refreshCarriers = () => Promise.all([
@@ -239,9 +245,7 @@ export function useCarrierShipmentMethods(partyId: string) {
   const typeRead = useCachedList<CarrierShipmentMethod>(shipmentMethodTypeCache);
   const configuredMethods = computed(() => orderedCarrierMethods(configuredRead.records.value));
   const shipmentMethods = computed(() =>
-    orderedCarrierMethods(
-      mergeCarrierShipmentMethods(typeRead.records.value, configuredRead.records.value),
-    ));
+    orderedCarrierMethods(mergeCarrierShipmentMethods(typeRead.records.value, configuredRead.records.value),));
 
   return {
     shipmentMethods,
@@ -257,19 +261,20 @@ export function useCarrierFacilities(partyId: string) {
     scope: { field: "partyId", value: partyId },
   });
   const facilityRead = useCachedList<any>(facilityCache);
+  const effectiveNow = useEffectiveNow(associationRead.records);
   const associations = computed(() =>
     associationRead.records.value.filter((row) =>
-      row.roleTypeId === CARRIER_ROLE_TYPE_ID && activeAt(row)));
+      row.roleTypeId === CARRIER_ROLE_TYPE_ID && activeAt(row, effectiveNow.value)));
   const facilities = computed(() => {
-    const byFacility = new Map(
-      associations.value.map((association) => [association.facilityId, association]),
-    );
+    const byFacility = new Map(associations.value.map((association) => [association.facilityId, association]),);
+
     return facilityRead.records.value
       .filter((facility) =>
-        facility.facilityTypeId !== "VIRTUAL_FACILITY"
-        && facility.parentTypeId !== "VIRTUAL_FACILITY")
+        facility.facilityTypeId !== "VIRTUAL_FACILITY" &&
+        facility.parentTypeId !== "VIRTUAL_FACILITY")
       .map((facility) => {
         const association = byFacility.get(facility.facilityId);
+
         return {
           ...facility,
           ...(association ?? {}),
@@ -317,22 +322,29 @@ export function useCarrier(partyId: string) {
     { scope: { field: "partyId", value: partyId } },
   );
   const readinessRead = useCarrierReadiness(partyId, carrierRead.record);
+  const productStoreMethodNow = useEffectiveNow(productStoreMethodRead.records);
   const productStoreShipmentMethods = computed(() =>
     productStoreMethodRead.records.value.filter((row) =>
-      (!row.roleTypeId || row.roleTypeId === CARRIER_ROLE_TYPE_ID) && activeAt(row)));
+      (!row.roleTypeId || row.roleTypeId === CARRIER_ROLE_TYPE_ID) &&
+      activeAt(row, productStoreMethodNow.value)));
   const hydrated = computed(() =>
-    carrierRead.hydrated.value
-    && methodRead.hydrated.value
-    && facilityRead.hydrated.value
-    && productStoreRead.hydrated.value
-    && productStoreMethodRead.hydrated.value
-    && readinessRead.hydrated.value);
-  const detailErrors = computed<Record<string, string>>(() =>
-    CARRIER_DETAIL_DOMAINS.reduce((errors, domain) => {
+    carrierRead.hydrated.value &&
+    methodRead.hydrated.value &&
+    facilityRead.hydrated.value &&
+    productStoreRead.hydrated.value &&
+    productStoreMethodRead.hydrated.value &&
+    readinessRead.hydrated.value);
+  const detailErrors = computed<Record<string, string>>(() => {
+    const errors = CARRIER_DETAIL_DOMAINS.reduce((next, domain) => {
       const message = bootstrapState.errors[domain];
-      if (message) errors[domain] = message;
-      return errors;
-    }, {} as Record<string, string>));
+      if(message) {next[domain] = message;}
+
+      return next;
+    }, {} as Record<string, string>);
+    if(bootstrapState.errors.__start) {errors.__start = bootstrapState.errors.__start;}
+
+    return errors;
+  });
   const readyForMutation = computed(() =>
     hydrated.value && Object.keys(detailErrors.value).length === 0);
 
@@ -354,7 +366,7 @@ export function useCarrier(partyId: string) {
 }
 
 function assertSuccessful(response: any, fallback: string): void {
-  if (commonUtil.hasError(response)) {
+  if(commonUtil.hasError(response)) {
     throw new Error(getResponseErrorMessage(response, fallback));
   }
 }
@@ -365,7 +377,7 @@ export async function createCarrier(input: {
 }): Promise<string> {
   const partyId = input.partyId.trim().toUpperCase();
   const groupName = input.groupName.trim();
-  if (!partyId || !groupName) throw new Error("Carrier ID and name are required.");
+  if(!partyId || !groupName) {throw new Error("Carrier ID and name are required.");}
 
   const response: any = await api({
     url: "oms/shippingGateways/carrierParties",
@@ -375,12 +387,13 @@ export async function createCarrier(input: {
   assertSuccessful(response, "Failed to create the carrier.");
   const createdPartyId = String(response?.data?.partyId || partyId);
   await refreshAfterMutation("carrier", { partyId: createdPartyId });
+
   return createdPartyId;
 }
 
 export async function renameCarrier(partyId: string, groupName: string): Promise<void> {
   const trimmedName = groupName.trim();
-  if (!trimmedName) throw new Error("Carrier name is required.");
+  if(!trimmedName) {throw new Error("Carrier name is required.");}
   const response: any = await api({
     url: `admin/organizations/${encodeURIComponent(partyId)}`,
     method: "post",
@@ -414,20 +427,100 @@ export async function updateCarrierShipmentMethod(
   shipmentMethodTypeId: string,
   fields: Pick<CarrierShipmentMethod, "carrierServiceCode" | "deliveryDays" | "sequenceNumber">,
 ): Promise<void> {
+  const mutableFields = {
+    ...(fields.carrierServiceCode !== undefined
+      ? { carrierServiceCode: fields.carrierServiceCode }
+      : {}),
+    ...(fields.deliveryDays !== undefined ? { deliveryDays: fields.deliveryDays } : {}),
+    ...(fields.sequenceNumber !== undefined ? { sequenceNumber: fields.sequenceNumber } : {}),
+  };
   const response: any = await api({
     url: "oms/shippingGateways/carrierShipmentMethods",
     method: "put",
-    data: { ...carrierMethodData(partyId, shipmentMethodTypeId), ...fields },
+    data: {
+      ...mutableFields,
+      // The selected row owns its complete identity; caller fields can never redirect the store.
+      ...carrierMethodData(partyId, shipmentMethodTypeId),
+    },
   });
   assertSuccessful(response, "Failed to update the carrier shipment method.");
   await refreshAfterMutation("carrierShipmentMethod", { partyId });
 }
 
-async function resyncProductStoreMethodDomains(): Promise<void> {
-  await Promise.all([
-    resyncDomain("productStoreShippingMethod"),
-    resyncDomain("productStoreShipmentCount"),
-  ]);
+const PRODUCT_STORE_ASSOCIATION_PAGE_SIZE = 100;
+const PRODUCT_STORE_ASSOCIATION_MAX_PAGES = 40;
+
+function productStoreAssociationKey(row: ProductStoreShipmentMethod): string {
+  return String(row.productStoreShipMethId ||
+    [
+      row.productStoreId,
+      row.partyId,
+      row.roleTypeId,
+      row.shipmentMethodTypeId,
+      row.fromDate,
+    ].join("|"),);
+}
+
+async function loadCarrierProductStoreAssociations(
+  partyId: string,
+  shipmentMethodTypeId: string,
+): Promise<ProductStoreShipmentMethod[]> {
+  const associations: ProductStoreShipmentMethod[] = [];
+  const seen = new Set<string>();
+
+  for(let pageIndex = 0; ; pageIndex += 1) {
+    if(pageIndex >= PRODUCT_STORE_ASSOCIATION_MAX_PAGES) {
+      throw new Error("The carrier product-store association list reached the " +
+        `${PRODUCT_STORE_ASSOCIATION_MAX_PAGES}-page safety limit; ` +
+        "the carrier shipment method was not deleted.",);
+    }
+    const response: any = await api({
+      url: `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/productStoreShipmentMethods`,
+      method: "get",
+      params: {
+        shipmentMethodTypeId,
+        roleTypeId: CARRIER_ROLE_TYPE_ID,
+        pageSize: PRODUCT_STORE_ASSOCIATION_PAGE_SIZE,
+        pageIndex,
+      },
+    });
+    assertSuccessful(response, "Failed to load the carrier's product-store shipment methods.");
+    if(!Array.isArray(response?.data)) {
+      throw new Error("The carrier product-store association endpoint must return an array; " +
+        "the complete dependency set cannot be proven and the carrier shipment method was not deleted.",);
+    }
+    const page: ProductStoreShipmentMethod[] = response.data.map((row: ProductStoreShipmentMethod) => ({
+      ...row,
+      // This nested route owns the parent scope even when its projected rows omit or stale it.
+      partyId,
+      roleTypeId: row.roleTypeId ?? CARRIER_ROLE_TYPE_ID,
+    }));
+    let added = 0;
+    for(const row of page) {
+      const key = productStoreAssociationKey(row);
+      if(seen.has(key)) {continue;}
+      seen.add(key);
+      associations.push(row);
+      added += 1;
+    }
+
+    if(page.length === PRODUCT_STORE_ASSOCIATION_PAGE_SIZE && added === 0) {
+      throw new Error("The carrier product-store association endpoint returned a repeated page " +
+        `${pageIndex}; the complete dependency set cannot be proven and the carrier ` +
+        "shipment method was not deleted.",);
+    }
+    if(page.length < PRODUCT_STORE_ASSOCIATION_PAGE_SIZE) {break;}
+  }
+
+  return associations;
+}
+
+async function resyncDomainsBestEffort(domains: string[]): Promise<string[]> {
+  const uniqueDomains = [...new Set(domains)];
+  const results = await Promise.allSettled(uniqueDomains.map((domain) => resyncDomain(domain)));
+
+  return results.flatMap((result, index) =>
+    result.status === "rejected" ? [uniqueDomains[index]] : []);
 }
 
 /**
@@ -438,32 +531,66 @@ async function resyncProductStoreMethodDomains(): Promise<void> {
 export async function deleteCarrierShipmentMethod(
   partyId: string,
   shipmentMethodTypeId: string,
-  productStoreAssociations: ProductStoreShipmentMethod[] = [],
+  /** @deprecated Retained for caller compatibility; live OMS data is always authoritative. */
+  _legacyProductStoreAssociations?: ProductStoreShipmentMethod[],
 ): Promise<void> {
-  const matchingAssociations = productStoreAssociations.filter((row) =>
-    row.partyId === partyId
-    && row.shipmentMethodTypeId === shipmentMethodTypeId
-    && (!row.roleTypeId || row.roleTypeId === CARRIER_ROLE_TYPE_ID)
-    && Boolean(row.productStoreId)
-    && Boolean(row.productStoreShipMethId)
-    && activeAt(row));
-
-  const expirationResults = await Promise.allSettled(
-    matchingAssociations.map((row) =>
-      expireProductStoreShipmentMethod(
-        row.productStoreId,
-        row.productStoreShipMethId,
-        Date.now(),
-        { refresh: false },
-      )),
+  void _legacyProductStoreAssociations;
+  const productStoreAssociations = await loadCarrierProductStoreAssociations(
+    partyId,
+    shipmentMethodTypeId,
   );
-  const expiredCount = expirationResults.filter((result) => result.status === "fulfilled").length;
-  if (expiredCount !== matchingAssociations.length) {
-    await resyncProductStoreMethodDomains();
-    throw new Error(
-      `${expiredCount} of ${matchingAssociations.length} product-store associations were expired. ` +
-      "The carrier shipment method was not deleted.",
-    );
+  const unsafeDependencies = productStoreAssociations.filter((row) =>
+    row.roleTypeId === CARRIER_ROLE_TYPE_ID &&
+    activeAt(row) &&
+    (
+      !row.shipmentMethodTypeId ||
+      (
+        row.shipmentMethodTypeId === shipmentMethodTypeId &&
+        (!row.productStoreId || !row.productStoreShipMethId)
+      )
+    ));
+  if(unsafeDependencies.length) {
+    const identifiers = unsafeDependencies.map((row) =>
+      row.productStoreShipMethId || row.productStoreId || "unidentified association");
+    throw new Error("Active product-store dependencies could not be classified or expired safely: " +
+      `${identifiers.join(", ")}. The carrier shipment method was not deleted.`,);
+  }
+  const matchingAssociations = productStoreAssociations.filter((row) =>
+    row.partyId === partyId &&
+    row.shipmentMethodTypeId === shipmentMethodTypeId &&
+    (!row.roleTypeId || row.roleTypeId === CARRIER_ROLE_TYPE_ID) &&
+    Boolean(row.productStoreId) &&
+    Boolean(row.productStoreShipMethId) &&
+    activeAt(row));
+
+  const expirationResults = await Promise.allSettled(matchingAssociations.map((row) =>
+    expireProductStoreShipmentMethod(
+      row.productStoreId,
+      row.productStoreShipMethId,
+      Date.now(),
+      { refresh: false },
+    )),);
+  const committedAssociationIds = expirationResults.flatMap((result, index) =>
+    result.status === "fulfilled"
+      ? [matchingAssociations[index].productStoreShipMethId]
+      : []);
+  const failedAssociationIds = expirationResults.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [matchingAssociations[index].productStoreShipMethId]
+      : []);
+  const expiredCount = committedAssociationIds.length;
+  if(failedAssociationIds.length) {
+    const failedReconciliationDomains = await resyncDomainsBestEffort([
+      "productStoreShippingMethod",
+      "productStoreShipmentCount",
+    ]);
+    throw new Error(`Committed product-store association IDs: ${committedAssociationIds.join(", ") || "none"}. ` +
+      `Failed product-store association IDs: ${failedAssociationIds.join(", ")}. ` +
+      `The carrier shipment method was not deleted.${
+        failedReconciliationDomains.length
+          ? " Cache reconciliation also failed for domains: " +
+          `${failedReconciliationDomains.join(", ")}.`
+          : ""}`,);
   }
 
   try {
@@ -474,14 +601,20 @@ export async function deleteCarrierShipmentMethod(
     });
     assertSuccessful(response, "Failed to delete the carrier shipment method.");
   } catch (error) {
-    if (expiredCount > 0) {
-      await Promise.all([
-        resyncProductStoreMethodDomains(),
-        resyncDomain("carrierShipmentMethod"),
+    if(expiredCount > 0) {
+      const failedReconciliationDomains = await resyncDomainsBestEffort([
+        "productStoreShippingMethod",
+        "productStoreShipmentCount",
+        "carrierShipmentMethod",
       ]);
       throw new Error(
         `${getResponseErrorMessage(error, "Failed to delete the carrier shipment method.")} ` +
-        `${expiredCount} product-store associations were already expired.`,
+        `Committed product-store association IDs: ${committedAssociationIds.join(", ")}. ` +
+        `Failed carrier shipment method ID: ${shipmentMethodTypeId}.${
+          failedReconciliationDomains.length
+            ? " Cache reconciliation also failed for domains: " +
+            `${failedReconciliationDomains.join(", ")}.`
+            : ""}`,
         { cause: error },
       );
     }
@@ -492,22 +625,23 @@ export async function deleteCarrierShipmentMethod(
     ...new Set(matchingAssociations.map((row) => row.productStoreId)),
   ];
   try {
-    if (affectedProductStoreIds.length) {
-      await Promise.all(
-        affectedProductStoreIds.map((productStoreId) =>
-          refreshAfterMutation("productStoreShippingMethod", { productStoreId })),
-      );
+    if(affectedProductStoreIds.length) {
+      await Promise.all(affectedProductStoreIds.map((productStoreId) =>
+        refreshAfterMutation("productStoreShippingMethod", { productStoreId })),);
       await resyncDomain("productStoreShipmentCount");
     }
     await refreshAfterMutation("carrierShipmentMethod", { partyId });
   } catch (error) {
-    await Promise.all([
-      ...(affectedProductStoreIds.length ? [resyncProductStoreMethodDomains()] : []),
-      resyncDomain("carrierShipmentMethod"),
+    await resyncDomainsBestEffort([
+      ...(affectedProductStoreIds.length
+        ? ["productStoreShippingMethod", "productStoreShipmentCount"]
+        : []),
+      "carrierShipmentMethod",
     ]);
-    throw new Error(
-      "The carrier shipment method was deleted, but its cached detail could not be refreshed.",
-      { cause: error },
+    throw new CacheReconciliationError(
+      "carrierShipmentMethod",
+      { partyId, shipmentMethodTypeId },
+      error,
     );
   }
 }
@@ -516,7 +650,7 @@ export async function resequenceCarrierShipmentMethods(
   partyId: string,
   shipmentMethods: Array<Pick<CarrierShipmentMethod, "shipmentMethodTypeId">>,
 ): Promise<void> {
-  if (!shipmentMethods.length) return;
+  if(!shipmentMethods.length) {return;}
   const results = await Promise.allSettled(shipmentMethods.map(async (method, index) => {
     const response: any = await api({
       url: "oms/shippingGateways/carrierShipmentMethods",
@@ -527,15 +661,23 @@ export async function resequenceCarrierShipmentMethods(
       },
     });
     assertSuccessful(response, `Failed to resequence ${method.shipmentMethodTypeId}.`);
+
     return method.shipmentMethodTypeId;
   }));
-  const committed = results.filter((result) => result.status === "fulfilled").length;
-  if (committed !== shipmentMethods.length) {
-    await resyncDomain("carrierShipmentMethod");
-    throw new Error(
-      `${committed} of ${shipmentMethods.length} shipment methods were resequenced. ` +
-      "The carrier methods were reloaded from the server.",
-    );
+  const committedMethodIds = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : []);
+  const failedMethodIds = results.flatMap((result, index) =>
+    result.status === "rejected" ? [shipmentMethods[index].shipmentMethodTypeId] : []);
+  if(failedMethodIds.length) {
+    const failedReconciliationDomains = await resyncDomainsBestEffort([
+      "carrierShipmentMethod",
+    ]);
+    throw new Error(`Committed shipment method IDs: ${committedMethodIds.join(", ") || "none"}. ` +
+      `Failed shipment method IDs: ${failedMethodIds.join(", ")}. ${
+        failedReconciliationDomains.length
+          ? "Cache reconciliation also failed for domains: " +
+          `${failedReconciliationDomains.join(", ")}.`
+          : "The carrier methods were reloaded from the server."}`,);
   }
 
   await refreshAfterMutation("carrierShipmentMethod", { partyId });

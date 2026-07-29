@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
@@ -9,11 +9,9 @@ const harness = vi.hoisted(() => ({
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
   commonUtil: {
-    hasError: (response: any) => Boolean(
-      response?.data?._ERROR_MESSAGE_
-      || response?.data?._ERROR_MESSAGE_LIST_?.length
-      || response?.data?.error,
-    ),
+    hasError: (response: any) => Boolean(response?.data?._ERROR_MESSAGE_ ||
+      response?.data?._ERROR_MESSAGE_LIST_?.length ||
+      response?.data?.error,),
   },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
@@ -27,11 +25,11 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 
 vi.mock("@/utils", () => ({
   getResponseErrorMessage: (error: any, fallback: string) =>
-    error?.data?._ERROR_MESSAGE_
-    || error?.data?._ERROR_MESSAGE_LIST_?.join(", ")
-    || error?.response?.data?._ERROR_MESSAGE_
-    || error?.message
-    || fallback,
+    error?.data?._ERROR_MESSAGE_ ||
+    error?.data?._ERROR_MESSAGE_LIST_?.join(", ") ||
+    error?.response?.data?._ERROR_MESSAGE_ ||
+    error?.message ||
+    fallback,
 }));
 
 import {
@@ -141,19 +139,43 @@ describe("carrier shipment-method mutations", () => {
     );
   });
 
-  it("expires active store associations before hard-deleting the carrier method", async () => {
-    await deleteCarrierShipmentMethod("FEDEX", "GROUND", [
+  it("whitelists mutable fields and does not let an injected identity redirect an update", async () => {
+    await updateCarrierShipmentMethod("FEDEX", "GROUND", {
+      carrierServiceCode: "FEDEX_GROUND",
+      deliveryDays: 3,
+      sequenceNumber: 4,
+      partyId: "UPS",
+      roleTypeId: "ATTACKER_ROLE",
+      shipmentMethodTypeId: "NEXT_DAY",
+      description: "not a mutable carrier field",
+    } as any);
+
+    expect(harness.api).toHaveBeenCalledWith({
+      url: "oms/shippingGateways/carrierShipmentMethods",
+      method: "put",
+      data: {
+        carrierServiceCode: "FEDEX_GROUND",
+        deliveryDays: 3,
+        sequenceNumber: 4,
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+      },
+    });
+  });
+
+  it("treats the nested route parent as authoritative before deleting live associations", async () => {
+    harness.api.mockResolvedValueOnce(ok([
       {
         productStoreShipMethId: "PSM_1",
         productStoreId: "STORE/1",
-        partyId: "FEDEX",
         shipmentMethodTypeId: "GROUND",
         fromDate: 1_000,
       },
       {
         productStoreShipMethId: "PSM_2",
         productStoreId: "STORE/1",
-        partyId: "FEDEX",
+        partyId: "STALE_PARENT",
         shipmentMethodTypeId: "GROUND",
         fromDate: 1_000,
       },
@@ -166,15 +188,27 @@ describe("carrier shipment-method mutations", () => {
         thruDate: NOW,
       },
       {
-        productStoreShipMethId: "PSM_UPS",
+        productStoreShipMethId: "PSM_OTHER_METHOD",
         productStoreId: "STORE/1",
-        partyId: "UPS",
-        shipmentMethodTypeId: "GROUND",
+        shipmentMethodTypeId: "NEXT_DAY",
         fromDate: 1_000,
       },
-    ]);
+    ]));
+
+    // Omit the legacy caller snapshot: live OMS source truth must still close both dependencies.
+    await deleteCarrierShipmentMethod("FEDEX", "GROUND");
 
     expect(harness.api.mock.calls.map(([request]) => request)).toEqual([
+      {
+        url: "oms/shippingGateways/carrierParties/FEDEX/productStoreShipmentMethods",
+        method: "get",
+        params: {
+          shipmentMethodTypeId: "GROUND",
+          roleTypeId: "CARRIER",
+          pageSize: 100,
+          pageIndex: 0,
+        },
+      },
       {
         url: "oms/productStores/STORE%2F1/shipmentMethods",
         method: "put",
@@ -206,34 +240,174 @@ describe("carrier shipment-method mutations", () => {
     expect(harness.refreshAfterMutation).toHaveBeenCalledTimes(2);
     expect(harness.resyncDomain).toHaveBeenCalledTimes(1);
     expect(harness.resyncDomain).toHaveBeenCalledWith("productStoreShipmentCount");
-    const deleteCallOrder = harness.api.mock.invocationCallOrder[2];
-    expect(harness.refreshAfterMutation.mock.invocationCallOrder.every(
-      (callOrder) => callOrder > deleteCallOrder,
-    )).toBe(true);
-    expect(harness.resyncDomain.mock.invocationCallOrder.every(
-      (callOrder) => callOrder > deleteCallOrder,
-    )).toBe(true);
+    const deleteCallIndex = harness.api.mock.calls.findIndex(([request]) =>
+      request.method === "delete" && request.url.includes("carrierShipmentMethods"));
+    const deleteCallOrder = harness.api.mock.invocationCallOrder[deleteCallIndex];
+    expect(harness.refreshAfterMutation.mock.invocationCallOrder.every((callOrder) => callOrder > deleteCallOrder,)).toBe(true);
+    expect(harness.resyncDomain.mock.invocationCallOrder.every((callOrder) => callOrder > deleteCallOrder,)).toBe(true);
+  });
+
+  it("paginates the authoritative association source and ignores a stale caller snapshot", async () => {
+    const unrelatedFirstPage = Array.from({ length: 100 }, (_, index) => ({
+      productStoreShipMethId: `OTHER_${index}`,
+      productStoreId: "STORE_IGNORED",
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+      shipmentMethodTypeId: "NEXT_DAY",
+      fromDate: 1_000,
+    }));
+    harness.api
+      .mockResolvedValueOnce(ok(unrelatedFirstPage))
+      .mockResolvedValueOnce(ok([{
+        productStoreShipMethId: "PSM_LIVE",
+        productStoreId: "STORE_LIVE",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+        fromDate: 1_000,
+      }]));
+
+    await deleteCarrierShipmentMethod("FEDEX", "GROUND", [{
+      productStoreShipMethId: "PSM_STALE",
+      productStoreId: "STORE_STALE",
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+      shipmentMethodTypeId: "GROUND",
+      fromDate: 1_000,
+    }]);
+
+    expect(harness.api.mock.calls.map(([request]) => request)).toEqual([
+      {
+        url: "oms/shippingGateways/carrierParties/FEDEX/productStoreShipmentMethods",
+        method: "get",
+        params: {
+          shipmentMethodTypeId: "GROUND",
+          roleTypeId: "CARRIER",
+          pageSize: 100,
+          pageIndex: 0,
+        },
+      },
+      {
+        url: "oms/shippingGateways/carrierParties/FEDEX/productStoreShipmentMethods",
+        method: "get",
+        params: {
+          shipmentMethodTypeId: "GROUND",
+          roleTypeId: "CARRIER",
+          pageSize: 100,
+          pageIndex: 1,
+        },
+      },
+      {
+        url: "oms/productStores/STORE_LIVE/shipmentMethods",
+        method: "put",
+        data: { productStoreShipMethId: "PSM_LIVE", thruDate: NOW },
+      },
+      {
+        url: "oms/shippingGateways/carrierShipmentMethods",
+        method: "delete",
+        data: {
+          partyId: "FEDEX",
+          roleTypeId: "CARRIER",
+          shipmentMethodTypeId: "GROUND",
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    ["null", null],
+    ["object envelope", { entityValueList: [] }],
+  ])("fails closed when the authoritative association response is a %s", async (_label, data) => {
+    harness.api.mockResolvedValueOnce(ok(data));
+
+    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND"))
+      .rejects.toThrow(/must return an array.*method was not deleted/i);
+
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api.mock.calls.some(([request]) => request.method !== "get")).toBe(false);
+  });
+
+  it("fails closed when a repeated full page makes the dependency set incomplete", async () => {
+    const repeatedPage = [
+      {
+        productStoreShipMethId: "PSM_LIVE",
+        productStoreId: "STORE_LIVE",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+        fromDate: 1_000,
+      },
+      ...Array.from({ length: 99 }, (_, index) => ({
+        productStoreShipMethId: `OTHER_${index}`,
+        productStoreId: "STORE_IGNORED",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "NEXT_DAY",
+        fromDate: 1_000,
+      })),
+    ];
+    harness.api
+      .mockResolvedValueOnce(ok(repeatedPage))
+      .mockResolvedValueOnce(ok(repeatedPage))
+      .mockRejectedValueOnce(new Error("unexpected third page"));
+
+    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND"))
+      .rejects.toThrow(/repeated page.*method was not deleted/i);
+
+    const associationReads = harness.api.mock.calls
+      .map(([request]) => request)
+      .filter((request) => request.method === "get");
+    expect(associationReads.map((request) => request.params.pageIndex)).toEqual([0, 1]);
+    expect(harness.api.mock.calls.some(([request]) => request.method !== "get")).toBe(false);
+  });
+
+  it("fails closed when an active dependency cannot be classified or expired safely", async () => {
+    harness.api.mockResolvedValueOnce(ok([
+      {
+        productStoreShipMethId: "UNCLASSIFIED_1",
+        productStoreId: "STORE_1",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        fromDate: 1_000,
+      },
+      {
+        productStoreId: "STORE_2",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+        fromDate: 1_000,
+      },
+    ]));
+
+    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND"))
+      .rejects.toThrow(/UNCLASSIFIED_1.*STORE_2.*method was not deleted/i);
+
+    expect(harness.api).toHaveBeenCalledTimes(1);
   });
 
   it("does not delete after a partial store expiry and forces full store-domain resync", async () => {
     harness.api
+      .mockResolvedValueOnce(ok([
+        {
+          productStoreShipMethId: "PSM_1",
+          productStoreId: "STORE_1",
+          partyId: "FEDEX",
+          roleTypeId: "CARRIER",
+          shipmentMethodTypeId: "GROUND",
+        },
+        {
+          productStoreShipMethId: "PSM_2",
+          productStoreId: "STORE_2",
+          partyId: "FEDEX",
+          roleTypeId: "CARRIER",
+          shipmentMethodTypeId: "GROUND",
+        },
+      ]))
       .mockResolvedValueOnce(ok())
       .mockResolvedValueOnce(ok({ _ERROR_MESSAGE_: "store two failed" }));
 
-    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND", [
-      {
-        productStoreShipMethId: "PSM_1",
-        productStoreId: "STORE_1",
-        partyId: "FEDEX",
-        shipmentMethodTypeId: "GROUND",
-      },
-      {
-        productStoreShipMethId: "PSM_2",
-        productStoreId: "STORE_2",
-        partyId: "FEDEX",
-        shipmentMethodTypeId: "GROUND",
-      },
-    ])).rejects.toThrow(/1 of 2 product-store associations were expired/i);
+    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND"))
+      .rejects.toThrow(/committed product-store association ids: PSM_1.*failed product-store association ids: PSM_2/i,);
 
     expect(harness.api.mock.calls.some(([request]) =>
       request.method === "delete" && request.url.includes("carrierShipmentMethods"))).toBe(false);
@@ -245,15 +419,18 @@ describe("carrier shipment-method mutations", () => {
 
   it("full-resyncs both affected domain families when delete fails after expiries commit", async () => {
     harness.api
+      .mockResolvedValueOnce(ok([{
+        productStoreShipMethId: "PSM_1",
+        productStoreId: "STORE_1",
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+      }]))
       .mockResolvedValueOnce(ok())
       .mockResolvedValueOnce(ok({ _ERROR_MESSAGE_: "carrier delete refused" }));
 
-    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND", [{
-      productStoreShipMethId: "PSM_1",
-      productStoreId: "STORE_1",
-      partyId: "FEDEX",
-      shipmentMethodTypeId: "GROUND",
-    }])).rejects.toThrow(/carrier delete refused.*1 product-store associations were already expired/i);
+    await expect(deleteCarrierShipmentMethod("FEDEX", "GROUND"))
+      .rejects.toThrow(/carrier delete refused.*committed product-store association ids: PSM_1.*failed carrier shipment method id: GROUND/i,);
 
     expect(harness.refreshAfterMutation).not.toHaveBeenCalled();
     expect(harness.resyncDomain.mock.calls).toEqual(expect.arrayContaining([
@@ -284,13 +461,42 @@ describe("carrier shipment-method mutations", () => {
     await expect(resequenceCarrierShipmentMethods("FEDEX", [
       { shipmentMethodTypeId: "GROUND" },
       { shipmentMethodTypeId: "NEXT_DAY" },
-    ])).rejects.toThrow(/1 of 2 shipment methods were resequenced/i);
+    ])).rejects.toThrow(/committed shipment method ids: GROUND.*failed shipment method ids: NEXT_DAY/i,);
     expect(harness.resyncDomain).toHaveBeenCalledWith("carrierShipmentMethod");
     expect(harness.refreshAfterMutation).not.toHaveBeenCalled();
+  });
+
+  it("preserves partial resequence IDs when the forced reconciliation also fails", async () => {
+    harness.api
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok({ error: "cannot update" }));
+    harness.resyncDomain.mockRejectedValueOnce(new Error("snapshot HTTP 503"));
+
+    await expect(resequenceCarrierShipmentMethods("FEDEX", [
+      { shipmentMethodTypeId: "GROUND" },
+      { shipmentMethodTypeId: "NEXT_DAY" },
+    ])).rejects.toThrow(/committed shipment method ids: GROUND.*failed shipment method ids: NEXT_DAY.*reconciliation also failed.*carrierShipmentMethod/i,);
   });
 });
 
 describe("owned association mutations", () => {
+  it("marks a created shipment type as committed when only its cache resync fails", async () => {
+    harness.resyncDomain.mockRejectedValueOnce(new Error("snapshot HTTP 503"));
+    const { createShipmentMethodType } = useShipmentMethodTypeMutations();
+
+    await expect(createShipmentMethodType({
+      shipmentMethodTypeId: "NEXT_DAY",
+      description: "Next day",
+    })).rejects.toMatchObject({
+      name: "CacheReconciliationError",
+      mutationCommitted: true,
+      domain: "shipmentMethodType",
+      pk: { shipmentMethodTypeId: "NEXT_DAY" },
+      failedDomains: ["shipmentMethodType"],
+    });
+    expect(harness.api).toHaveBeenCalledTimes(1);
+  });
+
   it("renames a shipment type and re-snapshots the global type domain", async () => {
     const { renameShipmentMethodType } = useShipmentMethodTypeMutations();
     await renameShipmentMethodType("NEXT/DAY", "Next day");
@@ -401,6 +607,41 @@ describe("owned association mutations", () => {
       { productStoreId: "STORE/1" },
     );
     expect(harness.resyncDomain).toHaveBeenCalledTimes(2);
+    expect(harness.resyncDomain).toHaveBeenCalledWith("productStoreShipmentCount");
+  });
+
+  it.each([
+    {
+      label: "add",
+      mutate: (mutations: ReturnType<typeof useProductStoreMutations>) =>
+        mutations.addShipmentMethod({
+          shipmentMethodTypeId: "GROUND",
+          partyId: "FEDEX",
+        }),
+    },
+    {
+      label: "expire",
+      mutate: (mutations: ReturnType<typeof useProductStoreMutations>) =>
+        mutations.expireShipmentMethod("PSM_1"),
+    },
+  ])("attempts both $label reconciliations and reports every failed cache domain", async ({ mutate }) => {
+    harness.refreshAfterMutation.mockRejectedValueOnce(new Error("method refresh HTTP 503"));
+    harness.resyncDomain.mockRejectedValueOnce(new Error("count snapshot HTTP 503"));
+    const mutations = useProductStoreMutations("STORE/1");
+
+    await expect(mutate(mutations)).rejects.toMatchObject({
+      name: "CacheReconciliationError",
+      mutationCommitted: true,
+      pk: { productStoreId: "STORE/1" },
+      failedDomains: [
+        "productStoreShippingMethod",
+        "productStoreShipmentCount",
+      ],
+    });
+    expect(harness.refreshAfterMutation).toHaveBeenCalledWith(
+      "productStoreShippingMethod",
+      { productStoreId: "STORE/1" },
+    );
     expect(harness.resyncDomain).toHaveBeenCalledWith("productStoreShipmentCount");
   });
 

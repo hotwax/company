@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, effectScope, ref } from "vue";
 
 /**
  * Product-store shipment methods share one all-store cache. Scoping must therefore follow a
@@ -36,10 +36,9 @@ vi.mock("@/utils/cacheEntities", () => ({
 vi.mock("@/composables/useCachedList", () => ({
   useCachedList: (_entity: any, options: any = {}) => {
     const records = options.scope
-      ? computed(() => harness.records.value.filter(
-        (row: any) => row[options.scope.field] === options.scope.value,
-      ))
+      ? computed(() => harness.records.value.filter((row: any) => row[options.scope.field] === options.scope.value,))
       : harness.records;
+
     return { records, rows: records, hydrated: harness.hydrated };
   },
   useCachedRecord: vi.fn(),
@@ -59,10 +58,18 @@ const STORE_B_METHOD = {
   partyId: "FEDEX",
   shipmentMethodTypeId: "GROUND_B",
 };
+const EXPIRED_STORE_A_METHOD = {
+  productStoreShipMethId: "PSM_A_EXPIRED",
+  productStoreId: "STORE_A",
+  partyId: "FEDEX",
+  shipmentMethodTypeId: "EXPRESS_A",
+  fromDate: 1,
+  thruDate: 2,
+};
 
 describe("useProductStoreShippingMethods scope", () => {
   beforeEach(() => {
-    harness.records = ref([STORE_A_METHOD, STORE_B_METHOD]);
+    harness.records = ref([STORE_A_METHOD, STORE_B_METHOD, EXPIRED_STORE_A_METHOD]);
     harness.hydrated = ref(true);
   });
 
@@ -70,6 +77,13 @@ describe("useProductStoreShippingMethods scope", () => {
     const { shippingMethods } = useProductStoreShippingMethods("STORE_A");
 
     expect(shippingMethods.value).toEqual([STORE_A_METHOD]);
+  });
+
+  it("excludes date-expired shipment-method history from existing store screens", () => {
+    const { shippingMethods } = useProductStoreShippingMethods("STORE_A");
+
+    expect(shippingMethods.value.map((row: any) => row.productStoreShipMethId))
+      .toEqual(["PSM_A"]);
   });
 
   it("fails closed when a caller omits the store scope", () => {
@@ -89,5 +103,37 @@ describe("useProductStoreShippingMethods scope", () => {
 
     productStoreId.value = "STORE_B";
     expect(shippingMethods.value).toEqual([STORE_B_METHOD]);
+  });
+
+  it("re-evaluates automatically when a date-effective boundary passes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    harness.records.value = [
+      {
+        ...STORE_A_METHOD,
+        fromDate: 1_001,
+      },
+      {
+        ...EXPIRED_STORE_A_METHOD,
+        productStoreShipMethId: "PSM_ACTIVE_UNTIL_BOUNDARY",
+        thruDate: 1_002,
+      },
+    ];
+    const scope = effectScope();
+    const result = scope.run(() => useProductStoreShippingMethods("STORE_A"))!;
+
+    expect(result.shippingMethods.value.map((row: any) => row.productStoreShipMethId))
+      .toEqual(["PSM_ACTIVE_UNTIL_BOUNDARY"]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result.shippingMethods.value.map((row: any) => row.productStoreShipMethId))
+      .toEqual(["PSM_A", "PSM_ACTIVE_UNTIL_BOUNDARY"]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result.shippingMethods.value.map((row: any) => row.productStoreShipMethId))
+      .toEqual(["PSM_A"]);
+
+    scope.stop();
+    vi.useRealTimers();
   });
 });

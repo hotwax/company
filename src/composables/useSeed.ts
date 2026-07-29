@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import { resyncDomain } from "@/services/appCacheBootstrap";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import {
   currencyCache,
   enumCache,
@@ -151,8 +152,20 @@ export function useProductTypes() {
  */
 export function useShipmentMethodTypeMutations() {
   const assertSuccessful = (response: any, fallback: string) => {
-    if (commonUtil.hasError(response)) {
+    if(commonUtil.hasError(response)) {
       throw new Error(getResponseErrorMessage(response, fallback));
+    }
+  };
+
+  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
+    try {
+      await resyncDomain("shipmentMethodType");
+    } catch (error) {
+      throw new CacheReconciliationError(
+        "shipmentMethodType",
+        { shipmentMethodTypeId },
+        error,
+      );
     }
   };
 
@@ -163,7 +176,8 @@ export function useShipmentMethodTypeMutations() {
       data: payload,
     });
     assertSuccessful(resp, "Failed to create the shipment method type.");
-    await resyncDomain("shipmentMethodType");
+    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
+
     return resp;
   }
 
@@ -174,7 +188,8 @@ export function useShipmentMethodTypeMutations() {
       data: { shipmentMethodTypeId, description: description.trim() },
     });
     assertSuccessful(resp, "Failed to rename the shipment method type.");
-    await resyncDomain("shipmentMethodType");
+    await resyncShipmentMethodTypes(shipmentMethodTypeId);
+
     return resp;
   }
 
