@@ -38,7 +38,7 @@
         </ion-item>
         
         <ion-label>
-          {{ shopifyKeyByValue[channel.enumId] || '-' }}
+          {{ getShopifyMappingId(channel.enumId) || '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
         
@@ -84,8 +84,13 @@ import { useShopifyTypeMappings } from '@/composables/useShopify';
 const { updateEnumCode } = useNetSuite();
 
 const { values: salesChannel, hydrated } = useTypedEnums("ORDER_SALES_CHANNEL");
-const { keyByValue: shopifyKeyByValue } = useShopifyTypeMappings(undefined, "SHOPIFY_ORDER_SOURCE");
+const { mappings: shopifyTypeMappings } = useShopifyTypeMappings(undefined, "SHOPIFY_ORDER_SOURCE");
 
+
+const getShopifyMappingId = computed(() => (salesChannelEnumId: any) => {
+  const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === salesChannelEnumId);
+  return shopifyMappingId ? shopifyMappingId.mappedKey : "";
+});
 
 async function editNetSuiteSalesChannelId(channel: any) {
   const alert = await alertController.create({

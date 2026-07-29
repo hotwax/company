@@ -38,7 +38,7 @@
         </ion-item>
 
         <ion-label>
-          {{ shopifyKeyByValue[paymentMethod.paymentMethodTypeId] || '-' }}
+          {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) || '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
 
@@ -85,7 +85,7 @@ const { editNetSuiteId, removeNetSuiteId } = useNetSuite(paymentMethodTypeId);
 
 const { paymentMethodTypes: paymentMethods, hydrated } = usePaymentMethodTypes();
 const { mappings: integrationTypeMappings } = useIntegrationTypeMappings(paymentMethodTypeId);
-const { keyByValue: shopifyKeyByValue } = useShopifyTypeMappings(undefined, "SHOPIFY_PAYMENT_TYPE");
+const { mappings: shopifyTypeMappings } = useShopifyTypeMappings(undefined, "SHOPIFY_PAYMENT_TYPE");
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_PMT_MTHD)
@@ -99,6 +99,11 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
+
+const getShopifyMappingId = computed(() => (paymentMethodTypeId: any) => {
+  const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === paymentMethodTypeId);
+  return shopifyMappingId ? shopifyMappingId.mappedKey : "";
+});
 
 function openPaymentMethodDoc() {
   window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/payment-methods', '_blank', 'noopener, noreferrer');
