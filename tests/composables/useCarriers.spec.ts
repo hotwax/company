@@ -291,6 +291,20 @@ describe("carrier cache-backed reads", () => {
     ]);
   });
 
+  it("carries the global type description onto configured methods for store association views", () => {
+    // `CarrierShipmentMethod` rows carry no `description` (see the `carrierMethods` fixture, which
+    // matches the live payload). Consumers that render only configured methods must still get the
+    // description from the type table, or they fall back to the raw id and show it twice.
+    const detail = useCarrier("FEDEX");
+
+    expect(detail.configuredShipmentMethods.value).toEqual([
+      expect.objectContaining({ shipmentMethodTypeId: "NEXT_DAY", description: "Next day" }),
+      expect.objectContaining({ shipmentMethodTypeId: "GROUND", description: "Ground" }),
+    ]);
+    // Still scoped to this carrier's enabled methods only — not the whole global type table.
+    expect(detail.configuredShipmentMethods.value).toHaveLength(2);
+  });
+
   it("does not present a failed cold carrier catalog as a genuine empty state", () => {
     harness.bootstrapState.errors = {
       carrier: "carrier snapshot failed",
