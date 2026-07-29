@@ -25,13 +25,12 @@
         </ion-item>
       </div>
       
-      <!-- TODO: need to make this dynamic -->
-      <!-- <div class="ion-margin-top">
-        <ion-text>Product store name shipment methods</ion-text>
-      </div> -->
-      <!-- <ion-button size="small" fill="clear" class="ion-margin-bottom">
+      <div class="ion-margin-top">
+        <ion-text>{{ netSuiteProductStore?.storeName }} {{ translate("shipment methods") }}</ion-text>
+      </div>
+      <ion-button size="small" fill="clear" class="ion-margin-bottom">
         <ion-label>{{ translate("Add more shipment methods") }}</ion-label>
-      </ion-button> -->
+      </ion-button>
       
       <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
            than an empty list that reads as "there is nothing here". -->
@@ -77,27 +76,27 @@
           </ion-button>
         </template>
 
-        <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-        <!-- <ion-label class="ion-margin">
-          150
+        <ion-label class="ion-margin">
+          {{ shipmentMethod.orderCount || 0 }}
           <p>{{ translate("orders") }}</p>
-        </ion-label> -->
+        </ion-label>
       </div>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
 import { computed } from "vue";
 import { useNetSuite } from "@/composables/useNetSuite";
 import { useShipmentMethodTypes } from "@/composables/useSeed";
-import { useProductStoreShippingMethods } from "@/composables/useProductStores";
+import { useNetSuiteProductStore, useProductStoreShippingMethods } from "@/composables/useProductStores";
 import { useShopifyCarrierShipments } from "@/composables/useShopify";
 
 const shipmentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
+const { netSuiteProductStore } = useNetSuiteProductStore();
 const { mappings: integrationTypeMappings, editNetSuiteId, removeNetSuiteId } = useNetSuite(shipmentMethodTypeId);
 
 // Every read is cached. The store's shipping methods come from one fixed product store for now
