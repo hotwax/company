@@ -320,10 +320,6 @@ function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
 }
 
-// function openFacilities() {
-//   router.push("/netsuite/facilities")
-// }
-
 function openInventoryVariances() {
   router.push("/netsuite/inventory-variances")
 }

@@ -47,7 +47,11 @@
               </ion-item>
             </div>
             <div v-if="isUserFetched">
-              <ion-item detail button @click="openCreatedByUserDetail">
+              <ion-item
+                :detail="canOpenCreatedByUserDetail()"
+                :button="canOpenCreatedByUserDetail()"
+                @click="openCreatedByUserDetail"
+              >
                 <ion-icon slot="start" :icon="bodyOutline" />
                 <ion-label v-if="isCreatedBySystem()">
                   {{ translate("Created by", { userLoginId: "&#129502;" }) }}
@@ -781,16 +785,18 @@ const openContactActionsPopover = async (event: Event, type: string, value: stri
   return contactActionsPopover.present();
 };
 
-const openCreatedByUserDetail = () => {
-  if(isCreatedBySystem()) {
-    window.open("https://youtu.be/dQw4w9WgXcQ?si=cPE1jkfRLPiebJuW", "_blank");
-  } else {
-    router.push({ path: `/user-details/${selectedUser.value.createdByUserPartyId}` });
-  }
-};
-
 const isCreatedBySystem = () => {
   return !selectedUser.value.createdByUserLogin || selectedUser.value.createdByUserLogin === "system";
+};
+
+const canOpenCreatedByUserDetail = () => {
+  return !isCreatedBySystem() && Boolean(selectedUser.value.createdByUserPartyId);
+};
+
+const openCreatedByUserDetail = () => {
+  if(!canOpenCreatedByUserDetail()) {return;}
+
+  router.push({ path: `/user-details/${selectedUser.value.createdByUserPartyId}` });
 };
 
 const addContactField = async (type: string) => {
