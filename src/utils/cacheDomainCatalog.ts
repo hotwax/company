@@ -51,6 +51,8 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // must come AFTER productStore: it fans out over the cached product stores
   { name: "productStoreFacility", table: "productStoreFacilities", label: "Store facilities", syncClass: "B" },
   { name: "facilityGroupProductStore", table: "facilityGroupProductStores", label: "Facility group product stores", syncClass: "B" },
+  { name: "app", table: "apps", label: "Apps", syncClass: "B" },
+  { name: "appVersion", table: "appVersions", label: "App versions", syncClass: "B" },
   // --- class A: live, view-scoped (shown for visibility; not synced at login) ---
   { name: "dataManagerLog", table: "dataManagerLogs", label: "Data manager logs", syncClass: "A" },
   { name: "systemMessage", table: "systemMessages", label: "System messages", syncClass: "A" },

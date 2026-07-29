@@ -61,6 +61,8 @@ class CompanyCacheDB extends Dexie {
   enumGroupMembers!: Table<CachedRow, string>;
   facilityIdentifications!: Table<CachedRow, string>;
   systemMessageTypes!: Table<CachedRow, string>;
+  apps!: Table<CachedRow, string>;
+  appVersions!: Table<CachedRow, string>;
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
@@ -191,6 +193,11 @@ const CACHE_SCHEMA = {
   enumGroupMembers: "enumGroupMemberKey, enumerationGroupId, enumId",
   facilityIdentifications: "facilityIdentificationKey, facilityId, facilityIdenTypeId",
   systemMessageTypes: "systemMessageTypeId, parentTypeId",
+  // App registry (admin/apps) — the app catalog the version screen and its create modal read.
+  apps: "appId",
+  // App version pins (admin/appVersion). Composite natural key (appId + environmentTypeId), so a
+  // synthetic PK plus the two indexed parts. `enumDesc`/`appName` come joined on the list response.
+  appVersions: "appVersionKey, appId, environmentTypeId",
   // Shopify bulk operations, keyed by the GraphQL node id. A completed operation is immutable, so
   // it can be served from cache forever; only in-flight ones need a re-read.
   shopifyBulkOperations: "id, status, systemMessageRemoteId, completedAt",
