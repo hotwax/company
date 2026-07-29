@@ -374,9 +374,11 @@ and delegated intents.
 
 ### Step 2: Document the proven backend gap
 
-Record supported reads/writes, the missing credential/config/link resources, the legacy route's
-test-maarg `404`, and the backend contracts required before credential or carrier-link management
-can be safely added. Link both carrier documents from `docs/README.md`.
+Record supported reads/writes, the missing credential/config/link resources, the deployed result
+of the undeclared legacy route if the authenticated pass exercises it, and the backend contracts
+required before credential or carrier-link management can be safely added. Keep environment
+observations dated and separate from the checked-in contract. Link both carrier documents from
+`docs/README.md`.
 
 Update `AGENTS.md` cache architecture documentation with the three new domains, the all-store
 shipping-method fan-out, composable ownership, and required consumer scoping.
@@ -416,8 +418,10 @@ rerun the exact failing command.
 pnpm --filter company dev -- --host 127.0.0.1
 ```
 
-Use Chrome Default profile so the `https://test-maarg.hotwax.io/` password saved for
-`aditya.patel` remains available. Never read or copy the password into source or `VITE_*`.
+Use the signed-in Chrome profile so the saved `https://test-maarg.hotwax.io/` credential remains
+available for an explicit native password-manager fill. Do not assume Chrome will automatically
+match that credential to the localhost origin. Never read or copy the password into source,
+terminal output, or `VITE_*`.
 
 ### Step 3: Execute browser QA on test-maarg
 
