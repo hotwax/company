@@ -54,6 +54,7 @@ export function startReferenceSync(): Promise<void> {
     onStatus: (status) => {
       if (status.type === "sync-end" && status.domain) {
         bootstrapState.written[status.domain] = status.written ?? 0;
+        delete bootstrapState.errors[status.domain];
       } else if ((status.type === "sync-error" || status.type === "auth-error") && status.domain) {
         bootstrapState.errors[status.domain] = String(status.message ?? "failed");
       }
