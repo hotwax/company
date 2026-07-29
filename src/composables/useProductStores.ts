@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, toValue, type MaybeRefOrGetter } from "vue";
 import { api, commonUtil, logger } from "@common";
 import {
   productStoreCache,
@@ -7,7 +7,11 @@ import {
   productStoreShippingMethodCache,
 } from "@/utils/cacheEntities";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { getResponseErrorMessage } from "@/utils";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 import { useCachedList, useCachedRecord } from "./useCachedList";
+import { useEffectiveNow } from "./useEffectiveNow";
 
 /**
  * Product store master entity — stores and the configuration hanging off them (shipment-method
@@ -112,13 +116,25 @@ export function useProductStoreShipmentCounts() {
   };
 }
 
-/** Shipping methods configured on a store. */
-export function useProductStoreShippingMethods(productStoreId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    productStoreShippingMethodCache,
-    productStoreId ? { scope: { field: "productStoreId", value: productStoreId } } : {},
-  );
-  return { shippingMethods: records, hydrated };
+/**
+ * Shipping methods configured on one store.
+ *
+ * The cache contains every store. Filter its live rows in a computed instead of capturing a Dexie
+ * scope once: Shopify and NetSuite discover their productStoreId asynchronously after setup.
+ */
+export function useProductStoreShippingMethods(productStoreId?: MaybeRefOrGetter<string | undefined>) {
+  const { records, hydrated } = useCachedList<any>(productStoreShippingMethodCache);
+  const effectiveNow = useEffectiveNow(records);
+  const shippingMethods = computed(() => {
+    const resolvedProductStoreId = String(toValue(productStoreId) ?? "").trim();
+    if(!resolvedProductStoreId) {return [];}
+
+    return records.value.filter((row: any) =>
+      String(row.productStoreId) === resolvedProductStoreId &&
+      isEffectiveNow(row, effectiveNow.value));
+  });
+
+  return { shippingMethods, hydrated };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -195,6 +211,129 @@ export function useProductStoreDetail(productStoreId: string) {
   return { current, settings, hydrated, loading, load, reloadDetail: loadDetail, reloadSettings: loadSettings };
 }
 
+export interface ProductStoreShipmentMethodInput {
+  /** Optional: omit to let the server sequence the PK. */
+  productStoreShipMethId?: string;
+  shipmentMethodTypeId: string;
+  partyId: string;
+  roleTypeId?: string;
+  sequenceNumber?: number;
+  shipmentGatewayConfigId?: string;
+  isTrackingRequired?: string | boolean;
+  fromDate?: number;
+}
+
+// The write must match the read: the cached `productStoreShippingMethod` domain fans out over
+// `admin/productStores/{id}/shippingMethods`, and `oms/productStores` is marked
+// "Deprecated (since maarg 4.4.0): Use admin/productStores" in oms.rest.xml. Both routes resolve to
+// the same `ProductStoreShipmentMeth` entity, so POST/PUT are equivalent here — admin's PUT is
+// `store` (upsert) rather than `update`. The admin resource exposes no DELETE, which is fine: this
+// module expires rows by setting `thruDate` and never hard-deletes them.
+const productStoreShipmentMethodUrl = (productStoreId: string) =>
+  `admin/productStores/${encodeURIComponent(productStoreId)}/shippingMethods`;
+
+function assertProductStoreMutation(response: any, fallback: string): void {
+  if (commonUtil.hasError(response)) {
+    throw new Error(getResponseErrorMessage(response, fallback));
+  }
+}
+
+async function refreshProductStoreShipmentMethods(
+  productStoreId: string,
+  countChanged: boolean,
+): Promise<void> {
+  const reconciliations = [
+    {
+      domain: "productStoreShippingMethod",
+      run: () => refreshAfterMutation("productStoreShippingMethod", { productStoreId }),
+    },
+    ...(countChanged
+      ? [{
+        domain: "productStoreShipmentCount",
+        run: () => resyncDomain("productStoreShipmentCount"),
+      }]
+      : []),
+  ];
+  const results = await Promise.allSettled(reconciliations.map(({ run }) => run()));
+  const failed = results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [{ domain: reconciliations[index].domain, reason: result.reason }]
+      : []);
+
+  if(failed.length) {
+    throw new CacheReconciliationError(
+      failed[0].domain,
+      { productStoreId },
+      new AggregateError(
+        failed.map(({ reason }) => reason),
+        `Failed to reconcile cache domains: ${failed.map(({ domain }) => domain).join(", ")}.`,
+      ),
+      failed.map(({ domain }) => domain),
+    );
+  }
+}
+
+export async function addProductStoreShipmentMethod(
+  productStoreId: string,
+  payload: ProductStoreShipmentMethodInput,
+): Promise<any> {
+  const response: any = await api({
+    url: productStoreShipmentMethodUrl(productStoreId),
+    method: "post",
+    data: {
+      ...payload,
+      productStoreId,
+      roleTypeId: payload.roleTypeId || "CARRIER",
+      fromDate: payload.fromDate ?? Date.now(),
+    },
+  });
+  assertProductStoreMutation(response, "Failed to add the product-store shipment method.");
+  await refreshProductStoreShipmentMethods(productStoreId, true);
+  return response;
+}
+
+export interface ProductStoreShipmentMethodMutationOptions {
+  /** The caller owns cache reconciliation (used by batched carrier-method deletion). */
+  refresh?: boolean;
+}
+
+export async function updateProductStoreShipmentMethod(
+  productStoreId: string,
+  productStoreShipMethId: string,
+  fields: Record<string, any>,
+  options: ProductStoreShipmentMethodMutationOptions = {},
+): Promise<any> {
+  const response: any = await api({
+    url: productStoreShipmentMethodUrl(productStoreId),
+    method: "put",
+    // The selected row owns its identity; caller-supplied scalar fields cannot redirect the write.
+    data: { ...fields, productStoreShipMethId },
+  });
+  assertProductStoreMutation(response, "Failed to update the product-store shipment method.");
+  if (options.refresh !== false) {
+    await refreshProductStoreShipmentMethods(productStoreId, false);
+  }
+  return response;
+}
+
+export async function expireProductStoreShipmentMethod(
+  productStoreId: string,
+  productStoreShipMethId: string,
+  thruDate = Date.now(),
+  options: ProductStoreShipmentMethodMutationOptions = {},
+): Promise<any> {
+  const response = await updateProductStoreShipmentMethod(
+    productStoreId,
+    productStoreShipMethId,
+    { thruDate },
+    { refresh: false },
+  );
+  if (options.refresh !== false) {
+    await refreshProductStoreShipmentMethods(productStoreId, true);
+  }
+  return response;
+}
+
 export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });
@@ -227,35 +366,14 @@ export function useProductStoreMutations(productStoreId: string) {
       return resp;
     },
 
-    async addShipmentMethod(payload: {
-      /** Optional: omit to let the server sequence the PK, which the Shopify screen relies on. */
-      productStoreShipMethId?: string;
-      shipmentMethodTypeId: string;
-      partyId: string;
-      roleTypeId?: string;
-      sequenceNumber?: number;
-    }) {
-      // Two implementations of this write existed — `productStoreStore` posted to
-      // `oms/productStores/{id}/shipmentMethods` and `utilStore` to
-      // `admin/productStores/{id}/shippingMethods`. Both routes exist, but `oms/productStores` is
-      // marked "Deprecated (since maarg 4.4.0): Use admin/productStores" in oms.rest.xml, and the
-      // admin route is what the cached read (`productStoreShippingMethod`) already lists from — so
-      // the write now matches the read.
-      const resp: any = await api({
-        url: `admin/productStores/${storeId()}/shippingMethods`,
-        method: "post",
-        // `roleTypeId` defaults to CARRIER — the server requires it and every caller means carrier.
-        data: { ...payload, productStoreId, roleTypeId: payload.roleTypeId || "CARRIER" },
-      });
-      if (commonUtil.hasError(resp)) return resp;
-      // Both snapshots are whole-list (the shipping-method domain is even pinned to one store id),
-      // so there is no by-PK route to re-read — re-snapshot each.
-      await Promise.all([
-        resyncDomain("productStoreShippingMethod"),
-        resyncDomain("productStoreShipmentCount"),
-      ]);
-      return resp;
-    },
+    addShipmentMethod: (payload: ProductStoreShipmentMethodInput) =>
+      addProductStoreShipmentMethod(productStoreId, payload),
+
+    updateShipmentMethod: (productStoreShipMethId: string, fields: Record<string, any>) =>
+      updateProductStoreShipmentMethod(productStoreId, productStoreShipMethId, fields),
+
+    expireShipmentMethod: (productStoreShipMethId: string, thruDate = Date.now()) =>
+      expireProductStoreShipmentMethod(productStoreId, productStoreShipMethId, thruDate),
   };
 }
 

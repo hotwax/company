@@ -19,7 +19,7 @@
           <ion-label>{{ translate("Integrations") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle v-for="(p, i) in integrationPages" :key="'integration-' + i" :auto-hide="false">
+        <ion-menu-toggle v-for="(p, i) in visibleIntegrationPages" :key="'integration-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIntegrationIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -30,7 +30,7 @@
           <ion-label>{{ translate("Facilities") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in facilitiesPages" :key="'facilities-' + i">
+        <ion-menu-toggle v-for="(p, i) in facilitiesPages" :key="'facilities-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedFacilitiesIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -90,7 +90,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import router from "@/router";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
@@ -107,7 +107,24 @@ const appPages = [
   },
 ];
 
-const integrationPages = [
+interface IntegrationPage {
+  title: string;
+  url: string;
+  childRoutes: string[];
+  permission?: string;
+  iosIcon: string;
+  mdIcon: string;
+}
+
+const integrationPages: IntegrationPage[] = [
+  {
+    title: "Carriers",
+    url: "/carriers",
+    childRoutes: ["/carriers/"],
+    permission: "CARRIER_SETUP_VIEW",
+    iosIcon: airplaneOutline,
+    mdIcon: airplaneOutline,
+  },
   {
     title: "Shopify",
     url: "/shopify",
@@ -130,6 +147,10 @@ const integrationPages = [
     mdIcon: walletOutline
   },
 ];
+
+const visibleIntegrationPages = computed(() =>
+  integrationPages.filter((screen) =>
+    !screen.permission || hasPermission(screen.permission)))
 
 const userPages = [
   {
@@ -212,6 +233,7 @@ const selectedIndex = computed(() => {
 
 const selectedFacilitiesIndex = computed(() => {
   const path = router.currentRoute.value.path
+
   return facilitiesPages.findIndex((screen) => screen.url === path)
 })
 
@@ -224,7 +246,7 @@ const selectedAgentIndex = computed(() => {
 const selectedIntegrationIndex = computed(() => {
   const path = router.currentRoute.value.path
 
-  return integrationPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+  return visibleIntegrationPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
 })
 
 const selectedUserIndex = computed(() => {

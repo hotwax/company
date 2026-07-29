@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { DateTime } from "luxon";
 import { api, commonUtil, logger, translate } from "@common";
+import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/cacheEntities";
@@ -32,6 +33,11 @@ import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
  */
 export function isVirtualFacility(facility: any): boolean {
   return facility?.facilityTypeId === "VIRTUAL_FACILITY" || facility?.parentTypeId === "VIRTUAL_FACILITY";
+}
+
+/** Parties rendered in Facility Details' staff section, excluding login and carrier associations. */
+export function isFacilityStaffParty(party: any): boolean {
+  return party?.roleTypeId !== "FAC_LOGIN" && party?.roleTypeId !== "CARRIER";
 }
 
 export interface FacilityFilters {
@@ -804,6 +810,43 @@ export interface ContactMechPayload extends Record<string, any> {
   contactMechId?: string;
 }
 
+export interface CarrierFacilityAssociationInput {
+  partyId: string;
+  facilityId: string;
+  enabled: boolean;
+  /** Required when closing the exact date-effective FacilityParty row. */
+  fromDate?: string | number;
+}
+
+/** Create or close a CARRIER FacilityParty row, then prune/refill that carrier's cache partition. */
+export async function setCarrierFacilityAssociation(
+  input: CarrierFacilityAssociationInput,
+): Promise<any> {
+  if (!input.enabled && (input.fromDate === null || input.fromDate === undefined || input.fromDate === "")) {
+    throw new Error("The active carrier-facility association fromDate is required.");
+  }
+  const response: any = await api({
+    url: `oms/facilities/${encodeURIComponent(input.facilityId)}/parties`,
+    method: input.enabled ? "post" : "put",
+    data: {
+      partyId: input.partyId,
+      facilityId: input.facilityId,
+      roleTypeId: "CARRIER",
+      ...(input.enabled
+        ? { fromDate: Date.now() }
+        : { fromDate: input.fromDate, thruDate: Date.now() }),
+    },
+  });
+  if (commonUtil.hasError(response)) {
+    throw new Error(getResponseErrorMessage(
+      response,
+      "Failed to update the carrier-facility association.",
+    ));
+  }
+  await refreshAfterMutation("carrierFacility", { partyId: input.partyId });
+  return response;
+}
+
 export function useFacilityMutations(facilityId: string) {
   const put = (url: string, data: any) => api({ url, method: "put", data }) as Promise<any>;
   const post = (url: string, data: any) => api({ url, method: "post", data }) as Promise<any>;
@@ -928,6 +971,11 @@ export function useFacilityMutations(facilityId: string) {
       post(`oms/facilities/${encodeURIComponent(facilityId)}/parties`, { ...payload, facilityId }),
     removeParty: (payload: Record<string, any>) =>
       put(`oms/facilities/${encodeURIComponent(facilityId)}/parties`, { ...payload, facilityId }),
+    setCarrierAssociation: (
+      partyId: string,
+      enabled: boolean,
+      fromDate?: string | number,
+    ) => setCarrierFacilityAssociation({ partyId, facilityId, enabled, fromDate }),
 
     /** The calendar association endpoint. Associating and removing are both POSTs to it. */
     saveCalendar: (payload: Record<string, any>) =>

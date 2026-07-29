@@ -370,6 +370,62 @@ export const productStoreShipmentCountCache = defineCachedEntity(
   productStoreShipmentCountProjection,
 );
 
+/** Carriers are PARTY_GROUP parties holding the CARRIER role. */
+export const carrierProjection = {
+  keyField: "partyId",
+  fields: {
+    partyId: "text",
+    groupName: "text",
+    partyTypeId: "text",
+    roleTypeId: "text",
+    statusId: "text",
+  },
+} as const;
+
+/** CarrierShipmentMethod has a composite natural key (carrier + role + method type). */
+export const carrierShipmentMethodProjection = {
+  keyField: "carrierShipmentMethodKey",
+  fields: {
+    carrierShipmentMethodKey: "text",
+    partyId: "text",
+    roleTypeId: "text",
+    shipmentMethodTypeId: "text",
+    sequenceNumber: "count",
+    carrierServiceCode: "text",
+    deliveryDays: "count",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) return undefined;
+    return `${raw.partyId}|${raw.roleTypeId}|${raw.shipmentMethodTypeId}`;
+  },
+} as const;
+
+/** A date-effective carrier role at one facility. */
+export const carrierFacilityProjection = {
+  keyField: "carrierFacilityKey",
+  fields: {
+    carrierFacilityKey: "text",
+    partyId: "text",
+    facilityId: "text",
+    facilityName: "text",
+    facilityTypeId: "text",
+    roleTypeId: "text",
+    fromDate: "date",
+    thruDate: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) return undefined;
+    return `${raw.partyId}|${raw.facilityId}|${raw.roleTypeId}|${raw.fromDate ?? ""}`;
+  },
+} as const;
+
+export const carrierCache = defineCachedEntity("carriers", carrierProjection);
+export const carrierShipmentMethodCache = defineCachedEntity(
+  "carrierShipmentMethods",
+  carrierShipmentMethodProjection,
+);
+export const carrierFacilityCache = defineCachedEntity("carrierFacilities", carrierFacilityProjection);
+
 /** Shopify carrier → shipment-method mappings. Composite key (shop + carrier + method). */
 export const shopifyCarrierShipmentProjection = {
   keyField: "carrierShipmentKey",
@@ -389,7 +445,7 @@ export const productStoreShippingMethodProjection = {
   fields: {
     productStoreShipMethId: "text", productStoreId: "text", shipmentMethodTypeId: "text",
     partyId: "text", roleTypeId: "text", description: "text", isTrackingRequired: "text",
-    fromDate: "date",
+    shipmentGatewayConfigId: "text", sequenceNumber: "count", fromDate: "date", thruDate: "date",
   },
 } as const;
 
@@ -429,16 +485,6 @@ export const facilityIdentificationProjection = {
 
 export const enumGroupMemberCache = defineCachedEntity("enumGroupMembers", enumGroupMemberProjection);
 export const facilityIdentificationCache = defineCachedEntity("facilityIdentifications", facilityIdentificationProjection);
-
-/**
- * The product store whose shipping methods are cached.
- *
- * HARDCODED for now by explicit decision: the NetSuite/Shopify shipment-method screens read one
- * store's methods, and the id was previously resolved from store state (which produced a request
- * for `admin/productStores/undefined/shippingMethods`). Replace with a fan-out over cached product
- * stores when those screens need to cover more than one store.
- */
-export const PRODUCT_STORE_ID_FOR_SHIPPING_METHODS = "STORE";
 
 /** Geo reference straight from Moqui (`moqui.basic.Geo`) — countries, states, regions. */
 export const geoProjection = {
