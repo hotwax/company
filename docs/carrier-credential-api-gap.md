@@ -78,6 +78,11 @@ file. That source fact does not establish what any currently deployed environmen
 must not call the path or interpret an empty, missing, or failed response as connected,
 disconnected, or ready.
 
+The adjacent plural path `oms/shippingGateways/configs` **is** declared and lists the OFBiz core
+entity `ShipmentGatewayConfig`. That does not close the `ShippingGatewayConfig` row above: the
+Unigate registry named there is a different entity, declared only in `UnigateServices.xml` and its
+OMS server screen, with no REST resource of its own. Do not treat the plural route as a substitute.
+
 ## Minimum backend contracts
 
 Endpoint names below are proposed contract shapes, not existing routes. The backend may choose
