@@ -14,8 +14,6 @@
             {{ translate("Inventory variances synced to NetSuite") }}
             <p>{{ translate("Select exactly which inventory variances should be synced to NetSuite") }}</p>
           </ion-label>
-          <!-- TODO: derive nextSyncTime from job execution or actual fixed cadence config -->
-          <!-- <ion-badge slot="end" color="dark">{{ translate("next sync in") }} {{ nextSyncTime }}</ion-badge> -->
         </ion-item>
       </div>
 
@@ -34,11 +32,6 @@
             <p>{{ variance.enumId }}</p>
           </ion-label>
         </ion-item>
-        
-        <ion-label>
-          {{ variance.varianceCount || 0 }}
-          <p>{{ translate("variances in 7 days") }}</p>
-        </ion-label>
 
         <template v-if="updatedNetSuiteIds[variance.enumId]">
           <div class="ion-text-center">
@@ -110,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonButton, IonButtons, IonChip, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonButton, IonButtons, IonChip, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonModal, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { businessOutline, closeCircleOutline, closeOutline, informationCircleOutline, openOutline, saveOutline, shieldCheckmarkOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, ref } from 'vue';

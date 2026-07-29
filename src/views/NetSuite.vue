@@ -10,11 +10,11 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
-      <!-- TODO: Implement NetSuite pending sync derivation in composables -->
+      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
       <!-- <section class="analytics-header">
         <ion-card>
           <ion-item lines="none">
-            <ion-label class="count-size">{{ ordersPendingSyncCount }}</ion-label>
+            <ion-label class="count-size">4</ion-label>
           </ion-item>
           <ion-item lines="none">
             <ion-label>{{ translate("Orders pending sync") }}</ion-label>
@@ -22,7 +22,7 @@
         </ion-card>
         <ion-card>
           <ion-item lines="none">
-            <ion-label class="count-size">{{ customersPendingSyncCount }}</ion-label>
+            <ion-label class="count-size">15</ion-label>
           </ion-item>
           <ion-item lines="none">
             <ion-label>{{ translate("Customers pending sync") }}</ion-label>
@@ -30,10 +30,10 @@
         </ion-card>
         <ion-card>
           <ion-item lines="none">
-            <ion-label class="count-size">{{ productsPendingSyncCount }}</ion-label>
+            <ion-label class="count-size">2</ion-label>
           </ion-item>
           <ion-item lines="none">
-            <ion-label>{{ translate("Products pending sync") }}</ion-label>
+            <ion-label>{{ ("Products pending sync") }}</ion-label>
           </ion-item>
         </ion-card>
       </section> -->
@@ -55,10 +55,6 @@
         <section>
           <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
-          </ion-item>
-          <ion-item detail :disabled="true" class="item-box" lines="none" button @click="openFacilities()">
-            <ion-label>{{ translate("Facilities") }}</ion-label>
-            <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
         </section>
       </div>
@@ -87,17 +83,18 @@
         </section>
       </div>
       
-      <div class="ion-margin-top">
+      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
+      <!-- <div class="ion-margin-top">
         <h1>{{ translate("Transfer orders") }}</h1>
         <section>
-          <ion-item detail :disabled="true" class="item-box" lines="none" button>
+          <ion-item detail class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order fulfillment") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="true" class="item-box" lines="none" button>
+          <ion-item detail class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order receipt") }}</ion-label>
           </ion-item>
         </section>
-      </div>
+      </div> -->
 
       <ion-modal :is-open="showSftpModal" @didDismiss="closeSftpModal">
         <ion-header>
@@ -294,8 +291,8 @@
 <script setup lang="ts">
 import { useNetSuiteProductStore, useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
 import { useIntegrationTypeMappings } from "@/composables/useNetSuite";
-import { IonButton, IonButtons, IonCard, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar } from "@ionic/vue";
-import { chevronForwardOutline, closeOutline, informationCircleOutline, openOutline, saveOutline, search } from "ionicons/icons";
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar } from "@ionic/vue";
+import { closeOutline, informationCircleOutline, openOutline, saveOutline, search } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
@@ -316,10 +313,6 @@ function openShipmentMethod() {
 
 function openPaymentMethods() {
   router.push("/netsuite/payment-methods")
-}
-
-function openFacilities() {
-  router.push("/netsuite/facilities")
 }
 
 function openInventoryVariances() {
@@ -554,17 +547,17 @@ async function updateMapping(mappingKey: any, mappingValue: any) {
 </script>
 
 <style scoped>
-ion-card {
+/* ion-card {
   margin-inline: 0px;
-}
+} */
 
-.analytics-header {
+/* .analytics-header {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));  
 }
 
 .count-size {
   font-size: 128px;
-}
+} */
 
 .item-box::part(native) {
   --border-radius: var(--spacer-xs);
