@@ -8,7 +8,10 @@ import {
 } from "@/utils/cacheEntities";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 import { useCachedList, useCachedRecord } from "./useCachedList";
+import { useEffectiveNow } from "./useEffectiveNow";
 
 /**
  * Product store master entity — stores and the configuration hanging off them (shipment-method
@@ -119,17 +122,18 @@ export function useProductStoreShipmentCounts() {
  * The cache contains every store. Filter its live rows in a computed instead of capturing a Dexie
  * scope once: Shopify and NetSuite discover their productStoreId asynchronously after setup.
  */
-export function useProductStoreShippingMethods(
-  productStoreId?: MaybeRefOrGetter<string | undefined>,
-) {
+export function useProductStoreShippingMethods(productStoreId?: MaybeRefOrGetter<string | undefined>) {
   const { records, hydrated } = useCachedList<any>(productStoreShippingMethodCache);
+  const effectiveNow = useEffectiveNow(records);
   const shippingMethods = computed(() => {
     const resolvedProductStoreId = String(toValue(productStoreId) ?? "").trim();
-    if (!resolvedProductStoreId) return [];
-    return records.value.filter(
-      (row: any) => String(row.productStoreId) === resolvedProductStoreId,
-    );
+    if(!resolvedProductStoreId) {return [];}
+
+    return records.value.filter((row: any) =>
+      String(row.productStoreId) === resolvedProductStoreId &&
+      isEffectiveNow(row, effectiveNow.value));
   });
+
   return { shippingMethods, hydrated };
 }
 
@@ -232,8 +236,35 @@ async function refreshProductStoreShipmentMethods(
   productStoreId: string,
   countChanged: boolean,
 ): Promise<void> {
-  await refreshAfterMutation("productStoreShippingMethod", { productStoreId });
-  if (countChanged) await resyncDomain("productStoreShipmentCount");
+  const reconciliations = [
+    {
+      domain: "productStoreShippingMethod",
+      run: () => refreshAfterMutation("productStoreShippingMethod", { productStoreId }),
+    },
+    ...(countChanged
+      ? [{
+        domain: "productStoreShipmentCount",
+        run: () => resyncDomain("productStoreShipmentCount"),
+      }]
+      : []),
+  ];
+  const results = await Promise.allSettled(reconciliations.map(({ run }) => run()));
+  const failed = results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [{ domain: reconciliations[index].domain, reason: result.reason }]
+      : []);
+
+  if(failed.length) {
+    throw new CacheReconciliationError(
+      failed[0].domain,
+      { productStoreId },
+      new AggregateError(
+        failed.map(({ reason }) => reason),
+        `Failed to reconcile cache domains: ${failed.map(({ domain }) => domain).join(", ")}.`,
+      ),
+      failed.map(({ domain }) => domain),
+    );
+  }
 }
 
 export async function addProductStoreShipmentMethod(

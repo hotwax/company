@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+/* eslint-disable require-await -- service mocks deliberately implement the production async API */
+
 /**
  * The mutation → cache-refresh handshake must survive being called while the app-load bootstrap
  * is still in flight.
@@ -12,7 +14,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** A worker handle that only exists once `start()` has resolved — exactly like pollingService. */
 const harnessState = vi.hoisted(() => ({
+  startCalls: 0,
   startResolved: false,
+  startError: null as Error | null,
+  refetchError: null as Error | null,
   refetchCalls: [] as Array<{ domain: string; whenStartResolved: boolean }>,
   syncDomainCalls: [] as string[],
   statusHandler: undefined as undefined | ((status: Record<string, any>) => void),
@@ -21,23 +26,39 @@ const harnessState = vi.hoisted(() => ({
 vi.mock("@/services/pollingService", () => ({
   createSyncService: (options: { onStatus?: (status: Record<string, any>) => void }) => {
     harnessState.statusHandler = options.onStatus;
+
     return {
       // Spawning a worker takes real time. Resolving on a macrotask reproduces the window in which
       // `service` is already assigned but the Comlink handle is not.
-      start: () =>
-        new Promise<void>((resolve) => {
+      start: () => {
+        harnessState.startCalls += 1;
+
+        return new Promise<void>((resolve, reject) => {
           setTimeout(() => {
+            if(harnessState.startError) {
+              harnessState.statusHandler?.({
+                type: "sync-error",
+                message: harnessState.startError.message,
+              });
+              reject(harnessState.startError);
+
+              return;
+            }
             harnessState.startResolved = true;
             resolve();
           }, 5);
-        }),
+        });
+      },
       // Mirrors pollingService: returns 0 while `harness` is still null.
       refetchOne: async (domain: string) => {
         harnessState.refetchCalls.push({ domain, whenStartResolved: harnessState.startResolved });
+        if(harnessState.refetchError) {throw harnessState.refetchError;}
+
         return harnessState.startResolved ? 1 : 0;
       },
       syncDomainNow: async (domain: string) => {
         harnessState.syncDomainCalls.push(domain);
+
         return harnessState.startResolved ? 1 : 0;
       },
       syncNow: async () => undefined,
@@ -62,7 +83,10 @@ vi.mock("@/store/user", () => ({ useUserStore: () => ({ current: { userId: "u1" 
 
 describe("refreshAfterMutation during the app-load bootstrap", () => {
   beforeEach(async () => {
+    harnessState.startCalls = 0;
     harnessState.startResolved = false;
+    harnessState.startError = null;
+    harnessState.refetchError = null;
     harnessState.refetchCalls = [];
     harnessState.syncDomainCalls = [];
     harnessState.statusHandler = undefined;
@@ -123,5 +147,125 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
 
     expect(mod.bootstrapState.written.carrier).toBe(7);
     expect(mod.bootstrapState.errors).not.toHaveProperty("carrier");
+  });
+
+  it("clears only the recovered scope when a targeted refetch succeeds", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    await mod.startReferenceSync();
+
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"FEDEX\"}",
+      message: "FEDEX HTTP 503",
+    });
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"UPS\"}",
+      message: "UPS HTTP 503",
+    });
+    expect(mod.bootstrapState.errors.carrier).toBe("UPS HTTP 503");
+
+    harnessState.statusHandler?.({
+      type: "refetch-end",
+      domain: "carrier",
+      scope: "{\"partyId\":\"FEDEX\"}",
+      written: 1,
+    });
+
+    expect(mod.bootstrapState.written.carrier).toBe(1);
+    expect(mod.bootstrapState.errors.carrier).toBe("UPS HTTP 503");
+  });
+
+  it("clears every scoped error only after a domain-wide resync succeeds", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    await mod.startReferenceSync();
+
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"FEDEX\"}",
+      message: "FEDEX HTTP 503",
+    });
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"UPS\"}",
+      message: "UPS HTTP 503",
+    });
+
+    harnessState.statusHandler?.({
+      type: "sync-end",
+      domain: "carrier",
+      written: 7,
+    });
+
+    expect(mod.bootstrapState.errors).not.toHaveProperty("carrier");
+  });
+
+  it("wraps a rejected post-write refetch as a committed cache-reconciliation failure", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    await mod.startReferenceSync();
+    const cause = new Error("carrier refetch HTTP 503");
+    harnessState.refetchError = cause;
+
+    await expect(mod.refreshAfterMutation("carrier", { partyId: "FEDEX" }))
+      .rejects.toMatchObject({
+        name: "CacheReconciliationError",
+        mutationCommitted: true,
+        domain: "carrier",
+        pk: { partyId: "FEDEX" },
+        cause,
+      });
+  });
+
+  it("wraps a missing service after a concurrent stop instead of silently returning zero", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    const refresh = mod.refreshAfterMutation("carrier", { partyId: "FEDEX" });
+
+    mod.stopReferenceSync();
+
+    await expect(refresh).rejects.toMatchObject({
+      name: "CacheReconciliationError",
+      mutationCommitted: true,
+      domain: "carrier",
+      pk: { partyId: "FEDEX" },
+    });
+  });
+
+  it("records domainless startup failures globally and clears them only after recovery", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
+
+    await mod.startReferenceSync();
+    expect(mod.bootstrapState.errors.__start)
+      .toBe("cache open failed: IndexedDB unavailable");
+
+    mod.stopReferenceSync();
+    expect(mod.bootstrapState.errors.__start)
+      .toBe("cache open failed: IndexedDB unavailable");
+
+    harnessState.startError = null;
+    await mod.startReferenceSync();
+
+    expect(mod.bootstrapState.errors).not.toHaveProperty("__start");
+  });
+
+  it("restarts a failed bootstrap from the visible domain-refresh path", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
+
+    await mod.startReferenceSync();
+    expect(harnessState.startCalls).toBe(1);
+    expect(mod.bootstrapState.errors.__start)
+      .toBe("cache open failed: IndexedDB unavailable");
+
+    harnessState.startError = null;
+    await mod.resyncDomain("carrier");
+
+    expect(harnessState.startCalls).toBe(2);
+    expect(harnessState.syncDomainCalls).toEqual(["carrier"]);
+    expect(mod.bootstrapState.errors).not.toHaveProperty("__start");
   });
 });
