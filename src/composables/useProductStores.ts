@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, toValue, type MaybeRefOrGetter } from "vue";
 import { api, commonUtil, logger } from "@common";
 import {
   productStoreCache,
@@ -113,13 +113,24 @@ export function useProductStoreShipmentCounts() {
   };
 }
 
-/** Shipping methods configured on a store. */
-export function useProductStoreShippingMethods(productStoreId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    productStoreShippingMethodCache,
-    productStoreId ? { scope: { field: "productStoreId", value: productStoreId } } : {},
-  );
-  return { shippingMethods: records, hydrated };
+/**
+ * Shipping methods configured on one store.
+ *
+ * The cache contains every store. Filter its live rows in a computed instead of capturing a Dexie
+ * scope once: Shopify and NetSuite discover their productStoreId asynchronously after setup.
+ */
+export function useProductStoreShippingMethods(
+  productStoreId?: MaybeRefOrGetter<string | undefined>,
+) {
+  const { records, hydrated } = useCachedList<any>(productStoreShippingMethodCache);
+  const shippingMethods = computed(() => {
+    const resolvedProductStoreId = String(toValue(productStoreId) ?? "").trim();
+    if (!resolvedProductStoreId) return [];
+    return records.value.filter(
+      (row: any) => String(row.productStoreId) === resolvedProductStoreId,
+    );
+  });
+  return { shippingMethods, hydrated };
 }
 
 // ---------------------------------------------------------------------------------------------
