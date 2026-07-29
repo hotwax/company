@@ -10,7 +10,8 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
-      <section class="analytics-header">
+      <!-- TODO: Implement NetSuite pending sync derivation in composables -->
+      <!-- <section class="analytics-header">
         <ion-card>
           <ion-item lines="none">
             <ion-label class="count-size">{{ ordersPendingSyncCount }}</ion-label>
@@ -35,7 +36,7 @@
             <ion-label>{{ translate("Products pending sync") }}</ion-label>
           </ion-item>
         </ion-card>
-      </section>
+      </section> -->
 
       <div>
         <h1>{{ translate("Configuration") }}</h1>
@@ -55,7 +56,7 @@
           <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openInventoryVariances()">
             <ion-label>{{ translate("Inventory variances") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openFacilities()">
+          <ion-item detail :disabled="true" class="item-box" lines="none" button @click="openFacilities()">
             <ion-label>{{ translate("Facilities") }}</ion-label>
             <ion-icon slot="end" :icon="chevronForwardOutline"/>
           </ion-item>
@@ -89,10 +90,10 @@
       <div class="ion-margin-top">
         <h1>{{ translate("Transfer orders") }}</h1>
         <section>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button>
+          <ion-item detail :disabled="true" class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order fulfillment") }}</ion-label>
           </ion-item>
-          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button>
+          <ion-item detail :disabled="true" class="item-box" lines="none" button>
             <ion-label>{{ translate("Transfer order receipt") }}</ion-label>
           </ion-item>
         </section>
@@ -308,10 +309,6 @@ const { addNetSuiteId: addDiscountNetSuiteId, updateNetSuiteId: updateDiscountNe
 
 const { updateSftpConfig } = useNetSuite();
 const { netSuiteProductStore } = useNetSuiteProductStore();
-
-const ordersPendingSyncCount = ref(0);
-const customersPendingSyncCount = ref(0);
-const productsPendingSyncCount = ref(0);
 
 function openShipmentMethod() {
   router.push("/netsuite/shipment-methods")

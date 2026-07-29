@@ -14,7 +14,8 @@
             {{ translate("Inventory variances synced to NetSuite") }}
             <p>{{ translate("Select exactly which inventory variances should be synced to NetSuite") }}</p>
           </ion-label>
-          <ion-badge slot="end" color="dark">{{ translate("next sync in") }} {{ nextSyncTime }}</ion-badge>
+          <!-- TODO: derive nextSyncTime from job execution or actual fixed cadence config -->
+          <!-- <ion-badge slot="end" color="dark">{{ translate("next sync in") }} {{ nextSyncTime }}</ion-badge> -->
         </ion-item>
       </div>
 
@@ -128,8 +129,6 @@ const {
 // Variance reasons are IID_REASON enums; the reason group is its own cached reference set.
 const { values: inventoryVariances, hydrated } = useTypedEnums("IID_REASON");
 const { members: enumGroupMembers } = useEnumGroupMembers();
-
-const nextSyncTime = ref("15 minutes");
 
 /** enumId → whether it belongs to the NetSuite reason group (was `getEnumGroups`). */
 const enumsInEnumGroup = computed(() => (enumId: any) =>
