@@ -615,13 +615,15 @@ export const useUserStore = defineStore("user", {
           if(selectedUser.partyTypeId === "PARTY_GROUP") {roleTypeIdSet.add("FAC_LOGIN")}
         }
 
-        for(const roleTypeId of roleTypeIdSet) {
-          const result = await this.ensurePartyRole({partyId, roleTypeId})
+        await Promise.all(
+          Array.from(roleTypeIdSet).map(async (roleTypeId) => {
+            const result = await this.ensurePartyRole({partyId, roleTypeId})
 
-          if(commonUtil.hasError(result)) {
-            throw result.data
-          }
-        }
+            if(commonUtil.hasError(result)) {
+              throw result.data
+            }
+          })
+        )
 
         if(payload.productStores.length > 0 && selectedTemplate.isProductStoreRequired) {
           payload.productStores?.forEach((store: any) => {
