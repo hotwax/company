@@ -214,8 +214,9 @@ trustworthy; a cold or failed remote domain is unavailable, never missing.
 Only one detail mutation can be active at a time. The lock is deliberately broader than an
 individual button because several writes snapshot-replace the same carrier or product-store
 partition; allowing a second write before the first refetch settles can let an older response prune
-newer server state. The worker also serializes targeted refetches with the same domain and canonical
-PK scope while leaving unrelated scopes concurrent.
+newer server state. The worker serializes targeted refetches with the same domain and canonical PK
+scope, and makes a full-domain snapshot exclusive with every targeted refetch for that domain.
+Different PK scopes remain concurrent when no full snapshot is waiting or running.
 
 The UI uses Ionic components and existing utility classes. It adds no Ionic grid, font/color CSS,
 or app-wide stylesheet changes. Narrow screens keep the segment scrollable and render each
@@ -252,6 +253,9 @@ send URL. The API key is write-only and must not be required in a read response.
 - Payload-level errors use `commonUtil.hasError`; displayed messages use the shared response helper.
 - Empty cache data is not an error after hydration.
 - A zero-row automatic worker response must not wipe a populated domain.
+- Carrier and carrier-association snapshots accept only their documented bare-array response.
+  Payload-level errors, `null`, and unsupported success envelopes fail before snapshot replacement
+  or the once-per-login marker, including when the cache is still empty.
 - Composite-domain refetches must carry the partition key; an undefined scope is refused.
 - Global cache-open failure is recorded as `__start` and keeps empty data and mutations
   untrustworthy until a later verified startup clears it. A failed cached start promise is reset,
@@ -278,6 +282,8 @@ Automated:
 - mutation URL/payload plus exact cache-refresh intent;
 - startup failure/recovery, committed-write reconciliation errors, and forced-sync propagation;
 - scoped-error isolation, same-scope refetch ordering, and whole-detail mutation locking;
+- same-domain full-snapshot/targeted-refetch exclusion while unrelated domains remain concurrent;
+- strict carrier collection envelopes before pruning or marking a cold domain synced;
 - multi-stage create recovery without replaying committed type or store-association POSTs;
 - destructive live-dependency paging, deduplication, malformed-row refusal, and paging backstops;
 - automatic date-effective boundary invalidation;

@@ -5,6 +5,7 @@ import {
   bootstrapState,
   refreshAfterMutation,
   resyncDomain,
+  startReferenceSync,
 } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
@@ -347,6 +348,22 @@ export function useCarrier(partyId: string) {
   });
   const readyForMutation = computed(() =>
     hydrated.value && Object.keys(detailErrors.value).length === 0);
+  const refreshDetails = async () => {
+    // Snapshot this attempt's failures. A successful startup may clear the reactive error object
+    // while it seeds the cache, but the user's Retry still owns precisely the domains that were
+    // visibly failed when they clicked it.
+    const errors = detailErrors.value;
+    const failedDomains = CARRIER_DETAIL_DOMAINS.filter((domain) => Boolean(errors[domain]));
+
+    if(errors.__start) {
+      await startReferenceSync();
+      if(bootstrapState.errors.__start) {
+        throw new Error(bootstrapState.errors.__start);
+      }
+    }
+
+    await Promise.all(failedDomains.map((domain) => resyncDomain(domain)));
+  };
 
   return {
     carrier: carrierRead.record,
@@ -362,6 +379,7 @@ export function useCarrier(partyId: string) {
     hydrated,
     detailErrors,
     readyForMutation,
+    refreshDetails,
   };
 }
 

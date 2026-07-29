@@ -2,15 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   parentRows: {} as Record<string, any[]>,
-  responses: {} as Record<string, any[]>,
+  responses: {} as Record<string, any>,
   pageCalls: [] as any[],
   snapshots: [] as Array<{ table: string; rows: any[]; scope: any }>,
 }));
 
 vi.mock("@/workers/domains/workerFetch", () => ({
-  pageAll: vi.fn(async (options: any) => {
+  pageAll: vi.fn((options: any) => {
     state.pageCalls.push(options);
-    return state.responses[options.url] ?? [];
+    const response = state.responses[options.url] ?? [];
+    if(options.strictCollection && !Array.isArray(response)) {
+      return Promise.reject(new Error(`${options.label} response must be a bare array.`));
+    }
+
+    return Promise.resolve(response);
   }),
   workerGet: vi.fn(async () => null),
   unwrapCollection: (response: any, collectionKey?: string | null) => {
@@ -59,6 +64,48 @@ beforeEach(() => {
 });
 
 describe("carrier reference snapshots", () => {
+  it.each([
+    {
+      name: "carrier",
+      responseUrl: "oms/shippingGateways/carrierParties",
+      parentTable: undefined,
+      parent: undefined,
+    },
+    {
+      name: "carrierShipmentMethod",
+      responseUrl: "oms/shippingGateways/carrierShipmentMethods",
+      parentTable: undefined,
+      parent: undefined,
+    },
+    {
+      name: "carrierFacility",
+      responseUrl: "oms/shippingGateways/carrierParties/FEDEX/facilities",
+      parentTable: "carriers",
+      parent: { partyId: "FEDEX" },
+    },
+    {
+      name: "productStoreShippingMethod",
+      responseUrl: "admin/productStores/STORE_1/shippingMethods",
+      parentTable: "productStores",
+      parent: { productStoreId: "STORE_1" },
+    },
+  ])("$name rejects an unsupported success envelope before snapshot replacement", async ({
+    name,
+    responseUrl,
+    parentTable,
+    parent,
+  }) => {
+    if(parentTable && parent) {
+      state.parentRows[parentTable] = [parent];
+    }
+    state.responses[responseUrl] = { _ERROR_MESSAGE_: "permission denied" };
+    const domain = await registeredDomain(name);
+
+    await expect(domain!.sync(ctx as any, undefined, { force: true }))
+      .rejects.toThrow(/bare array/i);
+    expect(state.snapshots).toEqual([]);
+  });
+
   it("lists only party-group carrier parties", async () => {
     state.responses["oms/shippingGateways/carrierParties"] = [{
       partyId: "FEDEX",

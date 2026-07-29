@@ -3,6 +3,7 @@ import { commonUtil } from "@common";
 import { appCacheDb, clearSyncMarkers, ensureCacheIdentity } from "@/utils/appCacheDb";
 import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import { REFERENCE_DOMAIN_NAMES } from "@/utils/cacheDomainCatalog";
+import { cacheScopeKey } from "@/utils/cacheScopeKey";
 import { type SyncService, createSyncService } from "./pollingService";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 
@@ -55,6 +56,14 @@ function updateVisibleError(domain: string): void {
 function recordSyncError(domain: string, message: string, scope?: string): void {
   if(scope) {
     const scoped = scopedDomainErrors.get(domain) ?? new Map<string, string>();
+    // The worker posts the scoped failure before its Comlink promise rejects. The service catch
+    // records the same failure as a fallback, but must not move that duplicate behind a newer
+    // failure from another PK and change the domain's visible diagnostic.
+    if(scoped.get(scope) === message) {
+      updateVisibleError(domain);
+
+      return;
+    }
     // Move a repeated failure to the end so the public message reflects the newest failure.
     scoped.delete(scope);
     scoped.set(scope, message);
@@ -223,15 +232,15 @@ export async function refreshAfterMutation(
     );
   }
   if(!service) {
-    throw new CacheReconciliationError(
-      domain,
-      pk,
-      new Error("The reference-cache service is unavailable."),
-    );
+    const cause = new Error("The reference-cache service is unavailable.");
+    recordSyncError(domain, cause.message, cacheScopeKey(pk));
+    throw new CacheReconciliationError(domain, pk, cause);
   }
   try {
     return await service.refetchOne(domain, pk);
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordSyncError(domain, message, cacheScopeKey(pk));
     throw new CacheReconciliationError(domain, pk, error);
   }
 }

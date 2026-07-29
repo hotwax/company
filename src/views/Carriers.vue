@@ -7,7 +7,7 @@
         <ion-buttons slot="end">
           <ion-button
             :aria-label="translate('Refresh carriers')"
-            :disabled="refreshing"
+            :disabled="refreshing || creatingCarrier"
             @click="handleRefresh()"
           >
             <ion-spinner v-if="refreshing" name="crescent" />
@@ -26,7 +26,7 @@
       <div class="ion-padding-horizontal ion-text-end">
         <ion-button
           fill="outline"
-          :disabled="!readyForDisplay || creatingCarrier"
+          :disabled="!readyForDisplay || creatingCarrier || refreshing"
           @click="openCreateCarrierAlert()"
         >
           <ion-icon slot="start" :icon="addOutline" />
@@ -55,7 +55,7 @@
             slot="end"
             fill="outline"
             color="light"
-            :disabled="refreshing"
+            :disabled="refreshing || creatingCarrier"
             @click="handleRefresh()"
           >
             {{ translate("Retry") }}
@@ -179,7 +179,7 @@ const methodCountsAvailable = computed(() =>
   !catalogErrors.value.__start);
 
 async function handleRefresh() {
-  if(refreshing.value) {
+  if(refreshing.value || creatingCarrier.value) {
     return;
   }
 
@@ -204,7 +204,7 @@ function viewCarrier(partyId: string) {
 }
 
 async function submitCarrier(data: Record<string, unknown>): Promise<boolean> {
-  if(creatingCarrier.value) {
+  if(creatingCarrier.value || refreshing.value) {
     return false;
   }
 
@@ -258,6 +258,10 @@ async function submitCarrier(data: Record<string, unknown>): Promise<boolean> {
 }
 
 async function openCreateCarrierAlert() {
+  if(!readyForDisplay.value || creatingCarrier.value || refreshing.value) {
+    return;
+  }
+
   const alert = await alertController.create({
     header: translate("Create carrier"),
     inputs: [

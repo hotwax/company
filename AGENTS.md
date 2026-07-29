@@ -222,8 +222,14 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
   several cache domains, attempt every reconciliation and report the exact failed domains.
 - **Partition replacement defines the concurrency lock.** Serialize targeted worker refetches by
   domain plus canonical PK scope, retain stale errors per scope, and clear them only with a matching
-  scoped success or a successful full-domain snapshot. UI that can replace the same partition must
-  lock the whole partition while a write is pending, not only the clicked row.
+  scoped success or a successful full-domain snapshot. A full-domain snapshot is exclusive with
+  every targeted refetch for that domain; different PK scopes remain concurrent only while no full
+  snapshot is waiting or running. UI that can replace the same partition must lock the whole
+  partition while a write is pending, not only the clicked row.
+- **Mutation-sensitive snapshots validate their collection envelope before pruning.** Set
+  `strictCollection` when a payload-level error, `null`, or an unsupported success envelope must
+  not be interpreted as an authoritative empty list. A cold empty cache is not permission to mark
+  an unrecognized response shape synced.
 - **Translation keys are static.** IDs, page numbers, server text, and partial-failure diagnostics
   are interpolation values under a fixed locale key; never pass runtime error text directly to
   `translate()`.

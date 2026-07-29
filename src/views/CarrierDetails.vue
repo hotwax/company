@@ -35,6 +35,15 @@
               {{ translateReferenceDataError(message) }}
             </p>
           </ion-label>
+          <ion-button
+            slot="end"
+            fill="outline"
+            color="light"
+            :disabled="retryingDetails || hasPendingMutation"
+            @click="handleRetryDetails()"
+          >
+            {{ translate("Retry") }}
+          </ion-button>
         </ion-item>
 
         <ion-item v-if="!carrier && !hasDetailErrors" lines="none">
@@ -195,6 +204,7 @@ const {
   hydrated,
   detailErrors,
   readyForMutation,
+  refreshDetails,
 } = useCarrier(props.partyId);
 const {
   createShipmentMethodType,
@@ -203,6 +213,7 @@ const {
 
 const segment = ref("methods");
 const configuredOnly = ref(false);
+const retryingDetails = ref(false);
 const pendingActions = ref<Set<string>>(new Set());
 const pendingKeys = computed(() => [...pendingActions.value]);
 const hasPendingMutation = computed(() => pendingActions.value.size > 0);
@@ -241,6 +252,21 @@ function removePending(key: string) {
   const next = new Set(pendingActions.value);
   next.delete(key);
   pendingActions.value = next;
+}
+
+async function handleRetryDetails() {
+  if(retryingDetails.value || hasPendingMutation.value) {
+    return;
+  }
+
+  retryingDetails.value = true;
+  try {
+    await refreshDetails();
+  } catch {
+    commonUtil.showToast(translate("Failed to refresh carrier details."));
+  } finally {
+    retryingDetails.value = false;
+  }
 }
 
 async function runAction(

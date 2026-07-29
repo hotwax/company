@@ -204,20 +204,55 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
     expect(mod.bootstrapState.errors).not.toHaveProperty("carrier");
   });
 
-  it("wraps a rejected post-write refetch as a committed cache-reconciliation failure", async () => {
+  it("records and clears a service-level refetch rejection under the canonical PK scope", async () => {
     const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
     const cause = new Error("carrier refetch HTTP 503");
     harnessState.refetchError = cause;
+    const pk = { roleTypeId: "CARRIER", partyId: "FEDEX" };
 
-    await expect(mod.refreshAfterMutation("carrier", { partyId: "FEDEX" }))
+    await expect(mod.refreshAfterMutation("carrier", pk))
       .rejects.toMatchObject({
         name: "CacheReconciliationError",
         mutationCommitted: true,
         domain: "carrier",
-        pk: { partyId: "FEDEX" },
+        pk,
         cause,
       });
+    expect(mod.bootstrapState.errors.carrier).toBe(cause.message);
+
+    harnessState.statusHandler?.({
+      type: "refetch-end",
+      domain: "carrier",
+      scope: "{\"partyId\":\"FEDEX\",\"roleTypeId\":\"CARRIER\"}",
+      written: 1,
+    });
+
+    expect(mod.bootstrapState.errors).not.toHaveProperty("carrier");
+  });
+
+  it("does not reorder a worker-recorded scoped error when the service rejects it again", async () => {
+    const mod = await import("@/services/appCacheBootstrap");
+    await mod.startReferenceSync();
+
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"FEDEX\"}",
+      message: "FEDEX HTTP 503",
+    });
+    harnessState.statusHandler?.({
+      type: "sync-error",
+      domain: "carrier",
+      scope: "{\"partyId\":\"UPS\"}",
+      message: "UPS HTTP 503",
+    });
+    harnessState.refetchError = new Error("FEDEX HTTP 503");
+
+    await expect(mod.refreshAfterMutation("carrier", { partyId: "FEDEX" }))
+      .rejects.toMatchObject({ name: "CacheReconciliationError" });
+
+    expect(mod.bootstrapState.errors.carrier).toBe("UPS HTTP 503");
   });
 
   it("wraps a missing service after a concurrent stop instead of silently returning zero", async () => {

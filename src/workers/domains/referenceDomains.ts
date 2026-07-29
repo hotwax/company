@@ -150,6 +150,7 @@ registerSnapshotDomain({
   projection: carrierProjection,
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
+  strictCollection: true,
   listParams: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" },
   refetchScope: (pk) => ({
     params: { partyId: pk.partyId },
@@ -163,6 +164,7 @@ registerSnapshotDomain({
   projection: carrierShipmentMethodProjection,
   listUrl: "oms/shippingGateways/carrierShipmentMethods",
   collectionKey: null,
+  strictCollection: true,
   listParams: { roleTypeId: "CARRIER" },
   refetchScope: (pk) => ({
     params: { partyId: pk.partyId },
@@ -180,6 +182,7 @@ registerSnapshotDomain({
   projection: carrierFacilityProjection,
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
+  strictCollection: true,
   fanOut: {
     parentTable: "carriers",
     parentKeyField: "partyId",
@@ -383,6 +386,7 @@ registerSnapshotDomain({
   projection: productStoreShippingMethodProjection,
   listUrl: "admin/productStores",
   collectionKey: null, // bare array
+  strictCollection: true,
   fanOut: {
     parentTable: "productStores",
     parentKeyField: "productStoreId",

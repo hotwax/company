@@ -734,6 +734,7 @@
   "Failed to quick setup user.": "Failed to quick setup user.",
   "Failed to record decision": "Failed to record decision",
   "Failed to refresh access scopes": "Failed to refresh access scopes",
+  "Failed to refresh carrier details.": "Failed to refresh carrier details.",
   "Failed to refresh carriers.": "Failed to refresh carriers.",
   "Failed to regenerate latitude and longitude for the facility.": "Failed to regenerate latitude and longitude for the facility.",
   "Failed to register the app version": "Failed to register the app version",

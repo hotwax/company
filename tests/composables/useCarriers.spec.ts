@@ -28,6 +28,7 @@ const harness = vi.hoisted(() => ({
     errors: {} as Record<string, string>,
   },
   resyncDomain: vi.fn(),
+  startReferenceSync: vi.fn(),
 }));
 
 vi.mock("@common", () => ({
@@ -54,6 +55,7 @@ vi.mock("@/services/appCacheBootstrap", () => ({
   bootstrapState: harness.bootstrapState,
   refreshAfterMutation: vi.fn(),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
+  startReferenceSync: (...args: any[]) => harness.startReferenceSync(...args),
 }));
 
 vi.mock("@/composables/useCachedList", () => ({
@@ -215,6 +217,7 @@ describe("carrier cache-backed reads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     harness.resyncDomain.mockResolvedValue(undefined);
+    harness.startReferenceSync.mockResolvedValue(undefined);
     Object.assign(harness.hydrated, {
       carriers: true,
       carrierMethods: true,
@@ -363,5 +366,61 @@ describe("carrier cache-backed reads", () => {
       expect(detail.detailErrors.value).toEqual({ [domain]: `${domain} snapshot failed` });
       expect(detail.readyForMutation.value).toBe(false);
     }
+  });
+
+  it("retries precisely the detail domains that are currently failed", async () => {
+    harness.bootstrapState.errors = {
+      carrierFacility: "carrier facility snapshot failed",
+      productStore: "product store snapshot failed",
+      userGroup: "unrelated snapshot failed",
+    };
+    const detail = useCarrier("FEDEX");
+
+    await detail.refreshDetails();
+
+    expect(harness.startReferenceSync).not.toHaveBeenCalled();
+    expect(harness.resyncDomain.mock.calls).toEqual([
+      ["carrierFacility"],
+      ["productStore"],
+    ]);
+  });
+
+  it("recovers startup before retrying the detail domains captured for this attempt", async () => {
+    harness.bootstrapState.errors = {
+      __start: "cache worker failed to start",
+      facility: "facility snapshot failed",
+    };
+    harness.startReferenceSync.mockImplementationOnce(() => {
+      delete harness.bootstrapState.errors.__start;
+
+      return Promise.resolve(undefined);
+    });
+    harness.resyncDomain.mockImplementationOnce(() => {
+      delete harness.bootstrapState.errors.facility;
+
+      return Promise.resolve(undefined);
+    });
+    const detail = useCarrier("FEDEX");
+
+    expect(detail.readyForMutation.value).toBe(false);
+    await detail.refreshDetails();
+
+    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.resyncDomain.mock.calls).toEqual([["facility"]]);
+    expect(harness.bootstrapState.errors).toEqual({});
+  });
+
+  it("does not retry detail domains while startup recovery remains failed", async () => {
+    harness.bootstrapState.errors = {
+      __start: "cache worker failed to start",
+      facility: "facility snapshot failed",
+    };
+    const detail = useCarrier("FEDEX");
+
+    await expect(detail.refreshDetails()).rejects.toThrow("cache worker failed to start");
+
+    expect(harness.startReferenceSync).toHaveBeenCalledTimes(1);
+    expect(harness.resyncDomain).not.toHaveBeenCalled();
+    expect(detail.readyForMutation.value).toBe(false);
   });
 });

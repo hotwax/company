@@ -1,5 +1,6 @@
 import { expose } from "comlink";
 import { ensureCacheReady } from "@/utils/appCacheDb";
+import { cacheScopeKey } from "@/utils/cacheScopeKey";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
   type ActiveDomain,
@@ -56,6 +57,8 @@ let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 const lastRunAt: Record<string, number> = {};
 const refetchQueues = new Map<string, Promise<void>>();
+const domainExclusiveQueues = new Map<string, Promise<void>>();
+const domainSharedOperations = new Map<string, Set<Promise<void>>>();
 
 // Token stays fresh via push from the main thread — held, never frozen at start().
 subscribeToken((next) => { ctx = { ...ctx, token: next }; });
@@ -71,18 +74,52 @@ function classifyError(err: any): { isAuth: boolean; message: string } {
   return { isAuth, message };
 }
 
-function stableScopeKey(value: unknown): string {
-  if(value === null || typeof value !== "object") {return JSON.stringify(value) ?? "";}
-  if(Array.isArray(value)) {return `[${value.map(stableScopeKey).join(",")}]`;}
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
+/**
+ * Run a full snapshot exclusively with respect to targeted refetches for the same domain.
+ *
+ * The exclusive tail is installed immediately, before this operation starts, so a later refetch
+ * cannot overtake it. Capturing the currently registered shared operations provides the opposite
+ * ordering too: a snapshot requested after a mutation waits for every earlier targeted read.
+ */
+function runExclusiveDomainOperation<T>(
+  domain: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previousExclusive = domainExclusiveQueues.get(domain) ?? Promise.resolve();
+  const previousShared = [...(domainSharedOperations.get(domain) ?? [])];
+  const operation = Promise.all([previousExclusive, ...previousShared]).then(() => action());
+  const tail = operation.then(() => undefined, () => undefined);
+  domainExclusiveQueues.set(domain, tail);
 
-  return `{${entries.map(([key, entry]) =>
-    `${JSON.stringify(key)}:${stableScopeKey(entry)}`,).join(",")}}`;
+  return operation.finally(() => {
+    if(domainExclusiveQueues.get(domain) === tail) {domainExclusiveQueues.delete(domain);}
+  });
 }
 
-async function runDomain(
+/**
+ * Run a targeted refetch concurrently with other scopes, but never across a full snapshot for the
+ * same domain. Different domains do not share either map and remain fully independent.
+ */
+function runSharedDomainOperation<T>(
+  domain: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previousExclusive = domainExclusiveQueues.get(domain) ?? Promise.resolve();
+  const operation = previousExclusive.then(() => action());
+  const tail = operation.then(() => undefined, () => undefined);
+  const active = domainSharedOperations.get(domain) ?? new Set<Promise<void>>();
+  active.add(tail);
+  domainSharedOperations.set(domain, active);
+
+  return operation.finally(() => {
+    active.delete(tail);
+    if(!active.size && domainSharedOperations.get(domain) === active) {
+      domainSharedOperations.delete(domain);
+    }
+  });
+}
+
+async function executeDomain(
   entry: ActiveDomain,
   force = false,
   propagateError = false,
@@ -114,6 +151,17 @@ async function runDomain(
 
     return 0;
   }
+}
+
+function runDomain(
+  entry: ActiveDomain,
+  force = false,
+  propagateError = false,
+): Promise<number> {
+  return runExclusiveDomainOperation(
+    entry.name,
+    () => executeDomain(entry, force, propagateError),
+  );
 }
 
 async function tick(force = false, propagateErrors = false): Promise<void> {
@@ -216,12 +264,15 @@ function refetchOne(request: {
   domain: string;
   pk: Record<string, unknown>;
 }): Promise<number> {
-  const scope = stableScopeKey(request.pk);
+  const scope = cacheScopeKey(request.pk);
   const queueKey = `${request.domain}:${scope}`;
   const previous = refetchQueues.get(queueKey) ?? Promise.resolve();
   // Same-scope reads must preserve call order: an older HTTP response must never land after a
   // newer one and prune the newer cache state. Independent PK scopes remain concurrent.
-  const operation = previous.then(() => runTargetedRefetch(request, scope));
+  const operation = runSharedDomainOperation(
+    request.domain,
+    () => previous.then(() => runTargetedRefetch(request, scope)),
+  );
   const tail = operation.then(() => undefined, () => undefined);
   refetchQueues.set(queueKey, tail);
 
