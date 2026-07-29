@@ -364,23 +364,25 @@ async function saveAllDirtyMappings() {
   const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== getShopifyMapping(id));
 
   try {
-    for (const id of dirtyIds) {
-      const newMappedKey = localMappings.value[id];
+    await Promise.all(dirtyIds.map(async (id) => {
       const oldMappedKey = getShopifyMapping(id);
-
       if (oldMappedKey) {
         await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
           mappedKey: oldMappedKey
         }, { refresh: false });
       }
+    }));
 
+    await Promise.all(dirtyIds.map(async (id) => {
+      const newMappedKey = localMappings.value[id];
       await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: newMappedKey,
         mappedValue: id
       }, { refresh: false });
-    }
+    }));
+
     await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
