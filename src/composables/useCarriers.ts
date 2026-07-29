@@ -244,9 +244,13 @@ export function useCarrierShipmentMethods(partyId: string) {
     scope: { field: "partyId", value: partyId },
   });
   const typeRead = useCachedList<CarrierShipmentMethod>(shipmentMethodTypeCache);
-  const configuredMethods = computed(() => orderedCarrierMethods(configuredRead.records.value));
   const shipmentMethods = computed(() =>
     orderedCarrierMethods(mergeCarrierShipmentMethods(typeRead.records.value, configuredRead.records.value),));
+  // Derived from the merged rows, not the raw carrier rows: `CarrierShipmentMethod` carries no
+  // `description`, so consumers reading this list would otherwise fall back to the raw
+  // `shipmentMethodTypeId` and render the id twice.
+  const configuredMethods = computed(() =>
+    shipmentMethods.value.filter((method) => method.isConfigured));
 
   return {
     shipmentMethods,
