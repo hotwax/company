@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-syntax -- pure hierarchy helpers and entity mutations share this entity composable */
-import { api, commonUtil } from "@common";
+import { api, commonUtil, translate } from "@common";
 import { computed, ref } from "vue";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
@@ -279,10 +279,10 @@ export function suggestOrganizationId(groupName: string): string {
 export async function createOrganization(input: CreateOrganizationInput): Promise<string> {
   const partyId = input.partyId.trim().toUpperCase();
   const groupName = input.groupName.trim();
-  if(!partyId || !groupName) {throw new Error("Organization ID and name are required.");}
-  if(partyId.length > 20) {throw new Error("Organization ID must be 20 characters or fewer.");}
+  if(!partyId || !groupName) {throw new Error(translate("Organization ID and name are required."));}
+  if(partyId.length > 20) {throw new Error(translate("Organization ID must be 20 characters or fewer."));}
   if(!/^[A-Z0-9_-]+$/.test(partyId)) {
-    throw new Error("Organization ID may contain only letters, numbers, underscores, and hyphens.");
+    throw new Error(translate("Organization ID may contain only letters, numbers, underscores, and hyphens."));
   }
 
   let completed = "nothing";

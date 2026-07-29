@@ -235,7 +235,7 @@ const searchResults = computed(() => {
 function anomalyMessage(anomaly: OrganizationAnomaly): string {
   if(anomaly.code === "missing-parent") {
     return translate("Organization has a relationship to a missing parent: {partyId}", {
-      partyId: anomaly.partyId,
+      partyId: anomaly.relatedPartyId,
     });
   }
   if(anomaly.code === "missing-child") {

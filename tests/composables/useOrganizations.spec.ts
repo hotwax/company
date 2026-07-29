@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   api: vi.fn(),
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
+  translate: vi.fn((key: string) => key),
 }));
 
 vi.mock("@common", () => ({
@@ -13,6 +14,7 @@ vi.mock("@common", () => ({
     hasError: (response: any) =>
       Boolean(response?.data?._ERROR_MESSAGE_ || response?.data?._ERROR_MESSAGE_LIST_),
   },
+  translate: mocks.translate,
 }));
 
 vi.mock("@/services/appCacheBootstrap", () => ({
@@ -113,6 +115,10 @@ describe("organization hierarchy", () => {
       "missing-parent",
       "multiple-parents",
     ]);
+    expect(result.anomalies).toEqual(expect.arrayContaining([
+      { code: "missing-parent", partyId: "A", relatedPartyId: "MISSING" },
+      { code: "missing-child", partyId: "ROOT", relatedPartyId: "GHOST" },
+    ]));
     expect(result.roots.map((node) => node.partyId)).toEqual(["A", "B", "LEAF", "ROOT"]);
   });
 
@@ -170,6 +176,28 @@ describe("organization mutations", () => {
       "organizationRelationship",
       { partyIdTo: "NEW_ORG" },
     );
+  });
+
+  it("translates organization id validation failures before displaying them", async () => {
+    await expect(createOrganization({
+      partyId: "",
+      groupName: "",
+    })).rejects.toThrow("Organization ID and name are required.");
+    await expect(createOrganization({
+      partyId: "THIS_IDENTIFIER_IS_TOO_LONG",
+      groupName: "Long identifier",
+    })).rejects.toThrow("Organization ID must be 20 characters or fewer.");
+    await expect(createOrganization({
+      partyId: "NOT VALID",
+      groupName: "Invalid identifier",
+    })).rejects.toThrow("Organization ID may contain only letters, numbers, underscores, and hyphens.");
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual([
+      "Organization ID and name are required.",
+      "Organization ID must be 20 characters or fewer.",
+      "Organization ID may contain only letters, numbers, underscores, and hyphens.",
+    ]);
+    expect(mocks.api).not.toHaveBeenCalled();
   });
 
   it("expires the old parent before creating and refreshing the new relationship", async () => {
