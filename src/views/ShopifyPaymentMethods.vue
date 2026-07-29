@@ -365,16 +365,17 @@ async function saveAllDirtyMappings() {
 
   try {
     await Promise.all(dirtyIds.map(async (id) => {
-      const newMappedKey = localMappings.value[id];
       const oldMappedKey = getShopifyMapping(id);
-
       if (oldMappedKey) {
         await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
           mappedKey: oldMappedKey
         }, { refresh: false });
       }
+    }));
 
+    await Promise.all(dirtyIds.map(async (id) => {
+      const newMappedKey = localMappings.value[id];
       await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: newMappedKey,
