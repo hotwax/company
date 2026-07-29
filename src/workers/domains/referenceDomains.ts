@@ -1,4 +1,7 @@
 import {
+  carrierFacilityProjection,
+  carrierProjection,
+  carrierShipmentMethodProjection,
   enumProjection,
   facilityTypeProjection,
   paymentMethodTypeProjection,
@@ -139,6 +142,50 @@ registerSnapshotDomain({
   listUrl: "admin/productStores",
   collectionKey: null, // bare array
   byPk: (pk) => ({ url: `admin/productStores/${encodeURIComponent(String(pk.productStoreId))}` }),
+});
+
+registerSnapshotDomain({
+  name: "carrier",
+  table: "carriers",
+  projection: carrierProjection,
+  listUrl: "oms/shippingGateways/carrierParties",
+  collectionKey: null,
+  listParams: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" },
+  refetchScope: (pk) => ({
+    params: { partyId: pk.partyId },
+    scope: { field: "partyId", value: pk.partyId },
+  }),
+});
+
+registerSnapshotDomain({
+  name: "carrierShipmentMethod",
+  table: "carrierShipmentMethods",
+  projection: carrierShipmentMethodProjection,
+  listUrl: "oms/shippingGateways/carrierShipmentMethods",
+  collectionKey: null,
+  listParams: { roleTypeId: "CARRIER" },
+  refetchScope: (pk) => ({
+    params: { partyId: pk.partyId },
+    scope: { field: "partyId", value: pk.partyId },
+  }),
+});
+
+/**
+ * Carrier ↔ facility associations have no global list. Build the snapshot by walking the cached
+ * carrier ids, and use the same parent scope for post-mutation refetch/prune.
+ */
+registerSnapshotDomain({
+  name: "carrierFacility",
+  table: "carrierFacilities",
+  projection: carrierFacilityProjection,
+  listUrl: "oms/shippingGateways/carrierParties",
+  collectionKey: null,
+  fanOut: {
+    parentTable: "carriers",
+    parentKeyField: "partyId",
+    urlFor: (partyId) =>
+      `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/facilities`,
+  },
 });
 
 registerSnapshotDomain({
@@ -328,14 +375,20 @@ registerSnapshotDomain({
   collectionKey: null,
 });
 
-// Shipping methods configured on one product store. Path-scoped endpoint, so the store id is
-// fixed for now (see PRODUCT_STORE_ID_FOR_SHIPPING_METHODS) rather than fanned out.
+// Shipping methods configured on every cached product store. The response does not reliably echo
+// productStoreId, so the generic fan-out contract stamps the parent scope onto every child row.
 registerSnapshotDomain({
   name: "productStoreShippingMethod",
   table: "productStoreShippingMethods",
   projection: productStoreShippingMethodProjection,
-  listUrl: `admin/productStores/${PRODUCT_STORE_ID_FOR_SHIPPING_METHODS}/shippingMethods`,
+  listUrl: "admin/productStores",
   collectionKey: null, // bare array
+  fanOut: {
+    parentTable: "productStores",
+    parentKeyField: "productStoreId",
+    urlFor: (productStoreId) =>
+      `admin/productStores/${encodeURIComponent(productStoreId)}/shippingMethods`,
+  },
 });
 
 // --- Enumeration types, geo reference, and the facility <-> product-store association. ---

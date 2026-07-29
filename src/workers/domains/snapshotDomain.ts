@@ -162,11 +162,12 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
             collectionKey: config.collectionKey,
             params: config.listParams,
             batchSize: config.batchSize,
-            keyOf: (record) => keyOfRecord(record, config),
+            keyOf: (record) =>
+              keyOfRecord({ ...record, [parentKeyField]: parentId }, config),
             label: `${config.name}:${parentId}`,
           });
-          // Stamp the parent id — child rows do not always echo it.
-          all.push(...page.map((row: any) => ({ [parentKeyField]: parentId, ...row })));
+          // The request scope is authoritative: child rows may omit or incorrectly echo the parent.
+          all.push(...page.map((row: any) => ({ ...row, [parentKeyField]: parentId })));
         }
         if (wouldWipePopulatedTable(all.length, await appCacheDb.table(config.table).count(), !!options?.force)) {
           console.warn(
@@ -224,11 +225,12 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           collectionKey: config.collectionKey,
           params: config.listParams,
           batchSize: config.batchSize,
-          keyOf: (record) => keyOfRecord(record, config),
+          keyOf: (record) =>
+            keyOfRecord({ ...record, [parentKeyField]: parentId }, config),
           label: `${config.name}:refetch:${parentId}`,
         });
-        // Child rows do not always echo the parent id — stamp it, as the fan-out sync does.
-        const stamped = fetched.map((row: any) => ({ [parentKeyField]: parentId, ...row }));
+        // The request scope is authoritative: child rows may omit or incorrectly echo the parent.
+        const stamped = fetched.map((row: any) => ({ ...row, [parentKeyField]: parentId }));
         const rows = keyableRows(config.name, stamped, config);
         if (rows === null) return 0;
         const { written } = await cache.snapshotReplace(rows, { field: parentKeyField, value: parentId });
