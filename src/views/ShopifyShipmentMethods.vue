@@ -139,26 +139,34 @@ import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
-import { computed, defineProps, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { shouldPopHistoryOnBack } from "@/utils/navigation";
 
 const props = defineProps(['id']);
 const shopMutations = useShopifyShopMutations(props.id);
 const { createShipmentMethodType } = useShipmentMethodTypeMutations();
-// Skeleton only until the cache emits; on a warm cache that is immediate.
-const isLoading = computed(() => !hydrated.value);
 const editingItemKey = ref("");
 // Keys the user has actually started editing. Everything else is safe to reseed from the cache.
 const userEditedKeys = ref<Set<string>>(new Set());
 const localMappings = ref<any>({});
-const { record: shopRecord } = useShopifyShop(props.id);
+const { record: shopRecord, hydrated: shopHydrated } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
+const productStoreId = computed<string | undefined>(() => shop.value.productStoreId);
 const selectedCarrierPartyId = ref("");
 
 const { shipmentMethodTypes } = useShipmentMethodTypes();
-const { shippingMethods: productStoreShipmentMethods } = useProductStoreShippingMethods();
-const { byCarrierAndMethod: shopifyShopsCarrierShipments, hydrated } = useShopifyCarrierShipments(props.id);
+const {
+  shippingMethods: productStoreShipmentMethods,
+  hydrated: shipmentMethodsHydrated,
+} = useProductStoreShippingMethods(productStoreId);
+const {
+  byCarrierAndMethod: shopifyShopsCarrierShipments,
+  hydrated: carrierMappingsHydrated,
+} = useShopifyCarrierShipments(props.id);
+// Skeleton only until every cache needed to resolve and render this shop emits.
+const isLoading = computed(() =>
+  !shopHydrated.value || !shipmentMethodsHydrated.value || !carrierMappingsHydrated.value);
 const backHref = computed(() => {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo")
   return returnTo || `/shopify-connection-details/${props.id}`
