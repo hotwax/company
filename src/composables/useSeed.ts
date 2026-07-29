@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
+import { getResponseErrorMessage } from "@/utils";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import {
   currencyCache,
@@ -149,17 +150,35 @@ export function useProductTypes() {
  * callers must not resync it themselves.
  */
 export function useShipmentMethodTypeMutations() {
+  const assertSuccessful = (response: any, fallback: string) => {
+    if (commonUtil.hasError(response)) {
+      throw new Error(getResponseErrorMessage(response, fallback));
+    }
+  };
+
   async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
     const resp: any = await api({
       url: "oms/shippingGateways/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    if (commonUtil.hasError(resp)) throw resp;
+    assertSuccessful(resp, "Failed to create the shipment method type.");
     await resyncDomain("shipmentMethodType");
     return resp;
   }
-  return { createShipmentMethodType };
+
+  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
+    const resp: any = await api({
+      url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
+      method: "put",
+      data: { shipmentMethodTypeId, description: description.trim() },
+    });
+    assertSuccessful(resp, "Failed to rename the shipment method type.");
+    await resyncDomain("shipmentMethodType");
+    return resp;
+  }
+
+  return { createShipmentMethodType, renameShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */

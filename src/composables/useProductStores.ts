@@ -7,6 +7,7 @@ import {
   productStoreShippingMethodCache,
 } from "@/utils/cacheEntities";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { getResponseErrorMessage } from "@/utils";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
@@ -195,6 +196,96 @@ export function useProductStoreDetail(productStoreId: string) {
   return { current, settings, hydrated, loading, load, reloadDetail: loadDetail, reloadSettings: loadSettings };
 }
 
+export interface ProductStoreShipmentMethodInput {
+  /** Optional: omit to let the server sequence the PK. */
+  productStoreShipMethId?: string;
+  shipmentMethodTypeId: string;
+  partyId: string;
+  roleTypeId?: string;
+  sequenceNumber?: number;
+  shipmentGatewayConfigId?: string;
+  isTrackingRequired?: string | boolean;
+  fromDate?: number;
+}
+
+const productStoreShipmentMethodUrl = (productStoreId: string) =>
+  `oms/productStores/${encodeURIComponent(productStoreId)}/shipmentMethods`;
+
+function assertProductStoreMutation(response: any, fallback: string): void {
+  if (commonUtil.hasError(response)) {
+    throw new Error(getResponseErrorMessage(response, fallback));
+  }
+}
+
+async function refreshProductStoreShipmentMethods(
+  productStoreId: string,
+  countChanged: boolean,
+): Promise<void> {
+  await refreshAfterMutation("productStoreShippingMethod", { productStoreId });
+  if (countChanged) await resyncDomain("productStoreShipmentCount");
+}
+
+export async function addProductStoreShipmentMethod(
+  productStoreId: string,
+  payload: ProductStoreShipmentMethodInput,
+): Promise<any> {
+  const response: any = await api({
+    url: productStoreShipmentMethodUrl(productStoreId),
+    method: "post",
+    data: {
+      ...payload,
+      productStoreId,
+      roleTypeId: payload.roleTypeId || "CARRIER",
+      fromDate: payload.fromDate ?? Date.now(),
+    },
+  });
+  assertProductStoreMutation(response, "Failed to add the product-store shipment method.");
+  await refreshProductStoreShipmentMethods(productStoreId, true);
+  return response;
+}
+
+export interface ProductStoreShipmentMethodMutationOptions {
+  /** The caller owns cache reconciliation (used by batched carrier-method deletion). */
+  refresh?: boolean;
+}
+
+export async function updateProductStoreShipmentMethod(
+  productStoreId: string,
+  productStoreShipMethId: string,
+  fields: Record<string, any>,
+  options: ProductStoreShipmentMethodMutationOptions = {},
+): Promise<any> {
+  const response: any = await api({
+    url: productStoreShipmentMethodUrl(productStoreId),
+    method: "put",
+    // The selected row owns its identity; caller-supplied scalar fields cannot redirect the write.
+    data: { ...fields, productStoreShipMethId },
+  });
+  assertProductStoreMutation(response, "Failed to update the product-store shipment method.");
+  if (options.refresh !== false) {
+    await refreshProductStoreShipmentMethods(productStoreId, false);
+  }
+  return response;
+}
+
+export async function expireProductStoreShipmentMethod(
+  productStoreId: string,
+  productStoreShipMethId: string,
+  thruDate = Date.now(),
+  options: ProductStoreShipmentMethodMutationOptions = {},
+): Promise<any> {
+  const response = await updateProductStoreShipmentMethod(
+    productStoreId,
+    productStoreShipMethId,
+    { thruDate },
+    { refresh: false },
+  );
+  if (options.refresh !== false) {
+    await refreshProductStoreShipmentMethods(productStoreId, true);
+  }
+  return response;
+}
+
 export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });
@@ -227,35 +318,14 @@ export function useProductStoreMutations(productStoreId: string) {
       return resp;
     },
 
-    async addShipmentMethod(payload: {
-      /** Optional: omit to let the server sequence the PK, which the Shopify screen relies on. */
-      productStoreShipMethId?: string;
-      shipmentMethodTypeId: string;
-      partyId: string;
-      roleTypeId?: string;
-      sequenceNumber?: number;
-    }) {
-      // Two implementations of this write existed — `productStoreStore` posted to
-      // `oms/productStores/{id}/shipmentMethods` and `utilStore` to
-      // `admin/productStores/{id}/shippingMethods`. Both routes exist, but `oms/productStores` is
-      // marked "Deprecated (since maarg 4.4.0): Use admin/productStores" in oms.rest.xml, and the
-      // admin route is what the cached read (`productStoreShippingMethod`) already lists from — so
-      // the write now matches the read.
-      const resp: any = await api({
-        url: `admin/productStores/${storeId()}/shippingMethods`,
-        method: "post",
-        // `roleTypeId` defaults to CARRIER — the server requires it and every caller means carrier.
-        data: { ...payload, productStoreId, roleTypeId: payload.roleTypeId || "CARRIER" },
-      });
-      if (commonUtil.hasError(resp)) return resp;
-      // Both snapshots are whole-list (the shipping-method domain is even pinned to one store id),
-      // so there is no by-PK route to re-read — re-snapshot each.
-      await Promise.all([
-        resyncDomain("productStoreShippingMethod"),
-        resyncDomain("productStoreShipmentCount"),
-      ]);
-      return resp;
-    },
+    addShipmentMethod: (payload: ProductStoreShipmentMethodInput) =>
+      addProductStoreShipmentMethod(productStoreId, payload),
+
+    updateShipmentMethod: (productStoreShipMethId: string, fields: Record<string, any>) =>
+      updateProductStoreShipmentMethod(productStoreId, productStoreShipMethId, fields),
+
+    expireShipmentMethod: (productStoreShipMethId: string, thruDate = Date.now()) =>
+      expireProductStoreShipmentMethod(productStoreId, productStoreShipMethId, thruDate),
   };
 }
 
