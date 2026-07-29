@@ -364,7 +364,7 @@ async function saveAllDirtyMappings() {
   const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== getShopifyMapping(id));
 
   try {
-    for (const id of dirtyIds) {
+    await Promise.all(dirtyIds.map(async (id) => {
       const newMappedKey = localMappings.value[id];
       const oldMappedKey = getShopifyMapping(id);
 
@@ -380,7 +380,8 @@ async function saveAllDirtyMappings() {
         mappedKey: newMappedKey,
         mappedValue: id
       }, { refresh: false });
-    }
+    }));
+
     await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
