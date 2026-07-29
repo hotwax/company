@@ -109,6 +109,11 @@ function buttonWithText(wrapper: any, text: string) {
   return button;
 }
 
+function isDisabled(button: any) {
+  return Object.prototype.hasOwnProperty.call(button.attributes(), "disabled") ||
+    button.element.disabled === true;
+}
+
 async function openCreateAlert(wrapper: any) {
   await buttonWithText(wrapper, "Create carrier").trigger("click");
   await flushPromises();
@@ -354,6 +359,49 @@ describe("carrier catalog", () => {
 
     create.resolve("DHL");
     await firstSubmission;
+  });
+
+  it("blocks refresh in both the UI and handler while carrier creation is pending", async () => {
+    harness.hydrated.value = true;
+    harness.readyForDisplay.value = true;
+    const create = deferred<string>();
+    harness.createCarrier.mockReturnValue(create.promise);
+    const wrapper = await mountView();
+    const handler = createAlertHandler(await openCreateAlert(wrapper));
+
+    const submission = handler({ partyId: "DHL", groupName: "DHL Express" });
+    await flushPromises();
+
+    const refreshButton = wrapper.get("[aria-label=\"Refresh carriers\"]");
+    expect(isDisabled(refreshButton)).toBe(true);
+    await refreshButton.trigger("click");
+    expect(harness.refreshCarriers).not.toHaveBeenCalled();
+
+    create.resolve("DHL");
+    await submission;
+  });
+
+  it("blocks create in both the UI and handlers while refresh is pending", async () => {
+    harness.hydrated.value = true;
+    harness.readyForDisplay.value = true;
+    const wrapper = await mountView();
+    const handler = createAlertHandler(await openCreateAlert(wrapper));
+    const refresh = deferred<any[]>();
+    harness.refreshCarriers.mockReturnValue(refresh.promise);
+
+    await wrapper.get("[aria-label=\"Refresh carriers\"]").trigger("click");
+    await flushPromises();
+
+    const createButton = buttonWithText(wrapper, "Create carrier");
+    expect(isDisabled(createButton)).toBe(true);
+    await createButton.trigger("click");
+    expect(harness.createAlert).toHaveBeenCalledTimes(1);
+    await expect(handler({ partyId: "DHL", groupName: "DHL Express" }))
+      .resolves.toBe(false);
+    expect(harness.createCarrier).not.toHaveBeenCalled();
+
+    refresh.resolve([]);
+    await flushPromises();
   });
 
   it("navigates to the named detail route after creating a carrier", async () => {

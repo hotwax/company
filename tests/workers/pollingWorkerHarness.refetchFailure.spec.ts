@@ -4,6 +4,7 @@ const harness = vi.hoisted(() => ({
   exposed: undefined as any,
   ensureCacheReady: vi.fn(),
   postMessage: vi.fn(),
+  productStoreRefetchOne: vi.fn(),
   refetchOne: vi.fn(),
   syncDomain: vi.fn(),
 }));
@@ -26,13 +27,23 @@ vi.mock("@/workers/syncRegistry", () => ({
   activationKey: (entry: any) => entry.name,
   dueDomains: vi.fn(() => []),
   effectiveInterval: vi.fn(),
-  getSyncDomain: (name: string) => name === "carrier"
-    ? {
-      refetchOne: (...args: any[]) => harness.refetchOne(...args),
-      sync: (...args: any[]) => harness.syncDomain(...args),
+  getSyncDomain: (name: string) => {
+    if(name === "carrier") {
+      return {
+        refetchOne: (...args: any[]) => harness.refetchOne(...args),
+        sync: (...args: any[]) => harness.syncDomain(...args),
+      };
     }
-    : undefined,
-  registeredDomainNames: vi.fn(() => ["carrier"]),
+    if(name === "productStore") {
+      return {
+        refetchOne: (...args: any[]) => harness.productStoreRefetchOne(...args),
+        sync: vi.fn(() => Promise.resolve(1)),
+      };
+    }
+
+    return undefined;
+  },
+  registeredDomainNames: vi.fn(() => ["carrier", "productStore"]),
 }));
 
 describe("polling worker targeted refetch failures", () => {
@@ -42,6 +53,7 @@ describe("polling worker targeted refetch failures", () => {
     harness.ensureCacheReady.mockReset();
     harness.ensureCacheReady.mockResolvedValue(undefined);
     harness.postMessage.mockReset();
+    harness.productStoreRefetchOne.mockReset().mockResolvedValue(1);
     harness.refetchOne.mockReset();
     harness.syncDomain.mockReset().mockResolvedValue(1);
     vi.stubGlobal("self", { postMessage: harness.postMessage });
@@ -108,6 +120,64 @@ describe("polling worker targeted refetch failures", () => {
     resolveFedEx(1);
     resolveUps(1);
     await expect(Promise.all([fedEx, ups])).resolves.toEqual([1, 1]);
+  });
+
+  it("waits for an earlier full snapshot before refetching the same domain", async () => {
+    let resolveSync!: (written: number) => void;
+    harness.syncDomain.mockImplementationOnce(() =>
+      new Promise<number>((resolve) => {resolveSync = resolve;}));
+    harness.refetchOne.mockResolvedValueOnce(1);
+
+    const snapshot = harness.exposed.syncDomainNow("carrier");
+    await vi.waitFor(() => expect(harness.syncDomain).toHaveBeenCalledTimes(1));
+    const refetch = harness.exposed.refetchOne({
+      domain: "carrier",
+      pk: { partyId: "FEDEX" },
+    });
+
+    await Promise.resolve();
+    expect(harness.refetchOne).not.toHaveBeenCalled();
+
+    resolveSync(7);
+    await expect(snapshot).resolves.toBe(7);
+    await expect(refetch).resolves.toBe(1);
+  });
+
+  it("waits for an earlier targeted refetch before snapshotting the same domain", async () => {
+    let resolveRefetch!: (written: number) => void;
+    harness.refetchOne.mockImplementationOnce(() =>
+      new Promise<number>((resolve) => {resolveRefetch = resolve;}));
+
+    const refetch = harness.exposed.refetchOne({
+      domain: "carrier",
+      pk: { partyId: "FEDEX" },
+    });
+    await vi.waitFor(() => expect(harness.refetchOne).toHaveBeenCalledTimes(1));
+    const snapshot = harness.exposed.syncDomainNow("carrier");
+
+    await Promise.resolve();
+    expect(harness.syncDomain).not.toHaveBeenCalled();
+
+    resolveRefetch(1);
+    await expect(refetch).resolves.toBe(1);
+    await expect(snapshot).resolves.toBe(1);
+  });
+
+  it("keeps a different domain concurrent with an in-flight full snapshot", async () => {
+    let resolveSync!: (written: number) => void;
+    harness.syncDomain.mockImplementationOnce(() =>
+      new Promise<number>((resolve) => {resolveSync = resolve;}));
+
+    const snapshot = harness.exposed.syncDomainNow("carrier");
+    await vi.waitFor(() => expect(harness.syncDomain).toHaveBeenCalledTimes(1));
+    const productStoreRefetch = harness.exposed.refetchOne({
+      domain: "productStore",
+      pk: { productStoreId: "STORE" },
+    });
+
+    await expect(productStoreRefetch).resolves.toBe(1);
+    resolveSync(1);
+    await expect(snapshot).resolves.toBe(1);
   });
 
   it("marks cache-open failure as a global startup error and rejects start", async () => {

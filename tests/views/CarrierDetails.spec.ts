@@ -17,6 +17,7 @@ const harness = vi.hoisted(() => ({
   hydrated: undefined as any,
   detailErrors: undefined as any,
   readyForMutation: undefined as any,
+  refreshDetails: vi.fn(),
   renameCarrier: vi.fn(),
   enableCarrierShipmentMethod: vi.fn(),
   updateCarrierShipmentMethod: vi.fn(),
@@ -68,6 +69,7 @@ vi.mock("@/composables/useCarriers", () => ({
     hydrated: harness.hydrated,
     detailErrors: harness.detailErrors,
     readyForMutation: harness.readyForMutation,
+    refreshDetails: (...args: any[]) => harness.refreshDetails(...args),
   }),
   renameCarrier: (...args: any[]) => harness.renameCarrier(...args),
   enableCarrierShipmentMethod: (...args: any[]) =>
@@ -261,6 +263,7 @@ describe("CarrierDetails", () => {
     harness.hydrated = ref(true);
     harness.detailErrors = ref<Record<string, string>>({});
     harness.readyForMutation = ref(true);
+    harness.refreshDetails.mockReset().mockResolvedValue(undefined);
 
     [
       harness.renameCarrier,
@@ -356,6 +359,47 @@ describe("CarrierDetails", () => {
     expect(harness.push).toHaveBeenCalledWith("/klaviyo");
   });
 
+  it("shows one retry for detail errors and stays fail-closed until it succeeds", async () => {
+    harness.detailErrors.value = { facility: "Facility sync failed" };
+    harness.readyForMutation.value = false;
+    const retry = deferred<void>();
+    harness.refreshDetails.mockImplementation(() => retry.promise.then(() => {
+      harness.detailErrors.value = {};
+      harness.readyForMutation.value = true;
+    }));
+    const wrapper = await mountView();
+
+    const retryButton = buttonWithText(wrapper, "Retry");
+    await retryButton.trigger("click");
+    await nextTick();
+
+    expect(harness.refreshDetails).toHaveBeenCalledTimes(1);
+    expect(isDisabled(retryButton)).toBe(true);
+    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
+    await retryButton.trigger("click");
+    expect(harness.refreshDetails).toHaveBeenCalledTimes(1);
+
+    retry.resolve();
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("Unable to load the complete carrier details.");
+    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(false);
+  });
+
+  it("keeps detail errors visible and reports a failed retry", async () => {
+    harness.detailErrors.value = { facility: "Facility sync failed" };
+    harness.readyForMutation.value = false;
+    harness.refreshDetails.mockRejectedValueOnce(new Error("facility HTTP 503"));
+    const wrapper = await mountView();
+
+    await buttonWithText(wrapper, "Retry").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Facility sync failed");
+    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
+    expect(harness.showToast).toHaveBeenLastCalledWith("Failed to refresh carrier details.");
+  });
+
   it("renames carrier identity through a parent-owned alert", async () => {
     const wrapper = await mountView();
 
@@ -369,8 +413,13 @@ describe("CarrierDetails", () => {
     expect(harness.showToast).toHaveBeenCalledWith("Carrier name updated.");
   });
 
-  it("dismisses a committed mutation with a cache-stage warning and releases its lock", async () => {
-    harness.renameCarrier.mockRejectedValueOnce(committedRefreshError());
+  it("dismisses a committed mutation warning but stays fail-closed for cache recovery", async () => {
+    harness.renameCarrier.mockImplementationOnce(() => {
+      harness.detailErrors.value = { carrier: "carrier refetch HTTP 503" };
+      harness.readyForMutation.value = false;
+
+      return Promise.reject(committedRefreshError());
+    });
     const wrapper = await mountView();
 
     await buttonWithText(wrapper, "Edit name").trigger("click");
@@ -382,7 +431,8 @@ describe("CarrierDetails", () => {
 
     expect(harness.renameCarrier).toHaveBeenCalledTimes(1);
     expect(harness.showToast).toHaveBeenLastCalledWith("The server change was saved, but this view could not be refreshed. Refresh before retrying.",);
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(false);
+    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
+    expect(buttonWithText(wrapper, "Retry").exists()).toBe(true);
   });
 
   it("locks the complete detail while a partition-replacing mutation is pending", async () => {

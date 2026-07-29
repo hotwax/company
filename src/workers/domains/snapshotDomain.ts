@@ -28,6 +28,13 @@ export interface SnapshotDomainConfig {
    * Verified per endpoint — see `unwrapCollection`.
    */
   collectionKey?: string | null;
+  /**
+   * Reject any response that does not match `collectionKey` exactly.
+   *
+   * Use for mutation-sensitive snapshots where an error object or unsupported envelope must not
+   * be interpreted as an authoritative empty set.
+   */
+  strictCollection?: boolean;
   /** Extra filter/order params for the full-set fetch. Paging params are supplied by `pageAll`. */
   listParams?: Record<string, unknown>;
   /** Page size for the full-set walk (default 250). */
@@ -160,6 +167,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
             ctx,
             url: urlFor(String(parentId)),
             collectionKey: config.collectionKey,
+            strictCollection: config.strictCollection,
             params: config.listParams,
             batchSize: config.batchSize,
             keyOf: (record) =>
@@ -187,6 +195,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
         ctx,
         url: config.listUrl,
         collectionKey: config.collectionKey,
+        strictCollection: config.strictCollection,
         params: config.listParams,
         batchSize: config.batchSize,
         keyOf: (record) => keyOfRecord(record, config),
@@ -223,6 +232,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           ctx,
           url: urlFor(String(parentId)),
           collectionKey: config.collectionKey,
+          strictCollection: config.strictCollection,
           params: config.listParams,
           batchSize: config.batchSize,
           keyOf: (record) =>
@@ -253,6 +263,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           ctx,
           url: config.listUrl,
           collectionKey: config.collectionKey,
+          strictCollection: config.strictCollection,
           params: { ...config.listParams, ...params },
           batchSize: config.batchSize,
           keyOf: (record) => keyOfRecord(record, config),
