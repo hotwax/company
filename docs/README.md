@@ -12,6 +12,7 @@ below is live; superseded material is in [`archive/`](archive/).
 | Doc | What it is |
 | --- | --- |
 | [carrier-management-architecture.md](carrier-management-architecture.md) | Active architecture and verified backend boundary for carrier identity, shipment methods, facility/store associations, and observable Unigate readiness |
+| [carrier-credential-api-gap.md](carrier-credential-api-gap.md) | Source-backed carrier credential/config/link boundary plus the dated, secret-free ledger for authenticated environment evidence |
 | [2026-07-29-carrier-management.md](superpowers/plans/2026-07-29-carrier-management.md) | Active execution plan for rebuilding carrier management on the cache/composable architecture, including focused tests and authenticated verification |
 | [shopify-batch-order-sync-scope.md](shopify-batch-order-sync-scope.md) | Requirements and acceptance criteria for shop-scoped order-sync configuration + monitoring. **Not signed off** — the source of the `C*/M*/K*/X*` acceptance rows |
 | [shopify-batch-order-sync-delivery-ledger.md](shopify-batch-order-sync-delivery-ledger.md) | Per-criterion delivery status keyed to the scope doc. A behavior is **Proven** only after reconciliation in the real UI against a live OMS |

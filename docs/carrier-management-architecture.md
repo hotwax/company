@@ -237,10 +237,11 @@ It does not expose Company-consumable resources for:
 - supported `ShippingGatewayConfig` rows;
 - `ShippingCarrierConfig` product-store links.
 
-The legacy `oms/shippingGateways/config` route is not part of the checked-in OMS REST contract and
-returned `404` on `test-maarg`. Company must not infer that a missing resource means disconnected
-or ready. It renders **Verification unavailable** and keeps credential creation, rotation,
-disconnect, and carrier-link management out of this PR.
+The legacy `oms/shippingGateways/config` route is not part of the checked-in OMS REST contract.
+Any deployed-environment observation belongs in the dated evidence ledger in
+`carrier-credential-api-gap.md`; it must not be promoted into a durable contract. Company must not
+infer that a missing resource means disconnected or ready. It renders **Verification unavailable**
+and keeps credential creation, rotation, disconnect, and carrier-link management out of this PR.
 
 FedEx is the only carrier currently selected by the automatic sales-order address-validation
 backend contract. A complete observable Unigate tenant requires a non-empty tenant/internal ID and
