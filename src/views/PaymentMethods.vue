@@ -38,7 +38,7 @@
         </ion-item>
 
         <ion-label>
-          {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) ? getShopifyMappingId(paymentMethod.paymentMethodTypeId) : '-' }}
+          {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) || '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
 
@@ -100,10 +100,10 @@ const updatedNetSuiteIds = computed(() => {
 });
 
 
-function getShopifyMappingId(paymentMethodTypeId: any) {
+const getShopifyMappingId = computed(() => (paymentMethodTypeId: any) => {
   const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === paymentMethodTypeId);
   return shopifyMappingId ? shopifyMappingId.mappedKey : "";
-}
+});
 
 function openPaymentMethodDoc() {
   window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/payment-methods', '_blank', 'noopener, noreferrer');

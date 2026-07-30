@@ -8,7 +8,7 @@
 
     <ion-content>
       <ion-list id="company-list">
-        <ion-menu-toggle v-for="(p, i) in appPages" :key="i" :auto-hide="false">
+        <ion-menu-toggle v-for="(p, i) in visibleAppPages" :key="i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ p.title }}</ion-label>
@@ -90,14 +90,22 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
-import router from "@/router";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
+import router from "@/router";
 
 const { isAuthenticated } = useAuth();
 const { hasPermission } = useAppAuth();
 const appPages = [
+  {
+    title: "Organizations",
+    url: "/organizations",
+    childRoutes: ["/organization-details/"],
+    permission: "PARTYMGR_VIEW OR PARTYMGR_ADMIN",
+    iosIcon: earthOutline,
+    mdIcon: earthOutline,
+  },
   {
     title: "Product Store",
     url: "/product-store",
@@ -106,6 +114,9 @@ const appPages = [
     mdIcon: businessOutline,
   },
 ];
+
+const visibleAppPages = computed(() =>
+  appPages.filter((screen) => !screen.permission || hasPermission(screen.permission)))
 
 const integrationPages = [
   {
@@ -213,11 +224,12 @@ const settingsPages = [
 const selectedIndex = computed(() => {
   const path = router.currentRoute.value.path
 
-  return appPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+  return visibleAppPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
 })
 
 const selectedFacilitiesIndex = computed(() => {
   const path = router.currentRoute.value.path
+
   return facilitiesPages.findIndex((screen) => screen.url === path)
 })
 

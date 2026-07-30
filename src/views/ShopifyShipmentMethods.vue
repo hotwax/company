@@ -302,7 +302,7 @@ async function saveAllDirtyMappings() {
   });
 
   try {
-    for (const key of dirtyKeys) {
+    await Promise.all(dirtyKeys.map(async (key) => {
       const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
       await shopMutations.saveCarrierShipment({
@@ -310,7 +310,7 @@ async function saveAllDirtyMappings() {
         shopifyShippingMethod: mapping.shopifyShippingMethod,
         carrierPartyId: carrierPartyId
       }, { refresh: false });
-    }
+    }));
     await shopMutations.refreshCarrierShipments();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {

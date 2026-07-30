@@ -79,6 +79,17 @@ const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
 
+const isValidPhone = (phoneNumber: string) => {
+  if (!phoneNumber) return false;
+  // Allows optional +, digits, spaces, hyphens, and parentheses,
+  // ensuring the stripped digit count is between 7 and 20.
+  const phonePattern = /^[+\d\s()-]+$/;
+  if (!phonePattern.test(phoneNumber)) return false;
+
+  const digitCount = phoneNumber.replace(/\D/g, "").length;
+  return digitCount >= 7 && digitCount <= 20;
+}
+
 const getDownloadFileContent = (data: any) => {
   const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
   if (typeof fileContent === "string") return fileContent;
@@ -149,4 +160,4 @@ const parseDateTimeValue = (value: string | number | Date | null | undefined) =>
   return candidates.find((candidate) => candidate.isValid) || null;
 }
 
-export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue }
+export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue, isValidPhone }

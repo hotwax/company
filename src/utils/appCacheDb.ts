@@ -29,6 +29,8 @@ class CompanyCacheDB extends Dexie {
   serviceJobs!: Table<CachedRow, string>;
   productStores!: Table<CachedRow, string>;
   shopifyShops!: Table<CachedRow, string>;
+  organizations!: Table<CachedRow, string>;
+  organizationRelationships!: Table<CachedRow, string>;
   facilities!: Table<CachedRow, string>;
   facilityGroups!: Table<CachedRow, string>;
   groupFacilities!: Table<CachedRow, string>;
@@ -152,7 +154,10 @@ const CACHE_SCHEMA = {
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
-  facilities: "facilityId, facilityTypeId, parentTypeId",
+  organizations: "partyId, groupName, externalId, statusId",
+  organizationRelationships:
+    "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",
+  facilities: "facilityId, facilityTypeId, parentTypeId, ownerPartyId",
   facilityGroups: "facilityGroupId, facilityGroupTypeId",
   groupFacilities: "memberKey, facilityGroupId, facilityId, fromDate, thruDate",
   users: "partyId, userLoginId",

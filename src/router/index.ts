@@ -40,6 +40,8 @@ const Composer = () => import("@/views/agent/Composer.vue")
 const Workforce = () => import("@/views/agent/Workforce.vue")
 const ResetPassword = () => import("@/views/ResetPassword.vue")
 const AppVersion = () => import("@/views/AppVersion.vue")
+const Organizations = () => import("@/views/Organizations.vue")
+const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -61,6 +63,19 @@ const requirePermission = (permissionId: string) => () => {
 const routes: Array<RouteRecordRaw> = [
   { path: "/", redirect: "/product-store" },
   { path: "/product-store", name: "ProductStore", component: ProductStore, beforeEnter: authGuard },
+  {
+    path: "/organizations",
+    name: "Organizations",
+    component: Organizations,
+    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+  },
+  {
+    path: "/organization-details/:partyId",
+    name: "OrganizationDetails",
+    component: OrganizationDetails,
+    props: true,
+    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+  },
   { path: "/facilities/find", name: "FindFacilities", component: FindFacilities, beforeEnter: authGuard },
   { path: "/facilities/groups", name: "FindGroups", component: FindGroups, beforeEnter: authGuard },
   { path: "/facility-group-detail/:facilityGroupId", name: "FacilityGroupDetail", component: FacilityGroupDetail, props: true, beforeEnter: authGuard },
@@ -127,6 +142,13 @@ const routes: Array<RouteRecordRaw> = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes
+})
+
+router.beforeEach(() => {
+  // Enforce the canonical version URL on every navigation (no-op until the version is resolved, or if
+  // already canonical). Redirect cancels this navigation. Logic lives in useAuth so it's shared. Runs
+  // globally (routes here use per-route beforeEnter guards, so this must be a top-level beforeEach).
+  if(useAuth().checkAppVersionRedirect()) return false
 })
 
 export default router

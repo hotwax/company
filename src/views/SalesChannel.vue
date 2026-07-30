@@ -37,9 +37,8 @@
           </ion-label>
         </ion-item>
         
-        <!-- TODO: need to make this shopify mapping dynamic -->
         <ion-label>
-          {{ getShopifyMappingId(channel.enumId) ? getShopifyMappingId(channel.enumId) : '-' }}
+          {{ getShopifyMappingId(channel.enumId) || '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
         
@@ -88,10 +87,10 @@ const { values: salesChannel, hydrated } = useTypedEnums("ORDER_SALES_CHANNEL");
 const { mappings: shopifyTypeMappings } = useShopifyTypeMappings(undefined, "SHOPIFY_ORDER_SOURCE");
 
 
-function getShopifyMappingId(salesChannelEnumId: any) {
+const getShopifyMappingId = computed(() => (salesChannelEnumId: any) => {
   const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === salesChannelEnumId);
   return shopifyMappingId ? shopifyMappingId.mappedKey : "";
-}
+});
 
 async function editNetSuiteSalesChannelId(channel: any) {
   const alert = await alertController.create({

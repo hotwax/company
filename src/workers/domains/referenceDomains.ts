@@ -27,6 +27,7 @@ import {
   facilityProjection,
   groupFacilityProjection,
   integrationTypeMappingProjection,
+  organizationRelationshipProjection,
   permissionProjection,
   productStoreProjection,
   currencyProjection,
@@ -35,6 +36,23 @@ import {
   systemMessageRemoteProjection,
 } from "@/utils/cacheEntities";
 import { registerSnapshotDomain } from "./snapshotDomain";
+
+registerSnapshotDomain({
+  name: "organizationRelationship",
+  table: "organizationRelationships",
+  projection: organizationRelationshipProjection,
+  listUrl: "oms/partyRelationships",
+  collectionKey: null,
+  listParams: {
+    roleTypeIdFrom: "INTERNAL_ORGANIZATIO",
+    roleTypeIdTo: "INTERNAL_ORGANIZATIO",
+    partyRelationshipTypeId: "SUB_DIVISION",
+  },
+  refetchScope: (pk) => ({
+    params: { partyIdTo: pk.partyIdTo },
+    scope: { field: "partyIdTo", value: pk.partyIdTo },
+  }),
+});
 
 /**
  * Class-B (reference/config) sync domains — registration is pure configuration; the snapshot +

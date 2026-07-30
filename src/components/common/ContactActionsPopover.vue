@@ -19,6 +19,7 @@
 import { computed } from "vue";
 import { IonContent, IonItem, IonList, IonListHeader, alertController, popoverController } from "@ionic/vue";
 import { commonUtil, logger, translate } from "@common";
+import { isValidPhone } from "@/utils";
 import { useUserStore } from "@/store/user";
 
 const props = defineProps<{
@@ -60,11 +61,13 @@ const copyInfo = () => {
 };
 
 const updateContactField = async () => {
+  const inputType = props.type === "email" ? "email" : (props.type === "phoneNumber" ? "tel" : "text");
+
   const contactUpdateAlert = await alertController.create({
     header: translate(OPTIONS[props.type].editHeader),
     inputs:  [{
-      // TODO add validation for phone
       name: "input",
+      type: inputType,
       placeholder: translate(OPTIONS[props.type].placeholder),
       value: props.value
     }],
@@ -111,6 +114,11 @@ const updateContactField = async () => {
               }
             };
           } else if(props.type === "phoneNumber") {
+            if(!isValidPhone(input)) {
+              commonUtil.showToast(translate("Invalid phone number."));
+
+              return false;
+            }
             const resp = await userStore.createUpdatePartyTelecomNumber({
               contactMechId: props.contactMechId,
               contactNumber: input,

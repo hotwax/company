@@ -164,6 +164,7 @@ export const facilityProjection = {
     facilityName: "text",
     facilityTypeId: "text",
     parentTypeId: "text",
+    ownerPartyId: "text",
     typeDescription: "text",
     externalId: "text",
     // Added after the F0 probe (docs/facility-detail-plan.md): the detail endpoint
@@ -172,6 +173,52 @@ export const facilityProjection = {
     defaultInventoryItemTypeId: "text",
     description: "text",
     lastUpdatedStamp: "date",
+  },
+} as const;
+
+/** Internal organization — Party(PARTY_GROUP) + PartyGroup + INTERNAL_ORGANIZATIO PartyRole. */
+export const organizationProjection = {
+  keyField: "partyId",
+  fields: {
+    partyId: "text",
+    partyTypeId: "text",
+    groupName: "text",
+    externalId: "text",
+    statusId: "text",
+    roleTypeId: "text",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * Parent → child internal-organization edge.
+ *
+ * PartyRelationship has a date-effective composite key, so the cache uses a stable synthetic key.
+ */
+export const organizationRelationshipProjection = {
+  keyField: "relationshipKey",
+  fields: {
+    relationshipKey: "text",
+    partyIdFrom: "text",
+    partyIdTo: "text",
+    roleTypeIdFrom: "text",
+    roleTypeIdTo: "text",
+    partyRelationshipTypeId: "text",
+    fromDate: "date",
+    thruDate: "date",
+    statusId: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if(!raw?.partyIdFrom || !raw?.partyIdTo) {return undefined;}
+
+    return [
+      raw.partyIdFrom,
+      raw.partyIdTo,
+      raw.roleTypeIdFrom,
+      raw.roleTypeIdTo,
+      raw.partyRelationshipTypeId,
+      raw.fromDate ?? "",
+    ].join("|");
   },
 } as const;
 
@@ -265,6 +312,11 @@ export const productStoreCache = defineCachedEntity("productStores", productStor
 export const syncRunCache = defineCachedEntity("syncRuns", syncRunProjection);
 export const shopifyShopCache = defineCachedEntity("shopifyShops", shopifyShopProjection);
 export const facilityCache = defineCachedEntity("facilities", facilityProjection);
+export const organizationCache = defineCachedEntity("organizations", organizationProjection);
+export const organizationRelationshipCache = defineCachedEntity(
+  "organizationRelationships",
+  organizationRelationshipProjection,
+);
 export const facilityGroupCache = defineCachedEntity("facilityGroups", facilityGroupProjection);
 export const groupFacilityCache = defineCachedEntity("groupFacilities", groupFacilityProjection);
 export const permissionCache = defineCachedEntity("permissions", permissionProjection);
