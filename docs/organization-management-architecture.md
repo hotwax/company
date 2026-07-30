@@ -155,14 +155,16 @@ flowchart TD
 
 The create form manages one business concept while the backend persists three records:
 
-1. create `Party` with `partyTypeId = PARTY_GROUP`;
+1. create `Party` with `partyTypeId = PARTY_GROUP` and the optional subsidiary mapping in
+   `externalId`;
 2. store `PartyGroup.groupName`;
 3. create the `INTERNAL_ORGANIZATIO` `PartyRole`;
 4. optionally create an active `SUB_DIVISION` relationship from the selected parent.
 
 The party-ID generation and validation contract must be decided before implementation; the app
-must not casually derive a permanent identity from the editable display name. `externalId` must be
-optional and clearly labelled as an external-system identifier; it is not the hierarchy key.
+must not casually derive a permanent identity from the editable display name. `externalId` is the
+editable subsidiary ID used by the current order-export mapping; it is optional and is not the
+hierarchy key.
 
 Do not copy the primary company's full `DEFAULT_COMPANY_ROLE_TYPE_IDS` set onto every subsidiary.
 Gurveen's model gives each subsidiary the internal-organization role; billing, customer, supplier,
@@ -176,6 +178,10 @@ concurrent administration or rollback guarantees become necessary.
 
 Renaming changes only `PartyGroup.groupName`. It must not rewrite `partyId`, `externalId`,
 relationships, facility ownership, or product-store accounting identity.
+
+Subsidiary-ID editing is a separate party mutation through `PUT oms/parties/{partyId}` with
+`externalId`. The detail screen refreshes the exact `organization` cache record after success and
+allows an administrator to clear the mapping with an empty value.
 
 Deletion is out of scope for the first release. Internal organizations can be referenced by
 facilities, product stores, inventory/accounting records, orders, returns, and integration data.
@@ -629,11 +635,9 @@ Completion requires:
    organization ultimately descend from the primary organization?
 4. Should the primary organization be movable beneath another organization? The safe default is
    no.
-5. Is `Party.externalId` editable here, and is it always a NetSuite subsidiary ID? The data model
-   suggests it is generic, so typed identification is safer long term.
-6. Is an unowned facility valid? Existing create flows assume an owner, but the entity field itself
+5. Is an unowned facility valid? Existing create flows assume an owner, but the entity field itself
    is optional.
-7. What operational process, if any, migrates existing `InventoryItem.ownerPartyId` and
+6. What operational process, if any, migrates existing `InventoryItem.ownerPartyId` and
    `ProductAverageCost` state after a facility owner changes?
-8. What archive/status model replaces deletion for an internal organization with historical
+7. What archive/status model replaces deletion for an internal organization with historical
    references?

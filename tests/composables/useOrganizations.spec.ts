@@ -54,6 +54,7 @@ import {
   renameOrganization,
   reparentOrganization,
   suggestOrganizationId,
+  updateOrganizationExternalId,
   wouldCreateOrganizationCycle,
 } from "@/composables/useOrganizations";
 
@@ -255,6 +256,37 @@ describe("organization mutations", () => {
       "The selected parent would create an organization cycle.",
       "This organization has multiple active parents. Resolve the data conflict before moving it.",
     ]));
+  });
+
+  it("updates and clears the subsidiary id through the Party endpoint", async () => {
+    await updateOrganizationExternalId("A/B", " 42 ");
+
+    expect(mocks.api).toHaveBeenNthCalledWith(1, {
+      url: "oms/parties/A%2FB",
+      method: "put",
+      data: { externalId: "42" },
+    });
+    expect(mocks.refreshAfterMutation).toHaveBeenNthCalledWith(
+      1,
+      "organization",
+      { partyId: "A/B" },
+    );
+
+    await updateOrganizationExternalId("A/B", " ");
+
+    expect(mocks.api).toHaveBeenNthCalledWith(2, {
+      url: "oms/parties/A%2FB",
+      method: "put",
+      data: { externalId: "" },
+    });
+  });
+
+  it("keeps the organization cache unchanged when the subsidiary update fails", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+
+    await expect(updateOrganizationExternalId("A", "42"))
+      .rejects.toThrow("Failed to update subsidiary ID.");
+    expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
   });
 
   it("expires the old parent before creating and refreshing the new relationship", async () => {

@@ -365,6 +365,16 @@ export async function renameOrganization(partyId: string, groupName: string): Pr
   await refreshAfterMutation("organization", { partyId });
 }
 
+export async function updateOrganizationExternalId(partyId: string, externalId: string): Promise<void> {
+  const response: any = await api({
+    url: `oms/parties/${encodeURIComponent(partyId)}`,
+    method: "put",
+    data: { externalId: externalId.trim() },
+  });
+  assertSuccessful(response, translate("Failed to update subsidiary ID."));
+  await refreshAfterMutation("organization", { partyId });
+}
+
 export async function reparentOrganization(
   childId: string,
   newParentId: string | undefined,
