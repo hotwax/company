@@ -21,11 +21,41 @@
               {{ translate("Primary organization") }}
             </ion-badge>
           </ion-card-content>
-          <ion-item v-if="organization.externalId">
-            <ion-label>{{ translate("External system ID") }}</ion-label>
-            <ion-note slot="end">
-              {{ organization.externalId }}
-            </ion-note>
+          <ion-item v-if="!editingExternalId">
+            <ion-label>
+              {{ translate("External ID") }}
+              <p>{{ organization.externalId || translate("Not mapped") }}</p>
+            </ion-label>
+            <ion-button v-if="canManage" slot="end" fill="clear" @click="startExternalIdEdit()">
+              {{ translate(organization.externalId ? "Edit" : "Add") }}
+            </ion-button>
+          </ion-item>
+          <ion-item v-else>
+            <ion-input
+              v-model="nextExternalId"
+              data-testid="external-id-input"
+              :label="translate('External ID')"
+              :helper-text="translate('Leave blank to clear the external ID.')"
+              label-placement="stacked"
+            />
+            <ion-button
+              slot="end"
+              data-testid="save-external-id"
+              fill="clear"
+              :disabled="savingExternalId"
+              @click="saveExternalId()"
+            >
+              {{ translate("Save") }}
+            </ion-button>
+            <ion-button
+              slot="end"
+              fill="clear"
+              color="medium"
+              :disabled="savingExternalId"
+              @click="editingExternalId = false"
+            >
+              {{ translate("Cancel") }}
+            </ion-button>
           </ion-item>
           <ion-item v-if="organization.statusId">
             <ion-label>{{ translate("Status") }}</ion-label>
@@ -168,6 +198,7 @@ import { computed, ref, watch } from "vue";
 import {
   renameOrganization,
   reparentOrganization,
+  updateOrganizationExternalId,
   useOrganizationFacilities,
   useOrganizationRecord,
   useOrganizations,
@@ -200,6 +231,9 @@ const parentCandidates = computed(() =>
 
 const editingName = ref(false);
 const nextName = ref("");
+const editingExternalId = ref(false);
+const nextExternalId = ref("");
+const savingExternalId = ref(false);
 const selectedParentId = ref("");
 const moving = ref(false);
 
@@ -210,6 +244,11 @@ function startRename() {
   editingName.value = true;
 }
 
+function startExternalIdEdit() {
+  nextExternalId.value = organization.value?.externalId ?? "";
+  editingExternalId.value = true;
+}
+
 async function saveRename() {
   if(!nextName.value.trim()) {return;}
   try {
@@ -218,6 +257,19 @@ async function saveRename() {
     await commonUtil.showToast(translate("Organization renamed."));
   } catch (error) {
     await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to rename organization.")));
+  }
+}
+
+async function saveExternalId() {
+  savingExternalId.value = true;
+  try {
+    await updateOrganizationExternalId(props.partyId, nextExternalId.value);
+    editingExternalId.value = false;
+    await commonUtil.showToast(translate("External ID updated."));
+  } catch (error) {
+    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update external ID.")));
+  } finally {
+    savingExternalId.value = false;
   }
 }
 

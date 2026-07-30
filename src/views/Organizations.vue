@@ -133,7 +133,8 @@
             <ion-item>
               <ion-input
                 v-model="externalId"
-                :label="translate('External system ID')"
+                :label="translate('External ID')"
+                :helper-text="translate('Maps to the subsidiary ID used by order exports.')"
                 label-placement="stacked"
               />
             </ion-item>
