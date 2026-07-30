@@ -1000,7 +1000,6 @@ export function useFacilityMutations(facilityId: string) {
 }
 
 /** The id of the group parkings are archived into. Created on first archive if absent. */
-const ARCHIVE_GROUP_ID = "ARCHIVE";
 
 /**
  * Creating a facility — the one write with no facility id to scope to.
@@ -1181,15 +1180,15 @@ export function useFacilityArchive() {
   async function ensureArchiveGroup(): Promise<string> {
     // Cache first — the group list is a login snapshot, so a hit costs no request at all.
     const cached = await facilityGroupCache.all();
-    if (cached.some((group: any) => group.facilityGroupId === ARCHIVE_GROUP_ID)) return ARCHIVE_GROUP_ID;
+    if (cached.some((group: any) => group.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID)) return ARCHIVE_FACILITY_GROUP_ID;
 
     // A cache miss is not proof of absence (the group may have been created outside this app since
     // login), so confirm against the server before trying to create it.
     try {
-      const resp: any = await api({ url: `oms/facilityGroups/${ARCHIVE_GROUP_ID}`, method: "get" });
+      const resp: any = await api({ url: `oms/facilityGroups/${ARCHIVE_FACILITY_GROUP_ID}`, method: "get" });
       if (!commonUtil.hasError(resp) && resp.data?.facilityGroupId) {
         await resyncDomain("facilityGroup"); // cache was stale — fix it while we know
-        return ARCHIVE_GROUP_ID;
+        return ARCHIVE_FACILITY_GROUP_ID;
       }
     } catch {
       // not found — fall through and create it
@@ -1199,11 +1198,11 @@ export function useFacilityArchive() {
       const resp: any = await api({
         url: "oms/facilityGroups",
         method: "post",
-        data: { facilityGroupId: ARCHIVE_GROUP_ID, facilityGroupName: "Archive" },
+        data: { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID, facilityGroupName: "Archive" },
       });
       if (!commonUtil.hasError(resp)) {
         await refreshAfterMutation("facilityGroup", {});
-        return ARCHIVE_GROUP_ID;
+        return ARCHIVE_FACILITY_GROUP_ID;
       }
     } catch (error) {
       logger.error("Failed to create archive group", error);
@@ -1212,7 +1211,7 @@ export function useFacilityArchive() {
   }
 
   const refreshArchive = () =>
-    refreshAfterMutation("facilityGroupMember", { facilityGroupId: ARCHIVE_GROUP_ID });
+    refreshAfterMutation("facilityGroupMember", { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID });
 
   return {
     async archive(facilityId: string) {
@@ -1234,7 +1233,7 @@ export function useFacilityArchive() {
      */
     async unarchive(facilityId: string, fromDate: number | string) {
       const resp: any = await api({
-        url: `admin/facilityGroups/${ARCHIVE_GROUP_ID}/facilities/${encodeURIComponent(facilityId)}/association`,
+        url: `admin/facilityGroups/${ARCHIVE_FACILITY_GROUP_ID}/facilities/${encodeURIComponent(facilityId)}/association`,
         method: "post",
         data: { fromDate, thruDate: Date.now() },
       });
