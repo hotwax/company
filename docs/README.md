@@ -11,6 +11,7 @@ below is live; superseded material is in [`archive/`](archive/).
 
 | Doc | What it is |
 | --- | --- |
+| [organization-management-architecture.md](organization-management-architecture.md) | Internal-organization hierarchy and facility-owner management architecture. Phases 1–2 are implemented; facility-owner editing and compatibility cleanup remain. Includes cache/API contracts, Mermaid flows, blast radius, rollout, and verification |
 | [shopify-batch-order-sync-scope.md](shopify-batch-order-sync-scope.md) | Requirements and acceptance criteria for shop-scoped order-sync configuration + monitoring. **Not signed off** — the source of the `C*/M*/K*/X*` acceptance rows |
 | [shopify-batch-order-sync-delivery-ledger.md](shopify-batch-order-sync-delivery-ledger.md) | Per-criterion delivery status keyed to the scope doc. A behavior is **Proven** only after reconciliation in the real UI against a live OMS |
 | [shopify-batch-order-sync-api-reuse.md](shopify-batch-order-sync-api-reuse.md) | The verified reuse decision for every datum and action in the scope doc — existing contract vs smallest accepted backend change |

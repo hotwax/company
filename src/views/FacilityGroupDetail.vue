@@ -138,7 +138,7 @@
                 >
                   <ion-select-option value="">{{ translate("None") }}</ion-select-option>
                   <ion-select-option
-                    v-for="type in facilityGroupTypes"
+                    v-for="type in facilityGroupTypeOptions"
                     :key="type.facilityGroupTypeId"
                     :value="type.facilityGroupTypeId"
                   >
@@ -249,7 +249,7 @@ import {
 } from '@ionic/vue';
 import { computed, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common";
-import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
+import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypeOptions, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
 import { useProductStores } from '@/composables/useProductStores';
 import { api } from '@common';
 import { DateTime } from 'luxon';
@@ -260,7 +260,10 @@ const props = defineProps<{ facilityGroupId: string }>();
 const groupMutations = useFacilityGroupMutations(props.facilityGroupId);
 
 // All three lists come from the login-time cache — nothing to fetch on entry.
+// `facilityGroupTypes` describes what the instance has, so it answers "what is this group's type?";
+// the edit picker needs `facilityGroupTypeOptions`, which also offers types no group carries yet.
 const { facilityGroupTypes } = useFacilityGroupTypes();
+const { facilityGroupTypeOptions } = useFacilityGroupTypeOptions();
 const { productStores, hydrated: productStoresHydrated } = useProductStores();
 // The group, its members and its product-store links are ALL cached domains — this screen makes no
 // requests. Mutations refresh those domains, so the cache is the current state, not a stale copy.

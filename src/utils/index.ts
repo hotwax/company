@@ -81,12 +81,12 @@ const generateInternalId = (name: string) => {
 
 const isValidPhone = (phoneNumber: string) => {
   if (!phoneNumber) return false;
-  // Allows optional +, digits, spaces, hyphens, and parentheses,
-  // ensuring the stripped digit count is between 7 and 20.
-  const phonePattern = /^[+\d\s()-]+$/;
-  if (!phonePattern.test(phoneNumber)) return false;
+  const trimmed = phoneNumber.trim();
+  // Constrain optional leading +, followed by structured digits, spaces, hyphens, and balanced parentheses
+  const phonePattern = /^\+?(?:[\d\s-]*|\(\d+\))*[\d\s-]*$/;
+  if (!phonePattern.test(trimmed)) return false;
 
-  const digitCount = phoneNumber.replace(/\D/g, "").length;
+  const digitCount = trimmed.replace(/\D/g, "").length;
   return digitCount >= 7 && digitCount <= 20;
 }
 
