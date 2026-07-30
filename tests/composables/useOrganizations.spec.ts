@@ -5,7 +5,11 @@ const mocks = vi.hoisted(() => ({
   api: vi.fn(),
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
-  translate: vi.fn((key: string) => key),
+  translate: vi.fn((key: string, params: Record<string, unknown> = {}) =>
+    Object.entries(params).reduce(
+      (message, [name, value]) => message.replace(`{${name}}`, String(value)),
+      key,
+    )),
 }));
 
 vi.mock("@common", () => ({
@@ -47,6 +51,7 @@ import {
   createOrganization,
   deriveOrganizationForest,
   isOrganizationRelationshipActive,
+  renameOrganization,
   reparentOrganization,
   suggestOrganizationId,
   wouldCreateOrganizationCycle,
@@ -198,6 +203,58 @@ describe("organization mutations", () => {
       "Organization ID may contain only letters, numbers, underscores, and hyphens.",
     ]);
     expect(mocks.api).not.toHaveBeenCalled();
+  });
+
+  it("translates backend fallbacks and partial-commit guidance during creation", async () => {
+    mocks.api
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+
+    const creation = createOrganization({
+      partyId: "NEW_ORG",
+      groupName: "New Organization",
+    });
+    const partialCommitMessage =
+      "Failed to save the organization name. The server already saved the party; review the organization before retrying.";
+    await expect(creation).rejects.toThrow(partialCommitMessage);
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
+      "Failed to create the organization party.",
+      "Failed to save the organization name.",
+      "Organization creation failed.",
+      "The server already saved the party; review the organization before retrying.",
+    ]));
+    expect(mocks.resyncDomain).toHaveBeenCalledWith("organization");
+    expect(mocks.resyncDomain).toHaveBeenCalledWith("organizationRelationship");
+  });
+
+  it("translates rename and hierarchy validation failures", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+    await expect(renameOrganization("A", "Renamed")).rejects.toThrow("Failed to rename the organization.");
+
+    const cycleMove = reparentOrganization(
+      "ROOT",
+      "A",
+      [],
+      new Map([["A", "ROOT"]]),
+    );
+    await expect(cycleMove).rejects.toThrow("The selected parent would create an organization cycle.");
+
+    const ambiguousMove = reparentOrganization(
+      "A",
+      "B",
+      [relationship("ROOT", "A"), relationship("LEAF", "A")],
+      new Map(),
+    );
+    const ambiguousParentMessage =
+      "This organization has multiple active parents. Resolve the data conflict before moving it.";
+    await expect(ambiguousMove).rejects.toThrow(ambiguousParentMessage);
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
+      "Failed to rename the organization.",
+      "The selected parent would create an organization cycle.",
+      "This organization has multiple active parents. Resolve the data conflict before moving it.",
+    ]));
   });
 
   it("expires the old parent before creating and refreshing the new relationship", async () => {

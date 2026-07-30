@@ -260,6 +260,12 @@ export interface CreateOrganizationInput {
   parentPartyId?: string;
 }
 
+const PARTIAL_CREATION_MESSAGES = {
+  party: "The server already saved the party; review the organization before retrying.",
+  partyAndName: "The server already saved the party and name; review the organization before retrying.",
+  organization: "The server already saved the organization; review the organization before retrying.",
+} as const;
+
 /** Suggest a valid, stable internal id without overwriting a later manual edit in the form. */
 export function suggestOrganizationId(groupName: string): string {
   return groupName
@@ -285,7 +291,7 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
     throw new Error(translate("Organization ID may contain only letters, numbers, underscores, and hyphens."));
   }
 
-  let completed = "nothing";
+  let completed: keyof typeof PARTIAL_CREATION_MESSAGES | undefined;
   try {
     const partyResponse: any = await api({
       url: "admin/organizations",
@@ -296,24 +302,24 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
         ...(input.externalId?.trim() ? { externalId: input.externalId.trim() } : {}),
       },
     });
-    assertSuccessful(partyResponse, "Failed to create the organization party.");
-    completed = "the party";
+    assertSuccessful(partyResponse, translate("Failed to create the organization party."));
+    completed = "party";
 
     const groupResponse: any = await api({
       url: `admin/organizations/${encodeURIComponent(partyId)}`,
       method: "post",
       data: { partyId, groupName },
     });
-    assertSuccessful(groupResponse, "Failed to save the organization name.");
-    completed = "the party and name";
+    assertSuccessful(groupResponse, translate("Failed to save the organization name."));
+    completed = "partyAndName";
 
     const roleResponse: any = await api({
       url: `admin/organizations/${encodeURIComponent(partyId)}/roles`,
       method: "post",
       data: { partyId, roleTypeId: INTERNAL_ORGANIZATION_ROLE },
     });
-    assertSuccessful(roleResponse, "Failed to assign the internal organization role.");
-    completed = "the organization";
+    assertSuccessful(roleResponse, translate("Failed to assign the internal organization role."));
+    completed = "organization";
     await refreshAfterMutation("organization", { partyId });
 
     if(input.parentPartyId) {
@@ -329,18 +335,19 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
           fromDate: Date.now(),
         },
       });
-      assertSuccessful(relationshipResponse, "Failed to save the parent organization.");
+      assertSuccessful(relationshipResponse, translate("Failed to save the parent organization."));
       await refreshAfterMutation("organizationRelationship", { partyIdTo: partyId });
     }
 
     return partyId;
   } catch (error) {
-    if(completed !== "nothing") {
+    if(completed) {
       await resyncDomain("organization");
       await resyncDomain("organizationRelationship");
+      const failureMessage = getResponseErrorMessage(error, translate("Organization creation failed."));
+      const partialMessage = translate(PARTIAL_CREATION_MESSAGES[completed]);
       throw new Error(
-        `${getResponseErrorMessage(error, "Organization creation failed.")} ` +
-        `The server already saved ${completed}; review the organization before retrying.`,
+        `${failureMessage} ${partialMessage}`,
         { cause: error },
       );
     }
@@ -354,7 +361,7 @@ export async function renameOrganization(partyId: string, groupName: string): Pr
     method: "post",
     data: { partyId, groupName: groupName.trim() },
   });
-  assertSuccessful(response, "Failed to rename the organization.");
+  assertSuccessful(response, translate("Failed to rename the organization."));
   await refreshAfterMutation("organization", { partyId });
 }
 
@@ -365,12 +372,12 @@ export async function reparentOrganization(
   parentById: ReadonlyMap<string, string>,
 ): Promise<void> {
   if(wouldCreateOrganizationCycle(childId, newParentId, parentById)) {
-    throw new Error("The selected parent would create an organization cycle.");
+    throw new Error(translate("The selected parent would create an organization cycle."));
   }
   const activeParents = relationships.filter((relationship) =>
     relationship.partyIdTo === childId && isOrganizationRelationshipActive(relationship));
   if(activeParents.length > 1) {
-    throw new Error("This organization has multiple active parents. Resolve the data conflict before moving it.");
+    throw new Error(translate("This organization has multiple active parents. Resolve the data conflict before moving it."));
   }
   const current = activeParents[0];
   if(current?.partyIdFrom === newParentId || (!current && !newParentId)) {return;}
@@ -381,7 +388,7 @@ export async function reparentOrganization(
       method: "put",
       data: { ...current, thruDate: Date.now() },
     });
-    assertSuccessful(closeResponse, "Failed to close the existing parent relationship.");
+    assertSuccessful(closeResponse, translate("Failed to close the existing parent relationship."));
     await refreshAfterMutation("organizationRelationship", { partyIdTo: childId });
   }
 
@@ -399,14 +406,14 @@ export async function reparentOrganization(
         fromDate: Date.now(),
       },
     });
-    assertSuccessful(createResponse, "Failed to create the new parent relationship.");
+    assertSuccessful(createResponse, translate("Failed to create the new parent relationship."));
     await refreshAfterMutation("organizationRelationship", { partyIdTo: childId });
   } catch (error) {
     await resyncDomain("organizationRelationship");
     if(current) {
+      const rootMessage = translate("The old relationship was already closed, so the organization is currently a root.");
       throw new Error(
-        `${getResponseErrorMessage(error, "Failed to create the new parent relationship.")} ` +
-        "The old relationship was already closed, so the organization is currently a root.",
+        `${getResponseErrorMessage(error, translate("Failed to create the new parent relationship."))} ${rootMessage}`,
         { cause: error },
       );
     }
