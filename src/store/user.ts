@@ -28,7 +28,11 @@ export const useUserStore = defineStore("user", {
       profile: "" as string,
       permissions: "" as string,
       lastFetched: 0 as number
-    }
+    },
+    // Three states, deliberately: undefined = not resolved yet (initial / just reset); "" = resolved,
+    // no version configured; "vX.Y.Z" = resolved, pinned to that version. The router guard depends on
+    // telling "not resolved yet" apart from "resolved: none" — collapsing them causes a redirect loop.
+    appVersion: undefined as string | undefined
   }),
 
   getters: {
@@ -36,6 +40,7 @@ export const useUserStore = defineStore("user", {
     getUserProfile: (state) => state.current,
     getTimeZones: (state) => state.availableTimeZones,
     getUserPermissions: (state) => state.permissions,
+    getAppVersion: (state) => state.appVersion,
     getInstanceUrl: (state) => state.instanceUrl,
     getQuery: (state) => state.query,
     getSelectedUser: (state) => state.selectedUser,
@@ -929,6 +934,8 @@ export const useUserStore = defineStore("user", {
 
     // Called by @common's initialiseConfig after logout
     async postLogout() {
+      // appVersion is preserved across this reset by useAuth().logout() (it's deployment config, not
+      // session state), so a plain $reset() is fine here.
       this.$reset()
       useAuth().clearAuth()
 
