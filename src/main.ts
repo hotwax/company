@@ -50,6 +50,8 @@ initialiseConfig({
   postLogout: useUserStore().postLogout,
   get oms() { return useUserStore().oms },
   set oms(val: string) { useUserStore().oms = val },
+  get appVersion() { return useUserStore().appVersion },
+  set appVersion(val: string | undefined) { useUserStore().appVersion = val },
   get current() { return useUserStore().current },
   set current(val: any) { useUserStore().current = val },
   router: router
