@@ -258,7 +258,7 @@ describe("organization mutations", () => {
     ]));
   });
 
-  it("updates and clears the subsidiary id through the Party endpoint", async () => {
+  it("updates and clears the external id through the Party endpoint", async () => {
     await updateOrganizationExternalId("A/B", " 42 ");
 
     expect(mocks.api).toHaveBeenNthCalledWith(1, {
@@ -285,7 +285,7 @@ describe("organization mutations", () => {
     mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
 
     await expect(updateOrganizationExternalId("A", "42"))
-      .rejects.toThrow("Failed to update subsidiary ID.");
+      .rejects.toThrow("Failed to update external ID.");
     expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
   });
 

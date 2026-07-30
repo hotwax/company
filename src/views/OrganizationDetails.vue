@@ -23,7 +23,7 @@
           </ion-card-content>
           <ion-item v-if="!editingExternalId">
             <ion-label>
-              {{ translate("Subsidiary ID") }}
+              {{ translate("External ID") }}
               <p>{{ organization.externalId || translate("Not mapped") }}</p>
             </ion-label>
             <ion-button v-if="canManage" slot="end" fill="clear" @click="startExternalIdEdit()">
@@ -33,14 +33,14 @@
           <ion-item v-else>
             <ion-input
               v-model="nextExternalId"
-              data-testid="subsidiary-id-input"
-              :label="translate('Subsidiary ID')"
-              :helper-text="translate('Leave blank to clear the subsidiary mapping.')"
+              data-testid="external-id-input"
+              :label="translate('External ID')"
+              :helper-text="translate('Leave blank to clear the external ID.')"
               label-placement="stacked"
             />
             <ion-button
               slot="end"
-              data-testid="save-subsidiary-id"
+              data-testid="save-external-id"
               fill="clear"
               :disabled="savingExternalId"
               @click="saveExternalId()"
@@ -265,9 +265,9 @@ async function saveExternalId() {
   try {
     await updateOrganizationExternalId(props.partyId, nextExternalId.value);
     editingExternalId.value = false;
-    await commonUtil.showToast(translate("Subsidiary ID updated."));
+    await commonUtil.showToast(translate("External ID updated."));
   } catch (error) {
-    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update subsidiary ID.")));
+    await commonUtil.showToast(getResponseErrorMessage(error, translate("Failed to update external ID.")));
   } finally {
     savingExternalId.value = false;
   }

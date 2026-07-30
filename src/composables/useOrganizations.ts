@@ -371,7 +371,7 @@ export async function updateOrganizationExternalId(partyId: string, externalId: 
     method: "put",
     data: { externalId: externalId.trim() },
   });
-  assertSuccessful(response, translate("Failed to update subsidiary ID."));
+  assertSuccessful(response, translate("Failed to update external ID."));
   await refreshAfterMutation("organization", { partyId });
 }
 

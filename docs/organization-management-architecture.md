@@ -155,16 +155,15 @@ flowchart TD
 
 The create form manages one business concept while the backend persists three records:
 
-1. create `Party` with `partyTypeId = PARTY_GROUP` and the optional subsidiary mapping in
-   `externalId`;
+1. create `Party` with `partyTypeId = PARTY_GROUP` and the optional external ID in `externalId`;
 2. store `PartyGroup.groupName`;
 3. create the `INTERNAL_ORGANIZATIO` `PartyRole`;
 4. optionally create an active `SUB_DIVISION` relationship from the selected parent.
 
 The party-ID generation and validation contract must be decided before implementation; the app
-must not casually derive a permanent identity from the editable display name. `externalId` is the
-editable subsidiary ID used by the current order-export mapping; it is optional and is not the
-hierarchy key.
+must not casually derive a permanent identity from the editable display name. `externalId` is
+editable and optional; the current order-export mapping treats it as the subsidiary ID, but it is
+not the hierarchy key.
 
 Do not copy the primary company's full `DEFAULT_COMPANY_ROLE_TYPE_IDS` set onto every subsidiary.
 Gurveen's model gives each subsidiary the internal-organization role; billing, customer, supplier,
@@ -179,7 +178,7 @@ concurrent administration or rollback guarantees become necessary.
 Renaming changes only `PartyGroup.groupName`. It must not rewrite `partyId`, `externalId`,
 relationships, facility ownership, or product-store accounting identity.
 
-Subsidiary-ID editing is a separate party mutation through `PUT oms/parties/{partyId}` with
+External-ID editing is a separate party mutation through `PUT oms/parties/{partyId}` with
 `externalId`. The detail screen refreshes the exact `organization` cache record after success and
 allows an administrator to clear the mapping with an empty value.
 

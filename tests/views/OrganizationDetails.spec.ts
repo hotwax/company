@@ -62,7 +62,7 @@ function buttonWithText(wrapper: any, text: string) {
   return matches[0];
 }
 
-describe("OrganizationDetails subsidiary mapping", () => {
+describe("OrganizationDetails external ID", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -80,36 +80,36 @@ describe("OrganizationDetails subsidiary mapping", () => {
     harness.updateOrganizationExternalId.mockResolvedValue(undefined);
   });
 
-  it("allows an administrator to update the mapped subsidiary id", async () => {
+  it("allows an administrator to update the external id", async () => {
     const wrapper = await mountView();
 
-    expect(wrapper.text()).toContain("Subsidiary ID");
+    expect(wrapper.text()).toContain("External ID");
     expect(wrapper.text()).toContain("42");
     await buttonWithText(wrapper, "Edit").trigger("click");
 
-    const input = wrapper.findComponent("[data-testid='subsidiary-id-input']");
+    const input = wrapper.findComponent("[data-testid='external-id-input']");
     input.vm.$emit("update:modelValue", "84");
     await flushPromises();
-    await wrapper.find("[data-testid='save-subsidiary-id']").trigger("click");
+    await wrapper.find("[data-testid='save-external-id']").trigger("click");
     await flushPromises();
 
     expect(harness.updateOrganizationExternalId).toHaveBeenCalledWith("ORG", "84");
-    expect(harness.showToast).toHaveBeenCalledWith("Subsidiary ID updated.");
+    expect(harness.showToast).toHaveBeenCalledWith("External ID updated.");
   });
 
-  it("keeps a failed subsidiary edit open with the entered value", async () => {
+  it("keeps a failed external-id edit open with the entered value", async () => {
     harness.updateOrganizationExternalId.mockRejectedValueOnce(new Error("Update failed"));
     const wrapper = await mountView();
 
     await buttonWithText(wrapper, "Edit").trigger("click");
-    const input = wrapper.findComponent("[data-testid='subsidiary-id-input']");
+    const input = wrapper.findComponent("[data-testid='external-id-input']");
     input.vm.$emit("update:modelValue", "99");
     await flushPromises();
-    await wrapper.find("[data-testid='save-subsidiary-id']").trigger("click");
+    await wrapper.find("[data-testid='save-external-id']").trigger("click");
     await flushPromises();
 
     expect(harness.updateOrganizationExternalId).toHaveBeenCalledWith("ORG", "99");
-    expect(wrapper.find("[data-testid='subsidiary-id-input']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='external-id-input']").exists()).toBe(true);
     expect(harness.showToast).toHaveBeenCalledWith("Update failed");
   });
 
