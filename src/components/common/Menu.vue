@@ -90,7 +90,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import router from "@/router";
@@ -207,6 +207,12 @@ const agentPages = [
 ];
 
 const settingsPages = [
+  {
+    title: "App Version",
+    url: "/app-version",
+    iosIcon: appsOutline,
+    mdIcon: appsOutline,
+  },
   {
     title: "Settings",
     url: "/settings",

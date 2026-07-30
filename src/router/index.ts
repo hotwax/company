@@ -39,6 +39,7 @@ const CloneProductStore = () => import("@/views/CloneProductStore.vue")
 const Composer = () => import("@/views/agent/Composer.vue")
 const Workforce = () => import("@/views/agent/Workforce.vue")
 const ResetPassword = () => import("@/views/ResetPassword.vue")
+const AppVersion = () => import("@/views/AppVersion.vue")
 const Organizations = () => import("@/views/Organizations.vue")
 const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
 
@@ -132,6 +133,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/login", name: "Login", component: Login },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
+  { path: "/app-version", name: "AppVersion", component: AppVersion, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },
   { path: "/workforce", name: "Workforce", component: Workforce, beforeEnter: authGuard },

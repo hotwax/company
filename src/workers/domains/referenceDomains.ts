@@ -18,6 +18,8 @@ import {
   enumGroupMemberProjection,
   facilityIdentificationProjection,
   systemMessageTypeProjection,
+  appProjection,
+  appVersionProjection,
   PRODUCT_STORE_ID_FOR_SHIPPING_METHODS,
   statusProjection,
   userGroupProjection,
@@ -367,4 +369,27 @@ registerSnapshotDomain({
     params: { facilityGroupId: pk.facilityGroupId },
     scope: { field: "facilityGroupId", value: pk.facilityGroupId },
   }),
+});
+
+// --- App registry + version pins (the App Version screen). ---
+
+registerSnapshotDomain({
+  name: "app",
+  table: "apps",
+  projection: appProjection,
+  listUrl: "admin/apps",
+  collectionKey: null, // bare array
+});
+
+registerSnapshotDomain({
+  name: "appVersion",
+  table: "appVersions",
+  projection: appVersionProjection,
+  // `CommerceAppAndDeployment` list — INNER-joined, so it returns only apps that HAVE a deployment.
+  listUrl: "admin/apps/appVersions",
+  collectionKey: null, // bare array
+  // Composite key and no by-PK route: create/update/delete are path-scoped by appId
+  // (`admin/apps/{appId}/appVersions`). The set is tiny, so a mutation re-lists the whole thing and
+  // the snapshot prunes any pin the server dropped. Callers trigger this via `resyncDomain("appVersion")`.
+  refetchScope: () => ({ params: {} }),
 });
