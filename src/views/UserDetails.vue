@@ -606,6 +606,7 @@ import router from "@/router";
 import { useUserStore } from "@/store/user";
 import { addCircleOutline, addOutline, bodyOutline, businessOutline, callOutline, cameraOutline, closeOutline, cloudyNightOutline, ellipsisVerticalOutline, eyeOffOutline, eyeOutline, lockClosedOutline, mailOutline, saveOutline, timeOutline } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from "@common";
+import { isValidPhone } from "@/utils";
 import { useUserGroups } from '@/composables/useSecurity';
 import { useShopifyShops } from '@/composables/useShopify';
 import { useRoleTypes } from '@/composables/useSeed';
@@ -794,10 +795,13 @@ const isCreatedBySystem = () => {
 };
 
 const addContactField = async (type: string) => {
+  const inputType = type === "email" ? "email" : (type === "phoneNumber" ? "tel" : "text");
+
   const contactUpdateAlert = await alertController.create({
     header: translate(OPTIONS[type as "email" | "phoneNumber" | "externalId"].header),
     inputs: [{
       name: "input",
+      type: inputType,
       placeholder: translate(OPTIONS[type as "email" | "phoneNumber" | "externalId"].placeholder),
     }],
     buttons: [{
@@ -837,6 +841,12 @@ const addContactField = async (type: string) => {
               }
             };
           } else if(type === "phoneNumber") {
+            if(!isValidPhone(input)) {
+              commonUtil.showToast(translate("Invalid phone number."));
+
+              return false;
+            }
+
             const resp = await userStore.createUpdatePartyTelecomNumber({
               contactNumber: input,
               partyId: selectedUser.value.partyId,
