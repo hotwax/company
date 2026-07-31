@@ -187,10 +187,12 @@ import { computed, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
+import { refreshAfterMutation } from '@/services/appCacheBootstrap';
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
   jobName: string;
+  productStoreId?: string;
   title?: string;
   allowedParameterNames?: string[];
   parameterDescription?: string;
@@ -202,6 +204,7 @@ const props = withDefaults(defineProps<{
   saveHandler?: ((payload: { cronExpression: string; paused: boolean }) => Promise<unknown>) | null;
 }>(), {
   title: '',
+  productStoreId: '',
   allowedParameterNames: () => [],
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
@@ -229,7 +232,7 @@ const originalCronExpression = computed(() => String(jobDetails.value.cronExpres
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
 const isDirty = computed(() => draftCronExpression.value !== originalCronExpression.value || draftActive.value !== originalActive.value);
 const isScheduleValid = computed(() => {
-  if (!draftCronExpression.value) return false;
+  if (!draftCronExpression.value) return true;
   try { cronstrue.toString(draftCronExpression.value); return true; } catch (_error) { return false; }
 });
 const scheduleDescription = computed(() => {
@@ -264,7 +267,7 @@ async function load() {
   isLoading.value = true; loadError.value = '';
   try {
     const [details, runs, audits] = await Promise.all([
-      fetchJobDetail(props.jobName),
+      fetchJobDetail(props.jobName, props.productStoreId),
       fetchJobRuns(props.jobName, { pageSize: 5, pageIndex: 0 }),
       fetchJobAuditHistory(props.jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
@@ -313,7 +316,12 @@ async function save() {
   try {
     const paused = !draftActive.value;
     if (props.saveHandler) await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
-    else await updateJob({ jobName: props.jobName, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' });
+    else {
+      await updateJob({ jobName: props.jobName, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' });
+      await refreshAfterMutation('serviceJob', { jobName: props.jobName });
+    }
+    jobDetails.value.cronExpression = draftCronExpression.value;
+    jobDetails.value.paused = paused ? 'Y' : 'N';
     commonUtil.showToast(translate('Sync job updated successfully.'));
     emit('updated'); emit('close');
   } catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
