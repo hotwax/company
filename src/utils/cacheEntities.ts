@@ -676,3 +676,42 @@ export const facilityGroupProductStoreProjection = {
 } as const;
 
 export const facilityGroupProductStoreCache = defineCachedEntity("facilityGroupProductStores", facilityGroupProductStoreProjection);
+
+/**
+ * App registry (`admin/apps`) — the catalog of apps that can be version-pinned. Read-only reference
+ * data: the version screen labels rows with it and the create modal offers app + environment combos
+ * that do not yet have a pin.
+ */
+export const appProjection = {
+  keyField: "appId",
+  fields: {
+    appId: "text",
+    appName: "text",
+  },
+} as const;
+
+/**
+ * App version pin (`admin/appVersion`) — which build of each app is served per environment.
+ *
+ * The natural key is COMPOSITE (appId + environmentTypeId), so rows carry a synthetic `appVersionKey`.
+ * `appName` and `enumDesc` (the environment description) come joined on the list response, so they
+ * are projected here rather than looked up — the screen renders straight from the cached row.
+ */
+export const appVersionProjection = {
+  keyField: "appVersionKey",
+  fields: {
+    appVersionKey: "text",
+    appId: "text",
+    appName: "text",
+    environmentTypeId: "text",
+    currentVersion: "text",
+    enumDesc: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.appId || !raw?.environmentTypeId) return undefined;
+    return `${raw.appId}|${raw.environmentTypeId}`;
+  },
+} as const;
+
+export const appCache = defineCachedEntity("apps", appProjection);
+export const appVersionCache = defineCachedEntity("appVersions", appVersionProjection);

@@ -5,6 +5,11 @@ const mocks = vi.hoisted(() => ({
   api: vi.fn(),
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
+  translate: vi.fn((key: string, params: Record<string, unknown> = {}) =>
+    Object.entries(params).reduce(
+      (message, [name, value]) => message.replace(`{${name}}`, String(value)),
+      key,
+    )),
 }));
 
 vi.mock("@common", () => ({
@@ -13,6 +18,7 @@ vi.mock("@common", () => ({
     hasError: (response: any) =>
       Boolean(response?.data?._ERROR_MESSAGE_ || response?.data?._ERROR_MESSAGE_LIST_),
   },
+  translate: mocks.translate,
 }));
 
 vi.mock("@/services/appCacheBootstrap", () => ({
@@ -45,8 +51,10 @@ import {
   createOrganization,
   deriveOrganizationForest,
   isOrganizationRelationshipActive,
+  renameOrganization,
   reparentOrganization,
   suggestOrganizationId,
+  updateOrganizationExternalId,
   wouldCreateOrganizationCycle,
 } from "@/composables/useOrganizations";
 
@@ -113,6 +121,10 @@ describe("organization hierarchy", () => {
       "missing-parent",
       "multiple-parents",
     ]);
+    expect(result.anomalies).toEqual(expect.arrayContaining([
+      { code: "missing-parent", partyId: "A", relatedPartyId: "MISSING" },
+      { code: "missing-child", partyId: "ROOT", relatedPartyId: "GHOST" },
+    ]));
     expect(result.roots.map((node) => node.partyId)).toEqual(["A", "B", "LEAF", "ROOT"]);
   });
 
@@ -170,6 +182,111 @@ describe("organization mutations", () => {
       "organizationRelationship",
       { partyIdTo: "NEW_ORG" },
     );
+  });
+
+  it("translates organization id validation failures before displaying them", async () => {
+    await expect(createOrganization({
+      partyId: "",
+      groupName: "",
+    })).rejects.toThrow("Organization ID and name are required.");
+    await expect(createOrganization({
+      partyId: "THIS_IDENTIFIER_IS_TOO_LONG",
+      groupName: "Long identifier",
+    })).rejects.toThrow("Organization ID must be 20 characters or fewer.");
+    await expect(createOrganization({
+      partyId: "NOT VALID",
+      groupName: "Invalid identifier",
+    })).rejects.toThrow("Organization ID may contain only letters, numbers, underscores, and hyphens.");
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual([
+      "Organization ID and name are required.",
+      "Organization ID must be 20 characters or fewer.",
+      "Organization ID may contain only letters, numbers, underscores, and hyphens.",
+    ]);
+    expect(mocks.api).not.toHaveBeenCalled();
+  });
+
+  it("translates backend fallbacks and partial-commit guidance during creation", async () => {
+    mocks.api
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+
+    const creation = createOrganization({
+      partyId: "NEW_ORG",
+      groupName: "New Organization",
+    });
+    const partialCommitMessage =
+      "Failed to save the organization name. The server already saved the party; review the organization before retrying.";
+    await expect(creation).rejects.toThrow(partialCommitMessage);
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
+      "Failed to create the organization party.",
+      "Failed to save the organization name.",
+      "Organization creation failed.",
+      "The server already saved the party; review the organization before retrying.",
+    ]));
+    expect(mocks.resyncDomain).toHaveBeenCalledWith("organization");
+    expect(mocks.resyncDomain).toHaveBeenCalledWith("organizationRelationship");
+  });
+
+  it("translates rename and hierarchy validation failures", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+    await expect(renameOrganization("A", "Renamed")).rejects.toThrow("Failed to rename the organization.");
+
+    const cycleMove = reparentOrganization(
+      "ROOT",
+      "A",
+      [],
+      new Map([["A", "ROOT"]]),
+    );
+    await expect(cycleMove).rejects.toThrow("The selected parent would create an organization cycle.");
+
+    const ambiguousMove = reparentOrganization(
+      "A",
+      "B",
+      [relationship("ROOT", "A"), relationship("LEAF", "A")],
+      new Map(),
+    );
+    const ambiguousParentMessage =
+      "This organization has multiple active parents. Resolve the data conflict before moving it.";
+    await expect(ambiguousMove).rejects.toThrow(ambiguousParentMessage);
+
+    expect(mocks.translate.mock.calls.map(([key]) => key)).toEqual(expect.arrayContaining([
+      "Failed to rename the organization.",
+      "The selected parent would create an organization cycle.",
+      "This organization has multiple active parents. Resolve the data conflict before moving it.",
+    ]));
+  });
+
+  it("updates and clears the external id through the Party endpoint", async () => {
+    await updateOrganizationExternalId("A/B", " 42 ");
+
+    expect(mocks.api).toHaveBeenNthCalledWith(1, {
+      url: "oms/parties/A%2FB",
+      method: "put",
+      data: { externalId: "42" },
+    });
+    expect(mocks.refreshAfterMutation).toHaveBeenNthCalledWith(
+      1,
+      "organization",
+      { partyId: "A/B" },
+    );
+
+    await updateOrganizationExternalId("A/B", " ");
+
+    expect(mocks.api).toHaveBeenNthCalledWith(2, {
+      url: "oms/parties/A%2FB",
+      method: "put",
+      data: { externalId: "" },
+    });
+  });
+
+  it("keeps the organization cache unchanged when the subsidiary update fails", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { _ERROR_MESSAGE_: "backend failure" } });
+
+    await expect(updateOrganizationExternalId("A", "42"))
+      .rejects.toThrow("Failed to update external ID.");
+    expect(mocks.refreshAfterMutation).not.toHaveBeenCalled();
   });
 
   it("expires the old parent before creating and refreshing the new relationship", async () => {

@@ -33,7 +33,7 @@
             detail
           >
             <ion-label class="ion-text-wrap">
-              <h2>{{ node.groupName || node.partyId }}</h2>
+              {{ node.groupName || node.partyId }}
               <p>{{ node.path.join(" / ") }}</p>
             </ion-label>
             <ion-badge v-if="node.partyId === primaryOrganizationId" slot="end">
@@ -70,8 +70,22 @@
         </ion-list>
       </main>
 
-      <main v-else class="empty-state">
-        {{ translate("No organizations found") }}
+      <main v-else>
+        <ion-card class="ion-text-center">
+          <ion-card-header>
+            <ion-icon :icon="businessOutline" color="medium" size="large" />
+            <ion-card-title>{{ translate("No organizations yet") }}</ion-card-title>
+          </ion-card-header>
+          <ion-card-content>
+            <p>
+              {{ translate("Create your first organization to start building your internal company hierarchy.") }}
+            </p>
+            <ion-button v-if="canManage" class="ion-margin-top" @click="showCreate = true">
+              {{ translate("Create your first organization") }}
+              <ion-icon slot="end" :icon="addOutline" />
+            </ion-button>
+          </ion-card-content>
+        </ion-card>
       </main>
 
       <ion-fab v-if="canManage" slot="fixed" vertical="bottom" horizontal="end">
@@ -94,6 +108,7 @@
 import { translate } from "@common";
 import {
   IonBadge,
+  IonButton,
   IonCard,
   IonCardContent,
   IonCardHeader,
@@ -115,7 +130,7 @@ import {
   IonToolbar,
   onIonViewWillEnter,
 } from "@ionic/vue";
-import { addOutline } from "ionicons/icons";
+import { addOutline, businessOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal.vue";
 import OrganizationTreeItem from "@/components/organization/OrganizationTreeItem.vue";
@@ -147,7 +162,7 @@ const searchResults = computed(() => {
 function anomalyMessage(anomaly: OrganizationAnomaly): string {
   if(anomaly.code === "missing-parent") {
     return translate("Organization has a relationship to a missing parent: {partyId}", {
-      partyId: anomaly.partyId,
+      partyId: anomaly.relatedPartyId,
     });
   }
   if(anomaly.code === "missing-child") {
@@ -175,16 +190,11 @@ onIonViewWillEnter(() => void loadPrimaryOrganization());
 
 <style scoped>
 ion-content {
-  --padding-bottom: 80px;
+  --padding-bottom: var(--spacer-2xl);
 }
 
 .organization-tree {
   margin: 0;
   padding: 0;
-}
-
-.empty-state {
-  padding: 24px;
-  text-align: center;
 }
 </style>

@@ -90,7 +90,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { albumsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, gitNetworkOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import router from "@/router";
@@ -99,19 +99,19 @@ const { isAuthenticated } = useAuth();
 const { hasPermission } = useAppAuth();
 const appPages = [
   {
+    title: "Organizations",
+    url: "/organizations",
+    childRoutes: ["/organization-details/"],
+    permission: "PARTYMGR_VIEW OR PARTYMGR_ADMIN",
+    iosIcon: earthOutline,
+    mdIcon: earthOutline,
+  },
+  {
     title: "Product Store",
     url: "/product-store",
     childRoutes: ["/product-store/", "/product-store-details/"],
     iosIcon: businessOutline,
     mdIcon: businessOutline,
-  },
-  {
-    title: "Organizations",
-    url: "/organizations",
-    childRoutes: ["/organization-details/"],
-    permission: "PARTYMGR_VIEW OR PARTYMGR_ADMIN",
-    iosIcon: gitNetworkOutline,
-    mdIcon: gitNetworkOutline,
   },
 ];
 
@@ -207,6 +207,12 @@ const agentPages = [
 ];
 
 const settingsPages = [
+  {
+    title: "App Version",
+    url: "/app-version",
+    iosIcon: appsOutline,
+    mdIcon: appsOutline,
+  },
   {
     title: "Settings",
     url: "/settings",
