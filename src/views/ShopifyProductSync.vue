@@ -317,6 +317,7 @@
           :product-store-id="shop?.productStoreId || ''"
           :title="syncJobDetailsTitle"
           :save-handler="saveSyncJobDetails"
+          :allow-empty-schedule="true"
           @updated="handleRefresh"
           @close="handleSyncJobDetailsDidDismiss"
         />

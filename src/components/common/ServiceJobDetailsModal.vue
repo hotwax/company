@@ -198,6 +198,7 @@ const props = withDefaults(defineProps<{
   parameterDescription?: string;
   canRunNow?: boolean;
   canEdit?: boolean;
+  allowEmptySchedule?: boolean;
   runNowDisabledReason?: string;
   editDisabledReason?: string;
   runHandler?: (() => Promise<unknown>) | null;
@@ -209,6 +210,7 @@ const props = withDefaults(defineProps<{
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
   canEdit: true,
+  allowEmptySchedule: false,
   runNowDisabledReason: '',
   editDisabledReason: '',
   runHandler: null,
@@ -232,7 +234,7 @@ const originalCronExpression = computed(() => String(jobDetails.value.cronExpres
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
 const isDirty = computed(() => draftCronExpression.value !== originalCronExpression.value || draftActive.value !== originalActive.value);
 const isScheduleValid = computed(() => {
-  if (!draftCronExpression.value) return true;
+  if (!draftCronExpression.value) return props.allowEmptySchedule;
   try { cronstrue.toString(draftCronExpression.value); return true; } catch (_error) { return false; }
 });
 const scheduleDescription = computed(() => {
