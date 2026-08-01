@@ -18,7 +18,6 @@
           :label="translate('Shopify domain') + ' *'"
           label-placement="stacked"
           placeholder="store.myshopify.com"
-          autocomplete="off"
           @ion-blur="suggestShopId()"
         />
       </ion-item>
@@ -56,7 +55,6 @@
           label-placement="stacked"
           type="password"
           placeholder="shpat_..."
-          autocomplete="off"
         />
       </ion-item>
       <ion-item>
@@ -64,7 +62,6 @@
           v-model="form.clientId"
           :label="translate('Client ID') + ' *'"
           label-placement="stacked"
-          autocomplete="off"
         />
       </ion-item>
       <ion-item>
@@ -73,7 +70,6 @@
           :label="translate('Client secret') + ' *'"
           label-placement="stacked"
           type="password"
-          autocomplete="off"
         />
       </ion-item>
     </ion-list>
