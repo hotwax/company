@@ -158,70 +158,11 @@ async function confirmClone() {
 async function executeClone() {
   emitter.emit("presentLoader");
   try {
-    // 1. Fetch details and settings of source store, and details of target store
-    const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
-      api({ url: `admin/productStores/${sourceStoreId.value}`, method: "get" }),
-      api({ url: `admin/productStores/${sourceStoreId.value}/settings`, method: "get" }),
-      api({ url: `admin/productStores/${targetStoreId.value}`, method: "get" })
-    ]);
-
-    if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {
-      throw new Error("Failed to fetch product store details");
-    }
-
-    const sourceDetails = (sourceDetailsResp as any).data;
-    const sourceSettings = !commonUtil.hasError(sourceSettingsResp) ? (sourceSettingsResp as any).data : [];
-    const targetDetails = (targetDetailsResp as any).data;
-
-    // 2. Build direct fields payload for target store
-    let targetPayload = { ...targetDetails };
-
-    Object.keys(categories.value).forEach((key: string) => {
-      if (categories.value[key].selected) {
-        const mapping = CATEGORY_MAP[key];
-        mapping.fields.forEach((field: string) => {
-          if (sourceDetails[field] !== undefined) {
-            targetPayload[field] = sourceDetails[field];
-          }
-        });
-      }
-    });
-
-    // Update target product store details
-    const detailsUpdateResp = await useProductStoreMutations(targetPayload.productStoreId).updateStore(targetPayload);
-    if (commonUtil.hasError(detailsUpdateResp)) {
-      throw detailsUpdateResp.data;
-    }
-
-    // 3. Build settings copy promises
-    const settingsPromises: Promise<any>[] = [];
-    const activeSourceSettings = sourceSettings.filter((s: any) => !s.thruDate && s.settingValue);
-
-    Object.keys(categories.value).forEach((key: string) => {
-      if (categories.value[key].selected) {
-        const mapping = CATEGORY_MAP[key];
-        const settingsToClone = activeSourceSettings.filter((s: any) => mapping.settings.includes(s.settingTypeEnumId));
-        
-        settingsToClone.forEach((setting: any) => {
-          settingsPromises.push(
-            useProductStoreMutations(targetStoreId.value).saveSettings({
-              fromDate: Date.now(),
-              productStoreId: targetStoreId.value,
-              settingTypeEnumId: setting.settingTypeEnumId,
-              settingValue: setting.settingValue
-            })
-          );
-        });
-      }
-    });
-
-    if (settingsPromises.length > 0) {
-      const results = await Promise.allSettled(settingsPromises);
-      const failed = results.filter(r => r.status === "rejected");
-      if (failed.length > 0) {
-        logger.warn(`Failed to clone ${failed.length} settings`);
-      }
-    }
+    await useProductStoreMutations(targetStoreId.value).cloneSettingsFrom(
+      sourceStoreId.value,
+      categories.value,
+      CATEGORY_MAP
+    );
 
     commonUtil.showToast(translate("Product store settings cloned successfully."));
     router.replace(`/product-store-details/${targetStoreId.value}`);

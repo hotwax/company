@@ -217,6 +217,88 @@ export function useProductStoreMutations(productStoreId: string) {
       data: { ...payload, productStoreId },
     }) as Promise<any>,
 
+    async cloneSettingsFrom(
+      sourceStoreId: string,
+      categories: Record<string, { selected: boolean }>,
+      categoryMap: Record<string, { fields: string[]; settings: string[] }>
+    ) {
+      // 1. Fetch details and settings of source store, and details of target store
+      const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
+        api({ url: `admin/productStores/${encodeURIComponent(sourceStoreId)}`, method: "get" }),
+        api({ url: `admin/productStores/${encodeURIComponent(sourceStoreId)}/settings`, method: "get" }),
+        api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" })
+      ]);
+
+      if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {
+        throw new Error("Failed to fetch product store details");
+      }
+
+      const sourceDetails = (sourceDetailsResp as any).data;
+      const sourceSettings = !commonUtil.hasError(sourceSettingsResp) ? (sourceSettingsResp as any).data : [];
+      const targetDetails = (targetDetailsResp as any).data;
+
+      // 2. Build direct fields payload for target store
+      let targetPayload = { ...targetDetails };
+
+      Object.keys(categories).forEach((key: string) => {
+        if (categories[key].selected) {
+          const mapping = categoryMap[key];
+          mapping.fields.forEach((field: string) => {
+            if (sourceDetails[field] !== undefined) {
+              targetPayload[field] = sourceDetails[field];
+            }
+          });
+        }
+      });
+
+      // Update target product store details
+      const updateDetailsResp: any = await api({
+        url: `admin/productStores/${encodeURIComponent(productStoreId)}`,
+        method: "put",
+        data: { ...targetPayload, productStoreId },
+      });
+      if (commonUtil.hasError(updateDetailsResp)) {
+        throw updateDetailsResp.data;
+      }
+      await refreshAfterMutation("productStore", { productStoreId });
+
+      // 3. Build settings copy promises
+      const settingsPromises: Promise<any>[] = [];
+      const activeSourceSettings = sourceSettings.filter((s: any) => !s.thruDate && s.settingValue);
+
+      Object.keys(categories).forEach((key: string) => {
+        if (categories[key].selected) {
+          const mapping = categoryMap[key];
+          const settingsToClone = activeSourceSettings.filter((s: any) => mapping.settings.includes(s.settingTypeEnumId));
+
+          settingsToClone.forEach((setting: any) => {
+            settingsPromises.push(
+              api({
+                url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`,
+                method: "post",
+                data: {
+                  fromDate: Date.now(),
+                  productStoreId,
+                  settingTypeEnumId: setting.settingTypeEnumId,
+                  settingValue: setting.settingValue
+                },
+              })
+            );
+          });
+        }
+      });
+
+      if (settingsPromises.length > 0) {
+        const results = await Promise.allSettled(settingsPromises);
+        const failed = results.filter(r => r.status === "rejected");
+        if (failed.length > 0) {
+          logger.warn(`Failed to clone ${failed.length} settings`);
+        }
+      }
+
+      return updateDetailsResp;
+    },
+
     async addFacility(payload: { facilityId: string; fromDate?: number }) {
       const resp: any = await api({
         url: `admin/productStores/${storeId()}/facilities/${encodeURIComponent(payload.facilityId)}/association`,
