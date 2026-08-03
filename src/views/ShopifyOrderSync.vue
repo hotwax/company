@@ -1232,7 +1232,7 @@ async function openLandmarkDateModal(key: LandmarkDateKey) {
   landmarkSaveError.value = "";
   landmarkSuggestedDate.value = "";
   const existing = orderSync.landmarkDates[key];
-  landmarkDateValue.value = existing ? toDatetimeInput(existing) : toDatetimeInput(new Date().toISOString());
+  landmarkDateValue.value = existing ? toDatetimeInput(existing) : undefined;
   showLandmarkDateModal.value = true;
   landmarkSuggestionLoading.value = true;
   try {
