@@ -182,6 +182,7 @@ External-ID editing is a separate party mutation through `PUT oms/parties/{party
 `externalId`. The detail screen refreshes the exact `organization` cache record after success and
 allows an administrator to clear the mapping with an empty value.
 
+
 Deletion is out of scope for the first release. Internal organizations can be referenced by
 facilities, product stores, inventory/accounting records, orders, returns, and integration data.
 A safe archive/deactivation contract needs separate referential-impact analysis.
