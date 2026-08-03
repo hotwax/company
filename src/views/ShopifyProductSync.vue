@@ -314,7 +314,10 @@
         <ServiceJobDetailsModal
           :is-open="showSyncJobDetailsModal"
           :job-name="selectedSyncJobDetailsJob?.jobName || ''"
+          :product-store-id="shop?.productStoreId || ''"
           :title="syncJobDetailsTitle"
+          :save-handler="saveSyncJobDetails"
+          :allow-empty-schedule="true"
           @updated="handleRefresh"
           @close="handleSyncJobDetailsDidDismiss"
         />
@@ -485,9 +488,8 @@
                   <ion-checkbox
                     slot="end"
                     :checked="areAllVisibleProductsSelected"
-                    :indeterminate="areSomeVisibleProductsSelected"
                     data-testid="product-sync-products-select-all-checkbox"
-                    @click.stop="toggleAllVisibleProducts"
+                    style="pointer-events: none;"
                   />
                 </ion-item>
 
@@ -511,7 +513,7 @@
                     slot="end"
                     :checked="isProductSelected(product.id)"
                     :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
-                    @click.stop="toggleProduct(product)"
+                    style="pointer-events: none;"
                   />
                 </ion-item>
               </ion-list>
@@ -2355,6 +2357,9 @@ async function resyncProduct(record: any) {
 
   isSaving.value = true;
   try {
+    if (!selectedShopSystemMessageRemoteId.value) {
+      await loadSelectedShopSystemMessageRemoteId();
+    }
     const result = await syncShopifyProductsOnDemand({
       shopId: props.id,
       shopifyProductId: [shopifyProductId]
@@ -2659,6 +2664,8 @@ async function updateSyncJob(payload: any, successMessage: string) {
       });
     }
 
+    await refreshAfterMutation("serviceJob", { jobName: payload.jobName });
+
     if (showSyncJobDetailsModal.value) {
       await refreshSyncJobDetails();
     }
@@ -2719,22 +2726,19 @@ async function requestRefreshSyncJobDetails() {
   await refreshSyncJobDetails();
 }
 
-async function saveSyncJobDetails() {
-  if (!selectedSyncJobDetailsJob.value?.jobName || !syncJobDetailsDirty.value || !isSyncJobDraftScheduleValid.value) return;
+async function saveSyncJobDetails(payload: { cronExpression: string; paused: boolean }) {
+  if (!selectedSyncJobDetailsJob.value?.jobName) {
+    throw new Error("No job selected");
+  }
 
-  isSyncJobDetailsSaving.value = true;
-  try {
-    const updated = await updateSyncJob({
-      jobName: selectedSyncJobDetailsJob.value.jobName,
-      cronExpression: syncJobDraftCronExpression.value,
-      paused: syncJobDraftActive.value ? "N" : "Y"
-    }, translate("Sync job updated successfully."));
+  const updated = await updateSyncJob({
+    jobName: selectedSyncJobDetailsJob.value.jobName,
+    cronExpression: payload.cronExpression,
+    paused: payload.paused ? "Y" : "N"
+  }, ""); // Pass empty string to avoid duplicate toast with modal
 
-    if (updated) {
-      showSyncJobDetailsModal.value = false;
-    }
-  } finally {
-    isSyncJobDetailsSaving.value = false;
+  if (!updated) {
+    throw new Error("Failed to update sync job");
   }
 }
 
