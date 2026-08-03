@@ -2799,8 +2799,12 @@ async function fetchLandmarkDates(): Promise<void> {
         systemPropertyId_op: "in",
         pageSize: 100,
       },
+    }).catch((err: any) => {
+      if (err.response?.status === 404) return { data: [] };
+      throw err;
     });
-    const rows: any[] = Array.isArray(resp?.data) ? resp.data : resp?.data?.systemPropertyList ?? [];
+
+    const rows = Array.isArray(resp?.data) ? resp.data : resp?.data?.systemPropertyList ?? [];
 
     // One pass, grouped by the shop the row belongs to. Every shop's dates land in one request, which
     // is why switching shops never costs another.

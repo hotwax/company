@@ -513,12 +513,10 @@
               <p>{{ activeLandmark?.description }}</p>
             </ion-label>
           </ion-item>
-          <ion-item>
-            <ion-label>{{ translate("Date") }}</ion-label>
-            <ion-datetime-button slot="end" datetime="landmark-datetime" />
-            <ion-popover :keep-contents-on-did-dismiss="true">
-              <ion-datetime id="landmark-datetime" presentation="date-time" v-model="landmarkDateValue" />
-            </ion-popover>
+          <ion-item lines="none">
+            <ion-input type="datetime-local" :value="landmarkDateValue" label-placement="stacked" clear-input :aria-label="translate('Date')" @ionInput="landmarkDateValue = String($event.detail.value || '')">
+              <div slot="label">{{ translate("Date") }}</div>
+            </ion-input>
           </ion-item>
           <ion-item v-if="landmarkSuggestionLoading" lines="none">
             <ion-spinner slot="start" name="crescent" />
@@ -638,7 +636,7 @@
               {{ translate("Select all") }}
               <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
             </ion-label>
-            <ion-checkbox slot="end" :checked="allSelected" @click.stop="toggleAll" />
+            <ion-checkbox slot="end" :checked="allSelected" style="pointer-events: none;" />
           </ion-item>
           <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
             <ion-label>
@@ -648,7 +646,7 @@
               <p>{{ formatOrderDate(order.createdAt) }}</p>
             </ion-label>
             <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
-            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" @click.stop="toggleOrder(order)" />
+            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" style="pointer-events: none;" />
           </ion-item>
         </ion-list>
         <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>
@@ -712,8 +710,6 @@ import {
   IonCheckbox,
   IonChip,
   IonContent,
-  IonDatetime,
-  IonDatetimeButton,
   IonFooter,
   IonHeader,
   IonIcon,
@@ -1082,6 +1078,7 @@ function openMdmLogDetails(logId: unknown) {
     ...Object.values(orderSync.importsBySystemMessageId || {}).flat().map((entry) => entry.logId),
     ...(orderSync.recentAudits || []).map((order) => order.logId),
     ...(orderSync.recentErrors || []).map((error) => error.logId),
+    ...(orderSync.failedDataManagerLogs || []).map((log) => log.logId),
   ].filter(Boolean));
   if (!safeLogIds.has(id)) return;
   selectedMdmLogId.value = id;
@@ -1219,7 +1216,7 @@ const landmarkDateRows = computed(() => ([
 
 const showLandmarkDateModal = ref(false);
 const activeLandmarkKey = ref<LandmarkDateKey>("launchDate");
-const landmarkDateValue = ref("");
+const landmarkDateValue = ref<string | undefined>(undefined);
 const landmarkSuggestedDate = ref("");
 const landmarkSuggestionLoading = ref(false);
 const isLandmarkSaving = ref(false);
@@ -1235,7 +1232,7 @@ async function openLandmarkDateModal(key: LandmarkDateKey) {
   landmarkSaveError.value = "";
   landmarkSuggestedDate.value = "";
   const existing = orderSync.landmarkDates[key];
-  landmarkDateValue.value = existing ? toDatetimeInput(existing) : "";
+  landmarkDateValue.value = existing ? toDatetimeInput(existing) : toDatetimeInput(new Date().toISOString());
   showLandmarkDateModal.value = true;
   landmarkSuggestionLoading.value = true;
   try {
