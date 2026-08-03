@@ -391,13 +391,13 @@ export function useServiceJob() {
     return getEntityAuditLogs(resp?.data);
   };
 
-  const updateJob = async (payload: any) => {
+  const updateJob = async (payload: any, options: { skipRefresh?: boolean } = {}) => {
     const resp = await api({
       url: `admin/serviceJobs/${payload.jobName}`,
       method: "PUT",
       data: payload,
     });
-    if (!commonUtil.hasError(resp)) {
+    if (!commonUtil.hasError(resp) && !options.skipRefresh) {
       await refreshAfterMutation("serviceJob", { jobName: payload.jobName });
     }
     return resp;
