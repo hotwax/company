@@ -1,6 +1,7 @@
 import { computed, reactive, toRefs } from "vue";
-import { api, logger } from "@common";
+import { api, logger, commonUtil } from "@common";
 import cronstrue from "cronstrue";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 
@@ -390,12 +391,16 @@ export function useServiceJob() {
     return getEntityAuditLogs(resp?.data);
   };
 
-  const updateJob = async (payload: any) => {
-    return await api({
+  const updateJob = async (payload: any, options: { skipRefresh?: boolean } = {}) => {
+    const resp = await api({
       url: `admin/serviceJobs/${payload.jobName}`,
       method: "PUT",
       data: payload,
     });
+    if (!commonUtil.hasError(resp) && !options.skipRefresh) {
+      await refreshAfterMutation("serviceJob", { jobName: payload.jobName });
+    }
+    return resp;
   };
 
   const runNow = async (jobName: string) => {
