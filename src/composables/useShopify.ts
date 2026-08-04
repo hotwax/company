@@ -3041,7 +3041,17 @@ export function useShopifyOrderSync() {
       
       // Fallback: Map the system message batches into dummy RecentProcessedOrder rows 
       // so the Recent order sync history UI component can still render them.
-      state.recentOrders = rows.map((msg: any) => ({
+      // Filter out runs that are still pending or failed without any successful imports.
+      state.recentOrders = rows
+        .filter((msg: any) => {
+          const hasLog = Boolean(msg.dataManagerLogId || msg.logId);
+          if (!hasLog) return false;
+          const explicit = Number(msg.successRecordCount || 0);
+          const total = Number(msg.totalRecordCount || 0);
+          const failed = Number(msg.failedRecordCount || 0);
+          return explicit > 0 || (total > 0 && total > failed);
+        })
+        .map((msg: any) => ({
         id: msg.systemMessageId,
         shopId: shopId,
         shopifyOrderId: msg.systemMessageId,
