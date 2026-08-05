@@ -120,7 +120,7 @@ function initializeLocalMappings() {
 function isItemDirty(id: string) {
   const local = localMappings.value[id];
   const original = getShopifyMappingId(id);
-  return local !== original;
+  return (local ?? "") !== (original ?? "");
 }
 
 function getShopifyMappingId(salesChannelEnumId: any) {
