@@ -384,7 +384,10 @@
             </ion-label>
           </ion-item>
 
-          <div v-if="scopes.length" class="ion-margin-horizontal">
+          <div v-if="isFetchingScopes" class="ion-text-center ion-padding ion-margin-top">
+            <ion-spinner name="crescent"></ion-spinner>
+          </div>
+          <div v-else-if="scopes.length" class="ion-margin-horizontal">
             <ion-chip v-for="scope in scopes" :key="scope" outline>
               <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label>{{ scope }}</ion-label>
@@ -472,7 +475,7 @@
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
@@ -1284,6 +1287,7 @@ async function updateCredentials() {
 // ----- Access scopes modal -----
 const showAccessScopes = ref(false);
 const accessScopesRemoteId = ref<string>('');
+const isFetchingScopes = ref(false);
 
 const scopeInfo = computed(() =>
   accessScopesRemoteId.value ? scopesFor(accessScopesRemoteId.value) : null
@@ -1301,6 +1305,8 @@ async function openAccessScopesModal() {
   accessScopesRemoteId.value = productSyncRemoteId.value;
   if (!accessScopesRemoteId.value) {
     commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
+  } else if (!scopeInfo.value) {
+    await refresh(true);
   }
 }
 
@@ -1308,18 +1314,25 @@ function closeAccessScopes() {
   showAccessScopes.value = false;
 }
 
-async function refresh() {
+async function refresh(isAutoFetch = false) {
   if (!accessScopesRemoteId.value) return;
 
-  emitter.emit('presentLoader');
+  if (!isAutoFetch) emitter.emit('presentLoader');
+  isFetchingScopes.value = true;
   try {
     const granted = await refreshAccessScopes(accessScopesRemoteId.value);
-    commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
+    if (!isAutoFetch) {
+      commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
+    }
   } catch (error: any) {
     logger.error('refreshAccessScopes', error);
-    commonUtil.showToast(translate('Failed to refresh access scopes'));
+    if (!isAutoFetch) {
+      commonUtil.showToast(translate('Failed to refresh access scopes'));
+    }
+  } finally {
+    isFetchingScopes.value = false;
+    if (!isAutoFetch) emitter.emit('dismissLoader');
   }
-  emitter.emit('dismissLoader');
 }
 
 // ----- Product store modal -----
