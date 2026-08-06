@@ -3,6 +3,7 @@ import { RouteRecordRaw } from "vue-router"
 import { Login, commonUtil, logger, translate } from "@common/index"
 import { useAuth } from "@common/composables/useAuth"
 import { useUserStore } from "@/store/user"
+import Actions from "@/authorization/actions"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
 const FacilityDetails = () => import("@/views/FacilityDetails.vue")
@@ -67,14 +68,14 @@ const routes: Array<RouteRecordRaw> = [
     path: "/organizations",
     name: "Organizations",
     component: Organizations,
-    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+    beforeEnter: requirePermission(Actions.APP_ORGANIZATIONS_VIEW),
   },
   {
     path: "/organization-details/:partyId",
     name: "OrganizationDetails",
     component: OrganizationDetails,
     props: true,
-    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+    beforeEnter: requirePermission(Actions.APP_ORGANIZATIONS_VIEW),
   },
   { path: "/facilities/find", name: "FindFacilities", component: FindFacilities, beforeEnter: authGuard },
   { path: "/facilities/groups", name: "FindGroups", component: FindGroups, beforeEnter: authGuard },
@@ -84,14 +85,14 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/create-facility", name: "CreateFacility", component: CreateFacility, beforeEnter: authGuard },
   { path: "/create-facility/address/:facilityId", name: "AddFacilityAddress", component: AddFacilityAddress, props: true, beforeEnter: authGuard },
   { path: "/create-facility/config/:facilityId", name: "AddFacilityConfig", component: AddFacilityConfig, props: true, beforeEnter: authGuard },
-  { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
-  { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission("APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN") },
-  { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
-  { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
-  { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
-  { path: "/create-user", name: "CreateUser", component: CreateUser, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
-  { path: "/user-confirmation/:partyId", name: "UserConfirmation", component: UserConfirmation, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
-  { path: "/user-quick-setup/:partyId", name: "UserQuickSetup", component: UserQuickSetup, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
+  { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission(Actions.APP_USERS_VIEW) },
+  { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission(Actions.APP_APP_PERMISSIONS_VIEW) },
+  { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission(Actions.APP_SECURITY_GROUPS_VIEW) },
+  { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_GROUPS_VIEW) },
+  { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission(Actions.APP_USERS_VIEW) },
+  { path: "/create-user", name: "CreateUser", component: CreateUser, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
+  { path: "/user-confirmation/:partyId", name: "UserConfirmation", component: UserConfirmation, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
+  { path: "/user-quick-setup/:partyId", name: "UserQuickSetup", component: UserQuickSetup, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
   { path: "/product-store-details/:productStoreId", name: "ProductStoreDetails", component: ProductStoreDetails, props: true, beforeEnter: authGuard },
   { path: "/shopify", name: "ShopifyConnections", component: () => import("@/views/ShopifyConnections.vue"), beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id", name: "ShopifyConnectionDetails", component: ShopifyConnectionDetails, props: true, beforeEnter: authGuard },

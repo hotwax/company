@@ -459,7 +459,7 @@ export const PRODUCT_SYNC_FEATURE: ShopifySyncFeature = {
     "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery",
     "poll_ShopifyBulkOperationResult",
   ],
-  adminPermission: "COMMON_ADMIN",
+  adminPermission: Actions.APP_SHOPIFY_SYNC_ADMIN,
   activePollMs: 10_000,
   idlePollMs: 60_000,
 };
@@ -1601,7 +1601,7 @@ export function useShopifyProductSyncRun() {
 
 export const SHOPIFY_ORDER_SYNC_TEMPLATE_JOB = "queue_ShopifyOrderSync";
 export const SHOPIFY_ORDER_SYNC_MESSAGE_TYPE = "ShopifyOrderSync";
-export const SHOPIFY_ORDER_SYNC_ADMIN_PERMISSION = "COMMON_ADMIN";
+export const SHOPIFY_ORDER_SYNC_ADMIN_PERMISSION = Actions.APP_SHOPIFY_SYNC_ADMIN;
 export const SHOPIFY_ORDER_SYNC_ACTIVE_POLL_MS = 10_000;
 export const SHOPIFY_ORDER_SYNC_IDLE_POLL_MS = 60_000;
 export const SHOPIFY_ORDER_SYNC_RESULT_LIMIT = 100;
@@ -3373,6 +3373,7 @@ const ORDER_SEARCH_QUERY = `
  */
 import { CronExpressionParser } from "cron-parser";
 import cronstrue from "cronstrue";
+import Actions from "@/authorization/actions";
 
 export const SYNC_SCHEDULE_PRESETS = [
   { id: "every-15-minutes", label: "Every 15 minutes", expression: "0 */15 * ? * *" },
