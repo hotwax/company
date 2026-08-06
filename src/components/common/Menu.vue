@@ -94,6 +94,7 @@ import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutli
 import { computed } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import router from "@/router";
+import Actions from "@/authorization/actions";
 
 const { isAuthenticated } = useAuth();
 const { hasPermission } = useAppAuth();
@@ -102,7 +103,7 @@ const appPages = [
     title: "Organizations",
     url: "/organizations",
     childRoutes: ["/organization-details/"],
-    permission: "PARTYMGR_VIEW OR PARTYMGR_ADMIN",
+    permission: Actions.APP_ORGANIZATIONS_VIEW,
     iosIcon: earthOutline,
     mdIcon: earthOutline,
   },
@@ -147,7 +148,7 @@ const userPages = [
     title: "Users",
     url: "/users",
     childRoutes: ["/user-details/", "/create-user", "/user-confirmation/", "/user-quick-setup/"],
-    permission: "USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN",
+    permission: Actions.APP_USERS_VIEW,
     iosIcon: peopleOutline,
     mdIcon: peopleOutline,
   },
@@ -155,14 +156,14 @@ const userPages = [
     title: "Security Groups",
     url: "/security-groups",
     childRoutes: ["/security-group-detail/"],
-    permission: "SECURITY_VIEW OR SECURITY_ADMIN",
+    permission: Actions.APP_SECURITY_GROUPS_VIEW,
     iosIcon: keyOutline,
     mdIcon: keyOutline,
   },
   {
     title: "App Permissions",
     url: "/app-permissions",
-    permission: "APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN",
+    permission: Actions.APP_APP_PERMISSIONS_VIEW,
     iosIcon: shieldCheckmarkOutline,
     mdIcon: shieldCheckmarkOutline,
   }
