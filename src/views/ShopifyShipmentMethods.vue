@@ -38,7 +38,8 @@
         </ion-segment-button>
       </ion-segment>
 
-      <div v-if="isLoading">
+      <div class="list-container">
+        <div v-if="isLoading">
         <div class="list-item ion-padding-end" v-for="i in 5" :key="i">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="airplaneOutline" />
@@ -82,6 +83,7 @@
             </ion-button>
           </div>
         </div>
+      </div>
       </div>
 
       <ion-modal :is-open="showCreateShipmentMethodModal" @didDismiss="closeCreateShipmentMethodModal">

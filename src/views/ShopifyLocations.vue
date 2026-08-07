@@ -176,7 +176,7 @@ function getShopifyLocationId(facilityId: string) {
 function isItemDirty(id: string) {
   const local = localMappings.value[id];
   const original = getShopifyLocationId(id) || "";
-  return local !== original;
+  return (local ?? "") !== (original ?? "");
 }
 
 async function editItem(id: string) {
