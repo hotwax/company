@@ -149,11 +149,11 @@ async function editItem(id: string) {
 }
 
 async function saveMapping(productTypeId: string) {
-  const newMappedKey = localMappings.value[productTypeId];
+  const newMappedKey = (localMappings.value[productTypeId] || "").trim();
   const oldMappedKey = getShopifyMappingId(productTypeId);
 
-  if (!newMappedKey) {
-    commonUtil.showToast(translate("Please provide a Shopify product type name"));
+  if (!newMappedKey && !oldMappedKey) {
+    editingItemId.value = "";
     return;
   }
 
@@ -166,19 +166,20 @@ async function saveMapping(productTypeId: string) {
       }, { refresh: false });
     }
 
-    const resp = await shopMutations.saveTypeMapping({
-      mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
-      mappedKey: newMappedKey,
-      mappedValue: productTypeId
-    }, { refresh: false });
-
-    if (!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopMutations.refreshTypeMappings();
-      editingItemId.value = "";
-    } else {
-      throw resp.data;
+    if (newMappedKey) {
+      const resp = await shopMutations.saveTypeMapping({
+        mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
+        mappedKey: newMappedKey,
+        mappedValue: productTypeId
+      }, { refresh: false });
+      if (commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
+
+    commonUtil.showToast(translate("Mapping updated successfully"));
+    await shopMutations.refreshTypeMappings();
+    editingItemId.value = "";
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update mapping"));
@@ -201,12 +202,13 @@ async function saveAllDirtyMappings() {
           mappedKey: oldMappedKey
         }, { refresh: false });
       }
-
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }
     await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
