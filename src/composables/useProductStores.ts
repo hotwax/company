@@ -259,6 +259,30 @@ export function useProductStoreMutations(productStoreId: string) {
   };
 }
 
+export function useProductStoreConfig() {
+  function fetchProductStore(productStoreId: string) {
+    const encodedId = encodeURIComponent(productStoreId);
+    return api({ url: `admin/productStores/${encodedId}`, method: "get" });
+  }
+
+  function fetchProductStoreSettings(productStoreId: string) {
+    const encodedId = encodeURIComponent(productStoreId);
+    return api({ url: `admin/productStores/${encodedId}/settings`, method: "get" });
+  }
+
+  /**
+   * Fetch product store details and settings in a single unified promise array.
+   */
+  async function fetchProductStoreWithSettings(productStoreId: string) {
+    return Promise.all([
+      fetchProductStore(productStoreId),
+      fetchProductStoreSettings(productStoreId)
+    ]);
+  }
+
+  return { fetchProductStore, fetchProductStoreSettings, fetchProductStoreWithSettings };
+}
+
 /**
  * Creating a product store, plus the two writes that only ever happen alongside a create.
  *

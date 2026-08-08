@@ -84,12 +84,13 @@ import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeade
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
-import { useProductStores } from "@/composables/useProductStores";
+import { useProductStores, useProductStoreConfig } from "@/composables/useProductStores";
 import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
 import { useProductStoreMutations } from "@/composables/useProductStores";
 
 const { productStores: cachedProductStores } = useProductStores();
+const { fetchProductStore: fetchStoreApi, fetchProductStoreWithSettings } = useProductStoreConfig();
 
 const props = defineProps(["productStoreId"]);
 
@@ -148,10 +149,7 @@ onIonViewWillEnter(async () => {
 
 async function fetchProductStore() {
   try {
-    const resp = await api({
-      url: `admin/productStores/${props.productStoreId}`,
-      method: "get"
-    })
+    const resp = await fetchStoreApi(props.productStoreId)
     if(!commonUtil.hasError(resp)) {
       productStore.value = (resp as any).data;
     } else {
@@ -174,10 +172,7 @@ async function setupProductStore() {
       }
 
       // Fetch source store details and settings
-      const [detailsResp, settingsResp] = await Promise.all([
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}`, method: "get" }),
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}/settings`, method: "get" })
-      ]);
+      const [detailsResp, settingsResp] = await fetchProductStoreWithSettings(selectedSourceStoreId.value);
 
       if (commonUtil.hasError(detailsResp)) {
         throw new Error("Failed to fetch source store details");
