@@ -70,8 +70,10 @@ import { alertCircleOutline, copyOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from "@common";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
+import { useProductStoreMutations, useProductStores, useProductStoreConfig } from "@/composables/useProductStores";
 
+
+const { fetchProductStore, fetchProductStoreWithSettings } = useProductStoreConfig();
 
 const sourceStoreId = ref("");
 const targetStoreId = ref("");
@@ -159,10 +161,9 @@ async function executeClone() {
   emitter.emit("presentLoader");
   try {
     // 1. Fetch details and settings of source store, and details of target store
-    const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
-      api({ url: `admin/productStores/${sourceStoreId.value}`, method: "get" }),
-      api({ url: `admin/productStores/${sourceStoreId.value}/settings`, method: "get" }),
-      api({ url: `admin/productStores/${targetStoreId.value}`, method: "get" })
+    const [ [sourceDetailsResp, sourceSettingsResp], targetDetailsResp ] = await Promise.all([
+      fetchProductStoreWithSettings(sourceStoreId.value),
+      fetchProductStore(targetStoreId.value)
     ]);
 
     if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {
