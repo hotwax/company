@@ -145,6 +145,26 @@ export function useProductStoreShippingMethods(productStoreId?: string) {
  * data — they are date-effective and edited in place, so caching them would only add a staleness
  * problem the page does not otherwise have.
  */
+/**
+ * Reads details and settings for a product store directly from the API for cloning operations.
+ * Bypass cache to ensure exact configuration source.
+ */
+export async function fetchSourceStoreForClone(storeId: string) {
+  const [detailsResp, settingsResp]: any[] = await Promise.all([
+    api({ url: `admin/productStores/${encodeURIComponent(storeId)}`, method: "get" }),
+    api({ url: `admin/productStores/${encodeURIComponent(storeId)}/settings`, method: "get" })
+  ]);
+
+  if (commonUtil.hasError(detailsResp)) {
+    throw new Error("Failed to fetch source store details");
+  }
+
+  return {
+    details: detailsResp.data,
+    settings: !commonUtil.hasError(settingsResp) ? settingsResp.data : []
+  };
+}
+
 export function useProductStoreDetail(productStoreId: string) {
   const { record: cachedRecord, hydrated } = useProductStoreRecord(productStoreId);
   const detail = ref<Record<string, any>>({});
