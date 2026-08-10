@@ -619,6 +619,14 @@ export function useFacilityDetail(facilityId: string) {
   const get = async (url: string, params: Record<string, any> = {}) =>
     (await api({ url, method: "get", params })) as any;
 
+  async function fetchRoles(roleTypeId: string, params: any) {
+    return await api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  }
+
+  async function fetchFacilityOrderCountsList(params: any) {
+    return await api({ url: "oms/facilities/facilityOrderCounts", method: "get", params });
+  }
+
   /**
    * Contact mechs arrive as one flat list and are split by `contactMechTypeId`, matching the
    * shape the template already binds (`postalAddress`, `contactDetails.telecomNumber`, …).
@@ -826,6 +834,18 @@ export function useFacilityMutations(facilityId: string) {
       return resp;
     },
 
+    async createFacilityAddress(payload: Record<string, any>) {
+      return await post("oms/facilityContactMechs/facilityAddress", payload);
+    },
+
+    async createFacilityPhone(payload: Record<string, any>) {
+      return await post("oms/facilityContactMechs/facilityPhone", payload);
+    },
+
+    async createFacilityEmail(payload: Record<string, any>) {
+      return await post("oms/facilityContactMechs/facilityEmail", payload);
+    },
+
     // ------------------------------------------------- groups (CACHED: groupFacilities)
     async addToGroup(payload: Record<string, any>) {
       const resp = await post(`oms/facilities/${encodeURIComponent(facilityId)}/groups`, { ...payload, facilityId });
@@ -999,6 +1019,10 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
   };
 
   return {
+    async checkFacilityGroup(id: string) {
+      return await api({ url: `oms/facilityGroups/${encodeURIComponent(id)}`, method: "get" });
+    },
+
     /**
      * The group's current member facilities, read live.
      *

@@ -145,6 +145,17 @@ export function useProductStoreShippingMethods(productStoreId?: string) {
  * data — they are date-effective and edited in place, so caching them would only add a staleness
  * problem the page does not otherwise have.
  */
+export function useProductStoreQueries() {
+  return {
+    async fetchProductStoreDetails(productStoreId: string) {
+      return await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" });
+    },
+    async fetchProductStoreSettings(productStoreId: string) {
+      return await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`, method: "get" });
+    }
+  };
+}
+
 export function useProductStoreDetail(productStoreId: string) {
   const { record: cachedRecord, hydrated } = useProductStoreRecord(productStoreId);
   const detail = ref<Record<string, any>>({});
