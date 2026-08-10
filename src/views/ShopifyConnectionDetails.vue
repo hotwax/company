@@ -474,7 +474,7 @@
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, logger, translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, reactive, ref, watch } from "vue";
