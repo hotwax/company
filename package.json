@@ -52,6 +52,7 @@
     "eslint": "catalog:",
     "eslint-plugin-vue": "^9.0.0",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vite-plugin-pwa": "catalog:"
   }
 }
