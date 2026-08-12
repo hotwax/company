@@ -229,7 +229,7 @@ async function saveAllDirtyMappings() {
       const shopifyLocationId = (localMappings.value[id] || "").trim();
       await shopMutations.saveLocation({
         facilityId: id,
-        shopifyLocationId: shopifyLocationId
+        shopifyLocationId
       }, { refresh: false });
     }
     await shopMutations.refreshLocations();
