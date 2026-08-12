@@ -908,9 +908,16 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
   active: () => boolean;
   /** Reload the pieces that genuinely cannot be cached. Omit if the feature has none. */
   refresh?: () => Promise<void>;
+  /** Force the active worker domains during manual refresh. */
+  refreshWorker?: boolean;
   onError?: (error: unknown) => void;
   /** Worker domains this feature needs beyond its messages and imports (job runs, and so on). */
   extraDomains?: (intervalMs: number) => ActiveDomain[];
+  /**
+   * Exact message remotes for a selected-shop view. When supplied but unresolved, the session
+   * activates no domains rather than falling back to every Shopify remote in the cache.
+   */
+  systemMessageRemoteIds?: () => string[];
 }
 
 /**
@@ -965,7 +972,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop } = useCacheSync();
+  const { start, stop, syncNow, error: workerError } = useCacheSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -985,14 +992,25 @@ export function useShopifySyncSession(
    */
   const activeDomainSet = computed<ActiveDomain[]>(() => {
     const intervalMs = syncFeatureInterval(feature, options.active());
+    const exactRemoteIds = options.systemMessageRemoteIds?.().map(String).filter(Boolean);
+    if(options.systemMessageRemoteIds && !exactRemoteIds?.length) {return [];}
+
     return [
-      ...syncFeatureDomains(feature, intervalMs, options),
+      ...syncFeatureDomains(feature, intervalMs, options).map((domain) =>
+        domain.name === "systemMessage" && exactRemoteIds?.length
+          ? { ...domain, args: { ...domain.args, systemMessageRemoteIds: exactRemoteIds } }
+          : domain),
       ...(options.extraDomains?.(intervalMs) ?? []),
     ];
   });
 
   async function activate() {
     isPageActive.value = true;
+    if(!activeDomainSet.value.length) {
+      stop();
+
+      return;
+    }
     try {
       await start(activeDomainSet.value);
     } catch (error) {
@@ -1008,17 +1026,26 @@ export function useShopifySyncSession(
 
   /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
   watch(activeDomainSet, (domains) => {
-    if (!isPageActive.value) return;
+    if(!isPageActive.value) {return;}
+    if(!domains.length) {
+      stop();
+
+      return;
+    }
     void start(domains).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
 
   async function manualRefresh(): Promise<void> {
-    if (!options.refresh || isRefreshing.value) return;
+    if((!options.refresh && !options.refreshWorker) || isRefreshing.value) {return;}
     isRefreshing.value = true;
     try {
-      await options.refresh();
+      if(options.refreshWorker) {
+        await syncNow();
+        if(workerError.value) {throw new Error(workerError.value);}
+      }
+      if(options.refresh) {await options.refresh();}
     } catch (error) {
       options.onError?.(error);
     } finally {
@@ -1398,7 +1425,7 @@ export function productSyncExtraDomains(intervalMs: number, jobNames: readonly s
  * through to the cache, after which they are read reactively like everything else.
  */
 export function useShopifyProductSyncRun() {
-  const { ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
+  const { ensureSystemMessageById, ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
   const { labelFor } = useStatuses();
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
@@ -1568,12 +1595,18 @@ export function useShopifyProductSyncRun() {
     targetMessageId.value = id;
     loading.value = true;
     try {
+      // An exact deep link can target a run outside the current shop spine window. Hydrate that one
+      // message by id before joining its bulk operation and import; this is cache-first and uses the
+      // same existing SystemMessage read contract as spine enrichment.
+      const ensuredMessage = systemMessage.value ?? systemMessageData ??
+        await ensureSystemMessageById(id).catch(() => null);
+
       // Cached after the first look, so this is a no-op on revisit.
       await ensureSystemMessageErrors(id);
 
       // Cache-first inside `fetchShopifyBulkOperation`, which short-circuits once the operation is
       // terminal (immutable), so a finished run never hits Shopify again.
-      const message = systemMessage.value ?? systemMessageData;
+      const message = systemMessage.value ?? ensuredMessage;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
       if (operationId && remoteId && !bulkOperation.value) {
@@ -2831,6 +2864,22 @@ function ensureLandmarkDates(): Promise<void> {
   return landmarkDatesRequest;
 }
 
+/** Fold a write performed by another Shopify setup surface into the shared session state. */
+function recordLandmarkDates(
+  shopId: string,
+  dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>,
+): void {
+  if(!shopId) {return;}
+  if(!landmarkState.byShopId[shopId]) {
+    landmarkState.byShopId[shopId] = { launchDate: "", historyLastSyncDate: "" };
+  }
+  const bucket = landmarkState.byShopId[shopId];
+  if(dates.launchDate !== undefined) {bucket.launchDate = dates.launchDate;}
+  if(dates.historyLastSyncDate !== undefined) {bucket.historyLastSyncDate = dates.historyLastSyncDate;}
+  landmarkState.status = "ready";
+  landmarkState.error = null;
+}
+
 /**
  * Write one shop's landmark date, then fold the new value into local state.
  *
@@ -2879,6 +2928,8 @@ export function useOrderSyncLandmarkDates(shopIdSource: ShopIdSource) {
     /** Load once for the whole session. Safe to call on every view entry. */
     load: () => ensureLandmarkDates(),
     save: (key: LandmarkDateKey, value: string) => saveLandmarkDate(shopId.value, key, value),
+    record: (dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>) =>
+      recordLandmarkDates(shopId.value, dates),
     EMPTY_LANDMARK_DATES,
   };
 }
@@ -3793,6 +3844,84 @@ export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+  });
+}
+
+/** The one-off import contract used by Product Store onboarding's Order history load. */
+export const SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE = "BulkOrderHistoryQuery";
+export const SHOPIFY_ORDER_HISTORY_CONFIG_ID = "BULK_ORDER_HISTORY";
+export const ORDER_HISTORY_SYNC_FEATURE: ShopifySyncFeature = {
+  ...ORDER_SYNC_FEATURE,
+  messageTypeIds: [SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE],
+  importConfigIds: [SHOPIFY_ORDER_HISTORY_CONFIG_ID],
+  templateJobName: "sync_ShopifyOrderHistory",
+};
+
+/**
+ * History can be opened from regular Order Sync or from Product Store onboarding. Keep both message
+ * contracts live on one worker, scoped to this shop's exact remotes. An unresolved shop context
+ * activates nothing, so this can never degrade into an unscoped tenant-wide poll.
+ */
+export function useShopifyOrderSyncHistorySession(options: {
+  remoteIds: () => string[];
+  jobName?: () => string;
+  refresh?: () => Promise<void>;
+  onError?: (error: unknown) => void;
+}) {
+  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+    active: () => true,
+    refresh: options.refresh,
+    refreshWorker: true,
+    onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+    messageTotal: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+    importTotal: 300,
+    extraDomains: (intervalMs) => [
+      {
+        name: "systemMessage",
+        intervalMs,
+        args: {
+          systemMessageRemoteIds: options.remoteIds(),
+          types: [{
+            systemMessageTypeId: SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE,
+            total: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+          }],
+        },
+      },
+      {
+        name: "dataManagerLog",
+        intervalMs,
+        args: { configId: SHOPIFY_ORDER_HISTORY_CONFIG_ID, total: 100 },
+      },
+      ...(options.jobName?.() ? [{
+        name: "serviceJobRun",
+        intervalMs,
+        args: { jobNames: [options.jobName()], total: 25 },
+      }] : []),
+    ],
+  });
+}
+
+/** Merge regular Order Sync and onboarding-history rows without duplicating one SystemMessage. */
+// eslint-disable-next-line no-restricted-syntax -- pure collection helper, not a Vue composable
+export function mergeOrderSyncHistoryBatches(
+  regularBatches: readonly ShopifyOrderSyncBatch[],
+  onboardingBatches: readonly ShopifyOrderSyncBatch[],
+): ShopifyOrderSyncBatch[] {
+  const seen = new Set<string>();
+
+  return [...onboardingBatches, ...regularBatches].filter((batch) => {
+    const id = String(batch.systemMessageId || "");
+    if(!id || seen.has(id)) {return false;}
+    seen.add(id);
+
+    return true;
+  }).sort((left, right) => {
+    const leftTime = parseDateTimeValue(left.initDate)?.toMillis() ?? 0;
+    const rightTime = parseDateTimeValue(right.initDate)?.toMillis() ?? 0;
+
+    return rightTime - leftTime;
   });
 }
 

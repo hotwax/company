@@ -22,11 +22,12 @@
  * which ARE a cached domain, so they write through to that cache — see `refreshServiceJobCache`.
  */
 
-import { computed, reactive, toRefs } from "vue"
 import { api, commonUtil, logger } from "@common"
+import { computed, reactive, toRefs } from "vue"
 import { refreshAfterMutation } from "@/services/appCacheBootstrap"
-import { useOrganization } from "./useSeed"
 import { onSessionCleared } from "./sessionScope"
+import { useOrganization } from "./useSeed"
+import { useServiceJob } from "./useServiceJobs"
 
 const SHOPIFY_JOB_SPECS = [
   { key: "productSync", label: "Queue product import", templateJobName: "sync_ShopifyProductUpdates", perShop: true, requiresEnabled: true },
@@ -35,7 +36,7 @@ const SHOPIFY_JOB_SPECS = [
   { key: "orderImport", label: "Order import", templateJobName: "queue_ShopifyOrderSync", perShop: true, requiresRemote: true, requiredType: "ShopifyOrderSync" },
   { key: "orderHistory", label: "Historic order import", templateJobName: "sync_ShopifyOrderHistory", perShop: true, requiresRemote: true, requiredType: "BulkOrderHistoryQuery" },
   { key: "realtimeOrderImport", label: "Real-time order SQS", templateJobName: "consume_ShopifyOrders_SQS", perShop: false },
-  { key: "inventoryReset", label: "Inventory reset to Shopify", templateJobName: "resetShopifyInventoryQoh", perShop: true, requiresRemote: true, requiredType: "ResetInventoryQoh" }
+  { key: "inventoryReset", label: "Initial inventory import", templateJobName: "sync_ShopifyInventoryReset", perShop: true, requiresShop: true }
 ]
 
 const ORDER_DATA_MANAGER_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "BULK_ORDER_HISTORY"]
@@ -375,6 +376,7 @@ function buildShopifyJobStatusFromRecords(payload: {
     const configuredJobs = sanitizedCandidates.filter((job: any) => {
       const params = job.parameters || {}
       if (spec.key === "productSync") return hasShopParam(params) && hasProductStoreParam(params)
+      if(spec.requiresShop) { return hasShopParam(params) }
       if (spec.key === "realtimeOrderImport") return !!valueText(params.queueName) && !!valueText(params.systemMessageRemoteId)
       if (spec.requiresRemote) return hasRemoteParam(params) && (!spec.requiredType || valueText(params.systemMessageTypeId) === spec.requiredType)
       return !!job
@@ -467,8 +469,11 @@ function initialState() {
     productStores: [] as any[],
     company: {} as any,
     fetchStatus: {
-      productStores: 'none',
-      shopifyJobStatus: 'none',
+      productStores: "none",
+      productStoreDetails: "none",
+      currentStoreSettings: "none",
+      facilities: "none",
+      shopifyJobStatus: "none",
       lastFetched: 0
     }
   }
@@ -535,19 +540,22 @@ async function fetchProductStores(payload: any = { fetchCounts: false }) {
 }
 
 async function fetchProductStoreDetails(productStoreId: string) {
+  state.fetchStatus = { ...state.fetchStatus, productStoreDetails: "pending" }
   let current = {} as any
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}`,
       method: "get"
     })
-    if (!commonUtil.hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       current = resp.data
+      state.fetchStatus = { ...state.fetchStatus, productStoreDetails: "success", lastFetched: Date.now() }
     } else {
       throw resp.data
     }
   } catch (error: any) {
     logger.error(error)
+    state.fetchStatus = { ...state.fetchStatus, productStoreDetails: "error" }
   }
   state.current = current
 }
@@ -572,28 +580,32 @@ async function fetchProductStoresShipmentMethodCount(): Promise<Record<string, n
 }
 
 async function fetchCurrentStoreSettings(productStoreId: string) {
+  state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: "pending" }
   const storeSettings: any = {}
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}/settings`,
       method: "get"
     })
-    if (!commonUtil.hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       resp.data.forEach((setting: any) => {
-        if (!setting.thruDate) {
+        if(!setting.thruDate) {
           storeSettings[setting.settingTypeEnumId] = setting
         }
       })
+      state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: "success", lastFetched: Date.now() }
     } else {
       throw resp.data
     }
   } catch (error: any) {
     logger.error(error)
+    state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: "error" }
   }
   state.currentStoreSettings = storeSettings
 }
 
 async function fetchProductStoreFacilities(productStoreId: string) {
+  state.fetchStatus = { ...state.fetchStatus, facilities: "pending" }
   let facilities: any[] = []
   try {
     const resp = await api({
@@ -601,20 +613,22 @@ async function fetchProductStoreFacilities(productStoreId: string) {
       method: "get",
       params: { pageSize: 200 }
     })
-    if (!commonUtil.hasError(resp)) {
+    if(!commonUtil.hasError(resp)) {
       facilities = resp.data || []
+      state.fetchStatus = { ...state.fetchStatus, facilities: "success", lastFetched: Date.now() }
     } else {
       throw resp.data
     }
   } catch (error: any) {
     logger.error(error)
+    state.fetchStatus = { ...state.fetchStatus, facilities: "error" }
   }
   state.currentFacilities = facilities
   return facilities
 }
 
 async function fetchProductStoreShopifyJobStatus(productStoreId: string) {
-  state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: 'pending' }
+  state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: "pending" }
   let shopifyJobStatus = null as any
 
   try {
@@ -685,26 +699,19 @@ async function setupProductStoreShopifyInventoryReset(payload: {
   const context = await fetchShopifySetupContext({
     productStoreId: payload.productStoreId,
     shopId: payload.shopId,
-    systemMessageRemoteId: payload.systemMessageRemoteId,
-    requireRemote: true
-  })
-
-  const additionalParameters = JSON.parse(normalizeJsonObjectText(payload.inventoryResetAdditionalParameters, {}))
-  ;(["facilityGroupId", "facilityTypeId", "parentTypeId", "productId"] as const).forEach((parameterName) => {
-    const parameterValue = valueText(payload[parameterName])
-    if (parameterValue) additionalParameters[parameterName] = parameterValue
+    systemMessageRemoteId: payload.systemMessageRemoteId
   })
 
   const resolvedShopId = valueText(context.shop.shopId)
-  const inventoryResetJobName = `resetShopifyInventoryQoh_${resolvedShopId}`
+  const inventoryResetJobName = `sync_ShopifyInventoryReset_${resolvedShopId}`
   const configuredJobs = [
-    await ensureServiceJobFromTemplate("resetShopifyInventoryQoh", inventoryResetJobName, payload.activateJobs)
+    await ensureServiceJobFromTemplate("sync_ShopifyInventoryReset", inventoryResetJobName, payload.activateJobs)
   ]
 
-  await storeServiceJobParameter(inventoryResetJobName, "systemMessageTypeId", "ResetInventoryQoh")
-  await storeServiceJobParameter(inventoryResetJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
-  await storeServiceJobParameter(inventoryResetJobName, "runAsBatch", "true")
-  await storeServiceJobParameter(inventoryResetJobName, "additionalParameters", JSON.stringify(additionalParameters))
+  // The inbound inventory-reset seed accepts only shopId. The job resolves the matching
+  // SystemMessageRemote itself; configuring the outbound ResetInventoryQoh parameters here would
+  // reverse the data direction (OMS -> Shopify) and cannot load a retailer's starting inventory.
+  await storeServiceJobParameter(inventoryResetJobName, "shopId", resolvedShopId)
   await refreshServiceJobCache([inventoryResetJobName])
 
   const shopifyJobsStatus = await fetchProductStoreShopifyJobStatus(payload.productStoreId)
@@ -775,28 +782,70 @@ async function runProductStoreShopifyProductImport(payload: {
   })
 }
 
-async function runProductStoreShopifyInventoryReset(payload: {
+function runProductStoreShopifyInventoryReset(payload: {
   shopId: string
 }) {
-  return api({
-    url: "sob/shopify/inventoryReset",
-    method: "post",
-    data: payload
-  })
+  const shopId = valueText(payload.shopId)
+  if(!shopId) { throw new Error("shopId is required.") }
+
+  return useServiceJob().runNow(`sync_ShopifyInventoryReset_${shopId}`)
 }
 
-async function runProductStoreShopifyOrderHistoryImport(payload: {
+function runProductStoreShopifyOrderHistoryImport(payload: {
   shopId: string
   fromDate: string
   launchDate: string
   thruDate?: string
   windowDays?: number
 }) {
-  return api({
-    url: "sob/shopify/orderHistory",
-    method: "post",
-    data: payload
-  })
+  const shopId = valueText(payload.shopId)
+  if(!shopId) { throw new Error("shopId is required.") }
+
+  return useServiceJob().runNow(`sync_ShopifyOrderHistory_${shopId}`)
+}
+
+/**
+ * Persist the two shop-scoped dates that control different parts of order onboarding.
+ *
+ * `orderSyncHistory.lastSyncDate` is the historical import cursor, while
+ * `newOrderSync.launchDate` decides whether imported orders enter live fulfillment. They must
+ * remain separate even when the UI asks for them together.
+ */
+async function saveProductStoreShopifyOrderDates(payload: {
+  shopId: string
+  historyStartDate: string
+  launchDate: string
+}) {
+  const savedSystemPropertyIds: string[] = []
+  const properties = [
+    {
+      systemPropertyId: "orderSyncHistory.lastSyncDate",
+      systemPropertyValue: payload.historyStartDate
+    },
+    {
+      systemPropertyId: "newOrderSync.launchDate",
+      systemPropertyValue: payload.launchDate
+    }
+  ]
+
+  try {
+    for(const property of properties) {
+      await requireApiResponse({
+        url: "admin/systemProperties",
+        method: "put",
+        data: {
+          systemResourceId: payload.shopId,
+          ...property
+        }
+      })
+      savedSystemPropertyIds.push(property.systemPropertyId)
+    }
+  } catch (error: any) {
+    error.savedSystemPropertyIds = savedSystemPropertyIds
+    throw error
+  }
+
+  return buildSuccessResponse({ savedSystemPropertyIds })
 }
 
 async function setupProductStoreShopifyOrderImport(payload: {
@@ -963,6 +1012,7 @@ export function useProductStoreData() {
     runProductStoreShopifyProductImport,
     runProductStoreShopifyInventoryReset,
     runProductStoreShopifyOrderHistoryImport,
+    saveProductStoreShopifyOrderDates,
     setupProductStoreShopifyOrderImport,
     setupProductStoreShopifyRealtimeOrderImport,
     fetchCompany,

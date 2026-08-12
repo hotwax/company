@@ -210,11 +210,25 @@ export function useProductStoreMutations(productStoreId: string) {
       return resp;
     },
 
-    /** LIVE data — settings are re-read per visit, so the caller re-runs its own loader. */
-    saveSettings: (payload: Record<string, any>) => api({
+    /**
+     * LIVE data — settings are re-read per visit, so the caller re-runs its own loader.
+     *
+     * ProductStoreSetting has exactly three fields. Keeping the payload bounded here prevents
+     * callers from leaking the date-effective fields used by other setting tables into this
+     * entity's REST store operation.
+     */
+    saveSettings: (payload: {
+      settingTypeEnumId: string;
+      settingValue: string;
+      [key: string]: unknown;
+    }) => api({
       url: `admin/productStores/${storeId()}/settings`,
       method: "post",
-      data: { ...payload, productStoreId },
+      data: {
+        productStoreId,
+        settingTypeEnumId: payload.settingTypeEnumId,
+        settingValue: payload.settingValue,
+      },
     }) as Promise<any>,
 
     async addFacility(payload: { facilityId: string; fromDate?: number }) {

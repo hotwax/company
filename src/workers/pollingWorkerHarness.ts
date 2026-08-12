@@ -2,9 +2,9 @@ import { expose } from "comlink";
 import { ensureCacheReady } from "@/utils/appCacheDb";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
-  activationKey,
   type ActiveDomain,
   type SyncContext,
+  activationKey,
   dueDomains,
   effectiveInterval,
   getSyncDomain,
@@ -53,7 +53,9 @@ let ctx: SyncContext = { maargUrl: "", token: "" };
 let active: ActiveDomain[] = [];
 let baseTickMs = DEFAULT_BASE_TICK_MS;
 let timer: ReturnType<typeof setInterval> | null = null;
-let running = false;
+let activeTick: Promise<void> | null = null;
+let activeTickForced = false;
+let queuedForcedTick: Promise<void> | null = null;
 const lastRunAt: Record<string, number> = {};
 
 // Token stays fresh via push from the main thread — held, never frozen at start().
@@ -66,13 +68,15 @@ function classifyError(err: any): { isAuth: boolean; message: string } {
   const status = err?.status ?? err?.statusCode ?? err?.response?.status;
   // workerRemoteApi throws the parsed error body (no status), so also sniff the message.
   const isAuth = status === 401 || /unauthor|not authorized|invalid.*token|\b401\b/i.test(message);
+
   return { isAuth, message };
 }
 
 async function runDomain(entry: ActiveDomain, force = false): Promise<void> {
   const domain = getSyncDomain(entry.name);
-  if (!domain) {
+  if(!domain) {
     post({ type: "sync-error", domain: entry.name, message: `unregistered domain "${entry.name}"` });
+
     return;
   }
   post({ type: "sync-start", domain: entry.name });
@@ -91,23 +95,58 @@ async function runDomain(entry: ActiveDomain, force = false): Promise<void> {
   }
 }
 
-async function tick(force = false): Promise<void> {
-  if (running || !ctx.token) return; // don't overlap; wait until start() supplies a token
-  running = true;
+async function executeTick(force: boolean): Promise<void> {
+  const now = Date.now();
+  const due = force
+    ? active
+    : dueDomains(active, lastRunAt, now, (entry) => effectiveInterval(entry, getSyncDomain(entry.name)));
+  if(!due.length) {return;}
+  post({ type: "sync-cycle-start", domains: due.map(({ name }) => name), force });
   try {
-    const now = Date.now();
-    const due = force
-      ? active
-      : dueDomains(active, lastRunAt, now, (entry) => effectiveInterval(entry, getSyncDomain(entry.name)));
     // Sequential: these share one thread and one backend; parallel bursts buy nothing here.
-    for (const entry of due) await runDomain(entry, force);
+    for(const entry of due) {await runDomain(entry, force);}
   } finally {
-    running = false;
+    post({ type: "sync-cycle-end", at: Date.now(), force });
   }
 }
 
+function beginTick(force: boolean): Promise<void> {
+  activeTickForced = force;
+  // Defer execution one microtask so `tracked` is assigned before its cleanup can run, including
+  // a zero-domain tick that completes immediately.
+  const operation = Promise.resolve().then(() => executeTick(force));
+  const tracked = operation.finally(() => {
+    if(activeTick === tracked) {
+      activeTick = null;
+      activeTickForced = false;
+    }
+  });
+  activeTick = tracked;
+
+  return tracked;
+}
+
+function tick(force = false): Promise<void> {
+  if(!ctx.token) {return Promise.resolve();} // wait until start() supplies a token
+  if(!activeTick) {return beginTick(force);}
+  // Scheduled ticks may share the current work. A manual refresh may share an already-forced tick,
+  // but it must queue behind a scheduled tick so its forced pass is never silently dropped.
+  if(!force || activeTickForced) {return activeTick;}
+  if(queuedForcedTick) {return queuedForcedTick;}
+
+  const predecessor = activeTick;
+  // Domain failures are normally reported by runDomain. Even if the tick itself rejects,
+  // a caller-requested forced pass still has to run after it.
+  const queued = predecessor.catch(() => undefined).then(() => beginTick(true)).finally(() => {
+    if(queuedForcedTick === queued) {queuedForcedTick = null;}
+  });
+  queuedForcedTick = queued;
+
+  return queued;
+}
+
 function stop(): void {
-  if (timer) {
+  if(timer) {
     clearInterval(timer);
     timer = null;
   }
@@ -123,9 +162,10 @@ async function start(payload: HarnessStartPayload): Promise<void> {
     await ensureCacheReady();
   } catch (err) {
     post({ type: "sync-error", message: `cache open failed: ${(err as any)?.message ?? err}` });
+
     return;
   }
-  for (const key of Object.keys(lastRunAt)) delete lastRunAt[key];
+  for(const key of Object.keys(lastRunAt)) {delete lastRunAt[key];}
   await tick(); // immediate first pass (seeds the cache for every activated domain)
   timer = setInterval(() => void tick(), baseTickMs);
 }
@@ -139,23 +179,26 @@ function setDomains(domains: ActiveDomain[]): void {
    * own clock instead of resetting or sharing one.
    */
   const keys = new Set(active.map(activationKey));
-  for (const key of Object.keys(lastRunAt)) if (!keys.has(key)) delete lastRunAt[key];
+  for(const key of Object.keys(lastRunAt)) {if(!keys.has(key)) {delete lastRunAt[key];}}
 }
 
 async function refetchOne(request: { domain: string; pk: Record<string, unknown> }): Promise<number> {
   const domain = getSyncDomain(request.domain);
-  if (!domain?.refetchOne) {
+  if(!domain?.refetchOne) {
     post({ type: "sync-error", domain: request.domain, message: "domain has no refetchOne" });
+
     return 0;
   }
   const entry = active.find((candidate) => candidate.name === request.domain);
   try {
     const written = await domain.refetchOne(ctx, request.pk, entry?.args);
     post({ type: "refetch-end", domain: request.domain, written });
+
     return written;
   } catch (err) {
     const { isAuth, message } = classifyError(err);
     post({ type: isAuth ? "auth-error" : "sync-error", domain: request.domain, message });
+
     return 0;
   }
 }
@@ -163,6 +206,7 @@ async function refetchOne(request: { domain: string; pk: Record<string, unknown>
 async function syncDomainNow(domain: string): Promise<number> {
   const entry = active.find((candidate) => candidate.name === domain) ?? { name: domain };
   await runDomain(entry, true);
+
   // Read back under the SAME key `runDomain` stamped, otherwise a domain activated with args always
   // reports 0 — the clock is keyed per activation, not per name.
   return lastRunAt[activationKey(entry)] ? 1 : 0;
