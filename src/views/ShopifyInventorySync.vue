@@ -1649,12 +1649,19 @@ function formatAge(timestamp: number): string {
   text-align: end;
 }
 
+/* The page owns the vertical rhythm. Before this the stack mixed three sources - Ionic's default
+   card margin, an ad-hoc margin on the segment, and nothing at all elsewhere - which left the
+   filter card flush against the toolbar and the segment flush against the results header. */
 .history-page {
-  padding-block-end: var(--spacer-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-sm);
+  padding-block: var(--spacer-sm) var(--spacer-lg);
 }
 
-.history-filter-card {
-  margin-block-start: 0;
+/* Cards keep their horizontal margin; the flex gap above owns the spacing between them. */
+.history-page > ion-card {
+  margin-block: 0;
 }
 
 .filter-grid {
@@ -1697,7 +1704,7 @@ function formatAge(timestamp: number): string {
 }
 
 .history-mode {
-  margin-block-end: var(--spacer-sm);
+  margin-block-end: 0;
 }
 
 /* The virtualised rows scroll inside this box rather than the page, so the window maths has a
