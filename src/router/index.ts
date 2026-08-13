@@ -116,7 +116,11 @@ const routes: Array<RouteRecordRaw> = [
     path: "/shopify-connection-details/:id/inventory-sync/history",
     name: "ShopifyInventorySyncHistory",
     component: ShopifyInventorySync,
-    props: (route) => ({ id: route.params.id, initialView: "history" }),
+    props: (route) => ({
+      id: route.params.id,
+      initialView: "history",
+      initialHistoryMode: route.query.mode === "batches" ? "batches" : "events",
+    }),
     beforeEnter: authGuard,
   },
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },

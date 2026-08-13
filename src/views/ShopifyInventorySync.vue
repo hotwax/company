@@ -43,7 +43,7 @@
                   {{ pendingEventCount }}
                 </ion-badge>
               </ion-item>
-              <ion-item>
+              <ion-item button detail @click="openHistory('batches')">
                 <ion-label>
                   Batches pending delivery
                   <p>System Messages waiting to send or retry</p>
@@ -52,7 +52,11 @@
                   {{ pendingBatchCount }}
                 </ion-badge>
               </ion-item>
-              <ion-item>
+              <ion-item
+                :button="!!pendingPublisherJob"
+                :detail="!!pendingPublisherJob"
+                @click="openServiceJob(pendingPublisherJob, 'Publish and send aggregate event batches')"
+              >
                 <ion-label>
                   Next batch send
                   <p>Send Shopify aggregate inventory adjustments</p>
@@ -62,7 +66,7 @@
                   <p>Publisher job schedule</p>
                 </ion-label>
               </ion-item>
-              <ion-item lines="none">
+              <ion-item lines="none" button detail @click="openHistory()">
                 <ion-label>
                   Oldest unbatched event
                   <p>First calculated adjustment still waiting for a batch</p>
@@ -79,13 +83,17 @@
               <ion-card-title>Next scheduled inventory work</ion-card-title>
               <ion-card-subtitle>Upcoming batch and reset jobs for this Shopify connection</ion-card-subtitle>
               <ion-buttons>
-                <ion-button fill="clear" aria-label="View schedules">
+                <ion-button fill="clear" aria-label="View schedules" @click="openFirstScheduledJob()">
                   <ion-icon slot="icon-only" :icon="calendarOutline" />
                 </ion-button>
               </ion-buttons>
             </ion-card-header>
             <ion-list lines="full">
-              <ion-item button detail>
+              <ion-item
+                :button="!!pendingPublisherJob"
+                :detail="!!pendingPublisherJob"
+                @click="openServiceJob(pendingPublisherJob, 'Publish and send aggregate event batches')"
+              >
                 <ion-label>
                   Aggregate event batch
                   <p>{{ pendingEventCount }} calculated adjustments waiting</p>
@@ -95,7 +103,11 @@
                   <p>Shared publisher job</p>
                 </ion-label>
               </ion-item>
-              <ion-item button detail>
+              <ion-item
+                :button="!!primaryAggregateResetJob"
+                :detail="!!primaryAggregateResetJob"
+                @click="openServiceJob(primaryAggregateResetJob, 'Reset aggregate ATP inventory')"
+              >
                 <ion-label>
                   Aggregate ATP reset
                   <p>{{ aggregateResetJobCount }} reset job{{ aggregateResetJobCount === 1 ? '' : 's' }} for this connection</p>
@@ -105,7 +117,11 @@
                   <p>Full aggregate ATP reset</p>
                 </ion-label>
               </ion-item>
-              <ion-item button detail>
+              <ion-item
+                :button="!!physicalResetJob"
+                :detail="!!physicalResetJob"
+                @click="openServiceJob(physicalResetJob, 'Reset physical location QOH')"
+              >
                 <ion-label>
                   Physical location QOH reset
                   <p>All mapped physical Shopify locations</p>
@@ -159,7 +175,7 @@
           </ion-card>
         </section>
 
-        <section class="sync-monitor">
+        <section ref="syncMonitorSection" class="sync-monitor">
           <ion-item lines="none">
             <ion-label>
               <h2>Sync monitor</h2>
@@ -173,7 +189,13 @@
               <ion-card-subtitle>Schedules, recent runs, and current health</ion-card-subtitle>
             </ion-card-header>
             <ion-list lines="full">
-              <ion-item v-for="job in monitoredJobs" :key="job.name" button detail>
+              <ion-item
+                v-for="job in monitoredJobs"
+                :key="job.name"
+                :button="!!job.job"
+                :detail="!!job.job"
+                @click="openServiceJob(job.job, job.name)"
+              >
                 <ion-icon slot="start" :icon="job.icon" />
                 <ion-label>
                   {{ job.name }}
@@ -196,7 +218,7 @@
                 <p>Recent full-job runs that reset on-hand inventory across every mapped physical location</p>
               </ion-label>
             </ion-item>
-            <ion-button fill="clear">
+            <ion-button v-if="physicalResetJob" fill="clear" @click="openServiceJob(physicalResetJob, 'Reset physical location QOH')">
               View all runs
             </ion-button>
           </div>
@@ -257,7 +279,7 @@
                 <p>Recent full-job runs that reset ATP across every configured aggregate location</p>
               </ion-label>
             </ion-item>
-            <ion-button fill="clear">
+            <ion-button v-if="primaryAggregateResetJob" fill="clear" @click="openServiceJob(primaryAggregateResetJob, 'Reset aggregate ATP inventory')">
               View all runs
             </ion-button>
           </div>
@@ -741,6 +763,15 @@
         />
       </ion-content>
     </ion-modal>
+
+    <ServiceJobDetailsModal
+      :is-open="!!selectedServiceJob"
+      :job-name="selectedServiceJob?.jobName || ''"
+      :title="selectedServiceJob?.title || 'Inventory sync job'"
+      parameter-description="Job and service parameters used by this inventory sync job."
+      @updated="refreshServiceJobData"
+      @close="selectedServiceJob = null"
+    />
   </ion-page>
 </template>
 
@@ -781,6 +812,7 @@ import {
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 
 type ViewName = "monitor" | "history";
 type HistoryMode = "events" | "batches";
@@ -816,11 +848,11 @@ interface InventoryEvent {
   decisionComment?: string;
 }
 
-const props = defineProps<{ id?: string; initialView?: ViewName }>();
+const props = defineProps<{ id?: string; initialView?: ViewName; initialHistoryMode?: HistoryMode }>();
 const router = useRouter();
 
 const activeView = ref<ViewName>(props.initialView ?? "monitor");
-const historyMode = ref<HistoryMode>("events");
+const historyMode = ref<HistoryMode>(props.initialHistoryMode ?? "events");
 const historyQuery = ref("");
 const selectedHistoryStatus = ref("");
 const selectedEventType = ref("");
@@ -829,6 +861,8 @@ const historySortOrder = ref("newest");
 const selectedEvent = ref<InventoryEvent | null>(null);
 const selectedBatch = ref<Batch | null>(null);
 const messageBatch = ref<Batch | null>(null);
+const selectedServiceJob = ref<{ jobName: string; title: string } | null>(null);
+const syncMonitorSection = ref<HTMLElement | null>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
 
@@ -904,6 +938,8 @@ const aggregateResetJobs = computed<any[]>(() => {
 });
 
 const aggregateResetJobCount = computed(() => aggregateResetJobs.value.length);
+const primaryAggregateResetJob = computed<any>(() =>
+  nextExecutionFor(aggregateResetJobs.value) ?? aggregateResetJobs.value[0] ?? null);
 
 const watchedJobNames = computed(() => [...new Set([
   physicalResetJob.value?.jobName,
@@ -939,6 +975,7 @@ const monitoredJobs = computed(() => {
     const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
     return {
       name,
+      job: nextJob ?? jobs[0] ?? null,
       lastRun: latestRun?.startTime ? `Last run ${formatDateTime(latestRun.startTime)}` : "No cached runs",
       nextRun: nextJob ? `Next run ${formatDateTime(nextJob.nextExecutionDateTime)}` : "No active schedule",
       status: missing ? "Not configured" : paused ? "Paused" : "Active",
@@ -1147,6 +1184,7 @@ watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}`, () => {
   if (isViewActive.value) void startSyncDomains(activeSyncDomains());
 });
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
+watch(() => props.initialHistoryMode, (mode) => { historyMode.value = mode ?? "events"; });
 
 onIonViewWillEnter(() => {
   isViewActive.value = true;
@@ -1216,8 +1254,29 @@ const messageText = computed(() => {
 
 function openMessage(batch: Batch) { messageBatch.value = batch; }
 function goBackToConnection() { void router.push(`/shopify-connection-details/${props.id}`); }
-function openHistory() { void router.push(`/shopify-connection-details/${props.id}/inventory-sync/history`); }
+function openHistory(mode: HistoryMode = "events") {
+  historyMode.value = mode;
+  void router.push({
+    path: `/shopify-connection-details/${props.id}/inventory-sync/history`,
+    query: mode === "batches" ? { mode } : {},
+  });
+}
 function closeHistory() { void router.push(`/shopify-connection-details/${props.id}/inventory-sync`); }
+
+function openServiceJob(job: any, title: string) {
+  if (!job?.jobName) return;
+  selectedServiceJob.value = { jobName: String(job.jobName), title };
+}
+
+function openFirstScheduledJob() {
+  const monitoredJob = monitoredJobs.value.find((job) => job.job);
+  if (monitoredJob) openServiceJob(monitoredJob.job, monitoredJob.name);
+  else syncMonitorSection.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function refreshServiceJobData() {
+  if (isViewActive.value) void startSyncDomains(activeSyncDomains());
+}
 
 function formatNetAdjustment(events: InventoryEvent[]) {
   const netAdjustment = events.reduce((total, event) => total + Number(event.change), 0);
