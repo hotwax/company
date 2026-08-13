@@ -4,9 +4,7 @@
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button aria-label="Back to Shopify connection" @click="goBackToConnection()">
-              <ion-icon slot="icon-only" :icon="arrowBackOutline" />
-            </ion-button>
+            <ion-back-button :default-href="`/shopify-connection-details/${props.id}`" />
           </ion-buttons>
           <ion-title>Inventory sync</ion-title>
           <ion-buttons slot="end">
@@ -408,9 +406,7 @@
       <ion-header>
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-button aria-label="Back to inventory sync" @click="closeHistory()">
-              <ion-icon slot="icon-only" :icon="arrowBackOutline" />
-            </ion-button>
+            <ion-back-button :default-href="`/shopify-connection-details/${props.id}/inventory-sync`" />
           </ion-buttons>
           <ion-title>Inventory event history</ion-title>
         </ion-toolbar>
@@ -777,7 +773,7 @@
 
 <script setup lang="ts">
 import {
-  IonAccordion, IonAccordionGroup, IonBadge, IonButton, IonButtons, IonCard,
+  IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
   IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
@@ -785,7 +781,7 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import {
-  arrowBackOutline, calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
+  calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   ellipsisVerticalOutline, flashOutline, layersOutline, listOutline, locationOutline,
   refreshOutline, timeOutline, warningOutline,
@@ -1253,7 +1249,6 @@ const messageText = computed(() => {
 });
 
 function openMessage(batch: Batch) { messageBatch.value = batch; }
-function goBackToConnection() { void router.push(`/shopify-connection-details/${props.id}`); }
 function openHistory(mode: HistoryMode = "events") {
   historyMode.value = mode;
   void router.push({
@@ -1261,7 +1256,6 @@ function openHistory(mode: HistoryMode = "events") {
     query: mode === "batches" ? { mode } : {},
   });
 }
-function closeHistory() { void router.push(`/shopify-connection-details/${props.id}/inventory-sync`); }
 
 function openServiceJob(job: any, title: string) {
   if (!job?.jobName) return;
