@@ -195,6 +195,27 @@ export function useProductStoreDetail(productStoreId: string) {
   return { current, settings, hydrated, loading, load, reloadDetail: loadDetail, reloadSettings: loadSettings };
 }
 
+export function useProductStoreQueries() {
+  const fetchStoreDetails = async (storeId: string) => {
+    return api({
+      url: `admin/productStores/${encodeURIComponent(storeId)}`,
+      method: "get"
+    });
+  };
+
+  const fetchStoreSettings = async (storeId: string) => {
+    return api({
+      url: `admin/productStores/${encodeURIComponent(storeId)}/settings`,
+      method: "get"
+    });
+  };
+
+  return {
+    fetchStoreDetails,
+    fetchStoreSettings
+  };
+}
+
 export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });

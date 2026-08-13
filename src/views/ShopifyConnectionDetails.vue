@@ -492,6 +492,7 @@ import {
   useShopifyProductSyncRunState,
   useShopifyShop,
   useShopifyShopMutations,
+  useShopifyShopQueries,
   useShopifyShops,
   fetchShopifyAccessState,
   updateShopifyRemote,
@@ -1051,52 +1052,15 @@ async function onCloneSettingsDismiss() {
   await loadConnectionSummaries();
 }
 
-const fetchTypeMappingsForShop = async (shopId: string, mappedTypeId: string) => {
-  let mappings: any[] = [];
-  let pageIndex = 0;
-  let resp: any;
-  do {
-    resp = await api({
-      url: "oms/shopifyShops/typeMappings",
-      method: "get",
-      params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
-    });
-    if (!commonUtil.hasError(resp) && resp.data) {
-      mappings = [...mappings, ...resp.data];
-    } else {
-      break;
-    }
-    pageIndex++;
-  } while (resp.data && resp.data.length >= 100);
-  return mappings;
-};
-
-const fetchCarrierShipmentsForShop = async (shopId: string) => {
-  let shipments: any[] = [];
-  let pageIndex = 0;
-  let resp: any;
-  do {
-    resp = await api({
-      url: "oms/shopifyShops/carrierShipments",
-      method: "get",
-      params: { shopId, pageSize: 100, pageIndex }
-    });
-    if (!commonUtil.hasError(resp) && resp.data) {
-      shipments = [...shipments, ...resp.data];
-    } else {
-      break;
-    }
-    pageIndex++;
-  } while (resp.data && resp.data.length >= 100);
-  return shipments;
-};
-
 async function cloneTypeMappings(mappedTypeId: string) {
   const targetShopId = shop.value.shopId;
   // 1. Fetch source and target mappings
+  const sourceQueries = useShopifyShopQueries(sourceShopId.value);
+  const targetQueries = useShopifyShopQueries(targetShopId);
+
   const [sourceMappings, targetMappings] = await Promise.all([
-    fetchTypeMappingsForShop(sourceShopId.value, mappedTypeId),
-    fetchTypeMappingsForShop(targetShopId, mappedTypeId)
+    sourceQueries.fetchTypeMappingsForShop(mappedTypeId),
+    targetQueries.fetchTypeMappingsForShop(mappedTypeId)
   ]);
 
   // 2. Delete existing mappings in target
@@ -1126,7 +1090,8 @@ async function cloneTypeMappings(mappedTypeId: string) {
 async function cloneShippingMethods() {
   const targetShopId = shop.value.shopId;
   // 1. Fetch source shipments
-  const sourceShipments = await fetchCarrierShipmentsForShop(sourceShopId.value);
+  const sourceQueries = useShopifyShopQueries(sourceShopId.value);
+  const sourceShipments = await sourceQueries.fetchCarrierShipmentsForShop();
 
   // 2. Create cloned shipments in target (upsert handles overwrite)
   if (sourceShipments.length > 0) {

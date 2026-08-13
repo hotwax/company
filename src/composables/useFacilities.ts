@@ -563,6 +563,14 @@ export function useFacilityCalendars() {
   return { calendarOptions, catalogAvailable, loadCalendarOptions, createCalendar, fetchFacilityCalendar };
 }
 
+export function usePartyQueries() {
+  const fetchPartyRoleDetails = async (roleTypeId: string, params: Record<string, any>) => {
+    return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  };
+
+  return { fetchPartyRoleDetails };
+}
+
 export function useFacilityOrderCounts() {
   async function fetchOrderCounts(facilityIds: string[]): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
@@ -588,7 +596,15 @@ export function useFacilityOrderCounts() {
     return counts;
   }
 
-  return { fetchOrderCounts };
+  async function fetchFacilityOrderCountsHistory(facilityId: string, params: Record<string, any> = {}) {
+    return api({
+      url: "oms/facilities/facilityOrderCounts",
+      method: "get",
+      params: { facilityId, ...params }
+    });
+  }
+
+  return { fetchOrderCounts, fetchFacilityOrderCountsHistory };
 }
 
 export function useFacilityDetail(facilityId: string) {

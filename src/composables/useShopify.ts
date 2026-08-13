@@ -293,6 +293,53 @@ export function useShopifyShopIdForProductStore() {
   return { shopifyShopIdFor };
 }
 
+export function useShopifyShopQueries(shopId: string) {
+  const fetchTypeMappingsForShop = async (mappedTypeId: string) => {
+    let mappings: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "get",
+        params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        mappings = [...mappings, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return mappings;
+  };
+
+  const fetchCarrierShipmentsForShop = async () => {
+    let shipments: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "get",
+        params: { shopId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        shipments = [...shipments, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return shipments;
+  };
+
+  return {
+    fetchTypeMappingsForShop,
+    fetchCarrierShipmentsForShop
+  };
+}
+
 export function useShopifyShopMutations(shopId: string) {
   const shop = () => encodeURIComponent(shopId);
   const wants = (options?: WriteOptions) => options?.refresh !== false;
