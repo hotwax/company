@@ -4119,7 +4119,32 @@ export function useShopifyAccessScopes() {
     return scopes;
   };
 
-  return { scopesFor, refreshAccessScopes };
+  /**
+   * Set the connection's read/write scope — `SystemMessageRemote.accessScopeEnumId`, an enum of type
+   * `ShopifyShopAccessScope`.
+   *
+   * NOT the same thing as the Shopify OAuth scopes above, despite the shared name: those are what
+   * Shopify granted the app, this is the OMS-side master shutoff that decides whether this OMS is
+   * allowed to write back at all. Services gate on it directly - `post#InventoryChannelInventory`
+   * refuses with "Shop [x] has no write-capable Shopify remote connection" unless it reads
+   * SHOP_RW_ACCESS - and nothing in this app could set it, so a shop could be fully configured for
+   * inventory sync and still fail every push with no field anywhere to explain why.
+   */
+  const setConnectionAccessScope = async (
+    systemMessageRemoteId: string,
+    accessScopeEnumId: string,
+  ): Promise<void> => {
+    const resp: any = await api({
+      url: `oms/systemMessageRemotes/${systemMessageRemoteId}`,
+      method: "put",
+      data: { systemMessageRemoteId, accessScopeEnumId },
+    });
+    if (commonUtil.hasError(resp)) throw resp;
+    // The PUT echoes nothing useful, and the screens read the cached remote row.
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  };
+
+  return { scopesFor, refreshAccessScopes, setConnectionAccessScope };
 }
 
 /**
