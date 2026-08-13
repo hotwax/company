@@ -2,6 +2,7 @@ import { computed, reactive, toRefs } from "vue";
 import { api, logger } from "@common";
 import cronstrue from "cronstrue";
 import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
@@ -390,19 +391,31 @@ export function useServiceJob() {
     return getEntityAuditLogs(resp?.data);
   };
 
+  /**
+   * The PUT answers with a message, not the updated row, and the LIST screens read the cached
+   * definition rather than this response - so without the write-through a job stayed "Paused / No
+   * active schedule" on the page that had just activated it, right through a full reload, until the
+   * next login sync. The `serviceJob` domain is configured for exactly this (`byPk` +
+   * `byPkRecordKey`); it just was not being called.
+   */
   const updateJob = async (payload: any) => {
-    return await api({
+    const resp = await api({
       url: `admin/serviceJobs/${payload.jobName}`,
       method: "PUT",
       data: payload,
     });
+    await refreshAfterMutation("serviceJob", { jobName: payload.jobName });
+    return resp;
   };
 
+  /** Run state (last run, next run) lives on the job row too, so the cache needs the same nudge. */
   const runNow = async (jobName: string) => {
-    return await api({
+    const resp = await api({
       url: `admin/serviceJobs/${jobName}/runNow`,
       method: "POST"
     });
+    await refreshAfterMutation("serviceJob", { jobName });
+    return resp;
   };
 
   return {

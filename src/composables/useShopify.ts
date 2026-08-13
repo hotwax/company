@@ -114,9 +114,9 @@ export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: st
 /**
  * Map one facility group to one Shopify location as an aggregate inventory channel.
  *
- * fromDate is deliberately omitted: the OMS treats a null fromDate as effective immediately, and
- * sending a client-side timestamp risks a future-dated row when the browser and OMS disagree on
- * timezone - which reads as "the channel silently does nothing".
+ * fromDate is deliberately omitted: the InventoryChannel entity defaults it to the OMS's own
+ * nowTimestamp. Sending a client-side timestamp instead risks a future-dated row when the browser
+ * and OMS disagree on timezone - which reads as "the channel silently does nothing".
  */
 export async function createInventoryChannel(params: {
   shopId: string;

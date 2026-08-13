@@ -314,6 +314,11 @@ async function save() {
     const paused = !draftActive.value;
     if (props.saveHandler) await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
     else await updateJob({ jobName: props.jobName, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' });
+    // Fold the saved values back in before closing. Emitting `close` leaves `jobDetails` holding the
+    // pre-save row, so `isDirty` is still true when ion-modal runs `can-dismiss` - and the user is
+    // asked to discard the changes that were just written.
+    jobDetails.value = { ...jobDetails.value, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' };
+    resetDraft();
     commonUtil.showToast(translate('Sync job updated successfully.'));
     emit('updated'); emit('close');
   } catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
