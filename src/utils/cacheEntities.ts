@@ -412,6 +412,25 @@ export const inventoryChannelProjection = {
 } as const;
 
 /**
+ * DataFeed — an OMS-wide routing switch for entity-feed delivery.
+ *
+ * The Shopify aggregate inventory documents currently share one DataFeed, so this record is
+ * deliberately not shop-scoped. Every Shopify connection reads the same cached server value.
+ */
+export const dataFeedProjection = {
+  keyField: "dataFeedId",
+  fields: {
+    dataFeedId: "text",
+    dataFeedTypeEnumId: "text",
+    feedName: "text",
+    feedReceiveServiceName: "text",
+    feedDeleteServiceName: "text",
+    lastFeedStamp: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
  * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
  * The database PK is event + shop + location + product + Shopify product mapping, represented by
  * one synthetic key in IndexedDB so fan-out rows never overwrite each other.
@@ -472,6 +491,7 @@ export const shopifyTypeMappingProjection = {
 
 export const shopifyLocationCache = defineCachedEntity("shopifyLocations", shopifyLocationProjection);
 export const shopifyTypeMappingCache = defineCachedEntity("shopifyTypeMappings", shopifyTypeMappingProjection);
+export const dataFeedCache = defineCachedEntity("dataFeeds", dataFeedProjection);
 export const inventoryChannelCache = defineCachedEntity("inventoryChannels", inventoryChannelProjection);
 export const shopifyInventoryAdjustmentDetailCache = defineCachedEntity(
   "shopifyInventoryAdjustmentDetails",

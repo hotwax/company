@@ -78,6 +78,39 @@ export function useShopifyShops() {
   return { shops: records, records, hydrated };
 }
 
+export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+export const SHOPIFY_INVENTORY_EVENT_FEED_MANUAL = "DTFDTP_MAN_PULL";
+export const SHOPIFY_INVENTORY_EVENT_FEED_PUSH = "DTFDTP_RT_PUSH";
+
+/**
+ * Switch the OMS-wide Shopify inventory event feed between manual and real-time push.
+ *
+ * This is intentionally global rather than shop-scoped: all ten Shopify inventory event
+ * DataDocuments currently belong to one Moqui DataFeed. The view makes that scope explicit before
+ * allowing the mutation.
+ */
+export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  const allowedTypes = [SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH];
+  if (!allowedTypes.includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported Shopify inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: {
+      dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+      dataFeedTypeEnumId,
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", {
+    dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  });
+}
+
 /** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
 export const useShopifyShop = (shopId: string | undefined) =>
   useCachedRecord(shopifyShopCache, "shopId", shopId);

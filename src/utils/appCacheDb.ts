@@ -68,6 +68,8 @@ class CompanyCacheDB extends Dexie {
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
+  /** OMS-wide Shopify inventory event feed configuration. */
+  dataFeeds!: Table<CachedRow, string>;
   /** Shopify aggregate inventory event ledger, scoped by shop. */
   shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
@@ -161,6 +163,7 @@ const CACHE_SCHEMA = {
   shopifyInventoryAdjustmentDetails:
     "adjustmentKey, eventKey, shopId, shopifyLocationId, productId, shopifyProductId, inventoryChannelId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [shopId+createdDate], [shopId+lastUpdatedStamp], [shopId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
+  dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",

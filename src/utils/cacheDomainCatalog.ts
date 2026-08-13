@@ -21,6 +21,7 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // --- class B: reference / config ---
   { name: "productStore", table: "productStores", label: "Product stores", syncClass: "B" },
   { name: "shopifyShop", table: "shopifyShops", label: "Shopify shops", syncClass: "B" },
+  { name: "shopifyInventoryEventFeed", table: "dataFeeds", label: "Shopify inventory event feed", syncClass: "B" },
   { name: "inventoryChannel", table: "inventoryChannels", label: "Shopify inventory channels", syncClass: "B" },
   { name: "systemMessageRemote", table: "systemMessageRemotes", label: "System message remotes", syncClass: "B" },
   { name: "serviceJob", table: "serviceJobs", label: "Service jobs", syncClass: "B" },

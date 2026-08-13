@@ -1,4 +1,5 @@
 import {
+  dataFeedCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryAdjustmentDetailProjection,
@@ -11,6 +12,36 @@ import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
 const ENDPOINT = "oms/dataDocumentView";
 const CHANNEL_DOCUMENT = "SHOPIFY_INVENTORY_CHANNEL";
 const DETAIL_DOCUMENT = "SHOPIFY_INVENTORY_ADJUSTMENT_DETAIL";
+const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+
+async function fetchInventoryEventFeed(ctx: SyncContext): Promise<any | null> {
+  const response = await workerGet(
+    ctx,
+    `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}`,
+    {},
+  );
+  return response?.dataFeedId ? response : null;
+}
+
+registerSyncDomain({
+  name: "shopifyInventoryEventFeed",
+  async sync(ctx, _args, options) {
+    if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
+    const feed = await fetchInventoryEventFeed(ctx);
+    const result = await dataFeedCache.snapshotReplace(feed ? [feed] : []);
+    await markSyncedThisLogin("shopifyInventoryEventFeed");
+    return result.written;
+  },
+  async refetchOne(ctx, pk) {
+    if (String(pk?.dataFeedId ?? "") !== SHOPIFY_INVENTORY_EVENT_FEED_ID) return 0;
+    const feed = await fetchInventoryEventFeed(ctx);
+    if (!feed) {
+      await dataFeedCache.remove(SHOPIFY_INVENTORY_EVENT_FEED_ID);
+      return 0;
+    }
+    return dataFeedCache.upsertMany([feed]);
+  },
+});
 
 interface DetailSyncArgs {
   shopId?: string;

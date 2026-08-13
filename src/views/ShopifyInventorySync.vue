@@ -128,6 +128,37 @@
           </ion-card>
         </section>
 
+        <section class="event-feed-settings">
+          <ion-item lines="none">
+            <ion-label>
+              <h2>Real-time inventory updates</h2>
+              <p>Control whether inventory events are pushed as they happen or retained for manual processing</p>
+            </ion-label>
+          </ion-item>
+
+          <ion-card>
+            <ion-card-content class="event-feed-setting">
+              <ion-icon :icon="cloudUploadOutline" />
+              <ion-label>
+                Inventory channel event updates
+                <p>Receipts, reservations, POS issuances, and inventory configuration changes</p>
+                <p class="global-feed-scope">Applies to every Shopify connection on this OMS</p>
+              </ion-label>
+              <div class="event-feed-control">
+                <ion-badge :color="inventoryEventFeedBadgeColor">
+                  {{ inventoryEventFeedStatus }}
+                </ion-badge>
+                <ion-toggle
+                  aria-label="Use real-time push for Shopify inventory events"
+                  :checked="inventoryEventFeedPush"
+                  :disabled="inventoryEventFeedToggleDisabled"
+                  @click.prevent="requestInventoryEventFeedChange($event)"
+                />
+              </div>
+            </ion-card-content>
+          </ion-card>
+        </section>
+
         <section class="sync-monitor">
           <ion-item lines="none">
             <ion-label>
@@ -719,7 +750,8 @@ import {
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
   IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
-  IonTextarea, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
+  IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, onIonViewDidLeave,
+  onIonViewWillEnter,
 } from "@ionic/vue";
 import {
   arrowBackOutline, calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
@@ -729,11 +761,19 @@ import {
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { commonUtil, logger } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
-import { useShopifySyncContext } from "@/composables/useShopify";
 import {
+  SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
+  SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+  updateShopifyInventoryEventFeedType,
+  useShopifySyncContext,
+} from "@/composables/useShopify";
+import {
+  dataFeedCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
   systemMessageCache,
@@ -790,6 +830,7 @@ const selectedEvent = ref<InventoryEvent | null>(null);
 const selectedBatch = ref<Batch | null>(null);
 const messageBatch = ref<Batch | null>(null);
 const isViewActive = ref(false);
+const inventoryEventFeedSaving = ref(false);
 
 const PUBLISH_PENDING_SERVICE = "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments";
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
@@ -798,6 +839,7 @@ const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
+const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useCachedList<any>(dataFeedCache);
 const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useCachedList<any>(inventoryChannelCache);
 const { records: allInventoryDetails, hydrated: inventoryDetailsHydrated } = useCachedList<any>(shopifyInventoryAdjustmentDetailCache);
 const { records: cachedSystemMessages } = useCachedList<any>(systemMessageCache);
@@ -812,6 +854,30 @@ const inventoryChannels = computed(() => allInventoryChannels.value.filter((chan
 
 const inventoryDetails = computed(() => allInventoryDetails.value.filter((detail: any) =>
   String(detail.shopId) === String(props.id ?? "")));
+
+const inventoryEventFeed = computed<any>(() => cachedDataFeeds.value.find((feed: any) =>
+  String(feed.dataFeedId) === SHOPIFY_INVENTORY_EVENT_FEED_ID) ?? null);
+const inventoryEventFeedPush = computed(() =>
+  inventoryEventFeed.value?.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_PUSH);
+const inventoryEventFeedTypeSupported = computed(() => [
+  SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
+  SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+].includes(String(inventoryEventFeed.value?.dataFeedTypeEnumId ?? "")));
+const inventoryEventFeedToggleDisabled = computed(() =>
+  inventoryEventFeedSaving.value || !dataFeedsHydrated.value || !inventoryEventFeed.value ||
+  !inventoryEventFeedTypeSupported.value);
+const inventoryEventFeedStatus = computed(() => {
+  if (!dataFeedsHydrated.value) return "Loading";
+  if (!inventoryEventFeed.value) return "Not configured";
+  if (inventoryEventFeedPush.value) return "Real-time push";
+  if (inventoryEventFeed.value.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_MANUAL) return "Manual";
+  return "Unsupported mode";
+});
+const inventoryEventFeedBadgeColor = computed(() => {
+  if (!dataFeedsHydrated.value || !inventoryEventFeed.value) return "medium";
+  if (!inventoryEventFeedTypeSupported.value) return "danger";
+  return inventoryEventFeedPush.value ? "success" : "warning";
+});
 
 const messageById = computed<Map<string, any>>(() => new Map(
   cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),
@@ -1033,6 +1099,41 @@ const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.stat
   ? "Needs attention" : "Healthy");
 const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
 
+async function requestInventoryEventFeedChange(event: Event) {
+  event.stopImmediatePropagation();
+  if (inventoryEventFeedToggleDisabled.value) return;
+
+  const enablePush = !inventoryEventFeedPush.value;
+  const alert = await alertController.create({
+    header: enablePush ? "Enable real-time inventory updates?" : "Switch inventory updates to manual?",
+    message: enablePush
+      ? "This affects every Shopify connection on this OMS. Make sure aggregate ATP is reconciled, then restart every OMS node after saving so Moqui registers the real-time feed."
+      : "This affects every Shopify connection on this OMS. New real-time events may continue for up to 15 minutes while Moqui's feed cache expires.",
+    buttons: [
+      { text: "Cancel", role: "cancel" },
+      { text: enablePush ? "Enable real-time push" : "Switch to manual", role: "confirm" },
+    ],
+  });
+  await alert.present();
+  const result = await alert.onDidDismiss();
+  if (result.role !== "confirm") return;
+
+  inventoryEventFeedSaving.value = true;
+  try {
+    await updateShopifyInventoryEventFeedType(
+      enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
+    );
+    commonUtil.showToast(enablePush
+      ? "Inventory events set to real-time push. Restart every OMS node before relying on event capture."
+      : "Inventory events set to manual. Cached routing may take up to 15 minutes to expire.");
+  } catch (error) {
+    logger.error("Failed to update Shopify inventory event feed", error);
+    commonUtil.showToast("Failed to update the inventory event feed.");
+  } finally {
+    inventoryEventFeedSaving.value = false;
+  }
+}
+
 function activeSyncDomains() {
   return [
     { name: "shopifyInventoryAdjustmentDetail", args: { shopId: String(props.id ?? ""), total: 500 } },
@@ -1164,6 +1265,35 @@ function formatAge(timestamp: number): string {
 
 .sync-monitor > ion-item {
   margin-block-start: var(--spacer-sm);
+}
+
+.event-feed-settings > ion-item {
+  margin-block-start: var(--spacer-sm);
+}
+
+.event-feed-setting ion-label {
+  color: var(--ion-text-color);
+  min-width: 0;
+  white-space: normal;
+}
+
+.event-feed-setting {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacer-base);
+}
+
+.global-feed-scope {
+  font-weight: 500;
+}
+
+.event-feed-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacer-sm);
+  min-width: max-content;
 }
 
 .section-header {
@@ -1392,10 +1522,22 @@ ion-modal p {
   }
 
   .summary-grid ion-item,
+  .event-feed-settings ion-item,
   .sync-monitor ion-item,
   .run-carousel ion-item,
   ion-modal ion-item {
     --inner-padding-end: var(--spacer-xs);
+  }
+
+  .event-feed-setting {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .event-feed-control {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-block-start: var(--spacer-xs);
   }
 }
 </style>

@@ -11,6 +11,7 @@ import {
   toMillis,
   toText,
 } from "@/utils/cacheProjection";
+import { dataFeedProjection } from "@/utils/cacheEntities";
 
 const NOW = 1_700_000_000_000;
 
@@ -106,6 +107,18 @@ describe("projectRow", () => {
   it("projectRows drops keyless records rather than throwing", () => {
     const rows = projectRows([{ logId: "A" }, { configId: "no key" }, { logId: "B" }], logProjection, NOW);
     expect(rows.map((row) => row.logId)).toEqual(["A", "B"]);
+  });
+
+  it("keeps the inventory event feed mode as a first-class cached field", () => {
+    const row = projectRow({
+      dataFeedId: "ShopifyInventoryChannelEventFeed",
+      dataFeedTypeEnumId: "DTFDTP_RT_PUSH",
+      feedName: "Shopify Inventory Channel Event Feed",
+    }, dataFeedProjection, NOW)!;
+
+    expect(row.dataFeedId).toBe("ShopifyInventoryChannelEventFeed");
+    expect(row.dataFeedTypeEnumId).toBe("DTFDTP_RT_PUSH");
+    expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
   });
 });
 
