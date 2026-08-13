@@ -590,7 +590,9 @@
               <ion-label>Status</ion-label>
               <span />
             </div>
-            <div v-for="event in filteredEvents" :key="event.rowKey" class="event-table event-table-row" role="row">
+            <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
+            <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
+            <div v-for="event in virtualEvents" :key="event.rowKey" data-virtual-row class="event-table event-table-row" role="row">
               <ion-label class="ion-text-wrap">
                 <span class="overline mobile-only">Event</span>
                 {{ event.type }}
@@ -624,6 +626,8 @@
                 <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
               </ion-button>
             </div>
+            <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
+            </div>
           </ion-card>
 
           <ion-accordion-group v-else-if="historyMode === 'batches' && visibleBatchGroups.length" :multiple="true" :value="['unsent']">
@@ -650,7 +654,13 @@
                 <span />
               </div>
               <ion-list slot="content" lines="full">
-                <ion-item v-for="event in group.events" :key="event.rowKey" button detail @click="selectedEvent = event">
+                <ion-item
+                  v-for="event in group.events.slice(0, shownInGroup(group.id))"
+                  :key="event.rowKey"
+                  button
+                  detail
+                  @click="selectedEvent = event"
+                >
                   <ion-label class="ion-text-wrap">
                     {{ event.type }} for item {{ event.shopifyInventoryItem }}
                     <p>{{ event.key }}</p>
@@ -662,6 +672,14 @@
                   <ion-badge slot="end" :color="event.badgeColor">
                     {{ event.status }}
                   </ion-badge>
+                </ion-item>
+                <ion-item v-if="group.events.length > shownInGroup(group.id)" lines="none">
+                  <ion-label class="ion-text-wrap">
+                    <p>Showing {{ shownInGroup(group.id) }} of {{ group.events.length }}</p>
+                  </ion-label>
+                  <ion-button slot="end" fill="outline" size="small" @click="loadMoreInGroup(group.id)">
+                    Load more
+                  </ion-button>
                 </ion-item>
               </ion-list>
             </ion-accordion>
@@ -870,6 +888,7 @@ import { useRouter } from "vue-router";
 import { commonUtil, logger } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
+import { useVirtualRows } from "@/composables/useVirtualRows";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useStatuses } from "@/composables/useSeed";
 import { useSystemMessage } from "@/composables/useSystemMessage";
@@ -1408,6 +1427,49 @@ const batchGroups = computed(() => {
 });
 
 const visibleBatchGroups = computed(() => batchGroups.value);
+
+/**
+ * Only the rows near the viewport get DOM nodes. The history can hold tens of thousands of events,
+ * and rendering one row each is what made this page slow to open.
+ */
+const {
+  containerRef: eventScrollerRef,
+  visibleItems: virtualEvents,
+  topSpacer: eventTopSpacer,
+  bottomSpacer: eventBottomSpacer,
+  onScroll: onEventScroll,
+  scrollToTop: scrollEventsToTop,
+} = useVirtualRows(filteredEvents, { estimatedRowHeight: 56 });
+
+/**
+ * A collapsed ion-accordion still renders its content, so a batch of thousands of events cost the
+ * whole page even unopened. Each group starts at GROUP_PAGE_SIZE and grows only when asked.
+ */
+const GROUP_PAGE_SIZE = 10;
+const groupShownCounts = ref<Record<string, number>>({});
+
+function shownInGroup(groupId: string): number {
+  return groupShownCounts.value[groupId] ?? GROUP_PAGE_SIZE;
+}
+
+function loadMoreInGroup(groupId: string) {
+  groupShownCounts.value = {
+    ...groupShownCounts.value,
+    [groupId]: shownInGroup(groupId) + GROUP_PAGE_SIZE,
+  };
+}
+
+// A narrower filter should not leave a group expanded to a count the operator chose for the old,
+// larger set; and the flat list should start at the top of the new results rather than mid-scroll.
+// Watch the filter inputs rather than filteredEvents: that array is rebuilt whenever a background
+// cache sync lands, which would otherwise throw away the reader's place and their loaded rows.
+watch(
+  [historyQuery, selectedHistoryStatus, selectedEventType, selectedTarget, historySortOrder],
+  () => {
+    groupShownCounts.value = {};
+    scrollEventsToTop();
+  },
+);
 const eventsForSelectedBatch = computed(() => selectedBatch.value
   ? inventoryEvents.value.filter((event) => event.batchId === selectedBatch.value?.id) : []);
 
@@ -1636,6 +1698,15 @@ function formatAge(timestamp: number): string {
 
 .history-mode {
   margin-block-end: var(--spacer-sm);
+}
+
+/* The virtualised rows scroll inside this box rather than the page, so the window maths has a
+   viewport to measure against. The column header above it stays put while the rows move. */
+.event-scroller {
+  max-block-size: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .event-table {
