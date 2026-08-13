@@ -236,7 +236,18 @@ const scheduleDescription = computed(() => {
   if (!draftCronExpression.value) return translate('Not scheduled');
   try { return cronstrue.toString(draftCronExpression.value); } catch (_error) { return translate('Schedule preview unavailable'); }
 });
-const nextRunLabel = computed(() => formatDateTime(jobDetails.value.nextRunTime) || translate('Not scheduled'));
+/**
+ * The job routes call this `nextExecutionDateTime`; nothing returns `nextRunTime`, which this read.
+ * A scheduled job therefore reported "Not scheduled" here while the list row behind the modal showed
+ * the correct next run from the same field - the list-vs-detail spelling trap `useServiceJobs`
+ * already documents for `cronDescription`/`cronString`. Read the spellings in order, as the product
+ * sync screen does.
+ */
+const nextRunLabel = computed(() => {
+  const details = jobDetails.value;
+  const nextRun = details.nextExecutionDateTime ?? details.nextRunTime ?? details.nextRunDate;
+  return formatDateTime(nextRun) || translate('Not scheduled');
+});
 const lastRunLabel = computed(() => recentRuns.value.length
   ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)} · ${statusLabel(recentRuns.value[0].statusId || recentRuns.value[0].status)}`
   : translate('No recent runs'));
