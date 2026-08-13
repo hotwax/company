@@ -7,11 +7,18 @@ import {
 } from "@/utils/cacheEntities";
 import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
+import { pageAll, pageNewestFirst, unwrapCollection, workerGet, workerPost } from "./workerFetch";
 
 const ENDPOINT = "oms/dataDocumentView";
 const CHANNEL_DOCUMENT = "SHOPIFY_INVENTORY_CHANNEL";
-const DETAIL_DOCUMENT = "SHOPIFY_INVENTORY_ADJUSTMENT_DETAIL";
+/**
+ * Dedicated read resource over ShopifyInventoryAdjustmentDetailView, NOT a DataDocument. The
+ * document this replaced kept its definition in DATA_DOCUMENT_FIELD rows, so a server-side re-key
+ * left stale fields behind that no redeploy could clear and broke every query against it.
+ */
+const DETAIL_ENDPOINT = "sob/shopify/inventoryAdjustmentDetails";
+/** Moqui entity-list responses are a bare array; unwrapCollection handles both shapes. */
+const DETAIL_COLLECTION = null;
 const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
 
 async function fetchInventoryEventFeed(ctx: SyncContext): Promise<any | null> {
@@ -44,12 +51,21 @@ registerSyncDomain({
 });
 
 interface DetailSyncArgs {
-  shopId?: string;
+  /**
+   * The channels to read. Detail rows carry no shopId -- the channel is the target identity -- so
+   * a shop-scoped screen resolves its channels first and passes them here.
+   */
+  inventoryChannelIds?: string[];
   /** Recent event rows retained for history. Pending and unresolved rows are always included. */
   total?: number;
   batchSize?: number;
   /** Exact System Messages enriched per tick for payload/status visibility. */
   enrichMax?: number;
+}
+
+/** Comma-joined `in` filter, the shape the DataDocument endpoint expects for a multi-value match. */
+function channelFilter(inventoryChannelIds: string[]): Record<string, unknown> {
+  return { inventoryChannelId: inventoryChannelIds.join(","), inventoryChannelId_op: "in" };
 }
 
 function detailKey(row: Record<string, unknown>): string | undefined {
@@ -144,38 +160,33 @@ registerSyncDomain({
 
 async function fetchRecentDetails(
   ctx: SyncContext,
-  shopId: string,
+  inventoryChannelIds: string[],
   wanted: number,
   batchSize: number,
 ): Promise<any[]> {
-  const rows: any[] = [];
-  for (let pageIndex = 0; rows.length < wanted; pageIndex += 1) {
-    const page = await fetchDocumentPage(
-      ctx,
-      DETAIL_DOCUMENT,
-      { shopId, orderByField: "-lastUpdatedStamp" },
-      pageIndex,
-      Math.min(batchSize, wanted - rows.length),
-    );
-    if (!page.length) break;
-    rows.push(...page);
-    if (page.length < Math.min(batchSize, wanted - rows.length + page.length)) break;
-  }
-  return rows.slice(0, wanted);
+  return pageNewestFirst({
+    ctx,
+    url: DETAIL_ENDPOINT,
+    collectionKey: DETAIL_COLLECTION,
+    params: { ...channelFilter(inventoryChannelIds), orderByField: "-lastUpdatedStamp" },
+    total: wanted,
+    batchSize,
+  });
 }
 
 async function enrichBatchMessages(
   ctx: SyncContext,
-  shopId: string,
+  inventoryChannelIds: string[],
   max: number,
 ): Promise<number> {
   const [details, messages] = await Promise.all([
     shopifyInventoryAdjustmentDetailCache.all(),
     systemMessageCache.all(),
   ]);
+  const wanted = new Set(inventoryChannelIds.map(String));
   const messageById = new Map(messages.map((message: any) => [String(message.systemMessageId), message]));
   const candidates = [...new Set(details
-    .filter((detail: any) => String(detail.shopId) === shopId)
+    .filter((detail: any) => wanted.has(String(detail.inventoryChannelId)))
     .map((detail: any) => String(detail.systemMessageId ?? ""))
     .filter(Boolean))]
     .filter((id) => messageById.get(id)?.statusId !== "SmsgSent")
@@ -202,33 +213,41 @@ registerSyncDomain({
   name: "shopifyInventoryAdjustmentDetail",
   intervalMs: 10_000,
   async sync(ctx, args: DetailSyncArgs = {}) {
-    const shopId = String(args.shopId ?? "");
-    if (!shopId) return 0;
+    const inventoryChannelIds = (args.inventoryChannelIds ?? []).map(String).filter(Boolean);
+    // No channels means nothing to read, NOT "read everything": an unscoped document query would
+    // pull every shop's ledger into this shop's cache.
+    if (!inventoryChannelIds.length) return 0;
 
     const batchSize = args.batchSize ?? 50;
     const target = args.total ?? 500;
-    const cached = await shopifyInventoryAdjustmentDetailCache.count({ field: "shopId", value: shopId });
+    const counts = await Promise.all(inventoryChannelIds.map((inventoryChannelId) =>
+      shopifyInventoryAdjustmentDetailCache.count({ field: "inventoryChannelId", value: inventoryChannelId })));
+    const cached = counts.reduce((sum, count) => sum + count, 0);
     const wanted = cached < target ? target : batchSize;
 
     const [recent, pending, unresolved] = await Promise.all([
-      fetchRecentDetails(ctx, shopId, wanted, batchSize),
-      fetchAllDocumentRows(
+      fetchRecentDetails(ctx, inventoryChannelIds, wanted, batchSize),
+      pageAll({
         ctx,
-        DETAIL_DOCUMENT,
-        { shopId, detailStatusId: "DETAIL_PENDING", orderByField: "createdDate" },
-        detailKey,
-      ),
-      fetchAllDocumentRows(
+        url: DETAIL_ENDPOINT,
+        collectionKey: DETAIL_COLLECTION,
+        params: { ...channelFilter(inventoryChannelIds), detailStatusId: "DETAIL_PENDING", orderByField: "createdDate" },
+        keyOf: detailKey,
+        label: "inventoryAdjustmentDetails:pending",
+      }),
+      pageAll({
         ctx,
-        DETAIL_DOCUMENT,
-        {
-          shopId,
+        url: DETAIL_ENDPOINT,
+        collectionKey: DETAIL_COLLECTION,
+        params: {
+          ...channelFilter(inventoryChannelIds),
           systemMessageStatusId: "SmsgProduced,SmsgSending,SmsgError",
           systemMessageStatusId_op: "in",
           orderByField: "-systemMessageInitDate",
         },
-        detailKey,
-      ),
+        keyOf: detailKey,
+        label: "inventoryAdjustmentDetails:unresolved",
+      }),
     ]);
 
     const merged = new Map<string, any>();
@@ -239,20 +258,24 @@ registerSyncDomain({
     let written = merged.size
       ? await shopifyInventoryAdjustmentDetailCache.upsertMany([...merged.values()])
       : 0;
-    written += await enrichBatchMessages(ctx, shopId, args.enrichMax ?? 40);
+    written += await enrichBatchMessages(ctx, inventoryChannelIds, args.enrichMax ?? 40);
     return written;
   },
   async refetchOne(ctx, pk) {
     const eventKey = String(pk?.eventKey ?? "");
-    const shopId = String(pk?.shopId ?? "");
-    if (!eventKey || !shopId) return 0;
-    const rows = await fetchAllDocumentRows(
+    const inventoryChannelId = String(pk?.inventoryChannelId ?? "");
+    if (!eventKey || !inventoryChannelId) return 0;
+    // shopifyInventoryItemId completes the PK but is left off on purpose: one event fans out across
+    // items within a channel, and re-reading the whole fan-out keeps the group consistent.
+    const rows = await pageAll({
       ctx,
-      DETAIL_DOCUMENT,
-      { eventKey, shopId },
-      detailKey,
-      100,
-    );
+      url: DETAIL_ENDPOINT,
+      collectionKey: DETAIL_COLLECTION,
+      params: { eventKey, inventoryChannelId },
+      keyOf: detailKey,
+      batchSize: 100,
+      label: "inventoryAdjustmentDetails:refetchOne",
+    });
     return rows.length ? shopifyInventoryAdjustmentDetailCache.upsertMany(rows) : 0;
   },
 });

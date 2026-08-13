@@ -157,11 +157,14 @@ const CACHE_SCHEMA = {
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
   /**
    * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
-   * aggregate target/product mapping. The natural PK has five parts, so `adjustmentKey` is the
-   * synthetic cache key. `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
+   * inventory item at one channel. Mirrors the server entity, whose PK is
+   * eventKey + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is the synthetic cache
+   * key for that. No shopId/shopifyLocationId and no product columns: the channel is the target
+   * identity, so shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
+   * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
    */
   shopifyInventoryAdjustmentDetails:
-    "adjustmentKey, eventKey, shopId, shopifyLocationId, productId, shopifyProductId, inventoryChannelId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [shopId+createdDate], [shopId+lastUpdatedStamp], [shopId+detailStatusId], [systemMessageId+createdDate]",
+    "adjustmentKey, eventKey, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",

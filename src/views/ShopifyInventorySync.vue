@@ -17,6 +17,19 @@
       </ion-header>
 
       <ion-content class="ion-padding-horizontal">
+        <!-- A failed cache sync must never look like a healthy empty queue: without this the
+             counts below render 0 / "None waiting" after the OMS rejects the query. -->
+        <ion-card v-if="inventorySyncError" color="warning" class="sync-error-banner">
+          <ion-card-content>
+            <ion-icon :icon="warningOutline" />
+            <ion-label>
+              <h2>Inventory data could not be loaded from the OMS</h2>
+              <p>{{ inventorySyncError }}</p>
+              <p>The counts below are unavailable, not confirmed empty. Do not read them as "nothing pending".</p>
+            </ion-label>
+          </ion-card-content>
+        </ion-card>
+
         <section class="summary-grid">
           <ion-card>
             <ion-card-header>
@@ -137,6 +150,41 @@
                 <ion-badge slot="end" :color="scheduleHealthColor">
                   {{ scheduleHealth }}
                 </ion-badge>
+              </ion-item>
+            </ion-list>
+          </ion-card>
+        </section>
+
+        <section class="inventory-channels">
+          <ion-item lines="none">
+            <ion-label>
+              <h2>Inventory channels</h2>
+              <p>Facility groups whose aggregated inventory is pushed to one Shopify location</p>
+            </ion-label>
+            <ion-button slot="end" fill="outline" size="small" @click="openChannelSetup()">
+              <ion-icon slot="start" :icon="addOutline" />
+              Set up channel
+            </ion-button>
+          </ion-item>
+
+          <ion-card>
+            <ion-list lines="full">
+              <ion-item v-if="!inventoryChannels.length" lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>No inventory channels are mapped for this connection. Aggregate inventory
+                     cannot be published until a facility group is mapped to a Shopify location.</p>
+                </ion-label>
+              </ion-item>
+              <ion-item v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
+                <ion-icon :icon="layersOutline" slot="start" />
+                <ion-label class="ion-text-wrap">
+                  {{ channel.facilityGroupName || channel.facilityGroupId }}
+                  <p>{{ channel.description || channel.inventoryChannelId }}</p>
+                </ion-label>
+                <ion-label slot="end" class="ion-text-end">
+                  {{ channel.shopifyLocationId }}
+                  <p>Shopify location</p>
+                </ion-label>
               </ion-item>
             </ion-list>
           </ion-card>
@@ -549,10 +597,9 @@
                 <p>{{ event.key }}</p>
               </ion-label>
               <ion-label class="ion-text-wrap">
-                <span class="overline mobile-only">Product</span>
-                {{ event.productId }}
-                <p>{{ event.productName || event.facility }}</p>
-                <p v-if="event.productName">{{ event.facility }}</p>
+                <span class="overline mobile-only">Shopify inventory item</span>
+                {{ event.shopifyInventoryItem }}
+                <p>{{ event.facility }}</p>
               </ion-label>
               <ion-label class="ion-text-wrap">
                 <span class="overline mobile-only">Shopify target</span>
@@ -605,7 +652,7 @@
               <ion-list slot="content" lines="full">
                 <ion-item v-for="event in group.events" :key="event.rowKey" button detail @click="selectedEvent = event">
                   <ion-label class="ion-text-wrap">
-                    {{ event.type }} for {{ event.productId }}
+                    {{ event.type }} for item {{ event.shopifyInventoryItem }}
                     <p>{{ event.key }}</p>
                     <p>{{ event.facility }} to {{ event.target }}</p>
                   </ion-label>
@@ -650,7 +697,7 @@
             <ion-badge slot="end" :color="selectedEvent?.badgeColor">{{ selectedEvent?.status }}</ion-badge>
           </ion-item>
           <ion-item>
-            <ion-label>Product<p>{{ selectedEvent?.productId }} · {{ selectedEvent?.productName || 'No product name' }}</p></ion-label>
+            <ion-label>Shopify inventory item<p>{{ selectedEvent?.shopifyInventoryItem || 'Unknown item' }}</p></ion-label>
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">Inventory channel<p>{{ selectedEvent?.facility }}</p></ion-label>
@@ -700,12 +747,44 @@
               {{ selectedBatch?.eventCount }}
             </ion-label>
           </ion-item>
+
+          <!-- Why it has not landed. Without this a failed batch reads as merely "not sent yet". -->
+          <template v-if="batchErrors.length">
+            <ion-list-header>
+              <ion-label>Delivery errors</ion-label>
+            </ion-list-header>
+            <ion-item v-for="(err, i) in batchErrors" :key="err.errorDate ?? i">
+              <ion-icon :icon="warningOutline" slot="start" color="danger" />
+              <ion-label class="ion-text-wrap">
+                {{ err.errorText }}
+                <p>Attempted {{ statusLabel(err.attemptedStatusId) }} · {{ formatDateTime(toMillis(err.errorDate)) }}</p>
+              </ion-label>
+            </ion-item>
+          </template>
+          <ion-item v-else-if="loadingBatchErrors" lines="none">
+            <ion-spinner name="crescent" slot="start" />
+            <ion-label>Checking delivery errors</ion-label>
+          </ion-item>
+
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              Resend this batch
+              <p>Re-sends the same frozen payload and idempotency key, so Shopify cannot double-apply it</p>
+            </ion-label>
+            <ion-button slot="end" fill="outline" :disabled="resendingBatch" @click="resendBatch()">
+              <ion-spinner v-if="resendingBatch" name="crescent" />
+              <template v-else>
+                <ion-icon slot="start" :icon="refreshOutline" />
+                Resend
+              </template>
+            </ion-button>
+          </ion-item>
           <ion-list-header>
             <ion-label>Event details</ion-label>
           </ion-list-header>
           <ion-item v-for="event in eventsForSelectedBatch" :key="event.rowKey">
             <ion-label class="ion-text-wrap">
-              {{ event.type }} for {{ event.productId }}
+              {{ event.type }} for item {{ event.shopifyInventoryItem }}
               <p>{{ event.key }}</p>
               <p>{{ event.facility }} to {{ event.target }}</p>
             </ion-label>
@@ -776,12 +855,12 @@ import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
   IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
-  IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
-  IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, onIonViewDidLeave,
+  IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner,
+  IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewDidLeave,
   onIonViewWillEnter,
 } from "@ionic/vue";
 import {
-  calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
+  addOutline, calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   ellipsisVerticalOutline, flashOutline, layersOutline, listOutline, locationOutline,
   refreshOutline, timeOutline, warningOutline,
@@ -792,6 +871,8 @@ import { commonUtil, logger } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
+import { useStatuses } from "@/composables/useSeed";
+import { useSystemMessage } from "@/composables/useSystemMessage";
 import {
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
@@ -809,6 +890,7 @@ import { isEffectiveNow } from "@/utils/cacheProjection";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 
 type ViewName = "monitor" | "history";
 type HistoryMode = "events" | "batches";
@@ -831,8 +913,8 @@ interface InventoryEvent {
   rowKey: string;
   key: string;
   type: string;
-  productId: string;
-  productName?: string;
+  /** The ledger's Shopify inventory item -- the detail row carries no OMS product. */
+  shopifyInventoryItem: string;
   facility: string;
   target: string;
   model: string;
@@ -877,13 +959,70 @@ const {
   start: startSyncDomains,
   stop: stopSyncDomains,
   ready: inventorySyncReady,
+  error: inventorySyncError,
+  afterMutation,
 } = useCacheSync();
+
+const { labelFor: statusDescriptionFor } = useStatuses();
+const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+
+const batchErrors = ref<any[]>([]);
+const loadingBatchErrors = ref(false);
+const resendingBatch = ref(false);
+
+// Errors are class C - only failed messages have any - so they are fetched when a batch is opened.
+watch(() => selectedBatch.value?.id, async (systemMessageId) => {
+  batchErrors.value = [];
+  if (!systemMessageId) return;
+  loadingBatchErrors.value = true;
+  try {
+    batchErrors.value = await ensureSystemMessageErrors(String(systemMessageId));
+  } catch (error) {
+    logger.error("Could not load delivery errors for batch", systemMessageId, error);
+  } finally {
+    loadingBatchErrors.value = false;
+  }
+});
+
+async function resendBatch() {
+  const systemMessageId = selectedBatch.value?.id;
+  if (!systemMessageId) return;
+  resendingBatch.value = true;
+  try {
+    await resendSystemMessage(String(systemMessageId));
+    commonUtil.showToast("Batch queued for another delivery attempt.");
+    // Re-read the message so the badge reflects the new attempt, then reload its errors: a
+    // failed retry appends a new SystemMessageError rather than replacing the old one.
+    await afterMutation("systemMessage", { systemMessageId: String(systemMessageId) });
+    batchErrors.value = await ensureSystemMessageErrors(String(systemMessageId));
+  } catch (error: any) {
+    logger.error("Failed to resend batch", systemMessageId, error);
+    commonUtil.showToast(error?.message || "Could not resend this batch.");
+  } finally {
+    resendingBatch.value = false;
+  }
+}
 
 const inventoryChannels = computed(() => allInventoryChannels.value.filter((channel: any) =>
   String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, Date.now())));
 
-const inventoryDetails = computed(() => allInventoryDetails.value.filter((detail: any) =>
-  String(detail.shopId) === String(props.id ?? "")));
+/**
+ * Every channel this shop has ever had, expired ones included. Detail rows carry no shopId -- the
+ * channel is the target identity -- so this is how the page scopes the ledger to one connection.
+ * Effectiveness is deliberately NOT applied: an expired channel still owns its historical events,
+ * and dropping it here would silently shrink history rather than mark it inactive.
+ */
+const shopChannelIds = computed(() => allInventoryChannels.value
+  .filter((channel: any) => String(channel.shopId) === String(props.id ?? ""))
+  .map((channel: any) => String(channel.inventoryChannelId))
+  .filter(Boolean)
+  .sort());
+
+const inventoryDetails = computed(() => {
+  const scope = new Set(shopChannelIds.value);
+  return allInventoryDetails.value.filter((detail: any) =>
+    scope.has(String(detail.inventoryChannelId)));
+});
 
 const inventoryEventFeed = computed<any>(() => cachedDataFeeds.value.find((feed: any) =>
   String(feed.dataFeedId) === SHOPIFY_INVENTORY_EVENT_FEED_ID) ?? null);
@@ -920,8 +1059,15 @@ const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) =>
     parameters.runAsBatch === "true";
 }) ?? null);
 
-const pendingPublisherJob = computed<any>(() =>
-  cachedJobs.value.find((job: any) => job.serviceName === PUBLISH_PENDING_SERVICE) ?? null);
+// Match on serviceName AND the inventoryChannelId parameter, the way aggregateResetJobs does.
+// serviceName alone also matches the seeded template (paused, no channel) and any other channel's
+// clone, so with one publisher per channel the panel could report the wrong row's status/next run.
+const pendingPublisherJob = computed<any>(() => {
+  const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
+  return cachedJobs.value.find((job: any) =>
+    job.serviceName === PUBLISH_PENDING_SERVICE &&
+    channelIds.has(String(parameterMap(job).inventoryChannelId ?? ""))) ?? null;
+});
 
 const effectiveDateJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === EFFECTIVE_DATE_SERVICE) ?? null);
@@ -1015,19 +1161,32 @@ const aggregateResetRuns = computed(() => aggregateResetJobs.value
     projectRun(job, run, "Full aggregate ATP reset")))
   .sort((a: any, b: any) => b.startTime - a.startTime));
 
+/**
+ * Colour stays a UI decision, but the LABEL comes from the StatusItem description the OMS actually
+ * ships. Hardcoding it meant the screen said "Queued" for SmsgProduced while every other HotWax
+ * surface said something else, and it silently mislabelled any status not in this list.
+ */
 function batchState(statusId?: string): { status: string; badgeColor: string } {
-  switch (statusId) {
-    case "SmsgProduced": return { status: "Queued", badgeColor: "primary" };
-    case "SmsgSending": return { status: "Sending", badgeColor: "primary" };
-    case "SmsgSent": return { status: "Sent", badgeColor: "success" };
-    case "SmsgError": return { status: "Error", badgeColor: "danger" };
-    default: return { status: "Assigned", badgeColor: "medium" };
-  }
+  const badgeColor = statusId === "SmsgSent" ? "success"
+    : statusId === "SmsgError" ? "danger"
+    : statusId === "SmsgProduced" || statusId === "SmsgSending" ? "primary"
+    : "medium";
+  return { status: statusLabel(statusId), badgeColor };
+}
+
+/** StatusItem description, falling back to the raw id rather than inventing a label. */
+function statusLabel(statusId?: string): string {
+  if (!statusId) return "Assigned";
+  return statusDescriptionFor(statusId) || statusId;
 }
 
 function targetLabel(detail: any): string {
-  return detail.inventoryChannelDescription ||
-    (detail.shopifyLocationId ? `Shopify location ${detail.shopifyLocationId}` : "Shopify aggregate location");
+  // The Shopify location lives on the channel, not the detail row, so fall back through the
+  // cached channel before giving up on a generic label.
+  const channel = allInventoryChannels.value.find((candidate: any) =>
+    String(candidate.inventoryChannelId) === String(detail.inventoryChannelId));
+  return detail.inventoryChannelDescription || channel?.description ||
+    (channel?.shopifyLocationId ? `Shopify location ${channel.shopifyLocationId}` : "Shopify aggregate location");
 }
 
 const batches = computed<Batch[]>(() => {
@@ -1092,13 +1251,16 @@ function eventType(eventKey: string): string {
 const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.map((detail: any) => {
   const state = eventState(detail);
   const change = Number(detail.computedInventoryChange || 0);
-  const identity = [detail.eventKey, detail.shopId, detail.shopifyLocationId, detail.productId, detail.shopifyProductId];
+  // Same identity as the server PK and the cache key: event + channel + Shopify inventory item.
+  const identity = [detail.eventKey, detail.inventoryChannelId, detail.shopifyInventoryItemId];
   return {
     rowKey: JSON.stringify(identity.map(String)),
     key: String(detail.eventKey),
     type: eventType(String(detail.eventKey)),
-    productId: String(detail.productId),
-    productName: detail.internalName,
+    // The ledger identifies a Shopify inventory item, not an OMS product, and nothing cached here
+    // maps one to the other. Show the item id -- the row's real identity -- rather than resolving a
+    // product through a join this screen does not have.
+    shopifyInventoryItem: String(detail.shopifyInventoryItemId ?? ""),
     facility: detail.inventoryChannelDescription || detail.facilityGroupId || detail.inventoryChannelId || "Inventory channel",
     target: targetLabel(detail),
     model: "Aggregate ATP",
@@ -1156,6 +1318,9 @@ async function requestInventoryEventFeedChange(event: Event) {
     await updateShopifyInventoryEventFeedType(
       enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
     );
+    // The feed domain only syncs once per login, so without this re-read the toggle keeps
+    // rendering the pre-save mode for the rest of the session.
+    await afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
     commonUtil.showToast(enablePush
       ? "Inventory events set to real-time push. Restart every OMS node before relying on event capture."
       : "Inventory events set to manual. Cached routing may take up to 15 minutes to expire.");
@@ -1169,14 +1334,23 @@ async function requestInventoryEventFeedChange(event: Event) {
 
 function activeSyncDomains() {
   return [
-    { name: "shopifyInventoryAdjustmentDetail", args: { shopId: String(props.id ?? ""), total: 500 } },
+    // Skipped entirely until the channels are known: with no channel list the domain cannot tell
+    // "this shop has no channels" from "read every shop", so it must not run.
+    ...(shopChannelIds.value.length
+      ? [{
+        name: "shopifyInventoryAdjustmentDetail",
+        args: { inventoryChannelIds: shopChannelIds.value, total: 500 },
+      }]
+      : []),
     ...(watchedJobNames.value.length
       ? [{ name: "serviceJobRun", args: { jobNames: watchedJobNames.value, total: 5 } }]
       : []),
   ];
 }
 
-watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}`, () => {
+// Channels are cached asynchronously, so the detail domain is usually skipped on first pass and
+// starts here once they land.
+watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelIds.value.join(",")}`, () => {
   if (isViewActive.value) void startSyncDomains(activeSyncDomains());
 });
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
@@ -1185,6 +1359,9 @@ watch(() => props.initialHistoryMode, (mode) => { historyMode.value = mode ?? "e
 onIonViewWillEnter(() => {
   isViewActive.value = true;
   void startSyncDomains(activeSyncDomains());
+  // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
+  // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
+  void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
 });
 
 onIonViewDidLeave(() => {
@@ -1199,7 +1376,7 @@ const targetOptions = computed(() => [...new Set(inventoryEvents.value.map((even
 const filteredEvents = computed(() => {
   const query = historyQuery.value.trim().toLowerCase();
   const events = inventoryEvents.value.filter((event) => {
-    const matchesQuery = !query || [event.key, event.type, event.productId, event.productName,
+    const matchesQuery = !query || [event.key, event.type, event.shopifyInventoryItem,
       event.facility, event.target, event.model, event.batchId, event.status, event.decisionComment]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
     return matchesQuery &&
@@ -1255,6 +1432,18 @@ function openHistory(mode: HistoryMode = "events") {
     path: `/shopify-connection-details/${props.id}/inventory-sync/history`,
     query: mode === "batches" ? { mode } : {},
   });
+}
+
+async function openChannelSetup() {
+  const modal = await modalController.create({
+    component: SetupInventoryChannelModal,
+    componentProps: { shopId: String(props.id ?? "") },
+  });
+  await modal.present();
+  const { data } = await modal.onDidDismiss();
+  // The channel drives which reset jobs belong to this connection, so pull both domains again
+  // rather than waiting for the next scheduled sync pass.
+  if (data?.created) await startSyncDomains(activeSyncDomains());
 }
 
 function openServiceJob(job: any, title: string) {
@@ -1339,6 +1528,18 @@ function formatAge(timestamp: number): string {
 
 .global-feed-scope {
   font-weight: 500;
+}
+
+.sync-error-banner ion-card-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--spacer-base);
+}
+
+.sync-error-banner ion-label {
+  min-width: 0;
+  white-space: normal;
 }
 
 .event-feed-control {

@@ -111,6 +111,179 @@ export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: st
   });
 }
 
+/**
+ * Map one facility group to one Shopify location as an aggregate inventory channel.
+ *
+ * fromDate is deliberately omitted: the OMS treats a null fromDate as effective immediately, and
+ * sending a client-side timestamp risks a future-dated row when the browser and OMS disagree on
+ * timezone - which reads as "the channel silently does nothing".
+ */
+export async function createInventoryChannel(params: {
+  shopId: string;
+  facilityGroupId: string;
+  shopifyLocationId: string;
+  description?: string;
+}): Promise<string | undefined> {
+  const resp: any = await api({
+    url: "sob/shopify/inventoryChannels",
+    method: "post",
+    data: {
+      shopId: params.shopId,
+      facilityGroupId: params.facilityGroupId,
+      shopifyLocationId: params.shopifyLocationId,
+      ...(params.description ? { description: params.description } : {}),
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel mapping.");
+  }
+  const inventoryChannelId = resp?.data?.inventoryChannelId;
+  if (inventoryChannelId) await refreshAfterMutation("inventoryChannel", { inventoryChannelId });
+  return inventoryChannelId;
+}
+
+const EVENT_PUBLISHER_TEMPLATE_JOB = "publish_PendingShopifyInventoryAdjustments";
+/** Shared by every `queue_*` feed job on this OMS; the message type is what differentiates them. */
+const FEED_SYSTEM_MESSAGE_SERVICE =
+  "co.hotwax.shopify.system.ShopifySystemMessageServices.queue#FeedSystemMessage";
+/** Must match the sync panel's physicalResetJob matcher. */
+const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+const ABSOLUTE_CHANNEL_RESET_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+
+/** Existence probe so both ensure* helpers are safe to call twice. */
+async function serviceJobExists(jobName: string): Promise<boolean> {
+  try {
+    const resp: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if (commonUtil.hasError(resp)) return false;
+    return !!(resp?.data?.jobDetail?.jobName ?? resp?.data?.jobName);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One event publisher per CHANNEL.
+ *
+ * `publish#PendingShopifyInventoryAdjustments` takes a required inventoryChannelId and holds its
+ * semaphore on that same value, so publishing is per channel, not per shop. The seeded
+ * `publish_PendingShopifyInventoryAdjustments` row is a TEMPLATE that must stay paused - it carries
+ * no inventoryChannelId, and unpausing it only produces failed runs. Each channel gets its own clone.
+ * Created paused: activation is a separate reviewed step, per the release runbook.
+ *
+ * This was previously keyed by shopId and passed a `shopId` parameter. The service no longer accepts
+ * that, so a clone provisioned the old way could never run - it failed on the missing required
+ * inventoryChannelId, and one publisher per shop could not serve two channels on the same shop.
+ */
+export async function ensureChannelEventPublisherJob(inventoryChannelId: string): Promise<string> {
+  const jobName = `${EVENT_PUBLISHER_TEMPLATE_JOB}_${inventoryChannelId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: `admin/serviceJobs/${EVENT_PUBLISHER_TEMPLATE_JOB}/clone`,
+    method: "POST",
+    data: { newJobName: jobName },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: inventoryChannelId },
+        { parameterName: "maxChangeCount", parameterValue: "100" },
+        { parameterName: "staleSendingMinutes", parameterValue: "60" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * One absolute reconciliation job per CHANNEL. No template ships for this one, so it is created
+ * outright. The sync panel finds it by serviceName plus the inventoryChannelId parameter, never by
+ * name, so the parameter is what makes it belong to the channel.
+ */
+export async function ensureChannelResetJob(params: {
+  inventoryChannelId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `reset_InventoryChannelInventory_${params.inventoryChannelId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE,
+      description: params.description || `Full aggregate ATP reset for ${params.inventoryChannelId}`,
+      cronExpression: "0 0 */4 * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * One physical-location QOH reset per SHOP REMOTE. No template ships, so it is created outright,
+ * mirroring the other `queue_*` feed jobs on this OMS (same service, same three parameters).
+ *
+ * The sync panel finds this job by parameter, never by name: systemMessageRemoteId must be the
+ * shop's remote, systemMessageTypeId must be ResetInventoryQoh, and runAsBatch must be "true".
+ * Miss any of the three and the panel reports "Not configured" - which is what it did before this
+ * existed, leaving a cold-start connection with no way to create the job from the UI at all.
+ */
+export async function ensureShopPhysicalInventoryResetJob(params: {
+  systemMessageRemoteId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `queue_ResetInventoryQoh_${params.systemMessageRemoteId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: FEED_SYSTEM_MESSAGE_SERVICE,
+      description: params.description
+        || `Reset physical location QOH for ${params.systemMessageRemoteId}`,
+      cronExpression: "0 0 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "systemMessageTypeId", parameterValue: PHYSICAL_RESET_MESSAGE_TYPE },
+        { parameterName: "systemMessageRemoteId", parameterValue: params.systemMessageRemoteId },
+        { parameterName: "runAsBatch", parameterValue: "true" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
 /** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
 export const useShopifyShop = (shopId: string | undefined) =>
   useCachedRecord(shopifyShopCache, "shopId", shopId);

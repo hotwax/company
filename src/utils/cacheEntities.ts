@@ -432,18 +432,22 @@ export const dataFeedProjection = {
 
 /**
  * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
- * The database PK is event + shop + location + product + Shopify product mapping, represented by
- * one synthetic key in IndexedDB so fan-out rows never overwrite each other.
+ * Mirrors the server entity, whose PK is eventKey + inventoryChannelId + shopifyInventoryItemId;
+ * `adjustmentKey` is the synthetic cache key for that so fan-out rows never overwrite each other.
+ *
+ * Deliberately absent, because the server row does not carry them:
+ *  - shopId / shopifyLocationId — the channel IS the target identity (it maps a facility group to
+ *    exactly one shop and one Shopify location). Scope by channel, resolve the shop through
+ *    `inventoryChannels`.
+ *  - productId / shopifyProductId / internalName — a detail row identifies a Shopify inventory item
+ *    at a channel and carries no OMS product. Consumers needing a product join ShopifyShopProduct
+ *    on shopId + shopifyInventoryItemId.
  */
 export const shopifyInventoryAdjustmentDetailProjection = {
   keyField: "adjustmentKey",
   fields: {
     adjustmentKey: "text",
     eventKey: "text",
-    shopId: "text",
-    shopifyLocationId: "text",
-    productId: "text",
-    shopifyProductId: "text",
     inventoryChannelId: "text",
     shopifyInventoryItemId: "text",
     computedInventoryChange: "count",
@@ -452,7 +456,6 @@ export const shopifyInventoryAdjustmentDetailProjection = {
     detailStatusId: "text",
     createdDate: "date",
     lastUpdatedStamp: "date",
-    internalName: "text",
     facilityGroupId: "text",
     inventoryChannelDescription: "text",
     systemMessageStatusId: "text",
@@ -463,10 +466,8 @@ export const shopifyInventoryAdjustmentDetailProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     const identity = [
       raw?.eventKey,
-      raw?.shopId,
-      raw?.shopifyLocationId,
-      raw?.productId,
-      raw?.shopifyProductId,
+      raw?.inventoryChannelId,
+      raw?.shopifyInventoryItemId,
     ];
     if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
     return JSON.stringify(identity.map(String));
