@@ -68,6 +68,10 @@ class CompanyCacheDB extends Dexie {
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
+  /** Shopify aggregate inventory event ledger, scoped by shop. */
+  shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
+  /** Shopify aggregate ATP channel configuration, scoped by shop. */
+  inventoryChannels!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -149,11 +153,20 @@ const CACHE_SCHEMA = {
    * the sync run that made it.
    */
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+  /**
+   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
+   * aggregate target/product mapping. The natural PK has five parts, so `adjustmentKey` is the
+   * synthetic cache key. `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
+   */
+  shopifyInventoryAdjustmentDetails:
+    "adjustmentKey, eventKey, shopId, shopifyLocationId, productId, shopifyProductId, inventoryChannelId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [shopId+createdDate], [shopId+lastUpdatedStamp], [shopId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
+  inventoryChannels:
+    "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
   organizations: "partyId, groupName, externalId, statusId",
   organizationRelationships:
     "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",

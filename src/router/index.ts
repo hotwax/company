@@ -34,6 +34,7 @@ const PaymentMethods = () => import("@/views/PaymentMethods.vue")
 const SalesChannel = () => import("@/views/SalesChannel.vue")
 const Departments = () => import("@/views/Departments.vue")
 const ShopifyConnectionDetails = () => import("@/views/ShopifyConnectionDetails.vue")
+const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
 const Klaviyo = () => import("@/views/Klaviyo.vue")
 const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.vue")
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
@@ -104,6 +105,20 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/product-sync", name: "ShopifyProductSync", component: () => import("@/views/ShopifyProductSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/product-sync/history", name: "ShopifyProductSyncHistory", component: () => import("@/views/ShopifyProductSyncHistory.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/product-sync/upgrade-assistant", name: "ShopifyProductSyncUpgradeAssistant", component: () => import("@/views/ShopifyProductSyncUpgradeAssistant.vue"), props: true, beforeEnter: authGuard },
+  {
+    path: "/shopify-connection-details/:id/inventory-sync",
+    name: "ShopifyInventorySync",
+    component: ShopifyInventorySync,
+    props: (route) => ({ id: route.params.id, initialView: "monitor" }),
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/shopify-connection-details/:id/inventory-sync/history",
+    name: "ShopifyInventorySyncHistory",
+    component: ShopifyInventorySync,
+    props: (route) => ({ id: route.params.id, initialView: "history" }),
+    beforeEnter: authGuard,
+  },
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync", name: "ShopifyOrderSync", component: () => import("@/views/ShopifyOrderSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },

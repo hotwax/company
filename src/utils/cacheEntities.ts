@@ -392,6 +392,68 @@ export const shopifyLocationProjection = {
   },
 } as const;
 
+/**
+ * InventoryChannel — one facility-group ATP pool mapped to one Shopify aggregate location.
+ * This is the missing ownership link between an aggregate reset ServiceJob parameter and a shop.
+ */
+export const inventoryChannelProjection = {
+  keyField: "inventoryChannelId",
+  fields: {
+    inventoryChannelId: "text",
+    shopId: "text",
+    facilityGroupId: "text",
+    facilityGroupName: "text",
+    shopifyLocationId: "text",
+    description: "text",
+    fromDate: "date",
+    thruDate: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
+ * The database PK is event + shop + location + product + Shopify product mapping, represented by
+ * one synthetic key in IndexedDB so fan-out rows never overwrite each other.
+ */
+export const shopifyInventoryAdjustmentDetailProjection = {
+  keyField: "adjustmentKey",
+  fields: {
+    adjustmentKey: "text",
+    eventKey: "text",
+    shopId: "text",
+    shopifyLocationId: "text",
+    productId: "text",
+    shopifyProductId: "text",
+    inventoryChannelId: "text",
+    shopifyInventoryItemId: "text",
+    computedInventoryChange: "count",
+    decisionComment: "text",
+    systemMessageId: "text",
+    detailStatusId: "text",
+    createdDate: "date",
+    lastUpdatedStamp: "date",
+    internalName: "text",
+    facilityGroupId: "text",
+    inventoryChannelDescription: "text",
+    systemMessageStatusId: "text",
+    systemMessageInitDate: "date",
+    systemMessageProcessedDate: "date",
+    systemMessageLastAttemptDate: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const identity = [
+      raw?.eventKey,
+      raw?.shopId,
+      raw?.shopifyLocationId,
+      raw?.productId,
+      raw?.shopifyProductId,
+    ];
+    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    return JSON.stringify(identity.map(String));
+  },
+} as const;
+
 export const shopifyTypeMappingProjection = {
   keyField: "typeMappingKey",
   fields: {
@@ -410,6 +472,11 @@ export const shopifyTypeMappingProjection = {
 
 export const shopifyLocationCache = defineCachedEntity("shopifyLocations", shopifyLocationProjection);
 export const shopifyTypeMappingCache = defineCachedEntity("shopifyTypeMappings", shopifyTypeMappingProjection);
+export const inventoryChannelCache = defineCachedEntity("inventoryChannels", inventoryChannelProjection);
+export const shopifyInventoryAdjustmentDetailCache = defineCachedEntity(
+  "shopifyInventoryAdjustmentDetails",
+  shopifyInventoryAdjustmentDetailProjection,
+);
 
 /** Per-product-store shipment-method count (bare-array aggregate endpoint). */
 export const productStoreShipmentCountProjection = {

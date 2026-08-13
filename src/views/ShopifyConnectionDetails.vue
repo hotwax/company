@@ -185,6 +185,12 @@
             <ion-item detail class="item-box" lines="none" button @click="openShopifyLocations()">
               <ion-label>{{ translate("Inventory locations") }}</ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openInventorySync()">
+              <ion-label>
+                {{ translate("Inventory sync") }}
+                <p>{{ translate("Monitor inventory reset jobs, aggregate events, batches, and errors") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openProductTypes()">
               <ion-label>{{ translate("Product types") }}</ion-label>
             </ion-item>
@@ -1408,6 +1414,10 @@ function openShopDetails() {
 
 function openShopifyLocations() {
   router.push(`/shopify-connection-details/${props.id}/locations`);
+}
+
+function openInventorySync() {
+  router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
 }
 
 function openShipmentMethods() {
