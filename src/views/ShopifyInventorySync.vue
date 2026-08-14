@@ -63,11 +63,9 @@
                   {{ pendingBatchCount }}
                 </ion-badge>
               </ion-item>
-              <ion-item
-                :button="!!pendingPublisherJob"
-                :detail="!!pendingPublisherJob"
-                @click="openServiceJob(pendingPublisherJob, 'Publish and send aggregate event batches')"
-              >
+              <!-- Reads as queue state ("when does what is waiting go out?"), not as a way into the
+                   publisher's config - that lives once, in Inventory sync jobs below. -->
+              <ion-item>
                 <ion-label>
                   Next batch send
                   <p>Send Shopify aggregate inventory adjustments</p>
@@ -89,70 +87,6 @@
             </ion-list>
           </ion-card>
 
-          <ion-card>
-            <ion-card-header>
-              <ion-card-title>Next scheduled inventory work</ion-card-title>
-              <ion-card-subtitle>Upcoming batch and reset jobs for this Shopify connection</ion-card-subtitle>
-              <ion-buttons>
-                <ion-button fill="clear" aria-label="View schedules" @click="openFirstScheduledJob()">
-                  <ion-icon slot="icon-only" :icon="calendarOutline" />
-                </ion-button>
-              </ion-buttons>
-            </ion-card-header>
-            <ion-list lines="full">
-              <ion-item
-                :button="!!pendingPublisherJob"
-                :detail="!!pendingPublisherJob"
-                @click="openServiceJob(pendingPublisherJob, 'Publish and send aggregate event batches')"
-              >
-                <ion-label>
-                  Aggregate event batch
-                  <p>{{ pendingEventCount }} calculated adjustments waiting</p>
-                </ion-label>
-                <ion-label slot="end">
-                  {{ nextBatchRun }}
-                  <p>Shared publisher job</p>
-                </ion-label>
-              </ion-item>
-              <ion-item
-                :button="!!primaryAggregateResetJob"
-                :detail="!!primaryAggregateResetJob"
-                @click="openServiceJob(primaryAggregateResetJob, 'Reset aggregate ATP inventory')"
-              >
-                <ion-label>
-                  Aggregate ATP reset
-                  <p>{{ aggregateResetJobCount }} reset job{{ aggregateResetJobCount === 1 ? '' : 's' }} for this connection</p>
-                </ion-label>
-                <ion-label slot="end">
-                  {{ nextAggregateReset }}
-                  <p>Full aggregate ATP reset</p>
-                </ion-label>
-              </ion-item>
-              <ion-item
-                :button="!!physicalResetJob"
-                :detail="!!physicalResetJob"
-                @click="openServiceJob(physicalResetJob, 'Reset physical location QOH')"
-              >
-                <ion-label>
-                  Physical location QOH reset
-                  <p>All mapped physical Shopify locations</p>
-                </ion-label>
-                <ion-label slot="end">
-                  {{ nextPhysicalReset }}
-                  <p>{{ physicalResetJob?.paused === 'Y' ? 'Paused' : 'Connection-scoped job' }}</p>
-                </ion-label>
-              </ion-item>
-              <ion-item lines="none">
-                <ion-label>
-                  Schedule health
-                  <p>Connection schedules and event delivery are visible from the OMS cache</p>
-                </ion-label>
-                <ion-badge slot="end" :color="scheduleHealthColor">
-                  {{ scheduleHealth }}
-                </ion-badge>
-              </ion-item>
-            </ion-list>
-          </ion-card>
         </section>
 
         <section class="inventory-channels">
@@ -221,7 +155,7 @@
           </ion-card>
         </section>
 
-        <section ref="syncMonitorSection" class="sync-monitor">
+        <section class="sync-monitor">
           <ion-item lines="none">
             <ion-label>
               <h2>Sync monitor</h2>
@@ -233,6 +167,10 @@
             <ion-card-header>
               <ion-card-title>Inventory sync jobs</ion-card-title>
               <ion-card-subtitle>Schedules, recent runs, and current health</ion-card-subtitle>
+              <!-- The rollup badge that used to head its own card. Every job's status is listed
+                   below it, so this is the summary of the rows it sits on rather than a second
+                   place to read the same schedules. -->
+              <ion-badge :color="scheduleHealthColor">{{ scheduleHealth }}</ion-badge>
             </ion-card-header>
             <ion-list lines="full">
               <ion-item
@@ -264,7 +202,7 @@
                 <p>Recent full-job runs that reset on-hand inventory across every mapped physical location</p>
               </ion-label>
             </ion-item>
-            <ion-button v-if="physicalResetJob" fill="clear" @click="openServiceJob(physicalResetJob, 'Reset physical location QOH')">
+            <ion-button v-if="physicalResetJob" fill="clear" @click="openJobRuns(physicalResetJob, 'Reset physical location QOH')">
               View all runs
             </ion-button>
           </div>
@@ -325,7 +263,7 @@
                 <p>Recent full-job runs that reset ATP across every configured aggregate location</p>
               </ion-label>
             </ion-item>
-            <ion-button v-if="primaryAggregateResetJob" fill="clear" @click="openServiceJob(primaryAggregateResetJob, 'Reset aggregate ATP inventory')">
+            <ion-button v-if="primaryAggregateResetJob" fill="clear" @click="openJobRuns(primaryAggregateResetJob, 'Reset aggregate ATP inventory')">
               View all runs
             </ion-button>
           </div>
@@ -878,7 +816,7 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import {
-  addOutline, calendarOutline, checkmarkCircleOutline, chevronForwardOutline,
+  addOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   ellipsisVerticalOutline, flashOutline, layersOutline, listOutline, locationOutline,
   refreshOutline, timeOutline, warningOutline,
@@ -959,7 +897,6 @@ const selectedEvent = ref<InventoryEvent | null>(null);
 const selectedBatch = ref<Batch | null>(null);
 const messageBatch = ref<Batch | null>(null);
 const selectedServiceJob = ref<{ jobName: string; title: string } | null>(null);
-const syncMonitorSection = ref<HTMLElement | null>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
 
@@ -1098,7 +1035,6 @@ const aggregateResetJobs = computed<any[]>(() => {
     channelIds.has(String(parameterMap(job).inventoryChannelId ?? "")));
 });
 
-const aggregateResetJobCount = computed(() => aggregateResetJobs.value.length);
 const primaryAggregateResetJob = computed<any>(() =>
   nextExecutionFor(aggregateResetJobs.value) ?? aggregateResetJobs.value[0] ?? null);
 
@@ -1303,12 +1239,6 @@ const oldestUnbatchedEvent = computed(() => {
 
 const nextBatchRun = computed(() => pendingPublisherJob.value?.nextExecutionDateTime
   ? formatDateTime(pendingPublisherJob.value.nextExecutionDateTime) : "Not scheduled");
-const nextPhysicalReset = computed(() => physicalResetJob.value?.nextExecutionDateTime
-  ? formatDateTime(physicalResetJob.value.nextExecutionDateTime) : "Not scheduled");
-const nextAggregateReset = computed(() => {
-  const job = nextExecutionFor(aggregateResetJobs.value);
-  return job ? formatDateTime(job.nextExecutionDateTime) : "Not scheduled";
-});
 const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.status !== "Active")
   ? "Needs attention" : "Healthy");
 const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
@@ -1508,15 +1438,20 @@ async function openChannelSetup() {
   if (data?.created) await startSyncDomains(activeSyncDomains());
 }
 
+/** The one way into a job's configuration - from its row in Inventory sync jobs. */
 function openServiceJob(job: any, title: string) {
   if (!job?.jobName) return;
   selectedServiceJob.value = { jobName: String(job.jobName), title };
 }
 
-function openFirstScheduledJob() {
-  const monitoredJob = monitoredJobs.value.find((job) => job.job);
-  if (monitoredJob) openServiceJob(monitoredJob.job, monitoredJob.name);
-  else syncMonitorSection.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+/** "View all runs" goes to the full history page, which is what it says. */
+function openJobRuns(job: any, title: string) {
+  if (!job?.jobName) return;
+  router.push({
+    name: "ShopifyInventoryJobRuns",
+    params: { id: props.id, jobName: String(job.jobName) },
+    query: { title },
+  });
 }
 
 function refreshServiceJobData() {

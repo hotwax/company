@@ -123,6 +123,19 @@ const routes: Array<RouteRecordRaw> = [
     }),
     beforeEnter: authGuard,
   },
+  {
+    // Full run history for one inventory sync job. jobName is a route param rather than a query so
+    // the page is linkable; `title` carries the human name the sync screen already has.
+    path: "/shopify-connection-details/:id/inventory-sync/job-runs/:jobName",
+    name: "ShopifyInventoryJobRuns",
+    component: () => import("@/views/ShopifyInventoryJobRuns.vue"),
+    props: (route) => ({
+      id: route.params.id,
+      jobName: route.params.jobName,
+      title: typeof route.query.title === "string" ? route.query.title : "",
+    }),
+    beforeEnter: authGuard,
+  },
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync", name: "ShopifyOrderSync", component: () => import("@/views/ShopifyOrderSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },
