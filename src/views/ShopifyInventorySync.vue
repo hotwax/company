@@ -6,13 +6,9 @@
           <ion-buttons slot="start">
             <ion-back-button :default-href="`/shopify-connection-details/${props.id}`" />
           </ion-buttons>
+          <!-- No Event history button: every row of the queue card below opens the same view, in the
+               context that says which slice of it you are about to read. -->
           <ion-title>Inventory sync</ion-title>
-          <ion-buttons slot="end">
-            <ion-button @click="openHistory()">
-              <ion-icon slot="start" :icon="timeOutline" />
-              Event history
-            </ion-button>
-          </ion-buttons>
         </ion-toolbar>
       </ion-header>
 
@@ -35,14 +31,6 @@
             <ion-card-header>
               <ion-card-title>Aggregate event queue</ion-card-title>
               <ion-card-subtitle>Inventory changes waiting to reach Shopify aggregate locations</ion-card-subtitle>
-              <ion-buttons>
-                <ion-button fill="clear" aria-label="Run batch now" disabled>
-                  <ion-icon slot="icon-only" :icon="flashOutline" />
-                </ion-button>
-                <ion-button fill="clear" aria-label="More queue actions" disabled>
-                  <ion-icon slot="icon-only" :icon="ellipsisVerticalOutline" />
-                </ion-button>
-              </ion-buttons>
             </ion-card-header>
             <ion-list lines="full">
               <ion-item button detail @click="openHistory()">
@@ -172,25 +160,26 @@
           </ion-item>
 
           <ion-card>
-            <ion-card-content class="event-feed-setting">
-              <ion-icon :icon="cloudUploadOutline" />
-              <ion-label>
-                Inventory channel event updates
-                <p>Receipts, reservations, POS issuances, and inventory configuration changes</p>
-                <p class="global-feed-scope">Applies to every Shopify connection on this OMS</p>
-              </ion-label>
-              <div class="event-feed-control">
-                <ion-badge :color="inventoryEventFeedBadgeColor">
+            <ion-list lines="none">
+              <ion-item>
+                <ion-icon slot="start" :icon="cloudUploadOutline" />
+                <ion-label class="ion-text-wrap">
+                  Inventory channel event updates
+                  <p>Receipts, reservations, POS issuances, and inventory configuration changes</p>
+                  <p>Applies to every Shopify connection on this OMS</p>
+                </ion-label>
+                <ion-badge slot="end" :color="inventoryEventFeedBadgeColor">
                   {{ inventoryEventFeedStatus }}
                 </ion-badge>
                 <ion-toggle
+                  slot="end"
                   aria-label="Use real-time push for Shopify inventory events"
                   :checked="inventoryEventFeedPush"
                   :disabled="inventoryEventFeedToggleDisabled"
                   @click.prevent="requestInventoryEventFeedChange($event)"
                 />
-              </div>
-            </ion-card-content>
+              </ion-item>
+            </ion-list>
           </ion-card>
         </section>
 
@@ -826,7 +815,7 @@ import {
 import {
   addOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
-  ellipsisVerticalOutline, flashOutline, layersOutline, listOutline, locationOutline,
+  layersOutline, listOutline, locationOutline,
   refreshOutline, timeOutline, warningOutline,
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
@@ -1554,23 +1543,6 @@ function formatAge(timestamp: number): string {
   margin-block-start: var(--spacer-sm);
 }
 
-.event-feed-setting ion-label {
-  color: var(--ion-text-color);
-  min-width: 0;
-  white-space: normal;
-}
-
-.event-feed-setting {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--spacer-base);
-}
-
-.global-feed-scope {
-  font-weight: 500;
-}
-
 .sync-error-banner ion-card-content {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1581,14 +1553,6 @@ function formatAge(timestamp: number): string {
 .sync-error-banner ion-label {
   min-width: 0;
   white-space: normal;
-}
-
-.event-feed-control {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--spacer-sm);
-  min-width: max-content;
 }
 
 .section-header {
@@ -1838,15 +1802,5 @@ ion-modal p {
     --inner-padding-end: var(--spacer-xs);
   }
 
-  .event-feed-setting {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .event-feed-control {
-    grid-column: 1 / -1;
-    width: 100%;
-    margin-block-start: var(--spacer-xs);
-  }
 }
 </style>
