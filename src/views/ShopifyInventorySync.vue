@@ -201,7 +201,7 @@
                   Event sources unavailable
                   <p>{{ documentsError }}</p>
                 </ion-label>
-                <ion-button slot="end" fill="outline" @click="loadInventoryEventDocuments()">Retry</ion-button>
+                <ion-button slot="end" fill="outline" @click="resyncEventDocuments()">Retry</ion-button>
               </ion-item>
 
               <ion-item v-for="doc in inventoryEventDocuments" :key="doc.dataDocumentId">
@@ -864,6 +864,7 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { commonUtil, logger } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
+import { resyncDomain } from "@/services/appCacheBootstrap";
 import { useCachedList } from "@/composables/useCachedList";
 import { useVirtualRows } from "@/composables/useVirtualRows";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
@@ -873,8 +874,8 @@ import {
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
-  fetchInventoryEventDocuments,
   setInventoryEventDocumentAttached,
+  useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
   useShopifySyncContext,
   type InventoryEventDocument,
@@ -1305,20 +1306,20 @@ const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.stat
 const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
 
 // ----- Event sources: which DataDocuments this feed listens to -----
-const inventoryEventDocuments = ref<InventoryEventDocument[]>([]);
-const documentsLoading = ref(false);
+// Cached like every other reference table: config that rarely moves, read on every entry, and kept
+// truthful after a change by the domain's write-through rather than by re-fetching here.
+const { documents: inventoryEventDocuments, hydrated: documentsHydrated } = useInventoryEventDocuments();
 const documentsError = ref("");
 const savingDocumentId = ref("");
+const documentsLoading = computed(() => !documentsHydrated.value);
 
-async function loadInventoryEventDocuments() {
-  documentsLoading.value = true;
+/** Re-snapshot the domain. The read path is the cache, so "retry" means refill it, not re-fetch here. */
+async function resyncEventDocuments() {
   documentsError.value = "";
   try {
-    inventoryEventDocuments.value = await fetchInventoryEventDocuments();
+    await resyncDomain("inventoryEventDocument");
   } catch (error: any) {
     documentsError.value = error?.message || "The OMS did not return its data documents.";
-  } finally {
-    documentsLoading.value = false;
   }
 }
 
@@ -1364,8 +1365,8 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
 
   savingDocumentId.value = doc.dataDocumentId;
   try {
+    // The composable's list updates from the cache write-through inside this call.
     await setInventoryEventDocumentAttached(doc.dataDocumentId, attaching);
-    await loadInventoryEventDocuments();
     commonUtil.showToast(attaching
       ? "Event source enabled. It can take a few minutes to take effect."
       : "Event source disabled. Events already recorded are unaffected.");
@@ -1453,8 +1454,6 @@ onIonViewWillEnter(() => {
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
-  // Not cached: DataFeedDocument has no sync domain, and this is the one screen that reads it.
-  void loadInventoryEventDocuments();
 });
 
 onIonViewDidLeave(() => {

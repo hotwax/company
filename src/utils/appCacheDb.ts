@@ -74,6 +74,8 @@ class CompanyCacheDB extends Dexie {
   shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
   inventoryChannels!: Table<CachedRow, string>;
+  /** Which DataDocuments the Shopify inventory event feed listens to. */
+  inventoryEventDocuments!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -173,6 +175,8 @@ const CACHE_SCHEMA = {
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
   inventoryChannels:
     "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
+  // Keyed by (document, feed) because one document can sit on several feeds, or on none.
+  inventoryEventDocuments: "documentFeedKey, dataDocumentId, dataFeedId",
   organizations: "partyId, groupName, externalId, statusId",
   organizationRelationships:
     "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",

@@ -490,6 +490,34 @@ export const shopifyTypeMappingProjection = {
   },
 } as const;
 
+/**
+ * DataDocument ⋈ its feed — which OMS changes an inventory event feed listens to.
+ *
+ * One row per (document, feed). `DataDocumentAndFeed` left-joins, so a document attached to nothing
+ * arrives with NO dataFeedId at all, and a document on two feeds arrives twice; neither is an error
+ * and both have to survive into the cache. Hence the composite key, with an empty second half
+ * standing for "attached to nothing" - a key built from dataDocumentId alone would collapse the two
+ * feed rows onto each other, and returning undefined for the unattached case would drop exactly the
+ * row the screen exists to show.
+ */
+export const inventoryEventDocumentProjection = {
+  keyField: "documentFeedKey",
+  fields: {
+    documentFeedKey: "text",
+    dataDocumentId: "text",
+    dataFeedId: "text",
+    documentName: "text",
+    primaryEntityName: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const dataDocumentId = raw?.dataDocumentId;
+    if (!dataDocumentId) return undefined;
+    return `${String(dataDocumentId)}|${raw?.dataFeedId ? String(raw.dataFeedId) : ""}`;
+  },
+} as const;
+
+export const inventoryEventDocumentCache =
+  defineCachedEntity("inventoryEventDocuments", inventoryEventDocumentProjection);
 export const shopifyLocationCache = defineCachedEntity("shopifyLocations", shopifyLocationProjection);
 export const shopifyTypeMappingCache = defineCachedEntity("shopifyTypeMappings", shopifyTypeMappingProjection);
 export const dataFeedCache = defineCachedEntity("dataFeeds", dataFeedProjection);

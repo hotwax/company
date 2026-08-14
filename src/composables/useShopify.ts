@@ -33,6 +33,7 @@ import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
   productStoreCache,
+  inventoryEventDocumentCache,
   serviceJobCache,
   shopifyBulkOperationCache,
   shopifyCarrierShipmentCache,
@@ -142,24 +143,8 @@ export interface InventoryEventDocument {
   missing: boolean;
 }
 
-/**
- * Every inventory event document with its attachment state.
- *
- * One request: `DataDocumentAndFeed` left-joins DataFeedDocument, so an unattached document comes
- * back with a null dataFeedId rather than not at all. A document attached to several feeds returns a
- * row per feed, hence the reduce rather than a straight map.
- */
-export async function fetchInventoryEventDocuments(): Promise<InventoryEventDocument[]> {
-  const resp: any = await api({
-    url: "admin/dataDocuments",
-    method: "get",
-    // "Shopify" is a filter, not the definition of the set - the known ids below are. It only keeps
-    // the response small enough that paging cannot silently drop one of them.
-    params: { queryString: "Shopify", pageSize: 200 },
-  });
-  if (commonUtil.hasError(resp)) throw new Error("The OMS did not return its data documents.");
-
-  const rows: any[] = resp?.data?.dataDocuments ?? [];
+/** Collapse (document, feed) rows into one entry per document this feature ships. */
+function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
   const byId = new Map<string, { row: any; attached: boolean }>();
   for (const row of rows) {
     const id = String(row?.dataDocumentId ?? "");
@@ -180,6 +165,21 @@ export async function fetchInventoryEventDocuments(): Promise<InventoryEventDocu
       missing: !found,
     };
   });
+}
+
+/**
+ * Every inventory event document with its attachment state, from the cache.
+ *
+ * The cached table holds one row per (document, feed) because `DataDocumentAndFeed` left-joins:
+ * unattached documents arrive with no feed, and a document on two feeds arrives twice. Both shapes
+ * are collapsed here rather than in the projection, so the stored rows stay a faithful copy of what
+ * the OMS returned.
+ */
+export function useInventoryEventDocuments() {
+  const { records, hydrated } = useCachedList<any>(inventoryEventDocumentCache);
+  const documents = computed(() => toInventoryEventDocuments(
+    records.value.map((row: any) => row?.raw ?? row)));
+  return { documents, hydrated };
 }
 
 /**
@@ -206,6 +206,9 @@ export async function setInventoryEventDocumentAttached(
       ? "The OMS rejected attaching the document to the feed."
       : "The OMS rejected detaching the document from the feed.");
   }
+  // Write-through. The domain re-lists just this document and snapshot-replaces its slice, so the
+  // row for the feed it just left is pruned rather than left behind as a phantom attachment.
+  await refreshAfterMutation("inventoryEventDocument", { dataDocumentId });
 }
 
 /**
