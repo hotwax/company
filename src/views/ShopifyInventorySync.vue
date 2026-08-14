@@ -173,6 +173,7 @@
                 </ion-badge>
                 <ion-toggle
                   slot="end"
+                  :key="`feed-${inventoryEventFeedPush}-${toggleNonce}`"
                   aria-label="Use real-time push for Shopify inventory events"
                   :checked="inventoryEventFeedPush"
                   :disabled="inventoryEventFeedToggleDisabled"
@@ -213,6 +214,7 @@
                 </ion-label>
                 <ion-toggle
                   slot="end"
+                  :key="`${doc.dataDocumentId}-${doc.attached}-${toggleNonce}`"
                   :aria-label="`Feed events from ${doc.documentName}`"
                   :checked="doc.attached"
                   :disabled="doc.missing || savingDocumentId === doc.dataDocumentId"
@@ -1313,12 +1315,27 @@ async function loadInventoryEventDocuments() {
 }
 
 /**
+ * Bumped whenever a toggle must be redrawn from stored state rather than from the click.
+ *
+ * `@click.prevent` stops the default but NOT ion-toggle flipping its own internal checked state, so
+ * a cancelled confirm - or a failed write - leaves the control showing a value the server never took.
+ * Writing `checked` back on the element races Ionic's own update; including this in the toggle's
+ * `key` makes Vue discard and rebuild it instead, which can only render the bound value. Observed
+ * live before this: a document reading off while the server had it attached.
+ */
+const toggleNonce = ref(0);
+const redrawToggles = () => { toggleNonce.value += 1; };
+
+/**
  * Turning a source off is destructive in a way a toggle does not look: it stops that class of event
  * being RECORDED, so nothing accumulates to replay once it goes back on. Confirm before, and say that
  * the change is not instant - Moqui reads this through a cached query.
  */
 async function requestDocumentAttachChange(doc: InventoryEventDocument) {
-  if (doc.missing || savingDocumentId.value) return;
+  if (doc.missing || savingDocumentId.value) {
+    redrawToggles();
+    return;
+  }
   const attaching = !doc.attached;
 
   const alert = await alertController.create({
@@ -1332,7 +1349,10 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
     ],
   });
   await alert.present();
-  if ((await alert.onDidDismiss()).role !== "confirm") return;
+  if ((await alert.onDidDismiss()).role !== "confirm") {
+    redrawToggles();
+    return;
+  }
 
   savingDocumentId.value = doc.dataDocumentId;
   try {
@@ -1345,12 +1365,18 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
     commonUtil.showToast(error?.message || "Failed to update the event source.");
   } finally {
     savingDocumentId.value = "";
+    // The list was re-read above on success and left untouched on failure, so a redraw shows what is
+    // actually stored either way rather than what was clicked.
+    redrawToggles();
   }
 }
 
 async function requestInventoryEventFeedChange(event: Event) {
   event.stopImmediatePropagation();
-  if (inventoryEventFeedToggleDisabled.value) return;
+  if (inventoryEventFeedToggleDisabled.value) {
+    redrawToggles();
+    return;
+  }
 
   const enablePush = !inventoryEventFeedPush.value;
   const alert = await alertController.create({
@@ -1365,7 +1391,10 @@ async function requestInventoryEventFeedChange(event: Event) {
   });
   await alert.present();
   const result = await alert.onDidDismiss();
-  if (result.role !== "confirm") return;
+  if (result.role !== "confirm") {
+    redrawToggles();
+    return;
+  }
 
   inventoryEventFeedSaving.value = true;
   try {
