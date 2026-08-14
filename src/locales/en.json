@@ -39,6 +39,8 @@
   "Import Shopify locations as facilities and associate every imported facility with this Product Store.": "Import Shopify locations as facilities and associate every imported facility with this Product Store.",
   "Initial available inventory will load from the linked Shopify shop.": "Initial available inventory will load from the linked Shopify shop.",
   "Initial inventory import": "Initial inventory import",
+  "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences.": "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences.",
+  "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh.": "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh.",
   "Inventory preferences": "Inventory preferences",
   "Inventory setup saved. You can now load inventory.": "Inventory setup saved. You can now load inventory.",
   "Link Shopify shop": "Link Shopify shop",

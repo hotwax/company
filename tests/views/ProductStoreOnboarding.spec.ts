@@ -473,6 +473,59 @@ describe("ProductStoreOnboarding", () => {
     expect(configuration.text()).not.toContain("Missing")
   })
 
+  it.each([
+    {
+      evidence: "missing",
+      detail: "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh."
+    },
+    {
+      evidence: "unknown",
+      detail: "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences."
+    }
+  ])("disables inventory Save and explains $evidence template evidence", async ({ evidence, detail }) => {
+    configureExistingShopifySetup("inventory")
+    if(evidence === "missing") {
+      harness.productStoreData.currentShopifyJobStatus.jobs = harness.productStoreData.currentShopifyJobStatus.jobs.map((job: any) => {
+        if(job.key === "inventoryReset") {
+          return { ...job, ready: false, status: "missing-template", templateExists: false, expectedJobExists: false }
+        }
+
+        return job
+      })
+    } else {
+      harness.productStoreData.fetchStatus.shopifyJobStatus = "pending"
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const saveButton = buttonNamed(wrapper, "Save inventory setup")
+
+    expect(wrapper.text()).toContain(detail)
+    expect((saveButton.element as any).disabled).toBe(true)
+    await saveButton.trigger("click")
+    expect(harness.productStoreData.setupProductStoreShopifyInventoryReset).not.toHaveBeenCalled()
+    expect(harness.updateStore).not.toHaveBeenCalled()
+    expect(harness.saveSettings).not.toHaveBeenCalled()
+  })
+
+  it("runs inventory job preflight before preference writes and leaves preferences untouched when it fails", async () => {
+    configureExistingShopifySetup("inventory")
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    harness.wizard.draft.reserveInventory = "N"
+    await nextTick()
+    harness.productStoreData.setupProductStoreShopifyInventoryReset.mockRejectedValueOnce(new Error("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then refresh setup."))
+
+    const saveButton = buttonNamed(wrapper, "Save inventory setup")
+    expect((saveButton.element as any).disabled).toBe(false)
+    await saveButton.trigger("click")
+    await flushPromises()
+
+    expect(harness.productStoreData.setupProductStoreShopifyInventoryReset).toHaveBeenCalledOnce()
+    expect(harness.updateStore).not.toHaveBeenCalled()
+    expect(harness.saveSettings).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing.")
+    expect(harness.wizard.stepStatuses.inventory).toBe("attention")
+  })
+
   it("passes persisted run requests into exact initial-load correlation", async () => {
     await mountView({ productStoreId: "STORE" })
 

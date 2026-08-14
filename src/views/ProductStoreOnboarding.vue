@@ -852,8 +852,31 @@ const productSetupDirty = computed(() =>
   savedSetupSnapshots.products === null || savedSetupSnapshots.products !== captureProductSetup().snapshot)
 const canLoadProducts = computed(() =>
   canConfigureProducts.value && !productSetupDirty.value)
+const inventoryResetJobStatus = computed(() =>
+  productStoreData.currentShopifyJobStatus?.jobs?.find((job: any) => job.key === "inventoryReset") || null)
+const inventoryResetSetupAvailability = computed<"available" | "missing" | "unknown">(() => {
+  if(productStoreData.fetchStatus?.shopifyJobStatus !== "success") {return "unknown"}
+
+  const job = inventoryResetJobStatus.value
+  if(!job) {return "unknown"}
+  if(job.ready === true || job.templateExists === true || job.expectedJobExists === true ||
+    job.status === "template-ready") {return "available"}
+
+  return job.status === "missing-template" ? "missing" : "unknown"
+})
+const inventoryResetSetupDetail = computed(() => {
+  if(inventoryResetSetupAvailability.value === "missing") {
+    return "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh."
+  }
+  if(inventoryResetSetupAvailability.value === "unknown") {
+    return "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences."
+  }
+
+  return ""
+})
 const canConfigureInventory = computed(() =>
-  !!selectedProductStoreId.value && !!linkedShopId.value && mappedShopifyLocationCount.value > 0)
+  !!selectedProductStoreId.value && !!linkedShopId.value && mappedShopifyLocationCount.value > 0 &&
+  inventoryResetSetupAvailability.value === "available")
 const inventorySetupDirty = computed(() =>
   savedSetupSnapshots.inventory === null || savedSetupSnapshots.inventory !== captureInventorySetup().snapshot)
 const canLoadInventory = computed(() =>
@@ -942,7 +965,13 @@ const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => s
       locationMappingFetchStatus.value === "success"
     ),
     syncCheck("inventory-preferences", "Inventory preferences", inventoryPreferencesPersisted.value, productStoreConfigurationKnown.value),
-    syncCheck("inventory-job", "Initial inventory import", jobReady("inventoryReset"), shopifyConfigurationKnown.value)
+    syncCheck(
+      "inventory-job",
+      "Initial inventory import",
+      jobReady("inventoryReset"),
+      inventoryResetSetupAvailability.value !== "unknown",
+      inventoryResetSetupDetail.value
+    )
   ],
   shopifyConfigurationFailed.value || productStoreConfigurationFailed.value ||
     locationMappingFetchStatus.value === "error"
@@ -982,11 +1011,12 @@ const orderSyncBusyAction = computed<OnboardingSyncBusyAction>(() => syncBusyAct
 const canContinue = computed(() => currentStep.value.id !== "name" || !!selectedProductStoreId.value)
 const stepStatusPresentation = computed(() => reviewStatus(currentStep.value.id))
 
-function syncCheck(id: string, label: string, complete: boolean, known: boolean) {
+function syncCheck(id: string, label: string, complete: boolean, known: boolean, detail = "") {
   return {
     id,
     label,
-    status: known ? (complete ? "complete" as const : "missing" as const) : "unknown" as const
+    status: known ? (complete ? "complete" as const : "missing" as const) : "unknown" as const,
+    detail
   }
 }
 
@@ -1635,6 +1665,16 @@ async function saveInventorySetup() {
   busy.inventory = true
   feedback.inventory = null
   try {
+    // Provisioning is the preflight for the preference writes below. A missing backend template or
+    // clone target must fail before ProductStore/ProductStoreSetting can be partially updated.
+    const jobResponse = await productStoreData.setupProductStoreShopifyInventoryReset({
+      productStoreId: setup.productStoreId,
+      shopId: setup.shopId,
+      activateJobs: false,
+      inventoryResetAdditionalParameters: {}
+    })
+    if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
+
     const storeResponse = await useProductStoreMutations(setup.productStoreId).updateStore({
       reserveInventory: setup.reserveInventory
     })
@@ -1645,14 +1685,6 @@ async function saveInventorySetup() {
       settingValue: setup.showSystemicInventory
     })
     if(responseFailed(settingResponse)) {throw settingResponse?.data || settingResponse}
-
-    const jobResponse = await productStoreData.setupProductStoreShopifyInventoryReset({
-      productStoreId: setup.productStoreId,
-      shopId: setup.shopId,
-      activateJobs: false,
-      inventoryResetAdditionalParameters: {}
-    })
-    if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
     savedSetupSnapshots.inventory = setup.snapshot
     onboarding.setRunRequest("inventory", null)

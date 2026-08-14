@@ -162,7 +162,10 @@ describe("Product Store API contracts", () => {
     ]);
   });
 
-  function mockShopifySetupApis() {
+  function mockShopifySetupApis(options: {
+    includeInventoryTemplate?: boolean;
+    materializeInventoryClone?: boolean;
+  } = {}) {
     const jobs = new Map<string, any>([
       ["sync_ShopifyInventoryReset", {
         jobName: "sync_ShopifyInventoryReset",
@@ -186,6 +189,9 @@ describe("Product Store API contracts", () => {
         ],
       }],
     ]);
+    if(options.includeInventoryTemplate === false) {
+      jobs.delete("sync_ShopifyInventoryReset");
+    }
 
     mocks.api.mockImplementation((request: any) => {
       const method = String(request.method || "get").toLowerCase();
@@ -210,15 +216,17 @@ describe("Product Store API contracts", () => {
         const templateJobName = url.slice("admin/serviceJobs/".length, -"/clone".length);
         const template = jobs.get(templateJobName);
         const newJobName = request.data.newJobName;
-        jobs.set(newJobName, {
-          ...template,
-          jobName: newJobName,
-          parentJobName: templateJobName,
-          serviceJobParameters: (template?.serviceJobParameters || []).map((parameter: any) => ({
-            ...parameter,
+        if(templateJobName !== "sync_ShopifyInventoryReset" || options.materializeInventoryClone !== false) {
+          jobs.set(newJobName, {
+            ...template,
             jobName: newJobName,
-          })),
-        });
+            parentJobName: templateJobName,
+            serviceJobParameters: (template?.serviceJobParameters || []).map((parameter: any) => ({
+              ...parameter,
+              jobName: newJobName,
+            })),
+          });
+        }
 
         return Promise.resolve({ data: {} });
       }
@@ -270,6 +278,67 @@ describe("Product Store API contracts", () => {
     expect(response.data.shopifyJobsStatus.jobs.find((job: any) => job.key === "inventoryReset")).toMatchObject({
       configured: true,
       selectedJobName: "sync_ShopifyInventoryReset_SHOP_100",
+    });
+  });
+
+  it("rejects inventory setup before cloning when its backend template is missing", async () => {
+    mockShopifySetupApis({ includeInventoryTemplate: false });
+
+    await expect(useProductStoreData().setupProductStoreShopifyInventoryReset({
+      productStoreId: "STORE_1",
+      shopId: "SHOP_100",
+      activateJobs: false,
+    })).rejects.toThrow("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing.");
+
+    expect(mocks.api).not.toHaveBeenCalledWith(expect.objectContaining({
+      url: "admin/serviceJobs/sync_ShopifyInventoryReset/clone",
+    }));
+  });
+
+  it("exposes inventory template and target availability in the live setup status", async () => {
+    const jobs = mockShopifySetupApis();
+    const productStoreData = useProductStoreData();
+
+    await expect(productStoreData.fetchProductStoreShopifyJobStatus("STORE_1")).resolves.toEqual(expect.objectContaining({
+      jobs: expect.arrayContaining([
+        expect.objectContaining({
+          key: "inventoryReset",
+          status: "template-ready",
+          templateExists: true,
+          expectedJobExists: false,
+        }),
+      ]),
+    }));
+
+    jobs.delete("sync_ShopifyInventoryReset");
+    await expect(productStoreData.fetchProductStoreShopifyJobStatus("STORE_1")).resolves.toEqual(expect.objectContaining({
+      jobs: expect.arrayContaining([
+        expect.objectContaining({
+          key: "inventoryReset",
+          status: "missing-template",
+          templateExists: false,
+          expectedJobExists: false,
+        }),
+      ]),
+    }));
+  });
+
+  it("rejects inventory setup when the backend clone response does not create its target job", async () => {
+    mockShopifySetupApis({ materializeInventoryClone: false });
+
+    await expect(useProductStoreData().setupProductStoreShopifyInventoryReset({
+      productStoreId: "STORE_1",
+      shopId: "SHOP_100",
+      activateJobs: false,
+    })).rejects.toThrow("Initial inventory import cannot be configured because clone target sync_ShopifyInventoryReset_SHOP_100 was not created.");
+
+    expect(mocks.api).toHaveBeenCalledWith({
+      url: "admin/serviceJobs/sync_ShopifyInventoryReset/clone",
+      method: "post",
+      data: {
+        newJobName: "sync_ShopifyInventoryReset_SHOP_100",
+        copyParameters: true,
+      },
     });
   });
 

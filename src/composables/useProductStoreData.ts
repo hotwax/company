@@ -40,6 +40,7 @@ const SHOPIFY_JOB_SPECS = [
 ]
 
 const ORDER_DATA_MANAGER_CONFIG_IDS = ["SYNC_SHOPIFY_ORDER", "BULK_ORDER_HISTORY"]
+const INVENTORY_RESET_TEMPLATE_JOB_NAME = "sync_ShopifyInventoryReset"
 // SHOP_RW_ACCESS is the official read-write access scope. The full-form SHOP_READ_WRITE_ACCESS
 // is deprecated and not enforced — a remote still on it is treated as needing a fix (force-replace
 // to SHOP_RW_ACCESS via the scope-fix action), not as already having read-write access.
@@ -169,6 +170,21 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
     created,
     activated: isTruthy(activateJob)
   }
+}
+
+async function preflightInventoryResetJob(shopId: string) {
+  const targetJobName = `${INVENTORY_RESET_TEMPLATE_JOB_NAME}_${shopId}`
+  const targetJob = await fetchServiceJob(targetJobName)
+  if(targetJob?.jobName) {
+    return targetJobName
+  }
+
+  const templateJob = await fetchServiceJob(INVENTORY_RESET_TEMPLATE_JOB_NAME)
+  if(!templateJob?.jobName) {
+    throw new Error(`Initial inventory import cannot be configured because the backend service-job template ${INVENTORY_RESET_TEMPLATE_JOB_NAME} is missing. Ask the backend owner to load the Shopify inventory reset seed data, then refresh setup.`)
+  }
+
+  return targetJobName
 }
 
 async function storeServiceJobParameter(jobName: string, parameterName: string, parameterValue: any) {
@@ -399,6 +415,8 @@ function buildShopifyJobStatusFromRecords(payload: {
       ready,
       status: ready ? (requiresEnabled ? "enabled" : "configured") : (configured ? "paused" : (templateJob ? "template-ready" : "missing-template")),
       selectedJobName: enabledJobs[0]?.jobName || configuredJobs[0]?.jobName || null,
+      templateExists: !!templateJob,
+      expectedJobExists: !!expectedJob,
       templateJob,
       expectedJob,
       jobs: sanitizedCandidates
@@ -703,10 +721,15 @@ async function setupProductStoreShopifyInventoryReset(payload: {
   })
 
   const resolvedShopId = valueText(context.shop.shopId)
-  const inventoryResetJobName = `sync_ShopifyInventoryReset_${resolvedShopId}`
+  const inventoryResetJobName = await preflightInventoryResetJob(resolvedShopId)
   const configuredJobs = [
-    await ensureServiceJobFromTemplate("sync_ShopifyInventoryReset", inventoryResetJobName, payload.activateJobs)
+    await ensureServiceJobFromTemplate(INVENTORY_RESET_TEMPLATE_JOB_NAME, inventoryResetJobName, payload.activateJobs)
   ]
+
+  const configuredInventoryResetJob = await fetchServiceJob(inventoryResetJobName)
+  if(!configuredInventoryResetJob?.jobName) {
+    throw new Error(`Initial inventory import cannot be configured because clone target ${inventoryResetJobName} was not created. Ask the backend owner to verify the Shopify inventory reset template, then refresh setup.`)
+  }
 
   // The inbound inventory-reset seed accepts only shopId. The job resolves the matching
   // SystemMessageRemote itself; configuring the outbound ResetInventoryQoh parameters here would
@@ -715,9 +738,10 @@ async function setupProductStoreShopifyInventoryReset(payload: {
   await refreshServiceJobCache([inventoryResetJobName])
 
   const shopifyJobsStatus = await fetchProductStoreShopifyJobStatus(payload.productStoreId)
-  if (shopifyJobsStatus) {
+  if(shopifyJobsStatus) {
     state.currentShopifyJobStatus = shopifyJobsStatus
   }
+
   return buildSuccessResponse({ configuredJobs, shopifyJobsStatus })
 }
 
