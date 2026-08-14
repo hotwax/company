@@ -945,7 +945,15 @@ const editingChannel = ref<any>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
 
-const PUBLISH_PENDING_SERVICE = "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments";
+// Both implementations of "publish this channel's pending events" are matched. The seeded job runs
+// drain#, which repeats publish# until the channel's queue is empty; publish# stays a valid service a
+// channel can be pointed at directly, and unreleased branches still carry clones on it. Matching only
+// one silently drops the job out of this panel - it renders as "Not configured" with no schedule,
+// which is exactly what happened when the seeded job moved from publish# to drain#.
+const PUBLISH_PENDING_SERVICES = [
+  "co.hotwax.sob.product.InventoryServices.drain#PendingShopifyInventoryAdjustments",
+  "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments",
+];
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
 const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
@@ -1074,7 +1082,7 @@ const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) =>
 const pendingPublisherJob = computed<any>(() => {
   const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
   return cachedJobs.value.find((job: any) =>
-    job.serviceName === PUBLISH_PENDING_SERVICE &&
+    PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
     channelIds.has(String(parameterMap(job).inventoryChannelId ?? ""))) ?? null;
 });
 
