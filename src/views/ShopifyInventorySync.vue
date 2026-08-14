@@ -151,8 +151,8 @@
               >
                 <ion-icon :icon="layersOutline" slot="start" />
                 <ion-label class="ion-text-wrap">
-                  {{ channel.facilityGroupName || channel.facilityGroupId }}
-                  <p>{{ channel.description || channel.inventoryChannelId }}</p>
+                  {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
+                  <p>{{ channelSubtitle(channel) }}</p>
                 </ion-label>
                 <ion-label slot="end" class="ion-text-end">
                   {{ channel.shopifyLocationId }}
@@ -849,6 +849,7 @@ import {
   dataFeedCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
+  shopifyShopCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
@@ -983,6 +984,14 @@ const shopChannelIds = computed(() => allInventoryChannels.value
   .map((channel: any) => String(channel.inventoryChannelId))
   .filter(Boolean)
   .sort());
+
+/** Shops by id, for naming a channel's target. Cached table, so no request per row. */
+const { records: allShopifyShops } = useCachedList<any>(shopifyShopCache);
+const shopsById = computed<Record<string, any>>(() =>
+  allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
+    map[String(shop.shopId)] = shop;
+    return map;
+  }, {}));
 
 const inventoryDetails = computed(() => {
   const scope = new Set(shopChannelIds.value);
@@ -1446,6 +1455,22 @@ async function openChannelSetup() {
   // The channel drives which reset jobs belong to this connection, so pull both domains again
   // rather than waiting for the next scheduled sync pass.
   if (data?.created) await startSyncDomains(activeSyncDomains());
+}
+
+/**
+ * "Online Facility Group · HC Demo" - what the channel maps, in the names people use for those two
+ * things rather than their ids.
+ *
+ * Both halves are already cached: facilityGroupName rides along on the channel row, and the shop's
+ * name comes from the shop table this page is scoped to, so this is a local read and not a fetch per
+ * row. Falls back to the id on either side rather than rendering a bare separator, which is what a
+ * shop whose row has not landed yet would otherwise produce.
+ */
+function channelSubtitle(channel: any): string {
+  const groupLabel = channel?.facilityGroupName || channel?.facilityGroupId || "";
+  const shop = shopsById.value[String(channel?.shopId ?? "")];
+  const shopLabel = shop?.name || shop?.myshopifyDomain || channel?.shopId || "";
+  return [groupLabel, shopLabel].filter(Boolean).join(" · ");
 }
 
 function openChannelEdit(channel: any) {
