@@ -181,6 +181,46 @@
               </ion-item>
             </ion-list>
           </ion-card>
+
+          <ion-card>
+            <ion-card-header>
+              <ion-card-title>Event sources</ion-card-title>
+              <ion-card-subtitle>
+                Which OMS changes this feed listens to. Turning one off stops that kind of inventory
+                event being recorded at all.
+              </ion-card-subtitle>
+            </ion-card-header>
+            <ion-list lines="full">
+              <ion-item v-if="documentsLoading && !inventoryEventDocuments.length" lines="none">
+                <ion-spinner name="crescent" />
+              </ion-item>
+
+              <ion-item v-else-if="documentsError" lines="none" role="alert">
+                <ion-label class="ion-text-wrap">
+                  Event sources unavailable
+                  <p>{{ documentsError }}</p>
+                </ion-label>
+                <ion-button slot="end" fill="outline" @click="loadInventoryEventDocuments()">Retry</ion-button>
+              </ion-item>
+
+              <ion-item v-for="doc in inventoryEventDocuments" :key="doc.dataDocumentId">
+                <ion-label class="ion-text-wrap">
+                  {{ doc.documentName }}
+                  <p>{{ doc.primaryEntityName || doc.dataDocumentId }}</p>
+                  <!-- A document the OMS has never heard of cannot be attached, and calling it
+                       "off" would send someone hunting for a toggle that will not help. -->
+                  <p v-if="doc.missing">Not loaded on this OMS &mdash; run the connector's seed data</p>
+                </ion-label>
+                <ion-toggle
+                  slot="end"
+                  :aria-label="`Feed events from ${doc.documentName}`"
+                  :checked="doc.attached"
+                  :disabled="doc.missing || savingDocumentId === doc.dataDocumentId"
+                  @click.prevent="requestDocumentAttachChange(doc)"
+                />
+              </ion-item>
+            </ion-list>
+          </ion-card>
         </section>
 
 
@@ -831,8 +871,11 @@ import {
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+  fetchInventoryEventDocuments,
+  setInventoryEventDocumentAttached,
   updateShopifyInventoryEventFeedType,
   useShopifySyncContext,
+  type InventoryEventDocument,
 } from "@/composables/useShopify";
 import {
   dataFeedCache,
@@ -1251,6 +1294,60 @@ const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.stat
   ? "Needs attention" : "Healthy");
 const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
 
+// ----- Event sources: which DataDocuments this feed listens to -----
+const inventoryEventDocuments = ref<InventoryEventDocument[]>([]);
+const documentsLoading = ref(false);
+const documentsError = ref("");
+const savingDocumentId = ref("");
+
+async function loadInventoryEventDocuments() {
+  documentsLoading.value = true;
+  documentsError.value = "";
+  try {
+    inventoryEventDocuments.value = await fetchInventoryEventDocuments();
+  } catch (error: any) {
+    documentsError.value = error?.message || "The OMS did not return its data documents.";
+  } finally {
+    documentsLoading.value = false;
+  }
+}
+
+/**
+ * Turning a source off is destructive in a way a toggle does not look: it stops that class of event
+ * being RECORDED, so nothing accumulates to replay once it goes back on. Confirm before, and say that
+ * the change is not instant - Moqui reads this through a cached query.
+ */
+async function requestDocumentAttachChange(doc: InventoryEventDocument) {
+  if (doc.missing || savingDocumentId.value) return;
+  const attaching = !doc.attached;
+
+  const alert = await alertController.create({
+    header: attaching ? `Listen to ${doc.documentName}?` : `Stop listening to ${doc.documentName}?`,
+    message: attaching
+      ? "New changes of this kind will start producing inventory events. Changes made while it was off were not recorded and will not be replayed; run a full aggregate ATP reset to reconcile."
+      : "Changes of this kind stop producing inventory events entirely, and nothing accumulates to catch up on later. Shopify keeps whatever quantity it already has until a full aggregate ATP reset corrects it.",
+    buttons: [
+      { text: "Cancel", role: "cancel" },
+      { text: attaching ? "Start listening" : "Stop listening", role: "confirm" },
+    ],
+  });
+  await alert.present();
+  if ((await alert.onDidDismiss()).role !== "confirm") return;
+
+  savingDocumentId.value = doc.dataDocumentId;
+  try {
+    await setInventoryEventDocumentAttached(doc.dataDocumentId, attaching);
+    await loadInventoryEventDocuments();
+    commonUtil.showToast(attaching
+      ? "Event source enabled. It can take a few minutes to take effect."
+      : "Event source disabled. Events already recorded are unaffected.");
+  } catch (error: any) {
+    commonUtil.showToast(error?.message || "Failed to update the event source.");
+  } finally {
+    savingDocumentId.value = "";
+  }
+}
+
 async function requestInventoryEventFeedChange(event: Event) {
   event.stopImmediatePropagation();
   if (inventoryEventFeedToggleDisabled.value) return;
@@ -1319,6 +1416,8 @@ onIonViewWillEnter(() => {
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
+  // Not cached: DataFeedDocument has no sync domain, and this is the one screen that reads it.
+  void loadInventoryEventDocuments();
 });
 
 onIonViewDidLeave(() => {

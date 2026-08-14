@@ -112,6 +112,103 @@ export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: st
 }
 
 /**
+ * The DataDocuments this feature ships, in the order the pipeline reads best.
+ *
+ * Listed rather than discovered so a document that is NOT attached is visibly missing instead of
+ * simply absent - "why did no POS event fire?" is the question this screen exists to answer, and a
+ * discovered list answers it with silence. Mirrors data/DA_ExtSeed_ShopifyDocumentData.xml in the
+ * connector; a document added there needs adding here to become visible.
+ */
+export const SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS = [
+  "ShopifyShipmentReceiptEvent",
+  "ShopifyPosItemIssuanceEvent",
+  "ShopifyPhysicalInventoryEvent",
+  "ShopifyExternalInventoryResetEvent",
+  "ShopifyReservationCreatedEvent",
+  "ShopifyReservationReleaseEvent",
+  "ShopifyProductFacilityAuditEvent",
+  "ShopifyProductStoreFacilityAuditEvent",
+  "ShopifyFacilityGroupMemberEvent",
+  "ShopifyInventoryChannelAuditEvent",
+] as const;
+
+export interface InventoryEventDocument {
+  dataDocumentId: string;
+  documentName: string;
+  primaryEntityName: string;
+  /** false when the row exists but carries no DataFeedDocument for this feed. */
+  attached: boolean;
+  /** true when the OMS has no DataDocument by this id at all - the seed data never loaded. */
+  missing: boolean;
+}
+
+/**
+ * Every inventory event document with its attachment state.
+ *
+ * One request: `DataDocumentAndFeed` left-joins DataFeedDocument, so an unattached document comes
+ * back with a null dataFeedId rather than not at all. A document attached to several feeds returns a
+ * row per feed, hence the reduce rather than a straight map.
+ */
+export async function fetchInventoryEventDocuments(): Promise<InventoryEventDocument[]> {
+  const resp: any = await api({
+    url: "admin/dataDocuments",
+    method: "get",
+    // "Shopify" is a filter, not the definition of the set - the known ids below are. It only keeps
+    // the response small enough that paging cannot silently drop one of them.
+    params: { queryString: "Shopify", pageSize: 200 },
+  });
+  if (commonUtil.hasError(resp)) throw new Error("The OMS did not return its data documents.");
+
+  const rows: any[] = resp?.data?.dataDocuments ?? [];
+  const byId = new Map<string, { row: any; attached: boolean }>();
+  for (const row of rows) {
+    const id = String(row?.dataDocumentId ?? "");
+    if (!id) continue;
+    const attached = String(row?.dataFeedId ?? "") === SHOPIFY_INVENTORY_EVENT_FEED_ID;
+    const seen = byId.get(id);
+    // Attached on any row wins: the same document can appear once per feed it belongs to.
+    byId.set(id, { row: seen?.row ?? row, attached: (seen?.attached ?? false) || attached });
+  }
+
+  return SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS.map((id) => {
+    const found = byId.get(id);
+    return {
+      dataDocumentId: id,
+      documentName: found?.row?.documentName || id,
+      primaryEntityName: found?.row?.primaryEntityName || "",
+      attached: found?.attached ?? false,
+      missing: !found,
+    };
+  });
+}
+
+/**
+ * Attach or detach one document from the inventory event feed.
+ *
+ * Not cosmetic: for a real-time feed Moqui derives which entity writes fire the feed from the
+ * documents attached to it, so detaching one stops that class of inventory event being recorded at
+ * all. The change lands when the entity cache behind that lookup expires, not immediately.
+ */
+export async function setInventoryEventDocumentAttached(
+  dataDocumentId: string,
+  attached: boolean,
+): Promise<void> {
+  const base = `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}/documents`;
+  const resp: any = attached
+    ? await api({
+      url: base,
+      method: "post",
+      data: { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID, dataDocumentId },
+    })
+    : await api({ url: `${base}/${dataDocumentId}`, method: "delete" });
+  if (commonUtil.hasError(resp)) {
+    throw new Error(attached
+      ? "The OMS rejected attaching the document to the feed."
+      : "The OMS rejected detaching the document from the feed.");
+  }
+}
+
+/**
  * Map one facility group to one Shopify location as an aggregate inventory channel.
  *
  * fromDate is deliberately omitted: the InventoryChannel entity defaults it to the OMS's own
@@ -4179,11 +4276,29 @@ export function useShopifyAccessScopes() {
 }
 
 /**
- * Create a Shopify connection: the SystemMessageRemote (credentials + linkage) and the ShopifyShop.
+ * Create a Shopify connection: the ShopifyShop, then its credentials via the OMS's own install service.
  *
- * Moved verbatim from the store except the ending: the store pushed the new shop into its own array,
- * which no cached read ever saw — a freshly created connection was invisible on every converted page
- * until the next login snapshot. Write-through refreshes both cached sides instead.
+ * Two rows are not enough. Every publishing service resolves a shop's credentials through
+ * `ShopifyHelper.getShopRemote(shopId, 'SsctShopifyDefaultApp')`, which reads `ShopifyShopRemote` — a
+ * third, link row. This function used to create the `SystemMessageRemote` with a raw entity POST and
+ * never that link, so the app showed a healthy, fully-credentialed connection while the publisher
+ * resolved nothing: the absolute inventory reset failed with "no write-capable Shopify remote
+ * connection" and the real-time event fan-out recorded nothing at all.
+ *
+ * So the credential half is no longer ours to assemble. `POST sob/shop` (`store#ShopifyShop`) is the
+ * same entry point Keychain calls when a merchant installs the app, and it owns creating the remote,
+ * the link row and the purpose in one transaction. Manual creation now takes the automatic path, which
+ * is what stops the two from drifting apart again.
+ *
+ * The shop is created FIRST, and deliberately by us: given no existing shop for the domain,
+ * `store#ShopifyShop` runs its first-install branch, which assigns its own sequenced `shopId` and has
+ * nowhere to put `productStoreId`. Creating the shop up front means the caller's chosen id and product
+ * store survive, and the service takes its "shop exists, no remote yet" branch instead — which creates
+ * exactly the remote and link row that were missing.
+ *
+ * Write-through refreshes both cached sides: the store used to push the new shop into its own array,
+ * which no cached read ever saw, so a freshly created connection was invisible on every converted page
+ * until the next login snapshot.
  */
 export async function createShopifyConnection(payload: {
   shopId: string;
@@ -4195,27 +4310,7 @@ export async function createShopifyConnection(payload: {
   name?: string;
   productStoreId?: string;
 }) {
-  // Predictable remote id so the remote↔shop linkage is self-describing.
-  const systemMessageRemoteId = `${payload.shopId}_REMOTE`;
-  const remoteResp: any = await api({
-    url: "oms/systemMessageRemotes",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      sendUrl: payload.myshopifyDomain,
-      remoteAppCode: payload.clientId,
-      sharedSecret: payload.clientSecret,
-      sendSharedSecret: payload.shopAccessToken,
-      password: payload.shopAccessToken,
-      remoteId: payload.shopifyShopId,
-      remoteIdType: "SHOPIFY_SHOP_ID",
-      internalId: payload.shopId,
-      internalIdType: "HOTWAX_SHOP_ID",
-      authHeaderName: "X-Shopify-Access-Token",
-      description: payload.name || payload.myshopifyDomain,
-    },
-  });
-  if (commonUtil.hasError(remoteResp)) throw remoteResp;
+  const name = payload.name || payload.myshopifyDomain.split(".")[0];
 
   const shopResp: any = await api({
     url: "oms/shopifyShops/shops",
@@ -4224,23 +4319,50 @@ export async function createShopifyConnection(payload: {
       shopId: payload.shopId,
       shopifyShopId: payload.shopifyShopId,
       myshopifyDomain: payload.myshopifyDomain,
-      name: payload.name || payload.myshopifyDomain.split(".")[0],
+      name,
       productStoreId: payload.productStoreId || undefined,
       isEnabled: "Y",
     },
   });
   if (commonUtil.hasError(shopResp)) throw shopResp;
 
-  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  // Creates the SystemMessageRemote, the ShopifyShopRemote link for SsctShopifyDefaultApp, and syncs
+  // live shop metadata (currency, timezone, primaryLocationId) that the inventory-channel setup reads.
+  // It is idempotent: re-running with the same credentials updates in place rather than duplicating,
+  // which also makes it the repair path for a connection left without a link row.
+  const remoteResp: any = await api({
+    url: "sob/shop",
+    method: "post",
+    data: {
+      name,
+      shopifyShopId: payload.shopifyShopId,
+      myshopifyDomain: payload.myshopifyDomain,
+      clientId: payload.clientId,
+      clientSecret: payload.clientSecret,
+      shopAccessToken: payload.shopAccessToken,
+    },
+  });
+  if (commonUtil.hasError(remoteResp)) {
+    // The shop row is committed but has no usable credentials. Say so, because the failure the caller
+    // must act on is a rejected token, not a missing shop — and re-submitting the same form completes it.
+    logger.error("createShopifyConnection: shop created but credentials were rejected", remoteResp);
+    throw remoteResp;
+  }
+
+  const systemMessageRemoteId = remoteResp?.data?.systemMessageRemoteId;
+  if (systemMessageRemoteId) {
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  }
   await refreshAfterMutation("shopifyShop", { shopId: payload.shopId });
 
   return {
     shopId: payload.shopId,
     shopifyShopId: payload.shopifyShopId,
     myshopifyDomain: payload.myshopifyDomain,
-    name: payload.name || payload.myshopifyDomain.split(".")[0],
+    name,
     productStoreId: payload.productStoreId || null,
     isEnabled: "Y",
+    systemMessageRemoteId: systemMessageRemoteId || null,
   };
 }
 
