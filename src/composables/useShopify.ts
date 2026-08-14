@@ -142,6 +142,37 @@ export async function createInventoryChannel(params: {
   return inventoryChannelId;
 }
 
+/**
+ * Edit an existing channel: its description, the Shopify location it feeds, or its thruDate.
+ *
+ * shopId and facilityGroupId are deliberately not editable. Either one changing makes this a mapping
+ * between different things rather than an edit of this one, and the pending deltas already recorded
+ * against the channel were calculated for the old pair.
+ *
+ * Moving shopifyLocationId is a real inventory operation, not a label change: the OMS records a
+ * clearing delta against the location being left so it does not keep the stock forever, and the new
+ * location is seeded by a full aggregate ATP reset. Expiring a channel (thruDate) clears its location
+ * the same way.
+ */
+export async function updateInventoryChannel(params: {
+  inventoryChannelId: string;
+  description?: string;
+  shopifyLocationId?: string;
+  thruDate?: string | null;
+}): Promise<void> {
+  const { inventoryChannelId, ...changes } = params;
+  const resp: any = await api({
+    url: `sob/shopify/inventoryChannels/${inventoryChannelId}`,
+    method: "put",
+    data: { inventoryChannelId, ...changes },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel change.");
+  }
+  // The PUT returns nothing useful and the sync screen reads the cached row.
+  await refreshAfterMutation("inventoryChannel", { inventoryChannelId });
+}
+
 const EVENT_PUBLISHER_TEMPLATE_JOB = "publish_PendingShopifyInventoryAdjustments";
 /** Shared by every `queue_*` feed job on this OMS; the message type is what differentiates them. */
 const FEED_SYSTEM_MESSAGE_SERVICE =

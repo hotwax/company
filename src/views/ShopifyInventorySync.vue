@@ -142,7 +142,13 @@
                      cannot be published until a facility group is mapped to a Shopify location.</p>
                 </ion-label>
               </ion-item>
-              <ion-item v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
+              <ion-item
+                v-for="channel in inventoryChannels"
+                :key="channel.inventoryChannelId"
+                button
+                detail
+                @click="openChannelEdit(channel)"
+              >
                 <ion-icon :icon="layersOutline" slot="start" />
                 <ion-label class="ion-text-wrap">
                   {{ channel.facilityGroupName || channel.facilityGroupId }}
@@ -798,6 +804,13 @@
       @updated="refreshServiceJobData"
       @close="selectedServiceJob = null"
     />
+
+    <EditInventoryChannelModal
+      :is-open="!!editingChannel"
+      :channel="editingChannel"
+      @updated="onChannelUpdated"
+      @close="editingChannel = null"
+    />
   </ion-page>
 </template>
 
@@ -843,6 +856,7 @@ import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
+import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 
 type ViewName = "monitor" | "history";
 type HistoryMode = "events" | "batches";
@@ -892,6 +906,7 @@ const selectedEvent = ref<InventoryEvent | null>(null);
 const selectedBatch = ref<Batch | null>(null);
 const messageBatch = ref<Batch | null>(null);
 const selectedServiceJob = ref<{ jobName: string; title: string } | null>(null);
+const editingChannel = ref<any>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
 
@@ -1431,6 +1446,16 @@ async function openChannelSetup() {
   // The channel drives which reset jobs belong to this connection, so pull both domains again
   // rather than waiting for the next scheduled sync pass.
   if (data?.created) await startSyncDomains(activeSyncDomains());
+}
+
+function openChannelEdit(channel: any) {
+  editingChannel.value = channel;
+}
+
+async function onChannelUpdated() {
+  // Changing the location changes what the reset jobs target, so re-read rather than waiting for the
+  // next scheduled pass.
+  await startSyncDomains(activeSyncDomains());
 }
 
 /** The one way into a job's configuration - from its row in Inventory sync jobs. */
