@@ -87,6 +87,39 @@
             </ion-list>
           </ion-card>
 
+          <!-- Sits beside the queue card rather than in a section of its own further down: the two
+               answer the paired questions a monitor is opened for (what is waiting, and what will
+               move it), and after the duplicate schedule card was removed each was left spanning a
+               desktop width to hold four rows. `auto-fit` still stacks them on narrow screens. -->
+          <ion-card>
+            <ion-card-header>
+              <ion-card-title>Inventory sync jobs</ion-card-title>
+              <ion-card-subtitle>Schedules, recent runs, and current health</ion-card-subtitle>
+              <!-- The rollup badge that used to head its own card. Every job's status is listed
+                   below it, so this is the summary of the rows it sits on rather than a second
+                   place to read the same schedules. -->
+              <ion-badge :color="scheduleHealthColor">{{ scheduleHealth }}</ion-badge>
+            </ion-card-header>
+            <ion-list lines="full">
+              <ion-item
+                v-for="job in monitoredJobs"
+                :key="job.name"
+                :button="!!job.job"
+                :detail="!!job.job"
+                @click="openServiceJob(job.job, job.name)"
+              >
+                <ion-icon slot="start" :icon="job.icon" />
+                <ion-label>
+                  {{ job.name }}
+                  <p>{{ job.lastRun }}</p>
+                  <p>{{ job.nextRun }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="job.badgeColor">
+                  {{ job.status }}
+                </ion-badge>
+              </ion-item>
+            </ion-list>
+          </ion-card>
         </section>
 
         <section class="inventory-channels">
@@ -155,44 +188,6 @@
           </ion-card>
         </section>
 
-        <section class="sync-monitor">
-          <ion-item lines="none">
-            <ion-label>
-              <h2>Sync monitor</h2>
-              <p>Review the jobs that move physical and aggregate inventory to Shopify</p>
-            </ion-label>
-          </ion-item>
-
-          <ion-card>
-            <ion-card-header>
-              <ion-card-title>Inventory sync jobs</ion-card-title>
-              <ion-card-subtitle>Schedules, recent runs, and current health</ion-card-subtitle>
-              <!-- The rollup badge that used to head its own card. Every job's status is listed
-                   below it, so this is the summary of the rows it sits on rather than a second
-                   place to read the same schedules. -->
-              <ion-badge :color="scheduleHealthColor">{{ scheduleHealth }}</ion-badge>
-            </ion-card-header>
-            <ion-list lines="full">
-              <ion-item
-                v-for="job in monitoredJobs"
-                :key="job.name"
-                :button="!!job.job"
-                :detail="!!job.job"
-                @click="openServiceJob(job.job, job.name)"
-              >
-                <ion-icon slot="start" :icon="job.icon" />
-                <ion-label>
-                  {{ job.name }}
-                  <p>{{ job.lastRun }}</p>
-                  <p>{{ job.nextRun }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="job.badgeColor">
-                  {{ job.status }}
-                </ion-badge>
-              </ion-item>
-            </ion-list>
-          </ion-card>
-        </section>
 
         <section class="run-section">
           <div class="section-header">
@@ -1495,15 +1490,14 @@ function formatAge(timestamp: number): string {
   padding-inline-end: var(--spacer-2xl);
 }
 
+/* ion-badge fills its line inside a card header, so without the summary-grid selector here the
+   health rollup rendered as a full-width bar across the card instead of a chip in its corner. */
 .summary-grid ion-card-header ion-buttons,
+.summary-grid ion-card-header ion-badge,
 .run-carousel ion-card-header ion-badge {
   position: absolute;
   inset-block-start: var(--spacer-xs);
   inset-inline-end: var(--spacer-xs);
-}
-
-.sync-monitor > ion-item {
-  margin-block-start: var(--spacer-sm);
 }
 
 .event-feed-settings > ion-item {
@@ -1573,8 +1567,7 @@ function formatAge(timestamp: number): string {
 }
 
 .run-carousel ion-label,
-.summary-grid ion-label,
-.sync-monitor ion-label {
+.summary-grid ion-label {
   min-width: 0;
   white-space: normal;
 }
@@ -1790,7 +1783,6 @@ ion-modal p {
 
   .summary-grid ion-item,
   .event-feed-settings ion-item,
-  .sync-monitor ion-item,
   .run-carousel ion-item,
   ion-modal ion-item {
     --inner-padding-end: var(--spacer-xs);
