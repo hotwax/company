@@ -1249,31 +1249,34 @@ function eventState(detail: any): { status: string; badgeColor: string } {
   }
 }
 
-function eventType(eventKey: string): string {
-  const code = eventKey.split(":", 1)[0].toUpperCase();
-  const known: Record<string, string> = {
-    RECEIPT: "Receipt",
-    ISSUANCE: "POS issuance",
-    POS_ISSUANCE: "POS issuance",
-    RESERVATION: "Reservation",
-    RESERVATION_CREATE: "Reservation",
-    RESERVATION_RELEASE: "Reservation release",
-    PRODUCT_FACILITY_AUDIT: "Minimum stock change",
-    FACILITY_GROUP_MEMBER: "Facility group membership",
-    INVENTORY_CHANNEL_AUDIT: "Inventory channel change",
-  };
-  return known[code] || code.toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
+/**
+ * The server owns this label. `eventTypeDescription` is joined from ShopifyInventoryEventType --
+ * the closed vocabulary the ledger's EVENT_TYPE_ID is foreign-keyed to -- so it is always present
+ * and always in step with the types the connector actually emits. The fallback only prettifies the
+ * id, and exists for a row whose type row was somehow not joined; it is not a mapping table,
+ * because a client-side copy of that vocabulary is exactly what drifts.
+ */
+function eventTypeLabel(detail: any): string {
+  const description = String(detail?.eventTypeDescription ?? "").trim();
+  if (description) return description;
+  return String(detail?.eventTypeId ?? "")
+    .toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
 }
 
 const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.map((detail: any) => {
   const state = eventState(detail);
   const change = Number(detail.computedInventoryChange || 0);
-  // Same identity as the server PK and the cache key: event + channel + Shopify inventory item.
-  const identity = [detail.eventKey, detail.inventoryChannelId, detail.shopifyInventoryItemId];
+  // Same identity as the server PK and the cache key: event type + reference + channel + item.
+  const identity = [
+    detail.eventTypeId,
+    detail.eventReferenceId,
+    detail.inventoryChannelId,
+    detail.shopifyInventoryItemId,
+  ];
   return {
     rowKey: JSON.stringify(identity.map(String)),
-    key: String(detail.eventKey),
-    type: eventType(String(detail.eventKey)),
+    key: `${String(detail.eventTypeId ?? "")}:${String(detail.eventReferenceId ?? "")}`,
+    type: eventTypeLabel(detail),
     // The ledger identifies a Shopify inventory item, not an OMS product, and nothing cached here
     // maps one to the other. Show the item id -- the row's real identity -- rather than resolving a
     // product through a join this screen does not have.

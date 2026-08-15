@@ -432,8 +432,9 @@ export const dataFeedProjection = {
 
 /**
  * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
- * Mirrors the server entity, whose PK is eventKey + inventoryChannelId + shopifyInventoryItemId;
- * `adjustmentKey` is the synthetic cache key for that so fan-out rows never overwrite each other.
+ * Mirrors the server entity, whose PK is
+ * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is
+ * the synthetic cache key for that so fan-out rows never overwrite each other.
  *
  * Deliberately absent, because the server row does not carry them:
  *  - shopId / shopifyLocationId — the channel IS the target identity (it maps a facility group to
@@ -447,7 +448,10 @@ export const shopifyInventoryAdjustmentDetailProjection = {
   keyField: "adjustmentKey",
   fields: {
     adjustmentKey: "text",
-    eventKey: "text",
+    eventTypeId: "text",
+    eventReferenceId: "text",
+    eventTypeDescription: "text",
+    shopifyReason: "text",
     inventoryChannelId: "text",
     shopifyInventoryItemId: "text",
     computedInventoryChange: "count",
@@ -463,9 +467,25 @@ export const shopifyInventoryAdjustmentDetailProjection = {
     systemMessageProcessedDate: "date",
     systemMessageLastAttemptDate: "date",
   },
+  /**
+   * The ledger's real primary key: (eventTypeId, eventReferenceId, inventoryChannelId,
+   * shopifyInventoryItemId). The type says WHAT KIND of source event a row came from, the
+   * reference says WHICH occurrence of it.
+   *
+   * This used to key on a single packed `eventKey`. The connector split that into two columns and
+   * `eventKey` no longer exists on the view or the endpoint, so every row hit the
+   * `undefined`-on-missing-field guard below and was dropped - silently, because the request still
+   * returned 200 with a correct payload. The cache stayed empty forever, and the page reported
+   * "0 aggregate events pending batching" and "No inventory events match this view" while the
+   * ledger held real pending rows.
+   *
+   * If this guard ever starts returning undefined again, the identity has drifted from the server
+   * - check the endpoint's field names before assuming there is no data.
+   */
   buildKey: (raw: Record<string, unknown>) => {
     const identity = [
-      raw?.eventKey,
+      raw?.eventTypeId,
+      raw?.eventReferenceId,
       raw?.inventoryChannelId,
       raw?.shopifyInventoryItemId,
     ];

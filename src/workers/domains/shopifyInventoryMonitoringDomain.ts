@@ -7,10 +7,22 @@ import {
 } from "@/utils/cacheEntities";
 import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageAll, pageNewestFirst, unwrapCollection, workerGet, workerPost } from "./workerFetch";
+import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
 
-const ENDPOINT = "oms/dataDocumentView";
-const CHANNEL_DOCUMENT = "SHOPIFY_INVENTORY_CHANNEL";
+/**
+ * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
+ *
+ * This used to be POST oms/dataDocumentView with dataDocumentId SHOPIFY_INVENTORY_CHANNEL. That
+ * document is retired by the connector release that adds the aggregate event ledger, and its rows
+ * are deleted by UpgradeSQL.sql - so the old call returns
+ * 400 "No DataDocument found with ID SHOPIFY_INVENTORY_CHANNEL" and this page rendered
+ * "No inventory channels are mapped for this connection" for channels that plainly existed,
+ * including one the page had just created. It also starved every panel downstream that scopes by
+ * channel, which showed configured jobs as "Not configured".
+ *
+ * The view carries facilityGroupName exactly as the document did, so channel labels are unchanged.
+ */
+const CHANNEL_ENDPOINT = "sob/shopify/inventoryChannels";
 /**
  * Dedicated read resource over ShopifyInventoryAdjustmentDetailView, NOT a DataDocument. The
  * document this replaced kept its definition in DATA_DOCUMENT_FIELD rows, so a server-side re-key
@@ -72,74 +84,18 @@ function detailKey(row: Record<string, unknown>): string | undefined {
   return shopifyInventoryAdjustmentDetailProjection.buildKey(row);
 }
 
-async function fetchDocumentPage(
-  ctx: SyncContext,
-  dataDocumentId: string,
-  customParametersMap: Record<string, unknown>,
-  pageIndex: number,
-  pageSize: number,
-): Promise<any[]> {
-  const response = await workerPost(ctx, ENDPOINT, {
-    dataDocumentId,
-    customParametersMap,
-    pageIndex,
-    pageSize,
-  });
-  return unwrapCollection(response, "entityValueList");
-}
-
-/** Complete DataDocument walk with the same no-progress/backstop protections as pageAll(). */
-async function fetchAllDocumentRows(
-  ctx: SyncContext,
-  dataDocumentId: string,
-  customParametersMap: Record<string, unknown>,
-  keyOf: (row: any) => string | undefined,
-  batchSize = 250,
-): Promise<any[]> {
-  const rows: any[] = [];
-  const seen = new Set<string>();
-  const maxPages = 200;
-
-  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-    const page = await fetchDocumentPage(
-      ctx,
-      dataDocumentId,
-      customParametersMap,
-      pageIndex,
-      batchSize,
-    );
-    if (!page.length) break;
-
-    let added = 0;
-    for (const row of page) {
-      const key = keyOf(row);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      rows.push(row);
-      added += 1;
-    }
-    if (page.length < batchSize) break;
-    if (!added) {
-      console.warn(`[sync] ${dataDocumentId}: paging made no progress at page ${pageIndex}; stopping.`);
-      break;
-    }
-    if (pageIndex === maxPages - 1) {
-      console.warn(`[sync] ${dataDocumentId}: reached the ${maxPages}-page safety backstop.`);
-    }
-  }
-  return rows;
-}
-
 registerSyncDomain({
   name: "inventoryChannel",
   async sync(ctx, _args, options) {
     if (!options?.force && await hasSyncedThisLogin("inventoryChannel")) return 0;
-    const rows = await fetchAllDocumentRows(
+    const rows = await pageAll({
       ctx,
-      CHANNEL_DOCUMENT,
-      { orderByField: "inventoryChannelId" },
-      (row) => row?.inventoryChannelId ? String(row.inventoryChannelId) : undefined,
-    );
+      url: CHANNEL_ENDPOINT,
+      collectionKey: DETAIL_COLLECTION,
+      params: { orderByField: "inventoryChannelId" },
+      keyOf: (row: any) => row?.inventoryChannelId ? String(row.inventoryChannelId) : undefined,
+      label: CHANNEL_ENDPOINT,
+    });
     const result = await inventoryChannelCache.snapshotReplace(rows);
     await markSyncedThisLogin("inventoryChannel");
     return result.written;
@@ -147,13 +103,12 @@ registerSyncDomain({
   async refetchOne(ctx, pk) {
     const inventoryChannelId = String(pk?.inventoryChannelId ?? "");
     if (!inventoryChannelId) return 0;
-    const rows = await fetchDocumentPage(
-      ctx,
-      CHANNEL_DOCUMENT,
-      { inventoryChannelId },
-      0,
-      1,
-    );
+    const response = await workerGet(ctx, CHANNEL_ENDPOINT, {
+      inventoryChannelId,
+      pageIndex: 0,
+      pageSize: 1,
+    });
+    const rows = unwrapCollection(response, DETAIL_COLLECTION);
     return rows.length ? inventoryChannelCache.upsertMany(rows) : 0;
   },
 });
@@ -262,16 +217,19 @@ registerSyncDomain({
     return written;
   },
   async refetchOne(ctx, pk) {
-    const eventKey = String(pk?.eventKey ?? "");
+    // The event identity is two columns now, not one packed eventKey: the type says what kind of
+    // source event this was, the reference says which occurrence of it.
+    const eventTypeId = String(pk?.eventTypeId ?? "");
+    const eventReferenceId = String(pk?.eventReferenceId ?? "");
     const inventoryChannelId = String(pk?.inventoryChannelId ?? "");
-    if (!eventKey || !inventoryChannelId) return 0;
+    if (!eventTypeId || !eventReferenceId || !inventoryChannelId) return 0;
     // shopifyInventoryItemId completes the PK but is left off on purpose: one event fans out across
     // items within a channel, and re-reading the whole fan-out keeps the group consistent.
     const rows = await pageAll({
       ctx,
       url: DETAIL_ENDPOINT,
       collectionKey: DETAIL_COLLECTION,
-      params: { eventKey, inventoryChannelId },
+      params: { eventTypeId, eventReferenceId, inventoryChannelId },
       keyOf: detailKey,
       batchSize: 100,
       label: "inventoryAdjustmentDetails:refetchOne",

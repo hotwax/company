@@ -160,13 +160,16 @@ const CACHE_SCHEMA = {
   /**
    * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
    * inventory item at one channel. Mirrors the server entity, whose PK is
-   * eventKey + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is the synthetic cache
-   * key for that. No shopId/shopifyLocationId and no product columns: the channel is the target
-   * identity, so shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
+   * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey`
+   * is the synthetic cache key for that. The type says what kind of source event a row came from
+   * and the reference says which occurrence of it — they replaced a single packed `eventKey`, and
+   * both are indexed because the history screen filters on type alone.
+   * No shopId/shopifyLocationId and no product columns: the channel is the target identity, so
+   * shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
    * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
    */
   shopifyInventoryAdjustmentDetails:
-    "adjustmentKey, eventKey, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+    "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
