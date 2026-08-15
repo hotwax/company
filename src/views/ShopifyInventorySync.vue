@@ -102,6 +102,20 @@
                   <p>{{ job.lastRun }}</p>
                   <p>{{ job.nextRun }}</p>
                 </ion-label>
+                <!-- Creates the row's missing job(s) PAUSED; activating is a second, deliberate step
+                     in the row's own modal. Also shown beside a Paused/Active badge when a newer
+                     channel still lacks its per-channel clone. -->
+                <ion-button
+                  v-if="job.setup"
+                  slot="end"
+                  fill="outline"
+                  size="small"
+                  :disabled="!!provisioningJobKind"
+                  @click.stop="setUpSyncJob(job.setup)"
+                >
+                  <ion-spinner v-if="provisioningJobKind === job.setup" name="crescent" />
+                  <template v-else>Set up</template>
+                </ion-button>
                 <ion-badge slot="end" :color="job.badgeColor">
                   {{ job.status }}
                 </ion-badge>
@@ -874,6 +888,9 @@ import {
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+  ensureChannelEventPublisherJob,
+  ensureChannelResetJob,
+  ensureShopPhysicalInventoryResetJob,
   setInventoryEventDocumentAttached,
   useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
@@ -1079,12 +1096,14 @@ const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) =>
 
 // Match on serviceName AND the inventoryChannelId parameter, the way aggregateResetJobs does.
 // serviceName alone also matches the seeded template (paused, no channel) and any other channel's
-// clone, so with one publisher per channel the panel could report the wrong row's status/next run.
-const pendingPublisherJob = computed<any>(() => {
+// clone, so the panel could report the template's paused state as if a channel were configured.
+// A LIST, not a find: publishing is per channel, so with two channels this row is the set of their
+// clones — reporting only the first would hide that the second channel never publishes.
+const pendingPublisherJobs = computed<any[]>(() => {
   const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
-  return cachedJobs.value.find((job: any) =>
+  return cachedJobs.value.filter((job: any) =>
     PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
-    channelIds.has(String(parameterMap(job).inventoryChannelId ?? ""))) ?? null;
+    channelIds.has(String(parameterMap(job).inventoryChannelId ?? "")));
 });
 
 const effectiveDateJob = computed<any>(() =>
@@ -1102,8 +1121,8 @@ const primaryAggregateResetJob = computed<any>(() =>
 
 const watchedJobNames = computed(() => [...new Set([
   physicalResetJob.value?.jobName,
-  pendingPublisherJob.value?.jobName,
   effectiveDateJob.value?.jobName,
+  ...pendingPublisherJobs.value.map((job: any) => job.jobName),
   ...aggregateResetJobs.value.map((job: any) => job.jobName),
 ].filter(Boolean))] as string[]);
 
@@ -1119,15 +1138,46 @@ function nextExecutionFor(jobs: any[]): any | null {
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
+type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset";
+
+/**
+ * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
+ * uncovered, not merely that some job exists: a channel added after the first was provisioned still
+ * needs its own publisher and reset clones, and "the row has a job" would hide that forever.
+ */
+function channelIdsWithoutJob(jobs: any[]): string[] {
+  const covered = new Set(jobs.map((job: any) => String(parameterMap(job).inventoryChannelId ?? "")));
+  return inventoryChannels.value
+    .map((channel: any) => String(channel.inventoryChannelId))
+    .filter((channelId: string) => !covered.has(channelId));
+}
+
 const monitoredJobs = computed(() => {
-  const definitions = [
-    { name: "Publish and send aggregate event batches", jobs: pendingPublisherJob.value ? [pendingPublisherJob.value] : [], icon: cloudUploadOutline },
-    { name: "Process effective-dated inventory changes", jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [], icon: layersOutline },
-    { name: "Reset physical location QOH", jobs: physicalResetJob.value ? [physicalResetJob.value] : [], icon: locationOutline },
-    { name: "Reset aggregate ATP inventory", jobs: aggregateResetJobs.value, icon: refreshOutline },
+  // `setup` is the row's create-the-missing-clone action, empty when there is nothing this page can
+  // honestly create: the per-channel rows need a channel to clone for (creating one is the "Set up
+  // channel" button's job), the physical reset needs the shop's SystemMessageRemote resolved, and
+  // the effective-date scanner is seeded by the connector release — its absence is a deploy gap the
+  // app must report, not paper over by inventing a job definition.
+  const definitions: Array<{ name: string; jobs: any[]; icon: string; setup: JobSetupKind | "" }> = [
+    {
+      name: "Publish and send aggregate event batches", jobs: pendingPublisherJobs.value, icon: cloudUploadOutline,
+      setup: channelIdsWithoutJob(pendingPublisherJobs.value).length ? "publisher" : "",
+    },
+    {
+      name: "Process effective-dated inventory changes", jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [], icon: layersOutline,
+      setup: "",
+    },
+    {
+      name: "Reset physical location QOH", jobs: physicalResetJob.value ? [physicalResetJob.value] : [], icon: locationOutline,
+      setup: !physicalResetJob.value && syncContext.remoteId.value ? "physicalReset" : "",
+    },
+    {
+      name: "Reset aggregate ATP inventory", jobs: aggregateResetJobs.value, icon: refreshOutline,
+      setup: channelIdsWithoutJob(aggregateResetJobs.value).length ? "aggregateReset" : "",
+    },
   ];
 
-  return definitions.map(({ name, jobs, icon }) => {
+  return definitions.map(({ name, jobs, icon, setup }) => {
     const latestRun = latestRunFor(jobs);
     const nextJob = nextExecutionFor(jobs);
     const missing = !jobs.length;
@@ -1140,6 +1190,7 @@ const monitoredJobs = computed(() => {
       status: missing ? "Not configured" : paused ? "Paused" : "Active",
       badgeColor: missing ? "medium" : paused ? "warning" : "success",
       icon,
+      setup,
     };
   });
 });
@@ -1302,8 +1353,12 @@ const oldestUnbatchedEvent = computed(() => {
   return oldest ? formatDateTime(oldest.createdAt) : "None waiting";
 });
 
-const nextBatchRun = computed(() => pendingPublisherJob.value?.nextExecutionDateTime
-  ? formatDateTime(pendingPublisherJob.value.nextExecutionDateTime) : "Not scheduled");
+// Only an unpaused clone's next fire time is a promise; a paused clone's stored
+// nextExecutionDateTime is a time at which nothing will happen.
+const nextBatchRun = computed(() => {
+  const nextRun = nextExecutionFor(pendingPublisherJobs.value)?.nextExecutionDateTime;
+  return nextRun ? formatDateTime(nextRun) : "Not scheduled";
+});
 const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.status !== "Active")
   ? "Needs attention" : "Healthy");
 const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
@@ -1628,6 +1683,49 @@ function openJobRuns(job: any, title: string) {
 
 function refreshServiceJobData() {
   if (isViewActive.value) void startSyncDomains(activeSyncDomains());
+}
+
+const provisioningJobKind = ref<JobSetupKind | "">("");
+
+/**
+ * Create a row's missing job(s), PAUSED — activation stays a deliberate second step in the job's own
+ * modal, per the connector release runbook. The per-channel kinds provision EVERY effective channel
+ * still missing its clone, not only the first: this is also the recovery path when a channel was
+ * created but its job provisioning failed, which otherwise left no way to finish the setup from the
+ * app at all. The ensure* helpers are idempotent and write the new row through to the job cache, so
+ * the row flips from "Not configured" to "Paused" without a re-login.
+ */
+async function setUpSyncJob(kind: JobSetupKind | "") {
+  if (!kind || provisioningJobKind.value) return;
+  provisioningJobKind.value = kind;
+  try {
+    const created: string[] = [];
+    if (kind === "physicalReset") {
+      const remoteId = String(syncContext.remoteId.value ?? "");
+      if (!remoteId) throw new Error("No Shopify remote is configured for this connection.");
+      created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
+    } else {
+      // Snapshot the uncovered channels first: each ensure* refreshes the job cache, which would
+      // otherwise recompute the list mid-loop.
+      const jobs = kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value;
+      for (const channelId of channelIdsWithoutJob(jobs)) {
+        created.push(kind === "publisher"
+          ? await ensureChannelEventPublisherJob(channelId)
+          : await ensureChannelResetJob({ inventoryChannelId: channelId }));
+      }
+    }
+    commonUtil.showToast(!created.length
+      ? "Nothing to create - these jobs already exist."
+      : created.length === 1
+        ? `${created[0]} created, paused. Open the row to set its schedule and activate it.`
+        : `${created.length} jobs created, paused. Open each row entry to schedule and activate them.`);
+    refreshServiceJobData();
+  } catch (error: any) {
+    logger.error("Failed to set up inventory sync job", kind, error);
+    commonUtil.showToast(error?.message || "The job could not be created.");
+  } finally {
+    provisioningJobKind.value = "";
+  }
 }
 
 function formatNetAdjustment(events: InventoryEvent[]) {
