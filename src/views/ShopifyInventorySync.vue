@@ -173,6 +173,34 @@
             </ion-label>
           </ion-item>
 
+          <!-- Its own card, above the OMS-wide one, because the two are read as the same switch the
+               moment they share a list: this is `ShopifyShop.realTimeInventoryPush` for the ONE
+               connection this page is scoped to, and the card below is a single OMS-wide DataFeed.
+               Each names its own scope on its last line rather than relying on the order. -->
+          <ion-card>
+            <ion-list lines="none">
+              <ion-item>
+                <ion-icon slot="start" :icon="storefrontOutline" />
+                <ion-label class="ion-text-wrap">
+                  Real-time inventory push for this shop
+                  <p>Sends inventory changes at this connection's mapped facilities straight to its Shopify locations as they happen</p>
+                  <p>Applies only to {{ shopDisplayName }} &mdash; every other Shopify connection keeps its own setting</p>
+                </ion-label>
+                <ion-badge slot="end" :color="shopInventoryPushBadgeColor">
+                  {{ shopInventoryPushStatus }}
+                </ion-badge>
+                <ion-toggle
+                  slot="end"
+                  :key="`shop-push-${shopInventoryPush}-${toggleNonce}`"
+                  :aria-label="`Push real-time inventory updates to ${shopDisplayName}`"
+                  :checked="shopInventoryPush"
+                  :disabled="shopInventoryPushToggleDisabled"
+                  @click.prevent="requestShopInventoryPushChange($event)"
+                />
+              </ion-item>
+            </ion-list>
+          </ion-card>
+
           <ion-card>
             <ion-list lines="none">
               <ion-item>
@@ -872,7 +900,7 @@ import {
   addOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   layersOutline, listOutline, locationOutline,
-  refreshOutline, timeOutline, warningOutline,
+  refreshOutline, storefrontOutline, timeOutline, warningOutline,
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -894,6 +922,7 @@ import {
   setInventoryEventDocumentAttached,
   useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
+  useShopifyShopMutations,
   useShopifySyncContext,
   type InventoryEventDocument,
 } from "@/composables/useShopify";
@@ -962,6 +991,7 @@ const selectedServiceJob = ref<{ jobName: string; title: string } | null>(null);
 const editingChannel = ref<any>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
+const shopInventoryPushSaving = ref(false);
 
 // Both implementations of "publish this channel's pending events" are matched. The seeded job runs
 // drain#, which repeats publish# until the channel's queue is empty; publish# stays a valid service a
@@ -1045,8 +1075,11 @@ const shopChannelIds = computed(() => allInventoryChannels.value
   .filter(Boolean)
   .sort());
 
-/** Shops by id, for naming a channel's target. Cached table, so no request per row. */
-const { records: allShopifyShops } = useCachedList<any>(shopifyShopCache);
+/**
+ * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
+ * so no request per row and no extra fetch for the toggle below.
+ */
+const { records: allShopifyShops, hydrated: shopsHydrated } = useCachedList<any>(shopifyShopCache);
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;
@@ -1081,6 +1114,34 @@ const inventoryEventFeedBadgeColor = computed(() => {
   if (!dataFeedsHydrated.value || !inventoryEventFeed.value) return "medium";
   if (!inventoryEventFeedTypeSupported.value) return "danger";
   return inventoryEventFeedPush.value ? "success" : "warning";
+});
+
+/**
+ * The PER-SHOP half of real-time inventory, and a different switch from the feed above in every way
+ * that matters. This is `ShopifyShop.realTimeInventoryPush` for the one connection this page is
+ * scoped to: the connector filters on it in find#EligibleRealtimeInventoryPushShops, the direct
+ * facility-to-Shopify-location path, so turning it off silences THIS shop and no other. The feed is
+ * one OMS-wide DataFeed deciding whether aggregate channel events are recorded for anybody.
+ *
+ * Read from the shop row this page already caches rather than fetching: `updateShop` re-reads that
+ * row on success, so what renders here is what the OMS stored, not what was clicked.
+ */
+const currentShop = computed<any>(() => shopsById.value[String(props.id ?? "")] ?? null);
+const shopDisplayName = computed(() =>
+  currentShop.value?.name || currentShop.value?.myshopifyDomain || "this connection");
+const shopInventoryPush = computed(() => String(currentShop.value?.realTimeInventoryPush ?? "") === "Y");
+const shopInventoryPushToggleDisabled = computed(() =>
+  shopInventoryPushSaving.value || !shopsHydrated.value || !currentShop.value);
+const shopInventoryPushStatus = computed(() => {
+  if (!shopsHydrated.value) return "Loading";
+  // Not "Off": an uncached shop row is a state nobody can read a setting out of, and rendering it as
+  // off would invite someone to "fix" a shop that is already pushing.
+  if (!currentShop.value) return "Unavailable";
+  return shopInventoryPush.value ? "Real-time push" : "Disabled";
+});
+const shopInventoryPushBadgeColor = computed(() => {
+  if (!shopsHydrated.value || !currentShop.value) return "medium";
+  return shopInventoryPush.value ? "success" : "warning";
 });
 
 const messageById = computed<Map<string, any>>(() => new Map(
@@ -1482,6 +1543,61 @@ async function requestInventoryEventFeedChange(event: Event) {
   }
 }
 
+/**
+ * Flip this connection's push gate. Confirmed first because turning it off queues NOTHING: an
+ * ineligible shop is skipped in the resolver and the delta is dropped there, so there is no backlog
+ * to drain when it goes back on - only the physical location QOH reset (listed above) closes the gap.
+ */
+async function requestShopInventoryPushChange(event: Event) {
+  event.stopImmediatePropagation();
+  if (shopInventoryPushToggleDisabled.value) {
+    redrawToggles();
+    return;
+  }
+
+  const shopId = String(props.id ?? "");
+  const enablePush = !shopInventoryPush.value;
+  const alert = await alertController.create({
+    header: enablePush
+      ? `Push real-time inventory to ${shopDisplayName.value}?`
+      : `Stop pushing real-time inventory to ${shopDisplayName.value}?`,
+    message: enablePush
+      ? "Only this Shopify connection is affected. Inventory that moved while it was off was never sent and will not be replayed; run the physical location QOH reset to reconcile."
+      : "Only this Shopify connection is affected. Inventory changes stop reaching its Shopify locations entirely, and nothing accumulates to catch up on later. Shopify keeps whatever quantity it already has until a physical location QOH reset corrects it.",
+    buttons: [
+      { text: "Cancel", role: "cancel" },
+      { text: enablePush ? "Enable real-time push" : "Turn off real-time push", role: "confirm" },
+    ],
+  });
+  await alert.present();
+  if ((await alert.onDidDismiss()).role !== "confirm") {
+    redrawToggles();
+    return;
+  }
+
+  shopInventoryPushSaving.value = true;
+  try {
+    // `updateShop` re-reads the shop by PK into the cache on success, so the row this toggle renders
+    // from becomes the stored one. It reports a rejected write in the RESPONSE rather than throwing,
+    // so an unchecked 200 is exactly how a toggle ends up showing a value the OMS never took.
+    const resp: any = await useShopifyShopMutations(shopId).updateShop({
+      realTimeInventoryPush: enablePush ? "Y" : "N",
+    });
+    if (commonUtil.hasError(resp)) throw new Error("The OMS rejected the real-time inventory push update.");
+    commonUtil.showToast(enablePush
+      ? "Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off."
+      : "Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected.");
+  } catch (error: any) {
+    logger.error("Failed to update real-time inventory push for shop", shopId, error);
+    commonUtil.showToast(error?.message || "Failed to update real-time inventory push for this connection.");
+  } finally {
+    shopInventoryPushSaving.value = false;
+    // The shop row was re-read above on success and left untouched on failure, so a redraw shows what
+    // is actually stored either way rather than what was clicked.
+    redrawToggles();
+  }
+}
+
 function activeSyncDomains() {
   return [
     // Skipped entirely until the channels are known: with no channel list the domain cannot tell
@@ -1512,6 +1628,10 @@ onIonViewWillEnter(() => {
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
+  // Same gate on the shop domain, and the same reason: this page renders the connection's push flag,
+  // which the Moqui admin screen can also change. Skipped without an id - the by-PK read would go to
+  // `oms/shopifyShops/shops/` and re-list every shop.
+  if (props.id) void afterMutation("shopifyShop", { shopId: String(props.id) });
 });
 
 onIonViewDidLeave(() => {

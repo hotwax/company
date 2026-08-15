@@ -152,6 +152,15 @@ export const shopifyShopProjection = {
     domain: "text",
     currency: "text",
     primaryLocationId: "text",
+    /**
+     * The shop's real-time inventory push gate (`Y`/`N`, absent when it was never set). The
+     * inventory sync screen renders and writes it, and the connector filters on it in
+     * find#EligibleRealtimeInventoryPushShops — so leaving it unprojected would make a shop that IS
+     * pushing render as off, the same failure the `productIdentifierEnumId` note above describes.
+     * `oms/shopifyShops/shops` does return it: ShopifyShop's `default` master carries every field of
+     * the entity.
+     */
+    realTimeInventoryPush: "text",
     lastUpdatedStamp: "date",
   },
 } as const;
