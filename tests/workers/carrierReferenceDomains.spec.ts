@@ -106,7 +106,7 @@ describe("carrier reference snapshots", () => {
     expect(state.snapshots).toEqual([]);
   });
 
-  it("lists only party-group carrier parties", async () => {
+  it("lists carrier parties with CARRIER role", async () => {
     state.responses["oms/shippingGateways/carrierParties"] = [{
       partyId: "FEDEX",
       partyTypeId: "PARTY_GROUP",
@@ -120,7 +120,7 @@ describe("carrier reference snapshots", () => {
     expect(state.pageCalls).toHaveLength(1);
     expect(state.pageCalls[0]).toMatchObject({
       url: "oms/shippingGateways/carrierParties",
-      params: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" },
+      params: { roleTypeId: "CARRIER" },
     });
 
     state.pageCalls = [];
@@ -129,7 +129,7 @@ describe("carrier reference snapshots", () => {
 
     expect(state.pageCalls[0]).toMatchObject({
       url: "oms/shippingGateways/carrierParties",
-      params: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER", partyId: "FEDEX" },
+      params: { roleTypeId: "CARRIER", partyId: "FEDEX" },
     });
     expect(state.snapshots[0]).toMatchObject({
       table: "carriers",

@@ -151,7 +151,7 @@ registerSnapshotDomain({
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
   strictCollection: true,
-  listParams: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" },
+  listParams: { roleTypeId: "CARRIER" },
   refetchScope: (pk) => ({
     params: { partyId: pk.partyId },
     scope: { field: "partyId", value: pk.partyId },
