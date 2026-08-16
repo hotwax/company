@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import { DateTime } from "luxon";
 import { api, commonUtil, logger, translate } from "@common";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/cacheEntities";
 import { facilityGroupProductStoreCache, productStoreFacilityCache } from "@/utils/cacheEntities";
@@ -248,8 +249,7 @@ export function useGroupMembershipIndex() {
  * rather than an empty table; `FacilityGroupType` appears in no `.rest.xml` in the OMS. So the type
  * filter and picker have always been blank.
  *
- * Deriving the distinct ids off `facilityGroups` makes them work. No descriptions exist anywhere,
- * so callers fall back to the id — which every template already does.
+ * Deriving the distinct ids off `facilityGroups` makes them work.
  */
 export function useFacilityGroupTypes() {
   const { records, hydrated } = useCachedList<any>(facilityGroupCache);
@@ -258,9 +258,53 @@ export function useFacilityGroupTypes() {
     for (const group of records.value as any[]) {
       if (group?.facilityGroupTypeId) seen.add(group.facilityGroupTypeId);
     }
-    return [...seen].sort().map((facilityGroupTypeId) => ({ facilityGroupTypeId, description: "" }));
+    return [...seen].sort().map((facilityGroupTypeId) => ({
+      facilityGroupTypeId,
+      description: facilityGroupTypeLabel(facilityGroupTypeId),
+    }));
   });
   return { facilityGroupTypes, hydrated };
+}
+
+/**
+ * Types the app must be able to assign to a group that does not exist yet.
+ *
+ * Derivation can only ever surface a type some group already uses, so on its own it makes the FIRST
+ * group of a type impossible to create — the type is absent from the picker until a group already
+ * has it. These ids are the ones the OMS and the sibling apps act on, so they stay assignable on an
+ * instance that has no group of that type yet.
+ */
+const ASSIGNABLE_FACILITY_GROUP_TYPE_IDS = [
+  // order brokering / routing groups
+  "BROKERING_GROUP",
+  // inventory channel ("sell online") groups
+  "CHANNEL_FAC_GROUP",
+  "FEATURING",
+  "PICKUP",
+];
+
+/**
+ * The types offered when creating or editing a group.
+ *
+ * Deliberately not the same list as `useFacilityGroupTypes`: that one describes what the instance
+ * actually has and so is right for the type *filter*, where an option matching no group is a dead
+ * end. Assigning a type is the opposite case — the whole point is to use a type no group has yet.
+ */
+export function useFacilityGroupTypeOptions() {
+  const { facilityGroupTypes, hydrated } = useFacilityGroupTypes();
+  const facilityGroupTypeOptions = computed(() => {
+    const seen = new Set<string>(ASSIGNABLE_FACILITY_GROUP_TYPE_IDS);
+
+    for (const type of facilityGroupTypes.value) {
+      seen.add(type.facilityGroupTypeId);
+    }
+
+    return [...seen].sort().map((facilityGroupTypeId) => ({
+      facilityGroupTypeId,
+      description: facilityGroupTypeLabel(facilityGroupTypeId),
+    }));
+  });
+  return { facilityGroupTypeOptions, hydrated };
 }
 
 
@@ -306,8 +350,14 @@ export function useFacilityGroupProductStores(facilityGroupId?: string) {
     facilityGroupProductStoreCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  const now = Date.now();
-  const active = computed(() => records.value.filter((row: any) => !row.thruDate || Number(row.thruDate) > now));
+  // `Date.now()` belongs INSIDE the computed. Read once at setup it freezes the cutoff at the
+  // moment the composable ran, so a row expired later in the same session still counts as active —
+  // the group's product-store count stayed put after a removal until a reload, and two pages that
+  // mounted at different times disagreed. Same rule as `useGroupFacilityCounts`.
+  const active = computed(() => {
+    const now = Date.now();
+    return records.value.filter((row: any) => !row.thruDate || Number(row.thruDate) > now);
+  });
   return { associations: active, all: records, hydrated };
 }
 
