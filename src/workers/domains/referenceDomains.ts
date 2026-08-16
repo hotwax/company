@@ -31,6 +31,7 @@ import {
   permissionProjection,
   productStoreProjection,
   currencyProjection,
+  inventoryEventDocumentProjection,
   serviceJobProjection,
   shopifyShopProjection,
   systemMessageRemoteProjection,
@@ -81,6 +82,30 @@ registerSnapshotDomain({
    * `queue_ShopifyOrderSync_99992` left the cache at its pre-write 156 rows.
    */
   byPkRecordKey: "jobDetail",
+});
+
+registerSnapshotDomain({
+  name: "inventoryEventDocument",
+  table: "inventoryEventDocuments",
+  projection: inventoryEventDocumentProjection,
+  listUrl: "admin/dataDocuments",
+  collectionKey: "dataDocuments",
+  /**
+   * `queryString` bounds the response, it does not define the set - the screen decides that from the
+   * documents this feature ships. Without it this would snapshot every DataDocument on the OMS to
+   * answer a question about ten of them.
+   */
+  listParams: { queryString: "Shopify", pageSize: 200 },
+  /**
+   * Scoped re-list, not `byPk`: there is no by-id route, and the cache row is (document, feed) while
+   * a mutation only knows the document. Re-listing that one document and pruning its slice is what
+   * makes attach/detach correct - the row for the feed it just left has to disappear, and a plain
+   * upsert would leave it behind.
+   */
+  refetchScope: (pk) => ({
+    params: { queryString: pk.dataDocumentId },
+    scope: { field: "dataDocumentId", value: pk.dataDocumentId },
+  }),
 });
 
 registerSnapshotDomain({

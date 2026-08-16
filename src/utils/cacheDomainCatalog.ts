@@ -21,6 +21,14 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // --- class B: reference / config ---
   { name: "productStore", table: "productStores", label: "Product stores", syncClass: "B" },
   { name: "shopifyShop", table: "shopifyShops", label: "Shopify shops", syncClass: "B" },
+  { name: "shopifyInventoryEventFeed", table: "dataFeeds", label: "Shopify inventory event feed", syncClass: "B" },
+  { name: "inventoryChannel", table: "inventoryChannels", label: "Shopify inventory channels", syncClass: "B" },
+  {
+    name: "inventoryEventDocument",
+    table: "inventoryEventDocuments",
+    label: "Shopify inventory event sources",
+    syncClass: "B",
+  },
   { name: "systemMessageRemote", table: "systemMessageRemotes", label: "System message remotes", syncClass: "B" },
   { name: "serviceJob", table: "serviceJobs", label: "Service jobs", syncClass: "B" },
   { name: "organization", table: "organizations", label: "Organizations", syncClass: "B" },
@@ -63,6 +71,12 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // --- class A: live, view-scoped (shown for visibility; not synced at login) ---
   { name: "dataManagerLog", table: "dataManagerLogs", label: "Data manager logs", syncClass: "A" },
   { name: "systemMessage", table: "systemMessages", label: "System messages", syncClass: "A" },
+  {
+    name: "shopifyInventoryAdjustmentDetail",
+    table: "shopifyInventoryAdjustmentDetails",
+    label: "Shopify aggregate inventory events",
+    syncClass: "A",
+  },
   { name: "shopifyBulkOperation", table: "shopifyBulkOperations", label: "Shopify bulk operations", syncClass: "C" },
 ];
 

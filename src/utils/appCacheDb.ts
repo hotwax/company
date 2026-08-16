@@ -68,6 +68,14 @@ class CompanyCacheDB extends Dexie {
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
+  /** OMS-wide Shopify inventory event feed configuration. */
+  dataFeeds!: Table<CachedRow, string>;
+  /** Shopify aggregate inventory event ledger, scoped by shop. */
+  shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
+  /** Shopify aggregate ATP channel configuration, scoped by shop. */
+  inventoryChannels!: Table<CachedRow, string>;
+  /** Which DataDocuments the Shopify inventory event feed listens to. */
+  inventoryEventDocuments!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -149,11 +157,29 @@ const CACHE_SCHEMA = {
    * the sync run that made it.
    */
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+  /**
+   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
+   * inventory item at one channel. Mirrors the server entity, whose PK is
+   * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey`
+   * is the synthetic cache key for that. The type says what kind of source event a row came from
+   * and the reference says which occurrence of it — they replaced a single packed `eventKey`, and
+   * both are indexed because the history screen filters on type alone.
+   * No shopId/shopifyLocationId and no product columns: the channel is the target identity, so
+   * shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
+   * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
+   */
+  shopifyInventoryAdjustmentDetails:
+    "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
+  dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
+  inventoryChannels:
+    "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
+  // Keyed by (document, feed) because one document can sit on several feeds, or on none.
+  inventoryEventDocuments: "documentFeedKey, dataDocumentId, dataFeedId",
   organizations: "partyId, groupName, externalId, statusId",
   organizationRelationships:
     "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",

@@ -152,6 +152,15 @@ export const shopifyShopProjection = {
     domain: "text",
     currency: "text",
     primaryLocationId: "text",
+    /**
+     * The shop's real-time inventory push gate (`Y`/`N`, absent when it was never set). The
+     * inventory sync screen renders and writes it, and the connector filters on it in
+     * find#EligibleRealtimeInventoryPushShops — so leaving it unprojected would make a shop that IS
+     * pushing render as off, the same failure the `productIdentifierEnumId` note above describes.
+     * `oms/shopifyShops/shops` does return it: ShopifyShop's `default` master carries every field of
+     * the entity.
+     */
+    realTimeInventoryPush: "text",
     lastUpdatedStamp: "date",
   },
 } as const;
@@ -392,6 +401,108 @@ export const shopifyLocationProjection = {
   },
 } as const;
 
+/**
+ * InventoryChannel — one facility-group ATP pool mapped to one Shopify aggregate location.
+ * This is the missing ownership link between an aggregate reset ServiceJob parameter and a shop.
+ */
+export const inventoryChannelProjection = {
+  keyField: "inventoryChannelId",
+  fields: {
+    inventoryChannelId: "text",
+    shopId: "text",
+    facilityGroupId: "text",
+    facilityGroupName: "text",
+    shopifyLocationId: "text",
+    description: "text",
+    fromDate: "date",
+    thruDate: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * DataFeed — an OMS-wide routing switch for entity-feed delivery.
+ *
+ * The Shopify aggregate inventory documents currently share one DataFeed, so this record is
+ * deliberately not shop-scoped. Every Shopify connection reads the same cached server value.
+ */
+export const dataFeedProjection = {
+  keyField: "dataFeedId",
+  fields: {
+    dataFeedId: "text",
+    dataFeedTypeEnumId: "text",
+    feedName: "text",
+    feedReceiveServiceName: "text",
+    feedDeleteServiceName: "text",
+    lastFeedStamp: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
+ * Mirrors the server entity, whose PK is
+ * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is
+ * the synthetic cache key for that so fan-out rows never overwrite each other.
+ *
+ * Deliberately absent, because the server row does not carry them:
+ *  - shopId / shopifyLocationId — the channel IS the target identity (it maps a facility group to
+ *    exactly one shop and one Shopify location). Scope by channel, resolve the shop through
+ *    `inventoryChannels`.
+ *  - productId / shopifyProductId / internalName — a detail row identifies a Shopify inventory item
+ *    at a channel and carries no OMS product. Consumers needing a product join ShopifyShopProduct
+ *    on shopId + shopifyInventoryItemId.
+ */
+export const shopifyInventoryAdjustmentDetailProjection = {
+  keyField: "adjustmentKey",
+  fields: {
+    adjustmentKey: "text",
+    eventTypeId: "text",
+    eventReferenceId: "text",
+    eventTypeDescription: "text",
+    shopifyReason: "text",
+    inventoryChannelId: "text",
+    shopifyInventoryItemId: "text",
+    computedInventoryChange: "count",
+    decisionComment: "text",
+    systemMessageId: "text",
+    detailStatusId: "text",
+    createdDate: "date",
+    lastUpdatedStamp: "date",
+    facilityGroupId: "text",
+    inventoryChannelDescription: "text",
+    systemMessageStatusId: "text",
+    systemMessageInitDate: "date",
+    systemMessageProcessedDate: "date",
+    systemMessageLastAttemptDate: "date",
+  },
+  /**
+   * The ledger's real primary key: (eventTypeId, eventReferenceId, inventoryChannelId,
+   * shopifyInventoryItemId). The type says WHAT KIND of source event a row came from, the
+   * reference says WHICH occurrence of it.
+   *
+   * This used to key on a single packed `eventKey`. The connector split that into two columns and
+   * `eventKey` no longer exists on the view or the endpoint, so every row hit the
+   * `undefined`-on-missing-field guard below and was dropped - silently, because the request still
+   * returned 200 with a correct payload. The cache stayed empty forever, and the page reported
+   * "0 aggregate events pending batching" and "No inventory events match this view" while the
+   * ledger held real pending rows.
+   *
+   * If this guard ever starts returning undefined again, the identity has drifted from the server
+   * - check the endpoint's field names before assuming there is no data.
+   */
+  buildKey: (raw: Record<string, unknown>) => {
+    const identity = [
+      raw?.eventTypeId,
+      raw?.eventReferenceId,
+      raw?.inventoryChannelId,
+      raw?.shopifyInventoryItemId,
+    ];
+    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    return JSON.stringify(identity.map(String));
+  },
+} as const;
+
 export const shopifyTypeMappingProjection = {
   keyField: "typeMappingKey",
   fields: {
@@ -408,8 +519,42 @@ export const shopifyTypeMappingProjection = {
   },
 } as const;
 
+/**
+ * DataDocument ⋈ its feed — which OMS changes an inventory event feed listens to.
+ *
+ * One row per (document, feed). `DataDocumentAndFeed` left-joins, so a document attached to nothing
+ * arrives with NO dataFeedId at all, and a document on two feeds arrives twice; neither is an error
+ * and both have to survive into the cache. Hence the composite key, with an empty second half
+ * standing for "attached to nothing" - a key built from dataDocumentId alone would collapse the two
+ * feed rows onto each other, and returning undefined for the unattached case would drop exactly the
+ * row the screen exists to show.
+ */
+export const inventoryEventDocumentProjection = {
+  keyField: "documentFeedKey",
+  fields: {
+    documentFeedKey: "text",
+    dataDocumentId: "text",
+    dataFeedId: "text",
+    documentName: "text",
+    primaryEntityName: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const dataDocumentId = raw?.dataDocumentId;
+    if (!dataDocumentId) return undefined;
+    return `${String(dataDocumentId)}|${raw?.dataFeedId ? String(raw.dataFeedId) : ""}`;
+  },
+} as const;
+
+export const inventoryEventDocumentCache =
+  defineCachedEntity("inventoryEventDocuments", inventoryEventDocumentProjection);
 export const shopifyLocationCache = defineCachedEntity("shopifyLocations", shopifyLocationProjection);
 export const shopifyTypeMappingCache = defineCachedEntity("shopifyTypeMappings", shopifyTypeMappingProjection);
+export const dataFeedCache = defineCachedEntity("dataFeeds", dataFeedProjection);
+export const inventoryChannelCache = defineCachedEntity("inventoryChannels", inventoryChannelProjection);
+export const shopifyInventoryAdjustmentDetailCache = defineCachedEntity(
+  "shopifyInventoryAdjustmentDetails",
+  shopifyInventoryAdjustmentDetailProjection,
+);
 
 /** Per-product-store shipment-method count (bare-array aggregate endpoint). */
 export const productStoreShipmentCountProjection = {
