@@ -211,7 +211,7 @@ concept is the smell this rule prevents.
 | [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
 | [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate) |
 | [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
-| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them (shipment-method counts, shipping methods) |
+| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them (shipment-method counts, shipping methods, settings, facilities, and the onboarding/setup surface). Merged `useProductStoreData` |
 | [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables, maarg config. Replaced `utilStore` |
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
 | [`useSystemMessage.ts`](src/composables/useSystemMessage.ts) | System messages, remotes, and error lookups |
@@ -219,7 +219,6 @@ concept is the smell this rule prevents.
 | [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups and the permission catalog |
 | [`useNetSuite.ts`](src/composables/useNetSuite.ts) | The NetSuite surface: cached reads + direct REST writes with a domain resync |
 | [`useProductUpdateHistory.ts`](src/composables/useProductUpdateHistory.ts) | Product-update history rows |
-| [`useProductStoreData.ts`](src/composables/useProductStoreData.ts) | The product-store SETUP surface the onboarding wizard drives: store settings, its facilities, and the Shopify job status. Replaced `store/productStore` |
 | [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |
 | [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
