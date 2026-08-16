@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-syntax -- carrier orchestration owns ordered multi-write consistency */
-import { computed } from "vue";
-import { api, commonUtil } from "@common";
+import { computed, ref } from "vue";
+import { api, commonUtil, logger } from "@common";
 import {
   bootstrapState,
   refreshAfterMutation,
@@ -218,6 +218,9 @@ export function useCarriers() {
 
     return errors;
   });
+  const hasCatalogError = computed(() => Object.keys(catalogErrors.value).length > 0);
+  const catalogErrorMessages = computed(() => Object.values(catalogErrors.value));
+  const methodCountsAvailable = computed(() => !catalogErrors.value.carrierShipmentMethod);
   const readyForDisplay = computed(() =>
     hydrated.value && Object.keys(catalogErrors.value).length === 0);
   const refreshCarriers = () => Promise.all([
@@ -230,6 +233,9 @@ export function useCarriers() {
     records: carrierRead.records,
     hydrated,
     catalogErrors,
+    hasCatalogError,
+    catalogErrorMessages,
+    methodCountsAvailable,
     readyForDisplay,
     refreshCarriers,
   };
@@ -369,6 +375,9 @@ export function useCarrier(partyId: string) {
     await Promise.all(failedDomains.map((domain) => resyncDomain(domain)));
   };
 
+  const hasDetailErrors = computed(() => Object.keys(detailErrors.value).length > 0);
+  const detailErrorMessages = computed(() => Object.values(detailErrors.value));
+
   return {
     carrier: carrierRead.record,
     shipmentMethods: methodRead.shipmentMethods,
@@ -382,6 +391,8 @@ export function useCarrier(partyId: string) {
     remoteError: readinessRead.error,
     hydrated,
     detailErrors,
+    hasDetailErrors,
+    detailErrorMessages,
     readyForMutation,
     refreshDetails,
   };
@@ -703,4 +714,42 @@ export async function resequenceCarrierShipmentMethods(
   }
 
   await refreshAfterMutation("carrierShipmentMethod", { partyId });
+}
+
+const gatewayConfigsState = ref<Array<{ shipmentGatewayConfigId: string; description?: string }>>([]);
+const gatewayConfigsLoaded = ref(false);
+
+export async function fetchShipmentGatewayConfigs(): Promise<void> {
+  try {
+    const resp: any = await api({
+      url: "oms/shippingGateways/configs",
+      method: "get",
+      params: { pageSize: 250 },
+    });
+    if(!commonUtil.hasError(resp) && Array.isArray(resp.data)) {
+      gatewayConfigsState.value = resp.data;
+      gatewayConfigsLoaded.value = true;
+    }
+  } catch (err) {
+    logger.error("Failed to fetch shipment gateway configs", err);
+  }
+}
+
+export function useShipmentGatewayConfigs() {
+  if(!gatewayConfigsLoaded.value) {
+    fetchShipmentGatewayConfigs();
+  }
+  const configs = computed(() => gatewayConfigsState.value);
+  const configsById = computed<Record<string, { shipmentGatewayConfigId: string; description?: string }>>(() =>
+    configs.value.reduce((map, item) => {
+      map[item.shipmentGatewayConfigId] = item;
+      return map;
+    }, {} as Record<string, any>));
+
+  const getGatewayConfigDescription = (id?: string) => {
+    if(!id) return "";
+    return configsById.value[id]?.description || id;
+  };
+
+  return { configs, configsById, getGatewayConfigDescription, fetchShipmentGatewayConfigs };
 }

@@ -27,7 +27,10 @@ const AddConfigurations = () => import("@/views/AddConfigurations.vue")
 const ProductStoreDetails = () => import("@/views/ProductStoreDetails.vue")
 const ProductStore = () => import("@/views/ProductStore.vue")
 const NetSuite = () => import("@/views/NetSuite.vue")
+const NetSuiteSyncMonitor = () => import("@/views/NetSuiteSyncMonitor.vue")
 const Carriers = () => import("@/views/Carriers.vue")
+const CreateCarrier = () => import("@/views/CreateCarrier.vue")
+const CarrierShipmentMethods = () => import("@/views/CarrierShipmentMethods.vue")
 const CarrierDetails = () => import("@/views/CarrierDetails.vue")
 const Settings = () => import("@/views/Settings.vue")
 const ShipmentMethods = () => import("@/views/ShipmentMethods.vue")
@@ -145,13 +148,18 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
   { path: "/netsuite", name: "NetSuite", component: NetSuite, beforeEnter: authGuard },
+  { path: "/unigate", name: "Unigate", component: () => import("@/views/Unigate.vue"), beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/carriers", name: "Carriers", component: Carriers, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/create-carrier", name: "CreateCarrier", component: CreateCarrier, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/shipment-methods-setup/:partyId", name: "CarrierShipmentMethods", component: CarrierShipmentMethods, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carrier-details/:partyId", name: "CarrierDetailsAlias", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/carriers/:partyId", name: "CarrierDetails", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/netsuite/shipment-methods", name: "ShipmentMethods", component: ShipmentMethods, beforeEnter: authGuard },
   { path: "/netsuite/inventory-variances", name: "InventoryVariances", component: InventoryVariances, beforeEnter: authGuard },
   { path: "/netsuite/payment-methods", name: "PaymentMethods", component: PaymentMethods, beforeEnter: authGuard },
   { path: "/netsuite/sales-channel", name: "SalesChannel", component: SalesChannel, beforeEnter: authGuard },
   { path: "/netsuite/departments", name: "Departments", component: Departments, beforeEnter: authGuard },
+  { path: "/netsuite/sync-monitor", name: "NetSuiteSyncMonitor", component: NetSuiteSyncMonitor, beforeEnter: authGuard },
   { path: "/create-product-store", name: "CreateProductStore", component: CreateProductStore, beforeEnter: authGuard },
   { path: "/product-store-onboarding", name: "ProductStoreOnboarding", component: ProductStoreOnboarding, beforeEnter: authGuard },
   { path: "/product-store-onboarding/:productStoreId", name: "ProductStoreOnboardingForStore", component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },

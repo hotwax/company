@@ -1,50 +1,44 @@
 <template>
-  <section data-testid="carrier-facility-list">
+  <div data-testid="carrier-facility-list">
     <ion-searchbar
       v-model="searchQuery"
       :placeholder="translate('Search physical facilities')"
     />
 
-    <ion-list>
-      <ion-item
-        v-for="facility in filteredFacilities"
-        :key="facility.facilityId"
-      >
-        <ion-label class="ion-text-wrap">
-          <h2>{{ facility.facilityName || facility.facilityId }}</h2>
-          <p>{{ facility.facilityId }}</p>
-          <p>{{ facility.facilityTypeDescription || facility.facilityTypeId }}</p>
-        </ion-label>
-        <ion-toggle
-          slot="end"
-          :aria-label="translate('Associate {facility} with carrier', {
-            facility: facility.facilityName || facility.facilityId,
-          })"
-          :checked="Boolean(facility.isConfigured)"
-          :disabled="disabled || isPending(facility)"
-          @ion-change="emitToggle(facility, $event)"
-        />
-      </ion-item>
+    <section v-if="filteredFacilities.length">
+      <ion-card v-for="facility in filteredFacilities" :key="facility.facilityId">
+        <ion-card-header>
+          <div>
+            <ion-card-title>{{ facility.facilityName || facility.facilityId }}</ion-card-title>
+            <ion-card-subtitle>{{ facility.facilityId }}</ion-card-subtitle>
+          </div>
+          <ion-checkbox
+            :aria-label="translate('Associate {facility} with carrier', {
+              facility: facility.facilityName || facility.facilityId,
+            })"
+            :checked="Boolean(facility.isConfigured)"
+            :disabled="disabled || isPending(facility)"
+            @click="emitToggle(facility, $event)"
+          />
+        </ion-card-header>
+      </ion-card>
+    </section>
 
-      <ion-item v-if="!filteredFacilities.length" lines="none">
-        <ion-label class="ion-text-center ion-text-wrap">
-          {{ translate(searchQuery.trim()
-            ? "No physical facilities match your search."
-            : "No physical facilities available.") }}
-        </ion-label>
-      </ion-item>
-    </ion-list>
-  </section>
+    <div v-else class="empty-state">
+      <p>{{ translate(searchQuery.trim() ? "No physical facilities match your search." : "No data found") }}</p>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { translate } from "@common";
 import {
-  IonItem,
-  IonLabel,
-  IonList,
+  IonCard,
+  IonCardHeader,
+  IonCardSubtitle,
+  IonCardTitle,
+  IonCheckbox,
   IonSearchbar,
-  IonToggle,
 } from "@ionic/vue";
 import { computed, ref } from "vue";
 
@@ -65,13 +59,15 @@ const emit = defineEmits<{
 }>();
 
 const searchQuery = ref("");
+
 const physicalFacilities = computed(() =>
   props.facilities.filter((facility) =>
     facility.facilityTypeId !== "VIRTUAL_FACILITY" &&
     facility.parentTypeId !== "VIRTUAL_FACILITY"));
+
 const filteredFacilities = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  if(!query) {
+  if (!query) {
     return physicalFacilities.value;
   }
 
@@ -90,15 +86,36 @@ function isPending(facility: Record<string, any>) {
 
 function emitToggle(
   facility: Record<string, any>,
-  event: CustomEvent<{ checked: boolean }>,
+  event: any,
 ) {
-  if(props.disabled || isPending(facility)) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  if (props.disabled || isPending(facility)) {
     return;
   }
 
   emit("toggle", {
     facility,
-    enabled: Boolean(event.detail.checked),
+    enabled: !facility.isConfigured,
   });
 }
 </script>
+
+<style scoped>
+ion-card-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+ion-card-header > ion-checkbox {
+  flex-shrink: 0;
+}
+
+section {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+</style>

@@ -90,7 +90,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import router from "@/router";
@@ -127,6 +127,14 @@ const integrationPages = [
     permission: Actions.APP_CARRIERS_VIEW,
     iosIcon: airplaneOutline,
     mdIcon: airplaneOutline,
+  },
+  {
+    title: "Unigate",
+    url: "/unigate",
+    childRoutes: ["/unigate/"],
+    permission: Actions.APP_CARRIERS_VIEW,
+    iosIcon: layersOutline,
+    mdIcon: layersOutline,
   },
   {
     title: "Shopify",
