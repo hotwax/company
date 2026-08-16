@@ -176,13 +176,12 @@ export function useProductStoreDetail(productStoreId: string) {
   async function loadDetail() {
     try {
       const resp: any = await api({ url: `admin/productStores/${storeId()}`, method: "get" });
-      if (!commonUtil.hasError(resp) && resp?.data && typeof resp.data === "object") {
-        detail.value = resp.data;
+      if (!commonUtil.hasError(resp)) {
+        detail.value = resp?.data && typeof resp.data === "object" ? resp.data : {};
       } else {
-        detail.value = {};
+        throw resp.data;
       }
     } catch (error) {
-      detail.value = {};
       logger.error("Failed to load product store detail", error);
     }
   }
