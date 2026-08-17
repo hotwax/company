@@ -12,6 +12,7 @@ import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
+import "./domains/netSuiteOrderPushDomain";
 import "./domains/referenceDomains";
 
 // The harness must be imported last: it calls `expose()`, and every domain has to be registered

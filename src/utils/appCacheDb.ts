@@ -40,6 +40,11 @@ class CompanyCacheDB extends Dexie {
   users!: Table<CachedRow, string>;
   permissions!: Table<CachedRow, string>;
   integrationTypeMappings!: Table<CachedRow, string>;
+  // NetSuite order push (rule-group export path)
+  netSuiteRuleGroups!: Table<CachedRow, string>;
+  netSuiteDecisionRules!: Table<CachedRow, string>;
+  netSuiteRuleGroupRuns!: Table<CachedRow, string>;
+  netSuiteOrderPushBacklog!: Table<CachedRow, string>;
   // lookup / type reference tables
   statuses!: Table<CachedRow, string>;
   enums!: Table<CachedRow, string>;
@@ -241,6 +246,14 @@ const CACHE_SCHEMA = {
   // Shopify bulk operations, keyed by the GraphQL node id. A completed operation is immutable, so
   // it can be served from cache forever; only in-flight ones need a re-read.
   shopifyBulkOperations: "id, status, systemMessageRemoteId, completedAt",
+  // --- NetSuite order push (rule-group export path) ---
+  // Rule groups and their rules are class B config: small, read constantly by the monitor, and
+  // refetched after a mutation rather than polled. Runs are class A, cursored on `startDate`.
+  netSuiteRuleGroups: "ruleGroupId, productStoreId, groupTypeEnumId, statusId, jobName",
+  netSuiteDecisionRules: "ruleId, ruleGroupId, statusId, sequenceNum, [ruleGroupId+sequenceNum]",
+  netSuiteRuleGroupRuns: "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
+  // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
+  netSuiteOrderPushBacklog: "productStoreId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;
