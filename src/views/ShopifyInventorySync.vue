@@ -111,10 +111,10 @@
                   fill="outline"
                   size="small"
                   :disabled="!!provisioningJobKind"
-                  @click.stop="setUpSyncJob(job.setup)"
+                  @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                 >
-                  <ion-spinner v-if="provisioningJobKind === job.setup" name="crescent" />
-                  <template v-else>Set up</template>
+                  <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                  <template v-else>{{ translate("Set up") }}</template>
                 </ion-button>
                 <ion-badge slot="end" :color="job.badgeColor">
                   {{ job.status }}
@@ -155,7 +155,17 @@
                 <ion-label class="ion-text-wrap">
                   {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
                   <p>{{ channelSubtitle(channel) }}</p>
+                  <p>{{ channelResetJobSummary(channel) }}</p>
                 </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="outline"
+                  size="small"
+                  @click.stop="openChannelResetJob(channel)"
+                >
+                  <ion-icon slot="start" :icon="timeOutline" />
+                  {{ translate("Schedule reset") }}
+                </ion-button>
                 <ion-label slot="end" class="ion-text-end">
                   {{ channel.shopifyLocationId }}
                   <p>Shopify location</p>
@@ -882,6 +892,7 @@
       :is-open="!!editingChannel"
       :channel="editingChannel"
       @updated="onChannelUpdated"
+      @schedule-job="handleScheduleChannelJob"
       @close="editingChannel = null"
     />
   </ion-page>
@@ -904,7 +915,8 @@ import {
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { commonUtil, logger } from "@common";
+import cronstrue from "cronstrue";
+import { commonUtil, logger, translate } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { useCachedList } from "@/composables/useCachedList";
@@ -1213,13 +1225,49 @@ function channelIdsWithoutJob(jobs: any[]): string[] {
     .filter((channelId: string) => !covered.has(channelId));
 }
 
+function findChannelResetJob(channelId: string) {
+  const targetId = String(channelId);
+  return cachedJobs.value.find((job: any) =>
+    job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId)
+    || cachedJobs.value.find((job: any) =>
+      job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
+    || cachedJobs.value.find((job: any) =>
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
+    || null;
+}
+
+function channelResetJobSummary(channel: any): string {
+  const job = findChannelResetJob(channel.inventoryChannelId);
+  if (!job) return translate("Reset job: Not configured");
+  if (job.paused === "Y") return translate("Reset job: Paused");
+  if (job.nextExecutionDateTime) {
+    return `${translate("Reset job:")} ${translate("Next run")} ${formatDateTime(job.nextExecutionDateTime)}`;
+  }
+  if (job.cronExpression) {
+    try {
+      return `${translate("Reset job:")} ${cronstrue.toString(job.cronExpression)}`;
+    } catch {
+      return `${translate("Reset job:")} ${job.cronExpression}`;
+    }
+  }
+  return translate("Reset job: Active");
+}
+
 const monitoredJobs = computed(() => {
   // `setup` is the row's create-the-missing-clone action, empty when there is nothing this page can
   // honestly create: the per-channel rows need a channel to clone for (creating one is the "Set up
   // channel" button's job), the physical reset needs the shop's SystemMessageRemote resolved, and
   // the effective-date scanner is seeded by the connector release — its absence is a deploy gap the
   // app must report, not paper over by inventing a job definition.
-  const definitions: Array<{ name: string; jobs: any[]; icon: string; setup: JobSetupKind | "" }> = [
+  const definitions: Array<{
+    name: string;
+    jobs: any[];
+    icon: string;
+    setup: JobSetupKind | "";
+    targetChannelId?: string;
+  }> = [
     {
       name: "Publish and send aggregate event batches", jobs: pendingPublisherJobs.value, icon: cloudUploadOutline,
       setup: channelIdsWithoutJob(pendingPublisherJobs.value).length ? "publisher" : "",
@@ -1232,13 +1280,31 @@ const monitoredJobs = computed(() => {
       name: "Reset physical location QOH", jobs: physicalResetJob.value ? [physicalResetJob.value] : [], icon: locationOutline,
       setup: !physicalResetJob.value && syncContext.remoteId.value ? "physicalReset" : "",
     },
-    {
-      name: "Reset aggregate ATP inventory", jobs: aggregateResetJobs.value, icon: refreshOutline,
-      setup: channelIdsWithoutJob(aggregateResetJobs.value).length ? "aggregateReset" : "",
-    },
   ];
 
-  return definitions.map(({ name, jobs, icon, setup }) => {
+  if (!inventoryChannels.value.length) {
+    definitions.push({
+      name: "Reset aggregate ATP inventory",
+      jobs: aggregateResetJobs.value,
+      icon: refreshOutline,
+      setup: "",
+    });
+  } else {
+    for (const channel of inventoryChannels.value) {
+      const channelId = String(channel.inventoryChannelId);
+      const channelName = channel.facilityGroupName || channel.description || channelId;
+      const job = findChannelResetJob(channelId);
+      definitions.push({
+        name: `${translate("Reset aggregate ATP")} (${channelName})`,
+        jobs: job ? [job] : [],
+        icon: refreshOutline,
+        setup: !job ? "aggregateReset" : "",
+        targetChannelId: channelId,
+      });
+    }
+  }
+
+  return definitions.map(({ name, jobs, icon, setup, targetChannelId }) => {
     const latestRun = latestRunFor(jobs);
     const nextJob = nextExecutionFor(jobs);
     const missing = !jobs.length;
@@ -1252,6 +1318,7 @@ const monitoredJobs = computed(() => {
       badgeColor: missing ? "medium" : paused ? "warning" : "success",
       icon,
       setup,
+      targetChannelId,
     };
   });
 });
@@ -1779,6 +1846,40 @@ function openChannelEdit(channel: any) {
   editingChannel.value = channel;
 }
 
+async function openChannelResetJob(channel: any) {
+  if (!channel?.inventoryChannelId) return;
+  const channelId = String(channel.inventoryChannelId);
+  const channelName = channel.facilityGroupName || channel.description || channelId;
+  let job = findChannelResetJob(channelId);
+  if (!job) {
+    try {
+      const jobName = await ensureChannelResetJob({
+        inventoryChannelId: channelId,
+        description: `Full aggregate ATP reset for ${channelName}`,
+      });
+      refreshServiceJobData();
+      selectedServiceJob.value = {
+        jobName,
+        title: `${translate("Reset aggregate ATP")} - ${channelName}`,
+      };
+      return;
+    } catch (error: any) {
+      logger.error("Failed to create aggregate reset job for channel", channelId, error);
+      commonUtil.showToast(error?.message || translate("Failed to set up aggregate reset job."));
+      return;
+    }
+  }
+  selectedServiceJob.value = {
+    jobName: String(job.jobName),
+    title: `${translate("Reset aggregate ATP")} - ${channelName}`,
+  };
+}
+
+function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
+  editingChannel.value = null;
+  selectedServiceJob.value = payload;
+}
+
 async function onChannelUpdated() {
   // Changing the location changes what the reset jobs target, so re-read rather than waiting for the
   // next scheduled pass.
@@ -1815,9 +1916,10 @@ const provisioningJobKind = ref<JobSetupKind | "">("");
  * app at all. The ensure* helpers are idempotent and write the new row through to the job cache, so
  * the row flips from "Not configured" to "Paused" without a re-login.
  */
-async function setUpSyncJob(kind: JobSetupKind | "") {
+async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   if (!kind || provisioningJobKind.value) return;
-  provisioningJobKind.value = kind;
+  const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
+  provisioningJobKind.value = provisioningKey as JobSetupKind;
   try {
     const created: string[] = [];
     if (kind === "physicalReset") {
@@ -1827,11 +1929,15 @@ async function setUpSyncJob(kind: JobSetupKind | "") {
     } else {
       // Snapshot the uncovered channels first: each ensure* refreshes the job cache, which would
       // otherwise recompute the list mid-loop.
-      const jobs = kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value;
-      for (const channelId of channelIdsWithoutJob(jobs)) {
+      const targetIds = targetChannelId
+        ? [targetChannelId]
+        : channelIdsWithoutJob(kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value);
+      for (const channelId of targetIds) {
+        const channel = inventoryChannels.value.find((c: any) => String(c.inventoryChannelId) === String(channelId));
+        const desc = channel ? `Full aggregate ATP reset for ${channel.facilityGroupName || channel.description || channelId}` : undefined;
         created.push(kind === "publisher"
           ? await ensureChannelEventPublisherJob(channelId)
-          : await ensureChannelResetJob({ inventoryChannelId: channelId }));
+          : await ensureChannelResetJob({ inventoryChannelId: channelId, description: desc }));
       }
     }
     commonUtil.showToast(!created.length

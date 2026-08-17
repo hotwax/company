@@ -2714,5 +2714,18 @@
   "Configured credentials": "Configured credentials",
   "Store mappings": "Store mappings",
   "No credentials specifically matching this carrier found.": "No credentials specifically matching this carrier found.",
-  "No store mappings configured for this carrier.": "No store mappings configured for this carrier."
+  "No store mappings configured for this carrier.": "No store mappings configured for this carrier.",
+  "Aggregate ATP reset job": "Aggregate ATP reset job",
+  "Schedule reset": "Schedule reset",
+  "Configure schedule": "Configure schedule",
+  "Set up reset job": "Set up reset job",
+  "Reset job: Not configured": "Reset job: Not configured",
+  "Reset job: Paused": "Reset job: Paused",
+  "Reset job: Active": "Reset job: Active",
+  "Reset job:": "Reset job:",
+  "Next run": "Next run",
+  "No reset job configured for this channel": "No reset job configured for this channel",
+  "Reset aggregate ATP": "Reset aggregate ATP",
+  "Failed to set up aggregate reset job.": "Failed to set up aggregate reset job.",
+  "Failed to set up reset job.": "Failed to set up reset job."
 }

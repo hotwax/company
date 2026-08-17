@@ -213,16 +213,13 @@ export async function setInventoryEventDocumentAttached(
 
 /**
  * Map one facility group to one Shopify location as an aggregate inventory channel.
- *
- * fromDate is deliberately omitted: the InventoryChannel entity defaults it to the OMS's own
- * nowTimestamp. Sending a client-side timestamp instead risks a future-dated row when the browser
- * and OMS disagree on timezone - which reads as "the channel silently does nothing".
  */
 export async function createInventoryChannel(params: {
   shopId: string;
   facilityGroupId: string;
   shopifyLocationId: string;
   description?: string;
+  fromDate?: number | string;
 }): Promise<string | undefined> {
   const resp: any = await api({
     url: "sob/shopify/inventoryChannels",
@@ -231,6 +228,7 @@ export async function createInventoryChannel(params: {
       shopId: params.shopId,
       facilityGroupId: params.facilityGroupId,
       shopifyLocationId: params.shopifyLocationId,
+      fromDate: params.fromDate ?? Date.now(),
       ...(params.description ? { description: params.description } : {}),
     },
   });
@@ -275,11 +273,11 @@ export async function updateInventoryChannel(params: {
 
 const EVENT_PUBLISHER_TEMPLATE_JOB = "publish_PendingShopifyInventoryAdjustments";
 /** Shared by every `queue_*` feed job on this OMS; the message type is what differentiates them. */
-const FEED_SYSTEM_MESSAGE_SERVICE =
+export const FEED_SYSTEM_MESSAGE_SERVICE =
   "co.hotwax.shopify.system.ShopifySystemMessageServices.queue#FeedSystemMessage";
 /** Must match the sync panel's physicalResetJob matcher. */
-const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
-const ABSOLUTE_CHANNEL_RESET_SERVICE =
+export const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+export const ABSOLUTE_CHANNEL_RESET_SERVICE =
   "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
 
 /** Existence probe so both ensure* helpers are safe to call twice. */

@@ -88,6 +88,38 @@
 
       <ion-list lines="full">
         <ion-list-header>
+          <ion-label>{{ translate("Aggregate ATP reset job") }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="refreshOutline" slot="start" />
+          <ion-label class="ion-text-wrap">
+            {{ channelResetJob?.jobName || `reset_InventoryChannelInventory_${channel?.inventoryChannelId}` }}
+            <p>{{ channelJobScheduleDescription }}</p>
+            <p v-if="channelResetJob?.nextExecutionDateTime">
+              {{ translate("Next run") }}: {{ formatDateTime(channelResetJob.nextExecutionDateTime) }}
+            </p>
+          </ion-label>
+          <ion-badge slot="end" :color="channelJobBadgeColor">
+            {{ channelJobStatus }}
+          </ion-badge>
+        </ion-item>
+        <ion-item lines="none">
+          <ion-button
+            fill="outline"
+            size="small"
+            :disabled="isSettingUpJob || isSaving"
+            @click="openScheduleJob()"
+          >
+            <ion-spinner v-if="isSettingUpJob" name="crescent" />
+            <template v-else>
+              {{ channelResetJob ? translate("Configure schedule") : translate("Set up reset job") }}
+            </template>
+          </ion-button>
+        </ion-item>
+      </ion-list>
+
+      <ion-list lines="full">
+        <ion-list-header>
           <ion-label>{{ translate("Stop using this channel") }}</ion-label>
         </ion-list-header>
         <ion-item lines="none">
@@ -117,17 +149,94 @@ import {
   IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonRadio, IonRadioGroup, IonSpinner,
   IonTitle, IonToolbar, alertController,
 } from "@ionic/vue";
-import { closeOutline, saveOutline } from "ionicons/icons";
+import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
+import cronstrue from "cronstrue";
 import { computed, ref, watch } from "vue";
 import { commonUtil, logger, translate } from "@common";
+import { useCachedList } from "@/composables/useCachedList";
 import {
+  ABSOLUTE_CHANNEL_RESET_SERVICE,
+  ensureChannelResetJob,
   fetchLocationsFromShopify,
   fetchShopifyShopLocations,
   updateInventoryChannel,
 } from "@/composables/useShopify";
+import { serviceJobCache } from "@/utils/cacheEntities";
+import { formatDateTime } from "@/utils";
+import { parameterMap } from "@/utils/serviceJob";
 
 const props = defineProps<{ isOpen: boolean; channel: any }>();
-const emit = defineEmits<{ close: []; updated: [] }>();
+const emit = defineEmits<{
+  close: [];
+  updated: [];
+  "schedule-job": [{ jobName: string; title: string }];
+}>();
+
+const { records: cachedJobs } = useCachedList<any>(serviceJobCache);
+
+const isSettingUpJob = ref(false);
+
+const channelResetJob = computed(() => {
+  const channelId = String(props.channel?.inventoryChannelId ?? "");
+  if (!channelId) return null;
+  return cachedJobs.value.find((job: any) =>
+    job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+    String(parameterMap(job).inventoryChannelId ?? "") === channelId)
+    || cachedJobs.value.find((job: any) =>
+      job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+      job.jobName === `reset_InventoryChannelInventory_${channelId}`)
+    || cachedJobs.value.find((job: any) =>
+      job.jobName === `reset_InventoryChannelInventory_${channelId}`)
+    || null;
+});
+
+const channelJobStatus = computed(() => {
+  if (!channelResetJob.value) return translate("Not configured");
+  return channelResetJob.value.paused === "Y" ? translate("Paused") : translate("Active");
+});
+
+const channelJobBadgeColor = computed(() => {
+  if (!channelResetJob.value) return "medium";
+  return channelResetJob.value.paused === "Y" ? "warning" : "success";
+});
+
+const channelJobScheduleDescription = computed(() => {
+  if (!channelResetJob.value) return translate("No reset job configured for this channel");
+  const cron = channelResetJob.value.cronExpression;
+  if (!cron) return translate("No active schedule");
+  try {
+    return cronstrue.toString(cron);
+  } catch {
+    return cron;
+  }
+});
+
+async function openScheduleJob() {
+  const channelId = String(props.channel?.inventoryChannelId ?? "");
+  if (!channelId) return;
+  const channelName = props.channel?.facilityGroupName || props.channel?.description || channelId;
+  let jobName = channelResetJob.value?.jobName;
+  if (!jobName) {
+    isSettingUpJob.value = true;
+    try {
+      jobName = await ensureChannelResetJob({
+        inventoryChannelId: channelId,
+        description: `Full aggregate ATP reset for ${channelName}`,
+      });
+    } catch (error: any) {
+      logger.error("Failed to ensure channel reset job", error);
+      commonUtil.showToast(error?.message || translate("Failed to set up reset job."));
+      isSettingUpJob.value = false;
+      return;
+    } finally {
+      isSettingUpJob.value = false;
+    }
+  }
+  emit("schedule-job", {
+    jobName,
+    title: `${translate("Reset aggregate ATP")} - ${channelName}`,
+  });
+}
 
 /** Locations parked here are unassigned rather than backing a real facility. */
 const UNASSIGNED_FACILITY_ID = "_NA_";
