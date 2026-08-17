@@ -906,3 +906,106 @@ export const appVersionProjection = {
 
 export const appCache = defineCachedEntity("apps", appProjection);
 export const appVersionCache = defineCachedEntity("appVersions", appVersionProjection);
+
+// =============================================================================================
+// NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
+//
+// Deepak's rule-group push replaced the single scheduled feed job with a RuleGroup of
+// DecisionRules, each carrying RuleConditions that narrow which orders that rule exports. All
+// three are the SHARED `co.hotwax.rule.*` model the safety-stock screens already drive through
+// `available-to-promise/*`, so nothing here is NetSuite-specific except the
+// `groupTypeEnumId = RG_NS_ORDER_PUSH` scope the reads apply.
+// =============================================================================================
+
+/**
+ * RuleGroup — one NetSuite order-push configuration for a product store.
+ *
+ * `jobName` is the link to the scheduled job that runs the group; the schedule itself lives on
+ * `moqui.service.job.ServiceJob` and is read through `ruleGroups/{id}/schedule`, not stored here.
+ */
+export const netSuiteRuleGroupProjection = {
+  keyField: "ruleGroupId",
+  fields: {
+    ruleGroupId: "text",
+    productStoreId: "text",
+    groupName: "text",
+    groupTypeEnumId: "text",
+    statusId: "text",
+    sequenceNum: "count",
+    jobName: "text",
+    description: "text",
+    createdDate: "date",
+    lastModifiedDate: "date",
+  },
+} as const;
+
+/**
+ * DecisionRule — one rule inside a group.
+ *
+ * The rule's conditions arrive nested on the `default` master (`ruleConditions`), so they are kept
+ * on the row as structured data rather than given their own table: a rule is never rendered
+ * without them, and the composite PK (ruleId + conditionSeqId) would otherwise need a synthetic key
+ * for no read that asks for conditions independently.
+ */
+export const netSuiteDecisionRuleProjection = {
+  keyField: "ruleId",
+  fields: {
+    ruleId: "text",
+    ruleGroupId: "text",
+    ruleName: "text",
+    statusId: "text",
+    sequenceNum: "count",
+    createdDate: "date",
+    ruleConditions: "structured",
+    ruleActions: "structured",
+  },
+} as const;
+
+/**
+ * RuleGroupRun — one execution of a rule group. This is the run history the monitor renders.
+ *
+ * ⚠️ Written by `co.hotwax.rule.DecisionRuleServices`, NOT by
+ * `co.hotwax.netsuite.OrderServices.run#NetSuiteDMOrderFeed` itself — that service iterates the
+ * rules and creates a DataManagerLog per generated file, and never stamps a RuleGroupRun. So a
+ * group invoked directly as a plain ServiceJob produces job runs and MDM logs but NO rows here.
+ * Treat an empty run history as "not driven through the rule-group scheduler", never as "no syncs".
+ */
+export const netSuiteRuleGroupRunProjection = {
+  keyField: "ruleGroupRunId",
+  fields: {
+    ruleGroupRunId: "text",
+    ruleGroupId: "text",
+    productStoreId: "text",
+    hasError: "text",
+    startDate: "date",
+    endDate: "date",
+    ruleGroupRunResult: "text",
+  },
+} as const;
+
+/**
+ * The pending-to-sync backlog, as a single row per product store.
+ *
+ * A scalar count has no entity of its own, so it is stored keyed by `productStoreId` — that is what
+ * makes it readable through the same `live()` path as every other cached read, so the monitor card
+ * re-renders from the worker's write with no main-thread fetch.
+ *
+ * `isSupported` records whether the backing endpoint exists on this instance at all:
+ * `netsuite/orderPushPending/count` ships in mantle-netsuite-connector and an instance that has not
+ * taken that release 404s. That is a "cannot know" answer, which must render differently from a
+ * genuine zero backlog — see `useNetSuiteOrderPushBacklog`.
+ */
+export const netSuiteOrderPushBacklogProjection = {
+  keyField: "productStoreId",
+  fields: {
+    productStoreId: "text",
+    pendingCount: "count",
+    isSupported: "text",
+    checkedAt: "date",
+  },
+} as const;
+
+export const netSuiteRuleGroupCache = defineCachedEntity("netSuiteRuleGroups", netSuiteRuleGroupProjection);
+export const netSuiteDecisionRuleCache = defineCachedEntity("netSuiteDecisionRules", netSuiteDecisionRuleProjection);
+export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRuns", netSuiteRuleGroupRunProjection);
+export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
