@@ -20,8 +20,7 @@ export type UnigateRemoteConfig = {
   internalId?: string;
   description?: string;
   sendUrl?: string;
-  publicKey?: string;
-  password?: string;
+  hasKey?: boolean;
   authHeaderName?: string;
 };
 
@@ -89,6 +88,12 @@ const unwrapList = (data: any, key?: string): any[] => {
   return [];
 };
 
+function assertUnigateMutation(response: any, fallback: string): void {
+  if (commonUtil.hasError(response)) {
+    throw new Error(commonUtil.getErrorMessage(response) || fallback);
+  }
+}
+
 const state = reactive({
   unigateConfig: null as UnigateRemoteConfig | null,
   shippingGatewayConfigs: [] as ShippingGatewayConfig[],
@@ -135,7 +140,19 @@ export async function fetchUnigateRemoteConfig(force = false): Promise<UnigateRe
     });
     const list = unwrapList(resp.data, "systemMessageRemoteList");
     const found = list.find((item: any) => item.systemMessageRemoteId === "UNIGATE_CONFIG");
-    state.unigateConfig = found || null;
+    if (found) {
+      // Discard secrets (publicKey, password) from client state while projecting only safe readiness fields
+      state.unigateConfig = {
+        systemMessageRemoteId: found.systemMessageRemoteId,
+        internalId: found.internalId,
+        description: found.description,
+        sendUrl: found.sendUrl,
+        hasKey: Boolean(found.publicKey || found.password || found.hasKey),
+        authHeaderName: found.authHeaderName,
+      };
+    } else {
+      state.unigateConfig = null;
+    }
     status.config = "success";
     return state.unigateConfig;
   } catch (err) {
@@ -165,17 +182,15 @@ export async function updateUnigateConnection(payload: {
     data.password = payload.password.trim();
   }
 
-  await safeApi({
+  const response: any = await safeApi({
     url: state.unigateConfig ? "oms/systemMessageRemotes/UNIGATE_CONFIG" : "oms/systemMessageRemotes",
     method: state.unigateConfig ? "put" : "post",
     data,
   });
+  assertUnigateMutation(response, "Failed to update Unigate connection.");
 
-  try {
-    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId: "UNIGATE_CONFIG" });
-  } catch (err) {
-    log.warn("Cache refresh after remote mutation rejected", err);
-  }
+  // Reconcile cache and propagate reconciliation errors
+  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId: "UNIGATE_CONFIG" });
 
   await fetchUnigateRemoteConfig(true);
 }
@@ -242,7 +257,7 @@ export async function createShippingGatewayAuth(data: {
   publicKey?: string;
   authHeaderName?: string;
 }): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: "oms/shippingGatewayAuths",
     method: "post",
     data: {
@@ -250,6 +265,7 @@ export async function createShippingGatewayAuth(data: {
       authHeaderName: data.authHeaderName || "Authorization",
     },
   });
+  assertUnigateMutation(response, "Failed to create carrier credentials.");
   await fetchShippingGatewayAuths(true);
 }
 
@@ -257,19 +273,21 @@ export async function updateShippingGatewayAuth(
   shippingGatewayAuthId: string,
   data: Partial<ShippingGatewayAuth>
 ): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: `oms/shippingGatewayAuths/${shippingGatewayAuthId}`,
     method: "put",
     data,
   });
+  assertUnigateMutation(response, "Failed to update carrier credentials.");
   await fetchShippingGatewayAuths(true);
 }
 
 export async function deleteShippingGatewayAuth(shippingGatewayAuthId: string): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: `oms/shippingGatewayAuths/${shippingGatewayAuthId}`,
     method: "delete",
   });
+  assertUnigateMutation(response, "Failed to delete carrier credentials.");
   await fetchShippingGatewayAuths(true);
 }
 
@@ -289,7 +307,7 @@ export async function fetchShippingCarrierConfigs(force = false): Promise<Shippi
       url: "oms/shippingCarrierConfigs",
       method: "get",
     });
-    state.shippingCarrierConfigs = unwrapList(resp.data);
+    state.shippingCarrierConfigs = unwrapList(resp.data, "carrierConfigList");
     status.carrierConfigs = "success";
   } catch (err) {
     log.error("Failed to fetch shippingCarrierConfigs", err);
@@ -299,19 +317,21 @@ export async function fetchShippingCarrierConfigs(force = false): Promise<Shippi
 }
 
 export async function saveShippingCarrierConfig(data: ShippingCarrierConfig): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: "oms/shippingCarrierConfigs",
     method: "post",
     data,
   });
+  assertUnigateMutation(response, "Failed to save carrier configuration.");
   await fetchShippingCarrierConfigs(true);
 }
 
 export async function deleteShippingCarrierConfig(carrierConfigId: string): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: `oms/shippingCarrierConfigs/${carrierConfigId}`,
     method: "delete",
   });
+  assertUnigateMutation(response, "Failed to delete carrier configuration.");
   await fetchShippingCarrierConfigs(true);
 }
 
@@ -331,7 +351,7 @@ export async function fetchShippingCarrierBillingConfigs(force = false): Promise
       url: "oms/shippingCarrierBillingConfigs",
       method: "get",
     });
-    state.shippingCarrierBillingConfigs = unwrapList(resp.data);
+    state.shippingCarrierBillingConfigs = unwrapList(resp.data, "billingConfigList");
     status.billingConfigs = "success";
   } catch (err) {
     log.error("Failed to fetch shippingCarrierBillingConfigs", err);
@@ -341,19 +361,21 @@ export async function fetchShippingCarrierBillingConfigs(force = false): Promise
 }
 
 export async function saveShippingCarrierBillingConfig(data: ShippingCarrierBillingConfig): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: "oms/shippingCarrierBillingConfigs",
     method: "post",
     data,
   });
+  assertUnigateMutation(response, "Failed to save billing configuration.");
   await fetchShippingCarrierBillingConfigs(true);
 }
 
 export async function deleteShippingCarrierBillingConfig(carrierBillingConfigId: string): Promise<void> {
-  await safeApi({
+  const response: any = await safeApi({
     url: `oms/shippingCarrierBillingConfigs/${carrierBillingConfigId}`,
     method: "delete",
   });
+  assertUnigateMutation(response, "Failed to delete billing configuration.");
   await fetchShippingCarrierBillingConfigs(true);
 }
 
@@ -369,7 +391,7 @@ export function useUnigate() {
 
   const tenantId = computed(() => state.unigateConfig?.internalId || "");
   const sendUrl = computed(() => state.unigateConfig?.sendUrl || "");
-  const hasKey = computed(() => Boolean(state.unigateConfig?.publicKey || state.unigateConfig?.password));
+  const hasKey = computed(() => Boolean(state.unigateConfig?.hasKey));
 
   const refreshAll = async () => {
     await Promise.allSettled([

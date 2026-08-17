@@ -38,9 +38,11 @@
         <ion-item>
           <ion-input
             v-model="formData.publicKey"
-            :label="translate('API key / Token')"
-            label-placement="floating"
             :type="showKey ? 'text' : 'password'"
+            :label="translate('API Key / Secret')"
+            label-placement="floating"
+            :placeholder="unigateConfig?.hasKey ? translate('(Key configured - enter to rotate)') : translate('Enter Unigate API key')"
+            autocomplete="new-password"
             data-testid="unigate-public-key-input"
           />
           <ion-button
@@ -109,7 +111,7 @@ const { unigateConfig } = useUnigate();
 const formData = reactive({
   sendUrl: props.initialSendUrl || unigateConfig.value?.sendUrl || "",
   internalId: props.initialTenantId || unigateConfig.value?.internalId || "",
-  publicKey: unigateConfig.value?.publicKey || "",
+  publicKey: "",
   description: props.initialDescription || unigateConfig.value?.description || "",
 });
 
@@ -126,12 +128,15 @@ async function save() {
   if (!isValid.value) return;
   isSaving.value = true;
   try {
-    await updateUnigateConnection({
+    const payload: any = {
       sendUrl: formData.sendUrl,
       internalId: formData.internalId,
-      publicKey: formData.publicKey,
       description: formData.description,
-    });
+    };
+    if (formData.publicKey.trim()) {
+      payload.publicKey = formData.publicKey.trim();
+    }
+    await updateUnigateConnection(payload);
     commonUtil.showToast(translate("Unigate connection saved successfully."));
     dismiss(true);
   } catch (err: any) {

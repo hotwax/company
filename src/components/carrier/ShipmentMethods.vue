@@ -89,7 +89,7 @@ import {
   alertController,
   popoverController,
 } from "@ionic/vue";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { addCircleOutline, ellipsisVerticalOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import type { CarrierShipmentMethod } from "@/composables/useCarriers";
@@ -116,6 +116,8 @@ const emit = defineEmits<{
   (event: "mutation-complete"): void;
 }>();
 
+const localPendingMethods = ref<Set<string>>(new Set());
+
 const visibleMethods = computed(() => {
   if (props.configuredOnly) {
     return props.methods.filter((m) => m.isConfigured);
@@ -128,10 +130,15 @@ const configuredMethods = computed(() =>
 );
 
 function isPending(method: CarrierShipmentMethod) {
-  return props.pendingKeys.includes(`method:${method.shipmentMethodTypeId}`);
+  return (
+    localPendingMethods.value.has(method.shipmentMethodTypeId) ||
+    props.pendingKeys.includes(`method:${method.shipmentMethodTypeId}`) ||
+    props.pendingKeys.includes(`carrier:${props.carrierPartyId}`)
+  );
 }
 
 const editDeliveryDays = async (shipmentMethod: CarrierShipmentMethod) => {
+  if (isPending(shipmentMethod)) return;
   const alert = await alertController.create({
     header: translate("Edit delivery days"),
     inputs: [{
@@ -147,6 +154,7 @@ const editDeliveryDays = async (shipmentMethod: CarrierShipmentMethod) => {
           const rawValue = data.deliveryDays?.trim();
           const deliveryDays = rawValue ? Number(rawValue) : undefined;
           if (deliveryDays !== shipmentMethod.deliveryDays) {
+            localPendingMethods.value.add(shipmentMethod.shipmentMethodTypeId);
             try {
               await updateCarrierShipmentMethod(
                 props.carrierPartyId,
@@ -158,6 +166,8 @@ const editDeliveryDays = async (shipmentMethod: CarrierShipmentMethod) => {
             } catch (err) {
               logger.error("Failed to update delivery days", err);
               commonUtil.showToast(translate("Failed to update delivery days."));
+            } finally {
+              localPendingMethods.value.delete(shipmentMethod.shipmentMethodTypeId);
             }
           }
         },
@@ -167,11 +177,13 @@ const editDeliveryDays = async (shipmentMethod: CarrierShipmentMethod) => {
   await alert.present();
 };
 
-const editCarrierCode = async (shipmentMethod: CarrierShipmentMethod) => {
+const editCarrierServiceCode = async (shipmentMethod: CarrierShipmentMethod) => {
+  if (isPending(shipmentMethod)) return;
   const alert = await alertController.create({
-    header: translate("Edit carrier code"),
+    header: translate("Edit carrier service code"),
     inputs: [{
       name: "carrierServiceCode",
+      type: "text",
       value: shipmentMethod.carrierServiceCode || "",
     }],
     buttons: [
@@ -181,6 +193,7 @@ const editCarrierCode = async (shipmentMethod: CarrierShipmentMethod) => {
         handler: async (data) => {
           const carrierServiceCode = data.carrierServiceCode?.trim();
           if (carrierServiceCode !== (shipmentMethod.carrierServiceCode || "")) {
+            localPendingMethods.value.add(shipmentMethod.shipmentMethodTypeId);
             try {
               await updateCarrierShipmentMethod(
                 props.carrierPartyId,
@@ -192,6 +205,8 @@ const editCarrierCode = async (shipmentMethod: CarrierShipmentMethod) => {
             } catch (err) {
               logger.error("Failed to update carrier code", err);
               commonUtil.showToast(translate("Failed to update carrier code."));
+            } finally {
+              localPendingMethods.value.delete(shipmentMethod.shipmentMethodTypeId);
             }
           }
         },
@@ -208,17 +223,21 @@ const toggleCarrierMethodAssociation = async (
   event.preventDefault();
   event.stopImmediatePropagation();
 
+  const typeId = shipmentMethod.shipmentMethodTypeId;
+  if (isPending(shipmentMethod) || props.disabled) return;
+
+  localPendingMethods.value.add(typeId);
   try {
     if (shipmentMethod.isConfigured) {
       await deleteCarrierShipmentMethod(
         props.carrierPartyId,
-        shipmentMethod.shipmentMethodTypeId,
+        typeId,
       );
       commonUtil.showToast(translate("Shipment method removed from carrier."));
     } else {
       await enableCarrierShipmentMethod(
         props.carrierPartyId,
-        shipmentMethod.shipmentMethodTypeId,
+        typeId,
       );
       commonUtil.showToast(translate("Shipment method associated with carrier."));
     }
@@ -226,6 +245,8 @@ const toggleCarrierMethodAssociation = async (
   } catch (err) {
     logger.error("Failed to toggle carrier shipment method association", err);
     commonUtil.showToast(translate("Failed to update shipment method."));
+  } finally {
+    localPendingMethods.value.delete(typeId);
   }
 };
 
