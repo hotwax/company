@@ -20,6 +20,10 @@ export interface CacheDomainEntry {
 export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // --- class B: reference / config ---
   { name: "productStore", table: "productStores", label: "Product stores", syncClass: "B" },
+  { name: "carrier", table: "carriers", label: "Carriers", syncClass: "B" },
+  { name: "carrierShipmentMethod", table: "carrierShipmentMethods", label: "Carrier shipment methods", syncClass: "B" },
+  // must come AFTER carrier: it fans out over the cached carriers
+  { name: "carrierFacility", table: "carrierFacilities", label: "Carrier facilities", syncClass: "B" },
   { name: "shopifyShop", table: "shopifyShops", label: "Shopify shops", syncClass: "B" },
   { name: "shopifyInventoryEventFeed", table: "dataFeeds", label: "Shopify inventory event feed", syncClass: "B" },
   { name: "inventoryChannel", table: "inventoryChannels", label: "Shopify inventory channels", syncClass: "B" },

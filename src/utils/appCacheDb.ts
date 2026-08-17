@@ -28,6 +28,9 @@ class CompanyCacheDB extends Dexie {
   syncRuns!: Table<CachedRow, string>;
   serviceJobs!: Table<CachedRow, string>;
   productStores!: Table<CachedRow, string>;
+  carriers!: Table<CachedRow, string>;
+  carrierShipmentMethods!: Table<CachedRow, string>;
+  carrierFacilities!: Table<CachedRow, string>;
   shopifyShops!: Table<CachedRow, string>;
   organizations!: Table<CachedRow, string>;
   organizationRelationships!: Table<CachedRow, string>;
@@ -175,6 +178,11 @@ const CACHE_SCHEMA = {
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
+  carriers: "partyId, groupName, roleTypeId",
+  carrierShipmentMethods:
+    "carrierShipmentMethodKey, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber",
+  carrierFacilities:
+    "carrierFacilityKey, partyId, facilityId, roleTypeId, fromDate, thruDate",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
   inventoryChannels:
     "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
@@ -208,7 +216,8 @@ const CACHE_SCHEMA = {
   // per-store aggregate used by the product-store list
   productStoreShipmentCounts: "productStoreId",
   shopifyCarrierShipments: "carrierShipmentKey, shopId, carrierPartyId, shipmentMethodTypeId",
-  productStoreShippingMethods: "productStoreShipMethId, productStoreId, shipmentMethodTypeId",
+  productStoreShippingMethods:
+    "productStoreShipMethId, productStoreId, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber, thruDate, [partyId+productStoreId]",
   enumTypes: "enumTypeId, parentTypeId",
   // Geo reference straight from Moqui (moqui.basic.Geo / GeoAssoc) — replaces utilStore states
   // and operating countries.
