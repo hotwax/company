@@ -336,6 +336,7 @@ async function createChannel() {
       facilityGroupId: selectedGroupId.value,
       shopifyLocationId: selectedLocationId.value,
       description: `${selectedGroup.value?.facilityGroupName || selectedGroupId.value} aggregate inventory`,
+      fromDate: Date.now(),
     });
   } catch (error: any) {
     logger.error("Failed to create inventory channel", error);

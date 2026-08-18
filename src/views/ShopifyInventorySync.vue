@@ -91,7 +91,7 @@
             <ion-list lines="full">
               <ion-item
                 v-for="job in monitoredJobs"
-                :key="job.name"
+                :key="`${job.name}-${job.targetChannelId ?? ''}`"
                 :button="!!job.job"
                 :detail="!!job.job"
                 @click="openServiceJob(job.job, job.name)"
@@ -111,10 +111,10 @@
                   fill="outline"
                   size="small"
                   :disabled="!!provisioningJobKind"
-                  @click.stop="setUpSyncJob(job.setup)"
+                  @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                 >
-                  <ion-spinner v-if="provisioningJobKind === job.setup" name="crescent" />
-                  <template v-else>Set up</template>
+                  <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                  <template v-else>{{ translate("Set up") }}</template>
                 </ion-button>
                 <ion-badge slot="end" :color="job.badgeColor">
                   {{ job.status }}
@@ -155,7 +155,17 @@
                 <ion-label class="ion-text-wrap">
                   {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
                   <p>{{ channelSubtitle(channel) }}</p>
+                  <p>{{ channelResetJobSummary(channel) }}</p>
                 </ion-label>
+                <ion-button
+                  slot="end"
+                  fill="outline"
+                  size="small"
+                  @click.stop="openChannelResetJob(channel)"
+                >
+                  <ion-icon slot="start" :icon="timeOutline" />
+                  {{ translate("Schedule reset") }}
+                </ion-button>
                 <ion-label slot="end" class="ion-text-end">
                   {{ channel.shopifyLocationId }}
                   <p>Shopify location</p>
@@ -530,22 +540,22 @@
 
                 <div class="filter-item">
                   <ion-select
-                    :value="selectedTarget"
-                    label="Shopify target"
+                    :value="selectedChannel"
+                    label="Inventory channel"
                     label-placement="stacked"
                     fill="outline"
                     interface="popover"
                     placeholder="All"
-                    @ion-change="selectedTarget = $event.detail.value || ''"
+                    @ion-change="selectedChannel = $event.detail.value || ''"
                   >
                     <ion-select-option value="">
                       All
                     </ion-select-option>
-                    <ion-select-option v-for="target in targetOptions" :key="target" :value="target">
-                      {{ target }}
+                    <ion-select-option v-for="option in channelFilterOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
                     </ion-select-option>
                   </ion-select>
-                  <ion-button v-if="selectedTarget" fill="clear" class="clear-filter-button" aria-label="Clear Shopify target filter" @click.stop="selectedTarget = ''">
+                  <ion-button v-if="selectedChannel" fill="clear" class="clear-filter-button" aria-label="Clear inventory channel filter" @click.stop="selectedChannel = ''">
                     <ion-icon slot="icon-only" :icon="closeCircleOutline" />
                   </ion-button>
                 </div>
@@ -869,11 +879,16 @@
       </ion-content>
     </ion-modal>
 
+    <!-- inventoryChannelId is protected: this panel finds a publisher and a reset job BY that
+         parameter and labels the per-channel rows from it, so editing it would move the job to a
+         different channel rather than configure this one. -->
     <ServiceJobDetailsModal
       :is-open="!!selectedServiceJob"
       :job-name="selectedServiceJob?.jobName || ''"
       :title="selectedServiceJob?.title || 'Inventory sync job'"
       parameter-description="Job and service parameters used by this inventory sync job."
+      :protected-parameter-names="selectedServiceJob?.protectedParameterNames || []"
+      :parameter-options="selectedServiceJob?.parameterOptions || {}"
       @updated="refreshServiceJobData"
       @close="selectedServiceJob = null"
     />
@@ -882,6 +897,7 @@
       :is-open="!!editingChannel"
       :channel="editingChannel"
       @updated="onChannelUpdated"
+      @schedule-job="handleScheduleChannelJob"
       @close="editingChannel = null"
     />
   </ion-page>
@@ -900,11 +916,13 @@ import {
   addOutline, checkmarkCircleOutline, chevronForwardOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   layersOutline, listOutline, locationOutline,
-  refreshOutline, storefrontOutline, timeOutline, warningOutline,
+  refreshOutline, sendOutline, storefrontOutline, timeOutline, trashBinOutline, trashOutline,
+  warningOutline,
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { commonUtil, logger } from "@common";
+import cronstrue from "cronstrue";
+import { commonUtil, logger, translate } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { useCachedList } from "@/composables/useCachedList";
@@ -916,8 +934,13 @@ import {
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+  DISCARD_PENDING_EVENTS_SERVICE,
+  INVENTORY_ADJUSTMENT_MESSAGE_TYPE,
+  PRODUCED_SENDER_SERVICE,
+  ensureChannelEventDiscardJob,
   ensureChannelEventPublisherJob,
   ensureChannelResetJob,
+  ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
   setInventoryEventDocumentAttached,
   useInventoryEventDocuments,
@@ -963,6 +986,8 @@ interface InventoryEvent {
   type: string;
   /** The ledger's Shopify inventory item -- the detail row carries no OMS product. */
   shopifyInventoryItem: string;
+  /** Channel identity, which the channel filter matches on -- `facility`/`target` are labels. */
+  inventoryChannelId: string;
   facility: string;
   target: string;
   model: string;
@@ -982,12 +1007,19 @@ const historyMode = ref<HistoryMode>(props.initialHistoryMode ?? "events");
 const historyQuery = ref("");
 const selectedHistoryStatus = ref("");
 const selectedEventType = ref("");
-const selectedTarget = ref("");
+const selectedChannel = ref("");
 const historySortOrder = ref("newest");
 const selectedEvent = ref<InventoryEvent | null>(null);
 const selectedBatch = ref<Batch | null>(null);
 const messageBatch = ref<Batch | null>(null);
-const selectedServiceJob = ref<{ jobName: string; title: string } | null>(null);
+interface ParameterOption { value: string; label: string }
+interface ServiceJobSelection {
+  jobName: string;
+  title: string;
+  protectedParameterNames: string[];
+  parameterOptions: Record<string, ParameterOption[]>;
+}
+const selectedServiceJob = ref<ServiceJobSelection | null>(null);
 const editingChannel = ref<any>(null);
 const isViewActive = ref(false);
 const inventoryEventFeedSaving = ref(false);
@@ -1005,6 +1037,7 @@ const PUBLISH_PENDING_SERVICES = [
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
 const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
@@ -1170,6 +1203,34 @@ const pendingPublisherJobs = computed<any[]>(() => {
 const effectiveDateJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === EFFECTIVE_DATE_SERVICE) ?? null);
 
+/** Retention cleanup for the event ledger. Connector-seeded and OMS-wide, so it is not per channel. */
+const purgeDetailsJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === PURGE_DETAILS_SERVICE) ?? null);
+
+/** The manual discard handle. One job serves every channel via its inventoryChannelId parameter. */
+const discardEventsJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === DISCARD_PENDING_EVENTS_SERVICE) ?? null);
+
+/**
+ * The sender this flow depends on, matched by TYPE SCOPE and not by serviceName alone. The OMS runs
+ * several jobs on send#AllProducedSystemMessages: an unscoped one, plus clones restricted to other
+ * message types. A serviceName-only match would report an unrelated type's sender as this flow's, so
+ * only a job whose systemMessageTypeIds is empty (sends everything, so it does cover us) or names
+ * ShopifyInventoryAdjustment counts.
+ */
+const inventoryAdjustmentSenderJobs = computed<any[]>(() =>
+  cachedJobs.value.filter((job: any) => {
+    if (job.serviceName !== PRODUCED_SENDER_SERVICE) return false;
+    const scope = String(parameterMap(job).systemMessageTypeIds ?? "").trim();
+    if (!scope) return true;
+    return scope.split(",").map((type: string) => type.trim()).includes(INVENTORY_ADJUSTMENT_MESSAGE_TYPE);
+  }));
+
+/** Prefer a sender scoped to inventory adjustments over the shared unscoped one. */
+const dedicatedSenderJob = computed<any>(() =>
+  inventoryAdjustmentSenderJobs.value.find((job: any) =>
+    String(parameterMap(job).systemMessageTypeIds ?? "").trim()) ?? null);
+
 const aggregateResetJobs = computed<any[]>(() => {
   const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
   return cachedJobs.value.filter((job: any) =>
@@ -1183,6 +1244,9 @@ const primaryAggregateResetJob = computed<any>(() =>
 const watchedJobNames = computed(() => [...new Set([
   physicalResetJob.value?.jobName,
   effectiveDateJob.value?.jobName,
+  purgeDetailsJob.value?.jobName,
+  discardEventsJob.value?.jobName,
+  ...inventoryAdjustmentSenderJobs.value.map((job: any) => job.jobName),
   ...pendingPublisherJobs.value.map((job: any) => job.jobName),
   ...aggregateResetJobs.value.map((job: any) => job.jobName),
 ].filter(Boolean))] as string[]);
@@ -1199,7 +1263,7 @@ function nextExecutionFor(jobs: any[]): any | null {
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
-type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset";
+type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "discard" | "sender";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -1213,17 +1277,96 @@ function channelIdsWithoutJob(jobs: any[]): string[] {
     .filter((channelId: string) => !covered.has(channelId));
 }
 
+/**
+ * The publisher clone that serves ONE channel. Matched the way findChannelResetJob matches its own:
+ * the inventoryChannelId parameter is the real identity, with the seeded naming convention as a
+ * fallback for a clone whose parameter rows have not been cached yet. Deliberately never matches the
+ * seeded template (no channel parameter, no `_<id>` suffix) - reporting the template's paused state
+ * under a channel's name would claim that channel publishes when it does not.
+ */
+function findChannelPublisherJob(channelId: string) {
+  const targetId = String(channelId);
+  return cachedJobs.value.find((job: any) =>
+    PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId)
+    || cachedJobs.value.find((job: any) =>
+      PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
+      job.jobName === `publish_PendingShopifyInventoryAdjustments_${targetId}`)
+    || null;
+}
+
+function findChannelResetJob(channelId: string) {
+  const targetId = String(channelId);
+  return cachedJobs.value.find((job: any) =>
+    job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId)
+    || cachedJobs.value.find((job: any) =>
+      job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
+    || cachedJobs.value.find((job: any) =>
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
+    || null;
+}
+
+function channelResetJobSummary(channel: any): string {
+  const job = findChannelResetJob(channel.inventoryChannelId);
+  if (!job) return translate("Reset job: Not configured");
+  if (job.paused === "Y") return translate("Reset job: Paused");
+  if (job.nextExecutionDateTime) {
+    return `${translate("Reset job:")} ${translate("Next run")} ${formatDateTime(job.nextExecutionDateTime)}`;
+  }
+  if (job.cronExpression) {
+    try {
+      return `${translate("Reset job:")} ${cronstrue.toString(job.cronExpression)}`;
+    } catch {
+      return `${translate("Reset job:")} ${job.cronExpression}`;
+    }
+  }
+  return translate("Reset job: Active");
+}
+
 const monitoredJobs = computed(() => {
   // `setup` is the row's create-the-missing-clone action, empty when there is nothing this page can
   // honestly create: the per-channel rows need a channel to clone for (creating one is the "Set up
   // channel" button's job), the physical reset needs the shop's SystemMessageRemote resolved, and
   // the effective-date scanner is seeded by the connector release — its absence is a deploy gap the
   // app must report, not paper over by inventing a job definition.
-  const definitions: Array<{ name: string; jobs: any[]; icon: string; setup: JobSetupKind | "" }> = [
-    {
-      name: "Publish and send aggregate event batches", jobs: pendingPublisherJobs.value, icon: cloudUploadOutline,
-      setup: channelIdsWithoutJob(pendingPublisherJobs.value).length ? "publisher" : "",
-    },
+  type JobDefinition = {
+    name: string;
+    jobs: any[];
+    icon: string;
+    setup: JobSetupKind | "";
+    targetChannelId?: string;
+  };
+
+  // Publishing is per channel, so each channel's clone gets its OWN row. Collapsing the set into one
+  // row rendered `jobs[0]` and nothing else: with two channels the second channel's publisher had no
+  // schedule, no runs, and no way into its modal on this screen - the panel showed one job where two
+  // exist. Same shape as the per-channel aggregate ATP reset rows below.
+  const publisherDefinitions: JobDefinition[] = inventoryChannels.value.length
+    ? inventoryChannels.value.map((channel: any) => {
+      const channelId = String(channel.inventoryChannelId);
+      const channelName = channel.facilityGroupName || channel.description || channelId;
+      const job = findChannelPublisherJob(channelId);
+      return {
+        name: `${translate("Publish and send event batches")} (${channelName})`,
+        jobs: job ? [job] : [],
+        icon: cloudUploadOutline,
+        setup: job ? "" : "publisher",
+        targetChannelId: channelId,
+      };
+    })
+    // No channel to clone for yet, so there is nothing this row could honestly create - setting one
+    // up is the "Set up channel" button's job.
+    : [{
+      name: "Publish and send aggregate event batches",
+      jobs: pendingPublisherJobs.value,
+      icon: cloudUploadOutline,
+      setup: "",
+    }];
+
+  const definitions: JobDefinition[] = [
+    ...publisherDefinitions,
     {
       name: "Process effective-dated inventory changes", jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [], icon: layersOutline,
       setup: "",
@@ -1232,13 +1375,53 @@ const monitoredJobs = computed(() => {
       name: "Reset physical location QOH", jobs: physicalResetJob.value ? [physicalResetJob.value] : [], icon: locationOutline,
       setup: !physicalResetJob.value && syncContext.remoteId.value ? "physicalReset" : "",
     },
+    // Delivery. Batches are left at SmsgProduced on purpose and a scheduled sender moves them, so a
+    // paused sender stalls the whole flow while every other row still reads healthy. OMS-wide.
     {
-      name: "Reset aggregate ATP inventory", jobs: aggregateResetJobs.value, icon: refreshOutline,
-      setup: channelIdsWithoutJob(aggregateResetJobs.value).length ? "aggregateReset" : "",
+      name: "Send produced inventory batches (all Shopify connections)",
+      jobs: inventoryAdjustmentSenderJobs.value,
+      icon: sendOutline,
+      setup: dedicatedSenderJob.value ? "" : "sender",
+    },
+    // Manual tool, not a schedule: it only ever runs from Run now.
+    {
+      name: "Discard unbatched events (manual, per channel)",
+      jobs: discardEventsJob.value ? [discardEventsJob.value] : [],
+      icon: trashOutline,
+      setup: discardEventsJob.value ? "" : "discard",
+    },
+    // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
+    {
+      name: "Purge old inventory events (all Shopify connections)",
+      jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+      icon: trashBinOutline,
+      setup: "",
     },
   ];
 
-  return definitions.map(({ name, jobs, icon, setup }) => {
+  if (!inventoryChannels.value.length) {
+    definitions.push({
+      name: "Reset aggregate ATP inventory",
+      jobs: aggregateResetJobs.value,
+      icon: refreshOutline,
+      setup: "",
+    });
+  } else {
+    for (const channel of inventoryChannels.value) {
+      const channelId = String(channel.inventoryChannelId);
+      const channelName = channel.facilityGroupName || channel.description || channelId;
+      const job = findChannelResetJob(channelId);
+      definitions.push({
+        name: `${translate("Reset aggregate ATP")} (${channelName})`,
+        jobs: job ? [job] : [],
+        icon: refreshOutline,
+        setup: !job ? "aggregateReset" : "",
+        targetChannelId: channelId,
+      });
+    }
+  }
+
+  return definitions.map(({ name, jobs, icon, setup, targetChannelId }) => {
     const latestRun = latestRunFor(jobs);
     const nextJob = nextExecutionFor(jobs);
     const missing = !jobs.length;
@@ -1252,9 +1435,48 @@ const monitoredJobs = computed(() => {
       badgeColor: missing ? "medium" : paused ? "warning" : "success",
       icon,
       setup,
+      targetChannelId,
     };
   });
 });
+
+const RESULT_SUMMARY_LIMIT = 200;
+
+function truncateResultText(text: string): string {
+  return text.length > RESULT_SUMMARY_LIMIT ? `${text.slice(0, RESULT_SUMMARY_LIMIT).trimEnd()}…` : text;
+}
+
+/**
+ * A reset that reports per-item failures answers with hundreds of lines of `results` JSON - one run
+ * card rendered taller than the viewport, burying the figures it exists to show. Keep what an operator
+ * triages on (the counts, and HOW MANY failures there were, not each one) and cap the rest. The
+ * untruncated payload is still rendered in full under "View all runs".
+ *
+ * "{}" and "[]" mean "nothing to report" - the convention the job runs screen already documents - so
+ * they summarise to nothing and let the caller's status wording stand instead of printing "{}".
+ */
+function summarizeResult(raw: unknown): string {
+  const text = raw === undefined || raw === null ? "" : String(raw).trim();
+  if (!text || text === "{}" || text === "[]") return "";
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return truncateResultText(text);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return truncateResultText(text);
+
+  // Scalars keep their value; a collection reports its SIZE, which is the part that was flooding the
+  // card. Anything unrecognised falls back to the capped raw text rather than being dropped silently.
+  const parts = Object.entries(parsed).map(([key, value]) => {
+    if (Array.isArray(value)) return `${key}: ${value.length}`;
+    if (value === null || typeof value === "object") return "";
+    return `${key}: ${value}`;
+  }).filter(Boolean);
+
+  return parts.length ? truncateResultText(parts.join(", ")) : truncateResultText(text);
+}
 
 function projectRun(job: any, run: any, scope: string) {
   const failed = run.hasError === "Y";
@@ -1270,8 +1492,8 @@ function projectRun(job: any, run: any, scope: string) {
     duration: run.endTime ? `Ended ${formatDateTime(run.endTime)}` : "In progress",
     status: failed ? "Failed" : running ? "Running" : "Completed",
     badgeColor: failed ? "danger" : running ? "primary" : "success",
-    result: run.results || run.messages || (failed
-      ? (run.errors || "The job reported an error")
+    result: summarizeResult(run.results) || summarizeResult(run.messages) || (failed
+      ? (summarizeResult(run.errors) || "The job reported an error")
       : running ? "The job is still running" : "Completed without a job error"),
     failed,
     startTime: toMillis(run.startTime),
@@ -1393,6 +1615,8 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     // maps one to the other. Show the item id -- the row's real identity -- rather than resolving a
     // product through a join this screen does not have.
     shopifyInventoryItem: String(detail.shopifyInventoryItemId ?? ""),
+    // The filter matches on this, not on the display label: two channels can share a description.
+    inventoryChannelId: String(detail.inventoryChannelId ?? ""),
     facility: detail.inventoryChannelDescription || detail.facilityGroupId || detail.inventoryChannelId || "Inventory channel",
     target: targetLabel(detail),
     model: "Aggregate ATP",
@@ -1641,7 +1865,31 @@ onIonViewDidLeave(() => {
 
 const historyStatusOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.status))]);
 const eventTypeOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.type))]);
-const targetOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.target))]);
+/**
+ * Channel choices for the history filter and the discard job's channel parameter.
+ *
+ * Built from the CHANNELS rather than from labels scraped off events: an event-derived list hides a
+ * channel that has no events yet. Two channels can also carry the SAME facility group name (this OMS
+ * has a pair of them), so a label that repeats gets its id appended - the value is the id either way,
+ * but an operator picking a target must be able to tell two entries apart.
+ */
+const channelFilterOptions = computed<ParameterOption[]>(() => {
+  const labelFor = (channel: any) =>
+    String(channel.facilityGroupName || channel.description || channel.inventoryChannelId);
+  const labelCounts = inventoryChannels.value.reduce((counts: Record<string, number>, channel: any) => {
+    const label = labelFor(channel);
+    counts[label] = (counts[label] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  return inventoryChannels.value.map((channel: any) => {
+    const label = labelFor(channel);
+    return {
+      value: String(channel.inventoryChannelId),
+      label: labelCounts[label] > 1 ? `${label} (${channel.inventoryChannelId})` : label,
+    };
+  });
+});
 
 const filteredEvents = computed(() => {
   const query = historyQuery.value.trim().toLowerCase();
@@ -1652,7 +1900,7 @@ const filteredEvents = computed(() => {
     return matchesQuery &&
       (!selectedHistoryStatus.value || event.status === selectedHistoryStatus.value) &&
       (!selectedEventType.value || event.type === selectedEventType.value) &&
-      (!selectedTarget.value || event.target === selectedTarget.value);
+      (!selectedChannel.value || event.inventoryChannelId === selectedChannel.value);
   });
   return historySortOrder.value === "oldest" ? events.reverse() : events;
 });
@@ -1715,7 +1963,7 @@ function loadMoreInGroup(groupId: string) {
 // Watch the filter inputs rather than filteredEvents: that array is rebuilt whenever a background
 // cache sync lands, which would otherwise throw away the reader's place and their loaded rows.
 watch(
-  [historyQuery, selectedHistoryStatus, selectedEventType, selectedTarget, historySortOrder],
+  [historyQuery, selectedHistoryStatus, selectedEventType, selectedChannel, historySortOrder],
   () => {
     groupShownCounts.value = {};
     scrollEventsToTop();
@@ -1779,6 +2027,36 @@ function openChannelEdit(channel: any) {
   editingChannel.value = channel;
 }
 
+async function openChannelResetJob(channel: any) {
+  if (!channel?.inventoryChannelId) return;
+  const channelId = String(channel.inventoryChannelId);
+  const channelName = channel.facilityGroupName || channel.description || channelId;
+  let job = findChannelResetJob(channelId);
+  if (!job) {
+    try {
+      const jobName = await ensureChannelResetJob({
+        inventoryChannelId: channelId,
+        description: `Full aggregate ATP reset for ${channelName}`,
+      });
+      refreshServiceJobData();
+      selectedServiceJob.value = serviceJobSelection(
+        jobName, `${translate("Reset aggregate ATP")} - ${channelName}`);
+      return;
+    } catch (error: any) {
+      logger.error("Failed to create aggregate reset job for channel", channelId, error);
+      commonUtil.showToast(error?.message || translate("Failed to set up aggregate reset job."));
+      return;
+    }
+  }
+  selectedServiceJob.value = serviceJobSelection(
+    job.jobName, `${translate("Reset aggregate ATP")} - ${channelName}`);
+}
+
+function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
+  editingChannel.value = null;
+  selectedServiceJob.value = serviceJobSelection(payload.jobName, payload.title);
+}
+
 async function onChannelUpdated() {
   // Changing the location changes what the reset jobs target, so re-read rather than waiting for the
   // next scheduled pass.
@@ -1786,9 +2064,32 @@ async function onChannelUpdated() {
 }
 
 /** The one way into a job's configuration - from its row in Inventory sync jobs. */
+/**
+ * Per-job parameter policy, because inventoryChannelId means opposite things on different rows.
+ *
+ * On a per-channel publisher or reset job the channel IS the job's identity - this panel finds the job
+ * by it and labels the row from it - so editing the value would move the job to another channel and
+ * orphan the row it was opened from. It stays read-only there.
+ *
+ * On the manual discard job the channel is the job's INPUT: one job serves every channel and choosing
+ * one is how the tool is aimed. So it is editable there, and offered as a dropdown of channel names
+ * rather than a free-text id, which is a misconfiguration the job would only reveal when it ran.
+ */
+function serviceJobSelection(jobName: string, title: string, serviceName?: string): ServiceJobSelection {
+  const isDiscardJob = serviceName === DISCARD_PENDING_EVENTS_SERVICE;
+  return {
+    jobName: String(jobName),
+    title,
+    // Default to protecting the channel: every other job that carries inventoryChannelId is bound to
+    // one channel, and only the discard tool takes it as an input.
+    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId"],
+    parameterOptions: isDiscardJob ? { inventoryChannelId: channelFilterOptions.value } : {},
+  };
+}
+
 function openServiceJob(job: any, title: string) {
   if (!job?.jobName) return;
-  selectedServiceJob.value = { jobName: String(job.jobName), title };
+  selectedServiceJob.value = serviceJobSelection(job.jobName, title, job.serviceName);
 }
 
 /** "View all runs" goes to the full history page, which is what it says. */
@@ -1815,23 +2116,36 @@ const provisioningJobKind = ref<JobSetupKind | "">("");
  * app at all. The ensure* helpers are idempotent and write the new row through to the job cache, so
  * the row flips from "Not configured" to "Paused" without a re-login.
  */
-async function setUpSyncJob(kind: JobSetupKind | "") {
+async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   if (!kind || provisioningJobKind.value) return;
-  provisioningJobKind.value = kind;
+  const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
+  provisioningJobKind.value = provisioningKey as JobSetupKind;
   try {
     const created: string[] = [];
     if (kind === "physicalReset") {
       const remoteId = String(syncContext.remoteId.value ?? "");
       if (!remoteId) throw new Error("No Shopify remote is configured for this connection.");
       created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
+    } else if (kind === "sender") {
+      created.push(await ensureInventoryAdjustmentSenderJob());
+    } else if (kind === "discard") {
+      // Seed it pointed at a channel so the parameter is never an empty id, but the operator still
+      // picks the channel deliberately in the modal before running it.
+      created.push(await ensureChannelEventDiscardJob({
+        inventoryChannelId: String(inventoryChannels.value[0]?.inventoryChannelId ?? ""),
+      }));
     } else {
       // Snapshot the uncovered channels first: each ensure* refreshes the job cache, which would
       // otherwise recompute the list mid-loop.
-      const jobs = kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value;
-      for (const channelId of channelIdsWithoutJob(jobs)) {
+      const targetIds = targetChannelId
+        ? [targetChannelId]
+        : channelIdsWithoutJob(kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value);
+      for (const channelId of targetIds) {
+        const channel = inventoryChannels.value.find((c: any) => String(c.inventoryChannelId) === String(channelId));
+        const desc = channel ? `Full aggregate ATP reset for ${channel.facilityGroupName || channel.description || channelId}` : undefined;
         created.push(kind === "publisher"
           ? await ensureChannelEventPublisherJob(channelId)
-          : await ensureChannelResetJob({ inventoryChannelId: channelId }));
+          : await ensureChannelResetJob({ inventoryChannelId: channelId, description: desc }));
       }
     }
     commonUtil.showToast(!created.length

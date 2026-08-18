@@ -111,14 +111,50 @@
                 {{ translate('Parameters') }}
                 <p>{{ parameterDescription }}</p>
               </ion-label>
-              <ion-note slot="end">{{ parameters.length }}</ion-note>
+              <ion-note slot="end">{{ parameterCount }}</ion-note>
             </ion-item>
             <ion-list slot="content" lines="full">
-              <ion-item v-for="parameter in parameters" :key="parameter.key">
-                <ion-label>{{ parameter.label }}<p>{{ parameter.source }}</p></ion-label>
-                <ion-label slot="end">{{ parameter.value }}</ion-label>
+              <!-- The job parameters are this job's stored values, so they are the editable ones.
+                   Saved through the same `serviceJobParameters` PUT that provisions a cloned job. -->
+              <ion-item v-for="parameter in jobParameters" :key="parameter.key">
+                <!-- A parameter whose valid values the host screen knows is chosen, not typed: an id
+                     typed by hand is a silent misconfiguration the job only reveals when it runs. -->
+                <ion-select
+                  v-if="parameter.options"
+                  label-placement="stacked"
+                  interface="popover"
+                  :label="parameter.label"
+                  :value="draftParameters[parameter.name]"
+                  :disabled="isSaving || !canEdit || parameter.isProtected"
+                  @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                >
+                  <ion-select-option v-for="option in parameter.options" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </ion-select-option>
+                </ion-select>
+                <ion-input
+                  v-else
+                  label-placement="stacked"
+                  :label="parameter.label"
+                  :value="draftParameters[parameter.name]"
+                  :disabled="isSaving || !canEdit || parameter.isProtected"
+                  @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                />
+                <ion-note v-if="parameter.isProtected" slot="end">{{ translate('Read only') }}</ion-note>
               </ion-item>
-              <ion-item v-if="!parameters.length"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
+
+              <!-- Service parameters are the service SIGNATURE (type, mode, default), not values
+                   stored against this job - there is nothing here a save could write, so they stay
+                   read-only rather than offering an edit that goes nowhere. -->
+              <template v-if="serviceParameters.length">
+                <ion-list-header>{{ translate('Service parameters') }}</ion-list-header>
+                <ion-item v-for="parameter in serviceParameters" :key="parameter.key">
+                  <ion-label>{{ parameter.label }}</ion-label>
+                  <ion-label slot="end">{{ parameter.value }}</ion-label>
+                </ion-item>
+              </template>
+
+              <ion-item v-if="!parameterCount"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
             </ion-list>
           </ion-accordion>
 
@@ -161,7 +197,7 @@
 
         <ion-fab vertical="bottom" horizontal="end" slot="fixed">
           <ion-fab-button
-            :disabled="!canEdit || !isDirty || !isScheduleValid || isSaving"
+            :disabled="!canSave || isSaving"
             :title="!canEdit ? editDisabledReason : undefined"
             :aria-label="translate(isSaving ? 'Saving' : 'Save')"
             @click="save"
@@ -179,7 +215,8 @@
 import {
   IonAccordion, IonAccordionGroup, IonBadge, IonButton, IonButtons, IonContent, IonFab, IonFabButton,
   IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
-  IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToggle, IonToolbar, alertController,
+  IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSpinner, IonTitle, IonToggle, IonToolbar,
+  alertController,
 } from '@ionic/vue';
 import { closeOutline, refreshOutline, saveOutline } from 'ionicons/icons';
 import cronstrue from 'cronstrue';
@@ -193,6 +230,16 @@ const props = withDefaults(defineProps<{
   jobName: string;
   title?: string;
   allowedParameterNames?: string[];
+  /**
+   * Job parameters that stay read-only. For identity parameters - the ones a screen finds this job
+   * BY - editing the value silently reassigns the job to something else instead of configuring it.
+   */
+  protectedParameterNames?: string[];
+  /**
+   * Valid values per job parameter, keyed by parameter name. A parameter listed here renders as a
+   * dropdown instead of a free-text field.
+   */
+  parameterOptions?: Record<string, Array<{ value: string; label: string }>>;
   parameterDescription?: string;
   canRunNow?: boolean;
   canEdit?: boolean;
@@ -203,6 +250,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   title: '',
   allowedParameterNames: () => [],
+  protectedParameterNames: () => [],
+  parameterOptions: () => ({}),
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
   canEdit: true,
@@ -223,15 +272,25 @@ const recentRuns = ref<any[]>([]);
 const auditHistory = ref<any[]>([]);
 const draftCronExpression = ref('');
 const draftActive = ref(false);
+const draftParameters = ref<Record<string, string>>({});
 
 const modalTitle = computed(() => props.title || jobDetails.value.jobName || props.jobName || translate('Sync job details'));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
-const isDirty = computed(() => draftCronExpression.value !== originalCronExpression.value || draftActive.value !== originalActive.value);
+const isDirty = computed(() => draftCronExpression.value !== originalCronExpression.value
+  || draftActive.value !== originalActive.value
+  || changedParameters.value.length > 0);
 const isScheduleValid = computed(() => {
   if (!draftCronExpression.value) return false;
   try { cronstrue.toString(draftCronExpression.value); return true; } catch (_error) { return false; }
 });
+/**
+ * A manual, run-on-demand job has NO cron by design, which made `isScheduleValid` false and disabled
+ * Save for it permanently - so its parameters could never be edited. Validity is only the schedule's
+ * business: gate on it when the schedule is what changed, not when a parameter is.
+ */
+const scheduleChanged = computed(() => draftCronExpression.value !== originalCronExpression.value);
+const canSave = computed(() => props.canEdit && isDirty.value && (!scheduleChanged.value || isScheduleValid.value));
 const scheduleDescription = computed(() => {
   if (!draftCronExpression.value) return translate('Not scheduled');
   try { return cronstrue.toString(draftCronExpression.value); } catch (_error) { return translate('Schedule preview unavailable'); }
@@ -259,14 +318,45 @@ const scheduleOptions = [
   { label: 'Every day at midnight', expression: '0 0 0 ? * *' },
 ];
 const parameterIsAllowed = (parameter: any) => !props.allowedParameterNames.length || props.allowedParameterNames.includes(String(parameter?.parameterName || parameter?.name || ''));
-const parameters = computed(() => [
-  ...(Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : []).filter(parameterIsAllowed).map((parameter: any, index: number) => ({
-    key: `job-${parameter.parameterName || index}`, label: parameter.parameterName || translate('Parameter'), value: formatValue(parameter.parameterValue), source: translate('Job parameter'),
-  })),
-  ...(Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : []).filter(parameterIsAllowed).map((parameter: any, index: number) => ({
-    key: `service-${parameter.parameterName || parameter.name || index}`, label: parameter.parameterName || parameter.name || translate('Parameter'), value: formatValue(parameter.defaultValue || parameter.parameterValue || parameter.type || parameter.mode), source: translate('Service parameter'),
-  })),
-]);
+
+/** Only rows with a real parameterName can be written back, so unnamed rows are not made editable. */
+const jobParameters = computed(() =>
+  (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
+    .filter(parameterIsAllowed)
+    .filter((parameter: any) => !!parameter?.parameterName)
+    .map((parameter: any) => ({
+      key: `job-${parameter.parameterName}`,
+      name: String(parameter.parameterName),
+      label: String(parameter.parameterName),
+      isProtected: props.protectedParameterNames.includes(String(parameter.parameterName)),
+      options: props.parameterOptions[String(parameter.parameterName)],
+    })));
+
+const serviceParameters = computed(() =>
+  (Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : [])
+    .filter(parameterIsAllowed)
+    .map((parameter: any, index: number) => ({
+      key: `service-${parameter.parameterName || parameter.name || index}`,
+      label: parameter.parameterName || parameter.name || translate('Parameter'),
+      value: formatValue(parameter.defaultValue || parameter.parameterValue || parameter.type || parameter.mode),
+    })));
+
+const parameterCount = computed(() => jobParameters.value.length + serviceParameters.value.length);
+
+const originalParameters = computed<Record<string, string>>(() => Object.fromEntries(
+  (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
+    .filter((parameter: any) => !!parameter?.parameterName)
+    .map((parameter: any) => [String(parameter.parameterName), toDraftValue(parameter.parameterValue)])));
+
+/**
+ * Only the parameters the user actually changed are sent. A full rewrite would also re-PUT the values
+ * this modal filters out of view (`allowedParameterNames`) and the protected ones, turning an edit of
+ * one field into a rewrite of the job's whole parameter set.
+ */
+const changedParameters = computed(() => jobParameters.value
+  .filter((parameter) => !parameter.isProtected)
+  .filter((parameter) => draftParameters.value[parameter.name] !== originalParameters.value[parameter.name])
+  .map((parameter) => ({ parameterName: parameter.name, parameterValue: draftParameters.value[parameter.name] })));
 
 watch(() => [props.isOpen, props.jobName], ([open]) => { if (open && props.jobName) void load(); });
 
@@ -289,7 +379,11 @@ async function load() {
   } finally { isLoading.value = false; }
 }
 
-function resetDraft() { draftCronExpression.value = originalCronExpression.value; draftActive.value = originalActive.value; }
+function resetDraft() {
+  draftCronExpression.value = originalCronExpression.value;
+  draftActive.value = originalActive.value;
+  draftParameters.value = { ...originalParameters.value };
+}
 async function confirmDiscard() {
   if (!isDirty.value) return true;
   return new Promise<boolean>((resolve) => {
@@ -319,16 +413,38 @@ async function runJobNow() {
   finally { isRunning.value = false; }
 }
 async function save() {
-  if (!props.canEdit || !isDirty.value || !isScheduleValid.value) return;
+  if (!canSave.value) return;
   isSaving.value = true;
   try {
     const paused = !draftActive.value;
-    if (props.saveHandler) await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
-    else await updateJob({ jobName: props.jobName, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' });
+    const parameterChanges = changedParameters.value;
+    if (props.saveHandler) {
+      await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
+      // A `saveHandler` owns the schedule/pause write only - it is where a screen puts its own
+      // validation for those. Parameters go through the standard job PUT so a caller that predates
+      // editable parameters drops them silently instead of writing them.
+      if (parameterChanges.length) await updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges });
+    } else {
+      await updateJob({
+        jobName: props.jobName,
+        paused: paused ? 'Y' : 'N',
+        ...(scheduleChanged.value ? { cronExpression: draftCronExpression.value } : {}),
+        ...(parameterChanges.length ? { serviceJobParameters: parameterChanges } : {}),
+      });
+    }
     // Fold the saved values back in before closing. Emitting `close` leaves `jobDetails` holding the
     // pre-save row, so `isDirty` is still true when ion-modal runs `can-dismiss` - and the user is
     // asked to discard the changes that were just written.
-    jobDetails.value = { ...jobDetails.value, cronExpression: draftCronExpression.value, paused: paused ? 'Y' : 'N' };
+    jobDetails.value = {
+      ...jobDetails.value,
+      cronExpression: draftCronExpression.value,
+      paused: paused ? 'Y' : 'N',
+      serviceJobParameters: (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
+        .map((parameter: any) => {
+          const saved = parameterChanges.find((change) => change.parameterName === String(parameter?.parameterName ?? ''));
+          return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
+        }),
+    };
     resetDraft();
     commonUtil.showToast(translate('Sync job updated successfully.'));
     emit('updated'); emit('close');
@@ -336,6 +452,15 @@ async function save() {
   finally { isSaving.value = false; }
 }
 function formatDate(value: unknown) { return formatDateTime(value) || translate('Not available'); }
+/**
+ * The value an input edits, which must round-trip - so unlike `formatValue` it never substitutes
+ * "Not available" for an empty value, which would otherwise be saved back as the literal text.
+ */
+function toDraftValue(value: unknown) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
 function formatValue(value: unknown) {
   if (value === undefined || value === null || value === '') return translate('Not available');
   if (Array.isArray(value)) return value.join(', ');
