@@ -13,6 +13,8 @@ const cachedMessages = ref<any[]>([]);
 const harness = vi.hoisted(() => ({
   ensureChannelResetJob: vi.fn(),
   ensureChannelEventPublisherJob: vi.fn(),
+  ensureChannelEventDiscardJob: vi.fn(),
+  ensureInventoryAdjustmentSenderJob: vi.fn(),
   ensureShopPhysicalInventoryResetJob: vi.fn(),
   showToast: vi.fn(),
   push: vi.fn(),
@@ -117,8 +119,13 @@ vi.mock("@/composables/useShopify", () => ({
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH: "push",
   ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+  DISCARD_PENDING_EVENTS_SERVICE: "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents",
+  PRODUCED_SENDER_SERVICE: "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages",
+  INVENTORY_ADJUSTMENT_MESSAGE_TYPE: "ShopifyInventoryAdjustment",
+  ensureChannelEventDiscardJob: (...args: any[]) => harness.ensureChannelEventDiscardJob(...args),
   ensureChannelEventPublisherJob: (...args: any[]) => harness.ensureChannelEventPublisherJob(...args),
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
+  ensureInventoryAdjustmentSenderJob: (...args: any[]) => harness.ensureInventoryAdjustmentSenderJob(...args),
   ensureShopPhysicalInventoryResetJob: (...args: any[]) => harness.ensureShopPhysicalInventoryResetJob(...args),
   setInventoryEventDocumentAttached: vi.fn(),
   useInventoryEventDocuments: () => ({
