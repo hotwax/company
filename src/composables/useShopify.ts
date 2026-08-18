@@ -330,6 +330,114 @@ export async function ensureChannelEventPublisherJob(inventoryChannelId: string)
   return jobName;
 }
 
+export const DISCARD_PENDING_EVENTS_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents";
+export const PRODUCED_SENDER_SERVICE =
+  "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages";
+export const INVENTORY_ADJUSTMENT_MESSAGE_TYPE = "ShopifyInventoryAdjustment";
+const DISCARD_PENDING_EVENTS_JOB = "cancel_PendingShopifyInventoryAdjustmentEvents";
+const INVENTORY_ADJUSTMENT_SENDER_JOB = "send_ShopifyInventoryAdjustmentProducedSystemMessages";
+
+/**
+ * A MANUAL, run-on-demand handle on `cancel#PendingShopifyInventoryAdjustmentEvents`.
+ *
+ * The service takes the channel as a parameter, so ONE job serves every channel: the operator points
+ * it at a channel by editing `inventoryChannelId`, then runs it. That is why this is created with NO
+ * cron expression - a schedule would silently discard a channel's unbatched events every few minutes,
+ * which is the opposite of what a discard tool is for. Created paused as well, so the only way it ever
+ * runs is a deliberate Run now.
+ *
+ * `reason` is required by the service and lands verbatim in the cancelled System Message's messageText,
+ * so it seeds to something that names the app rather than an empty string.
+ */
+export async function ensureChannelEventDiscardJob(params: {
+  inventoryChannelId?: string;
+  reason?: string;
+} = {}): Promise<string> {
+  const jobName = DISCARD_PENDING_EVENTS_JOB;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: DISCARD_PENDING_EVENTS_SERVICE,
+      description: "Discard unbatched aggregate inventory events for one inventory channel",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId ?? "" },
+        {
+          parameterName: "reason",
+          parameterValue: params.reason
+            || "Discarded from the Company app inventory event history.",
+        },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * A sender dedicated to ShopifyInventoryAdjustment messages.
+ *
+ * The aggregate inventory flow deliberately leaves its batch at SmsgProduced and relies on a scheduled
+ * `send#AllProducedSystemMessages` to deliver it - see the comment in
+ * createShopifyInventoryAdjustmentSystemMessage.groovy. The seeded `send_AllProducedSystemMessages_frequent`
+ * is UNSCOPED, so inventory delivery shares a queue with every other outgoing message type on the OMS
+ * and is held up by whatever else is backed up or erroring. `systemMessageTypeIds` restricts this clone
+ * to inventory adjustments only, so this flow cannot get stuck behind another queue.
+ *
+ * `mode: sync` sends each message inline instead of dispatching it on a worker thread. That is the point
+ * for this type: Shopify rate-limits per shop, and a throttled adjustment mutation freezes its rejection
+ * into messageText and replays verbatim, so parallel sends risk storing a permanently wrong adjustment.
+ *
+ * Created paused: activating a sender is a deliberate step, per the release runbook.
+ */
+export async function ensureInventoryAdjustmentSenderJob(): Promise<string> {
+  const jobName = INVENTORY_ADJUSTMENT_SENDER_JOB;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: PRODUCED_SENDER_SERVICE,
+      description: "Send produced Shopify inventory adjustment system messages",
+      // Matches the per-channel publisher cadence: delivery should keep pace with batching rather
+      // than lag it by the 15 minutes the unscoped seeded sender uses.
+      cronExpression: "0 0/5 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        // A plain comma-free string for a List parameter, the way the OMS's own
+        // send_BulkProductAndVariantsByIdQueryProducedSystemMessages job passes it.
+        { parameterName: "systemMessageTypeIds", parameterValue: INVENTORY_ADJUSTMENT_MESSAGE_TYPE },
+        { parameterName: "mode", parameterValue: "sync" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
 /**
  * One absolute reconciliation job per CHANNEL. No template ships for this one, so it is created
  * outright. The sync panel finds it by serviceName plus the inventoryChannelId parameter, never by

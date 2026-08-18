@@ -12,7 +12,23 @@ const harness = vi.hoisted(() => ({
 
 vi.mock("@common", () => ({
   translate: (key: string) => key,
+  commonUtil: {
+    getMaargURL: () => "https://rails-uat.hotwax.io/rest/s1/",
+    getCurrentTime: () => "12:00 PM",
+  },
 }));
+
+// The footer reads the Maarg config for its instance label.
+vi.mock("@/composables/useSeed", async () => {
+  const { computed } = await vi.importActual<typeof import("vue")>("vue");
+
+  return {
+    useMaargConfig: () => ({
+      instanceInfo: computed(() => ({ instanceName: "rails-uat" })),
+      load: vi.fn(),
+    }),
+  };
+});
 
 vi.mock("@common/composables/useAuth", () => ({
   useAuth: () => ({ isAuthenticated: harness.authenticated }),
@@ -34,8 +50,12 @@ vi.mock("@/router", () => ({
 }));
 
 async function mountMenu() {
+  const { createPinia, setActivePinia } = await import("pinia");
+  const pinia = createPinia();
+  setActivePinia(pinia);
+
   const Menu = (await import("@/components/common/Menu.vue")).default;
-  const wrapper = mount(Menu);
+  const wrapper = mount(Menu, { global: { plugins: [pinia] } });
   await flushPromises();
 
   return wrapper;
