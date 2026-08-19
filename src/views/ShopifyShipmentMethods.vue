@@ -232,7 +232,9 @@ function initializeLocalMappings() {
       // in edit mode forever because it could never be reseeded.
       if (!userEditedKeys.value.has(key)) {
         localMappings.value[key] = {
-          shopifyShippingMethod: original ? original.shopifyShippingMethod : ""
+          shopifyShippingMethod: original ? original.shopifyShippingMethod : "",
+          carrierPartyId: sm.partyId,
+          shipmentMethodTypeId: sm.shipmentMethodTypeId
         };
       }
     }
@@ -276,9 +278,11 @@ async function editItem(carrierPartyId: string, shipmentMethodTypeId: string) {
 
 async function saveMapping(shipmentMethodTypeId: string) {
   const key = `${selectedCarrierPartyId.value}_${shipmentMethodTypeId}`;
-  const mapping = localMappings.value[key];
-  if (!mapping.shopifyShippingMethod) {
-    commonUtil.showToast(translate("Please provide Shopify name"));
+  const newMappedKey = (localMappings.value[key]?.shopifyShippingMethod || "").trim();
+  const oldMappedKey = getShopifyMapping(shipmentMethodTypeId);
+
+  if (!newMappedKey && !oldMappedKey) {
+    editingItemKey.value = "";
     return;
   }
 
@@ -286,8 +290,7 @@ async function saveMapping(shipmentMethodTypeId: string) {
   try {
     const resp = await shopMutations.saveCarrierShipment({
       shipmentMethodTypeId,
-      shopifyShippingMethod: mapping.shopifyShippingMethod,
-      carrierPartyId: selectedCarrierPartyId.value
+      shopifyShippingMethod: newMappedKey
     }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
@@ -315,12 +318,12 @@ async function saveAllDirtyMappings() {
 
   try {
     await Promise.all(dirtyKeys.map(async (key) => {
-      const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
       const mapping = localMappings.value[key];
+      const newMappedKey = (mapping.shopifyShippingMethod || "").trim();
+      
       await shopMutations.saveCarrierShipment({
-        shipmentMethodTypeId,
-        shopifyShippingMethod: mapping.shopifyShippingMethod,
-        carrierPartyId: carrierPartyId
+        shipmentMethodTypeId: mapping.shipmentMethodTypeId,
+        shopifyShippingMethod: newMappedKey
       }, { refresh: false });
     }));
     await shopMutations.refreshCarrierShipments();
