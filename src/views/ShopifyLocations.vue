@@ -176,7 +176,7 @@ function getShopifyLocationId(facilityId: string) {
 function isItemDirty(id: string) {
   const local = localMappings.value[id];
   const original = getShopifyLocationId(id) || "";
-  return (local ?? "") !== (original ?? "");
+  return local !== original;
 }
 
 async function editItem(id: string) {
@@ -225,10 +225,13 @@ async function saveAllDirtyMappings() {
 
   try {
     for (const id of dirtyIds) {
-      await shopMutations.saveLocation({
-        facilityId: id,
-        shopifyLocationId: localMappings.value[id]
-      }, { refresh: false });
+      const shopifyLocationId = localMappings.value[id];
+      if (shopifyLocationId) {
+        await shopMutations.saveLocation({
+          facilityId: id,
+          shopifyLocationId
+        }, { refresh: false });
+      }
     }
     await shopMutations.refreshLocations();
     commonUtil.showToast(translate("All mappings saved successfully"));
