@@ -206,6 +206,7 @@ import {
 } from "@/composables/useOrganizations";
 import { useAuth } from "@/composables/useSecurity";
 import { getResponseErrorMessage } from "@/utils";
+import Actions from "@/authorization/actions";
 
 const props = defineProps<{ partyId: string }>();
 const { record: organization, hydrated: organizationHydrated } = useOrganizationRecord(props.partyId);
@@ -214,7 +215,7 @@ const { facilities, hydrated: facilitiesHydrated } = useOrganizationFacilities(p
 const { primaryOrganizationId, load: loadPrimaryOrganization } = usePrimaryOrganization();
 const { hasPermission } = useAuth();
 
-const canManage = computed(() => hasPermission("PARTYMGR_ADMIN"));
+const canManage = computed(() => hasPermission(Actions.APP_ORGANIZATION_UPDATE));
 const hydrated = computed(() => organizationHydrated.value && hierarchyHydrated.value);
 const node = computed(() => forest.value.nodesById.get(props.partyId));
 const parentId = computed(() => forest.value.parentById.get(props.partyId) ?? "");

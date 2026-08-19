@@ -3,6 +3,7 @@ import { RouteRecordRaw } from "vue-router"
 import { Login, commonUtil, logger, translate } from "@common/index"
 import { useAuth } from "@common/composables/useAuth"
 import { useUserStore } from "@/store/user"
+import Actions from "@/authorization/actions"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
 const FacilityDetails = () => import("@/views/FacilityDetails.vue")
@@ -26,6 +27,11 @@ const AddConfigurations = () => import("@/views/AddConfigurations.vue")
 const ProductStoreDetails = () => import("@/views/ProductStoreDetails.vue")
 const ProductStore = () => import("@/views/ProductStore.vue")
 const NetSuite = () => import("@/views/NetSuite.vue")
+const NetSuiteSyncMonitor = () => import("@/views/NetSuiteSyncMonitor.vue")
+const Carriers = () => import("@/views/Carriers.vue")
+const CreateCarrier = () => import("@/views/CreateCarrier.vue")
+const CarrierShipmentMethods = () => import("@/views/CarrierShipmentMethods.vue")
+const CarrierDetails = () => import("@/views/CarrierDetails.vue")
 const Settings = () => import("@/views/Settings.vue")
 const ShipmentMethods = () => import("@/views/ShipmentMethods.vue")
 const InventoryVariances = () => import("@/views/InventoryVariances.vue")
@@ -33,6 +39,7 @@ const PaymentMethods = () => import("@/views/PaymentMethods.vue")
 const SalesChannel = () => import("@/views/SalesChannel.vue")
 const Departments = () => import("@/views/Departments.vue")
 const ShopifyConnectionDetails = () => import("@/views/ShopifyConnectionDetails.vue")
+const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
 const Klaviyo = () => import("@/views/Klaviyo.vue")
 const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.vue")
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
@@ -67,14 +74,14 @@ const routes: Array<RouteRecordRaw> = [
     path: "/organizations",
     name: "Organizations",
     component: Organizations,
-    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+    beforeEnter: requirePermission(Actions.APP_ORGANIZATIONS_VIEW),
   },
   {
     path: "/organization-details/:partyId",
     name: "OrganizationDetails",
     component: OrganizationDetails,
     props: true,
-    beforeEnter: requirePermission("PARTYMGR_VIEW OR PARTYMGR_ADMIN"),
+    beforeEnter: requirePermission(Actions.APP_ORGANIZATIONS_VIEW),
   },
   { path: "/facilities/find", name: "FindFacilities", component: FindFacilities, beforeEnter: authGuard },
   { path: "/facilities/groups", name: "FindGroups", component: FindGroups, beforeEnter: authGuard },
@@ -84,14 +91,14 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/create-facility", name: "CreateFacility", component: CreateFacility, beforeEnter: authGuard },
   { path: "/create-facility/address/:facilityId", name: "AddFacilityAddress", component: AddFacilityAddress, props: true, beforeEnter: authGuard },
   { path: "/create-facility/config/:facilityId", name: "AddFacilityConfig", component: AddFacilityConfig, props: true, beforeEnter: authGuard },
-  { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
-  { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission("APP_PERMISSION_VIEW OR APP_PERMISSION_CREATE OR APP_PERMISSION_UPDATE OR SECURITY_ADMIN") },
-  { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
-  { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission("SECURITY_VIEW OR SECURITY_ADMIN") },
-  { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission("USERS_LIST_VIEW OR PARTYMGR_VIEW OR PARTYMGR_ADMIN") },
-  { path: "/create-user", name: "CreateUser", component: CreateUser, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
-  { path: "/user-confirmation/:partyId", name: "UserConfirmation", component: UserConfirmation, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
-  { path: "/user-quick-setup/:partyId", name: "UserQuickSetup", component: UserQuickSetup, props: true, beforeEnter: requirePermission("SECURITY_CREATE OR SECURITY_ADMIN") },
+  { path: "/users", name: "Users", component: Users, beforeEnter: requirePermission(Actions.APP_USERS_VIEW) },
+  { path: "/app-permissions", name: "AppPermissions", component: AppPermissions, beforeEnter: requirePermission(Actions.APP_APP_PERMISSIONS_VIEW) },
+  { path: "/security-groups", name: "SecurityGroups", component: SecurityGroups, beforeEnter: requirePermission(Actions.APP_SECURITY_GROUPS_VIEW) },
+  { path: "/security-group-detail/:userGroupId", name: "SecurityGroupDetail", component: SecurityGroupDetail, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_GROUPS_VIEW) },
+  { path: "/user-details/:partyId", name: "UserDetails", component: UserDetails, props: true, beforeEnter: requirePermission(Actions.APP_USERS_VIEW) },
+  { path: "/create-user", name: "CreateUser", component: CreateUser, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
+  { path: "/user-confirmation/:partyId", name: "UserConfirmation", component: UserConfirmation, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
+  { path: "/user-quick-setup/:partyId", name: "UserQuickSetup", component: UserQuickSetup, props: true, beforeEnter: requirePermission(Actions.APP_SECURITY_CREATE) },
   { path: "/product-store-details/:productStoreId", name: "ProductStoreDetails", component: ProductStoreDetails, props: true, beforeEnter: authGuard },
   { path: "/shopify", name: "ShopifyConnections", component: () => import("@/views/ShopifyConnections.vue"), beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id", name: "ShopifyConnectionDetails", component: ShopifyConnectionDetails, props: true, beforeEnter: authGuard },
@@ -103,6 +110,37 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/product-sync", name: "ShopifyProductSync", component: () => import("@/views/ShopifyProductSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/product-sync/history", name: "ShopifyProductSyncHistory", component: () => import("@/views/ShopifyProductSyncHistory.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/product-sync/upgrade-assistant", name: "ShopifyProductSyncUpgradeAssistant", component: () => import("@/views/ShopifyProductSyncUpgradeAssistant.vue"), props: true, beforeEnter: authGuard },
+  {
+    path: "/shopify-connection-details/:id/inventory-sync",
+    name: "ShopifyInventorySync",
+    component: ShopifyInventorySync,
+    props: (route) => ({ id: route.params.id, initialView: "monitor" }),
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/shopify-connection-details/:id/inventory-sync/history",
+    name: "ShopifyInventorySyncHistory",
+    component: ShopifyInventorySync,
+    props: (route) => ({
+      id: route.params.id,
+      initialView: "history",
+      initialHistoryMode: route.query.mode === "batches" ? "batches" : "events",
+    }),
+    beforeEnter: authGuard,
+  },
+  {
+    // Full run history for one inventory sync job. jobName is a route param rather than a query so
+    // the page is linkable; `title` carries the human name the sync screen already has.
+    path: "/shopify-connection-details/:id/inventory-sync/job-runs/:jobName",
+    name: "ShopifyInventoryJobRuns",
+    component: () => import("@/views/ShopifyInventoryJobRuns.vue"),
+    props: (route) => ({
+      id: route.params.id,
+      jobName: route.params.jobName,
+      title: typeof route.query.title === "string" ? route.query.title : "",
+    }),
+    beforeEnter: authGuard,
+  },
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync", name: "ShopifyOrderSync", component: () => import("@/views/ShopifyOrderSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },
@@ -110,11 +148,18 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
   { path: "/netsuite", name: "NetSuite", component: NetSuite, beforeEnter: authGuard },
+  { path: "/unigate", name: "Unigate", component: () => import("@/views/Unigate.vue"), beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carriers", name: "Carriers", component: Carriers, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/create-carrier", name: "CreateCarrier", component: CreateCarrier, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/shipment-methods-setup/:partyId", name: "CarrierShipmentMethods", component: CarrierShipmentMethods, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carrier-details/:partyId", name: "CarrierDetailsAlias", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carriers/:partyId", name: "CarrierDetails", component: CarrierDetails, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/netsuite/shipment-methods", name: "ShipmentMethods", component: ShipmentMethods, beforeEnter: authGuard },
   { path: "/netsuite/inventory-variances", name: "InventoryVariances", component: InventoryVariances, beforeEnter: authGuard },
   { path: "/netsuite/payment-methods", name: "PaymentMethods", component: PaymentMethods, beforeEnter: authGuard },
   { path: "/netsuite/sales-channel", name: "SalesChannel", component: SalesChannel, beforeEnter: authGuard },
   { path: "/netsuite/departments", name: "Departments", component: Departments, beforeEnter: authGuard },
+  { path: "/netsuite/sync-monitor", name: "NetSuiteSyncMonitor", component: NetSuiteSyncMonitor, beforeEnter: authGuard },
   { path: "/create-product-store", name: "CreateProductStore", component: CreateProductStore, beforeEnter: authGuard },
   { path: "/product-store-onboarding", name: "ProductStoreOnboarding", component: ProductStoreOnboarding, beforeEnter: authGuard },
   { path: "/product-store-onboarding/:productStoreId", name: "ProductStoreOnboardingForStore", component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },

@@ -5,10 +5,10 @@
       <ion-item button @click="copyInfo()">
         {{ translate("Copy") }}
       </ion-item>
-      <ion-item button :disabled="!userStore.hasPermission('PARTYMGR_PCM_UPDATE OR PARTYMGR_UPDATE OR PARTYMGR_ADMIN')" @click="updateContactField()">
+      <ion-item button :disabled="!userStore.hasPermission(Actions.APP_CONTACT_UPDATE)" @click="updateContactField()">
         {{ translate("Edit") }}
       </ion-item>
-      <ion-item button lines="none" :disabled="!userStore.hasPermission('PARTYMGR_PCM_DELETE OR PARTYMGR_ADMIN')" @click="deleteContactField()">
+      <ion-item button lines="none" :disabled="!userStore.hasPermission(Actions.APP_CONTACT_DELETE)" @click="deleteContactField()">
         {{ translate("Remove") }}
       </ion-item>
     </ion-list>
@@ -21,6 +21,7 @@ import { IonContent, IonItem, IonList, IonListHeader, alertController, popoverCo
 import { commonUtil, logger, translate } from "@common";
 import { isValidPhone } from "@/utils";
 import { useUserStore } from "@/store/user";
+import Actions from "@/authorization/actions";
 
 const props = defineProps<{
   type: string;
