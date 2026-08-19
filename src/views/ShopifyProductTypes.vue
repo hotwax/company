@@ -129,7 +129,7 @@ function initializeLocalMappings() {
 function isItemDirty(id: string) {
   const local = localMappings.value[id];
   const original = getShopifyMappingId(id);
-  return (local ?? "") !== (original ?? "");
+  return local !== original;
 }
 
 function getShopifyMappingId(productTypeId: any) {
@@ -202,11 +202,13 @@ async function saveAllDirtyMappings() {
         }, { refresh: false });
       }
 
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }
     await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));

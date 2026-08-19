@@ -38,8 +38,7 @@
         </ion-segment-button>
       </ion-segment>
 
-      <div class="list-container">
-        <div v-if="isLoading">
+      <div v-if="isLoading">
         <div class="list-item ion-padding-end" v-for="i in 5" :key="i">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="airplaneOutline" />
@@ -54,82 +53,84 @@
         </div>
       </div>
 
-      <div v-else class="list-item ion-padding-end" v-for="shipmentMethod in filteredShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
-        <ion-item lines="none" button @click="editItem(shipmentMethod.partyId, shipmentMethod.shipmentMethodTypeId)">
-          <ion-icon slot="start" :icon="airplaneOutline" />
-          <ion-label>
-            {{ getShipmentMethodDesc(shipmentMethod.shipmentMethodTypeId) }}
-            <p>{{ shipmentMethod.shipmentMethodTypeId }}</p>
-          </ion-label>
-        </ion-item>
+      <template v-else>
+        <div class="list-item ion-padding-end" v-for="shipmentMethod in filteredShipmentMethods" :key="shipmentMethod.productStoreShipMethId">
+          <ion-item lines="none" button @click="editItem(shipmentMethod.partyId, shipmentMethod.shipmentMethodTypeId)">
+            <ion-icon slot="start" :icon="airplaneOutline" />
+            <ion-label>
+              {{ getShipmentMethodDesc(shipmentMethod.shipmentMethodTypeId) }}
+              <p>{{ shipmentMethod.shipmentMethodTypeId }}</p>
+            </ion-label>
+          </ion-item>
 
-        <!-- Shopify Mapping (Inline Edit) -->
-        <div class="ion-text-end mapping-container">
-          <div v-if="editingItemKey === (shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId) || isItemDirty(shipmentMethod.shipmentMethodTypeId)" class="edit-controls">
-            <ion-input :autofocus="editingItemKey === (shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId)" :placeholder="translate('Shopify Name')" v-model="localMappings[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId].shopifyShippingMethod" class="inline-input" />
-            <ion-button fill="clear" @click.stop="saveMapping(shipmentMethod.shipmentMethodTypeId)">
-              <ion-icon slot="icon-only" :icon="saveOutline" />
-            </ion-button>
-          </div>
-          <div v-else @click="editItem(shipmentMethod.partyId, shipmentMethod.shipmentMethodTypeId)">
-            <template v-if="getShopifyMapping(shipmentMethod.shipmentMethodTypeId)">
-                <ion-chip outline class="ion-no-margin">
-                    <ion-label>{{ getShopifyMapping(shipmentMethod.shipmentMethodTypeId).shopifyShippingMethod }}</ion-label>
-                </ion-chip>
-            </template>
-            <ion-button v-else size="small" fill="outline">
-                <ion-icon :icon="addOutline" slot="start"/>
-                <ion-label>{{ translate("Shopify name") }}</ion-label>
-            </ion-button>
+          <!-- Shopify Mapping (Inline Edit) -->
+          <div class="ion-text-end mapping-container">
+            <div v-if="editingItemKey === (shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId) || isItemDirty(shipmentMethod.shipmentMethodTypeId)" class="edit-controls">
+              <ion-input :autofocus="editingItemKey === (shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId)" :placeholder="translate('Shopify Name')" v-model="localMappings[shipmentMethod.partyId + '_' + shipmentMethod.shipmentMethodTypeId].shopifyShippingMethod" class="inline-input" />
+              <ion-button fill="clear" @click.stop="saveMapping(shipmentMethod.shipmentMethodTypeId)">
+                <ion-icon slot="icon-only" :icon="saveOutline" />
+              </ion-button>
+            </div>
+            <div v-else @click="editItem(shipmentMethod.partyId, shipmentMethod.shipmentMethodTypeId)">
+              <template v-if="getShopifyMapping(shipmentMethod.shipmentMethodTypeId)">
+                  <ion-chip outline class="ion-no-margin">
+                      <ion-label>{{ getShopifyMapping(shipmentMethod.shipmentMethodTypeId).shopifyShippingMethod }}</ion-label>
+                  </ion-chip>
+              </template>
+              <ion-button v-else size="small" fill="outline">
+                  <ion-icon :icon="addOutline" slot="start"/>
+                  <ion-label>{{ translate("Shopify name") }}</ion-label>
+              </ion-button>
+            </div>
           </div>
         </div>
-      </div>
-      </div>
+      </template>
 
-      <ion-modal :is-open="showCreateShipmentMethodModal" @didDismiss="closeCreateShipmentMethodModal">
-        <ion-header>
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-button @click="closeCreateShipmentMethodModal()">
-                <ion-icon slot="icon-only" :icon="closeOutline" />
-              </ion-button>
-            </ion-buttons>
-            <ion-title>{{ translate("Create shipment method") }}</ion-title>
-          </ion-toolbar>
-        </ion-header>
-
-        <ion-content>
-          <ion-list>
-            <ion-item v-if="carriers.length > 1">
-              <ion-select :label="translate('Carrier')" :placeholder="translate('Select')" v-model="createShipmentCarrierPartyId" interface="popover">
-                <ion-select-option v-for="carrier in carriers" :key="carrier.partyId" :value="carrier.partyId">
-                  {{ carrier.groupName || carrier.partyId }}
-                </ion-select-option>
-              </ion-select>
-            </ion-item>
-
-            <ion-item>
-              <ion-input v-model="description" :label="translate('Shipment method name')" label-placement="stacked" :placeholder="translate('e.g. Standard Shipping')" :maxlength="60" @ionInput="onDescriptionInput" />
-            </ion-item>
-            <ion-item lines="none">
-              <ion-label class="ion-text-wrap">
-                <p>{{ translate("Hotwax ID") }}: <ion-text color="primary">{{ derivedId || "—" }}</ion-text></p>
-              </ion-label>
-            </ion-item>
-
-            <ion-item>
-              <ion-input v-model="shopifyShippingMethod" :label="translate('Shopify name')" label-placement="stacked" :placeholder="translate('Shopify shipping method name')" />
-            </ion-item>
-          </ion-list>
-        </ion-content>
-
-        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-          <ion-fab-button :disabled="!canSave" @click="createShipmentMethod()">
-            <ion-icon :icon="saveOutline" />
-          </ion-fab-button>
-        </ion-fab>
-      </ion-modal>
     </ion-content>
+
+    <ion-modal :is-open="showCreateShipmentMethodModal" @didDismiss="closeCreateShipmentMethodModal">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button @click="closeCreateShipmentMethodModal()">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Create shipment method") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content>
+        <ion-list>
+          <ion-item v-if="carriers.length > 1">
+            <ion-select :label="translate('Carrier')" :placeholder="translate('Select')" v-model="createShipmentCarrierPartyId" interface="popover">
+              <ion-select-option v-for="carrier in carriers" :key="carrier.partyId" :value="carrier.partyId">
+                {{ carrier.groupName || carrier.partyId }}
+              </ion-select-option>
+            </ion-select>
+          </ion-item>
+
+          <ion-item>
+            <ion-input v-model="description" :label="translate('Shipment method name')" label-placement="stacked" :placeholder="translate('e.g. Standard Shipping')" :maxlength="60" @ionInput="onDescriptionInput" />
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <p>{{ translate("Hotwax ID") }}: <ion-text color="primary">{{ derivedId || "—" }}</ion-text></p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item>
+            <ion-input v-model="shopifyShippingMethod" :label="translate('Shopify name')" label-placement="stacked" :placeholder="translate('Shopify shipping method name')" />
+          </ion-item>
+        </ion-list>
+      </ion-content>
+
+      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+        <ion-fab-button :disabled="!canSave" @click="createShipmentMethod()">
+          <ion-icon :icon="saveOutline" />
+        </ion-fab-button>
+      </ion-fab>
+    </ion-modal>
   </ion-page>
 </template>
 
@@ -317,7 +318,9 @@ async function saveAllDirtyMappings() {
 
   try {
     await Promise.all(dirtyKeys.map(async (key) => {
-      const [carrierPartyId, shipmentMethodTypeId] = key.split('_');
+      const idx = key.indexOf('_');
+      const carrierPartyId = key.slice(0, idx);
+      const shipmentMethodTypeId = key.slice(idx + 1);
       const mapping = localMappings.value[key];
       await shopMutations.saveCarrierShipment({
         shipmentMethodTypeId,
