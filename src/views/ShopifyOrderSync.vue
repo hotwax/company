@@ -516,10 +516,16 @@
           <ion-item>
             <ion-label>{{ translate("Date") }}</ion-label>
             <ion-datetime-button slot="end" datetime="landmark-datetime" />
+<<<<<<< Updated upstream
             <ion-popover :keep-contents-on-did-dismiss="true">
               <ion-datetime id="landmark-datetime" presentation="date-time" v-model="landmarkDateValue" />
             </ion-popover>
+=======
+>>>>>>> Stashed changes
           </ion-item>
+          <ion-popover :keep-contents-on-did-dismiss="true">
+            <ion-datetime id="landmark-datetime" presentation="date-time" v-model="landmarkDateValue" />
+          </ion-popover>
           <ion-item v-if="landmarkSuggestionLoading" lines="none">
             <ion-spinner slot="start" name="crescent" />
             <ion-label class="ion-text-wrap"><p>{{ translate("Finding the oldest order date…") }}</p></ion-label>
