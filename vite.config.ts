@@ -6,7 +6,9 @@ import { defineConfig, loadEnv } from 'vite'
 import { versionInfoUtil } from '../../common/utils/versionInfoUtil'
 import { localApiServerDiscoveryPlugin } from '../../common/vite/localApiServerDiscoveryPlugin'
 import { ideTraceVue } from 'chrome-ide-trace/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import pkg from './package.json'
+import manifest from './manifest.json'
 
 const require = createRequire(import.meta.url)
 const projectRoot = path.resolve(new URL('.', import.meta.url).pathname)
@@ -67,7 +69,15 @@ export default defineConfig(({ mode }) => {
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
     vue(),
-    legacy()
+    legacy(),
+    VitePWA({
+      registerType: "autoUpdate",
+      selfDestroying: true,
+      manifest: manifest as any,
+      devOptions: {
+        enabled: true
+      }
+    })
   ],
   define: {
     'import.meta.env.VITE_APP_VERSION_INFO': JSON.stringify(JSON.stringify(versionInfoUtil.getVersionInfo(pkg.version)))

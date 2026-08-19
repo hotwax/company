@@ -8,7 +8,7 @@
           <p>{{ translate('added to group') }}</p>
         </ion-label>
       </ion-item>
-      <ion-item button lines="none" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN OR PARTY_SECURITY_ASSIGNMENT')" @click="confirmRemove()">
+      <ion-item button lines="none" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_GROUP_ASSIGN)" @click="confirmRemove()">
         {{ translate("Remove") }}
       </ion-item>
     </ion-list>
@@ -21,6 +21,7 @@ import { computed } from "vue";
 import { commonUtil, logger, translate } from "@common";
 import { useUserStore } from "@/store/user";
 import { DateTime } from "luxon";
+import Actions from "@/authorization/actions";
 
 const props = defineProps({
   securityGroup: {
