@@ -1264,19 +1264,53 @@ function isFailedImport(log: any): boolean {
  *
  * Grouped rather than filtered per message because a history list needs every group at once, and one
  * pass over the cached table is cheaper than N filters — the join key is `systemMessageId`.
+ *
+ * ⚠️ FALLBACK JOIN via `syncRunCache`.
+ *
+ * Before backend PR #460 was merged, the order sync pipeline never stamped `systemMessageId` on
+ * DataManagerLog records — so rows cached before that fix have `systemMessageId: undefined`, the
+ * join below skips them, and `processedOrderCount` stays 0.
+ *
+ * The `syncRuns` table (populated by `syncRunDomain` via `SYSTEM_MESSAGE_DATA_MANAGER_LOG`) holds
+ * the canonical `logId ↔ systemMessageId` pairing for every shop-scoped run, including older ones.
+ * We build a `logId → systemMessageId` index from it and fall back to it when the log row itself
+ * lacks the field. This means the count resolves correctly for both old cached rows (no
+ * `systemMessageId`) and new rows (have it), without requiring a logout / cache-clear.
  */
 export function useShopifySyncImports(feature: ShopifySyncFeature) {
   const { records: logs, hydrated } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: syncRuns } = useCachedList<any>(syncRunCache);
 
   const wanted = new Set(feature.importConfigIds.map(String));
 
   const records = computed<any[]>(() =>
     logs.value.filter((row: any) => wanted.has(String(row?.configId))));
 
+  /**
+   * logId → systemMessageId fallback, built from the syncRun spine.
+   *
+   * syncRuns are scoped per shop and carry both ids, so this map is always correct even when the
+   * DataManagerLog row itself was cached before the backend fix.
+   */
+  const logIdToSystemMessageId = computed<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const run of syncRuns.value) {
+      const logId = String(run?.logId ?? "");
+      const msgId = String(run?.systemMessageId ?? "");
+      if (logId && msgId) map[logId] = msgId;
+    }
+    return map;
+  });
+
   const bySystemMessageId = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
+    const fallback = logIdToSystemMessageId.value;
     for (const log of records.value) {
-      const id = String(log?.systemMessageId ?? "");
+      // Prefer the field projected directly from the log row; fall back to the syncRun spine index
+      // for rows that pre-date the backend fix (systemMessageId was not written to DataManagerLog).
+      const id = String(
+        log?.systemMessageId ?? fallback[String(log?.logId ?? "")] ?? ""
+      );
       if (!id) continue;
       (grouped[id] ||= []).push(log);
     }
@@ -4231,11 +4265,34 @@ export interface OrderSyncSessionOptions {
 
 /** The DataManagerLog configs an order import writes under. */
 
+/**
+ * Extra class-A domains the order sync monitoring page needs beyond its messages and imports.
+ *
+ * The `syncRun` domain populates the `syncRuns` table via `SYSTEM_MESSAGE_DATA_MANAGER_LOG` —
+ * the only shop-scoped source that pairs `systemMessageId` with `logId`. Without it, the
+ * `logIdToSystemMessageId` fallback in `useShopifySyncImports` has no data to resolve from,
+ * so pre-backend-fix DataManagerLog rows (which lack `systemMessageId` directly) can never be
+ * joined to their batch and `processedOrderCount` stays 0.
+ */
+export function orderSyncExtraDomains(intervalMs: number): ActiveDomain[] {
+  return [
+    {
+      name: "syncRun",
+      intervalMs,
+      args: {
+        systemMessageTypeIds: [SHOPIFY_ORDER_SYNC_MESSAGE_TYPE],
+        total: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+      },
+    },
+  ];
+}
+
 export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
   return useShopifySyncSession(ORDER_SYNC_FEATURE, {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
+    extraDomains: (intervalMs) => orderSyncExtraDomains(intervalMs),
   });
 }
 
@@ -4278,12 +4335,13 @@ export function useShopifyConnectionSyncSession(options: ConnectionSyncSessionOp
     importTotal: 300,
     extraDomains: (productIntervalMs) => [
       ...productSyncExtraDomains(productIntervalMs, options.productSyncJobNames?.() ?? []),
-      // Order sync's own messages and imports, on order sync's own cadence.
+      // Order sync's own messages, imports, AND syncRun spine — on order sync's own cadence.
       ...syncFeatureDomains(
         ORDER_SYNC_FEATURE,
         syncFeatureInterval(ORDER_SYNC_FEATURE, orderSyncActive()),
         { messageTotal: SHOPIFY_ORDER_SYNC_RESULT_LIMIT, importTotal: 300 },
       ),
+      ...orderSyncExtraDomains(syncFeatureInterval(ORDER_SYNC_FEATURE, orderSyncActive())),
     ],
   });
 }
