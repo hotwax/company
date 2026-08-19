@@ -42,85 +42,88 @@
         </div>
       </div>
 
-      <div v-else class="list-item ion-padding-end" v-for="paymentMethod in paymentMethods" :key="paymentMethod.paymentMethodTypeId">
-        <ion-item lines="none" button @click="editItem(paymentMethod.paymentMethodTypeId)">
-          <ion-label>
-            {{ paymentMethod.description }}
-            <p>{{ paymentMethod.paymentMethodTypeId }}</p>
-          </ion-label>
-        </ion-item>
+      <template v-else>
+        <div class="list-item ion-padding-end" v-for="paymentMethod in paymentMethods" :key="paymentMethod.paymentMethodTypeId">
+          <ion-item lines="none" button @click="editItem(paymentMethod.paymentMethodTypeId)">
+            <ion-label>
+              {{ paymentMethod.description }}
+              <p>{{ paymentMethod.paymentMethodTypeId }}</p>
+            </ion-label>
+          </ion-item>
 
-        <!-- Shopify Mapping (Inline Edit) -->
-        <div class="ion-text-end mapping-container">
-          <div v-if="editingItemId === paymentMethod.paymentMethodTypeId || isItemDirty(paymentMethod.paymentMethodTypeId)" class="edit-controls">
-            <ion-input :autofocus="editingItemId === paymentMethod.paymentMethodTypeId" :placeholder="translate('Shopify ID')" v-model="localMappings[paymentMethod.paymentMethodTypeId]" class="inline-input" />
-            <ion-button fill="clear" @click.stop="saveMapping(paymentMethod.paymentMethodTypeId)">
-              <ion-icon slot="icon-only" :icon="saveOutline" />
-            </ion-button>
-          </div>
-          <div v-else @click="editItem(paymentMethod.paymentMethodTypeId)">
-            <ion-chip outline v-if="getShopifyMapping(paymentMethod.paymentMethodTypeId)" class="ion-no-margin">
-              <ion-label>{{ getShopifyMapping(paymentMethod.paymentMethodTypeId) }}</ion-label>
-            </ion-chip>
-            <ion-button v-else size="small" fill="outline">
-              <ion-icon :icon="addOutline" slot="start"/>
-              <ion-label>{{ translate("Shopify ID") }}</ion-label>
-            </ion-button>
+          <!-- Shopify Mapping (Inline Edit) -->
+          <div class="ion-text-end mapping-container">
+            <div v-if="editingItemId === paymentMethod.paymentMethodTypeId || isItemDirty(paymentMethod.paymentMethodTypeId)" class="edit-controls">
+              <ion-input :autofocus="editingItemId === paymentMethod.paymentMethodTypeId" :placeholder="translate('Shopify ID')" v-model="localMappings[paymentMethod.paymentMethodTypeId]" class="inline-input" />
+              <ion-button fill="clear" @click.stop="saveMapping(paymentMethod.paymentMethodTypeId)">
+                <ion-icon slot="icon-only" :icon="saveOutline" />
+              </ion-button>
+            </div>
+            <div v-else @click="editItem(paymentMethod.paymentMethodTypeId)">
+              <ion-chip outline v-if="getShopifyMapping(paymentMethod.paymentMethodTypeId)" class="ion-no-margin">
+                <ion-label>{{ getShopifyMapping(paymentMethod.paymentMethodTypeId) }}</ion-label>
+              </ion-chip>
+              <ion-button v-else size="small" fill="outline">
+                <ion-icon :icon="addOutline" slot="start"/>
+                <ion-label>{{ translate("Shopify ID") }}</ion-label>
+              </ion-button>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
 
-      <ion-modal :is-open="showCreatePaymentMethodModal" @didDismiss="closeCreatePaymentMethodModal">
-        <ion-header>
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-button @click="closeCreatePaymentMethodModal()">
-                <ion-icon slot="icon-only" :icon="closeOutline" />
-              </ion-button>
-            </ion-buttons>
-            <ion-title>{{ translate("Create payment method") }}</ion-title>
-          </ion-toolbar>
-        </ion-header>
-
-        <ion-content>
-          <ion-list>
-            <ion-item>
-              <ion-input
-                v-model="description"
-                :label="translate('Payment method name')"
-                label-placement="stacked"
-                :placeholder="translate('e.g. Store Credit')"
-                :maxlength="60"
-                @ionInput="resetState" />
-            </ion-item>
-
-            <ion-item lines="none">
-              <ion-label class="ion-text-wrap">
-                <p>{{ translate("Hotwax ID") }}: <ion-text color="primary">{{ derivedId || "—" }}</ion-text></p>
-              </ion-label>
-            </ion-item>
-
-            <ion-item lines="none" v-if="duplicateWarning">
-              <ion-note color="warning">{{ translate("A payment method with this Hotwax ID already exists.") }}</ion-note>
-            </ion-item>
-
-            <ion-item>
-              <ion-input
-                v-model="shopifyId"
-                :label="translate('Shopify ID')"
-                label-placement="stacked"
-                :placeholder="translate('Shopify payment method')" />
-            </ion-item>
-          </ion-list>
-        </ion-content>
-
-        <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-          <ion-fab-button :disabled="!canSave" @click="createPaymentMethod()">
-            <ion-icon :icon="saveOutline" />
-          </ion-fab-button>
-        </ion-fab>
-      </ion-modal>
     </ion-content>
+
+    <ion-modal :is-open="showCreatePaymentMethodModal" @didDismiss="closeCreatePaymentMethodModal">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button @click="closeCreatePaymentMethodModal()">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Create payment method") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content>
+        <ion-list>
+          <ion-item>
+            <ion-input
+              v-model="description"
+              :label="translate('Payment method name')"
+              label-placement="stacked"
+              :placeholder="translate('e.g. Store Credit')"
+              :maxlength="60"
+              @ionInput="resetState" />
+          </ion-item>
+
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <p>{{ translate("Hotwax ID") }}: <ion-text color="primary">{{ derivedId || "—" }}</ion-text></p>
+            </ion-label>
+          </ion-item>
+
+          <ion-item lines="none" v-if="duplicateWarning">
+            <ion-note color="warning">{{ translate("A payment method with this Hotwax ID already exists.") }}</ion-note>
+          </ion-item>
+
+          <ion-item>
+            <ion-input
+              v-model="shopifyId"
+              :label="translate('Shopify ID')"
+              label-placement="stacked"
+              :placeholder="translate('Shopify payment method')" />
+          </ion-item>
+        </ion-list>
+      </ion-content>
+
+      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
+        <ion-fab-button :disabled="!canSave" @click="createPaymentMethod()">
+          <ion-icon :icon="saveOutline" />
+        </ion-fab-button>
+      </ion-fab>
+    </ion-modal>
   </ion-page>
 </template>
 
@@ -376,11 +379,13 @@ async function saveAllDirtyMappings() {
 
     await Promise.all(dirtyIds.map(async (id) => {
       const newMappedKey = localMappings.value[id];
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }));
 
     await shopMutations.refreshTypeMappings();

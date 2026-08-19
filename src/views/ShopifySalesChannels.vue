@@ -194,11 +194,13 @@ async function saveAllDirtyMappings() {
 
     await Promise.all(dirtyIds.map(async (id) => {
       const newMappedKey = localMappings.value[id];
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_ORDER_SOURCE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }));
 
     await shopMutations.refreshTypeMappings();
