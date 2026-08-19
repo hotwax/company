@@ -224,10 +224,12 @@ import { computed, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
+import { refreshAfterMutation } from '@/services/appCacheBootstrap';
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
   jobName: string;
+  productStoreId?: string;
   title?: string;
   allowedParameterNames?: string[];
   /**
@@ -243,18 +245,21 @@ const props = withDefaults(defineProps<{
   parameterDescription?: string;
   canRunNow?: boolean;
   canEdit?: boolean;
+  allowEmptySchedule?: boolean;
   runNowDisabledReason?: string;
   editDisabledReason?: string;
   runHandler?: (() => Promise<unknown>) | null;
   saveHandler?: ((payload: { cronExpression: string; paused: boolean }) => Promise<unknown>) | null;
 }>(), {
   title: '',
+  productStoreId: '',
   allowedParameterNames: () => [],
   protectedParameterNames: () => [],
   parameterOptions: () => ({}),
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
   canEdit: true,
+  allowEmptySchedule: false,
   runNowDisabledReason: '',
   editDisabledReason: '',
   runHandler: null,
@@ -281,7 +286,7 @@ const isDirty = computed(() => draftCronExpression.value !== originalCronExpress
   || draftActive.value !== originalActive.value
   || changedParameters.value.length > 0);
 const isScheduleValid = computed(() => {
-  if (!draftCronExpression.value) return false;
+  if (!draftCronExpression.value) return props.allowEmptySchedule;
   try { cronstrue.toString(draftCronExpression.value); return true; } catch (_error) { return false; }
 });
 /**
@@ -365,7 +370,7 @@ async function load() {
   isLoading.value = true; loadError.value = '';
   try {
     const [details, runs, audits] = await Promise.all([
-      fetchJobDetail(props.jobName),
+      fetchJobDetail(props.jobName, props.productStoreId),
       fetchJobRuns(props.jobName, { pageSize: 5, pageIndex: 0 }),
       fetchJobAuditHistory(props.jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
