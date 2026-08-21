@@ -28,14 +28,21 @@ export const useUserStore = defineStore("user", {
       profile: "" as string,
       permissions: "" as string,
       lastFetched: 0 as number
-    }
+    },
+    // Three states, deliberately: undefined = not resolved yet (initial / just reset); "" = resolved,
+    // no version configured; "vX.Y.Z" = resolved, pinned to that version. The router guard depends on
+    // telling "not resolved yet" apart from "resolved: none" — collapsing them causes a redirect loop.
+    appVersion: undefined as string | undefined
   }),
 
   getters: {
     isAuthenticated: () => useAuth().isAuthenticated.value,
     getUserProfile: (state) => state.current,
+    /** Named to match order-manager's store so shared UI reads the same getter in both apps. */
+    getUserTimeZone: (state) => state.current?.timeZone,
     getTimeZones: (state) => state.availableTimeZones,
     getUserPermissions: (state) => state.permissions,
+    getAppVersion: (state) => state.appVersion,
     getInstanceUrl: (state) => state.instanceUrl,
     getQuery: (state) => state.query,
     getSelectedUser: (state) => state.selectedUser,
@@ -615,13 +622,15 @@ export const useUserStore = defineStore("user", {
           if(selectedUser.partyTypeId === "PARTY_GROUP") {roleTypeIdSet.add("FAC_LOGIN")}
         }
 
-        for(const roleTypeId of roleTypeIdSet) {
-          const result = await this.ensurePartyRole({partyId, roleTypeId})
+        await Promise.all(
+          Array.from(roleTypeIdSet).map(async (roleTypeId) => {
+            const result = await this.ensurePartyRole({partyId, roleTypeId})
 
-          if(commonUtil.hasError(result)) {
-            throw result.data
-          }
-        }
+            if(commonUtil.hasError(result)) {
+              throw result.data
+            }
+          })
+        )
 
         if(payload.productStores.length > 0 && selectedTemplate.isProductStoreRequired) {
           payload.productStores?.forEach((store: any) => {
@@ -927,6 +936,8 @@ export const useUserStore = defineStore("user", {
 
     // Called by @common's initialiseConfig after logout
     async postLogout() {
+      // appVersion is preserved across this reset by useAuth().logout() (it's deployment config, not
+      // session state), so a plain $reset() is fine here.
       this.$reset()
       useAuth().clearAuth()
 

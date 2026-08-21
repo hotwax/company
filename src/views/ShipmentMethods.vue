@@ -25,13 +25,12 @@
         </ion-item>
       </div>
       
-      <!-- TODO: need to make this dynamic -->
-      <!-- <div class="ion-margin-top">
-        <ion-text>Product store name shipment methods</ion-text>
-      </div> -->
-      <!-- <ion-button size="small" fill="clear" class="ion-margin-bottom">
+      <div class="ion-margin-top">
+        <ion-text>{{ netSuiteProductStore?.storeName || translate("Product Store") }} {{ translate("shipment methods") }}</ion-text>
+      </div>
+      <ion-button size="small" fill="clear" class="ion-margin-bottom" @click="addMoreShipmentMethods()">
         <ion-label>{{ translate("Add more shipment methods") }}</ion-label>
-      </ion-button> -->
+      </ion-button>
       
       <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
            than an empty list that reads as "there is nothing here". -->
@@ -77,34 +76,47 @@
           </ion-button>
         </template>
 
-        <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-        <!-- <ion-label class="ion-margin">
-          150
+        <ion-label class="ion-margin">
+          {{ shipmentMethod.orderCount || 0 }}
           <p>{{ translate("orders") }}</p>
-        </ion-label> -->
+        </ion-label>
       </div>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
 import { computed } from "vue";
 import { useNetSuite } from "@/composables/useNetSuite";
 import { useShipmentMethodTypes } from "@/composables/useSeed";
-import { useProductStoreShippingMethods } from "@/composables/useProductStores";
+import { useNetSuiteProductStore, useProductStoreShippingMethods } from "@/composables/useProductStores";
 import { useShopifyCarrierShipments } from "@/composables/useShopify";
 
+import { useRouter } from "vue-router";
+
+const router = useRouter();
 const shipmentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
 const { mappings: integrationTypeMappings, editNetSuiteId, removeNetSuiteId } = useNetSuite(shipmentMethodTypeId);
 
-// Every read is cached. The store's shipping methods come from one fixed product store for now
-// (see PRODUCT_STORE_ID_FOR_SHIPPING_METHODS) — this page previously requested
-// `admin/productStores/undefined/shippingMethods` because the id was never resolved.
+// Every read is cached. Resolve the NetSuite-linked ProductStore reactively: on a cold cache its ID
+// lands after setup, and the all-store shipment-method cache must then reveal only that partition.
 const { shipmentMethodTypes } = useShipmentMethodTypes();
-const { shippingMethods: productStoreShipmentMethods, hydrated } = useProductStoreShippingMethods();
+const {
+  netSuiteProductStore,
+  hydrated: productStoresHydrated,
+} = useNetSuiteProductStore();
+const netSuiteProductStoreId = computed<string | undefined>(
+  () => netSuiteProductStore.value?.productStoreId,
+);
+const {
+  shippingMethods: productStoreShipmentMethods,
+  hydrated: shipmentMethodsHydrated,
+} = useProductStoreShippingMethods(netSuiteProductStoreId);
+const hydrated = computed(() =>
+  productStoresHydrated.value && shipmentMethodsHydrated.value);
 const { byCarrierAndMethod: shopifyShopsCarrierShipments } = useShopifyCarrierShipments(undefined);
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
@@ -119,6 +131,13 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
+function addMoreShipmentMethods() {
+  if (netSuiteProductStore.value?.productStoreId) {
+    router.push(`/product-store-details/${netSuiteProductStore.value.productStoreId}`);
+  } else {
+    router.push("/product-store");
+  }
+}
 
 function getShipmentMethodDesc(shipmentMethodTypeId: string) {
   const shipmentMethodType = shipmentMethodTypes.value.find((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);

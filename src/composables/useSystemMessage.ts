@@ -1,5 +1,5 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
-import { api, logger } from '@common'
+import { api, commonUtil, logger } from '@common'
 import {
   shopifyBulkOperationCache,
   systemMessageCache,
@@ -431,12 +431,33 @@ export function useSystemMessage() {
     };
   };
 
+  /**
+   * Re-attempt delivery of a message that has already been produced.
+   *
+   * Re-sends the SAME stored message: the payload and its frozen Shopify idempotency key are never
+   * rebuilt, so a batch that did reach Shopify before failing cannot double-apply.
+   */
+  const resendSystemMessage = async (systemMessageId: string) => {
+    if (!systemMessageId) throw new Error("A system message is required to resend.");
+    const response = await api({
+      url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/send`,
+      method: "POST",
+      data: { systemMessageId }
+    }) as any;
+    if (commonUtil.hasError(response)) {
+      logger.error("Resend rejected for system message", systemMessageId, response);
+      throw new Error("The OMS rejected the resend request.");
+    }
+    return response?.data ?? {};
+  };
+
   return {
     ...toRefs(state),
     fetchSystemMessageById,
     ensureSystemMessageById,
     fetchSystemMessageErrors,
     ensureSystemMessageErrors,
+    resendSystemMessage,
     fetchShopifyBulkOperation,
     fetchShopifyBulkOperationBySystemMessageId,
     fetchSystemMessageLogDetailsPage,

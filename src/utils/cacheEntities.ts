@@ -152,6 +152,15 @@ export const shopifyShopProjection = {
     domain: "text",
     currency: "text",
     primaryLocationId: "text",
+    /**
+     * The shop's real-time inventory push gate (`Y`/`N`, absent when it was never set). The
+     * inventory sync screen renders and writes it, and the connector filters on it in
+     * find#EligibleRealtimeInventoryPushShops — so leaving it unprojected would make a shop that IS
+     * pushing render as off, the same failure the `productIdentifierEnumId` note above describes.
+     * `oms/shopifyShops/shops` does return it: ShopifyShop's `default` master carries every field of
+     * the entity.
+     */
+    realTimeInventoryPush: "text",
     lastUpdatedStamp: "date",
   },
 } as const;
@@ -164,6 +173,7 @@ export const facilityProjection = {
     facilityName: "text",
     facilityTypeId: "text",
     parentTypeId: "text",
+    ownerPartyId: "text",
     typeDescription: "text",
     externalId: "text",
     // Added after the F0 probe (docs/facility-detail-plan.md): the detail endpoint
@@ -172,6 +182,52 @@ export const facilityProjection = {
     defaultInventoryItemTypeId: "text",
     description: "text",
     lastUpdatedStamp: "date",
+  },
+} as const;
+
+/** Internal organization — Party(PARTY_GROUP) + PartyGroup + INTERNAL_ORGANIZATIO PartyRole. */
+export const organizationProjection = {
+  keyField: "partyId",
+  fields: {
+    partyId: "text",
+    partyTypeId: "text",
+    groupName: "text",
+    externalId: "text",
+    statusId: "text",
+    roleTypeId: "text",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * Parent → child internal-organization edge.
+ *
+ * PartyRelationship has a date-effective composite key, so the cache uses a stable synthetic key.
+ */
+export const organizationRelationshipProjection = {
+  keyField: "relationshipKey",
+  fields: {
+    relationshipKey: "text",
+    partyIdFrom: "text",
+    partyIdTo: "text",
+    roleTypeIdFrom: "text",
+    roleTypeIdTo: "text",
+    partyRelationshipTypeId: "text",
+    fromDate: "date",
+    thruDate: "date",
+    statusId: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if(!raw?.partyIdFrom || !raw?.partyIdTo) {return undefined;}
+
+    return [
+      raw.partyIdFrom,
+      raw.partyIdTo,
+      raw.roleTypeIdFrom,
+      raw.roleTypeIdTo,
+      raw.partyRelationshipTypeId,
+      raw.fromDate ?? "",
+    ].join("|");
   },
 } as const;
 
@@ -265,6 +321,11 @@ export const productStoreCache = defineCachedEntity("productStores", productStor
 export const syncRunCache = defineCachedEntity("syncRuns", syncRunProjection);
 export const shopifyShopCache = defineCachedEntity("shopifyShops", shopifyShopProjection);
 export const facilityCache = defineCachedEntity("facilities", facilityProjection);
+export const organizationCache = defineCachedEntity("organizations", organizationProjection);
+export const organizationRelationshipCache = defineCachedEntity(
+  "organizationRelationships",
+  organizationRelationshipProjection,
+);
 export const facilityGroupCache = defineCachedEntity("facilityGroups", facilityGroupProjection);
 export const groupFacilityCache = defineCachedEntity("groupFacilities", groupFacilityProjection);
 export const permissionCache = defineCachedEntity("permissions", permissionProjection);
@@ -340,6 +401,108 @@ export const shopifyLocationProjection = {
   },
 } as const;
 
+/**
+ * InventoryChannel — one facility-group ATP pool mapped to one Shopify aggregate location.
+ * This is the missing ownership link between an aggregate reset ServiceJob parameter and a shop.
+ */
+export const inventoryChannelProjection = {
+  keyField: "inventoryChannelId",
+  fields: {
+    inventoryChannelId: "text",
+    shopId: "text",
+    facilityGroupId: "text",
+    facilityGroupName: "text",
+    shopifyLocationId: "text",
+    description: "text",
+    fromDate: "date",
+    thruDate: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * DataFeed — an OMS-wide routing switch for entity-feed delivery.
+ *
+ * The Shopify aggregate inventory documents currently share one DataFeed, so this record is
+ * deliberately not shop-scoped. Every Shopify connection reads the same cached server value.
+ */
+export const dataFeedProjection = {
+  keyField: "dataFeedId",
+  fields: {
+    dataFeedId: "text",
+    dataFeedTypeEnumId: "text",
+    feedName: "text",
+    feedReceiveServiceName: "text",
+    feedDeleteServiceName: "text",
+    lastFeedStamp: "date",
+    lastUpdatedStamp: "date",
+  },
+} as const;
+
+/**
+ * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
+ * Mirrors the server entity, whose PK is
+ * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is
+ * the synthetic cache key for that so fan-out rows never overwrite each other.
+ *
+ * Deliberately absent, because the server row does not carry them:
+ *  - shopId / shopifyLocationId — the channel IS the target identity (it maps a facility group to
+ *    exactly one shop and one Shopify location). Scope by channel, resolve the shop through
+ *    `inventoryChannels`.
+ *  - productId / shopifyProductId / internalName — a detail row identifies a Shopify inventory item
+ *    at a channel and carries no OMS product. Consumers needing a product join ShopifyShopProduct
+ *    on shopId + shopifyInventoryItemId.
+ */
+export const shopifyInventoryAdjustmentDetailProjection = {
+  keyField: "adjustmentKey",
+  fields: {
+    adjustmentKey: "text",
+    eventTypeId: "text",
+    eventReferenceId: "text",
+    eventTypeDescription: "text",
+    shopifyReason: "text",
+    inventoryChannelId: "text",
+    shopifyInventoryItemId: "text",
+    computedInventoryChange: "count",
+    decisionComment: "text",
+    systemMessageId: "text",
+    detailStatusId: "text",
+    createdDate: "date",
+    lastUpdatedStamp: "date",
+    facilityGroupId: "text",
+    inventoryChannelDescription: "text",
+    systemMessageStatusId: "text",
+    systemMessageInitDate: "date",
+    systemMessageProcessedDate: "date",
+    systemMessageLastAttemptDate: "date",
+  },
+  /**
+   * The ledger's real primary key: (eventTypeId, eventReferenceId, inventoryChannelId,
+   * shopifyInventoryItemId). The type says WHAT KIND of source event a row came from, the
+   * reference says WHICH occurrence of it.
+   *
+   * This used to key on a single packed `eventKey`. The connector split that into two columns and
+   * `eventKey` no longer exists on the view or the endpoint, so every row hit the
+   * `undefined`-on-missing-field guard below and was dropped - silently, because the request still
+   * returned 200 with a correct payload. The cache stayed empty forever, and the page reported
+   * "0 aggregate events pending batching" and "No inventory events match this view" while the
+   * ledger held real pending rows.
+   *
+   * If this guard ever starts returning undefined again, the identity has drifted from the server
+   * - check the endpoint's field names before assuming there is no data.
+   */
+  buildKey: (raw: Record<string, unknown>) => {
+    const identity = [
+      raw?.eventTypeId,
+      raw?.eventReferenceId,
+      raw?.inventoryChannelId,
+      raw?.shopifyInventoryItemId,
+    ];
+    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    return JSON.stringify(identity.map(String));
+  },
+} as const;
+
 export const shopifyTypeMappingProjection = {
   keyField: "typeMappingKey",
   fields: {
@@ -356,8 +519,42 @@ export const shopifyTypeMappingProjection = {
   },
 } as const;
 
+/**
+ * DataDocument ⋈ its feed — which OMS changes an inventory event feed listens to.
+ *
+ * One row per (document, feed). `DataDocumentAndFeed` left-joins, so a document attached to nothing
+ * arrives with NO dataFeedId at all, and a document on two feeds arrives twice; neither is an error
+ * and both have to survive into the cache. Hence the composite key, with an empty second half
+ * standing for "attached to nothing" - a key built from dataDocumentId alone would collapse the two
+ * feed rows onto each other, and returning undefined for the unattached case would drop exactly the
+ * row the screen exists to show.
+ */
+export const inventoryEventDocumentProjection = {
+  keyField: "documentFeedKey",
+  fields: {
+    documentFeedKey: "text",
+    dataDocumentId: "text",
+    dataFeedId: "text",
+    documentName: "text",
+    primaryEntityName: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const dataDocumentId = raw?.dataDocumentId;
+    if (!dataDocumentId) return undefined;
+    return `${String(dataDocumentId)}|${raw?.dataFeedId ? String(raw.dataFeedId) : ""}`;
+  },
+} as const;
+
+export const inventoryEventDocumentCache =
+  defineCachedEntity("inventoryEventDocuments", inventoryEventDocumentProjection);
 export const shopifyLocationCache = defineCachedEntity("shopifyLocations", shopifyLocationProjection);
 export const shopifyTypeMappingCache = defineCachedEntity("shopifyTypeMappings", shopifyTypeMappingProjection);
+export const dataFeedCache = defineCachedEntity("dataFeeds", dataFeedProjection);
+export const inventoryChannelCache = defineCachedEntity("inventoryChannels", inventoryChannelProjection);
+export const shopifyInventoryAdjustmentDetailCache = defineCachedEntity(
+  "shopifyInventoryAdjustmentDetails",
+  shopifyInventoryAdjustmentDetailProjection,
+);
 
 /** Per-product-store shipment-method count (bare-array aggregate endpoint). */
 export const productStoreShipmentCountProjection = {
@@ -369,6 +566,62 @@ export const productStoreShipmentCountCache = defineCachedEntity(
   "productStoreShipmentCounts",
   productStoreShipmentCountProjection,
 );
+
+/** Carriers are PARTY_GROUP parties holding the CARRIER role. */
+export const carrierProjection = {
+  keyField: "partyId",
+  fields: {
+    partyId: "text",
+    groupName: "text",
+    partyTypeId: "text",
+    roleTypeId: "text",
+    statusId: "text",
+  },
+} as const;
+
+/** CarrierShipmentMethod has a composite natural key (carrier + role + method type). */
+export const carrierShipmentMethodProjection = {
+  keyField: "carrierShipmentMethodKey",
+  fields: {
+    carrierShipmentMethodKey: "text",
+    partyId: "text",
+    roleTypeId: "text",
+    shipmentMethodTypeId: "text",
+    sequenceNumber: "count",
+    carrierServiceCode: "text",
+    deliveryDays: "count",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) return undefined;
+    return `${raw.partyId}|${raw.roleTypeId}|${raw.shipmentMethodTypeId}`;
+  },
+} as const;
+
+/** A date-effective carrier role at one facility. */
+export const carrierFacilityProjection = {
+  keyField: "carrierFacilityKey",
+  fields: {
+    carrierFacilityKey: "text",
+    partyId: "text",
+    facilityId: "text",
+    facilityName: "text",
+    facilityTypeId: "text",
+    roleTypeId: "text",
+    fromDate: "date",
+    thruDate: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) return undefined;
+    return `${raw.partyId}|${raw.facilityId}|${raw.roleTypeId}|${raw.fromDate ?? ""}`;
+  },
+} as const;
+
+export const carrierCache = defineCachedEntity("carriers", carrierProjection);
+export const carrierShipmentMethodCache = defineCachedEntity(
+  "carrierShipmentMethods",
+  carrierShipmentMethodProjection,
+);
+export const carrierFacilityCache = defineCachedEntity("carrierFacilities", carrierFacilityProjection);
 
 /** Shopify carrier → shipment-method mappings. Composite key (shop + carrier + method). */
 export const shopifyCarrierShipmentProjection = {
@@ -389,7 +642,7 @@ export const productStoreShippingMethodProjection = {
   fields: {
     productStoreShipMethId: "text", productStoreId: "text", shipmentMethodTypeId: "text",
     partyId: "text", roleTypeId: "text", description: "text", isTrackingRequired: "text",
-    fromDate: "date",
+    shipmentGatewayConfigId: "text", sequenceNumber: "count", fromDate: "date", thruDate: "date",
   },
 } as const;
 
@@ -429,16 +682,6 @@ export const facilityIdentificationProjection = {
 
 export const enumGroupMemberCache = defineCachedEntity("enumGroupMembers", enumGroupMemberProjection);
 export const facilityIdentificationCache = defineCachedEntity("facilityIdentifications", facilityIdentificationProjection);
-
-/**
- * The product store whose shipping methods are cached.
- *
- * HARDCODED for now by explicit decision: the NetSuite/Shopify shipment-method screens read one
- * store's methods, and the id was previously resolved from store state (which produced a request
- * for `admin/productStores/undefined/shippingMethods`). Replace with a fan-out over cached product
- * stores when those screens need to cover more than one store.
- */
-export const PRODUCT_STORE_ID_FOR_SHIPPING_METHODS = "STORE";
 
 /** Geo reference straight from Moqui (`moqui.basic.Geo`) — countries, states, regions. */
 export const geoProjection = {
@@ -624,3 +867,145 @@ export const facilityGroupProductStoreProjection = {
 } as const;
 
 export const facilityGroupProductStoreCache = defineCachedEntity("facilityGroupProductStores", facilityGroupProductStoreProjection);
+
+/**
+ * App registry (`admin/apps`) — the catalog of apps that can be version-pinned. Read-only reference
+ * data: the version screen labels rows with it and the create modal offers app + environment combos
+ * that do not yet have a pin.
+ */
+export const appProjection = {
+  keyField: "appId",
+  fields: {
+    appId: "text",
+    appName: "text",
+  },
+} as const;
+
+/**
+ * App version pin (`admin/appVersion`) — which build of each app is served per environment.
+ *
+ * The natural key is COMPOSITE (appId + environmentTypeId), so rows carry a synthetic `appVersionKey`.
+ * `appName` and `enumDesc` (the environment description) come joined on the list response, so they
+ * are projected here rather than looked up — the screen renders straight from the cached row.
+ */
+export const appVersionProjection = {
+  keyField: "appVersionKey",
+  fields: {
+    appVersionKey: "text",
+    appId: "text",
+    appName: "text",
+    environmentTypeId: "text",
+    currentVersion: "text",
+    enumDesc: "text",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.appId || !raw?.environmentTypeId) return undefined;
+    return `${raw.appId}|${raw.environmentTypeId}`;
+  },
+} as const;
+
+export const appCache = defineCachedEntity("apps", appProjection);
+export const appVersionCache = defineCachedEntity("appVersions", appVersionProjection);
+
+// =============================================================================================
+// NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
+//
+// Deepak's rule-group push replaced the single scheduled feed job with a RuleGroup of
+// DecisionRules, each carrying RuleConditions that narrow which orders that rule exports. All
+// three are the SHARED `co.hotwax.rule.*` model the safety-stock screens already drive through
+// `available-to-promise/*`, so nothing here is NetSuite-specific except the
+// `groupTypeEnumId = RG_NS_ORDER_PUSH` scope the reads apply.
+// =============================================================================================
+
+/**
+ * RuleGroup — one NetSuite order-push configuration for a product store.
+ *
+ * `jobName` is the link to the scheduled job that runs the group; the schedule itself lives on
+ * `moqui.service.job.ServiceJob` and is read through `ruleGroups/{id}/schedule`, not stored here.
+ */
+export const netSuiteRuleGroupProjection = {
+  keyField: "ruleGroupId",
+  fields: {
+    ruleGroupId: "text",
+    productStoreId: "text",
+    groupName: "text",
+    groupTypeEnumId: "text",
+    statusId: "text",
+    sequenceNum: "count",
+    jobName: "text",
+    description: "text",
+    createdDate: "date",
+    lastModifiedDate: "date",
+  },
+} as const;
+
+/**
+ * DecisionRule — one rule inside a group.
+ *
+ * The rule's conditions arrive nested on the `default` master (`ruleConditions`), so they are kept
+ * on the row as structured data rather than given their own table: a rule is never rendered
+ * without them, and the composite PK (ruleId + conditionSeqId) would otherwise need a synthetic key
+ * for no read that asks for conditions independently.
+ */
+export const netSuiteDecisionRuleProjection = {
+  keyField: "ruleId",
+  fields: {
+    ruleId: "text",
+    ruleGroupId: "text",
+    ruleName: "text",
+    statusId: "text",
+    sequenceNum: "count",
+    createdDate: "date",
+    ruleConditions: "structured",
+    ruleActions: "structured",
+  },
+} as const;
+
+/**
+ * RuleGroupRun — one execution of a rule group. This is the run history the monitor renders.
+ *
+ * ⚠️ Written by `co.hotwax.rule.DecisionRuleServices`, NOT by
+ * `co.hotwax.netsuite.OrderServices.run#NetSuiteDMOrderFeed` itself — that service iterates the
+ * rules and creates a DataManagerLog per generated file, and never stamps a RuleGroupRun. So a
+ * group invoked directly as a plain ServiceJob produces job runs and MDM logs but NO rows here.
+ * Treat an empty run history as "not driven through the rule-group scheduler", never as "no syncs".
+ */
+export const netSuiteRuleGroupRunProjection = {
+  keyField: "ruleGroupRunId",
+  fields: {
+    ruleGroupRunId: "text",
+    ruleGroupId: "text",
+    productStoreId: "text",
+    hasError: "text",
+    startDate: "date",
+    endDate: "date",
+    ruleGroupRunResult: "text",
+  },
+} as const;
+
+/**
+ * The pending-to-sync backlog, as a single row per product store.
+ *
+ * A scalar count has no entity of its own, so it is stored keyed by `productStoreId` — that is what
+ * makes it readable through the same `live()` path as every other cached read, so the monitor card
+ * re-renders from the worker's write with no main-thread fetch.
+ *
+ * `isSupported` records whether the backing endpoint exists on this instance at all:
+ * `netsuite/orderPushPending/count` ships in mantle-netsuite-connector and an instance that has not
+ * taken that release 404s. That is a "cannot know" answer, which must render differently from a
+ * genuine zero backlog — see `useNetSuiteOrderPushBacklog`.
+ */
+export const netSuiteOrderPushBacklogProjection = {
+  keyField: "productStoreId",
+  fields: {
+    productStoreId: "text",
+    pendingCount: "count",
+    isSupported: "text",
+    checkedAt: "date",
+  },
+} as const;
+
+export const netSuiteRuleGroupCache = defineCachedEntity("netSuiteRuleGroups", netSuiteRuleGroupProjection);
+export const netSuiteDecisionRuleCache = defineCachedEntity("netSuiteDecisionRules", netSuiteDecisionRuleProjection);
+export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRuns", netSuiteRuleGroupRunProjection);
+export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
