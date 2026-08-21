@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const cachedJobs = ref<any[]>([]);
@@ -106,11 +106,21 @@ vi.mock("@/composables/useSystemMessage", () => ({
   }),
 }));
 
+// Mirrors the real composable's return shape. The stub used to expose an older one
+// (virtualRows/totalHeight/handleScroll), which left `visibleItems` undefined and silently handed the
+// view nothing to render — so the view carried a guard for a shape only this stub produced.
+// `visibleItems` passes the items straight through: this spec asserts on job scheduling, not on
+// windowing, so the stub's job is to be honest about the contract rather than to window anything.
 vi.mock("@/composables/useVirtualRows", () => ({
   useVirtualRows: (items: any) => ({
-    virtualRows: items,
-    totalHeight: ref(0),
-    handleScroll: vi.fn(),
+    containerRef: ref(null),
+    visibleItems: items,
+    topSpacer: ref(0),
+    bottomSpacer: ref(0),
+    startIndex: ref(0),
+    endIndex: computed(() => items.value?.length ?? 0),
+    onScroll: vi.fn(),
+    scrollToTop: vi.fn(),
   }),
 }));
 
@@ -178,7 +188,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     harness.push.mockReset();
   });
 
-  it("lists each channel's aggregate reset job individually in monitored sync jobs", async () => {
+  it("surfaces each channel's own jobs on that channel's card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
@@ -217,11 +227,27 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Reset aggregate ATP (Retail Channel)");
-    expect(wrapper.text()).toContain("Reset aggregate ATP (Wholesale Channel)");
+    // Each channel owns a card carrying its own two schedules, so a row no longer needs the channel
+    // name in brackets to be distinguishable -- the card it sits on supplies that.
+    const channelCards = wrapper.findAll("ion-card")
+      .filter((card) => card.text().includes("Reset aggregate ATP"));
+    expect(channelCards.length).toBe(2);
+
+    expect(channelCards[0].text()).toContain("Retail Channel");
+    expect(channelCards[1].text()).toContain("Wholesale Channel");
+
+    // Resolved independently rather than collapsed onto the first job: IC_1001 is active and
+    // IC_1002 is paused in the fixture above.
+    expect(channelCards[0].text()).toContain("Active");
+    expect(channelCards[1].text()).toContain("Paused");
+
+    // The publisher is grouped with it, on the same card.
+    channelCards.forEach((card) => {
+      expect(card.text()).toContain("Publish and send event batches");
+    });
   });
 
-  it("renders a Schedule reset button and schedule summary on each channel item", async () => {
+  it("opens the reset job from its row on the channel card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
@@ -251,21 +277,27 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    // Verify Schedule reset buttons exist for channels
+    // The dedicated "Schedule reset" button is gone: it opened the same modal as the row it sat under,
+    // and provisioned through the same ensureChannelResetJob when the job was missing.
     const scheduleButtons = wrapper.findAll("ion-button").filter((b) => b.text().includes("Schedule reset"));
-    expect(scheduleButtons.length).toBe(2);
+    expect(scheduleButtons.length).toBe(0);
 
-    // Clicking Schedule reset for the existing job opens ServiceJobDetailsModal
-    await scheduleButtons[0].trigger("click");
+    // IC_1001 has a job, so its row is the way in.
+    const resetRow = wrapper.findAll("ion-item")
+      .find((item) => item.text().includes("Reset aggregate ATP") && item.text().includes("Active"));
+    expect(resetRow).toBeDefined();
+
+    await resetRow!.trigger("click");
     await flushPromises();
 
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP - Retail Channel");
+    expect(modal.text()).toContain("Reset aggregate ATP");
+    expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
   });
 
-  it("provisions the job via ensureChannelResetJob when scheduling a channel without an existing reset job", async () => {
+  it("provisions a missing reset job from the row's Set up action and opens it", async () => {
     harness.ensureChannelResetJob.mockResolvedValue("reset_InventoryChannelInventory_IC_1002");
 
     const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
@@ -285,9 +317,22 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    const scheduleButtons = wrapper.findAll("ion-button").filter((b) => b.text().includes("Schedule reset"));
-    // Click Schedule reset on the second channel (IC_1002, which has no job in cachedJobs)
-    await scheduleButtons[1].trigger("click");
+    // IC_1002 has no reset job, so its row offers Set up rather than a click-through. That row is on
+    // the Wholesale Channel's own card, which is how the channel is identified without a name suffix.
+    const wholesaleCard = wrapper.findAll("ion-card")
+      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset aggregate ATP"));
+    expect(wholesaleCard).toBeDefined();
+
+    // Scope to the reset ROW, not the card: cachedJobs is empty here, so the publisher row offers a
+    // Set up of its own and the card's first one is not the one under test.
+    const resetRow = wholesaleCard!.findAll("ion-item")
+      .find((item) => item.text().includes("Reset aggregate ATP"));
+    expect(resetRow).toBeDefined();
+
+    const setUpButton = resetRow!.findAll("ion-button").find((b) => b.text().includes("Set up"));
+    expect(setUpButton).toBeDefined();
+
+    await setUpButton!.trigger("click");
     await flushPromises();
 
     expect(harness.ensureChannelResetJob).toHaveBeenCalledWith({
@@ -295,6 +340,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
       description: "Full aggregate ATP reset for Wholesale Channel",
     });
 
+    // Creating from a single channel's row lands in that job's modal, which is the one thing the
+    // removed button did that Set up alone did not.
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
     expect(modal.text()).toContain("Reset aggregate ATP - Wholesale Channel");
