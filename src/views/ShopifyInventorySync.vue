@@ -433,18 +433,21 @@
                   </ion-note>
                 </ion-item>
                 <ion-item>
-                  <ion-label>
-                    Shopify target
-                    <p>{{ batch.target }}</p>
+                  <ion-label class="ion-text-wrap">
+                    Publishes under
+                    <p>{{ batch.reason }}</p>
                   </ion-label>
+                  <ion-badge v-if="!batch.reasonMapped" slot="end" color="warning">
+                    {{ batch.mixedEventTypes ? "Mixed types" : "Unmapped" }}
+                  </ion-badge>
                 </ion-item>
                 <ion-item button detail @click="selectedBatch = batch">
                   <ion-label>
-                    Events in this batch
-                    <p>{{ batch.detail }}</p>
+                    Change entries
+                    <p>Summed from {{ batch.eventCount }} ledger events</p>
                   </ion-label>
                   <ion-badge slot="end" color="medium">
-                    {{ batch.eventCount }}
+                    {{ batch.entries.length }}
                   </ion-badge>
                 </ion-item>
                 <ion-item lines="none">
@@ -490,7 +493,7 @@
                 v-model="historyQuery"
                 class="history-search"
                 :debounce="250"
-                placeholder="Search event key, product, inventory channel, Shopify target, or batch"
+                placeholder="Search event type, source record, inventory item, location, reason, or batch"
               />
 
               <div class="filter-grid">
@@ -583,9 +586,12 @@
 
           <div class="history-results-header">
             <ion-item lines="none">
-              <ion-label>
-                <h2>Inventory event history</h2>
-                <p>A list of aggregate inventory events and the batches that carry them to Shopify</p>
+              <ion-label class="ion-text-wrap">
+                <h2>Inventory event pipeline</h2>
+                <p>
+                  Aggregate inventory events in the order the publisher acts on them. Settled events are
+                  purged after five days, so this is a rolling window rather than a full history.
+                </p>
               </ion-label>
             </ion-item>
             <ion-badge color="medium">
@@ -593,120 +599,320 @@
             </ion-badge>
           </div>
 
-          <ion-segment v-model="historyMode" class="history-mode">
-            <ion-segment-button value="events">
-              <ion-label>All events</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="batches">
-              <ion-label>Grouped by batch</ion-label>
-            </ion-segment-button>
-          </ion-segment>
-
-          <ion-card v-if="historyMode === 'events' && filteredEvents.length">
-            <div class="event-table event-table-header" role="row">
-              <ion-label>Event</ion-label>
-              <ion-label>Product</ion-label>
-              <ion-label>Shopify target</ion-label>
-              <ion-label>Adjustment</ion-label>
-              <ion-label>Batch</ion-label>
-              <ion-label>Status</ion-label>
-              <span />
-            </div>
-            <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
-            <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
-            <div v-for="event in virtualEvents" :key="event.rowKey" data-virtual-row class="event-table event-table-row" role="row">
+          <!-- The batch boundary is a job parameter, and taking eventTypeId out of it costs a truthful
+               reason on every batch. Said here, where the reasons are read. -->
+          <ion-card v-if="batchesWillMixEventTypes">
+            <ion-item lines="none">
+              <ion-icon slot="start" :icon="warningOutline" color="warning" />
               <ion-label class="ion-text-wrap">
-                <span class="overline mobile-only">Event</span>
-                {{ event.type }}
-                <p>{{ event.key }}</p>
+                Batches can mix event types
+                <p>
+                  The publisher groups by {{ publisherGroupBy.join(", ") }}, which leaves out event type.
+                  Any batch holding more than one kind of event must publish under correction, because no
+                  other reason is true about it.
+                </p>
               </ion-label>
-              <ion-label class="ion-text-wrap">
-                <span class="overline mobile-only">Shopify inventory item</span>
-                {{ event.shopifyInventoryItem }}
-                <p>{{ event.facility }}</p>
-              </ion-label>
-              <ion-label class="ion-text-wrap">
-                <span class="overline mobile-only">Shopify target</span>
-                {{ event.target }}
-                <p>{{ event.model }}</p>
-              </ion-label>
-              <ion-label>
-                <span class="overline mobile-only">Adjustment</span>
-                {{ event.change }}
-              </ion-label>
-              <ion-label>
-                <span class="overline mobile-only">Batch</span>
-                {{ event.batchId || "Not batched" }}
-              </ion-label>
-              <div class="event-status">
-                <span class="overline mobile-only">Status</span>
-                <ion-badge :color="event.badgeColor">
-                  {{ event.status }}
-                </ion-badge>
-              </div>
-              <ion-button fill="clear" aria-label="View event details" @click="selectedEvent = event">
-                <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
-              </ion-button>
-            </div>
-            <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
-            </div>
+            </ion-item>
           </ion-card>
 
-          <ion-accordion-group v-else-if="historyMode === 'batches' && visibleBatchGroups.length" :multiple="true" :value="['unsent']">
-            <ion-accordion
-              v-for="group in visibleBatchGroups"
-              :key="group.id"
-              :value="group.id"
-            >
-              <div slot="header" class="batch-header list-item">
-                <ion-item lines="none">
-                  <ion-icon slot="start" :icon="group.icon" />
-                  <ion-label>
-                    {{ group.title }}
-                    <p>{{ group.subtitle }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-label>
-                  {{ group.events.length }} events
-                  <p>{{ group.totalChange }}</p>
+          <section class="pipeline-section">
+            <div class="section-header">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="timeOutline" color="warning" />
+                <ion-label class="ion-text-wrap">
+                  <h2>Waiting to batch</h2>
+                  <p>Grouped the way the publisher will group it. The oldest group drains first.</p>
                 </ion-label>
-                <ion-badge :color="group.badgeColor">
-                  {{ group.status }}
-                </ion-badge>
-                <span />
-              </div>
-              <ion-list slot="content" lines="full">
+              </ion-item>
+              <ion-badge color="warning">
+                {{ visibleWaitingBatches.length }}
+              </ion-badge>
+            </div>
+
+            <ion-card v-for="group in visibleWaitingBatches" :key="group.id">
+              <ion-item lines="full">
+                <ion-label class="ion-text-wrap">
+                  {{ group.type }}
+                  <p>{{ group.channel }}</p>
+                  <p>{{ group.eventCount }} events, oldest recorded {{ group.oldestAge }}</p>
+                </ion-label>
+                <div slot="end" class="reason-cell">
+                  <span class="overline">Publishes under</span>
+                  <ion-badge :color="group.reasonMapped ? 'primary' : 'warning'">
+                    {{ group.reason }}
+                  </ion-badge>
+                </div>
+              </ion-item>
+
+              <ion-item v-if="!group.reasonMapped" lines="full">
+                <ion-icon slot="start" :icon="warningOutline" color="warning" />
+                <ion-label class="ion-text-wrap">
+                  <p v-if="group.mixedEventTypes">
+                    This group holds more than one event type, so no single Shopify reason is true about
+                    it and the batch falls back to correction.
+                  </p>
+                  <p v-else>
+                    This event type has no Shopify reason mapped, so the batch falls back to correction.
+                    Map it by editing the event type row in the OMS, and the next batch picks it up.
+                  </p>
+                </ion-label>
+              </ion-item>
+
+              <ion-list lines="full">
+                <ion-list-header>
+                  <ion-label>Change entries Shopify will receive</ion-label>
+                </ion-list-header>
+                <ion-item v-for="entry in group.entries" :key="entry.key">
+                  <ion-label class="ion-text-wrap">
+                    {{ entry.productLabel }}
+                    <p>{{ entry.productSku }}</p>
+                    <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
+                    <p>{{ entry.eventCount }} events summed</p>
+                  </ion-label>
+                  <div slot="end" class="entry-outcome">
+                    <ion-note>{{ entry.change }}</ion-note>
+                    <ion-badge v-if="entry.outcome !== 'publish'" :color="entry.outcomeColor">
+                      {{ entry.outcomeLabel }}
+                    </ion-badge>
+                    <ion-badge v-if="entry.retarget" color="danger">
+                      Drains the location the channel left
+                    </ion-badge>
+                  </div>
+                </ion-item>
+              </ion-list>
+
+              <ion-accordion-group>
+                <ion-accordion value="events">
+                  <ion-item slot="header" lines="full">
+                    <ion-label>Contributing events</ion-label>
+                  </ion-item>
+                  <ion-list slot="content" lines="full">
+                    <ion-item
+                      v-for="event in group.events.slice(0, shownInGroup(group.id))"
+                      :key="event.rowKey"
+                      button
+                      detail
+                      @click="selectedEvent = event"
+                    >
+                      <ion-label class="ion-text-wrap">
+                        {{ event.type }}
+                        <p>{{ event.sourceLabel }}</p>
+                        <p>{{ event.calculation || "No calculation comment recorded" }}</p>
+                      </ion-label>
+                      <div slot="end" class="entry-outcome">
+                        <ion-note>{{ event.change }}</ion-note>
+                        <ion-badge v-if="event.sourcePhase" color="medium">{{ event.sourcePhase }}</ion-badge>
+                      </div>
+                    </ion-item>
+                    <ion-item v-if="group.events.length > shownInGroup(group.id)" lines="none">
+                      <ion-label class="ion-text-wrap">
+                        <p>Showing {{ shownInGroup(group.id) }} of {{ group.events.length }}</p>
+                      </ion-label>
+                      <ion-button slot="end" fill="outline" size="small" @click="loadMoreInGroup(group.id)">
+                        Load more
+                      </ion-button>
+                    </ion-item>
+                  </ion-list>
+                </ion-accordion>
+              </ion-accordion-group>
+            </ion-card>
+
+            <ion-card v-if="!visibleWaitingBatches.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
+                <ion-label class="ion-text-wrap">
+                  Nothing waiting
+                  <p>Every recorded event has been claimed into a batch or settled.</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </section>
+
+          <section class="pipeline-section">
+            <div class="section-header">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="cloudUploadOutline" color="primary" />
+                <ion-label class="ion-text-wrap">
+                  <h2>In flight and failed</h2>
+                  <p>
+                    Batches the OMS has produced that Shopify has not confirmed. A rejection freezes into
+                    the message and replays identically on every retry.
+                  </p>
+                </ion-label>
+              </ion-item>
+              <ion-badge color="primary">
+                {{ visibleInFlightBatches.length }}
+              </ion-badge>
+            </div>
+
+            <ion-card v-for="batch in visibleInFlightBatches" :key="batch.id">
+              <ion-item lines="full">
+                <ion-label class="ion-text-wrap">
+                  {{ batch.id }}
+                  <p>{{ batch.channel }}</p>
+                  <p>Produced {{ batch.created }}, {{ batch.age }}</p>
+                </ion-label>
+                <div slot="end" class="reason-cell">
+                  <ion-badge :color="batch.badgeColor">
+                    {{ batch.status }}
+                  </ion-badge>
+                  <ion-badge :color="batch.reasonMapped ? 'primary' : 'warning'">
+                    {{ batch.reason }}
+                  </ion-badge>
+                </div>
+              </ion-item>
+              <ion-list lines="full">
+                <ion-item v-for="entry in batch.entries" :key="entry.key">
+                  <ion-label class="ion-text-wrap">
+                    {{ entry.productLabel }}
+                    <p>{{ entry.productSku }}</p>
+                    <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
+                  </ion-label>
+                  <ion-note slot="end">{{ entry.change }}</ion-note>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-button fill="clear" @click="selectedBatch = batch">
+                    <ion-icon slot="start" :icon="listOutline" />
+                    Events
+                  </ion-button>
+                  <ion-button fill="clear" @click="openMessage(batch)">
+                    <ion-icon slot="start" :icon="documentTextOutline" />
+                    Message text
+                  </ion-button>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+
+            <ion-card v-if="!visibleInFlightBatches.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
+                <ion-label class="ion-text-wrap">
+                  Nothing in flight
+                  <p>Every batch produced for this connection has reached Shopify.</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </section>
+
+          <section class="pipeline-section">
+            <div class="section-header">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="warningOutline" :color="visibleQuarantinedEvents.length ? 'danger' : 'medium'" />
+                <ion-label class="ion-text-wrap">
+                  <h2>Quarantined</h2>
+                  <p>
+                    Terminal. These are never batched again and are excluded from the absolute reset gate,
+                    so nothing retries them: fix the source rows and record a new event.
+                  </p>
+                </ion-label>
+              </ion-item>
+              <ion-badge :color="visibleQuarantinedEvents.length ? 'danger' : 'medium'">
+                {{ visibleQuarantinedEvents.length }}
+              </ion-badge>
+            </div>
+
+            <ion-card v-if="visibleQuarantinedEvents.length">
+              <ion-list lines="full">
                 <ion-item
-                  v-for="event in group.events.slice(0, shownInGroup(group.id))"
+                  v-for="event in visibleQuarantinedEvents"
                   :key="event.rowKey"
                   button
                   detail
                   @click="selectedEvent = event"
                 >
                   <ion-label class="ion-text-wrap">
-                    {{ event.type }} for item {{ event.shopifyInventoryItem }}
-                    <p>{{ event.key }}</p>
-                    <p>{{ event.facility }} to {{ event.target }}</p>
+                    {{ event.type }}
+                    <p>{{ event.productName || `Item ${event.shopifyInventoryItem}` }}<template v-if="event.productSku"> ({{ event.productSku }})</template></p>
+                    <p>{{ event.sourceLabel }}, at {{ event.locationLabel }}</p>
+                    <p>{{ event.calculation || "No calculation comment recorded" }}</p>
                   </ion-label>
-                  <ion-note slot="end">
-                    {{ event.change }}
-                  </ion-note>
-                  <ion-badge slot="end" :color="event.badgeColor">
-                    {{ event.status }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item v-if="group.events.length > shownInGroup(group.id)" lines="none">
-                  <ion-label class="ion-text-wrap">
-                    <p>Showing {{ shownInGroup(group.id) }} of {{ group.events.length }}</p>
-                  </ion-label>
-                  <ion-button slot="end" fill="outline" size="small" @click="loadMoreInGroup(group.id)">
-                    Load more
-                  </ion-button>
+                  <ion-note slot="end">{{ event.change }}</ion-note>
                 </ion-item>
               </ion-list>
-            </ion-accordion>
-          </ion-accordion-group>
-          <ion-card v-else-if="inventoryDetailsHydrated && inventorySyncReady">
+            </ion-card>
+
+            <ion-card v-else>
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
+                <ion-label class="ion-text-wrap">
+                  Nothing quarantined
+                  <p>No event has produced a summed delta the publisher had to refuse.</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </section>
+
+          <section v-if="visibleSettledEvents.length" class="pipeline-section">
+            <ion-accordion-group :value="historyMode === 'events' ? ['settled'] : []" :multiple="true">
+              <ion-accordion value="settled">
+                <div slot="header" class="section-header">
+                  <ion-item lines="none">
+                    <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
+                    <ion-label class="ion-text-wrap">
+                      <h2>Settled in the last five days</h2>
+                      <p>Delivered to Shopify or closed as no change. Purged on the retention schedule.</p>
+                    </ion-label>
+                  </ion-item>
+                  <ion-badge color="medium">
+                    {{ visibleSettledEvents.length }}
+                  </ion-badge>
+                </div>
+
+                <ion-card slot="content">
+                  <div class="event-table event-table-header" role="row">
+                    <ion-label>Event</ion-label>
+                    <ion-label>Product</ion-label>
+                    <ion-label>Location</ion-label>
+                    <ion-label>Adjustment</ion-label>
+                    <ion-label>Batch</ion-label>
+                    <ion-label>Outcome</ion-label>
+                    <span />
+                  </div>
+                  <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
+                    <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
+                    <div v-for="event in virtualEvents" :key="event.rowKey" data-virtual-row class="event-table event-table-row" role="row">
+                      <ion-label class="ion-text-wrap">
+                        <span class="overline mobile-only">Event</span>
+                        <span class="event-type">{{ event.type }}</span>
+                        <p>{{ event.sourceLabel }}</p>
+                      </ion-label>
+                      <ion-label class="ion-text-wrap">
+                        <span class="overline mobile-only">Product</span>
+                        <span class="event-type">{{ event.productName || `Item ${event.shopifyInventoryItem}` }}</span>
+                        <p>{{ event.productSku || event.productId || event.shopifyInventoryItem }}</p>
+                      </ion-label>
+                      <ion-label class="ion-text-wrap">
+                        <span class="overline mobile-only">Location</span>
+                        <span class="event-type">{{ event.locationLabel }}</span>
+                        <p v-if="event.retargetLocationId">Channel has left this location</p>
+                      </ion-label>
+                      <ion-label>
+                        <span class="overline mobile-only">Adjustment</span>
+                        <span>{{ event.change }}</span>
+                      </ion-label>
+                      <ion-label>
+                        <span class="overline mobile-only">Batch</span>
+                        {{ event.batchId || "No batch" }}
+                      </ion-label>
+                      <div class="event-status">
+                        <span class="overline mobile-only">Outcome</span>
+                        <ion-badge :color="event.deliveryColor || event.detailStateColor">
+                          {{ event.delivery || event.detailState }}
+                        </ion-badge>
+                      </div>
+                      <ion-button fill="clear" aria-label="View event details" @click="selectedEvent = event">
+                        <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
+                      </ion-button>
+                      <p class="row-calculation">{{ event.calculation || "No calculation comment recorded" }}</p>
+                    </div>
+                    <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
+                  </div>
+                </ion-card>
+              </ion-accordion>
+            </ion-accordion-group>
+          </section>
+
+          <ion-card v-if="!filteredEvents.length && inventoryDetailsHydrated && inventorySyncReady">
             <ion-item lines="none">
               <ion-icon slot="start" :icon="timeOutline" />
               <ion-label class="ion-text-wrap">
@@ -733,24 +939,72 @@
       <ion-content>
         <ion-list lines="full">
           <ion-item>
-            <ion-label class="ion-text-wrap">Event<p>{{ selectedEvent?.key }}</p></ion-label>
-            <ion-badge slot="end" :color="selectedEvent?.badgeColor">{{ selectedEvent?.status }}</ion-badge>
+            <ion-label class="ion-text-wrap">Event type<p>{{ selectedEvent?.type }}</p></ion-label>
+            <ion-badge slot="end" :color="selectedEvent?.detailStateColor">{{ selectedEvent?.detailState }}</ion-badge>
+          </ion-item>
+          <!-- The reference is its own field, not half of a composed key: it is the source row's
+               natural key, and for the effective-date families it carries the lifecycle phase too. -->
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              Source record
+              <p>{{ selectedEvent?.sourceLabel }}</p>
+              <p v-if="selectedEvent?.sourcePhase">
+                Effective-date boundary this row crossed: {{ selectedEvent?.sourcePhase }}
+              </p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="selectedEvent?.showRawReference">
+            <ion-label class="ion-text-wrap">
+              Ledger event reference
+              <p>{{ selectedEvent?.eventReferenceId }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-label class="ion-text-wrap">
+              Product
+              <p>{{ selectedEvent?.productName || 'Not resolved' }}</p>
+              <p v-if="selectedEvent?.productSku">{{ selectedEvent?.productSku }}</p>
+              <p v-if="selectedEvent?.productId">HotWax product {{ selectedEvent?.productId }}</p>
+            </ion-label>
+            <ion-note slot="end">{{ selectedEvent?.change }}</ion-note>
           </ion-item>
           <ion-item>
             <ion-label>Shopify inventory item<p>{{ selectedEvent?.shopifyInventoryItem || 'Unknown item' }}</p></ion-label>
           </ion-item>
           <ion-item>
-            <ion-label class="ion-text-wrap">Inventory channel<p>{{ selectedEvent?.facility }}</p></ion-label>
+            <ion-label class="ion-text-wrap">Inventory channel<p>{{ selectedEvent?.channelLabel }}</p></ion-label>
           </ion-item>
           <ion-item>
-            <ion-label>Shopify target<p>{{ selectedEvent?.target }}</p></ion-label>
-            <ion-note slot="end">{{ selectedEvent?.change }}</ion-note>
+            <ion-label class="ion-text-wrap">
+              Shopify location
+              <p>{{ selectedEvent?.locationLabel }}</p>
+              <p v-if="selectedEvent?.locationId">Shopify location {{ selectedEvent?.locationId }}</p>
+              <p v-if="selectedEvent?.retargetLocationId">
+                This delta was calculated against the location the channel has since stopped pointing at,
+                and publishes there rather than to the channel's current one.
+              </p>
+            </ion-label>
+            <ion-badge v-if="selectedEvent?.retargetLocationId" slot="end" color="danger">
+              Retarget drain
+            </ion-badge>
+          </ion-item>
+          <ion-item>
+            <ion-label class="ion-text-wrap">Publishes under<p>{{ selectedEvent?.reason }}</p></ion-label>
+            <ion-badge v-if="selectedEvent && !selectedEvent.reasonMapped" slot="end" color="warning">
+              Unmapped
+            </ion-badge>
           </ion-item>
           <ion-item>
             <ion-label>Batch<p>{{ selectedEvent?.batchId || 'Not batched' }}</p></ion-label>
+            <ion-badge v-if="selectedEvent?.delivery" slot="end" :color="selectedEvent?.deliveryColor">
+              {{ selectedEvent?.delivery }}
+            </ion-badge>
           </ion-item>
           <ion-item lines="none">
-            <ion-label class="ion-text-wrap">Calculation<p>{{ selectedEvent?.decisionComment || 'No calculation comment recorded' }}</p></ion-label>
+            <ion-label class="ion-text-wrap">
+              How this delta was calculated
+              <p>{{ selectedEvent?.calculation || 'No calculation comment recorded' }}</p>
+            </ion-label>
           </ion-item>
         </ion-list>
       </ion-content>
@@ -770,22 +1024,45 @@
       <ion-content>
         <ion-list lines="full">
           <ion-item>
-            <ion-label>
-              Shopify target
-              <p>{{ selectedBatch?.target }}</p>
+            <ion-label class="ion-text-wrap">
+              Inventory channel
+              <p>{{ selectedBatch?.channel }}</p>
             </ion-label>
             <ion-badge slot="end" :color="selectedBatch?.badgeColor">
               {{ selectedBatch?.status }}
             </ion-badge>
           </ion-item>
           <ion-item>
-            <ion-label>
+            <ion-label class="ion-text-wrap">
+              Publishes under
+              <p>{{ selectedBatch?.reason }}</p>
+            </ion-label>
+            <ion-badge v-if="selectedBatch && !selectedBatch.reasonMapped" slot="end" color="warning">
+              {{ selectedBatch.mixedEventTypes ? "Mixed types" : "Unmapped" }}
+            </ion-badge>
+          </ion-item>
+          <ion-item>
+            <ion-label class="ion-text-wrap">
               Included events
-              <p>Every event retains its original HotWax event key</p>
+              <p>Each keeps its own event type and reference</p>
             </ion-label>
             <ion-label slot="end">
               {{ selectedBatch?.eventCount }}
             </ion-label>
+          </ion-item>
+
+          <!-- What the mutation carried: the deltas above, summed per (inventory item, location). -->
+          <ion-list-header>
+            <ion-label>Change entries</ion-label>
+          </ion-list-header>
+          <ion-item v-for="entry in selectedBatch?.entries ?? []" :key="entry.key">
+            <ion-label class="ion-text-wrap">
+              {{ entry.productLabel }}
+              <p>{{ entry.productSku }}</p>
+              <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
+              <p>{{ entry.eventCount }} events summed</p>
+            </ion-label>
+            <ion-note slot="end">{{ entry.change }}</ion-note>
           </ion-item>
 
           <!-- Why it has not landed. Without this a failed batch reads as merely "not sent yet". -->
@@ -797,7 +1074,7 @@
               <ion-icon :icon="warningOutline" slot="start" color="danger" />
               <ion-label class="ion-text-wrap">
                 {{ err.errorText }}
-                <p>Attempted {{ statusLabel(err.attemptedStatusId) }} · {{ formatDateTime(toMillis(err.errorDate)) }}</p>
+                <p>Attempted {{ statusLabel(err.attemptedStatusId) }} at {{ formatDateTime(toMillis(err.errorDate)) }}</p>
               </ion-label>
             </ion-item>
           </template>
@@ -824,15 +1101,16 @@
           </ion-list-header>
           <ion-item v-for="event in eventsForSelectedBatch" :key="event.rowKey">
             <ion-label class="ion-text-wrap">
-              {{ event.type }} for item {{ event.shopifyInventoryItem }}
-              <p>{{ event.key }}</p>
-              <p>{{ event.facility }} to {{ event.target }}</p>
+              {{ event.type }}
+              <p>{{ event.sourceLabel }}</p>
+              <p>Item {{ event.shopifyInventoryItem }} at {{ event.locationLabel }}</p>
+              <p>{{ event.calculation }}</p>
             </ion-label>
             <ion-note slot="end">
               {{ event.change }}
             </ion-note>
-            <ion-badge slot="end" :color="event.badgeColor">
-              {{ event.status }}
+            <ion-badge slot="end" :color="event.detailStateColor">
+              {{ event.detailState }}
             </ion-badge>
           </ion-item>
         </ion-list>
@@ -908,7 +1186,7 @@ import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
   IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
-  IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner,
+  IonPage, IonSearchbar, IonSelect, IonSelectOption, IonSpinner,
   IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewDidLeave,
   onIonViewWillEnter,
 } from "@ionic/vue";
@@ -942,6 +1220,7 @@ import {
   ensureChannelResetJob,
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
+  fetchLocationsFromShopify,
   setInventoryEventDocumentAttached,
   useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
@@ -957,6 +1236,7 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import { useProductNames } from "@/composables/useProductNames";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -968,35 +1248,87 @@ type HistoryMode = "events" | "batches";
 
 interface Batch {
   id: string;
+  /** SystemMessage delivery. A batch genuinely has a delivery status; a ledger row does not. */
   statusId?: string;
   status: string;
   badgeColor: string;
   created: string;
   createdAt: number;
   age: string;
-  target: string;
+  channel: string;
   eventCount: number;
-  detail: string;
+  /** What the mutation carried: one entry per (inventory item, location), deltas summed. */
+  entries: ChangeEntry[];
+  mixedEventTypes: boolean;
+  reason: string;
+  reasonMapped: boolean;
   messageText?: string;
 }
 
 interface InventoryEvent {
   rowKey: string;
-  key: string;
+  /**
+   * The ledger's source identity is TWO fields, not one composed string. eventTypeId is atomic so it
+   * can be grouped on -- which is what lets the Shopify `reason` be derived from data instead of
+   * hardcoded -- and eventReferenceId names which occurrence of that type this is. Concatenating them
+   * for display throws away exactly the split the entity exists to make.
+   */
+  eventTypeId: string;
+  eventReferenceId: string;
   type: string;
+  /** The reference named as the OMS record it is, e.g. "Shipment receipt 107319". */
+  sourceLabel: string;
+  /** Trailing lifecycle phase on an effective-date reference: OLD, NEW, ACTIVATE or EXPIRE. */
+  sourcePhase: string;
+  /** True only when the raw ledger reference is not already spelled out inside `sourceLabel`. */
+  showRawReference: boolean;
   /** The ledger's Shopify inventory item -- the detail row carries no OMS product. */
   shopifyInventoryItem: string;
-  /** Channel identity, which the channel filter matches on -- `facility`/`target` are labels. */
+  /** Channel identity, which the channel filter matches on -- `channelLabel` is the label. */
   inventoryChannelId: string;
-  facility: string;
-  target: string;
-  model: string;
+  channelLabel: string;
+  /** The Shopify location this row's delta was calculated FOR, which is not always the channel's. */
+  locationId: string;
+  locationLabel: string;
+  /**
+   * Set only when the row carries publishShopifyLocationId: a delta written to drain a location the
+   * channel has since stopped pointing at. Resolving such a row through the channel would apply it to
+   * the new location, draining that and stranding the stock at the old one.
+   */
+  retargetLocationId?: string;
+  delta: number;
   change: string;
+  /** The reason a batch of this event type publishes under, and whether the type maps to one at all. */
+  reason: string;
+  reasonMapped: boolean;
   batchId?: string;
-  status: string;
-  badgeColor: string;
+  /**
+   * Ledger lifecycle ONLY: Pending / Assigned / No change / Quarantined. Never a delivery status --
+   * these are two different state machines and collapsing them hides "quarantined, never batches"
+   * behind the same chip as "batched, mutation rejected".
+   */
+  detailState: string;
+  detailStateColor: string;
+  /** SystemMessage delivery, present only once the row has been assigned to a batch. */
+  delivery?: string;
+  deliveryColor?: string;
+  /** The raw SmsgProduced/Sending/Sent/Error id. Sections branch on this, never on the label. */
+  deliveryStatusId?: string;
   createdAt: number;
+  /** Raw, so the search box still matches what the server actually wrote. */
   decisionComment?: string;
+  /**
+   * The OMS product whose publishable ATP moved. Read out of the calculation comment, which is the only
+   * place it appears: the ledger row carries no productId, and ShopifyShopProduct has no reverse mount
+   * on shopifyInventoryItemId (checked against this instance's sob and oms Swagger), so the comment is
+   * the available source. Empty when the comment does not follow the connector's template.
+   */
+  productId: string;
+  /** Solr-resolved name and SKU for `productId`, absent until the lookup lands. */
+  productName: string;
+  productSku: string;
+  /** The calculation itself, e.g. "publishable ATP 40.0 -> 41.0." */
+  calculation: string;
 }
 
 const props = defineProps<{ id?: string; initialView?: ViewName; initialHistoryMode?: HistoryMode }>();
@@ -1052,6 +1384,47 @@ const {
   error: inventorySyncError,
   afterMutation,
 } = useCacheSync();
+
+/**
+ * SHOPIFY'S OWN NAME FOR EACH LOCATION, read from Shopify through get#ShopifyLocations -- the same
+ * call the location import screen makes, so the names on this page and in that picker are the same
+ * strings the merchant sees in their admin.
+ *
+ * NOT resolved through ShopifyShopLocation -> Facility. That mapping exists, but an aggregate location
+ * is not a facility: the shop records it against the `_NA_` sentinel, whose Facility row is named
+ * "Brokering Queue" (verified on rails-oms channel 100002 / location 83049873577), so that join
+ * produces a confident, wrong label. Shopify is the authority on what its own locations are called.
+ *
+ * One call per shop, on view entry, and never blocking: a shop that cannot be reached leaves the ids
+ * showing rather than emptying the column.
+ */
+const shopifyLocationNames = ref(new Map<string, string>());
+
+async function loadShopifyLocationNames() {
+  const shopId = String(syncContext.shopId?.value ?? "");
+  if (!shopId) return;
+  try {
+    const nodes = await fetchLocationsFromShopify(shopId);
+    const names = new Map<string, string>();
+    for (const node of nodes) {
+      // The node id is a GID; the ledger and the channel both carry the bare numeric id.
+      const locationId = String(node?.id ?? "").split("/").pop() ?? "";
+      const name = String(node?.name ?? "").trim();
+      if (locationId && name) names.set(locationId, name);
+    }
+    shopifyLocationNames.value = names;
+  } catch (error) {
+    logger.warn("Could not read Shopify location names; falling back to location ids", error);
+  }
+}
+
+// Optional chaining on purpose: this getter runs at setup, before anything guarantees the context has
+// settled, and a caller that stubs the context without a shopId should not take the whole view down.
+watch(() => syncContext.shopId?.value, (shopId) => {
+  if (shopId) void loadShopifyLocationNames();
+}, { immediate: true });
+
+const { products: resolvedProducts, resolve: resolveProductNames } = useProductNames();
 
 const { labelFor: statusDescriptionFor } = useStatuses();
 const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
@@ -1531,13 +1904,106 @@ function statusLabel(statusId?: string): string {
   return statusDescriptionFor(statusId) || statusId;
 }
 
-function targetLabel(detail: any): string {
-  // The Shopify location lives on the channel, not the detail row, so fall back through the
-  // cached channel before giving up on a generic label.
-  const channel = allInventoryChannels.value.find((candidate: any) =>
+function channelFor(detail: any): any {
+  return allInventoryChannels.value.find((candidate: any) =>
     String(candidate.inventoryChannelId) === String(detail.inventoryChannelId));
-  return detail.inventoryChannelDescription || channel?.description ||
-    (channel?.shopifyLocationId ? `Shopify location ${channel.shopifyLocationId}` : "Shopify aggregate location");
+}
+
+/** The channel that owns the row, by name. This is the row's SCOPE, not its Shopify target. */
+function channelLabel(detail: any): string {
+  return detail.inventoryChannelDescription || channelFor(detail)?.description ||
+    detail.facilityGroupId || detail.inventoryChannelId || "Inventory channel";
+}
+
+/**
+ * The Shopify location this row's delta will actually be applied to. Mirrors `locationOf` in
+ * create#ShopifyInventoryAdjustmentSystemMessage exactly: a row publishes to its own
+ * publishShopifyLocationId when it carries one, and to the channel's current location otherwise.
+ *
+ * Resolving every row through the channel -- which is what this page used to do -- is wrong for the
+ * one row type where it matters. A retarget writes a negative delta computed against the OLD location;
+ * labelling it with the channel's NEW location tells the operator the opposite of what will happen.
+ */
+function locationIdOf(detail: any): string {
+  return String(detail.publishShopifyLocationId || channelFor(detail)?.shopifyLocationId || "");
+}
+
+/**
+ * The Shopify location a row publishes to, by id.
+ *
+ * NOT resolved to a name. ShopifyShopLocation does map (shopId, shopifyLocationId) -> facilityId, and
+ * going on to Facility for a name looks like the obvious enrichment -- but an AGGREGATE location is not
+ * a facility, and the shop records it against the `_NA_` sentinel. On rails-oms, channel 100002's
+ * location 83049873577 resolves that way to a Facility row named "Brokering Queue", so the join
+ * produces a confident, wrong target label. The channel's own description is the human name for this
+ * target and it is already shown in context; the id is the precise one.
+ */
+function locationLabel(detail: any): string {
+  const locationId = locationIdOf(detail);
+  if (!locationId) return "Shopify aggregate location";
+  return shopifyLocationNames.value.get(locationId) || `Location ${locationId}`;
+}
+
+/**
+ * WHICH OMS RECORD THE EVENT CAME FROM. eventReferenceId is the source row's natural key, and its shape
+ * is decided per family in post#ShopifyInventoryChannelEvent:
+ *
+ *   RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK   ShipmentReceipt.receiptId
+ *   POS_ISSUANCE                                  ItemIssuance.itemIssuanceId
+ *   PHYSICAL_INVENTORY / CYCLE_COUNT              PhysicalInventory.physicalInventoryId
+ *   EXTERNAL_RESET                                ExternalInventoryReset.resetItemId
+ *   RESERVATION_CREATE / RESERVATION_RELEASE      inventoryItemId:inventoryItemDetailSeqId
+ *   the configuration families                    the source row's composite key, and for the
+ *                                                 effective-date ones a trailing :OLD or :NEW phase
+ *
+ * A bare number tells an operator nothing about where to look, so this names the record type. It is a
+ * DISPLAY LABEL ONLY and the raw reference is always shown beside it, so an unrecognised type -- a new
+ * one seeded in the OMS before this app ships -- degrades to the reference alone rather than to a wrong
+ * label. The durable fix for "which sales order was that" is a resolved source on the server; this
+ * ledger row deliberately carries no order, return or shipment id at all.
+ */
+const SOURCE_RECORD_LABELS: Record<string, string> = {
+  RECEIPT: "Shipment receipt",
+  TRANSFER_RECEIPT: "Shipment receipt",
+  RETURN_RESTOCK: "Shipment receipt",
+  POS_ISSUANCE: "Item issuance",
+  PHYSICAL_INVENTORY: "Physical inventory",
+  CYCLE_COUNT: "Physical inventory",
+  EXTERNAL_RESET: "External inventory reset",
+  // Deliberately absent: the reservation reference is spelled out below as "Inventory item X, detail Y",
+  // which already names the record, and prefixing it would repeat the words.
+  RESERVATION_CREATE: "",
+  RESERVATION_RELEASE: "",
+};
+
+interface EventSource {
+  /** What kind of OMS record the reference points at, empty when the type is not recognised. */
+  recordLabel: string;
+  /** The reference, spelled out for the composite families. */
+  reference: string;
+  /** ACTIVATE/EXPIRE-style boundary phase, carried as a trailing :OLD or :NEW on the reference. */
+  phase: string;
+}
+
+function sourceOf(detail: any): EventSource {
+  const eventTypeId = String(detail.eventTypeId ?? "");
+  const raw = String(detail.eventReferenceId ?? "");
+  const phaseMatch = raw.match(/:(OLD|NEW|ACTIVATE|EXPIRE)$/);
+  const phase = phaseMatch ? phaseMatch[1] : "";
+  const body = phase ? raw.slice(0, -(phase.length + 1)) : raw;
+
+  // The reservation families are one inventory item plus one detail sequence, which reads as two
+  // things rather than one opaque colon-joined token.
+  if (eventTypeId.startsWith("RESERVATION_") && body.includes(":")) {
+    const [inventoryItemId, detailSeqId] = body.split(":");
+    return {
+      recordLabel: SOURCE_RECORD_LABELS[eventTypeId] ?? "",
+      reference: `Inventory item ${inventoryItemId}, detail ${detailSeqId}`,
+      phase,
+    };
+  }
+
+  return { recordLabel: SOURCE_RECORD_LABELS[eventTypeId] ?? "", reference: body, phase };
 }
 
 const batches = computed<Batch[]>(() => {
@@ -1553,7 +2019,14 @@ const batches = computed<Batch[]>(() => {
     const statusId = message?.statusId || details[0]?.systemMessageStatusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.systemMessageInitDate || details[0]?.createdDate);
-    const net = details.reduce((total, detail) => total + Number(detail.computedInventoryChange || 0), 0);
+    const entries = changeEntriesOf(details);
+    // Reason is a property of the WHOLE mutation, so it can only be stated when the batch holds one
+    // event type. A mixed batch is the case the batcher publishes under `correction` because no single
+    // reason is true about it -- worth showing as such rather than picking the first row's reason.
+    const eventTypeIds = new Set(details.map((detail: any) => String(detail.eventTypeId ?? "")));
+    const { reason, mapped } = eventTypeIds.size === 1
+      ? reasonOf(details[0])
+      : { reason: "correction", mapped: false };
     return {
       id,
       statusId,
@@ -1561,27 +2034,243 @@ const batches = computed<Batch[]>(() => {
       created: createdAt ? formatDateTime(createdAt) : "Unknown",
       createdAt,
       age: formatAge(createdAt),
-      target: targetLabel(details[0]),
+      channel: channelLabel(details[0]),
       eventCount: details.length,
-      detail: `Net adjustment ${net > 0 ? "+" : ""}${net}`,
+      // What Shopify receives: one change entry per (inventory item, location) with the deltas SUMMED.
+      // A net figure across the whole message corresponds to nothing in the mutation.
+      entries,
+      mixedEventTypes: eventTypeIds.size > 1,
+      reason,
+      reasonMapped: mapped,
       messageText: message?.messageText,
     };
   }).sort((a, b) => b.createdAt - a.createdAt);
 });
 
-function eventState(detail: any): { status: string; badgeColor: string } {
+/**
+ * THE LEDGER'S OWN LIFECYCLE, and nothing else. DETAIL_PENDING / ASSIGNED / NOOP / ERROR is a closed
+ * vocabulary seeded by the connector; SystemMessage delivery is a separate state machine that lives on
+ * the batch. This page used to return the batch's delivery status here whenever a row was assigned,
+ * which meant "Sent" appeared as though it were a detail status and DETAIL_ERROR -- a terminal
+ * quarantine that never batches and needs a human to record a new event -- read as just another
+ * red chip. They are reported separately now.
+ */
+function detailState(detail: any): { label: string; color: string } {
   switch (detail.detailStatusId) {
-    case "DETAIL_PENDING": return { status: "Unbatched", badgeColor: "warning" };
-    case "DETAIL_NOOP": return { status: "No change", badgeColor: "medium" };
-    case "DETAIL_ERROR": return { status: "Error", badgeColor: "danger" };
-    case "DETAIL_ASSIGNED": {
-      const messageStatus = messageById.value.get(String(detail.systemMessageId ?? ""))?.statusId ||
-        detail.systemMessageStatusId;
-      return batchState(messageStatus);
-    }
-    default: return { status: String(detail.detailStatusId || "Unknown"), badgeColor: "medium" };
+    case "DETAIL_PENDING": return { label: "Waiting", color: "warning" };
+    case "DETAIL_ASSIGNED": return { label: "Batched", color: "primary" };
+    case "DETAIL_NOOP": return { label: "No change", color: "medium" };
+    case "DETAIL_ERROR": return { label: "Quarantined", color: "danger" };
+    default: return { label: String(detail.detailStatusId || "Unknown"), color: "medium" };
   }
 }
+
+/** Delivery of the batch this row was assigned to. Absent while the row is still unbatched. */
+function deliveryState(detail: any): { label: string; color: string; statusId: string } | null {
+  const systemMessageId = String(detail.systemMessageId ?? "");
+  if (!systemMessageId) return null;
+  const statusId = String(messageById.value.get(systemMessageId)?.statusId ||
+    detail.systemMessageStatusId || "");
+  const state = batchState(statusId);
+  return { label: state.status, color: state.badgeColor, statusId };
+}
+
+/**
+ * The reason a batch made up of this event type publishes under. `shopifyReason` is aliased onto the
+ * view from ShopifyInventoryEventType precisely so it is readable BEFORE a send: inventoryAdjustQuantities
+ * validates reason server-side and rejects the WHOLE mutation on a bad value, and that rejection freezes
+ * into messageText and replays identically on every retry. A null mapping is a recorded decision, not an
+ * oversight, and the batcher falls back to `correction` -- the one reason that is never a lie about an
+ * aggregate adjustment.
+ */
+function reasonOf(detail: any): { reason: string; mapped: boolean } {
+  const mapped = String(detail.shopifyReason ?? "").trim();
+  return mapped ? { reason: mapped, mapped: true } : { reason: "correction", mapped: false };
+}
+
+/**
+ * THE DECISION LOGIC, minus the identity it restates. A comment reads
+ * "Event RETURN_RESTOCK:107319: product 140876 publishable ATP 40.0 -> 41.0." and the first clause is
+ * the row's own event type and reference, already shown two lines above it. Stripping exactly that
+ * prefix -- rebuilt from the row's own fields, so this is an equality test and not a pattern guess --
+ * leaves the part that exists nowhere else on the screen: which OMS product's publishable ATP moved,
+ * and the transition it made. A comment that does not open that way is passed through untouched.
+ */
+function calculationOf(detail: any): { productId: string; calculation: string } {
+  const comment = String(detail.decisionComment ?? "").trim();
+  const prefix = `Event ${detail.eventTypeId}:${detail.eventReferenceId}:`;
+  const body = comment.startsWith(prefix) ? comment.slice(prefix.length).trim() : comment;
+  // "product 140876 publishable ATP 40.0 -> 41.0." -- the productId is the ONLY place this screen can
+  // get an OMS product from, and the phrase after it is the calculation itself.
+  const parts = body.match(/^product (\S+) (publishable ATP .*)$/);
+  return parts ? { productId: parts[1], calculation: parts[2] } : { productId: "", calculation: body };
+}
+
+/** The ledger's four-column primary key, used as the identity of a row everywhere on this page. */
+function rowKeyOf(detail: any): string {
+  return JSON.stringify([detail.eventTypeId, detail.eventReferenceId,
+    detail.inventoryChannelId, detail.shopifyInventoryItemId].map(String));
+}
+
+/**
+ * ONE CHANGE ENTRY -- what Shopify is actually sent. The batcher groups its claimed rows by
+ * (shopifyInventoryItemId, effective location) and SUMS the deltas, so several ledger rows collapse
+ * into a single entry in the mutation. Reporting per-row deltas alone, which is all this page used to
+ * do, never shows the number Shopify receives.
+ *
+ * The summed delta also decides the rows' fate before any send happens: exactly zero settles them as
+ * DETAIL_NOOP, and a non-whole sum quarantines the whole group as DETAIL_ERROR. Both are worth seeing
+ * while the rows are still pending.
+ */
+interface ChangeEntry {
+  key: string;
+  shopifyInventoryItem: string;
+  /**
+   * One inventory item is one remote target, and the rows feeding an entry are all for that target, so
+   * the product is taken from the first. Mappings that collapse several Shopify products onto a shared
+   * inventory item are one target by design, which is why this cannot disagree with itself.
+   */
+  productLabel: string;
+  productSku: string;
+  locationId: string;
+  locationLabel: string;
+  retarget: boolean;
+  delta: number;
+  change: string;
+  eventCount: number;
+  outcome: "publish" | "noChange" | "quarantine";
+  outcomeLabel: string;
+  outcomeColor: string;
+}
+
+/** Binary floating point makes a summed decimal delta like 0.1 + 0.2 fail an exact integer test. */
+function isWholeNumber(value: number): boolean {
+  return Number.isInteger(Math.round(value * 1e6) / 1e6);
+}
+
+function changeEntriesOf(details: any[]): ChangeEntry[] {
+  const grouped = new Map<string, any[]>();
+  for (const detail of details) {
+    const key = `${String(detail.shopifyInventoryItemId ?? "")}@${locationIdOf(detail)}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), detail]);
+  }
+  return [...grouped.entries()].map(([key, rows]) => {
+    const delta = rows.reduce((total, row) => total + Number(row.computedInventoryChange || 0), 0);
+    const outcome = delta === 0 ? "noChange" : isWholeNumber(delta) ? "publish" : "quarantine";
+    const { productId } = calculationOf(rows[0]);
+    const product = productId ? resolvedProducts.value.get(productId) : undefined;
+    return {
+      key,
+      shopifyInventoryItem: String(rows[0].shopifyInventoryItemId ?? ""),
+      productLabel: product?.parentProductName || product?.internalName || product?.productName ||
+        `Item ${rows[0].shopifyInventoryItemId ?? ""}`,
+      productSku: product?.sku || productId || "",
+      locationId: locationIdOf(rows[0]),
+      locationLabel: locationLabel(rows[0]),
+      retarget: !!rows[0].publishShopifyLocationId,
+      delta,
+      change: `${delta > 0 ? "+" : ""}${delta}`,
+      eventCount: rows.length,
+      outcome,
+      outcomeLabel: outcome === "publish" ? "Will publish"
+        : outcome === "noChange" ? "Nets to zero, will settle as no change"
+        : "Not a whole number, will be quarantined",
+      outcomeColor: outcome === "publish" ? "primary" : outcome === "noChange" ? "medium" : "danger",
+    } as ChangeEntry;
+  }).sort((a, b) => a.shopifyInventoryItem.localeCompare(b.shopifyInventoryItem));
+}
+
+/**
+ * THE PUBLISHER'S BATCH BOUNDARY. `groupByFields` is a parameter on the drain job; unset means the
+ * default documented in create#ShopifyInventoryAdjustmentSystemMessage, which puts one inventory item
+ * and one event type in a message so a rejected item can only ever take itself down.
+ */
+const PUBLISHER_DEFAULT_GROUP_BY = ["inventoryChannelId", "shopifyInventoryItemId", "eventTypeId"];
+
+const publisherGroupBy = computed<string[]>(() => {
+  for (const job of pendingPublisherJobs.value) {
+    const configured = String(parameterMap(job).groupByFields ?? "").trim();
+    if (configured) return configured.split(",").map((field) => field.trim()).filter(Boolean);
+  }
+  return PUBLISHER_DEFAULT_GROUP_BY;
+});
+
+/**
+ * With eventTypeId out of the grouping, one message can hold a receipt and a POS sale, and the batcher
+ * then has to publish under `correction` because no single reason is true about the batch. That is a
+ * configuration choice with a visible cost, so the page says so rather than letting the reason quietly
+ * degrade.
+ */
+const batchesWillMixEventTypes = computed(() => !publisherGroupBy.value.includes("eventTypeId"));
+
+const eventByRowKey = computed(() => new Map(inventoryEvents.value.map((event) => [event.rowKey, event])));
+
+function eventsFor(details: any[]): InventoryEvent[] {
+  return details.map((detail) => eventByRowKey.value.get(rowKeyOf(detail)))
+    .filter((event): event is InventoryEvent => !!event);
+}
+
+/**
+ * SECTION 1 -- what has not been sent yet, grouped the way the publisher will group it, so the reason
+ * each prospective batch will publish under is readable while it is still cheap to change. A wrong
+ * reason is rejected for the whole mutation and then replays verbatim on every retry, so this is the
+ * only moment an operator can act on it.
+ *
+ * Oldest group first: that is the order the publisher drains, because it picks the oldest pending group
+ * on each run.
+ */
+const waitingBatches = computed(() => {
+  const pending = inventoryDetails.value.filter((detail: any) =>
+    detail.detailStatusId === "DETAIL_PENDING" && !detail.systemMessageId);
+  const grouped = new Map<string, any[]>();
+  for (const detail of pending) {
+    const key = publisherGroupBy.value.map((field) => `${field}=${detail[field] ?? ""}`).join(", ");
+    grouped.set(key, [...(grouped.get(key) ?? []), detail]);
+  }
+
+  return [...grouped.entries()].map(([key, rows]) => {
+    const eventTypeIds = new Set(rows.map((row: any) => String(row.eventTypeId ?? "")));
+    const { reason, mapped } = eventTypeIds.size === 1
+      ? reasonOf(rows[0])
+      : { reason: "correction", mapped: false };
+    const timestamps = rows.map((row: any) => toMillis(row.createdDate)).filter(Boolean);
+    const oldestAt = timestamps.length ? Math.min(...timestamps) : 0;
+    return {
+      id: key,
+      channel: channelLabel(rows[0]),
+      inventoryChannelId: String(rows[0].inventoryChannelId ?? ""),
+      type: eventTypeIds.size === 1 ? eventTypeLabel(rows[0]) : `${eventTypeIds.size} event types mixed`,
+      mixedEventTypes: eventTypeIds.size > 1,
+      reason,
+      reasonMapped: mapped,
+      entries: changeEntriesOf(rows),
+      eventCount: rows.length,
+      oldestAt,
+      oldestAge: oldestAt ? formatAge(oldestAt) : "Unknown",
+      events: eventsFor(rows),
+    };
+  }).sort((a, b) => a.oldestAt - b.oldestAt);
+});
+
+/** SECTION 2 -- batches the OMS has produced but Shopify has not confirmed, including outright failures. */
+const IN_FLIGHT_STATUS_IDS = ["SmsgProduced", "SmsgSending", "SmsgError"];
+const inFlightBatches = computed(() => batches.value
+  .filter((batch: any) => IN_FLIGHT_STATUS_IDS.includes(String(batch.statusId))));
+
+/**
+ * SECTION 3 -- terminal quarantine. These rows are never claimed again and are deliberately excluded
+ * from the absolute publisher's pending-delta gate, so nothing will retry them: the source rows have to
+ * be fixed and a NEW event recorded.
+ */
+const quarantinedEvents = computed(() => inventoryEvents.value
+  .filter((event) => event.detailState === "Quarantined"));
+
+/**
+ * SECTION 4 -- the settled tail. Retention-bound, not an archive: the scheduled purge removes terminal
+ * rows after five days by default, so this can only ever be a rolling window.
+ */
+const settledEvents = computed(() => inventoryEvents.value.filter((event) =>
+  event.detailState === "No change" || event.deliveryStatusId === "SmsgSent"));
 
 /**
  * The server owns this label. `eventTypeDescription` is joined from ShopifyInventoryEventType --
@@ -1598,8 +2287,13 @@ function eventTypeLabel(detail: any): string {
 }
 
 const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.map((detail: any) => {
-  const state = eventState(detail);
-  const change = Number(detail.computedInventoryChange || 0);
+  const state = detailState(detail);
+  const delivery = deliveryState(detail);
+  const { reason, mapped } = reasonOf(detail);
+  const source = sourceOf(detail);
+  const { productId, calculation } = calculationOf(detail);
+  const product = productId ? resolvedProducts.value.get(productId) : undefined;
+  const delta = Number(detail.computedInventoryChange || 0);
   // Same identity as the server PK and the cache key: event type + reference + channel + item.
   const identity = [
     detail.eventTypeId,
@@ -1609,31 +2303,56 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
   ];
   return {
     rowKey: JSON.stringify(identity.map(String)),
-    key: `${String(detail.eventTypeId ?? "")}:${String(detail.eventReferenceId ?? "")}`,
+    eventTypeId: String(detail.eventTypeId ?? ""),
+    eventReferenceId: String(detail.eventReferenceId ?? ""),
     type: eventTypeLabel(detail),
+    sourceLabel: [source.recordLabel, source.reference].filter(Boolean).join(" "),
+    sourcePhase: source.phase,
+    showRawReference: !`${source.recordLabel} ${source.reference}`.includes(String(detail.eventReferenceId ?? "")),
     // The ledger identifies a Shopify inventory item, not an OMS product, and nothing cached here
     // maps one to the other. Show the item id -- the row's real identity -- rather than resolving a
     // product through a join this screen does not have.
     shopifyInventoryItem: String(detail.shopifyInventoryItemId ?? ""),
     // The filter matches on this, not on the display label: two channels can share a description.
     inventoryChannelId: String(detail.inventoryChannelId ?? ""),
-    facility: detail.inventoryChannelDescription || detail.facilityGroupId || detail.inventoryChannelId || "Inventory channel",
-    target: targetLabel(detail),
-    model: "Aggregate ATP",
-    change: `${change > 0 ? "+" : ""}${change}`,
+    channelLabel: channelLabel(detail),
+    locationId: locationIdOf(detail),
+    locationLabel: locationLabel(detail),
+    retargetLocationId: detail.publishShopifyLocationId ? String(detail.publishShopifyLocationId) : undefined,
+    delta,
+    change: `${delta > 0 ? "+" : ""}${delta}`,
+    reason,
+    reasonMapped: mapped,
     batchId: detail.systemMessageId || undefined,
-    ...state,
+    detailState: state.label,
+    detailStateColor: state.color,
+    delivery: delivery?.label,
+    deliveryColor: delivery?.color,
+    deliveryStatusId: delivery?.statusId,
     createdAt: toMillis(detail.createdDate),
     decisionComment: detail.decisionComment,
+    productId,
+    productName: product?.parentProductName || product?.internalName || product?.productName || "",
+    productSku: product?.sku || "",
+    calculation,
   };
 }).sort((a, b) => b.createdAt - a.createdAt));
+
+/**
+ * Ask Solr for the products the rendered rows mention. Watches the rows rather than fetching per row:
+ * `resolve` filters against what it has already requested, so a stable list is one round trip and a
+ * background cache sync that rebuilds the array is none.
+ */
+watch(inventoryEvents, (events) => {
+  void resolveProductNames(events.map((event) => event.productId).filter(Boolean));
+}, { immediate: true });
 
 const pendingEventCount = computed(() => inventoryDetails.value.filter((detail: any) =>
   detail.detailStatusId === "DETAIL_PENDING").length);
 const pendingBatchCount = computed(() => batches.value.filter((batch) =>
   ["SmsgProduced", "SmsgSending", "SmsgError"].includes(String(batch.statusId))).length);
 const oldestUnbatchedEvent = computed(() => {
-  const oldest = inventoryEvents.value.filter((event) => event.status === "Unbatched")
+  const oldest = inventoryEvents.value.filter((event) => event.detailState === "Waiting")
     .sort((a, b) => a.createdAt - b.createdAt)[0];
   return oldest ? formatDateTime(oldest.createdAt) : "None waiting";
 });
@@ -1863,7 +2582,7 @@ onIonViewDidLeave(() => {
   stopSyncDomains();
 });
 
-const historyStatusOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.status))]);
+const historyStatusOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.detailState))]);
 const eventTypeOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.type))]);
 /**
  * Channel choices for the history filter and the discard job's channel parameter.
@@ -1894,38 +2613,37 @@ const channelFilterOptions = computed<ParameterOption[]>(() => {
 const filteredEvents = computed(() => {
   const query = historyQuery.value.trim().toLowerCase();
   const events = inventoryEvents.value.filter((event) => {
-    const matchesQuery = !query || [event.key, event.type, event.shopifyInventoryItem,
-      event.facility, event.target, event.model, event.batchId, event.status, event.decisionComment]
+    const matchesQuery = !query || [event.eventTypeId, event.eventReferenceId, event.type,
+      event.shopifyInventoryItem, event.channelLabel, event.locationId, event.locationLabel,
+      event.reason, event.batchId, event.detailState, event.delivery, event.decisionComment,
+      event.productId, event.productName, event.productSku]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
     return matchesQuery &&
-      (!selectedHistoryStatus.value || event.status === selectedHistoryStatus.value) &&
+      (!selectedHistoryStatus.value || event.detailState === selectedHistoryStatus.value) &&
       (!selectedEventType.value || event.type === selectedEventType.value) &&
       (!selectedChannel.value || event.inventoryChannelId === selectedChannel.value);
   });
   return historySortOrder.value === "oldest" ? events.reverse() : events;
 });
 
-const batchGroups = computed(() => {
-  const visibleEvents = filteredEvents.value;
-  const unsent = visibleEvents.filter((event) => !event.batchId);
-  return [
-    {
-      id: "unsent", title: "Unsent events", subtitle: "Calculated events waiting for the next batch",
-      status: "Waiting", badgeColor: "warning", totalChange: formatNetAdjustment(unsent),
-      icon: timeOutline, events: unsent,
-    },
-    ...batches.value.map((batch) => {
-      const events = visibleEvents.filter((event) => event.batchId === batch.id);
-      return {
-        id: batch.id, title: batch.id, subtitle: `${batch.target} | ${batch.created}`,
-        status: batch.status, badgeColor: batch.badgeColor, totalChange: formatNetAdjustment(events),
-        icon: batch.status === "Error" ? warningOutline : checkmarkCircleOutline, events,
-      };
-    }),
-  ].filter((group) => group.events.length);
-});
+/**
+ * The four pipeline sections all read `filteredEvents`, so the search box and the selects narrow every
+ * section at once rather than only the flat list.
+ */
+const visibleRowKeys = computed(() => new Set(filteredEvents.value.map((event) => event.rowKey)));
 
-const visibleBatchGroups = computed(() => batchGroups.value);
+const visibleWaitingBatches = computed(() => waitingBatches.value
+  .map((group) => ({ ...group, events: group.events.filter((event) => visibleRowKeys.value.has(event.rowKey)) }))
+  .filter((group) => group.events.length));
+
+const visibleInFlightBatches = computed(() => inFlightBatches.value
+  .filter((batch: any) => filteredEvents.value.some((event) => event.batchId === batch.id)));
+
+const visibleQuarantinedEvents = computed(() => quarantinedEvents.value
+  .filter((event) => visibleRowKeys.value.has(event.rowKey)));
+
+const visibleSettledEvents = computed(() => settledEvents.value
+  .filter((event) => visibleRowKeys.value.has(event.rowKey)));
 
 /**
  * Only the rows near the viewport get DOM nodes. The history can hold tens of thousands of events,
@@ -1938,7 +2656,7 @@ const {
   bottomSpacer: eventBottomSpacer,
   onScroll: onEventScroll,
   scrollToTop: scrollEventsToTop,
-} = useVirtualRows(filteredEvents, { estimatedRowHeight: 56 });
+} = useVirtualRows(visibleSettledEvents, { estimatedRowHeight: 76 });
 
 /**
  * A collapsed ion-accordion still renders its content, so a batch of thousands of events cost the
@@ -1980,7 +2698,8 @@ const messageText = computed(() => {
   return JSON.stringify({
     systemMessageId: messageBatch.value?.id,
     systemMessageTypeId: "ShopifyInventoryAdjustment",
-    shopifyLocation: messageBatch.value?.target,
+    inventoryChannel: messageBatch.value?.channel,
+    reason: messageBatch.value?.reason,
     eventCount: messageBatch.value?.eventCount,
     messageText: "The exact System Message payload is still loading.",
   }, null, 2);
@@ -2008,7 +2727,7 @@ async function openChannelSetup() {
 }
 
 /**
- * "Online Facility Group · HC Demo" - what the channel maps, in the names people use for those two
+ * "Online Facility Group, HC Demo" - what the channel maps, in the names people use for those two
  * things rather than their ids.
  *
  * Both halves are already cached: facilityGroupName rides along on the channel row, and the shop's
@@ -2020,7 +2739,7 @@ function channelSubtitle(channel: any): string {
   const groupLabel = channel?.facilityGroupName || channel?.facilityGroupId || "";
   const shop = shopsById.value[String(channel?.shopId ?? "")];
   const shopLabel = shop?.name || shop?.myshopifyDomain || channel?.shopId || "";
-  return [groupLabel, shopLabel].filter(Boolean).join(" · ");
+  return [groupLabel, shopLabel].filter(Boolean).join(", ");
 }
 
 function openChannelEdit(channel: any) {
@@ -2160,11 +2879,6 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   } finally {
     provisioningJobKind.value = "";
   }
-}
-
-function formatNetAdjustment(events: InventoryEvent[]) {
-  const netAdjustment = events.reduce((total, event) => total + Number(event.change), 0);
-  return `Net adjustment ${netAdjustment > 0 ? "+" : ""}${netAdjustment}`;
 }
 
 function toMillis(value: unknown): number {
@@ -2315,10 +3029,6 @@ function formatAge(timestamp: number): string {
   min-width: 0;
 }
 
-.history-mode {
-  margin-block-end: 0;
-}
-
 /* The virtualised rows scroll inside this box rather than the page, so the window maths has a
    viewport to measure against. The column header above it stays put while the rows move. */
 .event-scroller {
@@ -2328,12 +3038,45 @@ function formatAge(timestamp: number): string {
   overscroll-behavior: contain;
 }
 
+/* Five columns, down from six plus a constant: the channel is section scope now rather than a
+   per-row repeat, and "Aggregate ATP" was the same string on every row. */
 .event-table {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 1fr) minmax(160px, 1fr) minmax(90px, 0.6fr) minmax(110px, 0.7fr) minmax(90px, 0.6fr) max-content;
+  grid-template-columns: minmax(220px, 1.7fr) minmax(160px, 1.2fr) minmax(110px, 0.8fr) minmax(80px, 0.5fr) minmax(100px, 0.6fr) minmax(80px, 0.5fr) max-content;
   align-items: center;
   gap: var(--spacer-xs);
   padding: var(--spacer-sm);
+}
+
+/* Each pipeline state owns a block, so the gap between sections has to read as larger than the gap
+   between the cards inside one. */
+.pipeline-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-sm);
+  margin-block-start: var(--spacer-base);
+}
+
+.pipeline-section > ion-card,
+.pipeline-section ion-accordion-group {
+  margin-block: 0;
+}
+
+/* The reason a batch publishes under, and its delivery, stack at the end of a header row rather than
+   competing for the same slot. */
+.reason-cell,
+.entry-outcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacer-2xs);
+  min-width: 0;
+}
+
+.reason-cell ion-badge,
+.entry-outcome ion-badge {
+  white-space: normal;
+  text-align: end;
 }
 
 .event-table-header,
@@ -2356,6 +3099,49 @@ function formatAge(timestamp: number): string {
 
 .event-table-row > ion-label:first-child p {
   overflow-wrap: anywhere;
+}
+
+/* The calculation is prose, so it gets the whole row rather than the narrowest column: it spans every
+   track and wraps onto the grid's second line.
+
+   ONE LINE, ALWAYS PRESENT. useVirtualRows measures a single row and assumes the others match, so a
+   comment of varying length would drift the spacer maths and make the scroll jump. Clamped here and
+   shown in full in the row's own detail. */
+.event-table-row .row-calculation {
+  grid-column: 1 / -1;
+  margin-block: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-table-row > ion-label {
+  min-width: 0;
+}
+
+.event-table-row > ion-label p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* TWO LINES, FIXED, on every cell whose text is free-form: the server-owned event-type description,
+   the Solr product name and the Shopify location name all vary in length, so any of them can decide
+   the row's height -- measured live, rows landed on 106px or 122px depending on the event type alone.
+   useVirtualRows measures ONE row and applies that height to the spacers for all of them, so a varying
+   row drifts the scrollbar over hundreds of rows.
+
+   Clamped so a long description cannot grow the row, and floored at the same two line boxes so a short
+   one cannot shrink it. `lh` is the line box itself rather than a guessed pixel value; where it is not
+   supported the cell just sizes to content, which is the behaviour this replaces rather than a break.
+   The full description is in the row's own detail. */
+.event-table-row .event-type {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  block-size: 2lh;
 }
 
 .batch-header {
@@ -2400,6 +3186,24 @@ ion-modal p {
 
   .event-table-row > * {
     grid-column: 1;
+  }
+
+  /* Stacked rows get the full width, and truncating a product name on a 375px screen costs more than
+     it saves, so everything wraps here.
+
+     That does mean mobile rows vary in height while desktop rows do not, and useVirtualRows measures
+     one row for all of them -- so the mobile spacers stay an approximation. This is the behaviour the
+     stacked layout already had before the columns changed; it is not worth buying back by clamping the
+     one place the text most needs to be readable. Fixing it properly means teaching the virtualiser
+     about variable heights, which is a change to a shared composable rather than to this page. */
+  .event-table-row > ion-label p,
+  .event-table-row .row-calculation {
+    white-space: normal;
+  }
+
+  .event-table-row .event-type {
+    display: block;
+    block-size: auto;
   }
 
   .event-table-row > ion-button {
