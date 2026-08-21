@@ -57,12 +57,20 @@ describe("normalizeProductSyncStatus", () => {
       expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgConsumed" })).toBe("importing");
     });
 
-    it("returns cancelled when systemMessageState is SmsgCancelled with logId present", () => {
-      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgCancelled" })).toBe("cancelled");
+    // Once an MDM log exists, the DataManager status owns the outcome and the system message no
+    // longer forces a terminal read. With no logStatusId yet the import is still in flight, so both
+    // of these stay importing rather than reporting the message's terminal state.
+    it("keeps importing when a logId is present and only the message is cancelled", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgCancelled" })).toBe("importing");
     });
 
-    it("returns error when systemMessageState is SmsgError with logId present", () => {
-      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgError" })).toBe("error");
+    it("keeps importing when a logId is present and only the message errored", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgError" })).toBe("importing");
+    });
+
+    it("reports the DataManager outcome once the log carries one", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsCancelled" })).toBe("cancelled");
+      expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsFailed" })).toBe("error");
     });
 
     it("returns queued by default", () => {

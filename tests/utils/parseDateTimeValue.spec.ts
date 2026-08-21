@@ -41,7 +41,7 @@ describe("parseDateTimeValue", () => {
 
 describe("formatDateTime", () => {
   it("formats a native Date rather than returning the empty string", () => {
-    const formatted = formatDateTime(new Date(Date.UTC(2026, 6, 27, 6, 15, 0)), "yyyy-MM-dd");
+    const formatted = formatDateTime(new Date(2026, 6, 27, 12, 0, 0), "yyyy-MM-dd");
 
     expect(formatted).toBe("2026-07-27");
   });
