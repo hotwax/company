@@ -188,7 +188,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     harness.push.mockReset();
   });
 
-  it("lists each channel's aggregate reset job individually in monitored sync jobs", async () => {
+  it("surfaces each channel's own jobs on that channel's card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
@@ -227,8 +227,24 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Reset aggregate ATP (Retail Channel)");
-    expect(wrapper.text()).toContain("Reset aggregate ATP (Wholesale Channel)");
+    // Each channel owns a card carrying its own two schedules, so a row no longer needs the channel
+    // name in brackets to be distinguishable -- the card it sits on supplies that.
+    const channelCards = wrapper.findAll("ion-card")
+      .filter((card) => card.text().includes("Reset aggregate ATP"));
+    expect(channelCards.length).toBe(2);
+
+    expect(channelCards[0].text()).toContain("Retail Channel");
+    expect(channelCards[1].text()).toContain("Wholesale Channel");
+
+    // Resolved independently rather than collapsed onto the first job: IC_1001 is active and
+    // IC_1002 is paused in the fixture above.
+    expect(channelCards[0].text()).toContain("Active");
+    expect(channelCards[1].text()).toContain("Paused");
+
+    // The publisher is grouped with it, on the same card.
+    channelCards.forEach((card) => {
+      expect(card.text()).toContain("Publish and send event batches");
+    });
   });
 
   it("renders a Schedule reset button and schedule summary on each channel item", async () => {

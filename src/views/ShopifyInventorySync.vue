@@ -81,8 +81,8 @@
                desktop width to hold four rows. `auto-fit` still stacks them on narrow screens. -->
           <ion-card>
             <ion-card-header>
-              <ion-card-title>Inventory sync jobs</ion-card-title>
-              <ion-card-subtitle>Schedules, recent runs, and current health</ion-card-subtitle>
+              <ion-card-title>Shared sync jobs</ion-card-title>
+              <ion-card-subtitle>One schedule each, serving every channel on this connection</ion-card-subtitle>
               <!-- The rollup badge that used to head its own card. Every job's status is listed
                    below it, so this is the summary of the rows it sits on rather than a second
                    place to read the same schedules. -->
@@ -90,7 +90,7 @@
             </ion-card-header>
             <ion-list lines="full">
               <ion-item
-                v-for="job in monitoredJobs"
+                v-for="job in sharedJobs"
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
                 :button="!!job.job"
                 :detail="!!job.job"
@@ -136,40 +136,66 @@
             </ion-button>
           </ion-item>
 
-          <ion-card>
+          <ion-card v-if="!inventoryChannels.length">
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <p>No inventory channels are mapped for this connection. Aggregate inventory
+                   cannot be published until a facility group is mapped to a Shopify location.</p>
+              </ion-label>
+            </ion-item>
+          </ion-card>
+
+          <!-- One card per channel. A channel is the unit an operator manages -- it owns a facility
+               group, a Shopify location, and its own two schedules -- so its jobs sit on it rather than
+               in a shared list that needed the channel's name in brackets to tell rows apart. -->
+          <ion-card v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
+            <ion-item lines="full" button detail @click="openChannelEdit(channel)">
+              <ion-icon :icon="layersOutline" slot="start" />
+              <ion-label class="ion-text-wrap">
+                {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
+                <p>{{ channelSubtitle(channel) }}</p>
+              </ion-label>
+              <ion-label slot="end" class="ion-text-end">
+                {{ channel.shopifyLocationId }}
+                <p>Shopify location</p>
+              </ion-label>
+            </ion-item>
+
             <ion-list lines="full">
-              <ion-item v-if="!inventoryChannels.length" lines="none">
-                <ion-label class="ion-text-wrap">
-                  <p>No inventory channels are mapped for this connection. Aggregate inventory
-                     cannot be published until a facility group is mapped to a Shopify location.</p>
-                </ion-label>
-              </ion-item>
               <ion-item
-                v-for="channel in inventoryChannels"
-                :key="channel.inventoryChannelId"
-                button
-                detail
-                @click="openChannelEdit(channel)"
+                v-for="job in jobsForChannel(channel)"
+                :key="`${job.name}-${job.targetChannelId ?? ''}`"
+                :button="!!job.job"
+                :detail="!!job.job"
+                @click="openServiceJob(job.job, `${job.name} (${channel.facilityGroupName || channel.description || channel.inventoryChannelId})`)"
               >
-                <ion-icon :icon="layersOutline" slot="start" />
+                <ion-icon slot="start" :icon="job.icon" />
                 <ion-label class="ion-text-wrap">
-                  {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
-                  <p>{{ channelSubtitle(channel) }}</p>
-                  <p>{{ channelResetJobSummary(channel) }}</p>
+                  {{ job.name }}
+                  <p>{{ job.lastRun }}</p>
+                  <p>{{ job.nextRun }}</p>
                 </ion-label>
                 <ion-button
+                  v-if="job.setup"
                   slot="end"
                   fill="outline"
                   size="small"
-                  @click.stop="openChannelResetJob(channel)"
+                  :disabled="!!provisioningJobKind"
+                  @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                 >
+                  <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                  <template v-else>{{ translate("Set up") }}</template>
+                </ion-button>
+                <ion-badge slot="end" :color="job.badgeColor">
+                  {{ job.status }}
+                </ion-badge>
+              </ion-item>
+
+              <ion-item lines="none">
+                <ion-button fill="clear" @click="openChannelResetJob(channel)">
                   <ion-icon slot="start" :icon="timeOutline" />
                   {{ translate("Schedule reset") }}
                 </ion-button>
-                <ion-label slot="end" class="ion-text-end">
-                  {{ channel.shopifyLocationId }}
-                  <p>Shopify location</p>
-                </ion-label>
               </ion-item>
             </ion-list>
           </ion-card>
@@ -1204,7 +1230,6 @@ import {
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import cronstrue from "cronstrue";
 import { commonUtil, logger, translate } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { resyncDomain } from "@/services/appCacheBootstrap";
@@ -1736,71 +1761,107 @@ function findChannelResetJob(channelId: string) {
     || null;
 }
 
-function channelResetJobSummary(channel: any): string {
-  const job = findChannelResetJob(channel.inventoryChannelId);
-  if (!job) return translate("Reset job: Not configured");
-  if (job.paused === "Y") return translate("Reset job: Paused");
-  if (job.nextExecutionDateTime) {
-    return `${translate("Reset job:")} ${translate("Next run")} ${formatDateTime(job.nextExecutionDateTime)}`;
-  }
-  if (job.cronExpression) {
-    try {
-      return `${translate("Reset job:")} ${cronstrue.toString(job.cronExpression)}`;
-    } catch {
-      return `${translate("Reset job:")} ${job.cronExpression}`;
-    }
-  }
-  return translate("Reset job: Active");
+/**
+ * A job as this page renders it, wherever it renders. Both surfaces below build the same shape so a
+ * row behaves identically on a channel card and in the shared list.
+ */
+type JobDefinition = {
+  name: string;
+  jobs: any[];
+  icon: string;
+  setup: JobSetupKind | "";
+  targetChannelId?: string;
+};
+
+function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition) {
+  const latestRun = latestRunFor(jobs);
+  const nextJob = nextExecutionFor(jobs);
+  const missing = !jobs.length;
+  const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
+
+  return {
+    name,
+    job: nextJob ?? jobs[0] ?? null,
+    lastRun: latestRun?.startTime ? `Last run ${formatDateTime(latestRun.startTime)}` : "No cached runs",
+    nextRun: nextJob ? `Next run ${formatDateTime(nextJob.nextExecutionDateTime)}` : "No active schedule",
+    status: missing ? "Not configured" : paused ? "Paused" : "Active",
+    badgeColor: missing ? "medium" : paused ? "warning" : "success",
+    icon,
+    setup,
+    targetChannelId,
+  };
 }
 
-const monitoredJobs = computed(() => {
-  // `setup` is the row's create-the-missing-clone action, empty when there is nothing this page can
-  // honestly create: the per-channel rows need a channel to clone for (creating one is the "Set up
-  // channel" button's job), the physical reset needs the shop's SystemMessageRemote resolved, and
-  // the effective-date scanner is seeded by the connector release — its absence is a deploy gap the
-  // app must report, not paper over by inventing a job definition.
-  type JobDefinition = {
-    name: string;
-    jobs: any[];
-    icon: string;
-    setup: JobSetupKind | "";
-    targetChannelId?: string;
-  };
+/**
+ * THE TWO JOBS THAT BELONG TO ONE CHANNEL, rendered on that channel's own card.
+ *
+ * These used to sit in the flat jobs list with the channel's name in parentheses -- a suffix that
+ * existed only to tell two otherwise identical rows apart. Grouping them under the channel makes the
+ * card the context, so the suffix is gone, and the list stops growing by two rows per channel.
+ *
+ * `setup` is the row's create-the-missing-clone action, empty when there is nothing this page can
+ * honestly create.
+ */
+function jobsForChannel(channel: any) {
+  const channelId = String(channel.inventoryChannelId);
+  const publisher = findChannelPublisherJob(channelId);
+  const reset = findChannelResetJob(channelId);
 
-  // Publishing is per channel, so each channel's clone gets its OWN row. Collapsing the set into one
-  // row rendered `jobs[0]` and nothing else: with two channels the second channel's publisher had no
-  // schedule, no runs, and no way into its modal on this screen - the panel showed one job where two
-  // exist. Same shape as the per-channel aggregate ATP reset rows below.
-  const publisherDefinitions: JobDefinition[] = inventoryChannels.value.length
-    ? inventoryChannels.value.map((channel: any) => {
-      const channelId = String(channel.inventoryChannelId);
-      const channelName = channel.facilityGroupName || channel.description || channelId;
-      const job = findChannelPublisherJob(channelId);
-      return {
-        name: `${translate("Publish and send event batches")} (${channelName})`,
-        jobs: job ? [job] : [],
-        icon: cloudUploadOutline,
-        setup: job ? "" : "publisher",
-        targetChannelId: channelId,
-      };
-    })
-    // No channel to clone for yet, so there is nothing this row could honestly create - setting one
-    // up is the "Set up channel" button's job.
-    : [{
+  return [
+    {
+      name: translate("Publish and send event batches"),
+      jobs: publisher ? [publisher] : [],
+      icon: cloudUploadOutline,
+      setup: publisher ? "" : "publisher",
+      targetChannelId: channelId,
+    },
+    {
+      name: translate("Reset aggregate ATP"),
+      jobs: reset ? [reset] : [],
+      icon: refreshOutline,
+      setup: reset ? "" : "aggregateReset",
+      targetChannelId: channelId,
+    },
+  ].map((definition) => describeJob(definition as JobDefinition));
+}
+
+/**
+ * The jobs that are NOT per channel: one schedule serves every channel on the connection, or the whole
+ * OMS. A fixed five, however many channels exist.
+ *
+ * With no channel mapped yet, the two per-channel rows fall back to un-scoped ones here so a
+ * misconfigured connection still shows them - there is no channel card to hang them on, and the
+ * "Set up channel" button is the honest action rather than cloning a job for a channel that is absent.
+ */
+const sharedJobs = computed(() => {
+  const definitions: JobDefinition[] = [];
+
+  if (!inventoryChannels.value.length) {
+    definitions.push({
       name: "Publish and send aggregate event batches",
       jobs: pendingPublisherJobs.value,
       icon: cloudUploadOutline,
       setup: "",
-    }];
+    });
+    definitions.push({
+      name: "Reset aggregate ATP inventory",
+      jobs: aggregateResetJobs.value,
+      icon: refreshOutline,
+      setup: "",
+    });
+  }
 
-  const definitions: JobDefinition[] = [
-    ...publisherDefinitions,
+  definitions.push(
     {
-      name: "Process effective-dated inventory changes", jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [], icon: layersOutline,
+      name: "Process effective-dated inventory changes",
+      jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
+      icon: layersOutline,
       setup: "",
     },
     {
-      name: "Reset physical location QOH", jobs: physicalResetJob.value ? [physicalResetJob.value] : [], icon: locationOutline,
+      name: "Reset physical location QOH",
+      jobs: physicalResetJob.value ? [physicalResetJob.value] : [],
+      icon: locationOutline,
       setup: !physicalResetJob.value && syncContext.remoteId.value ? "physicalReset" : "",
     },
     // Delivery. Batches are left at SmsgProduced on purpose and a scheduled sender moves them, so a
@@ -1825,48 +1886,16 @@ const monitoredJobs = computed(() => {
       icon: trashBinOutline,
       setup: "",
     },
-  ];
+  );
 
-  if (!inventoryChannels.value.length) {
-    definitions.push({
-      name: "Reset aggregate ATP inventory",
-      jobs: aggregateResetJobs.value,
-      icon: refreshOutline,
-      setup: "",
-    });
-  } else {
-    for (const channel of inventoryChannels.value) {
-      const channelId = String(channel.inventoryChannelId);
-      const channelName = channel.facilityGroupName || channel.description || channelId;
-      const job = findChannelResetJob(channelId);
-      definitions.push({
-        name: `${translate("Reset aggregate ATP")} (${channelName})`,
-        jobs: job ? [job] : [],
-        icon: refreshOutline,
-        setup: !job ? "aggregateReset" : "",
-        targetChannelId: channelId,
-      });
-    }
-  }
-
-  return definitions.map(({ name, jobs, icon, setup, targetChannelId }) => {
-    const latestRun = latestRunFor(jobs);
-    const nextJob = nextExecutionFor(jobs);
-    const missing = !jobs.length;
-    const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
-    return {
-      name,
-      job: nextJob ?? jobs[0] ?? null,
-      lastRun: latestRun?.startTime ? `Last run ${formatDateTime(latestRun.startTime)}` : "No cached runs",
-      nextRun: nextJob ? `Next run ${formatDateTime(nextJob.nextExecutionDateTime)}` : "No active schedule",
-      status: missing ? "Not configured" : paused ? "Paused" : "Active",
-      badgeColor: missing ? "medium" : paused ? "warning" : "success",
-      icon,
-      setup,
-      targetChannelId,
-    };
-  });
+  return definitions.map(describeJob);
 });
+
+/** Every job on the page, whichever surface renders it. The health rollup reads this, not one half. */
+const monitoredJobs = computed(() => [
+  ...inventoryChannels.value.flatMap((channel: any) => jobsForChannel(channel)),
+  ...sharedJobs.value,
+]);
 
 const RESULT_SUMMARY_LIMIT = 200;
 
