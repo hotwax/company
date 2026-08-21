@@ -148,49 +148,66 @@
           <!-- One card per channel. A channel is the unit an operator manages -- it owns a facility
                group, a Shopify location, and its own two schedules -- so its jobs sit on it rather than
                in a shared list that needed the channel's name in brackets to tell rows apart. -->
-          <ion-card v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
-            <ion-item lines="full" button detail @click="openChannelEdit(channel)">
-              <ion-label class="ion-text-wrap">
-                {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
-                <p>{{ channelSubtitle(channel) }}</p>
-              </ion-label>
-              <ion-label slot="end" class="ion-text-end">
-                {{ channel.shopifyLocationId }}
-                <p>Shopify location</p>
-              </ion-label>
-            </ion-item>
-
-            <ion-list lines="full">
-              <ion-item
-                v-for="job in jobsForChannel(channel)"
-                :key="`${job.name}-${job.targetChannelId ?? ''}`"
-                :button="!!job.job"
-                :detail="!!job.job"
-                @click="openServiceJob(job.job, `${job.name} (${channel.facilityGroupName || channel.description || channel.inventoryChannelId})`)"
-              >
-                <ion-icon slot="start" :icon="job.icon" />
+          <div class="channel-grid">
+            <ion-card v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
+              <ion-item lines="full" button detail @click="openChannelEdit(channel)">
                 <ion-label class="ion-text-wrap">
-                  {{ job.name }}
-                  <p>{{ job.lastRun }}</p>
-                  <p>{{ job.nextRun }}</p>
+                  {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
+                  <p>{{ channelSubtitle(channel) }}</p>
                 </ion-label>
-                <ion-button
-                  v-if="job.setup"
-                  slot="end"
-                  fill="outline"
-                  size="small"
-                  :disabled="!!provisioningJobKind"
-                  @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
-                >
-                  <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
-                  <template v-else>{{ translate("Set up") }}</template>
-                </ion-button>
-                <ion-badge slot="end" :color="job.badgeColor">
-                  {{ job.status }}
-                </ion-badge>
+                <ion-label slot="end" class="ion-text-end">
+                  {{ channel.shopifyLocationId }}
+                  <p>Shopify location</p>
+                </ion-label>
               </ion-item>
-            </ion-list>
-          </ion-card>
+
+              <!-- What feeds this channel, and how much of it has actually landed at Shopify lately. -->
+              <div class="channel-stats">
+                <div class="channel-stat">
+                  <span class="overline">Feeding this channel</span>
+                  <!-- The composition carries its own counts, so a separate total would just repeat one
+                       of them on a single-type group. -->
+                  <span>{{ channelStats(channel).composition }}</span>
+                </div>
+                <div class="channel-stat">
+                  <span class="overline">Delivered in 24h</span>
+                  <span>{{ channelStats(channel).delivered }}</span>
+                  <p>From cached events</p>
+                </div>
+              </div>
+
+              <ion-list lines="full">
+                <ion-item
+                  v-for="job in jobsForChannel(channel)"
+                  :key="`${job.name}-${job.targetChannelId ?? ''}`"
+                  :button="!!job.job"
+                  :detail="!!job.job"
+                  @click="openServiceJob(job.job, `${job.name} (${channel.facilityGroupName || channel.description || channel.inventoryChannelId})`)"
+                >
+                  <ion-icon slot="start" :icon="job.icon" />
+                  <ion-label class="ion-text-wrap">
+                    {{ job.name }}
+                    <p>{{ job.lastRun }}</p>
+                    <p>{{ job.nextRun }}</p>
+                  </ion-label>
+                  <ion-button
+                    v-if="job.setup"
+                    slot="end"
+                    fill="outline"
+                    size="small"
+                    :disabled="!!provisioningJobKind"
+                    @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
+                  >
+                    <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                    <template v-else>{{ translate("Set up") }}</template>
+                  </ion-button>
+                  <ion-badge slot="end" :color="job.badgeColor">
+                    {{ job.status }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+          </div>
         </section>
 
         <section class="event-feed-settings">
@@ -1222,6 +1239,7 @@ import {
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import cronstrue from "cronstrue";
 import { commonUtil, logger, translate } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { resyncDomain } from "@/services/appCacheBootstrap";
@@ -1765,6 +1783,43 @@ type JobDefinition = {
   targetChannelId?: string;
 };
 
+/**
+ * What to say about the next run, which depends on whether the stored value can be trusted.
+ *
+ * ServiceJob is cached class B - snapshotted once per login - while its RUNS are polled live while this
+ * view is open. So nextExecutionDateTime ages out of the cache while "Last run" stays current, and on
+ * this connection every job reported a next run behind its own last one. Calling that overdue would be
+ * a false alarm on a job running perfectly well every fifteen minutes.
+ *
+ * Three cases, and only one of them is an alarm:
+ *   future             -> the delta, which is what an operator actually wants to read
+ *   a run came after   -> the stored value is PROVABLY stale, so fall back to the cron's cadence, which
+ *                         is the one schedule fact that cannot decay
+ *   past, no later run -> genuinely overdue
+ */
+function nextRunLine(nextJob: any, latestRun: any): string {
+  if(!nextJob) {return "No active schedule";}
+
+  const nextMs = toMillis(nextJob.nextExecutionDateTime);
+  const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
+
+  if(nextMs && lastMs && lastMs > nextMs) {
+    if(nextJob.cronExpression) {
+      try {
+        return `Runs ${cronstrue.toString(nextJob.cronExpression).toLowerCase()}`;
+      } catch {
+        // An expression cronstrue cannot phrase is still a real schedule; say that much.
+      }
+    }
+
+    return "Next run not yet recalculated";
+  }
+
+  if(!nextMs) {return "No active schedule";}
+
+  return `Next run ${formatUntil(nextMs)}, ${formatDateTime(nextJob.nextExecutionDateTime)}`;
+}
+
 function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition) {
   const latestRun = latestRunFor(jobs);
   const nextJob = nextExecutionFor(jobs);
@@ -1775,7 +1830,7 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
     name,
     job: nextJob ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? `Last run ${formatDateTime(latestRun.startTime)}` : "No cached runs",
-    nextRun: nextJob ? `Next run ${formatDateTime(nextJob.nextExecutionDateTime)}` : "No active schedule",
+    nextRun: nextRunLine(nextJob, latestRun),
     status: missing ? "Not configured" : paused ? "Paused" : "Active",
     badgeColor: missing ? "medium" : paused ? "warning" : "success",
     icon,
@@ -1882,6 +1937,87 @@ const sharedJobs = computed(() => {
 
   return definitions.map(describeJob);
 });
+
+/**
+ * Facility types read for display. The group's members carry a facilityTypeId but no description, and
+ * the shape of a channel is worth stating in words rather than as a raw enum.
+ *
+ * Counted by the types ACTUALLY PRESENT rather than by asking for retail and warehouse specifically:
+ * this OMS also groups NA, BACKORDER and PRE_ORDER facilities, and a hardcoded pair would report a
+ * group of them as empty. An unmapped type falls back to its own id, lowercased.
+ */
+const FACILITY_TYPE_LABELS: Record<string, [string, string]> = {
+  RETAIL_STORE: ["retail store", "retail stores"],
+  WAREHOUSE: ["warehouse", "warehouses"],
+  DISTRIBUTION_CENTER: ["distribution centre", "distribution centres"],
+  BACKORDER: ["backorder location", "backorder locations"],
+  PRE_ORDER: ["pre-order location", "pre-order locations"],
+};
+
+function facilityTypeLabel(facilityTypeId: string, count: number): string {
+  const known = FACILITY_TYPE_LABELS[facilityTypeId];
+  if(known) {return `${count} ${count === 1 ? known[0] : known[1]}`;}
+
+  return `${count} ${facilityTypeId.toLowerCase().replaceAll("_", " ")}`;
+}
+
+/** Events delivered to Shopify are counted over this window. */
+const CHANNEL_ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The two facts a channel's shape and throughput come down to: what feeds it, and how much has actually
+ * landed at Shopify lately.
+ *
+ * The delivered count is over the ledger this page has CACHED, which is a rolling window rather than the
+ * full history - so it is a floor, not a total, and it is labelled with its window so the number is not
+ * mistaken for one. Measured on this connection the cache spans about 70 hours, comfortably more than
+ * the 24 it reports on.
+ */
+const channelStatsById = computed(() => {
+  const now = Date.now();
+
+  // One pass over the ledger for every channel rather than one per channel per render: the template
+  // reads several fields off this and the cached ledger runs to hundreds of rows.
+  const deliveredByChannel = new Map<string, number>();
+  for(const detail of inventoryDetails.value) {
+    if(detail.systemMessageStatusId !== "SmsgSent") {continue;}
+    const created = toMillis(detail.createdDate);
+    if(!created || now - created > CHANNEL_ACTIVITY_WINDOW_MS) {continue;}
+    const channelId = String(detail.inventoryChannelId ?? "");
+    deliveredByChannel.set(channelId, (deliveredByChannel.get(channelId) ?? 0) + 1);
+  }
+
+  const typesByGroup = new Map<string, Map<string, number>>();
+  for(const member of cachedGroupFacilities.value) {
+    if(!isEffectiveNow(member, now)) {continue;}
+    const groupId = String(member.facilityGroupId ?? "");
+    const typeId = String(member.facilityTypeId ?? "").trim() || "NA";
+    const byType = typesByGroup.get(groupId) ?? new Map<string, number>();
+    byType.set(typeId, (byType.get(typeId) ?? 0) + 1);
+    typesByGroup.set(groupId, byType);
+  }
+
+  const stats = new Map<string, { composition: string; delivered: number }>();
+  for(const channel of inventoryChannels.value) {
+    const channelId = String(channel.inventoryChannelId ?? "");
+    const byType = typesByGroup.get(String(channel.facilityGroupId ?? "")) ?? new Map<string, number>();
+    const composition = [...byType.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([typeId, count]) => facilityTypeLabel(typeId, count));
+    stats.set(channelId, {
+      composition: composition.length ? composition.join(", ") : "No facilities in this group",
+      delivered: deliveredByChannel.get(channelId) ?? 0,
+    });
+  }
+
+  return stats;
+});
+
+const EMPTY_CHANNEL_STATS = { composition: "No facilities in this group", delivered: 0 };
+
+function channelStats(channel: any) {
+  return channelStatsById.value.get(String(channel.inventoryChannelId ?? "")) ?? EMPTY_CHANNEL_STATS;
+}
 
 /** Every job on the page, whichever surface renders it. The health rollup reads this, not one half. */
 const monitoredJobs = computed(() => [
@@ -2953,7 +3089,7 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
     // what the removed "Schedule reset" button did. A multi-create -- the shared rows provision every
     // uncovered channel at once -- has no single job to open, so it keeps the toast.
     const openable = created.length === 1 && targetChannelId ? created[0] : "";
-    if (openable) {
+    if(openable) {
       const channel = inventoryChannels.value.find((c: any) => String(c.inventoryChannelId) === String(targetChannelId));
       const channelName = channel?.facilityGroupName || channel?.description || targetChannelId;
       const jobLabel = kind === "publisher"
@@ -2961,6 +3097,7 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         : translate("Reset aggregate ATP");
       commonUtil.showToast(`${openable} created, paused. Set its schedule and activate it below.`);
       selectedServiceJob.value = serviceJobSelection(openable, `${jobLabel} - ${channelName}`);
+
       return;
     }
 
@@ -2983,6 +3120,32 @@ function toMillis(value: unknown): number {
   if (Number.isFinite(numeric)) return numeric;
   const parsed = Date.parse(String(value));
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * How long until a scheduled run, as a delta rather than a wall-clock time an operator has to subtract
+ * from "now" themselves.
+ *
+ * Handles the past deliberately. A stored nextExecutionDateTime can sit BEHIND the job's own last run --
+ * observed live on this connection, where the publisher reported a next run 35 minutes before its last
+ * one -- and printing that timestamp reads as a normal schedule. Overdue is the honest word for it.
+ */
+function formatUntil(timestamp: number): string {
+  if(!timestamp) {return "";}
+  const minutes = Math.round((timestamp - Date.now()) / 60_000);
+  if(minutes < -1) {
+    const overdue = Math.abs(minutes);
+    if(overdue < 60) {return `overdue by ${overdue} min`;}
+    const hours = Math.floor(overdue / 60);
+
+    return hours < 24 ? `overdue by ${hours}h` : `overdue by ${Math.floor(hours / 24)}d`;
+  }
+  if(minutes <= 1) {return "due now";}
+  if(minutes < 60) {return `in ${minutes} min`;}
+  const hours = Math.floor(minutes / 60);
+  if(hours < 24) {return minutes % 60 ? `in ${hours}h ${minutes % 60}m` : `in ${hours}h`;}
+
+  return `in ${Math.floor(hours / 24)}d`;
 }
 
 function formatAge(timestamp: number): string {
@@ -3017,6 +3180,34 @@ function formatAge(timestamp: number): string {
   position: absolute;
   inset-block-start: var(--spacer-xs);
   inset-inline-end: var(--spacer-xs);
+}
+
+/* Channels sit side by side rather than stacking: they are peers an operator compares, and a card is
+   now tall enough that a vertical list pushed the second one off-screen. Same auto-fit measure as
+   .summary-grid above, so the two sections break to one column at the same width. */
+.inventory-channels .channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  align-items: flex-start;
+}
+
+.channel-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--spacer-sm);
+  padding: var(--spacer-sm) var(--spacer-base);
+  border-block-end: var(--border-medium);
+}
+
+.channel-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.channel-stat p {
+  margin-block: var(--spacer-2xs) 0;
+  overflow-wrap: anywhere;
 }
 
 .event-feed-settings > ion-item {
