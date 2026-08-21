@@ -15,9 +15,9 @@
  *   4. Email types                — load-once memo (moved off `store/util.fetchEmailTypes`)
  *   5. Mutations                  — plain exported async functions
  *
- * Mutations do NOT call `refreshAfterMutation`: that helper re-snapshots a cached worker domain
- * and Klaviyo has none. Call sites refetch the affected live list after a write, exactly as they
- * did against the store.
+ * Most mutations do not call `refreshAfterMutation`: Klaviyo connection data has no cached worker
+ * domain, so call sites refetch the affected live list. Unigate remote configuration is the one
+ * exception because carrier readiness consumes the shared `systemMessageRemote` cache.
  *
  * Deliberately NOT carried over from the store: `current` / `setCurrent` / `getCurrent`. That
  * state was write-only — its single writer was the landing page's row click (Klaviyo.vue,
@@ -27,6 +27,8 @@
 
 import { computed, reactive, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { getResponseErrorMessage } from "@/utils";
 import { onSessionCleared } from "./sessionScope";
 
 // =============================================================================================
@@ -282,7 +284,7 @@ function ensureEmailTypes(): Promise<any[]> {
 }
 
 // =============================================================================================
-// 5. Mutations — plain exported async functions (no cached domain, so no refreshAfterMutation)
+// 5. Mutations — live Klaviyo writes; Unigate updates also refresh its shared cached remote
 // =============================================================================================
 
 /** Update the Unigate tenant remote (tenant id, URL, description, optionally the API key). */
@@ -295,6 +297,10 @@ export async function updateSystemMessageRemote(
     method: "put",
     data: payload,
   });
+  if (commonUtil.hasError(resp)) {
+    throw new Error(getResponseErrorMessage(resp, "Failed to update the Unigate remote."));
+  }
+  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
   return resp.data;
 }
 

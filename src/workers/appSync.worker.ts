@@ -11,6 +11,12 @@ import "./domains/serviceJobRunDomain";
 import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/organizationDomain";
+<<<<<<< HEAD
+||||||| 544075d
+=======
+import "./domains/shopifyInventoryMonitoringDomain";
+import "./domains/netSuiteOrderPushDomain";
+>>>>>>> refactor/vue-views-composable-extraction-9050245222670725615
 import "./domains/referenceDomains";
 
 // The harness must be imported last: it calls `expose()`, and every domain has to be registered

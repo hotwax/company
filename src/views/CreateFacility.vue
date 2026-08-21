@@ -194,9 +194,23 @@ async function createFacility() {
           levelId: "LL",
           positionId: "01"
         });
+<<<<<<< HEAD
       } catch (locationError) {
         logger.warn("Facility created, but default pick location setup failed.", locationError);
         commonUtil.showToast(translate("Facility created, but default pick location could not be set up."));
+||||||| 544075d
+      await useFacilityMutations(facilityId).saveLocation({
+        locationTypeEnumId: "FLT_PICKLOC",
+        areaId: "TL",
+        aisleId: "TL",
+        sectionId: "TL",
+        levelId: "LL",
+        positionId: "01"
+      });
+=======
+      } catch(e) {
+        logger.error(e);
+>>>>>>> refactor/vue-views-composable-extraction-9050245222670725615
       }
 
       router.replace(`/create-facility/address/${facilityId}`);
