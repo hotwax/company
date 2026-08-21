@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { DateTime } from "luxon";
 import { api, commonUtil, logger, translate } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { isEffectiveNow, toCount, toMillis } from "@/utils/cacheProjection";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/cacheEntities";
@@ -192,13 +192,38 @@ export function useFacilityGroups() {
 export const useFacilityGroupRecord = (facilityGroupId: string | undefined) =>
   useCachedRecord(facilityGroupCache, "facilityGroupId", facilityGroupId);
 
-/** Members of one group, or every membership when no group is given. */
+/**
+ * Members of one group, or every membership when no group is given.
+ *
+ * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useCachedList`
+ * hands back `row.raw`, i.e. whatever shape the OMS emitted the timestamp as, and the group screen
+ * echoes `fromDate` back on every membership revision. Since `store` matches the row on the exact
+ * timestamp, echoing an un-normalized value inserts a duplicate member instead of updating one —
+ * see `useFacilityGroupMutations.saveMembers`. The projected value is always epoch millis.
+ *
+ * `sequenceNum` is coerced for the same reason one step removed: the screen decides which members to
+ * rewrite by comparing the stored number against the renumbered one, and a `"3"` never equals a `3`.
+ * That comparison failing marks EVERY member as resequenced, so a single unmatched `fromDate` stops
+ * being one duplicate row and becomes a duplicate of the whole group.
+ */
 export function useGroupFacilities(facilityGroupId?: string) {
-  const { records, hydrated } = useCachedList<any>(
+  const { rows, records, hydrated } = useCachedList<any>(
     groupFacilityCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  return { members: records, records, hydrated };
+  const members = computed<any[]>(() => rows.value.map((row: any) => {
+    const raw = row.raw ?? {};
+    const sequenceNum = toCount(raw.sequenceNum);
+    return {
+      ...raw,
+      facilityGroupId: row.facilityGroupId,
+      facilityId: row.facilityId,
+      fromDate: row.fromDate,
+      ...(row.thruDate === undefined ? {} : { thruDate: row.thruDate }),
+      ...(sequenceNum === undefined ? {} : { sequenceNum }),
+    };
+  }));
+  return { members, records, hydrated };
 }
 
 /** facilityGroupId → member count, honoring `thruDate` (memberships are date-effective). */
@@ -619,6 +644,14 @@ export function useFacilityCalendars() {
   return { calendarOptions, catalogAvailable, loadCalendarOptions, createCalendar, fetchFacilityCalendar };
 }
 
+export function usePartyQueries() {
+  const fetchPartyRoleDetails = async (roleTypeId: string, params: Record<string, any>) => {
+    return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  };
+
+  return { fetchPartyRoleDetails };
+}
+
 export function useFacilityOrderCounts() {
   async function fetchOrderCounts(facilityIds: string[]): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
@@ -644,7 +677,15 @@ export function useFacilityOrderCounts() {
     return counts;
   }
 
-  return { fetchOrderCounts };
+  async function fetchFacilityOrderCountsHistory(facilityId: string, params: Record<string, any> = {}) {
+    return api({
+      url: "oms/facilities/facilityOrderCounts",
+      method: "get",
+      params: { facilityId, ...params }
+    });
+  }
+
+  return { fetchOrderCounts, fetchFacilityOrderCountsHistory };
 }
 
 export function useFacilityDetail(facilityId: string) {
@@ -1165,9 +1206,34 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
      * (facilityGroupId, facilityId, fromDate). One shape therefore covers all three intents:
      * add (new fromDate), expire (send thruDate), resequence (send sequenceNum). It is the same
      * endpoint `useFacilityMutations.addToGroup` already uses, so no new API is introduced.
+     *
+     * ⚠️ `store` resolves the row on the EXACT `(facilityGroupId, facilityId, fromDate)` timestamp.
+     * A revision whose `fromDate` is missing or even slightly off does NOT fail — it answers 200 and
+     * INSERTS a second active membership. Verified live 2026-08-17 against `POST
+     * oms/facilities/BROADWAY/groups`: omitting `fromDate` returned `{fromDate: 1786965457977}` and
+     * added a row, and sending `1718341888000` for a row stored at `...888240` added another. That
+     * is what duplicates a group's members on save, so every revision is normalized to epoch millis
+     * here and one that cannot be resolved is refused rather than sent.
      */
     async saveMembers(additions: any[], revisions: any[]) {
-      const rows = [...additions, ...revisions];
+      // A revision addresses an existing row, so it MUST carry an exact `fromDate`. `toMillis`
+      // normalizes whatever shape the OMS emitted it as (millis, numeric string, ISO string) to the
+      // one unambiguous form; anything it cannot read is a bug we refuse to turn into a duplicate.
+      const unaddressable: any[] = [];
+      const normalizedRevisions = revisions.flatMap((row) => {
+        const fromDate = toMillis(row.fromDate);
+        if (fromDate === undefined) { unaddressable.push(row); return []; }
+        return [{ ...row, fromDate }];
+      });
+      if (unaddressable.length) {
+        logger.error(
+          "Refusing to revise facility group memberships with no resolvable fromDate — posting them " +
+          "would create duplicate members instead of updating them",
+          unaddressable,
+        );
+      }
+
+      const rows = [...additions, ...normalizedRevisions];
       const results = await Promise.allSettled(rows.map((row) => api({
         url: `oms/facilities/${encodeURIComponent(row.facilityId)}/groups`,
         method: "post",
@@ -1176,7 +1242,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
 
       // A 4xx rejects, but the api wrapper can also RESOLVE carrying an error body — check both, or
       // a failed save reports success.
-      const failed = results.some((result) =>
+      const failed = unaddressable.length > 0 || results.some((result) =>
         result.status === "rejected" || commonUtil.hasError((result as PromiseFulfilledResult<any>).value));
 
       // Refresh even on partial failure: some writes may have landed, and the cache must reflect
@@ -1272,7 +1338,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility archive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
 
@@ -1287,7 +1359,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate, thruDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility unarchive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
   };

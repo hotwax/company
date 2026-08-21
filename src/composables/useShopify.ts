@@ -28,7 +28,6 @@ import {
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import { api, commonUtil, logger, translate } from "@common";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { onSessionCleared } from "./sessionScope";
 import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
@@ -46,11 +45,17 @@ import {
   systemMessageRemoteCache,
 } from "@/utils/cacheEntities";
 import {
+  DATA_MANAGER_LOG_STATUS_IDS,
+  logState as dataManagerLogState,
+  isTerminal as isDataManagerLogTerminal,
+} from "@/utils/dataManagerLog";
+import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
-import { resolveShopRemoteIds, shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
+import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import type { ActiveDomain } from "@/workers/syncRegistry";
+import { onSessionCleared } from "./sessionScope";
 import { useCacheSync } from "./useCacheSync";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useStatuses } from "./useSeed";
@@ -736,6 +741,53 @@ export function useShopifyShopIdForProductStore() {
   return { shopifyShopIdFor };
 }
 
+export function useShopifyShopQueries(shopId: string) {
+  const fetchTypeMappingsForShop = async (mappedTypeId: string) => {
+    let mappings: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "get",
+        params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        mappings = [...mappings, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return mappings;
+  };
+
+  const fetchCarrierShipmentsForShop = async () => {
+    let shipments: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "get",
+        params: { shopId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        shipments = [...shipments, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return shipments;
+  };
+
+  return {
+    fetchTypeMappingsForShop,
+    fetchCarrierShipmentsForShop
+  };
+}
+
 export function useShopifyShopMutations(shopId: string) {
   const shop = () => encodeURIComponent(shopId);
   const wants = (options?: WriteOptions) => options?.refresh !== false;
@@ -1351,9 +1403,16 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
   active: () => boolean;
   /** Reload the pieces that genuinely cannot be cached. Omit if the feature has none. */
   refresh?: () => Promise<void>;
+  /** Force the active worker domains during manual refresh. */
+  refreshWorker?: boolean;
   onError?: (error: unknown) => void;
   /** Worker domains this feature needs beyond its messages and imports (job runs, and so on). */
   extraDomains?: (intervalMs: number) => ActiveDomain[];
+  /**
+   * Exact message remotes for a selected-shop view. When supplied but unresolved, the session
+   * activates no domains rather than falling back to every Shopify remote in the cache.
+   */
+  systemMessageRemoteIds?: () => string[];
 }
 
 /**
@@ -1408,7 +1467,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop } = useCacheSync();
+  const { start, stop, syncNow, error: workerError } = useCacheSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -1428,14 +1487,25 @@ export function useShopifySyncSession(
    */
   const activeDomainSet = computed<ActiveDomain[]>(() => {
     const intervalMs = syncFeatureInterval(feature, options.active());
+    const exactRemoteIds = options.systemMessageRemoteIds?.().map(String).filter(Boolean);
+    if(options.systemMessageRemoteIds && !exactRemoteIds?.length) {return [];}
+
     return [
-      ...syncFeatureDomains(feature, intervalMs, options),
+      ...syncFeatureDomains(feature, intervalMs, options).map((domain) =>
+        domain.name === "systemMessage" && exactRemoteIds?.length
+          ? { ...domain, args: { ...domain.args, systemMessageRemoteIds: exactRemoteIds } }
+          : domain),
       ...(options.extraDomains?.(intervalMs) ?? []),
     ];
   });
 
   async function activate() {
     isPageActive.value = true;
+    if(!activeDomainSet.value.length) {
+      stop();
+
+      return;
+    }
     try {
       await start(activeDomainSet.value);
     } catch (error) {
@@ -1451,17 +1521,26 @@ export function useShopifySyncSession(
 
   /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
   watch(activeDomainSet, (domains) => {
-    if (!isPageActive.value) return;
+    if(!isPageActive.value) {return;}
+    if(!domains.length) {
+      stop();
+
+      return;
+    }
     void start(domains).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
 
   async function manualRefresh(): Promise<void> {
-    if (!options.refresh || isRefreshing.value) return;
+    if((!options.refresh && !options.refreshWorker) || isRefreshing.value) {return;}
     isRefreshing.value = true;
     try {
-      await options.refresh();
+      if(options.refreshWorker) {
+        await syncNow();
+        if(workerError.value) {throw new Error(workerError.value);}
+      }
+      if(options.refresh) {await options.refresh();}
     } catch (error) {
       options.onError?.(error);
     } finally {
@@ -1841,7 +1920,7 @@ export function productSyncExtraDomains(intervalMs: number, jobNames: readonly s
  * through to the cache, after which they are read reactively like everything else.
  */
 export function useShopifyProductSyncRun() {
-  const { ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
+  const { ensureSystemMessageById, ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
   const { labelFor } = useStatuses();
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
@@ -1991,9 +2070,7 @@ export function useShopifyProductSyncRun() {
       },
       status: getStatusLabel(effectiveStatus.value),
       statusColor: getStatusColor(effectiveStatus.value),
-      completed: log?.statusId === 'DmlSuccess' ||
-        log?.statusId === 'DmlError' ||
-        skippedEmptyImport.value,
+      completed: isDataManagerLogTerminal(log) || skippedEmptyImport.value,
     } as Record<string, any>;
   });
 
@@ -2011,12 +2088,18 @@ export function useShopifyProductSyncRun() {
     targetMessageId.value = id;
     loading.value = true;
     try {
+      // An exact deep link can target a run outside the current shop spine window. Hydrate that one
+      // message by id before joining its bulk operation and import; this is cache-first and uses the
+      // same existing SystemMessage read contract as spine enrichment.
+      const ensuredMessage = systemMessage.value ?? systemMessageData ??
+        await ensureSystemMessageById(id).catch(() => null);
+
       // Cached after the first look, so this is a no-op on revisit.
       await ensureSystemMessageErrors(id);
 
       // Cache-first inside `fetchShopifyBulkOperation`, which short-circuits once the operation is
       // terminal (immutable), so a finished run never hits Shopify again.
-      const message = systemMessage.value ?? systemMessageData;
+      const message = systemMessage.value ?? ensuredMessage;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
       if (operationId && remoteId && !bulkOperation.value) {
@@ -3274,6 +3357,22 @@ function ensureLandmarkDates(): Promise<void> {
   return landmarkDatesRequest;
 }
 
+/** Fold a write performed by another Shopify setup surface into the shared session state. */
+function recordLandmarkDates(
+  shopId: string,
+  dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>,
+): void {
+  if(!shopId) {return;}
+  if(!landmarkState.byShopId[shopId]) {
+    landmarkState.byShopId[shopId] = { launchDate: "", historyLastSyncDate: "" };
+  }
+  const bucket = landmarkState.byShopId[shopId];
+  if(dates.launchDate !== undefined) {bucket.launchDate = dates.launchDate;}
+  if(dates.historyLastSyncDate !== undefined) {bucket.historyLastSyncDate = dates.historyLastSyncDate;}
+  landmarkState.status = "ready";
+  landmarkState.error = null;
+}
+
 /**
  * Write one shop's landmark date, then fold the new value into local state.
  *
@@ -3322,6 +3421,8 @@ export function useOrderSyncLandmarkDates(shopIdSource: ShopIdSource) {
     /** Load once for the whole session. Safe to call on every view entry. */
     load: () => ensureLandmarkDates(),
     save: (key: LandmarkDateKey, value: string) => saveLandmarkDate(shopId.value, key, value),
+    record: (dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>) =>
+      recordLandmarkDates(shopId.value, dates),
     EMPTY_LANDMARK_DATES,
   };
 }
@@ -4236,6 +4337,84 @@ export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+  });
+}
+
+/** The one-off import contract used by Product Store onboarding's Order history load. */
+export const SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE = "BulkOrderHistoryQuery";
+export const SHOPIFY_ORDER_HISTORY_CONFIG_ID = "BULK_ORDER_HISTORY";
+export const ORDER_HISTORY_SYNC_FEATURE: ShopifySyncFeature = {
+  ...ORDER_SYNC_FEATURE,
+  messageTypeIds: [SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE],
+  importConfigIds: [SHOPIFY_ORDER_HISTORY_CONFIG_ID],
+  templateJobName: "sync_ShopifyOrderHistory",
+};
+
+/**
+ * History can be opened from regular Order Sync or from Product Store onboarding. Keep both message
+ * contracts live on one worker, scoped to this shop's exact remotes. An unresolved shop context
+ * activates nothing, so this can never degrade into an unscoped tenant-wide poll.
+ */
+export function useShopifyOrderSyncHistorySession(options: {
+  remoteIds: () => string[];
+  jobName?: () => string;
+  refresh?: () => Promise<void>;
+  onError?: (error: unknown) => void;
+}) {
+  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+    active: () => true,
+    refresh: options.refresh,
+    refreshWorker: true,
+    onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+    messageTotal: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+    importTotal: 300,
+    extraDomains: (intervalMs) => [
+      {
+        name: "systemMessage",
+        intervalMs,
+        args: {
+          systemMessageRemoteIds: options.remoteIds(),
+          types: [{
+            systemMessageTypeId: SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE,
+            total: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+          }],
+        },
+      },
+      {
+        name: "dataManagerLog",
+        intervalMs,
+        args: { configId: SHOPIFY_ORDER_HISTORY_CONFIG_ID, total: 100 },
+      },
+      ...(options.jobName?.() ? [{
+        name: "serviceJobRun",
+        intervalMs,
+        args: { jobNames: [options.jobName()], total: 25 },
+      }] : []),
+    ],
+  });
+}
+
+/** Merge regular Order Sync and onboarding-history rows without duplicating one SystemMessage. */
+// eslint-disable-next-line no-restricted-syntax -- pure collection helper, not a Vue composable
+export function mergeOrderSyncHistoryBatches(
+  regularBatches: readonly ShopifyOrderSyncBatch[],
+  onboardingBatches: readonly ShopifyOrderSyncBatch[],
+): ShopifyOrderSyncBatch[] {
+  const seen = new Set<string>();
+
+  return [...onboardingBatches, ...regularBatches].filter((batch) => {
+    const id = String(batch.systemMessageId || "");
+    if(!id || seen.has(id)) {return false;}
+    seen.add(id);
+
+    return true;
+  }).sort((left, right) => {
+    const leftTime = parseDateTimeValue(left.initDate)?.toMillis() ?? 0;
+    const rightTime = parseDateTimeValue(right.initDate)?.toMillis() ?? 0;
+
+    return rightTime - leftTime;
   });
 }
 
@@ -4647,19 +4826,6 @@ export interface ShopifyProductUpdateSyncRunState {
   systemMessages?: any[];
 }
 
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
 export interface ShopifyRunningBulkOperation {
   id: string;
   status: string;
@@ -4753,125 +4919,6 @@ export interface ShopifyProductSyncHistoryRun {
 
 export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 
-
-export interface ShopifyShopProductCount {
-  count: number;
-  lastSyncedAt?: string;
-}
-
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
-export interface ShopifyRunningBulkOperation {
-  id: string;
-  status: string;
-  type: string;
-  createdAt: string;
-  objectCount: number;
-}
-
-export interface ShopifyUnsyncedProductUpdate {
-  id: string;
-  legacyResourceId?: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-}
-
-export interface ShopifyProductSyncProductSearchResult {
-  id: string;
-  legacyResourceId: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-  cursor: string;
-}
-
-export interface ShopifyProductSyncProductSearchState {
-  products: ShopifyProductSyncProductSearchResult[];
-  hasNextPage: boolean;
-  endCursor: string;
-}
-
-export interface ShopifyProductSyncOnDemandResult {
-  systemMessageId?: string;
-  syncedProductId?: string[];
-  missingProductId?: string[];
-  failedProductId?: string[];
-  rejectedProductId?: string[];
-  acceptedCount?: number;
-  syncedCount?: number;
-  failedCount?: number;
-  rejectedCount?: number;
-}
-
-export interface ShopifyProductSyncActionResult {
-  jobOutput?: string;
-  message?: string;
-  systemMessageId?: string;
-}
-
-export interface ShopifyProductSyncHistoryOperation {
-  id: string;
-  title: string;
-  subtitle: string;
-  status: string;
-  statusLabel: string;
-  metricValue?: number | string;
-  metricLabel?: string;
-  actionLabel?: string;
-  detailType: string;
-}
-
-export interface ShopifyProductSyncHistoryRun {
-  id: string;
-  systemMessageId: string;
-  createdTime: string;
-  bulkOperationStatus: string;
-  bulkOperationStatusLabel: string;
-  mdmStatus: string;
-  mdmStatusLabel: string;
-  bulkOperationId: string;
-  objectCount: number;
-  mdmImportId: string;
-  totalRecordCount: number;
-  failedRecordCount: number;
-  operations: ShopifyProductSyncHistoryOperation[];
-}
-
 export interface ShopifyProductSyncHistoryState {
   runs: ShopifyProductSyncHistoryRun[];
 }
@@ -4897,6 +4944,11 @@ const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // deprecated full-form enum and requires updating (it is being phased out / force-replaced).
 const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const TERMINAL_DATA_MANAGER_LOG_STATUS_IDS = DATA_MANAGER_LOG_STATUS_IDS.filter((statusId) => {
+  const state = dataManagerLogState(statusId, { total: 0, success: 0, failed: 0 });
+
+  return state === "completed" || state === "partial" || state === "failed";
+});
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -5116,12 +5168,6 @@ function assertStringField(value: any, fieldName: string, context: string) {
   }
 }
 
-function assertArrayField(value: any, fieldName: string, context: string) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${context} response must include array ${fieldName}.`);
-  }
-}
-
 function validateSetupState(response: any): ShopifyProductSyncSetupState {
   const context = "Product sync setup state";
   assertPlainObject(response, context);
@@ -5271,28 +5317,32 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
 
   if (!remoteIds.length) return candidates[0]?.systemMessageRemoteId;
 
-  try {
-    const response = await requestBackend<SystemMessagesResponse>({
-      url: "admin/systemMessages",
-      method: "get",
-      params: {
-        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
-        systemMessageRemoteId: remoteIds,
-        systemMessageRemoteId_op: "in",
-        pageSize: remoteIds.length
-      }
-    });
+  const remoteChecks = await Promise.all(remoteIds.map(async (systemMessageRemoteId: string) => {
+    try {
+      const response = await requestBackend<SystemMessagesResponse>({
+        url: "admin/systemMessages",
+        method: "get",
+        params: {
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+          systemMessageRemoteId,
+          pageSize: 1
+        }
+      });
 
-    const validRemoteIds = new Set(response?.systemMessages?.map((msg: any) => msg.systemMessageRemoteId));
-    // Pick the first remoteId from the original candidates list that is valid
-    const firstValid = remoteIds.find(id => validRemoteIds.has(id));
+      const matchesRemote = response?.systemMessages?.some((message: any) =>
+        String(message?.systemMessageRemoteId || "") === systemMessageRemoteId);
 
-    if (firstValid) {
-      return firstValid;
+      return matchesRemote ? systemMessageRemoteId : "";
+    } catch (error) {
+      logger.warn(`Failed to check product-sync history for remote ${systemMessageRemoteId}`, error);
+
+      return "";
     }
-  } catch (e) {
-    logger.error("Failed to resolve system message remote IDs in bulk", e);
-  }
+  }));
+
+  // `Promise.all` preserves candidate order, so access-priority remains deterministic.
+  const firstValid = remoteChecks.find(Boolean);
+  if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
 };
@@ -5320,13 +5370,20 @@ export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProd
 
 const getSystemMessageRank = (systemMessage: any) => {
   const statusId = String(systemMessage?.statusId || "").toLowerCase();
-  const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
+  const logStatusId = String(systemMessage?.logStatusId || "");
   const logId = systemMessage?.logId;
+  const logState = logId
+    ? dataManagerLogState(logStatusId, {
+      total: Number(systemMessage?.totalRecordCount || 0),
+      success: Number(systemMessage?.successRecordCount || 0),
+      failed: Number(systemMessage?.failedRecordCount || 0),
+    })
+    : undefined;
 
   // Terminal status:
-  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
+  // 1. mdm logId is present AND its canonical DataManager status is terminal
   // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
+  const isTerminal = (logId && (logState === "completed" || logState === "partial" || logState === "failed")) ||
                      (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
 
   if (isTerminal) {
@@ -5334,8 +5391,8 @@ const getSystemMessageRank = (systemMessage: any) => {
   }
 
   // Any other case is considered "In Progress" and gets a higher rank (>= 2)
-  if (logStatusId === "dmlsrunning") return 5;
-  if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
+  if(logState === "active") {return 5;}
+  if(logState === "pending" || statusId === "smsgconsumed" || statusId === "consumed") {return 4.5;}
   if (statusId === "smsgreceived") return 3.5;
   if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
   if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
@@ -5516,45 +5573,6 @@ async function cachedSyncMessageHistory(query: {
     return null;
   }
 }
-
-export const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
-  const shopId = payload.shopId || payload.shop?.shopId;
-  if (!shopId) {
-    throw new Error("Shop ID is required to count pending product update requests.");
-  }
-
-  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
-  const cachedPending = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    statusId: "SmsgProduced",
-  });
-  if (cachedPending) {
-    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
-  }
-
-  const response = await requestBackend<any>({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-        remoteInternalId: shopId,
-        remoteInternalIdType: "HOTWAX_SHOP_ID",
-        statusId: "SmsgProduced"
-      },
-      pageSize: payload.pageSize || 1,
-      pageIndex: 0,
-      orderByField: "-initDate"
-    }
-  }, "Pending product update requests");
-
-  return {
-    count: Number(response?.entityValueListCount || 0),
-    latestSystemMessage: response?.entityValueList?.[0]
-  };
-};
 
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
@@ -5850,42 +5868,6 @@ export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductS
   }, "Shopify product sync endpoint");
 };
 
-const sendShopifyBulkQueryMessage = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const systemMessageRemoteId = String(payload?.systemMessageRemoteId || "").trim();
-  const queryText = String(payload?.queryText || "").trim();
-
-  if (!systemMessageRemoteId) {
-    throw new Error("System message remote id is required to send a Shopify bulk query message.");
-  }
-  if (!queryText) {
-    throw new Error("Query text is required to send a Shopify bulk query message.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/graphql",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      queryText
-    }
-  }, "Shopify GraphQL send endpoint");
-};
-
-const pollBulkOperationResult = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const parentSystemMessageTypeId = String(payload?.parentSystemMessageTypeId || "").trim();
-  if (!parentSystemMessageTypeId) {
-    throw new Error("Parent system message type id is required to poll a Shopify bulk operation result.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/bulk/result/poll",
-    method: "post",
-    data: {
-      parentSystemMessageTypeId
-    }
-  }, "Shopify bulk result poll endpoint");
-};
-
 export const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProductSyncActionResult> => {
   if (!String(systemMessageId || "").trim()) {
     throw new Error("System message id is required to cancel a Shopify product sync message.");
@@ -6060,36 +6042,6 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
 // did not — without that the new job stays invisible to every cached read until the next login.
 
 
-const fetchErrorRecordCount = async (payload: any): Promise<number> => {
-  const { shopId, configId } = payload;
-  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
-
-  try {
-    const response = await requestBackend<any>({
-      url: "oms/dataDocumentView",
-      method: "post",
-      data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
-        customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
-          parameterName: "shopId",
-          parameterValue: shopId,
-          failedRecordCount: 0,
-          failedRecordCount_op: "equals",
-          failedRecordCount_not: "true",
-          finishDateTime_from: finishDateTimeFrom.toString()
-        },
-        fieldsToSelect: "failedRecordCount"
-      }
-    });
-
-    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
-  } catch (error) {
-    logger.warn("Failed to fetch error record count using dataDocumentView", error);
-    return 0;
-  }
-};
-
 export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
   const { shopId, configId } = payload;
   try {
@@ -6104,7 +6056,7 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
           configId: configId || "SYNC_SHOPIFY_PRODUCT",
           parameterName: "shopId",
           parameterValue: shopId,
-          statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
+          statusId: TERMINAL_DATA_MANAGER_LOG_STATUS_IDS,
           statusId_not: "true"
         }
       }
@@ -6115,36 +6067,6 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
     logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
     return 0;
   }
-};
-
-export const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDashboardSummary> => {
-  const { systemMessageRemoteId } = payload;
-
-  const [syncRunState, pendingRequests, runningOperation, updateFilesToProcess] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload).catch(e => { logger.error("Failed to fetch product update sync run state", e); return { systemMessages: [], lastSyncedAt: "" } as any }),
-    fetchPendingProductUpdateRequests(payload).catch(e => { logger.error("Failed to fetch pending product update requests", e); return { count: 0 } as any }),
-    fetchRunningBulkOperation(payload).catch(e => { logger.warn("Failed to fetch running bulk operation (likely GraphQL error)", e); return null }),
-    fetchUpdateFilesToProcessCount(payload).catch(e => { logger.error("Failed to fetch update files to process count", e); return 0 })
-  ]);
-
-  let unsyncedUpdates = { count: 0, products: [] } as any;
-  try {
-    unsyncedUpdates = await fetchShopifyShopProductCount({
-      ...payload,
-      systemMessageRemoteId,
-      syncRunState
-    });
-  } catch (error) {
-    logger.warn("Failed to fetch unsynced product updates (likely GraphQL error)", error);
-  }
-
-  return {
-    syncRunState,
-    pendingRequests,
-    runningOperation,
-    unsyncedUpdates,
-    updateFilesToProcess
-  };
 };
 
 export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {

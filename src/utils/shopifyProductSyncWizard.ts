@@ -1,3 +1,5 @@
+import { logState as dataManagerLogState } from "@/utils/dataManagerLog";
+
 export type ProductSyncWizardStep =
   | "home"
   | "product-store"
@@ -150,20 +152,23 @@ export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot
   const systemMessageState = progress.systemMessageState;
   const logStatusId = progress.logStatusId;
   const logId = progress.logId;
+  const importState = logId
+    ? dataManagerLogState(logStatusId, { total: 0, success: 0, failed: 0 })
+    : undefined;
 
   // A sync run is considered terminal (completed) if:
-  // 1. There is an MDM log AND it is finished or errored
+  // 1. There is an MDM log AND its canonical DataManager status is terminal
   // 2. There is NO MDM log AND the system message is consumed (handling empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "DmlsFinished" || logStatusId === "DmlsError")) ||
+  const isTerminal = (logId && (importState === "completed" || importState === "partial" || importState === "failed")) ||
                      (!logId && (systemMessageState === "SmsgConsumed" || systemMessageState === "SmsgError" || systemMessageState === "SmsgCancelled"));
 
   if (isTerminal) {
-    if (logStatusId === "DmlsError" || systemMessageState === "SmsgError") return "error";
-    if (systemMessageState === "SmsgCancelled") return "cancelled";
+    if(logStatusId === "DmlsCancelled" || systemMessageState === "SmsgCancelled") {return "cancelled";}
+    if(importState === "failed" || systemMessageState === "SmsgError") {return "error";}
     return "completed";
   }
 
-  if (logStatusId === "DmlsRunning" || logStatusId === "DmlsPending") {
+  if(logId && (importState === "active" || importState === "pending")) {
     return "importing";
   }
 

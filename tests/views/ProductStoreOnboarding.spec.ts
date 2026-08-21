@@ -1,0 +1,1400 @@
+// @vitest-environment jsdom
+import { flushPromises, mount } from "@vue/test-utils"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { computed, nextTick, onMounted, reactive, ref, toRefs } from "vue"
+import { PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
+
+const harness = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  wizard: null as any,
+  productStoreData: null as any,
+  shops: null as any,
+  shopsHydrated: null as any,
+  updateShop: vi.fn(),
+  createModal: vi.fn(),
+  fetchShopifyShopLocations: vi.fn(),
+  updateStore: vi.fn(),
+  saveSettings: vi.fn(),
+  shopifyLocations: [] as any[],
+  landmarkDates: null as any,
+  loadOrderLandmarkDates: vi.fn(),
+  recordOrderLandmarkDates: vi.fn(),
+  initialLoadStatus: null as any,
+  initialLoadRequestSource: null as any
+}))
+
+vi.mock("@ionic/vue", async (importOriginal) => ({
+  ...(await importOriginal<any>()),
+  onIonViewDidLeave: vi.fn(),
+  onIonViewWillEnter: (callback: () => unknown) => onMounted(callback),
+  modalController: { create: (...args: any[]) => harness.createModal(...args) }
+}))
+
+vi.mock("@common", () => ({
+  commonUtil: { hasError: (response: any) => Boolean(response?.data?._ERROR_MESSAGE_) },
+  logger: { error: vi.fn(), warn: vi.fn() },
+  translate: (key: string, parameters?: Record<string, unknown>) => {
+    if(!parameters) {return key}
+
+    return Object.entries(parameters).reduce(
+      (text, [name, value]) => text.replace(`{${name}}`, String(value)),
+      key
+    )
+  }
+}))
+
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ fullPath: "/product-store-onboarding" }),
+  useRouter: () => ({
+    push: harness.push,
+    replace: harness.replace
+  })
+}))
+
+vi.mock("@/composables/useProductStoreOnboardingWizard", () => ({
+  useProductStoreOnboardingWizard: () => harness.wizard
+}))
+
+vi.mock("@/composables/useProductStoreData", () => ({
+  useProductStoreData: () => harness.productStoreData
+}))
+
+vi.mock("@/composables/useProductStoreOnboardingInitialLoad", () => ({
+  useProductStoreOnboardingInitialLoad: (_shopIdSource: unknown, requestSource: unknown) => {
+    harness.initialLoadRequestSource = requestSource
+
+    return harness.initialLoadStatus
+  }
+}))
+
+vi.mock("@/composables/useProductStores", () => ({
+  useProductStoreCreation: () => ({ createStore: vi.fn() }),
+  useProductStoreMutations: () => ({
+    updateStore: harness.updateStore,
+    saveSettings: harness.saveSettings,
+    addFacility: vi.fn()
+  })
+}))
+
+vi.mock("@/composables/useShopify", () => ({
+  fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
+  useOrderSyncLandmarkDates: () => ({
+    landmarkDates: harness.landmarkDates,
+    load: harness.loadOrderLandmarkDates,
+    record: harness.recordOrderLandmarkDates
+  }),
+  useShopifyShopMutations: () => ({ updateShop: harness.updateShop }),
+  useShopifyShops: () => ({ shops: harness.shops, hydrated: harness.shopsHydrated })
+}))
+
+vi.mock("@/composables/useFacilities", () => ({
+  useFacilities: () => ({ facilities: ref([]) }),
+  useFacilityCreation: () => ({ createFacility: vi.fn() })
+}))
+
+vi.mock("@/composables/useSeed", () => ({
+  useCurrencies: () => ({ currencies: ref([{ uomId: "USD", description: "US Dollar" }]) }),
+  useOrganization: () => ({
+    organizationPartyId: ref("COMPANY"),
+    loadOrganizationPartyId: vi.fn().mockResolvedValue("COMPANY"),
+    bootstrapOrganization: vi.fn()
+  }),
+  useTimeZones: () => ({
+    loadTimeZones: vi.fn().mockResolvedValue([{ id: "America/New_York", label: "Eastern Time" }])
+  }),
+  useTypedEnums: () => ({ values: ref([{ enumId: "SHOPIFY_PRODUCT_SKU", description: "SKU" }]) })
+}))
+
+function buildWizard() {
+  const state = reactive({
+    currentStepId: "name",
+    createdProductStoreId: "",
+    draft: {
+      companyName: "",
+      storeName: "",
+      productStoreId: "",
+      defaultCurrencyUomId: "USD",
+      locale: "en_US",
+      timezone: "America/New_York",
+      autoApproveOrder: "N",
+      orderNumberPrefix: "HC",
+      saveBillingInformation: "Y",
+      selectedShopifyShopId: "",
+      linkedShopifyShopId: "",
+      productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
+      primaryProductIdentification: "",
+      secondaryProductIdentification: "",
+      facilityMode: "import",
+      inventorySource: "Shopify",
+      reserveInventory: "Y",
+      showSystemicInventory: "true",
+      orderHistoryStartDate: "",
+      orderLaunchDate: ""
+    },
+    stepStatuses: Object.fromEntries(PRODUCT_STORE_ONBOARDING_STEPS.map((step) => [step.id, "not-started"])),
+    currentStepIndex: 0,
+    completedCount: 0,
+    totalStepCount: 7,
+    progressValue: 0
+  })
+
+  return reactive({
+    ...toRefs(state),
+    currentStep: computed(() => PRODUCT_STORE_ONBOARDING_STEPS.find((step) => step.id === state.currentStepId)),
+    selectStep: (stepId: string) => {
+      state.currentStepId = stepId
+      state.currentStepIndex = PRODUCT_STORE_ONBOARDING_STEPS.findIndex((step) => step.id === stepId)
+    },
+    updateDraftField: (field: string, value: string) => { (state.draft as any)[field] = value },
+    markStepComplete: (stepId: string = state.currentStepId) => { (state.stepStatuses as any)[stepId] = "complete" },
+    markStepAttention: (stepId: string = state.currentStepId) => { (state.stepStatuses as any)[stepId] = "attention" },
+    markStepInProgress: (stepId: string = state.currentStepId) => { (state.stepStatuses as any)[stepId] = "in-progress" },
+    runRequests: reactive({ products: null, inventory: null, orders: null }) as any,
+    setRunRequest: (kind: "products" | "inventory" | "orders", request: any) => {
+      ;(harness.wizard.runRequests as any)[kind] = request
+    },
+    setCreatedProductStoreId: (id: string) => { state.createdProductStoreId = id },
+    initializeForProductStore: vi.fn(),
+    startNewSetup: vi.fn(),
+    goNext: () => {
+      const next = PRODUCT_STORE_ONBOARDING_STEPS[state.currentStepIndex + 1]
+      if(next) {state.currentStepId = next.id; state.currentStepIndex += 1}
+    },
+    goPrevious: vi.fn()
+  })
+}
+
+function buildProductStoreData() {
+  const productStoreData = reactive({
+    productStores: [{ productStoreId: "EXISTING" }],
+    current: {} as any,
+    currentStoreSettings: {} as any,
+    currentFacilities: [] as any[],
+    currentShopifyJobStatus: null as any,
+    fetchStatus: {
+      productStoreDetails: "none",
+      currentStoreSettings: "none",
+      facilities: "none",
+      shopifyJobStatus: "none"
+    },
+    fetchProductStores: vi.fn(),
+    fetchCompany: vi.fn(),
+    fetchProductStoreDetails: vi.fn(),
+    fetchCurrentStoreSettings: vi.fn(),
+    fetchProductStoreFacilities: vi.fn(),
+    fetchProductStoreShopifyJobStatus: vi.fn(),
+    setupProductStoreShopifyProductImport: vi.fn(),
+    runProductStoreShopifyProductImport: vi.fn(),
+    setupProductStoreShopifyInventoryReset: vi.fn(),
+    runProductStoreShopifyInventoryReset: vi.fn(),
+    saveProductStoreShopifyOrderDates: vi.fn(),
+    setupProductStoreShopifyOrderImport: vi.fn(),
+    runProductStoreShopifyOrderHistoryImport: vi.fn()
+  })
+  productStoreData.fetchProductStoreShopifyJobStatus.mockImplementation(() =>
+    Promise.resolve(productStoreData.currentShopifyJobStatus))
+
+  return productStoreData
+}
+
+function initialLoadSnapshot(kind: "products" | "inventory" | "orders", status = "not-started") {
+  return {
+    kind,
+    hydrated: true,
+    run: { status, summary: "No sync request has been produced yet.", stages: [] },
+    details: {
+      route: kind === "products"
+        ? "/shopify-connection-details/SHOP/product-sync"
+        : kind === "orders"
+          ? "/shopify-connection-details/SHOP/order-sync/history"
+          : null,
+      systemMessageId: "",
+      bulkOperationId: "",
+      logId: "",
+      configId: kind === "products" ? "SYNC_SHOPIFY_PRODUCT" : kind === "inventory"
+        ? "RESET_SHOPIFY_INVENTORY" : "BULK_ORDER_HISTORY",
+      jobRunId: ""
+    }
+  }
+}
+
+function buildInitialLoadStatus() {
+  return {
+    products: ref(initialLoadSnapshot("products")),
+    inventory: ref(initialLoadSnapshot("inventory")),
+    orders: ref(initialLoadSnapshot("orders")),
+    refreshing: ref(false),
+    activate: vi.fn().mockResolvedValue(undefined),
+    deactivate: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined)
+  }
+}
+
+function completePersistedStore(productStoreId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    productStoreId,
+    storeName: `${productStoreId} Store`,
+    defaultCurrencyUomId: "USD",
+    defaultLocaleString: "en_US",
+    defaultTimeZoneString: "America/New_York",
+    autoApproveOrder: "N",
+    orderNumberPrefix: "HC",
+    ...overrides
+  }
+}
+
+async function mountView(props: Record<string, unknown> = {}) {
+  const View = (await import("@/views/ProductStoreOnboarding.vue")).default
+  const wrapper = mount(View, {
+    props,
+    global: {
+      stubs: {
+        IonBackButton: true,
+        IonContent: { template: "<div><slot /></div>" },
+        IonIcon: true
+      }
+    }
+  })
+  await flushPromises()
+
+  return wrapper
+}
+
+function buttonNamed(wrapper: Awaited<ReturnType<typeof mountView>>, label: string) {
+  return wrapper.findAll("ion-button").find((button) => button.text() === label)!
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
+
+  return { promise, resolve }
+}
+
+function configureExistingShopifySetup(stepId: "products" | "inventory" | "orders") {
+  harness.wizard.selectStep(stepId)
+  harness.wizard.draft.linkedShopifyShopId = "SHOP"
+  harness.wizard.draft.selectedShopifyShopId = "SHOP"
+  harness.wizard.draft.orderHistoryStartDate = "2026-08-01"
+  harness.wizard.draft.orderLaunchDate = "2026-08-08"
+  harness.productStoreData.current = {
+    productStoreId: "STORE",
+    productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
+    reserveInventory: "Y"
+  }
+  harness.productStoreData.currentStoreSettings = {
+    PRDT_IDEN_PREF: { settingValue: "{}" },
+    INV_CNT_VIEW_QOH: { settingValue: "true" }
+  }
+  harness.productStoreData.currentShopifyJobStatus = {
+    productStoreId: "STORE",
+    linkedShops: [{ shopId: "SHOP", productStoreId: "STORE" }],
+    jobs: [
+      { key: "productSync", ready: true },
+      { key: "productBulkSend", ready: true },
+      { key: "productBulkPoll", ready: true },
+      { key: "inventoryReset", ready: true },
+      { key: "orderImport", ready: true },
+      { key: "orderHistory", ready: true }
+    ]
+  }
+  harness.productStoreData.fetchStatus.productStoreDetails = "success"
+  harness.productStoreData.fetchStatus.currentStoreSettings = "success"
+  harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+  harness.shops.value = [{ shopId: "SHOP", productStoreId: "STORE" }]
+  harness.shopifyLocations = [{ shopifyLocationId: "LOCATION" }]
+  harness.landmarkDates.value = {
+    status: "ready",
+    error: null,
+    historyLastSyncDate: "2026-08-01 00:00:00",
+    launchDate: "2026-08-08 00:00:00"
+  }
+}
+
+function initialLoadSetupSnapshot(kind: "products" | "inventory" | "orders", shopId = "SHOP") {
+  if(kind === "products") {
+    return JSON.stringify(["STORE", shopId, "SHOPIFY_PRODUCT_SKU", "", ""])
+  }
+  if(kind === "inventory") {
+    return JSON.stringify(["STORE", shopId, "Y", "true"])
+  }
+
+  return JSON.stringify([
+    "STORE",
+    shopId,
+    "2026-08-01 00:00:00",
+    "2026-08-08 00:00:00"
+  ])
+}
+
+function trackedInitialLoadRequest(
+  kind: "products" | "inventory" | "orders",
+  trackingId: string,
+  requestedAt = Date.now()
+) {
+  return {
+    shopId: "SHOP",
+    setupSnapshot: initialLoadSetupSnapshot(kind),
+    baselineSystemMessageId: "",
+    systemMessageId: kind === "products" ? trackingId : "",
+    jobRunId: kind === "products" ? "" : trackingId,
+    requestedAt
+  }
+}
+
+describe("ProductStoreOnboarding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    harness.wizard = buildWizard()
+    harness.productStoreData = buildProductStoreData()
+    harness.shops = ref([])
+    harness.shopsHydrated = ref(true)
+    harness.landmarkDates = ref({ status: "idle", error: null, launchDate: "", historyLastSyncDate: "" })
+    harness.initialLoadStatus = buildInitialLoadStatus()
+    harness.initialLoadRequestSource = null
+    harness.shopifyLocations = []
+    harness.fetchShopifyShopLocations.mockReset()
+    harness.fetchShopifyShopLocations.mockImplementation(() => Promise.resolve(harness.shopifyLocations))
+    harness.updateShop.mockResolvedValue({ data: {} })
+    harness.updateStore.mockResolvedValue({ data: {} })
+    harness.saveSettings.mockResolvedValue({ data: {} })
+    harness.productStoreData.setupProductStoreShopifyProductImport.mockResolvedValue({ data: {} })
+    harness.productStoreData.runProductStoreShopifyProductImport.mockResolvedValue({ data: {} })
+    harness.productStoreData.setupProductStoreShopifyInventoryReset.mockResolvedValue({ data: {} })
+    harness.productStoreData.runProductStoreShopifyInventoryReset.mockResolvedValue({ data: {} })
+    harness.productStoreData.saveProductStoreShopifyOrderDates.mockResolvedValue({ data: {} })
+    harness.productStoreData.setupProductStoreShopifyOrderImport.mockResolvedValue({ data: {} })
+    harness.productStoreData.runProductStoreShopifyOrderHistoryImport.mockResolvedValue({ data: {} })
+    harness.createModal.mockResolvedValue({
+      present: vi.fn(),
+      onDidDismiss: vi.fn().mockResolvedValue({})
+    })
+  })
+
+  it("renders the focused eight-step flow without token, workflow, or package setup", async () => {
+    const wrapper = await mountView()
+
+    const text = wrapper.text()
+    for(const step of PRODUCT_STORE_ONBOARDING_STEPS) {
+      expect(text).toContain(step.label)
+    }
+    expect(text).not.toContain("JWT")
+    expect(text).not.toContain("Setup package")
+    expect(text).not.toContain("Workflow")
+    expect(text).not.toContain("SQS")
+  })
+
+  it("shows Product Sync-style configuration and terminal stage evidence", async () => {
+    configureExistingShopifySetup("products")
+    harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+    harness.initialLoadStatus.products.value = {
+      ...initialLoadSnapshot("products", "completed"),
+      run: {
+        status: "completed",
+        summary: "Product sync request completed.",
+        lastRunLabel: "Aug 12, 2026, 10:00 AM",
+        totalRecordCount: 120,
+        failedRecordCount: 0,
+        stages: [
+          { id: "system-message", label: "System message", status: "completed", detail: "M100" },
+          { id: "shopify-bulk-operation", label: "Shopify bulk operation", status: "completed", detail: "gid://100" },
+          { id: "hotwax-import", label: "HotWax bulk import", status: "completed", detail: "L100", totalRecordCount: 120 }
+        ]
+      },
+      details: {
+        ...initialLoadSnapshot("products").details,
+        systemMessageId: "M100"
+      }
+    }
+    harness.wizard.setRunRequest("products", {
+      shopId: "SHOP",
+      setupSnapshot: JSON.stringify(["STORE", "SHOP", "SHOPIFY_PRODUCT_SKU", "", ""]),
+      baselineSystemMessageId: "",
+      systemMessageId: "M100",
+      jobRunId: "",
+      requestedAt: Date.now()
+    })
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(wrapper.text()).toContain("Track sync progress")
+    expect(wrapper.text()).toContain("Monitor each step as products get imported from Shopify")
+    expect(wrapper.text()).toContain("Queue update requests")
+    expect(wrapper.text()).toContain("Send update request")
+    expect(wrapper.text()).toContain("Import completed requests")
+    expect(wrapper.text()).toContain("System message")
+    expect(wrapper.text()).toContain("Shopify bulk operation")
+    expect(wrapper.text()).toContain("HotWax bulk import")
+    expect(wrapper.text()).toContain("120 records processed")
+    expect(harness.wizard.stepStatuses.products).toBe("complete")
+
+    await buttonNamed(wrapper, "View details").trigger("click")
+    expect(harness.push).toHaveBeenCalledWith({
+      path: "/shopify-connection-details/SHOP/product-sync",
+      query: {
+        returnTo: "/product-store-onboarding",
+        systemMessageId: "M100"
+      }
+    })
+  })
+
+  it.each(["productStoreDetails", "currentStoreSettings"] as const)(
+    "shows Product configuration as Unknown when the %s fetch fails",
+    async (failedSource) => {
+      configureExistingShopifySetup("products")
+      harness.productStoreData.fetchStatus[failedSource] = "error"
+      if(failedSource === "productStoreDetails") {harness.productStoreData.current = {}}
+      if(failedSource === "currentStoreSettings") {harness.productStoreData.currentStoreSettings = {}}
+
+      const wrapper = await mountView({ productStoreId: "STORE" })
+      const configuration = wrapper.find(".status-row")
+
+      expect(configuration.text()).toContain("Configuration status could not be loaded. Refresh to try again.")
+      expect(configuration.text()).toContain("Product Store")
+      expect(configuration.text()).toContain("Global identifier")
+      expect(configuration.text()).toContain("Unknown")
+      expect(configuration.text()).not.toContain("Missing")
+    }
+  )
+
+  it("keeps store-backed Product checks Unknown while their evidence is loading", async () => {
+    configureExistingShopifySetup("products")
+    harness.productStoreData.fetchStatus.productStoreDetails = "pending"
+    harness.productStoreData.fetchStatus.currentStoreSettings = "pending"
+    harness.productStoreData.current = {}
+    harness.productStoreData.currentStoreSettings = {}
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const configuration = wrapper.find(".status-row")
+
+    expect(configuration.text()).toContain("Configuration status is still loading.")
+    expect(configuration.text()).toContain("Unknown")
+    expect(configuration.text()).not.toContain("Missing")
+  })
+
+  it.each([
+    {
+      evidence: "missing",
+      detail: "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh."
+    },
+    {
+      evidence: "unknown",
+      detail: "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences."
+    }
+  ])("disables inventory Save and explains $evidence template evidence", async ({ evidence, detail }) => {
+    configureExistingShopifySetup("inventory")
+    if(evidence === "missing") {
+      harness.productStoreData.currentShopifyJobStatus.jobs = harness.productStoreData.currentShopifyJobStatus.jobs.map((job: any) => {
+        if(job.key === "inventoryReset") {
+          return { ...job, ready: false, status: "missing-template", templateExists: false, expectedJobExists: false }
+        }
+
+        return job
+      })
+    } else {
+      harness.productStoreData.fetchStatus.shopifyJobStatus = "pending"
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const saveButton = buttonNamed(wrapper, "Save inventory setup")
+
+    expect(wrapper.text()).toContain(detail)
+    expect((saveButton.element as any).disabled).toBe(true)
+    await saveButton.trigger("click")
+    expect(harness.productStoreData.setupProductStoreShopifyInventoryReset).not.toHaveBeenCalled()
+    expect(harness.updateStore).not.toHaveBeenCalled()
+    expect(harness.saveSettings).not.toHaveBeenCalled()
+  })
+
+  it("runs inventory job preflight before preference writes and leaves preferences untouched when it fails", async () => {
+    configureExistingShopifySetup("inventory")
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    harness.wizard.draft.reserveInventory = "N"
+    await nextTick()
+    harness.productStoreData.setupProductStoreShopifyInventoryReset.mockRejectedValueOnce(new Error("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then refresh setup."))
+
+    const saveButton = buttonNamed(wrapper, "Save inventory setup")
+    expect((saveButton.element as any).disabled).toBe(false)
+    await saveButton.trigger("click")
+    await flushPromises()
+
+    expect(harness.productStoreData.setupProductStoreShopifyInventoryReset).toHaveBeenCalledOnce()
+    expect(harness.updateStore).not.toHaveBeenCalled()
+    expect(harness.saveSettings).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing.")
+    expect(harness.wizard.stepStatuses.inventory).toBe("attention")
+  })
+
+  it("passes persisted run requests into exact initial-load correlation", async () => {
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.initialLoadRequestSource).toBeTypeOf("function")
+    expect(harness.initialLoadRequestSource()).toBe(harness.wizard.runRequests)
+  })
+
+  it("refreshes live import evidence and opens the existing Product Sync details route", async () => {
+    configureExistingShopifySetup("products")
+    harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, "Refresh").trigger("click")
+    await flushPromises()
+    expect(harness.initialLoadStatus.refresh).toHaveBeenCalledOnce()
+
+    await buttonNamed(wrapper, "View details").trigger("click")
+    expect(harness.push).toHaveBeenCalledWith({
+      path: "/shopify-connection-details/SHOP/product-sync",
+      query: { returnTo: "/product-store-onboarding" }
+    })
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      saveLabel: "Save product setup",
+      runLabel: "Load all products",
+      runSpy: () => harness.productStoreData.runProductStoreShopifyProductImport
+    },
+    {
+      stepId: "inventory" as const,
+      saveLabel: "Save inventory setup",
+      runLabel: "Load inventory",
+      runSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset
+    },
+    {
+      stepId: "orders" as const,
+      saveLabel: "Save order import",
+      runLabel: "Load order history",
+      runSpy: () => harness.productStoreData.runProductStoreShopifyOrderHistoryImport
+    }
+  ])("keeps the whole $stepId refresh busy and deduplicates its actions", async ({
+    stepId,
+    saveLabel,
+    runLabel,
+    runSpy
+  }) => {
+    configureExistingShopifySetup(stepId)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const configurationRefresh = deferred<void>()
+    harness.productStoreData.fetchProductStoreDetails.mockClear()
+    harness.productStoreData.fetchProductStoreDetails.mockReturnValueOnce(configurationRefresh.promise)
+    harness.initialLoadStatus.refresh.mockClear()
+    runSpy().mockClear()
+
+    const refreshButton = buttonNamed(wrapper, "Refresh")
+    const saveButton = buttonNamed(wrapper, saveLabel)
+    const runButton = buttonNamed(wrapper, runLabel)
+    expect((runButton.element as any).disabled).toBe(false)
+
+    await refreshButton.trigger("click")
+    await nextTick()
+
+    expect(harness.initialLoadStatus.refresh).toHaveBeenCalledOnce()
+    expect((refreshButton.element as any).disabled).toBe(true)
+    expect((saveButton.element as any).disabled).toBe(true)
+    expect((runButton.element as any).disabled).toBe(true)
+
+    await refreshButton.trigger("click")
+    await runButton.trigger("click")
+    expect(harness.initialLoadStatus.refresh).toHaveBeenCalledOnce()
+    expect(runSpy()).not.toHaveBeenCalled()
+
+    configurationRefresh.resolve()
+    await flushPromises()
+    await flushPromises()
+
+    expect((refreshButton.element as any).disabled).toBe(false)
+    expect((runButton.element as any).disabled).toBe(false)
+    expect(wrapper.text()).toContain("Sync status refreshed.")
+  })
+
+  it("does not save Product setup while its full status refresh is active", async () => {
+    configureExistingShopifySetup("products")
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
+    await nextTick()
+
+    const configurationRefresh = deferred<void>()
+    harness.productStoreData.fetchProductStoreDetails.mockReturnValueOnce(configurationRefresh.promise)
+    harness.productStoreData.setupProductStoreShopifyProductImport.mockClear()
+    const saveButton = buttonNamed(wrapper, "Save product setup")
+    expect((saveButton.element as any).disabled).toBe(false)
+
+    await buttonNamed(wrapper, "Refresh").trigger("click")
+    await nextTick()
+    expect((saveButton.element as any).disabled).toBe(true)
+
+    await saveButton.trigger("click")
+    expect(harness.productStoreData.setupProductStoreShopifyProductImport).not.toHaveBeenCalled()
+
+    configurationRefresh.resolve()
+    await flushPromises()
+  })
+
+  it("opens Order history scoped to the exact accepted job and correlated message", async () => {
+    configureExistingShopifySetup("orders")
+    harness.initialLoadStatus.orders.value = {
+      ...initialLoadSnapshot("orders", "running"),
+      details: {
+        ...initialLoadSnapshot("orders").details,
+        systemMessageId: "ORDER-MESSAGE",
+        jobRunId: "ORDER-JOB"
+      }
+    }
+    harness.wizard.setRunRequest("orders", {
+      shopId: "SHOP",
+      setupSnapshot: initialLoadSetupSnapshot("orders"),
+      baselineSystemMessageId: "",
+      systemMessageId: "",
+      jobRunId: "ORDER-JOB",
+      requestedAt: Date.now()
+    })
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, "View details").trigger("click")
+    expect(harness.push).toHaveBeenCalledWith({
+      path: "/shopify-connection-details/SHOP/order-sync/history",
+      query: {
+        returnTo: "/product-store-onboarding",
+        systemMessageId: "ORDER-MESSAGE",
+        jobRunId: "ORDER-JOB"
+      }
+    })
+  })
+
+  it("navigates without completing the current step", async () => {
+    harness.wizard.setCreatedProductStoreId("STORE")
+    const wrapper = await mountView()
+
+    const continueButton = wrapper.findAll("ion-button").find((button) => button.text() === "Continue")
+    expect(continueButton).toBeDefined()
+    await continueButton!.trigger("click")
+
+    expect(harness.wizard.currentStepId).toBe("shopify")
+    expect(harness.wizard.stepStatuses.name).toBe("not-started")
+  })
+
+  it("does not let wizard defaults make an incomplete persisted Store look complete", async () => {
+    harness.wizard.stepStatuses.name = "complete"
+    harness.productStoreData.current = completePersistedStore("STORE", {
+      defaultLocaleString: "",
+      orderNumberPrefix: ""
+    })
+    harness.productStoreData.currentStoreSettings = {}
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.draft.locale).toBe("")
+    expect(harness.wizard.draft.orderNumberPrefix).toBe("")
+    expect(harness.wizard.draft.saveBillingInformation).toBe("")
+    expect(harness.wizard.stepStatuses.name).toBe("attention")
+  })
+
+  it("completes Store only when every displayed default and billing truth are persisted", async () => {
+    harness.productStoreData.current = completePersistedStore("STORE")
+    harness.productStoreData.currentStoreSettings = {
+      SAVE_BILL_TO_INF: { settingTypeEnumId: "SAVE_BILL_TO_INF", settingValue: "N" }
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.draft.saveBillingInformation).toBe("N")
+    expect(harness.wizard.stepStatuses.name).toBe("complete")
+
+    const storeName = wrapper.findAll("ion-input").find((input) => (input.element as any).label === "Store name")
+    await storeName!.trigger("ionInput", { detail: { value: "Unsaved name" } })
+    expect(harness.wizard.stepStatuses.name).toBe("in-progress")
+  })
+
+  it("serializes rapid route loads and hydrates only the currently requested Product Store", async () => {
+    const firstDetails = deferred<void>()
+    harness.productStoreData.fetchProductStoreDetails.mockImplementation(async (productStoreId: string) => {
+      if(productStoreId === "STORE_A") {await firstDetails.promise}
+      harness.productStoreData.current = completePersistedStore(productStoreId)
+    })
+    harness.productStoreData.fetchCurrentStoreSettings.mockImplementation((productStoreId: string) => {
+      harness.productStoreData.currentStoreSettings = {
+        SAVE_BILL_TO_INF: {
+          settingTypeEnumId: "SAVE_BILL_TO_INF",
+          settingValue: productStoreId === "STORE_A" ? "Y" : "N"
+        }
+      }
+    })
+
+    const View = (await import("@/views/ProductStoreOnboarding.vue")).default
+    const wrapper = mount(View, {
+      props: { productStoreId: "STORE_A" },
+      global: { stubs: { IonBackButton: true, IonContent: { template: "<div><slot /></div>" }, IonIcon: true } }
+    })
+    await nextTick()
+    await flushPromises()
+    expect(harness.productStoreData.fetchProductStoreDetails).toHaveBeenCalledWith("STORE_A")
+    await wrapper.setProps({ productStoreId: "STORE_B" })
+    await nextTick()
+
+    firstDetails.resolve()
+    await flushPromises()
+    await flushPromises()
+
+    expect(harness.productStoreData.fetchProductStoreDetails.mock.calls.map(([id]: [string]) => id)).toEqual([
+      "STORE_A",
+      "STORE_B"
+    ])
+    expect(harness.wizard.draft.productStoreId).toBe("STORE_B")
+    expect(harness.wizard.draft.storeName).toBe("STORE_B Store")
+    expect(harness.wizard.draft.saveBillingInformation).toBe("N")
+    expect(harness.wizard.stepStatuses.name).toBe("complete")
+  })
+
+  it("exposes setup progress as an accessible count on desktop and mobile", async () => {
+    harness.wizard.completedCount = 3
+    harness.wizard.progressValue = 3 / 7
+    const wrapper = await mountView()
+
+    const progress = wrapper.get("ion-progress-bar")
+    expect(progress.attributes("aria-label")).toBe("3 of 7 setup steps complete")
+    expect(progress.attributes("aria-valuemin")).toBe("0")
+    expect(progress.attributes("aria-valuemax")).toBe("7")
+    expect(progress.attributes("aria-valuenow")).toBe("3")
+    expect(progress.attributes("aria-valuetext")).toBe("3 of 7 setup steps complete")
+
+    const mobileCount = wrapper.get("[data-testid=\"mobile-progress-count\"]")
+    expect(mobileCount.text()).toBe("3 / 7")
+    expect(mobileCount.attributes("aria-label")).toBe("3 of 7 setup steps complete")
+    expect(mobileCount.attributes("aria-live")).toBe("polite")
+  })
+
+  it("keeps Store ID and locale validation visible and reachable", async () => {
+    harness.wizard.draft.storeName = "Test store"
+    harness.wizard.draft.productStoreId = ""
+    harness.wizard.draft.locale = "en-us"
+    const wrapper = await mountView()
+
+    const storeIdInput = wrapper.get("[data-testid=\"product-store-id-input\"]")
+    expect((storeIdInput.element as any).maxlength).toBe(20)
+    expect((storeIdInput.element as any).required).toBe(true)
+
+    const createButton = wrapper.findAll("ion-button").find((button) => button.text() === "Create product store")
+    expect((createButton?.element as any)?.disabled).toBe(false)
+    await createButton!.trigger("click")
+    await flushPromises()
+
+    expect((storeIdInput.element as any).errorText).toBe("Product Store ID is required.")
+    expect(storeIdInput.classes()).toEqual(expect.arrayContaining(["ion-invalid", "ion-touched"]))
+    expect((wrapper.get("[data-testid=\"default-locale-input\"]").element as any).errorText)
+      .toBe("Enter a locale in the format en_US.")
+    expect(wrapper.get("[role=\"alert\"]").text()).toBe("Complete every required store field before saving.")
+  })
+
+  it("constrains the order date range and explains an invalid relationship inline", async () => {
+    harness.wizard.selectStep("orders")
+    harness.wizard.draft.linkedShopifyShopId = "SHOP"
+    harness.wizard.draft.orderHistoryStartDate = "2026-08-12"
+    harness.wizard.draft.orderLaunchDate = "2026-08-11"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.shops.value = [{ shopId: "SHOP", productStoreId: "STORE" }]
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    const historyInput = wrapper.get("[data-testid=\"order-history-start-input\"]")
+    const launchInput = wrapper.get("[data-testid=\"order-launch-date-input\"]")
+    expect((historyInput.element as any).max).toBe("2026-08-11")
+    expect((launchInput.element as any).min).toBe("2026-08-12")
+
+    await historyInput.trigger("ionBlur")
+    await flushPromises()
+
+    expect((launchInput.element as any).errorText)
+      .toBe("Order history start date must be on or before the order launch date.")
+    expect(launchInput.classes()).toEqual(expect.arrayContaining(["ion-invalid", "ion-touched"]))
+    const saveButton = wrapper.findAll("ion-button").find((button) => button.text() === "Save order import")
+    expect((saveButton?.element as any)?.disabled).toBe(true)
+  })
+
+  it("restores focus to the facility import opener after its modal closes", async () => {
+    harness.wizard.selectStep("facilities")
+    harness.wizard.draft.linkedShopifyShopId = "SHOP"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.shops.value = [{ shopId: "SHOP", productStoreId: "STORE" }]
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const importButton = wrapper.findAll("ion-button").find((button) => button.text() === "Import Shopify locations")!
+    const setFocus = vi.fn()
+    Object.assign(importButton.element, { setFocus })
+
+    await importButton.trigger("click")
+    await flushPromises()
+
+    expect(harness.createModal).toHaveBeenCalledOnce()
+    expect(setFocus).toHaveBeenCalledOnce()
+  })
+
+  it("completes Facilities when a previously imported mapping is associated on retry", async () => {
+    harness.wizard.selectStep("facilities")
+    harness.wizard.draft.linkedShopifyShopId = "SHOP"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.shops.value = [{ shopId: "SHOP", productStoreId: "STORE" }]
+    harness.createModal.mockResolvedValue({
+      present: vi.fn(),
+      onDidDismiss: vi.fn().mockResolvedValue({
+        data: {
+          imported: 0,
+          retried: 1,
+          associated: 1,
+          facilityIds: [],
+          retriedFacilityIds: ["FACILITY"],
+          associationFacilityIds: ["FACILITY"],
+          associatedFacilityIds: ["FACILITY"],
+          failedAssociationFacilityIds: [],
+          associationFailed: false
+        }
+      })
+    })
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    await buttonNamed(wrapper, "Import Shopify locations").trigger("click")
+    await flushPromises()
+
+    expect(harness.wizard.stepStatuses.facilities).toBe("complete")
+    expect(wrapper.text()).toContain("Every selected facility was associated with this Product Store.")
+  })
+
+  it.each([
+    { assignment: "unassigned", productStoreId: "" },
+    { assignment: "assigned to another Product Store", productStoreId: "OTHER_STORE" }
+  ])("clears a persisted shop that is now $assignment and blocks job setup", async ({ productStoreId }) => {
+    harness.wizard.selectStep("products")
+    harness.wizard.draft.linkedShopifyShopId = "STALE_SHOP"
+    harness.wizard.draft.selectedShopifyShopId = "STALE_SHOP"
+    harness.wizard.stepStatuses.shopify = "complete"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.shops.value = [{ shopId: "STALE_SHOP", productStoreId }]
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.draft.linkedShopifyShopId).toBe("")
+    expect(harness.wizard.draft.selectedShopifyShopId).toBe("")
+    expect(harness.wizard.stepStatuses.shopify).toBe("attention")
+    const saveButton = wrapper.findAll("ion-button").find((button) => button.text() === "Save product setup")
+    expect((saveButton?.element as (HTMLElement & { disabled: boolean }) | undefined)?.disabled).toBe(true)
+    await saveButton!.trigger("click")
+    expect(harness.productStoreData.setupProductStoreShopifyProductImport).not.toHaveBeenCalled()
+  })
+
+  it("prefers the live assignment response over a stale cached link", async () => {
+    harness.wizard.selectStep("products")
+    harness.wizard.draft.linkedShopifyShopId = "STALE_SHOP"
+    harness.wizard.draft.selectedShopifyShopId = "STALE_SHOP"
+    harness.wizard.stepStatuses.shopify = "complete"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.productStoreData.currentShopifyJobStatus = {
+      productStoreId: "STORE",
+      linkedShops: [],
+      jobs: []
+    }
+    harness.shops.value = [{ shopId: "STALE_SHOP", productStoreId: "STORE" }]
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.draft.linkedShopifyShopId).toBe("")
+    expect(harness.wizard.stepStatuses.shopify).toBe("attention")
+  })
+
+  it("clears all initial-load correlations when live evidence verifies a different linked shop", async () => {
+    harness.wizard.selectStep("products")
+    harness.wizard.draft.linkedShopifyShopId = "SHOP_OLD"
+    harness.wizard.draft.selectedShopifyShopId = "SHOP_OLD"
+    harness.wizard.stepStatuses.shopify = "complete"
+    harness.wizard.setRunRequest("products", trackedInitialLoadRequest("products", "MSG-OLD"))
+    harness.wizard.setRunRequest("inventory", trackedInitialLoadRequest("inventory", "RUN-INVENTORY-OLD"))
+    harness.wizard.setRunRequest("orders", trackedInitialLoadRequest("orders", "RUN-ORDERS-OLD"))
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.productStoreData.currentShopifyJobStatus = {
+      productStoreId: "STORE",
+      linkedShops: [{ shopId: "SHOP_NEW", productStoreId: "STORE" }],
+      jobs: []
+    }
+    harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+    harness.shops.value = [{ shopId: "SHOP_NEW", productStoreId: "STORE" }]
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.draft.linkedShopifyShopId).toBe("SHOP_NEW")
+    expect(harness.wizard.draft.selectedShopifyShopId).toBe("SHOP_NEW")
+    expect(harness.wizard.runRequests).toEqual({
+      products: null,
+      inventory: null,
+      orders: null
+    })
+  })
+
+  it("persists a Shopify link only after the saved association is currently assigned", async () => {
+    harness.wizard.selectStep("shopify")
+    harness.wizard.draft.selectedShopifyShopId = "NEW_SHOP"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.shops.value = [{ shopId: "NEW_SHOP", productStoreId: "" }]
+    harness.updateShop.mockImplementation(() => {
+      harness.shops.value = [{ shopId: "NEW_SHOP", productStoreId: "STORE" }]
+
+      return Promise.resolve({ data: {} })
+    })
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const linkButton = wrapper.findAll("ion-button").find((button) => button.text() === "Link Shopify shop")
+    expect(linkButton).toBeDefined()
+    await linkButton!.trigger("click")
+    await flushPromises()
+
+    expect(harness.updateShop).toHaveBeenCalledWith({ productStoreId: "STORE" })
+    expect(harness.wizard.draft.linkedShopifyShopId).toBe("NEW_SHOP")
+    expect(harness.wizard.stepStatuses.shopify).toBe("complete")
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      loadLabel: "Load all products",
+      edit: () => { harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU" }
+    },
+    {
+      stepId: "inventory" as const,
+      loadLabel: "Load inventory",
+      edit: () => { harness.wizard.draft.reserveInventory = "N" }
+    },
+    {
+      stepId: "orders" as const,
+      loadLabel: "Load order history",
+      edit: () => { harness.wizard.draft.orderHistoryStartDate = "2026-08-02" }
+    }
+  ])("blocks $stepId load after editing a reconciled saved setup", async ({ stepId, loadLabel, edit }) => {
+    configureExistingShopifySetup(stepId)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const loadButton = buttonNamed(wrapper, loadLabel)
+    expect((loadButton.element as any).disabled).toBe(false)
+
+    edit()
+    harness.wizard.stepStatuses[stepId] = "in-progress"
+    await nextTick()
+
+    expect((loadButton.element as any).disabled).toBe(true)
+  })
+
+  it("does not treat configured jobs without persisted product settings as saved setup", async () => {
+    configureExistingShopifySetup("products")
+    harness.productStoreData.currentStoreSettings = {}
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect((buttonNamed(wrapper, "Load all products").element as any).disabled).toBe(true)
+  })
+
+  it("keeps Load blocked when product fields change while Save is resolving", async () => {
+    configureExistingShopifySetup("products")
+    harness.productStoreData.currentStoreSettings = {}
+    const pending = deferred<any>()
+    harness.productStoreData.setupProductStoreShopifyProductImport.mockReturnValueOnce(pending.promise)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const saveButton = buttonNamed(wrapper, "Save product setup")
+    const loadButton = buttonNamed(wrapper, "Load all products")
+
+    await saveButton.trigger("click")
+    expect((saveButton.element as any).disabled).toBe(true)
+    expect((loadButton.element as any).disabled).toBe(true)
+    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
+    pending.resolve({ data: {} })
+    await flushPromises()
+
+    expect(harness.productStoreData.setupProductStoreShopifyProductImport).toHaveBeenCalledOnce()
+    expect((loadButton.element as any).disabled).toBe(true)
+  })
+
+  it("does not report a product load as accepted when its saved setup changes in flight", async () => {
+    configureExistingShopifySetup("products")
+    const pending = deferred<any>()
+    harness.productStoreData.runProductStoreShopifyProductImport.mockReturnValueOnce(pending.promise)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, "Load all products").trigger("click")
+    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
+    pending.resolve({ data: {} })
+    await flushPromises()
+
+    expect(harness.wizard.stepStatuses.products).not.toBe("complete")
+    expect(wrapper.text()).not.toContain("The initial product import was queued.")
+    expect((buttonNamed(wrapper, "Load all products").element as any).disabled).toBe(true)
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      saveLabel: "Save product setup",
+      loadLabel: "Load all products",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport
+    },
+    {
+      stepId: "inventory" as const,
+      saveLabel: "Save inventory setup",
+      loadLabel: "Load inventory",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset
+    },
+    {
+      stepId: "orders" as const,
+      saveLabel: "Save order import",
+      loadLabel: "Load order history",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyOrderHistoryImport
+    }
+  ])("cross-disables and deduplicates $stepId actions while Load runs", async ({ stepId, saveLabel, loadLabel, importSpy }) => {
+    configureExistingShopifySetup(stepId)
+    const pending = deferred<any>()
+    importSpy().mockReturnValueOnce(pending.promise)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const saveButton = buttonNamed(wrapper, saveLabel)
+    const loadButton = buttonNamed(wrapper, loadLabel)
+
+    await loadButton.trigger("click")
+    expect((saveButton.element as any).disabled).toBe(true)
+    expect((loadButton.element as any).disabled).toBe(true)
+    await loadButton.trigger("click")
+    await saveButton.trigger("click")
+
+    expect(importSpy()).toHaveBeenCalledOnce()
+    pending.resolve({ data: {} })
+    await flushPromises()
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      loadLabel: "Load all products",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport,
+      expectedMessage: "The initial product import was queued. This step stays in progress until the import finishes successfully."
+    },
+    {
+      stepId: "inventory" as const,
+      loadLabel: "Load inventory",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset,
+      expectedMessage: "The initial inventory load was queued. This step stays in progress until the load finishes successfully."
+    },
+    {
+      stepId: "orders" as const,
+      loadLabel: "Load order history",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyOrderHistoryImport,
+      expectedMessage: "The initial order history load was queued. This step stays in progress until the import finishes successfully."
+    }
+  ])("keeps $stepId in progress when the backend only accepts the initial-load request", async ({
+    stepId,
+    loadLabel,
+    importSpy,
+    expectedMessage
+  }) => {
+    configureExistingShopifySetup(stepId)
+    importSpy().mockResolvedValueOnce({ data: { jobRunId: "RUN-1", systemMessageId: "MSG-1" } })
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, loadLabel).trigger("click")
+    await flushPromises()
+
+    expect(harness.wizard.stepStatuses[stepId]).toBe("in-progress")
+    expect(wrapper.text()).toContain(expectedMessage)
+    expect(wrapper.text()).toContain("Request accepted. Waiting for its sync run to appear.")
+    expect((buttonNamed(wrapper, loadLabel).element as any).disabled).toBe(true)
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      saveLabel: "Save product setup",
+      loadLabel: "Load all products",
+      trackingId: "MSG-ACCEPTED"
+    },
+    {
+      stepId: "inventory" as const,
+      saveLabel: "Save inventory setup",
+      loadLabel: "Load inventory",
+      trackingId: "RUN-INVENTORY-ACCEPTED"
+    },
+    {
+      stepId: "orders" as const,
+      saveLabel: "Save order import",
+      loadLabel: "Load order history",
+      trackingId: "RUN-ORDERS-ACCEPTED"
+    }
+  ])("shows the Waiting overlay and blocks $stepId actions until accepted request evidence appears", async ({
+    stepId,
+    saveLabel,
+    loadLabel,
+    trackingId
+  }) => {
+    configureExistingShopifySetup(stepId)
+    harness.wizard.setRunRequest(stepId, trackedInitialLoadRequest(stepId, trackingId))
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(wrapper.text()).toContain("Request accepted. Waiting for its sync run to appear.")
+    expect(wrapper.text()).toContain(trackingId)
+    expect((buttonNamed(wrapper, saveLabel).element as any).disabled).toBe(true)
+    expect((buttonNamed(wrapper, loadLabel).element as any).disabled).toBe(true)
+    expect(harness.wizard.runRequests[stepId]).not.toBeNull()
+  })
+
+  it("keeps an exactly correlated unavailable inventory run recoverable", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.setRunRequest("inventory", trackedInitialLoadRequest("inventory", "RUN-UNAVAILABLE"))
+    harness.initialLoadStatus.inventory.value = {
+      ...initialLoadSnapshot("inventory", "unavailable"),
+      run: {
+        status: "unavailable",
+        summary: "The inventory job finished without a usable sync result.",
+        stages: []
+      },
+      details: {
+        ...initialLoadSnapshot("inventory").details,
+        jobRunId: "RUN-UNAVAILABLE"
+      }
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const retryButton = buttonNamed(wrapper, "Retry")
+
+    expect(harness.wizard.stepStatuses.inventory).toBe("attention")
+    expect(wrapper.text()).toContain("The inventory job finished without a usable sync result.")
+    expect((retryButton.element as any).disabled).toBe(false)
+    expect(harness.wizard.runRequests.inventory?.jobRunId).toBe("RUN-UNAVAILABLE")
+  })
+
+  it("does not let an unrelated completed inventory run complete the accepted request", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.stepStatuses.inventory = "in-progress"
+    harness.wizard.setRunRequest("inventory", trackedInitialLoadRequest("inventory", "RUN-REQUESTED"))
+    harness.initialLoadStatus.inventory.value = {
+      ...initialLoadSnapshot("inventory", "completed"),
+      run: {
+        status: "completed",
+        summary: "An unrelated inventory run completed.",
+        stages: []
+      },
+      details: {
+        ...initialLoadSnapshot("inventory").details,
+        jobRunId: "RUN-OTHER"
+      }
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.inventory).not.toBe("complete")
+    expect(wrapper.text()).toContain("Request accepted. Waiting for its sync run to appear.")
+    expect(wrapper.text()).not.toContain("An unrelated inventory run completed.")
+    expect((buttonNamed(wrapper, "Load inventory").element as any).disabled).toBe(true)
+    expect(harness.wizard.runRequests.inventory?.jobRunId).toBe("RUN-REQUESTED")
+  })
+
+  it("enables Retry when accepted inventory evidence is still unmatched after 15 minutes", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.setRunRequest(
+      "inventory",
+      trackedInitialLoadRequest("inventory", "RUN-STALLED", Date.now() - (16 * 60 * 1000))
+    )
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    const retryButton = buttonNamed(wrapper, "Retry")
+
+    expect(wrapper.text()).toContain("No sync evidence appeared for the accepted request. Refresh, then retry if needed.")
+    expect((retryButton.element as any).disabled).toBe(false)
+    expect(harness.wizard.runRequests.inventory?.jobRunId).toBe("RUN-STALLED")
+  })
+
+  it("keeps an exactly correlated active inventory request blocked after 15 minutes", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.setRunRequest(
+      "inventory",
+      trackedInitialLoadRequest("inventory", "RUN-ACTIVE", Date.now() - (16 * 60 * 1000))
+    )
+    harness.initialLoadStatus.inventory.value = {
+      ...initialLoadSnapshot("inventory", "running"),
+      run: {
+        status: "running",
+        summary: "The exact inventory request is still running.",
+        stages: []
+      },
+      details: {
+        ...initialLoadSnapshot("inventory").details,
+        jobRunId: "RUN-ACTIVE"
+      }
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(wrapper.text()).toContain("The exact inventory request is still running.")
+    expect(buttonNamed(wrapper, "Retry")).toBeUndefined()
+    expect((buttonNamed(wrapper, "Load inventory").element as any).disabled).toBe(true)
+    expect(harness.wizard.stepStatuses.inventory).toBe("in-progress")
+  })
+
+  it("completes an exactly correlated inventory run without making pristine setup editable", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.setRunRequest("inventory", trackedInitialLoadRequest("inventory", "RUN-COMPLETE"))
+    harness.initialLoadStatus.inventory.value = {
+      ...initialLoadSnapshot("inventory", "completed"),
+      run: {
+        status: "completed",
+        summary: "The exact inventory request completed.",
+        stages: []
+      },
+      details: {
+        ...initialLoadSnapshot("inventory").details,
+        jobRunId: "RUN-COMPLETE"
+      }
+    }
+
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.inventory).toBe("complete")
+    expect(wrapper.text()).toContain("The exact inventory request completed.")
+    expect((buttonNamed(wrapper, "Save inventory setup").element as any).disabled).toBe(true)
+    expect((buttonNamed(wrapper, "Load inventory").element as any).disabled).toBe(false)
+    expect(buttonNamed(wrapper, "Retry")).toBeUndefined()
+  })
+
+  it.each([
+    {
+      stepId: "products" as const,
+      loadLabel: "Load all products",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport,
+      response: { data: { jobRunId: "WRONG-ID-TYPE" } }
+    },
+    {
+      stepId: "inventory" as const,
+      loadLabel: "Load inventory",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset,
+      response: { data: { systemMessageId: "WRONG-ID-TYPE" } }
+    },
+    {
+      stepId: "orders" as const,
+      loadLabel: "Load order history",
+      importSpy: () => harness.productStoreData.runProductStoreShopifyOrderHistoryImport,
+      response: { data: { systemMessageId: "WRONG-ID-TYPE" } }
+    }
+  ])("rejects an untrackable $stepId trigger response", async ({
+    stepId,
+    loadLabel,
+    importSpy,
+    response
+  }) => {
+    configureExistingShopifySetup(stepId)
+    importSpy().mockResolvedValueOnce(response)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, loadLabel).trigger("click")
+    await flushPromises()
+    await flushPromises()
+
+    expect(harness.wizard.stepStatuses[stepId]).toBe("attention")
+    expect(harness.wizard.runRequests[stepId]).toBeNull()
+    expect(wrapper.text()).toContain("The sync request could not be tracked because the backend returned no tracking ID.")
+    expect(wrapper.text()).not.toContain("Request accepted. Waiting for its sync run to appear.")
+  })
+
+  it.each(["products", "inventory", "orders"] as const)(
+    "treats a payload-level $stepId run failure as Needs attention",
+    async (stepId) => {
+      configureExistingShopifySetup(stepId)
+      const labels = {
+        products: "Load all products",
+        inventory: "Load inventory",
+        orders: "Load order history"
+      }
+      harness.productStoreData[
+        stepId === "products"
+          ? "runProductStoreShopifyProductImport"
+          : stepId === "inventory"
+            ? "runProductStoreShopifyInventoryReset"
+            : "runProductStoreShopifyOrderHistoryImport"
+      ].mockResolvedValueOnce({ hasError: true, errorMessages: ["Backend rejected the run"] })
+      const wrapper = await mountView({ productStoreId: "STORE" })
+
+      await buttonNamed(wrapper, labels[stepId]).trigger("click")
+      await flushPromises()
+
+      expect(harness.wizard.stepStatuses[stepId]).toBe("attention")
+      expect(wrapper.text()).toContain("Backend rejected the run")
+    }
+  )
+
+  it("demotes stale facilities, mappings, and job configuration only after successful evidence loads", async () => {
+    harness.wizard.stepStatuses.facilities = "complete"
+    harness.wizard.stepStatuses.locations = "complete"
+    harness.wizard.stepStatuses.products = "complete"
+    harness.wizard.stepStatuses.inventory = "complete"
+    harness.wizard.stepStatuses.orders = "complete"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.productStoreData.fetchStatus = { facilities: "success", shopifyJobStatus: "success" }
+    harness.productStoreData.currentFacilities = []
+    harness.productStoreData.currentShopifyJobStatus = {
+      productStoreId: "STORE",
+      linkedShops: [],
+      jobs: []
+    }
+    harness.shopifyLocations = []
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.facilities).toBe("attention")
+    expect(harness.wizard.stepStatuses.locations).toBe("attention")
+    expect(harness.wizard.stepStatuses.products).toBe("attention")
+    expect(harness.wizard.stepStatuses.inventory).toBe("attention")
+    expect(harness.wizard.stepStatuses.orders).toBe("attention")
+  })
+
+  it("does not erase existing completion when authoritative facility or job refreshes fail", async () => {
+    harness.wizard.stepStatuses.facilities = "complete"
+    harness.wizard.stepStatuses.products = "complete"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.productStoreData.fetchStatus = { facilities: "error", shopifyJobStatus: "error" }
+    harness.productStoreData.currentFacilities = []
+    harness.productStoreData.currentShopifyJobStatus = null
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.facilities).toBe("complete")
+    expect(harness.wizard.stepStatuses.products).toBe("attention")
+  })
+
+  it("preserves a completed location step when its mapping refresh fails", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.wizard.stepStatuses.locations = "complete"
+    harness.fetchShopifyShopLocations.mockRejectedValueOnce(new Error("mapping fetch failed"))
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.locations).toBe("complete")
+  })
+
+  it("demotes a completed location step when current evidence proves the Shopify link is gone", async () => {
+    harness.wizard.stepStatuses.shopify = "complete"
+    harness.wizard.stepStatuses.locations = "complete"
+    harness.wizard.draft.linkedShopifyShopId = "SHOP"
+    harness.wizard.draft.selectedShopifyShopId = "SHOP"
+    harness.productStoreData.current = { productStoreId: "STORE" }
+    harness.productStoreData.currentShopifyJobStatus = {
+      productStoreId: "STORE",
+      linkedShops: [],
+      jobs: []
+    }
+    harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+
+    await mountView({ productStoreId: "STORE" })
+
+    expect(harness.wizard.stepStatuses.locations).toBe("attention")
+  })
+
+  it("keeps Finish blocked while any initial load has only queued evidence", async () => {
+    for(const step of PRODUCT_STORE_ONBOARDING_STEPS) {
+      if(step.id !== "readiness") {harness.wizard.stepStatuses[step.id] = "complete"}
+    }
+    harness.wizard.stepStatuses.products = "in-progress"
+    harness.wizard.selectStep("readiness")
+    const wrapper = await mountView()
+
+    const finishButton = buttonNamed(wrapper, "Finish setup")
+    expect((finishButton.element as any).disabled).toBe(true)
+    expect(wrapper.text()).toContain("Queued imports are still in progress. Verify each initial load completes successfully before finishing.")
+  })
+})
