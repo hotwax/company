@@ -150,7 +150,6 @@
                in a shared list that needed the channel's name in brackets to tell rows apart. -->
           <ion-card v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
             <ion-item lines="full" button detail @click="openChannelEdit(channel)">
-              <ion-icon :icon="layersOutline" slot="start" />
               <ion-label class="ion-text-wrap">
                 {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
                 <p>{{ channelSubtitle(channel) }}</p>
