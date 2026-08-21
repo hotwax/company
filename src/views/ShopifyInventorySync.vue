@@ -190,13 +190,6 @@
                   {{ job.status }}
                 </ion-badge>
               </ion-item>
-
-              <ion-item lines="none">
-                <ion-button fill="clear" @click="openChannelResetJob(channel)">
-                  <ion-icon slot="start" :icon="timeOutline" />
-                  {{ translate("Schedule reset") }}
-                </ion-button>
-              </ion-item>
             </ion-list>
           </ion-card>
         </section>
@@ -2859,31 +2852,6 @@ function openChannelEdit(channel: any) {
   editingChannel.value = channel;
 }
 
-async function openChannelResetJob(channel: any) {
-  if (!channel?.inventoryChannelId) return;
-  const channelId = String(channel.inventoryChannelId);
-  const channelName = channel.facilityGroupName || channel.description || channelId;
-  let job = findChannelResetJob(channelId);
-  if (!job) {
-    try {
-      const jobName = await ensureChannelResetJob({
-        inventoryChannelId: channelId,
-        description: `Full aggregate ATP reset for ${channelName}`,
-      });
-      refreshServiceJobData();
-      selectedServiceJob.value = serviceJobSelection(
-        jobName, `${translate("Reset aggregate ATP")} - ${channelName}`);
-      return;
-    } catch (error: any) {
-      logger.error("Failed to create aggregate reset job for channel", channelId, error);
-      commonUtil.showToast(error?.message || translate("Failed to set up aggregate reset job."));
-      return;
-    }
-  }
-  selectedServiceJob.value = serviceJobSelection(
-    job.jobName, `${translate("Reset aggregate ATP")} - ${channelName}`);
-}
-
 function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
   editingChannel.value = null;
   selectedServiceJob.value = serviceJobSelection(payload.jobName, payload.title);
@@ -2980,12 +2948,28 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
           : await ensureChannelResetJob({ inventoryChannelId: channelId, description: desc }));
       }
     }
+    refreshServiceJobData();
+
+    // One job, created for one named channel: open it, which is what the row's own click would do and
+    // what the removed "Schedule reset" button did. A multi-create -- the shared rows provision every
+    // uncovered channel at once -- has no single job to open, so it keeps the toast.
+    const openable = created.length === 1 && targetChannelId ? created[0] : "";
+    if (openable) {
+      const channel = inventoryChannels.value.find((c: any) => String(c.inventoryChannelId) === String(targetChannelId));
+      const channelName = channel?.facilityGroupName || channel?.description || targetChannelId;
+      const jobLabel = kind === "publisher"
+        ? translate("Publish and send event batches")
+        : translate("Reset aggregate ATP");
+      commonUtil.showToast(`${openable} created, paused. Set its schedule and activate it below.`);
+      selectedServiceJob.value = serviceJobSelection(openable, `${jobLabel} - ${channelName}`);
+      return;
+    }
+
     commonUtil.showToast(!created.length
       ? "Nothing to create - these jobs already exist."
       : created.length === 1
         ? `${created[0]} created, paused. Open the row to set its schedule and activate it.`
         : `${created.length} jobs created, paused. Open each row entry to schedule and activate them.`);
-    refreshServiceJobData();
   } catch (error: any) {
     logger.error("Failed to set up inventory sync job", kind, error);
     commonUtil.showToast(error?.message || "The job could not be created.");

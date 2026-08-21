@@ -247,7 +247,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
   });
 
-  it("renders a Schedule reset button and schedule summary on each channel item", async () => {
+  it("opens the reset job from its row on the channel card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
@@ -277,21 +277,27 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    // Verify Schedule reset buttons exist for channels
+    // The dedicated "Schedule reset" button is gone: it opened the same modal as the row it sat under,
+    // and provisioned through the same ensureChannelResetJob when the job was missing.
     const scheduleButtons = wrapper.findAll("ion-button").filter((b) => b.text().includes("Schedule reset"));
-    expect(scheduleButtons.length).toBe(2);
+    expect(scheduleButtons.length).toBe(0);
 
-    // Clicking Schedule reset for the existing job opens ServiceJobDetailsModal
-    await scheduleButtons[0].trigger("click");
+    // IC_1001 has a job, so its row is the way in.
+    const resetRow = wrapper.findAll("ion-item")
+      .find((item) => item.text().includes("Reset aggregate ATP") && item.text().includes("Active"));
+    expect(resetRow).toBeDefined();
+
+    await resetRow!.trigger("click");
     await flushPromises();
 
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP - Retail Channel");
+    expect(modal.text()).toContain("Reset aggregate ATP");
+    expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
   });
 
-  it("provisions the job via ensureChannelResetJob when scheduling a channel without an existing reset job", async () => {
+  it("provisions a missing reset job from the row's Set up action and opens it", async () => {
     harness.ensureChannelResetJob.mockResolvedValue("reset_InventoryChannelInventory_IC_1002");
 
     const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
@@ -311,9 +317,22 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     });
     await flushPromises();
 
-    const scheduleButtons = wrapper.findAll("ion-button").filter((b) => b.text().includes("Schedule reset"));
-    // Click Schedule reset on the second channel (IC_1002, which has no job in cachedJobs)
-    await scheduleButtons[1].trigger("click");
+    // IC_1002 has no reset job, so its row offers Set up rather than a click-through. That row is on
+    // the Wholesale Channel's own card, which is how the channel is identified without a name suffix.
+    const wholesaleCard = wrapper.findAll("ion-card")
+      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset aggregate ATP"));
+    expect(wholesaleCard).toBeDefined();
+
+    // Scope to the reset ROW, not the card: cachedJobs is empty here, so the publisher row offers a
+    // Set up of its own and the card's first one is not the one under test.
+    const resetRow = wholesaleCard!.findAll("ion-item")
+      .find((item) => item.text().includes("Reset aggregate ATP"));
+    expect(resetRow).toBeDefined();
+
+    const setUpButton = resetRow!.findAll("ion-button").find((b) => b.text().includes("Set up"));
+    expect(setUpButton).toBeDefined();
+
+    await setUpButton!.trigger("click");
     await flushPromises();
 
     expect(harness.ensureChannelResetJob).toHaveBeenCalledWith({
@@ -321,6 +340,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
       description: "Full aggregate ATP reset for Wholesale Channel",
     });
 
+    // Creating from a single channel's row lands in that job's modal, which is the one thing the
+    // removed button did that Set up alone did not.
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
     expect(modal.text()).toContain("Reset aggregate ATP - Wholesale Channel");
