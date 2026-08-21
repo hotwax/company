@@ -1748,21 +1748,14 @@ async function updateGroups() {
 
   let isFacilityGroupRespHasError = false;
 
-  for (const groupId of groupsToAdd.value) {
-    try {
-      await linkFacilityGroup(groupId);
-    } catch {
-      isFacilityGroupRespHasError = true;
-    }
-  }
+  const responses = await Promise.allSettled([
+    ...groupsToAdd.value.map((groupId) => linkFacilityGroup(groupId)),
+    ...groupsToRemove.value.map((groupId) => unlinkFacilityGroup(groupId))
+  ]);
 
-  for (const groupId of groupsToRemove.value) {
-    try {
-      await unlinkFacilityGroup(groupId);
-    } catch {
-      isFacilityGroupRespHasError = true;
-    }
-  }
+  isFacilityGroupRespHasError = responses.some(
+    (response) => response.status === 'rejected'
+  );
 
   if (isFacilityGroupRespHasError) {
     commonUtil.showToast(translate('Failed to update some groups for facility'));

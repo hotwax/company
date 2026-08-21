@@ -253,6 +253,7 @@ concept is the smell this rule prevents.
 | [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
 | [`useCarriers.ts`](src/composables/useCarriers.ts) | Carrier catalog/detail aggregates, carrier-method joins and counts, facility/store association views, observable Unigate readiness, and carrier/carrier-method mutations. Method removal closes dependent store associations before the hard delete |
 | [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate), plus date-effective carrier-facility association writes |
+| [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
 | [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them: shipment-method counts, all-store shipping-method reads, and date-effective store-method writes. Consumers must scope shipping methods by `productStoreId` |
 | [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables (including shipment-method type create/rename), maarg config. Replaced `utilStore` |
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
@@ -349,6 +350,11 @@ The cache/worker data layer is built and in use, and **the screen conversion is 
   documented no-op, `progressPoll` is declared but never assigned, and nine call sites still invoke
   the pair. The only surviving interval on that page is a 15s clock for relative-time labels, which
   loads no data.
+- Organization management phases 1 and 2 are implemented at `/organizations` and
+  `/organization-details/:partyId`. The `organization` and `organizationRelationship` class-B
+  domains feed a cycle-safe forest; writes use the existing party/group/role/relationship endpoints
+  and refresh their exact cache domains. Those multi-call writes are not backend-transactional, so
+  errors explicitly report partial commits. Facility owner editing remains phase 3.
 - Explicitly **out of scope** for now: offline write queue / mutation replay, cross-tab and
   cross-session cache persistence, class-A retention/pruning, service-worker background sync, and
   converting Solr-backed relevance search (`Users.vue`) to a client-side snapshot.

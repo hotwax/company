@@ -9,6 +9,15 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+  commonUtil: {
+    hasError: () => false,
+  },
+  api: vi.fn(async () => ({ data: [] })),
 }));
 
 const IonToggleStub = defineComponent({

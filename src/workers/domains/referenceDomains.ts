@@ -21,20 +21,41 @@ import {
   enumGroupMemberProjection,
   facilityIdentificationProjection,
   systemMessageTypeProjection,
+  appProjection,
+  appVersionProjection,
   statusProjection,
   userGroupProjection,
   facilityGroupProjection,
   facilityProjection,
   groupFacilityProjection,
   integrationTypeMappingProjection,
+  organizationRelationshipProjection,
   permissionProjection,
   productStoreProjection,
   currencyProjection,
+  inventoryEventDocumentProjection,
   serviceJobProjection,
   shopifyShopProjection,
   systemMessageRemoteProjection,
 } from "@/utils/cacheEntities";
 import { registerSnapshotDomain } from "./snapshotDomain";
+
+registerSnapshotDomain({
+  name: "organizationRelationship",
+  table: "organizationRelationships",
+  projection: organizationRelationshipProjection,
+  listUrl: "oms/partyRelationships",
+  collectionKey: null,
+  listParams: {
+    roleTypeIdFrom: "INTERNAL_ORGANIZATIO",
+    roleTypeIdTo: "INTERNAL_ORGANIZATIO",
+    partyRelationshipTypeId: "SUB_DIVISION",
+  },
+  refetchScope: (pk) => ({
+    params: { partyIdTo: pk.partyIdTo },
+    scope: { field: "partyIdTo", value: pk.partyIdTo },
+  }),
+});
 
 /**
  * Class-B (reference/config) sync domains — registration is pure configuration; the snapshot +
@@ -63,6 +84,30 @@ registerSnapshotDomain({
    * `queue_ShopifyOrderSync_99992` left the cache at its pre-write 156 rows.
    */
   byPkRecordKey: "jobDetail",
+});
+
+registerSnapshotDomain({
+  name: "inventoryEventDocument",
+  table: "inventoryEventDocuments",
+  projection: inventoryEventDocumentProjection,
+  listUrl: "admin/dataDocuments",
+  collectionKey: "dataDocuments",
+  /**
+   * `queryString` bounds the response, it does not define the set - the screen decides that from the
+   * documents this feature ships. Without it this would snapshot every DataDocument on the OMS to
+   * answer a question about ten of them.
+   */
+  listParams: { queryString: "Shopify", pageSize: 200 },
+  /**
+   * Scoped re-list, not `byPk`: there is no by-id route, and the cache row is (document, feed) while
+   * a mutation only knows the document. Re-listing that one document and pruning its slice is what
+   * makes attach/detach correct - the row for the feed it just left has to disappear, and a plain
+   * upsert would leave it behind.
+   */
+  refetchScope: (pk) => ({
+    params: { queryString: pk.dataDocumentId },
+    scope: { field: "dataDocumentId", value: pk.dataDocumentId },
+  }),
 });
 
 registerSnapshotDomain({
@@ -105,7 +150,7 @@ registerSnapshotDomain({
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
   strictCollection: true,
-  listParams: { partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" },
+  listParams: { roleTypeId: "CARRIER" },
   refetchScope: (pk) => ({
     params: { partyId: pk.partyId },
     scope: { field: "partyId", value: pk.partyId },
@@ -405,4 +450,27 @@ registerSnapshotDomain({
     params: { facilityGroupId: pk.facilityGroupId },
     scope: { field: "facilityGroupId", value: pk.facilityGroupId },
   }),
+});
+
+// --- App registry + version pins (the App Version screen). ---
+
+registerSnapshotDomain({
+  name: "app",
+  table: "apps",
+  projection: appProjection,
+  listUrl: "admin/apps",
+  collectionKey: null, // bare array
+});
+
+registerSnapshotDomain({
+  name: "appVersion",
+  table: "appVersions",
+  projection: appVersionProjection,
+  // `CommerceAppAndDeployment` list — INNER-joined, so it returns only apps that HAVE a deployment.
+  listUrl: "admin/apps/appVersions",
+  collectionKey: null, // bare array
+  // Composite key and no by-PK route: create/update/delete are path-scoped by appId
+  // (`admin/apps/{appId}/appVersions`). The set is tiny, so a mutation re-lists the whole thing and
+  // the snapshot prunes any pin the server dropped. Callers trigger this via `resyncDomain("appVersion")`.
+  refetchScope: () => ({ params: {} }),
 });

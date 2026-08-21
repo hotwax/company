@@ -32,12 +32,19 @@ class CompanyCacheDB extends Dexie {
   carrierShipmentMethods!: Table<CachedRow, string>;
   carrierFacilities!: Table<CachedRow, string>;
   shopifyShops!: Table<CachedRow, string>;
+  organizations!: Table<CachedRow, string>;
+  organizationRelationships!: Table<CachedRow, string>;
   facilities!: Table<CachedRow, string>;
   facilityGroups!: Table<CachedRow, string>;
   groupFacilities!: Table<CachedRow, string>;
   users!: Table<CachedRow, string>;
   permissions!: Table<CachedRow, string>;
   integrationTypeMappings!: Table<CachedRow, string>;
+  // NetSuite order push (rule-group export path)
+  netSuiteRuleGroups!: Table<CachedRow, string>;
+  netSuiteDecisionRules!: Table<CachedRow, string>;
+  netSuiteRuleGroupRuns!: Table<CachedRow, string>;
+  netSuiteOrderPushBacklog!: Table<CachedRow, string>;
   // lookup / type reference tables
   statuses!: Table<CachedRow, string>;
   enums!: Table<CachedRow, string>;
@@ -64,9 +71,19 @@ class CompanyCacheDB extends Dexie {
   enumGroupMembers!: Table<CachedRow, string>;
   facilityIdentifications!: Table<CachedRow, string>;
   systemMessageTypes!: Table<CachedRow, string>;
+  apps!: Table<CachedRow, string>;
+  appVersions!: Table<CachedRow, string>;
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
+  /** OMS-wide Shopify inventory event feed configuration. */
+  dataFeeds!: Table<CachedRow, string>;
+  /** Shopify aggregate inventory event ledger, scoped by shop. */
+  shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
+  /** Shopify aggregate ATP channel configuration, scoped by shop. */
+  inventoryChannels!: Table<CachedRow, string>;
+  /** Which DataDocuments the Shopify inventory event feed listens to. */
+  inventoryEventDocuments!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -148,7 +165,21 @@ const CACHE_SCHEMA = {
    * the sync run that made it.
    */
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+  /**
+   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
+   * inventory item at one channel. Mirrors the server entity, whose PK is
+   * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey`
+   * is the synthetic cache key for that. The type says what kind of source event a row came from
+   * and the reference says which occurrence of it — they replaced a single packed `eventKey`, and
+   * both are indexed because the history screen filters on type alone.
+   * No shopId/shopifyLocationId and no product columns: the channel is the target identity, so
+   * shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
+   * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
+   */
+  shopifyInventoryAdjustmentDetails:
+    "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
+  dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
@@ -158,7 +189,14 @@ const CACHE_SCHEMA = {
   carrierFacilities:
     "carrierFacilityKey, partyId, facilityId, roleTypeId, fromDate, thruDate",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
-  facilities: "facilityId, facilityTypeId, parentTypeId",
+  inventoryChannels:
+    "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
+  // Keyed by (document, feed) because one document can sit on several feeds, or on none.
+  inventoryEventDocuments: "documentFeedKey, dataDocumentId, dataFeedId",
+  organizations: "partyId, groupName, externalId, statusId",
+  organizationRelationships:
+    "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",
+  facilities: "facilityId, facilityTypeId, parentTypeId, ownerPartyId",
   facilityGroups: "facilityGroupId, facilityGroupTypeId",
   groupFacilities: "memberKey, facilityGroupId, facilityId, fromDate, thruDate",
   users: "partyId, userLoginId",
@@ -200,9 +238,22 @@ const CACHE_SCHEMA = {
   enumGroupMembers: "enumGroupMemberKey, enumerationGroupId, enumId",
   facilityIdentifications: "facilityIdentificationKey, facilityId, facilityIdenTypeId",
   systemMessageTypes: "systemMessageTypeId, parentTypeId",
+  // App registry (admin/apps) — the app catalog the version screen and its create modal read.
+  apps: "appId",
+  // App version pins (admin/appVersion). Composite natural key (appId + environmentTypeId), so a
+  // synthetic PK plus the two indexed parts. `enumDesc`/`appName` come joined on the list response.
+  appVersions: "appVersionKey, appId, environmentTypeId",
   // Shopify bulk operations, keyed by the GraphQL node id. A completed operation is immutable, so
   // it can be served from cache forever; only in-flight ones need a re-read.
   shopifyBulkOperations: "id, status, systemMessageRemoteId, completedAt",
+  // --- NetSuite order push (rule-group export path) ---
+  // Rule groups and their rules are class B config: small, read constantly by the monitor, and
+  // refetched after a mutation rather than polled. Runs are class A, cursored on `startDate`.
+  netSuiteRuleGroups: "ruleGroupId, productStoreId, groupTypeEnumId, statusId, jobName",
+  netSuiteDecisionRules: "ruleId, ruleGroupId, statusId, sequenceNum, [ruleGroupId+sequenceNum]",
+  netSuiteRuleGroupRuns: "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
+  // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
+  netSuiteOrderPushBacklog: "productStoreId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;

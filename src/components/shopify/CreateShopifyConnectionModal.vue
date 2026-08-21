@@ -11,33 +11,38 @@
   </ion-header>
 
   <ion-content>
-    <ion-list>
+    <ion-list lines="none">
       <ion-item>
         <ion-input
           v-model="form.myshopifyDomain"
           :label="translate('Shopify domain') + ' *'"
           label-placement="stacked"
           placeholder="store.myshopify.com"
-          autocomplete="off"
+          fill="outline"
+          class="ion-margin-top"
           @ion-blur="suggestShopId()"
         />
       </ion-item>
-      <ion-item>
+      <ion-item lines="none">
         <ion-input
           v-model="form.shopifyShopId"
           :label="translate('Shopify shop ID') + ' *'"
           label-placement="stacked"
-          placeholder="72176566383"
+          placeholder="1234567890"
+          fill="outline"
+          class="ion-margin-top"
           inputmode="numeric"
           helper-text="Numeric ID from Shopify Admin (Settings → General)"
         />
       </ion-item>
-      <ion-item>
+      <ion-item lines="none">
         <ion-input
           v-model="form.shopId"
           :label="translate('Internal shop ID') + ' *'"
           label-placement="stacked"
           placeholder="10000"
+          fill="outline"
+          class="ion-margin-top"
           helper-text="Unique ID used internally in HotWax — appears in app URLs"
         />
       </ion-item>
@@ -47,6 +52,8 @@
           :label="translate('Shop name')"
           label-placement="stacked"
           :placeholder="form.myshopifyDomain.split('.')[0] || 'My Store'"
+          fill="outline"
+          class="ion-margin-top"
         />
       </ion-item>
       <ion-item>
@@ -56,7 +63,8 @@
           label-placement="stacked"
           type="password"
           placeholder="shpat_..."
-          autocomplete="off"
+          fill="outline"
+          class="ion-margin-top"
         />
       </ion-item>
       <ion-item>
@@ -64,7 +72,8 @@
           v-model="form.clientId"
           :label="translate('Client ID') + ' *'"
           label-placement="stacked"
-          autocomplete="off"
+          fill="outline"
+          class="ion-margin-top"
         />
       </ion-item>
       <ion-item>
@@ -73,29 +82,24 @@
           :label="translate('Client secret') + ' *'"
           label-placement="stacked"
           type="password"
-          autocomplete="off"
+          fill="outline"
+          class="ion-margin-top"
         />
       </ion-item>
     </ion-list>
 
-    <ion-button
-      class="ion-margin"
-      expand="block"
-      :disabled="!isFormValid"
-      @click="saveConnection()"
-    >
-      {{ translate("Add Shopify connection") }}
-    </ion-button>
+    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button :disabled="!isFormValid" @click="saveConnection()">
+        <ion-icon :icon="saveOutline" />
+      </ion-fab-button>
+    </ion-fab>
   </ion-content>
 </template>
 
 <script setup lang="ts">
 import { createShopifyConnection } from "@/composables/useShopify";
-import {
-  IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput,
-  IonItem, IonList, IonTitle, IonToolbar, modalController
-} from '@ionic/vue'
-import { closeOutline } from 'ionicons/icons'
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonList, IonTitle, IonToolbar, modalController } from '@ionic/vue'
+import { closeOutline, saveOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, reactive } from 'vue'
 

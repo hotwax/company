@@ -2,7 +2,8 @@ import { computed, ref } from "vue";
 import { DateTime } from "luxon";
 import { api, commonUtil, logger, translate } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { isEffectiveNow, toCount, toMillis } from "@/utils/cacheProjection";
+import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/cacheEntities";
 import { facilityGroupProductStoreCache, productStoreFacilityCache } from "@/utils/cacheEntities";
@@ -191,13 +192,38 @@ export function useFacilityGroups() {
 export const useFacilityGroupRecord = (facilityGroupId: string | undefined) =>
   useCachedRecord(facilityGroupCache, "facilityGroupId", facilityGroupId);
 
-/** Members of one group, or every membership when no group is given. */
+/**
+ * Members of one group, or every membership when no group is given.
+ *
+ * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useCachedList`
+ * hands back `row.raw`, i.e. whatever shape the OMS emitted the timestamp as, and the group screen
+ * echoes `fromDate` back on every membership revision. Since `store` matches the row on the exact
+ * timestamp, echoing an un-normalized value inserts a duplicate member instead of updating one —
+ * see `useFacilityGroupMutations.saveMembers`. The projected value is always epoch millis.
+ *
+ * `sequenceNum` is coerced for the same reason one step removed: the screen decides which members to
+ * rewrite by comparing the stored number against the renumbered one, and a `"3"` never equals a `3`.
+ * That comparison failing marks EVERY member as resequenced, so a single unmatched `fromDate` stops
+ * being one duplicate row and becomes a duplicate of the whole group.
+ */
 export function useGroupFacilities(facilityGroupId?: string) {
-  const { records, hydrated } = useCachedList<any>(
+  const { rows, records, hydrated } = useCachedList<any>(
     groupFacilityCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  return { members: records, records, hydrated };
+  const members = computed<any[]>(() => rows.value.map((row: any) => {
+    const raw = row.raw ?? {};
+    const sequenceNum = toCount(raw.sequenceNum);
+    return {
+      ...raw,
+      facilityGroupId: row.facilityGroupId,
+      facilityId: row.facilityId,
+      fromDate: row.fromDate,
+      ...(row.thruDate === undefined ? {} : { thruDate: row.thruDate }),
+      ...(sequenceNum === undefined ? {} : { sequenceNum }),
+    };
+  }));
+  return { members, records, hydrated };
 }
 
 /** facilityGroupId → member count, honoring `thruDate` (memberships are date-effective). */
@@ -254,8 +280,7 @@ export function useGroupMembershipIndex() {
  * rather than an empty table; `FacilityGroupType` appears in no `.rest.xml` in the OMS. So the type
  * filter and picker have always been blank.
  *
- * Deriving the distinct ids off `facilityGroups` makes them work. No descriptions exist anywhere,
- * so callers fall back to the id — which every template already does.
+ * Deriving the distinct ids off `facilityGroups` makes them work.
  */
 export function useFacilityGroupTypes() {
   const { records, hydrated } = useCachedList<any>(facilityGroupCache);
@@ -264,9 +289,53 @@ export function useFacilityGroupTypes() {
     for (const group of records.value as any[]) {
       if (group?.facilityGroupTypeId) seen.add(group.facilityGroupTypeId);
     }
-    return [...seen].sort().map((facilityGroupTypeId) => ({ facilityGroupTypeId, description: "" }));
+    return [...seen].sort().map((facilityGroupTypeId) => ({
+      facilityGroupTypeId,
+      description: facilityGroupTypeLabel(facilityGroupTypeId),
+    }));
   });
   return { facilityGroupTypes, hydrated };
+}
+
+/**
+ * Types the app must be able to assign to a group that does not exist yet.
+ *
+ * Derivation can only ever surface a type some group already uses, so on its own it makes the FIRST
+ * group of a type impossible to create — the type is absent from the picker until a group already
+ * has it. These ids are the ones the OMS and the sibling apps act on, so they stay assignable on an
+ * instance that has no group of that type yet.
+ */
+const ASSIGNABLE_FACILITY_GROUP_TYPE_IDS = [
+  // order brokering / routing groups
+  "BROKERING_GROUP",
+  // inventory channel ("sell online") groups
+  "CHANNEL_FAC_GROUP",
+  "FEATURING",
+  "PICKUP",
+];
+
+/**
+ * The types offered when creating or editing a group.
+ *
+ * Deliberately not the same list as `useFacilityGroupTypes`: that one describes what the instance
+ * actually has and so is right for the type *filter*, where an option matching no group is a dead
+ * end. Assigning a type is the opposite case — the whole point is to use a type no group has yet.
+ */
+export function useFacilityGroupTypeOptions() {
+  const { facilityGroupTypes, hydrated } = useFacilityGroupTypes();
+  const facilityGroupTypeOptions = computed(() => {
+    const seen = new Set<string>(ASSIGNABLE_FACILITY_GROUP_TYPE_IDS);
+
+    for (const type of facilityGroupTypes.value) {
+      seen.add(type.facilityGroupTypeId);
+    }
+
+    return [...seen].sort().map((facilityGroupTypeId) => ({
+      facilityGroupTypeId,
+      description: facilityGroupTypeLabel(facilityGroupTypeId),
+    }));
+  });
+  return { facilityGroupTypeOptions, hydrated };
 }
 
 
@@ -312,8 +381,14 @@ export function useFacilityGroupProductStores(facilityGroupId?: string) {
     facilityGroupProductStoreCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  const now = Date.now();
-  const active = computed(() => records.value.filter((row: any) => !row.thruDate || Number(row.thruDate) > now));
+  // `Date.now()` belongs INSIDE the computed. Read once at setup it freezes the cutoff at the
+  // moment the composable ran, so a row expired later in the same session still counts as active —
+  // the group's product-store count stayed put after a removal until a reload, and two pages that
+  // mounted at different times disagreed. Same rule as `useGroupFacilityCounts`.
+  const active = computed(() => {
+    const now = Date.now();
+    return records.value.filter((row: any) => !row.thruDate || Number(row.thruDate) > now);
+  });
   return { associations: active, all: records, hydrated };
 }
 
@@ -1115,9 +1190,34 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
      * (facilityGroupId, facilityId, fromDate). One shape therefore covers all three intents:
      * add (new fromDate), expire (send thruDate), resequence (send sequenceNum). It is the same
      * endpoint `useFacilityMutations.addToGroup` already uses, so no new API is introduced.
+     *
+     * ⚠️ `store` resolves the row on the EXACT `(facilityGroupId, facilityId, fromDate)` timestamp.
+     * A revision whose `fromDate` is missing or even slightly off does NOT fail — it answers 200 and
+     * INSERTS a second active membership. Verified live 2026-08-17 against `POST
+     * oms/facilities/BROADWAY/groups`: omitting `fromDate` returned `{fromDate: 1786965457977}` and
+     * added a row, and sending `1718341888000` for a row stored at `...888240` added another. That
+     * is what duplicates a group's members on save, so every revision is normalized to epoch millis
+     * here and one that cannot be resolved is refused rather than sent.
      */
     async saveMembers(additions: any[], revisions: any[]) {
-      const rows = [...additions, ...revisions];
+      // A revision addresses an existing row, so it MUST carry an exact `fromDate`. `toMillis`
+      // normalizes whatever shape the OMS emitted it as (millis, numeric string, ISO string) to the
+      // one unambiguous form; anything it cannot read is a bug we refuse to turn into a duplicate.
+      const unaddressable: any[] = [];
+      const normalizedRevisions = revisions.flatMap((row) => {
+        const fromDate = toMillis(row.fromDate);
+        if (fromDate === undefined) { unaddressable.push(row); return []; }
+        return [{ ...row, fromDate }];
+      });
+      if (unaddressable.length) {
+        logger.error(
+          "Refusing to revise facility group memberships with no resolvable fromDate — posting them " +
+          "would create duplicate members instead of updating them",
+          unaddressable,
+        );
+      }
+
+      const rows = [...additions, ...normalizedRevisions];
       const results = await Promise.allSettled(rows.map((row) => api({
         url: `oms/facilities/${encodeURIComponent(row.facilityId)}/groups`,
         method: "post",
@@ -1126,7 +1226,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
 
       // A 4xx rejects, but the api wrapper can also RESOLVE carrying an error body — check both, or
       // a failed save reports success.
-      const failed = results.some((result) =>
+      const failed = unaddressable.length > 0 || results.some((result) =>
         result.status === "rejected" || commonUtil.hasError((result as PromiseFulfilledResult<any>).value));
 
       // Refresh even on partial failure: some writes may have landed, and the cache must reflect

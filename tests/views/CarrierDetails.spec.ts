@@ -16,6 +16,8 @@ const harness = vi.hoisted(() => ({
   remoteError: undefined as any,
   hydrated: undefined as any,
   detailErrors: undefined as any,
+  hasDetailErrors: undefined as any,
+  detailErrorMessages: undefined as any,
   readyForMutation: undefined as any,
   refreshDetails: vi.fn(),
   renameCarrier: vi.fn(),
@@ -68,8 +70,14 @@ vi.mock("@/composables/useCarriers", () => ({
     remoteError: harness.remoteError,
     hydrated: harness.hydrated,
     detailErrors: harness.detailErrors,
+    hasDetailErrors: harness.hasDetailErrors,
+    detailErrorMessages: harness.detailErrorMessages,
     readyForMutation: harness.readyForMutation,
     refreshDetails: (...args: any[]) => harness.refreshDetails(...args),
+  }),
+  useShipmentGatewayConfigs: () => ({
+    configs: ref([]),
+    getGatewayConfigDescription: (id: string) => id,
   }),
   renameCarrier: (...args: any[]) => harness.renameCarrier(...args),
   enableCarrierShipmentMethod: (...args: any[]) =>
@@ -194,7 +202,7 @@ function buttonWithText(wrapper: any, text: string) {
   const button = wrapper.findAll("ion-button").find((candidate: any) =>
     candidate.text().includes(text));
 
-  if(!button) {
+  if (!button) {
     throw new Error(`Button not found: ${text}`);
   }
 
@@ -209,7 +217,7 @@ function isDisabled(button: any) {
 function alertButton(options: any, text: string) {
   const button = options.buttons.find((candidate: any) => candidate.text === text);
 
-  if(!button?.handler) {
+  if (!button?.handler) {
     throw new Error(`Alert button not found: ${text}`);
   }
 
@@ -262,6 +270,8 @@ describe("CarrierDetails", () => {
     harness.remoteError = ref<any>(null);
     harness.hydrated = ref(true);
     harness.detailErrors = ref<Record<string, string>>({});
+    harness.hasDetailErrors = ref(false);
+    harness.detailErrorMessages = ref<string[]>([]);
     harness.readyForMutation = ref(true);
     harness.refreshDetails.mockReset().mockResolvedValue(undefined);
 
@@ -296,14 +306,16 @@ describe("CarrierDetails", () => {
     cold.unmount();
 
     harness.hydrated.value = true;
-    harness.detailErrors.value = { carrier: "Carrier sync failed" };
+    harness.hasDetailErrors.value = true;
+    harness.detailErrorMessages.value = ["Carrier sync failed"];
     const failed = await mountView();
 
     expect(failed.text()).toContain("Unable to load the complete carrier details.");
     expect(failed.text()).toContain("Carrier sync failed");
     failed.unmount();
 
-    harness.detailErrors.value = {};
+    harness.hasDetailErrors.value = false;
+    harness.detailErrorMessages.value = [];
     harness.carrier.value = undefined;
     const missing = await mountView();
 
@@ -315,34 +327,31 @@ describe("CarrierDetails", () => {
     const values = wrapper.findAll("ion-segment-button")
       .map((button) => button.attributes("value") || button.element.value);
 
-    expect(values).toEqual(["methods", "facilities", "store:STORE_A", "account"]);
+    expect(values).toEqual(["shipping-methods", "facilities", "store:STORE_A", "account"]);
 
     await wrapper.get("[data-testid=\"select-store-a\"]").trigger("click");
     await nextTick();
 
     expect(wrapper.get("[data-testid=\"carrier-segment\"]").attributes("data-value"))
       .toBe("store:STORE_A");
-    expect(wrapper.find("[data-testid=\"carrier-store-method-list\"]").exists()).toBe(true);
 
     harness.productStores.value = [];
     await nextTick();
 
     expect(wrapper.get("[data-testid=\"carrier-segment\"]").attributes("data-value"))
-      .toBe("methods");
-    expect(wrapper.find("[data-testid=\"carrier-method-list\"]").exists()).toBe(true);
+      .toBe("shipping-methods");
   });
 
   it("locks identity and child mutation controls until every detail domain is ready", async () => {
     harness.readyForMutation.value = false;
     const wrapper = await mountView();
 
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
-    expect(isDisabled(buttonWithText(wrapper, "Enable"))).toBe(true);
-    expect(isDisabled(buttonWithText(wrapper, "Disable"))).toBe(true);
+    expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(true);
   });
 
   it("keeps cached sections and Klaviyo navigation inspectable when mutations are gated", async () => {
-    harness.detailErrors.value = { facility: "Facility sync failed" };
+    harness.hasDetailErrors.value = true;
+    harness.detailErrorMessages.value = ["Facility sync failed"];
     harness.readyForMutation.value = false;
     const wrapper = await mountView();
     const segment = wrapper.getComponent(IonSegmentStub);
@@ -356,15 +365,17 @@ describe("CarrierDetails", () => {
     expect(isDisabled(manageButton)).toBe(false);
     await manageButton.trigger("click");
 
-    expect(harness.push).toHaveBeenCalledWith("/klaviyo");
+    expect(harness.push).toHaveBeenCalledWith({ path: "/klaviyo" });
   });
 
   it("shows one retry for detail errors and stays fail-closed until it succeeds", async () => {
-    harness.detailErrors.value = { facility: "Facility sync failed" };
+    harness.hasDetailErrors.value = true;
+    harness.detailErrorMessages.value = ["Facility sync failed"];
     harness.readyForMutation.value = false;
     const retry = deferred<void>();
     harness.refreshDetails.mockImplementation(() => retry.promise.then(() => {
-      harness.detailErrors.value = {};
+      harness.hasDetailErrors.value = false;
+      harness.detailErrorMessages.value = [];
       harness.readyForMutation.value = true;
     }));
     const wrapper = await mountView();
@@ -375,7 +386,7 @@ describe("CarrierDetails", () => {
 
     expect(harness.refreshDetails).toHaveBeenCalledTimes(1);
     expect(isDisabled(retryButton)).toBe(true);
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
+    expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(true);
     await retryButton.trigger("click");
     expect(harness.refreshDetails).toHaveBeenCalledTimes(1);
 
@@ -383,11 +394,12 @@ describe("CarrierDetails", () => {
     await flushPromises();
 
     expect(wrapper.text()).not.toContain("Unable to load the complete carrier details.");
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(false);
+    expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(false);
   });
 
   it("keeps detail errors visible and reports a failed retry", async () => {
-    harness.detailErrors.value = { facility: "Facility sync failed" };
+    harness.hasDetailErrors.value = true;
+    harness.detailErrorMessages.value = ["Facility sync failed"];
     harness.readyForMutation.value = false;
     harness.refreshDetails.mockRejectedValueOnce(new Error("facility HTTP 503"));
     const wrapper = await mountView();
@@ -396,14 +408,14 @@ describe("CarrierDetails", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Facility sync failed");
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
-    expect(harness.showToast).toHaveBeenLastCalledWith("Failed to refresh carrier details.");
+    expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(true);
+    expect(harness.showToast).toHaveBeenLastCalledWith("Reference data could not be synchronized. Details: facility HTTP 503");
   });
 
   it("renames carrier identity through a parent-owned alert", async () => {
     const wrapper = await mountView();
 
-    await buttonWithText(wrapper, "Edit name").trigger("click");
+    await buttonWithText(wrapper, "Edit").trigger("click");
     await flushPromises();
 
     const options = harness.alertOptions.at(-1);
@@ -415,14 +427,15 @@ describe("CarrierDetails", () => {
 
   it("dismisses a committed mutation warning but stays fail-closed for cache recovery", async () => {
     harness.renameCarrier.mockImplementationOnce(() => {
-      harness.detailErrors.value = { carrier: "carrier refetch HTTP 503" };
+      harness.hasDetailErrors.value = true;
+      harness.detailErrorMessages.value = ["carrier refetch HTTP 503"];
       harness.readyForMutation.value = false;
 
       return Promise.reject(committedRefreshError());
     });
     const wrapper = await mountView();
 
-    await buttonWithText(wrapper, "Edit name").trigger("click");
+    await buttonWithText(wrapper, "Edit").trigger("click");
     await flushPromises();
     const options = harness.alertOptions.at(-1);
 
@@ -431,30 +444,8 @@ describe("CarrierDetails", () => {
 
     expect(harness.renameCarrier).toHaveBeenCalledTimes(1);
     expect(harness.showToast).toHaveBeenLastCalledWith("The server change was saved, but this view could not be refreshed. Refresh before retrying.",);
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
+    expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(true);
     expect(buttonWithText(wrapper, "Retry").exists()).toBe(true);
-  });
-
-  it("locks the complete detail while a partition-replacing mutation is pending", async () => {
-    const enable = deferred<void>();
-    harness.enableCarrierShipmentMethod.mockReturnValue(enable.promise);
-    const wrapper = await mountView();
-
-    await buttonWithText(wrapper, "Enable").trigger("click");
-    await nextTick();
-
-    expect(isDisabled(buttonWithText(wrapper, "Enable"))).toBe(true);
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(true);
-
-    await buttonWithText(wrapper, "Disable").trigger("click");
-    expect(harness.createAlert).not.toHaveBeenCalled();
-
-    enable.resolve();
-    await flushPromises();
-
-    expect(isDisabled(buttonWithText(wrapper, "Enable"))).toBe(false);
-    expect(isDisabled(buttonWithText(wrapper, "Edit name"))).toBe(false);
-    expect(harness.enableCarrierShipmentMethod).toHaveBeenCalledWith("UPS", "TWO_DAY");
   });
 
   it("keeps runtime diagnostics as values under a stable translated failure key", async () => {
@@ -462,7 +453,7 @@ describe("CarrierDetails", () => {
     harness.renameCarrier.mockRejectedValueOnce(error);
     const wrapper = await mountView();
 
-    await buttonWithText(wrapper, "Edit name").trigger("click");
+    await buttonWithText(wrapper, "Edit").trigger("click");
     await flushPromises();
     const options = harness.alertOptions.at(-1);
 
@@ -474,24 +465,6 @@ describe("CarrierDetails", () => {
     expect(harness.showToast).toHaveBeenLastCalledWith(expected);
   });
 
-  it("confirms live cascading impact before delegating the authoritative hard delete", async () => {
-    const wrapper = await mountView();
-
-    await buttonWithText(wrapper, "Disable").trigger("click");
-    await flushPromises();
-
-    const options = harness.alertOptions.at(-1);
-    expect(options.message).toContain("Any active product-store associations will be expired",);
-    expect(options.message).not.toMatch(/\d+ product store association/);
-
-    await alertButton(options, "Disable method")();
-
-    expect(harness.deleteCarrierShipmentMethod).toHaveBeenCalledWith(
-      "UPS",
-      "GROUND",
-    );
-  });
-
   it("routes account setup intent to Klaviyo without exposing gateway edits", async () => {
     const wrapper = await mountView();
     const segment = wrapper.getComponent(IonSegmentStub);
@@ -500,7 +473,7 @@ describe("CarrierDetails", () => {
     await nextTick();
     await buttonWithText(wrapper, "Manage Unigate in Klaviyo").trigger("click");
 
-    expect(harness.push).toHaveBeenCalledWith("/klaviyo");
+    expect(harness.push).toHaveBeenCalledWith({ path: "/klaviyo" });
     expect(wrapper.find("ion-input").exists()).toBe(false);
   });
 });

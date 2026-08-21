@@ -1,76 +1,88 @@
 <template>
-  <section data-testid="carrier-store-method-list">
-    <ion-list>
-      <ion-item lines="full">
-        <ion-label class="ion-text-wrap">
-          <h2>{{ store.storeName || store.productStoreName || store.productStoreId }}</h2>
-          <p>{{ store.productStoreId }}</p>
-          <p>
-            {{ translate("Only shipment methods enabled for this carrier can be associated with the store.") }}
-          </p>
-        </ion-label>
-      </ion-item>
-
-      <ion-item
+  <div data-testid="carrier-store-method-list">
+    <template v-if="methods.length">
+      <div
         v-for="method in methods"
         :key="method.shipmentMethodTypeId"
+        class="list-item ion-padding"
       >
-        <ion-label class="ion-text-wrap">
-          <h2>{{ method.description || method.shipmentMethodTypeId }}</h2>
-          <p>{{ method.shipmentMethodTypeId }}</p>
-          <p v-if="associationFor(method)?.shipmentGatewayConfigId">
-            {{ translate("Shipment gateway ID") }}:
-            {{ associationFor(method)?.shipmentGatewayConfigId }}
-          </p>
-        </ion-label>
+        <ion-item lines="none">
+          <ion-label>
+            {{ method.description || method.shipmentMethodTypeId }}
+            <p>{{ method.shipmentMethodTypeId }}</p>
+          </ion-label>
+        </ion-item>
 
-        <div slot="end">
+        <div class="tablet">
+          <ion-chip
+            v-if="associationFor(method)?.shipmentGatewayConfigId"
+            outline
+            :disabled="disabled || associationPending(method)"
+            @click.stop="updateShipmentGatewayConfigId(method)"
+          >
+            <ion-label>{{ getGatewayConfigDescription(associationFor(method)?.shipmentGatewayConfigId) }}</ion-label>
+          </ion-chip>
+          <ion-chip
+            v-else
+            :disabled="!associationFor(method) || disabled || associationPending(method)"
+            outline
+            @click.stop="updateShipmentGatewayConfigId(method)"
+          >
+            <ion-icon :icon="addCircleOutline" />
+            <ion-label>{{ translate("gateway") }}</ion-label>
+          </ion-chip>
+          <ion-note class="config-label">{{ translate("gateway") }}</ion-note>
+        </div>
+
+        <div class="tablet">
           <ion-toggle
+            :aria-label="translate('Require tracking for {method}', {
+              method: method.description || method.shipmentMethodTypeId,
+            })"
+            :checked="trackingRequired(associationFor(method))"
+            :disabled="!associationFor(method) || disabled || trackingPending(method)"
+            @ion-change="emitTracking(method, $event)"
+          />
+          <ion-note class="config-label">{{ translate("require tracking code") }}</ion-note>
+        </div>
+
+        <div class="tablet">
+          <ion-checkbox
             :aria-label="translate('Associate {method} with {store}', {
               method: method.description || method.shipmentMethodTypeId,
               store: store.storeName || store.productStoreId,
             })"
             :checked="Boolean(associationFor(method))"
             :disabled="disabled || associationPending(method)"
-            @ion-change="emitAssociation(method, $event)"
-          >
-            {{ translate("Associated") }}
-          </ion-toggle>
-          <ion-toggle
-            v-if="associationFor(method)"
-            :aria-label="translate('Require tracking for {method}', {
-              method: method.description || method.shipmentMethodTypeId,
-            })"
-            :checked="trackingRequired(associationFor(method))"
-            :disabled="disabled || trackingPending(method)"
-            @ion-change="emitTracking(method, $event)"
-          >
-            {{ translate("Tracking required") }}
-          </ion-toggle>
+            @click="emitAssociation(method, $event)"
+          />
         </div>
-      </ion-item>
-
-      <ion-item v-if="!methods.length" lines="none">
-        <ion-label class="ion-text-center ion-text-wrap">
-          {{ translate("Enable a carrier shipment method before configuring this store.") }}
-        </ion-label>
-      </ion-item>
-    </ion-list>
-  </section>
+      </div>
+    </template>
+    <div v-else class="empty-state">
+      <p>{{ translate("No data found") }}</p>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { translate } from "@common";
 import {
+  IonCheckbox,
+  IonChip,
+  IonIcon,
   IonItem,
   IonLabel,
-  IonList,
+  IonNote,
   IonToggle,
+  alertController,
 } from "@ionic/vue";
+import { addCircleOutline } from "ionicons/icons";
 import type {
   CarrierShipmentMethod,
   ProductStoreShipmentMethod,
 } from "@/composables/useCarriers";
+import { useShipmentGatewayConfigs } from "@/composables/useCarriers";
 
 const props = withDefaults(defineProps<{
   store: Record<string, any>;
@@ -94,7 +106,14 @@ const emit = defineEmits<{
     association: ProductStoreShipmentMethod;
     required: boolean;
   }): void;
+  (event: "update-gateway", payload: {
+    method: CarrierShipmentMethod;
+    association: ProductStoreShipmentMethod;
+    shipmentGatewayConfigId?: string;
+  }): void;
 }>();
+
+const { configs, getGatewayConfigDescription } = useShipmentGatewayConfigs();
 
 function associationFor(method: CarrierShipmentMethod) {
   return props.associations.find((association) =>
@@ -122,16 +141,19 @@ function trackingRequired(association: ProductStoreShipmentMethod | undefined) {
 
 function emitAssociation(
   method: CarrierShipmentMethod,
-  event: CustomEvent<{ checked: boolean }>,
+  event: any,
 ) {
-  if(props.disabled || associationPending(method)) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  if (props.disabled || associationPending(method)) {
     return;
   }
 
   emit("toggle-association", {
     method,
     association: associationFor(method),
-    enabled: Boolean(event.detail.checked),
+    enabled: !associationFor(method),
   });
 }
 
@@ -140,7 +162,7 @@ function emitTracking(
   event: CustomEvent<{ checked: boolean }>,
 ) {
   const association = associationFor(method);
-  if(!association || props.disabled || trackingPending(method)) {
+  if (!association || props.disabled || trackingPending(method)) {
     return;
   }
 
@@ -150,4 +172,73 @@ function emitTracking(
     required: Boolean(event.detail.checked),
   });
 }
+
+const updateShipmentGatewayConfigId = async (method: CarrierShipmentMethod) => {
+  const association = associationFor(method);
+  if (!association) return;
+
+  const currentConfigId = association.shipmentGatewayConfigId;
+  const configOptions = configs.value.map((config) => ({
+    type: "radio" as const,
+    label: config.description || config.shipmentGatewayConfigId,
+    value: config.shipmentGatewayConfigId,
+    checked: config.shipmentGatewayConfigId === currentConfigId,
+  }));
+
+  const alert = await alertController.create({
+    header: translate("Edit gateway"),
+    inputs: configOptions,
+    buttons: [
+      {
+        text: translate("Clear"),
+        handler: () => {
+          emit("update-gateway", {
+            method,
+            association,
+            shipmentGatewayConfigId: "",
+          });
+        },
+      },
+      { text: translate("Cancel"), role: "cancel" },
+      {
+        text: translate("Confirm"),
+        handler: (data) => {
+          if (data && data !== currentConfigId) {
+            emit("update-gateway", {
+              method,
+              association,
+              shipmentGatewayConfigId: data,
+            });
+          }
+        },
+      },
+    ],
+  });
+  await alert.present();
+};
 </script>
+
+<style scoped>
+.list-item {
+  --columns-desktop: 5;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 60px;
+  align-items: center;
+  gap: var(--spacer-sm);
+}
+
+.list-item:hover {
+  cursor: default;
+}
+
+.tablet {
+  display: block;
+  text-align: center;
+}
+
+.config-label {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+}
+</style>

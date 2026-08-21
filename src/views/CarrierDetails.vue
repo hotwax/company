@@ -1,8 +1,8 @@
 <template>
   <ion-page>
-    <ion-header>
+    <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button slot="start" default-href="/carriers" />
+        <ion-back-button default-href="/carriers" slot="start" />
         <ion-title>{{ translate("Carrier details") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -53,32 +53,46 @@
         </ion-item>
 
         <main v-if="carrier" class="carrier-detail">
-          <ion-card>
+          <ion-list class="items-inline">
             <ion-item lines="none">
-              <ion-label class="ion-text-wrap">
-                <p class="overline">
-                  {{ carrier.partyId }}
-                </p>
-                <h1>{{ carrier.groupName || carrier.partyId }}</h1>
+              <ion-icon slot="start" :icon="peopleOutline" />
+              <ion-label>
+                <p class="overline">{{ carrier.partyId }}</p>
+                {{ carrier.groupName || carrier.partyId }}
               </ion-label>
               <ion-button
                 slot="end"
-                fill="outline"
                 :disabled="!readyForMutation || hasPendingMutation"
                 @click="openRenameCarrierAlert()"
               >
-                {{ translate("Edit name") }}
+                {{ translate("Edit") }}
               </ion-button>
             </ion-item>
-          </ion-card>
+
+            <ion-item lines="none">
+              <ion-icon slot="start" :icon="shieldCheckmarkOutline" />
+              <ion-toggle
+                v-if="selectedSegment !== 'shipping-methods'"
+                :checked="true"
+                :disabled="true"
+              >
+                {{ translate("Only methods for this carrier") }}
+              </ion-toggle>
+              <ion-toggle
+                v-else
+                v-model="configuredOnly"
+              >
+                {{ translate("Only methods for this carrier") }}
+              </ion-toggle>
+            </ion-item>
+          </ion-list>
+          <hr />
 
           <ion-segment
-            v-model="segment"
-            class="carrier-segments"
+            v-model="selectedSegment"
             scrollable
-            @ion-change="handleSegmentChange($event)"
           >
-            <ion-segment-button value="methods">
+            <ion-segment-button value="shipping-methods">
               <ion-label>{{ translate("Methods") }}</ion-label>
             </ion-segment-button>
             <ion-segment-button value="facilities">
@@ -98,48 +112,64 @@
             </ion-segment-button>
           </ion-segment>
 
-          <CarrierMethodList
-            v-if="segment === 'methods'"
-            v-model:configured-only="configuredOnly"
-            :methods="shipmentMethods"
-            :disabled="!readyForMutation || hasPendingMutation"
-            :pending-keys="pendingKeys"
-            @enable="handleEnableMethod"
-            @delete="openDeleteMethodAlert"
-            @edit="openEditMethodAlert"
-            @rename-type="openRenameTypeAlert"
-            @create-type="openCreateTypeAlert"
-            @save-order="handleSaveOrder"
-          />
+          <div class="segments">
+            <template v-if="selectedSegment === 'shipping-methods'">
+              <ShipmentMethods
+                :methods="shipmentMethods"
+                :carrier-party-id="carrier.partyId"
+                :configured-only="configuredOnly"
+                :disabled="!readyForMutation || hasPendingMutation"
+                :pending-keys="pendingKeys"
+              />
+            </template>
 
-          <CarrierFacilityList
-            v-else-if="segment === 'facilities'"
-            :facilities="facilities"
-            :disabled="!readyForMutation || hasPendingMutation"
-            :pending-keys="pendingKeys"
-            @toggle="handleFacilityToggle"
-          />
+            <template v-else-if="selectedSegment === 'facilities'">
+              <CarrierFacilityList
+                :facilities="facilities"
+                :disabled="!readyForMutation || hasPendingMutation"
+                :pending-keys="pendingKeys"
+                @toggle="handleFacilityToggle"
+              />
+            </template>
 
-          <CarrierStoreMethodList
-            v-else-if="selectedStore"
-            :store="selectedStore"
-            :methods="configuredShipmentMethods"
-            :associations="productStoreShipmentMethods"
-            :disabled="!readyForMutation || hasPendingMutation"
-            :pending-keys="pendingKeys"
-            @toggle-association="handleStoreAssociationToggle"
-            @toggle-tracking="handleStoreTrackingToggle"
-          />
+            <template v-else-if="selectedStore">
+              <CarrierStoreMethodList
+                :store="selectedStore"
+                :methods="configuredShipmentMethods"
+                :associations="productStoreShipmentMethods"
+                :disabled="!readyForMutation || hasPendingMutation"
+                :pending-keys="pendingKeys"
+                @toggle-association="handleStoreAssociationToggle"
+                @toggle-tracking="handleStoreTrackingToggle"
+                @update-gateway="handleStoreGatewayUpdate"
+              />
+            </template>
 
-          <CarrierAccountReadiness
-            v-else-if="segment === 'account'"
-            :readiness="readiness"
-            :remote="remote"
-            @open-klaviyo="openKlaviyo"
-          />
+            <template v-else-if="selectedSegment === 'account'">
+              <CarrierAccountReadiness
+                :readiness="readiness"
+                :remote="remote"
+                @open-klaviyo="openKlaviyo"
+              />
+            </template>
+          </div>
         </main>
       </template>
     </ion-content>
+
+    <ion-fab
+      v-if="selectedSegment === 'shipping-methods' && carrier"
+      vertical="bottom"
+      horizontal="end"
+      slot="fixed"
+    >
+      <ion-fab-button
+        :disabled="!readyForMutation || hasPendingMutation"
+        @click="openCreateShipmentMethodModal()"
+      >
+        <ion-icon :icon="addOutline" />
+      </ion-fab-button>
+    </ion-fab>
   </ion-page>
 </template>
 
@@ -150,7 +180,10 @@ import {
   IonButton,
   IonCard,
   IonContent,
+  IonFab,
+  IonFabButton,
   IonHeader,
+  IonIcon,
   IonItem,
   IonLabel,
   IonList,
@@ -159,28 +192,30 @@ import {
   IonSegmentButton,
   IonSkeletonText,
   IonTitle,
+  IonToggle,
   IonToolbar,
   alertController,
+  modalController,
 } from "@ionic/vue";
+import { addOutline, peopleOutline, shieldCheckmarkOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import CarrierAccountReadiness from "@/components/carrier/CarrierAccountReadiness.vue";
 import CarrierFacilityList from "@/components/carrier/CarrierFacilityList.vue";
-import CarrierMethodList from "@/components/carrier/CarrierMethodList.vue";
 import CarrierStoreMethodList from "@/components/carrier/CarrierStoreMethodList.vue";
+import ShipmentMethods from "@/components/carrier/ShipmentMethods.vue";
+import CreateShipmentMethodModal from "@/components/carrier/CreateShipmentMethodModal.vue";
 import {
-  CARRIER_ROLE_TYPE_ID,
   type CarrierShipmentMethod,
   type ProductStoreShipmentMethod,
-  deleteCarrierShipmentMethod,
-  enableCarrierShipmentMethod,
   renameCarrier,
-  resequenceCarrierShipmentMethods,
-  updateCarrierShipmentMethod,
   useCarrier,
 } from "@/composables/useCarriers";
 import { setCarrierFacilityAssociation } from "@/composables/useFacilities";
-import { useProductStoreMutations } from "@/composables/useProductStores";
-import { useShipmentMethodTypeMutations } from "@/composables/useSeed";
+import {
+  addProductStoreShipmentMethod,
+  expireProductStoreShipmentMethod,
+  updateProductStoreShipmentMethod,
+} from "@/composables/useProductStores";
 import {
   translateMutationError,
   translateReferenceDataError,
@@ -202,450 +237,271 @@ const {
   readiness,
   remote,
   hydrated,
-  detailErrors,
+  hasDetailErrors,
+  detailErrorMessages,
   readyForMutation,
   refreshDetails,
 } = useCarrier(props.partyId);
-const {
-  createShipmentMethodType,
-  renameShipmentMethodType,
-} = useShipmentMethodTypeMutations();
 
-const segment = ref("methods");
-const configuredOnly = ref(false);
+const selectedSegment = ref("shipping-methods");
+const configuredOnly = ref(true);
 const retryingDetails = ref(false);
-const pendingActions = ref<Set<string>>(new Set());
-const pendingKeys = computed(() => [...pendingActions.value]);
-const hasPendingMutation = computed(() => pendingActions.value.size > 0);
-const validSegments = computed(() => [
-  "methods",
-  "facilities",
-  ...productStores.value.map((store) => `store:${store.productStoreId}`),
-  "account",
-]);
+const pendingActionKeys = ref(new Set<string>());
+
+const hasPendingMutation = computed(() => pendingActionKeys.value.size > 0);
+const pendingKeys = computed(() => Array.from(pendingActionKeys.value));
+
 const selectedStore = computed(() => {
-  if(!segment.value.startsWith("store:")) {
+  if (!selectedSegment.value.startsWith("store:")) {
     return undefined;
   }
-
-  const productStoreId = segment.value.slice("store:".length);
-
-  return productStores.value.find((store) =>
-    String(store.productStoreId) === productStoreId);
+  const storeId = selectedSegment.value.slice("store:".length);
+  return productStores.value.find((store) => store.productStoreId === storeId);
 });
-const detailErrorMessages = computed(() => [...new Set(Object.values(detailErrors.value)
-  .map((message) => String(message).trim())
-  .filter(Boolean))]);
-const hasDetailErrors = computed(() => detailErrorMessages.value.length > 0);
 
-watch(validSegments, (segments) => {
-  if(!segments.includes(segment.value)) {
-    segment.value = "methods";
+watch(productStores, (stores) => {
+  if (selectedSegment.value.startsWith("store:")) {
+    const storeId = selectedSegment.value.slice("store:".length);
+    if (!stores.some((store) => store.productStoreId === storeId)) {
+      selectedSegment.value = "shipping-methods";
+    }
   }
-}, { immediate: true });
+});
 
-function addPending(key: string) {
-  pendingActions.value = new Set([...pendingActions.value, key]);
+function addPendingKey(key: string) {
+  const next = new Set(pendingActionKeys.value);
+  next.add(key);
+  pendingActionKeys.value = next;
 }
 
-function removePending(key: string) {
-  const next = new Set(pendingActions.value);
+function removePendingKey(key: string) {
+  const next = new Set(pendingActionKeys.value);
   next.delete(key);
-  pendingActions.value = next;
+  pendingActionKeys.value = next;
 }
 
-async function handleRetryDetails() {
-  if(retryingDetails.value || hasPendingMutation.value) {
-    return;
-  }
-
-  retryingDetails.value = true;
-  try {
-    await refreshDetails();
-  } catch {
-    commonUtil.showToast(translate("Failed to refresh carrier details."));
-  } finally {
-    retryingDetails.value = false;
-  }
-}
-
-async function runAction(
+async function runGuardedMutation(
   key: string,
-  action: () => Promise<unknown>,
-  successMessage: string,
-  failureMessage: string,
-) {
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return false;
-  }
-
-  addPending(key);
+  operation: () => Promise<void>,
+  successMessage?: string,
+  errorMessage = "Failed to update the carrier.",
+): Promise<boolean> {
+  addPendingKey(key);
   try {
-    await action();
-    commonUtil.showToast(translate(successMessage));
-
+    await operation();
+    if (successMessage) {
+      commonUtil.showToast(translate(successMessage));
+    }
     return true;
-  } catch (error) {
-    commonUtil.showToast(translateMutationError(error, failureMessage));
-
-    // A cache-stage failure follows a committed server write. Dismiss an owning alert and never
-    // invite a retry; readiness is already fail-closed on the worker's recorded domain error.
-    return isCacheReconciliationError(error);
+  } catch (error: any) {
+    if (isCacheReconciliationError(error)) {
+      commonUtil.showToast(translateMutationError(error, errorMessage));
+      return true;
+    }
+    commonUtil.showToast(translateMutationError(error, errorMessage));
+    return false;
   } finally {
-    removePending(key);
+    removePendingKey(key);
   }
 }
 
-function handleSegmentChange(event: CustomEvent<{ value?: string | number }>) {
-  const value = String(event.detail.value ?? "");
-  if(validSegments.value.includes(value)) {
-    segment.value = value;
-  }
-}
+const openCreateShipmentMethodModal = async () => {
+  const modal = await modalController.create({
+    component: CreateShipmentMethodModal,
+    componentProps: {
+      carrierPartyId: props.partyId,
+    },
+  });
+  return modal.present();
+};
 
-async function openRenameCarrierAlert() {
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return;
-  }
+const openRenameCarrierAlert = async () => {
+  if (!carrier.value) return;
 
   const alert = await alertController.create({
-    header: translate("Rename carrier"),
-    inputs: [
-      {
-        name: "groupName",
-        type: "text",
-        value: carrier.value?.groupName || "",
-        placeholder: translate("Carrier name"),
-      },
-    ],
+    header: translate("Edit carrier detail"),
+    inputs: [{
+      name: "groupName",
+      value: carrier.value.groupName || carrier.value.partyId,
+    }],
     buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel",
-      },
+      { text: translate("Cancel"), role: "cancel" },
       {
         text: translate("Save"),
-        handler: (data: Record<string, unknown>) => {
-          const groupName = String(data.groupName ?? "").trim();
-          if(!groupName) {
-            commonUtil.showToast(translate("Carrier name is required."));
-
+        handler: async (data) => {
+          const newName = data.groupName?.trim();
+          if (!newName) {
+            commonUtil.showToast(translate("Carrier name can not be empty."));
             return false;
           }
-
-          return runAction(
-            "carrier:rename",
-            () => renameCarrier(props.partyId, groupName),
-            "Carrier name updated.",
-            "Failed to rename the carrier.",
-          );
+          if (newName !== carrier.value?.groupName) {
+            return await runGuardedMutation(
+              `carrier:${carrier.value?.partyId}:rename`,
+              () => renameCarrier(carrier.value!.partyId, newName),
+              "Carrier name updated.",
+              "Failed to rename the carrier.",
+            );
+          }
+          return true;
         },
       },
     ],
   });
-
   await alert.present();
-}
+};
 
-function handleEnableMethod(method: CarrierShipmentMethod) {
-  return runAction(
-    `method:${method.shipmentMethodTypeId}:enable`,
-    () => enableCarrierShipmentMethod(props.partyId, method.shipmentMethodTypeId),
-    "Carrier shipment method enabled.",
-    "Failed to enable the carrier shipment method.",
-  );
-}
-
-async function openEditMethodAlert(method: CarrierShipmentMethod) {
-  const key = `method:${method.shipmentMethodTypeId}:edit`;
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return;
-  }
-
-  const alert = await alertController.create({
-    header: translate("Edit carrier shipment method"),
-    subHeader: method.description || method.shipmentMethodTypeId,
-    inputs: [
-      {
-        name: "carrierServiceCode",
-        type: "text",
-        value: method.carrierServiceCode ?? "",
-        placeholder: translate("Carrier service code"),
-      },
-      {
-        name: "deliveryDays",
-        type: "number",
-        value: method.deliveryDays ?? "",
-        placeholder: translate("Delivery days"),
-        min: 0,
-      },
-    ],
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel",
-      },
-      {
-        text: translate("Save"),
-        handler: (data: Record<string, unknown>) => {
-          const rawDeliveryDays = String(data.deliveryDays ?? "").trim();
-          const deliveryDays = rawDeliveryDays === "" ? "" : Number(rawDeliveryDays);
-          if(deliveryDays !== "" && (!Number.isFinite(deliveryDays) || deliveryDays < 0)) {
-            commonUtil.showToast(translate("Delivery days must be zero or greater."));
-
-            return false;
-          }
-
-          return runAction(
-            key,
-            () => updateCarrierShipmentMethod(
-              props.partyId,
-              method.shipmentMethodTypeId,
-              {
-                carrierServiceCode: String(data.carrierServiceCode ?? "").trim(),
-                deliveryDays,
-              },
-            ),
-            "Carrier shipment method updated.",
-            "Failed to update the carrier shipment method.",
-          );
-        },
-      },
-    ],
-  });
-
-  await alert.present();
-}
-
-async function openDeleteMethodAlert(method: CarrierShipmentMethod) {
-  const key = `method:${method.shipmentMethodTypeId}:delete`;
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return;
-  }
-
-  const alert = await alertController.create({
-    header: translate("Disable carrier shipment method"),
-    message: translate("Any active product-store associations will be expired before this carrier method is permanently deleted. This cannot be undone."),
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel",
-      },
-      {
-        text: translate("Disable method"),
-        role: "destructive",
-        handler: () => runAction(
-          key,
-          () => deleteCarrierShipmentMethod(
-            props.partyId,
-            method.shipmentMethodTypeId,
-          ),
-          "Carrier shipment method disabled.",
-          "Failed to disable the carrier shipment method.",
-        ),
-      },
-    ],
-  });
-
-  await alert.present();
-}
-
-async function openCreateTypeAlert() {
-  const key = "method-type:create";
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return;
-  }
-
-  const alert = await alertController.create({
-    header: translate("Create shipment method type"),
-    inputs: [
-      {
-        name: "shipmentMethodTypeId",
-        type: "text",
-        placeholder: translate("Shipment method type ID"),
-      },
-      {
-        name: "description",
-        type: "text",
-        placeholder: translate("Description"),
-      },
-    ],
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel",
-      },
-      {
-        text: translate("Create"),
-        handler: (data: Record<string, unknown>) => {
-          const shipmentMethodTypeId =
-            String(data.shipmentMethodTypeId ?? "").trim().toUpperCase();
-          const description = String(data.description ?? "").trim();
-          if(!shipmentMethodTypeId || !description) {
-            commonUtil.showToast(translate("Shipment method type ID and description are required."));
-
-            return false;
-          }
-
-          return runAction(
-            key,
-            () => createShipmentMethodType({ shipmentMethodTypeId, description }),
-            "Shipment method type created.",
-            "Failed to create the shipment method type.",
-          );
-        },
-      },
-    ],
-  });
-
-  await alert.present();
-}
-
-async function openRenameTypeAlert(method: CarrierShipmentMethod) {
-  const key = `method:${method.shipmentMethodTypeId}:rename-type`;
-  if(!readyForMutation.value || hasPendingMutation.value) {
-    return;
-  }
-
-  const alert = await alertController.create({
-    header: translate("Rename shipment method type"),
-    subHeader: method.shipmentMethodTypeId,
-    inputs: [
-      {
-        name: "description",
-        type: "text",
-        value: method.description ?? "",
-        placeholder: translate("Description"),
-      },
-    ],
-    buttons: [
-      {
-        text: translate("Cancel"),
-        role: "cancel",
-      },
-      {
-        text: translate("Save"),
-        handler: (data: Record<string, unknown>) => {
-          const description = String(data.description ?? "").trim();
-          if(!description) {
-            commonUtil.showToast(translate("Shipment method description is required."));
-
-            return false;
-          }
-
-          return runAction(
-            key,
-            () => renameShipmentMethodType(method.shipmentMethodTypeId, description),
-            "Shipment method type renamed.",
-            "Failed to rename the shipment method type.",
-          );
-        },
-      },
-    ],
-  });
-
-  await alert.present();
-}
-
-function handleSaveOrder(methods: CarrierShipmentMethod[]) {
-  return runAction(
-    "methods:reorder",
-    () => resequenceCarrierShipmentMethods(props.partyId, methods),
-    "Carrier shipment method order saved.",
-    "Failed to save the carrier shipment method order.",
-  );
-}
-
-function handleFacilityToggle(payload: {
+const handleFacilityToggle = async ({
+  facility,
+  enabled,
+}: {
   facility: Record<string, any>;
   enabled: boolean;
-}) {
-  const { facility, enabled } = payload;
-
-  return runAction(
-    `facility:${facility.facilityId}`,
-    () => setCarrierFacilityAssociation({
-      partyId: props.partyId,
-      facilityId: facility.facilityId,
-      enabled,
-      ...(!enabled ? { fromDate: facility.fromDate } : {}),
-    }),
-    enabled ? "Carrier associated with facility." : "Carrier removed from facility.",
+}) => {
+  if (!carrier.value) return;
+  const key = `facility:${facility.facilityId}`;
+  await runGuardedMutation(
+    key,
+    () =>
+      setCarrierFacilityAssociation({
+        partyId: carrier.value!.partyId,
+        facilityId: facility.facilityId,
+        enabled,
+      }),
+    enabled
+      ? "Facility associated with carrier."
+      : "Facility association removed.",
     "Failed to update the carrier facility association.",
   );
-}
+};
 
-function handleStoreAssociationToggle(payload: {
+const handleStoreAssociationToggle = async ({
+  method,
+  association,
+  enabled,
+}: {
   method: CarrierShipmentMethod;
   association?: ProductStoreShipmentMethod;
   enabled: boolean;
-}) {
+}) => {
   const store = selectedStore.value;
-  if(!store) {
-    return Promise.resolve(false);
-  }
+  if (!store || !carrier.value) return;
 
-  const { method, association, enabled } = payload;
-  const key =
-    `store:${store.productStoreId}:${method.shipmentMethodTypeId}:association`;
-  const mutations = useProductStoreMutations(store.productStoreId);
-
-  return runAction(
+  const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:association`;
+  await runGuardedMutation(
     key,
-    () => {
-      if(enabled) {
-        return mutations.addShipmentMethod({
+    async () => {
+      if (enabled) {
+        await addProductStoreShipmentMethod(store.productStoreId, {
+          productStoreId: store.productStoreId,
           shipmentMethodTypeId: method.shipmentMethodTypeId,
-          partyId: props.partyId,
-          roleTypeId: CARRIER_ROLE_TYPE_ID,
+          partyId: carrier.value!.partyId,
+          roleTypeId: "CARRIER",
+          isTrackingRequired: false,
         });
+      } else if (association?.productStoreShipMethId) {
+        await expireProductStoreShipmentMethod(
+          store.productStoreId,
+          association.productStoreShipMethId,
+        );
       }
-      if(!association?.productStoreShipMethId) {
-        throw new Error("The active product-store shipment method was not found.");
-      }
-
-      return mutations.expireShipmentMethod(association.productStoreShipMethId);
     },
     enabled
-      ? "Carrier shipment method associated with store."
-      : "Carrier shipment method removed from store.",
-    "Failed to update the product-store shipment method.",
+      ? "Shipment method associated with store."
+      : "Store shipment method association removed.",
+    "Failed to update the carrier shipment method.",
   );
-}
+};
 
-function handleStoreTrackingToggle(payload: {
+const handleStoreTrackingToggle = async ({
+  method,
+  association,
+  required,
+}: {
   method: CarrierShipmentMethod;
   association: ProductStoreShipmentMethod;
   required: boolean;
-}) {
+}) => {
   const store = selectedStore.value;
-  if(!store) {
-    return Promise.resolve(false);
-  }
+  if (!store || !association.productStoreShipMethId) return;
 
-  const { method, association, required } = payload;
   const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:tracking`;
-  const mutations = useProductStoreMutations(store.productStoreId);
-
-  return runAction(
+  await runGuardedMutation(
     key,
-    () => mutations.updateShipmentMethod(
-      association.productStoreShipMethId,
-      { isTrackingRequired: required ? "Y" : "N" },
-    ),
+    () =>
+      updateProductStoreShipmentMethod(
+        store.productStoreId,
+        association.productStoreShipMethId!,
+        { isTrackingRequired: required ? "Y" : "N" },
+      ),
     "Tracking requirement updated.",
-    "Failed to update the tracking requirement.",
+    "Failed to update the carrier shipment method.",
   );
-}
+};
 
-function openKlaviyo() {
-  return router.push("/klaviyo");
-}
+const handleStoreGatewayUpdate = async ({
+  method,
+  association,
+  shipmentGatewayConfigId,
+}: {
+  method: CarrierShipmentMethod;
+  association: ProductStoreShipmentMethod;
+  shipmentGatewayConfigId?: string;
+}) => {
+  const store = selectedStore.value;
+  if (!store || !association.productStoreShipMethId) return;
+
+  const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:gateway`;
+  await runGuardedMutation(
+    key,
+    () =>
+      updateProductStoreShipmentMethod(
+        store.productStoreId,
+        association.productStoreShipMethId!,
+        { shipmentGatewayConfigId: shipmentGatewayConfigId || null },
+      ),
+    "Shipment gateway updated successfully.",
+    "Failed to update the carrier shipment method.",
+  );
+};
+
+const handleRetryDetails = async () => {
+  if (retryingDetails.value) {
+    return;
+  }
+  retryingDetails.value = true;
+  try {
+    await refreshDetails();
+    commonUtil.showToast(translate("Carrier details refreshed."));
+  } catch (err: any) {
+    commonUtil.showToast(
+      translateReferenceDataError(err?.message || "Failed to refresh carrier details."),
+    );
+  } finally {
+    retryingDetails.value = false;
+  }
+};
+
+const openKlaviyo = () => {
+  router.push({ path: "/klaviyo" });
+};
 </script>
 
 <style scoped>
-.carrier-detail,
-.carrier-segments {
-  width: 100%;
+ion-content > main {
+  max-width: 1110px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+ion-content {
+  --padding-bottom: 80px;
+}
+
+.items-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: var(--spacer-xs);
+  align-items: start;
+  margin-bottom: var(--spacer-lg);
 }
 </style>

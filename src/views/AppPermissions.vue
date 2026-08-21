@@ -209,6 +209,7 @@ import { appPermissionCatalogs } from "@/config/appPermissions"
 import type { AppPermissionCatalog, AppPermissionDefinition } from "@/config/appPermissions"
 import router from "@/router"
 import { toEpochMillis } from "@/utils/appPermissionTime"
+import Actions from "@/authorization/actions"
 
 const {
   securityGroups,
@@ -235,8 +236,8 @@ const getAppId = (appId: unknown) => {
 
 const selectedAppId = ref<string>(getAppId(router.currentRoute.value.query.appId))
 
-const canCreate = computed(() => hasPermission("APP_PERMISSION_CREATE OR SECURITY_ADMIN"))
-const canUpdate = computed(() => hasPermission("APP_PERMISSION_UPDATE OR SECURITY_ADMIN"))
+const canCreate = computed(() => hasPermission(Actions.APP_APP_PERMISSION_CREATE))
+const canUpdate = computed(() => hasPermission(Actions.APP_APP_PERMISSION_UPDATE))
 const canManage = computed(() => canCreate.value || canUpdate.value)
 const selectedApp = computed<AppPermissionCatalog | undefined>(() => appPermissionCatalogs.find((app) => app.appId === selectedAppId.value) || appPermissionCatalogs[0])
 
