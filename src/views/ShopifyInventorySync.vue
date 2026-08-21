@@ -696,7 +696,7 @@
                     >
                       <ion-label class="ion-text-wrap">
                         {{ event.type }}
-                        <p>{{ event.sourceLabel }}</p>
+                        <p>{{ sourceLine(event) }}</p>
                         <p>{{ event.calculation || "No calculation comment recorded" }}</p>
                       </ion-label>
                       <div slot="end" class="entry-outcome">
@@ -823,7 +823,7 @@
                   <ion-label class="ion-text-wrap">
                     {{ event.type }}
                     <p>{{ event.productName || `Item ${event.shopifyInventoryItem}` }}<template v-if="event.productSku"> ({{ event.productSku }})</template></p>
-                    <p>{{ event.sourceLabel }}, at {{ event.locationLabel }}</p>
+                    <p>{{ sourceLine(event) }}, at {{ event.locationLabel }}</p>
                     <p>{{ event.calculation || "No calculation comment recorded" }}</p>
                   </ion-label>
                   <ion-note slot="end">{{ event.change }}</ion-note>
@@ -874,7 +874,7 @@
                       <ion-label class="ion-text-wrap">
                         <span class="overline mobile-only">Event</span>
                         <span class="event-type">{{ event.type }}</span>
-                        <p>{{ event.sourceLabel }}</p>
+                        <p>{{ sourceLine(event) }}</p>
                       </ion-label>
                       <ion-label class="ion-text-wrap">
                         <span class="overline mobile-only">Product</span>
@@ -951,6 +951,15 @@
               <p v-if="selectedEvent?.sourcePhase">
                 Effective-date boundary this row crossed: {{ selectedEvent?.sourcePhase }}
               </p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="selectedEvent && selectedArtifact">
+            <ion-label class="ion-text-wrap">
+              Came from
+              <p v-if="selectedArtifact.label">{{ selectedArtifact.label }}</p>
+              <p v-if="selectedArtifact.actor">Recorded by {{ selectedArtifact.actor }}</p>
+              <p v-if="selectedArtifact.note">{{ selectedArtifact.note }}</p>
+              <p v-if="selectedArtifact.unresolved">{{ selectedArtifact.unresolved }}</p>
             </ion-label>
           </ion-item>
           <ion-item v-if="selectedEvent?.showRawReference">
@@ -1102,7 +1111,7 @@
           <ion-item v-for="event in eventsForSelectedBatch" :key="event.rowKey">
             <ion-label class="ion-text-wrap">
               {{ event.type }}
-              <p>{{ event.sourceLabel }}</p>
+              <p>{{ sourceLine(event) }}</p>
               <p>Item {{ event.shopifyInventoryItem }} at {{ event.locationLabel }}</p>
               <p>{{ event.calculation }}</p>
             </ion-label>
@@ -1230,12 +1239,14 @@ import {
 } from "@/composables/useShopify";
 import {
   dataFeedCache,
+  groupFacilityCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyShopCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import { useEventSourceNames, type SourceLookup } from "@/composables/useEventSourceNames";
 import { useProductNames } from "@/composables/useProductNames";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
@@ -1377,6 +1388,9 @@ const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useCachedList<
 const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useCachedList<any>(inventoryChannelCache);
 const { records: allInventoryDetails, hydrated: inventoryDetailsHydrated } = useCachedList<any>(shopifyInventoryAdjustmentDetailCache);
 const { records: cachedSystemMessages } = useCachedList<any>(systemMessageCache);
+// Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
+// carries a facility GROUP because the event is aggregate; these are the candidates to search.
+const { records: cachedGroupFacilities } = useCachedList<any>(groupFacilityCache);
 const {
   start: startSyncDomains,
   stop: stopSyncDomains,
@@ -1425,6 +1439,51 @@ watch(() => syncContext.shopId?.value, (shopId) => {
 }, { immediate: true });
 
 const { products: resolvedProducts, resolve: resolveProductNames } = useProductNames();
+const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = useEventSourceNames();
+
+/** Effective member facilities of a channel's group, which is what a scoped lookup can search. */
+const facilityIdsByGroup = computed(() => {
+  const byGroup = new Map<string, string[]>();
+  const now = Date.now();
+  for (const member of cachedGroupFacilities.value) {
+    if(!isEffectiveNow(member, now)) {continue;}
+    const group = String(member.facilityGroupId ?? "");
+    const facilityId = String(member.facilityId ?? "");
+    if(!group || !facilityId) {continue;}
+    byGroup.set(group, [...(byGroup.get(group) ?? []), facilityId]);
+  }
+  return byGroup;
+});
+
+function lookupFor(event: InventoryEvent): SourceLookup {
+  const channel = allInventoryChannels.value.find((candidate: any) =>
+    String(candidate.inventoryChannelId) === event.inventoryChannelId);
+  return {
+    eventTypeId: event.eventTypeId,
+    eventReferenceId: event.eventReferenceId,
+    productId: event.productId,
+    facilityIds: facilityIdsByGroup.value.get(String(channel?.facilityGroupId ?? "")) ?? [],
+  };
+}
+
+/** The resolved artifact for a row, once its lookup has landed. */
+function artifactFor(event: InventoryEvent) {
+  return resolvedSources.value.get(sourceKeyOf(event.eventTypeId, event.eventReferenceId));
+}
+
+/**
+ * One line naming the source: the artifact when it resolved, otherwise the record the reference points
+ * at. Both, when the artifact does not already spell the record out.
+ */
+const selectedArtifact = computed(() =>
+  selectedEvent.value ? artifactFor(selectedEvent.value) : undefined);
+
+function sourceLine(event: InventoryEvent): string {
+  // The artifact replaces the record rather than sitting beside it. Both together read as duplication on
+  // one clamped line, and the reservation families spell out to something far too long for it; the exact
+  // source record keeps its own row in the detail.
+  return artifactFor(event)?.label || event.sourceLabel;
+}
 
 const { labelFor: statusDescriptionFor } = useStatuses();
 const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
@@ -2347,6 +2406,7 @@ watch(inventoryEvents, (events) => {
   void resolveProductNames(events.map((event) => event.productId).filter(Boolean));
 }, { immediate: true });
 
+
 const pendingEventCount = computed(() => inventoryDetails.value.filter((detail: any) =>
   detail.detailStatusId === "DETAIL_PENDING").length);
 const pendingBatchCount = computed(() => batches.value.filter((batch) =>
@@ -2657,6 +2717,37 @@ const {
   onScroll: onEventScroll,
   scrollToTop: scrollEventsToTop,
 } = useVirtualRows(visibleSettledEvents, { estimatedRowHeight: 76 });
+
+/**
+ * Source artifacts for the rows actually on screen.
+ *
+ * NOT for the whole list. The receipt and issuance families need a walk over the channel's facilities,
+ * which is affordable for a row a person opened and not for hundreds; those are skipped here (no
+ * `fanOut`) and resolved when the row's detail opens. The reservation, cycle-count and external-reset
+ * families each cost one call and are resolved eagerly, so the actionable sections and the visible
+ * window of the settled tail carry real names without a click.
+ */
+const onScreenEvents = computed<InventoryEvent[]>(() => [
+  ...visibleWaitingBatches.value.flatMap((group: any) => group.events as InventoryEvent[]),
+  ...visibleQuarantinedEvents.value,
+  // Optional chained because this one comes from a composable a caller can stub, and this computed
+  // runs at setup. ShopifyInventorySync.channelResetJob.spec still stubs useVirtualRows with its
+  // pre-`visibleItems` shape (virtualRows/totalHeight/handleScroll), so the alias is undefined there.
+  ...(virtualEvents?.value ?? []),
+]);
+
+watch(onScreenEvents, (events) => {
+  if(!events.length) {return;}
+  void resolveSourceNames(events.map(lookupFor));
+}, { immediate: true });
+
+/**
+ * Opening a row is the explicit request that pays for the facility walk. Everything already resolved is
+ * skipped inside the resolver, so this only ever adds the receipt/issuance families.
+ */
+watch(selectedEvent, (event) => {
+  if(event) {void resolveSourceNames([lookupFor(event)], { fanOut: true });}
+});
 
 /**
  * A collapsed ion-accordion still renders its content, so a batch of thousands of events cost the
