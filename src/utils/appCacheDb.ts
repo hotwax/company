@@ -28,9 +28,6 @@ class CompanyCacheDB extends Dexie {
   syncRuns!: Table<CachedRow, string>;
   serviceJobs!: Table<CachedRow, string>;
   productStores!: Table<CachedRow, string>;
-  carriers!: Table<CachedRow, string>;
-  carrierShipmentMethods!: Table<CachedRow, string>;
-  carrierFacilities!: Table<CachedRow, string>;
   shopifyShops!: Table<CachedRow, string>;
   organizations!: Table<CachedRow, string>;
   organizationRelationships!: Table<CachedRow, string>;
@@ -40,11 +37,6 @@ class CompanyCacheDB extends Dexie {
   users!: Table<CachedRow, string>;
   permissions!: Table<CachedRow, string>;
   integrationTypeMappings!: Table<CachedRow, string>;
-  // NetSuite order push (rule-group export path)
-  netSuiteRuleGroups!: Table<CachedRow, string>;
-  netSuiteDecisionRules!: Table<CachedRow, string>;
-  netSuiteRuleGroupRuns!: Table<CachedRow, string>;
-  netSuiteOrderPushBacklog!: Table<CachedRow, string>;
   // lookup / type reference tables
   statuses!: Table<CachedRow, string>;
   enums!: Table<CachedRow, string>;
@@ -76,14 +68,6 @@ class CompanyCacheDB extends Dexie {
   shopifyBulkOperations!: Table<CachedRow, string>;
   systemMessageErrors!: Table<CachedRow, string>;
   productUpdateHistories!: Table<CachedRow, string>;
-  /** OMS-wide Shopify inventory event feed configuration. */
-  dataFeeds!: Table<CachedRow, string>;
-  /** Shopify aggregate inventory event ledger, scoped by shop. */
-  shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
-  /** Shopify aggregate ATP channel configuration, scoped by shop. */
-  inventoryChannels!: Table<CachedRow, string>;
-  /** Which DataDocuments the Shopify inventory event feed listens to. */
-  inventoryEventDocuments!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -165,34 +149,11 @@ const CACHE_SCHEMA = {
    * the sync run that made it.
    */
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
-  /**
-   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
-   * inventory item at one channel. Mirrors the server entity, whose PK is
-   * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey`
-   * is the synthetic cache key for that. The type says what kind of source event a row came from
-   * and the reference says which occurrence of it — they replaced a single packed `eventKey`, and
-   * both are indexed because the history screen filters on type alone.
-   * No shopId/shopifyLocationId and no product columns: the channel is the target identity, so
-   * shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
-   * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
-   */
-  shopifyInventoryAdjustmentDetails:
-    "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
-  dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
   productStores: "productStoreId, storeName",
-  carriers: "partyId, groupName, roleTypeId",
-  carrierShipmentMethods:
-    "carrierShipmentMethodKey, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber",
-  carrierFacilities:
-    "carrierFacilityKey, partyId, facilityId, roleTypeId, fromDate, thruDate",
   shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
-  inventoryChannels:
-    "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
-  // Keyed by (document, feed) because one document can sit on several feeds, or on none.
-  inventoryEventDocuments: "documentFeedKey, dataDocumentId, dataFeedId",
   organizations: "partyId, groupName, externalId, statusId",
   organizationRelationships:
     "relationshipKey, partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",
@@ -221,8 +182,7 @@ const CACHE_SCHEMA = {
   // per-store aggregate used by the product-store list
   productStoreShipmentCounts: "productStoreId",
   shopifyCarrierShipments: "carrierShipmentKey, shopId, carrierPartyId, shipmentMethodTypeId",
-  productStoreShippingMethods:
-    "productStoreShipMethId, productStoreId, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber, thruDate, [partyId+productStoreId]",
+  productStoreShippingMethods: "productStoreShipMethId, productStoreId, shipmentMethodTypeId",
   enumTypes: "enumTypeId, parentTypeId",
   // Geo reference straight from Moqui (moqui.basic.Geo / GeoAssoc) — replaces utilStore states
   // and operating countries.
@@ -246,14 +206,6 @@ const CACHE_SCHEMA = {
   // Shopify bulk operations, keyed by the GraphQL node id. A completed operation is immutable, so
   // it can be served from cache forever; only in-flight ones need a re-read.
   shopifyBulkOperations: "id, status, systemMessageRemoteId, completedAt",
-  // --- NetSuite order push (rule-group export path) ---
-  // Rule groups and their rules are class B config: small, read constantly by the monitor, and
-  // refetched after a mutation rather than polled. Runs are class A, cursored on `startDate`.
-  netSuiteRuleGroups: "ruleGroupId, productStoreId, groupTypeEnumId, statusId, jobName",
-  netSuiteDecisionRules: "ruleId, ruleGroupId, statusId, sequenceNum, [ruleGroupId+sequenceNum]",
-  netSuiteRuleGroupRuns: "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
-  // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
-  netSuiteOrderPushBacklog: "productStoreId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;

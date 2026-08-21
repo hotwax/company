@@ -1,7 +1,4 @@
 import {
-  carrierFacilityProjection,
-  carrierProjection,
-  carrierShipmentMethodProjection,
   enumProjection,
   facilityTypeProjection,
   paymentMethodTypeProjection,
@@ -23,6 +20,7 @@ import {
   systemMessageTypeProjection,
   appProjection,
   appVersionProjection,
+  PRODUCT_STORE_ID_FOR_SHIPPING_METHODS,
   statusProjection,
   userGroupProjection,
   facilityGroupProjection,
@@ -33,7 +31,6 @@ import {
   permissionProjection,
   productStoreProjection,
   currencyProjection,
-  inventoryEventDocumentProjection,
   serviceJobProjection,
   shopifyShopProjection,
   systemMessageRemoteProjection,
@@ -87,30 +84,6 @@ registerSnapshotDomain({
 });
 
 registerSnapshotDomain({
-  name: "inventoryEventDocument",
-  table: "inventoryEventDocuments",
-  projection: inventoryEventDocumentProjection,
-  listUrl: "admin/dataDocuments",
-  collectionKey: "dataDocuments",
-  /**
-   * `queryString` bounds the response, it does not define the set - the screen decides that from the
-   * documents this feature ships. Without it this would snapshot every DataDocument on the OMS to
-   * answer a question about ten of them.
-   */
-  listParams: { queryString: "Shopify", pageSize: 200 },
-  /**
-   * Scoped re-list, not `byPk`: there is no by-id route, and the cache row is (document, feed) while
-   * a mutation only knows the document. Re-listing that one document and pruning its slice is what
-   * makes attach/detach correct - the row for the feed it just left has to disappear, and a plain
-   * upsert would leave it behind.
-   */
-  refetchScope: (pk) => ({
-    params: { queryString: pk.dataDocumentId },
-    scope: { field: "dataDocumentId", value: pk.dataDocumentId },
-  }),
-});
-
-registerSnapshotDomain({
   name: "systemMessageRemote",
   table: "systemMessageRemotes",
   projection: systemMessageRemoteProjection,
@@ -141,53 +114,6 @@ registerSnapshotDomain({
   listUrl: "admin/productStores",
   collectionKey: null, // bare array
   byPk: (pk) => ({ url: `admin/productStores/${encodeURIComponent(String(pk.productStoreId))}` }),
-});
-
-registerSnapshotDomain({
-  name: "carrier",
-  table: "carriers",
-  projection: carrierProjection,
-  listUrl: "oms/shippingGateways/carrierParties",
-  collectionKey: null,
-  strictCollection: true,
-  listParams: { roleTypeId: "CARRIER" },
-  refetchScope: (pk) => ({
-    params: { partyId: pk.partyId },
-    scope: { field: "partyId", value: pk.partyId },
-  }),
-});
-
-registerSnapshotDomain({
-  name: "carrierShipmentMethod",
-  table: "carrierShipmentMethods",
-  projection: carrierShipmentMethodProjection,
-  listUrl: "oms/shippingGateways/carrierShipmentMethods",
-  collectionKey: null,
-  strictCollection: true,
-  listParams: { roleTypeId: "CARRIER" },
-  refetchScope: (pk) => ({
-    params: { partyId: pk.partyId },
-    scope: { field: "partyId", value: pk.partyId },
-  }),
-});
-
-/**
- * Carrier ↔ facility associations have no global list. Build the snapshot by walking the cached
- * carrier ids, and use the same parent scope for post-mutation refetch/prune.
- */
-registerSnapshotDomain({
-  name: "carrierFacility",
-  table: "carrierFacilities",
-  projection: carrierFacilityProjection,
-  listUrl: "oms/shippingGateways/carrierParties",
-  collectionKey: null,
-  strictCollection: true,
-  fanOut: {
-    parentTable: "carriers",
-    parentKeyField: "partyId",
-    urlFor: (partyId) =>
-      `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/facilities`,
-  },
 });
 
 registerSnapshotDomain({
@@ -377,21 +303,14 @@ registerSnapshotDomain({
   collectionKey: null,
 });
 
-// Shipping methods configured on every cached product store. The response does not reliably echo
-// productStoreId, so the generic fan-out contract stamps the parent scope onto every child row.
+// Shipping methods configured on one product store. Path-scoped endpoint, so the store id is
+// fixed for now (see PRODUCT_STORE_ID_FOR_SHIPPING_METHODS) rather than fanned out.
 registerSnapshotDomain({
   name: "productStoreShippingMethod",
   table: "productStoreShippingMethods",
   projection: productStoreShippingMethodProjection,
-  listUrl: "admin/productStores",
+  listUrl: `admin/productStores/${PRODUCT_STORE_ID_FOR_SHIPPING_METHODS}/shippingMethods`,
   collectionKey: null, // bare array
-  strictCollection: true,
-  fanOut: {
-    parentTable: "productStores",
-    parentKeyField: "productStoreId",
-    urlFor: (productStoreId) =>
-      `admin/productStores/${encodeURIComponent(productStoreId)}/shippingMethods`,
-  },
 });
 
 // --- Enumeration types, geo reference, and the facility <-> product-store association. ---

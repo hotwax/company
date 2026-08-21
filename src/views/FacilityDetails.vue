@@ -841,7 +841,7 @@ import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMa
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
-import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
 import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
@@ -874,7 +874,7 @@ const facilityCalendar = computed(() => current.value.calendar || {});
 const facilityProductStores = computed(() => current.value.productStores || []);
 const facilityParties = computed(() => current.value.parties || []);
 const facilityLogins = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId === 'FAC_LOGIN'));
-const staffParties = computed(() => facilityParties.value.filter(isFacilityStaffParty));
+const staffParties = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId !== 'FAC_LOGIN'));
 const calendars = calendarOptions;
 // Inventory channels are facility groups of the channel type — a filter, not a fetch.
 const inventoryGroups = computed(() => allFacilityGroups.value.filter((g: any) => g.facilityGroupTypeId === 'CHANNEL_FAC_GROUP'));

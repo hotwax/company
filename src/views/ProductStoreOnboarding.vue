@@ -1052,7 +1052,7 @@ import ImportShopifyLocationsModal from "@/components/facility/ImportShopifyLoca
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { useProductStoreData } from "@/composables/useProductStores"
+import { useProductStoreData } from "@/composables/useProductStoreData"
 import { useFacilities, useFacilityCreation, useFacilityGroups } from "@/composables/useFacilities"
 import {
   fetchProductUpdateSyncRunState,

@@ -1,8 +1,6 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
-import { getResponseErrorMessage } from "@/utils";
 import { resyncDomain } from "@/services/appCacheBootstrap";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import {
   currencyCache,
   enumCache,
@@ -151,49 +149,17 @@ export function useProductTypes() {
  * callers must not resync it themselves.
  */
 export function useShipmentMethodTypeMutations() {
-  const assertSuccessful = (response: any, fallback: string) => {
-    if(commonUtil.hasError(response)) {
-      throw new Error(getResponseErrorMessage(response, fallback));
-    }
-  };
-
-  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
-    try {
-      await resyncDomain("shipmentMethodType");
-    } catch (error) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        { shipmentMethodTypeId },
-        error,
-      );
-    }
-  };
-
   async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
     const resp: any = await api({
       url: "oms/shippingGateways/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    assertSuccessful(resp, "Failed to create the shipment method type.");
-    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
-
+    if (commonUtil.hasError(resp)) throw resp;
+    await resyncDomain("shipmentMethodType");
     return resp;
   }
-
-  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
-    const resp: any = await api({
-      url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
-      method: "put",
-      data: { shipmentMethodTypeId, description: description.trim() },
-    });
-    assertSuccessful(resp, "Failed to rename the shipment method type.");
-    await resyncShipmentMethodTypes(shipmentMethodTypeId);
-
-    return resp;
-  }
-
-  return { createShipmentMethodType, renameShipmentMethodType };
+  return { createShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
