@@ -2730,10 +2730,7 @@ const {
 const onScreenEvents = computed<InventoryEvent[]>(() => [
   ...visibleWaitingBatches.value.flatMap((group: any) => group.events as InventoryEvent[]),
   ...visibleQuarantinedEvents.value,
-  // Optional chained because this one comes from a composable a caller can stub, and this computed
-  // runs at setup. ShopifyInventorySync.channelResetJob.spec still stubs useVirtualRows with its
-  // pre-`visibleItems` shape (virtualRows/totalHeight/handleScroll), so the alias is undefined there.
-  ...(virtualEvents?.value ?? []),
+  ...virtualEvents.value,
 ]);
 
 watch(onScreenEvents, (events) => {

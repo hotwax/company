@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const cachedJobs = ref<any[]>([]);
@@ -106,11 +106,21 @@ vi.mock("@/composables/useSystemMessage", () => ({
   }),
 }));
 
+// Mirrors the real composable's return shape. The stub used to expose an older one
+// (virtualRows/totalHeight/handleScroll), which left `visibleItems` undefined and silently handed the
+// view nothing to render — so the view carried a guard for a shape only this stub produced.
+// `visibleItems` passes the items straight through: this spec asserts on job scheduling, not on
+// windowing, so the stub's job is to be honest about the contract rather than to window anything.
 vi.mock("@/composables/useVirtualRows", () => ({
   useVirtualRows: (items: any) => ({
-    virtualRows: items,
-    totalHeight: ref(0),
-    handleScroll: vi.fn(),
+    containerRef: ref(null),
+    visibleItems: items,
+    topSpacer: ref(0),
+    bottomSpacer: ref(0),
+    startIndex: ref(0),
+    endIndex: computed(() => items.value?.length ?? 0),
+    onScroll: vi.fn(),
+    scrollToTop: vi.fn(),
   }),
 }));
 
