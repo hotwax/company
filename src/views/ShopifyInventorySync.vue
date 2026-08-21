@@ -865,7 +865,6 @@
                     <ion-label>Location</ion-label>
                     <ion-label>Adjustment</ion-label>
                     <ion-label>Batch</ion-label>
-                    <ion-label>Outcome</ion-label>
                     <span />
                   </div>
                   <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
@@ -890,12 +889,9 @@
                         <span class="overline mobile-only">Adjustment</span>
                         <span>{{ event.change }}</span>
                       </ion-label>
-                      <ion-label>
-                        <span class="overline mobile-only">Batch</span>
-                        {{ event.batchId || "No batch" }}
-                      </ion-label>
                       <div class="event-status">
-                        <span class="overline mobile-only">Outcome</span>
+                        <span class="overline mobile-only">Batch</span>
+                        <span>{{ event.batchId || "No batch" }}</span>
                         <ion-badge :color="event.deliveryColor || event.detailStateColor">
                           {{ event.delivery || event.detailState }}
                         </ion-badge>
@@ -3130,7 +3126,7 @@ function formatAge(timestamp: number): string {
    per-row repeat, and "Aggregate ATP" was the same string on every row. */
 .event-table {
   display: grid;
-  grid-template-columns: minmax(220px, 1.7fr) minmax(160px, 1.2fr) minmax(110px, 0.8fr) minmax(80px, 0.5fr) minmax(100px, 0.6fr) minmax(80px, 0.5fr) max-content;
+  grid-template-columns: minmax(240px, 1.8fr) minmax(180px, 1.4fr) minmax(110px, 0.8fr) minmax(80px, 0.5fr) minmax(110px, 0.7fr) max-content;
   align-items: center;
   gap: var(--spacer-xs);
   padding: var(--spacer-sm);
@@ -3183,6 +3179,24 @@ function formatAge(timestamp: number): string {
 .event-table ion-badge,
 .event-status {
   justify-self: start;
+}
+
+/* The batch id and its delivery badge share one cell: the badge is the state OF that batch, so they
+   read as one fact rather than two columns that always move together. Stacked at every width, which
+   is what the row-restack rule below used to do only on narrow screens. */
+.event-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacer-2xs);
+  min-width: 0;
+}
+
+.event-status > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .event-table-row > ion-label:first-child p {
@@ -3299,11 +3313,9 @@ ion-modal p {
     grid-row: 1;
   }
 
-  .event-status {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacer-2xs);
+  /* Stacked rows have the width to show a long batch id in full. */
+  .event-status > span {
+    white-space: normal;
   }
 
   .mobile-only {
