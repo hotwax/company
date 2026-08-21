@@ -23,7 +23,6 @@ import {
   systemMessageTypeProjection,
   appProjection,
   appVersionProjection,
-  PRODUCT_STORE_ID_FOR_SHIPPING_METHODS,
   statusProjection,
   userGroupProjection,
   facilityGroupProjection,
