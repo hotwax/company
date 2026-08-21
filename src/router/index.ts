@@ -1,7 +1,7 @@
+import { useAuth } from "@common/composables/useAuth"
+import { Login, commonUtil, translate } from "@common/index"
 import { createRouter, createWebHistory } from "@ionic/vue-router"
 import { RouteRecordRaw } from "vue-router"
-import { Login, commonUtil, logger, translate } from "@common/index"
-import { useAuth } from "@common/composables/useAuth"
 import { useUserStore } from "@/store/user"
 import Actions from "@/authorization/actions"
 
@@ -23,7 +23,6 @@ const UserConfirmation = () => import("@/views/UserConfirmation.vue")
 const UserQuickSetup = () => import("@/views/UserQuickSetup.vue")
 const CreateProductStore = () => import("@/views/CreateProductStore.vue")
 const ProductStoreOnboarding = () => import("@/views/ProductStoreOnboarding.vue")
-const AddConfigurations = () => import("@/views/AddConfigurations.vue")
 const ProductStoreDetails = () => import("@/views/ProductStoreDetails.vue")
 const ProductStore = () => import("@/views/ProductStore.vue")
 const NetSuite = () => import("@/views/NetSuite.vue")
@@ -163,18 +162,6 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/create-product-store", name: "CreateProductStore", component: CreateProductStore, beforeEnter: authGuard },
   { path: "/product-store-onboarding", name: "ProductStoreOnboarding", component: ProductStoreOnboarding, beforeEnter: authGuard },
   { path: "/product-store-onboarding/:productStoreId", name: "ProductStoreOnboardingForStore", component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },
-  {
-    path: "/add-configurations/:productStoreId",
-    name: "AddConfigurations",
-    component: AddConfigurations,
-    props: true,
-    beforeEnter: (to, from) => {
-      logger.info("AddConfigurations beforeEnter guard", { to: to.path, from: from.path, fromName: from.name });
-      if(from.path !== "/create-product-store" && from.name !== "CreateProductStore") {
-        return { path: from.path || "/product-store" }
-      }
-    }
-  },
   { path: "/login", name: "Login", component: Login },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },

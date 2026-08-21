@@ -28,7 +28,6 @@ import {
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import { api, commonUtil, logger, translate } from "@common";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { onSessionCleared } from "./sessionScope";
 import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
@@ -46,11 +45,17 @@ import {
   systemMessageRemoteCache,
 } from "@/utils/cacheEntities";
 import {
+  DATA_MANAGER_LOG_STATUS_IDS,
+  logState as dataManagerLogState,
+  isTerminal as isDataManagerLogTerminal,
+} from "@/utils/dataManagerLog";
+import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
-import { resolveShopRemoteIds, shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
+import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import type { ActiveDomain } from "@/workers/syncRegistry";
+import { onSessionCleared } from "./sessionScope";
 import { useCacheSync } from "./useCacheSync";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useStatuses } from "./useSeed";
@@ -2038,9 +2043,7 @@ export function useShopifyProductSyncRun() {
       },
       status: getStatusLabel(effectiveStatus.value),
       statusColor: getStatusColor(effectiveStatus.value),
-      completed: log?.statusId === 'DmlSuccess' ||
-        log?.statusId === 'DmlError' ||
-        skippedEmptyImport.value,
+      completed: isDataManagerLogTerminal(log) || skippedEmptyImport.value,
     } as Record<string, any>;
   });
 
@@ -4694,19 +4697,6 @@ export interface ShopifyProductUpdateSyncRunState {
   systemMessages?: any[];
 }
 
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
 export interface ShopifyRunningBulkOperation {
   id: string;
   status: string;
@@ -4800,125 +4790,6 @@ export interface ShopifyProductSyncHistoryRun {
 
 export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 
-
-export interface ShopifyShopProductCount {
-  count: number;
-  lastSyncedAt?: string;
-}
-
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
-export interface ShopifyRunningBulkOperation {
-  id: string;
-  status: string;
-  type: string;
-  createdAt: string;
-  objectCount: number;
-}
-
-export interface ShopifyUnsyncedProductUpdate {
-  id: string;
-  legacyResourceId?: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-}
-
-export interface ShopifyProductSyncProductSearchResult {
-  id: string;
-  legacyResourceId: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-  cursor: string;
-}
-
-export interface ShopifyProductSyncProductSearchState {
-  products: ShopifyProductSyncProductSearchResult[];
-  hasNextPage: boolean;
-  endCursor: string;
-}
-
-export interface ShopifyProductSyncOnDemandResult {
-  systemMessageId?: string;
-  syncedProductId?: string[];
-  missingProductId?: string[];
-  failedProductId?: string[];
-  rejectedProductId?: string[];
-  acceptedCount?: number;
-  syncedCount?: number;
-  failedCount?: number;
-  rejectedCount?: number;
-}
-
-export interface ShopifyProductSyncActionResult {
-  jobOutput?: string;
-  message?: string;
-  systemMessageId?: string;
-}
-
-export interface ShopifyProductSyncHistoryOperation {
-  id: string;
-  title: string;
-  subtitle: string;
-  status: string;
-  statusLabel: string;
-  metricValue?: number | string;
-  metricLabel?: string;
-  actionLabel?: string;
-  detailType: string;
-}
-
-export interface ShopifyProductSyncHistoryRun {
-  id: string;
-  systemMessageId: string;
-  createdTime: string;
-  bulkOperationStatus: string;
-  bulkOperationStatusLabel: string;
-  mdmStatus: string;
-  mdmStatusLabel: string;
-  bulkOperationId: string;
-  objectCount: number;
-  mdmImportId: string;
-  totalRecordCount: number;
-  failedRecordCount: number;
-  operations: ShopifyProductSyncHistoryOperation[];
-}
-
 export interface ShopifyProductSyncHistoryState {
   runs: ShopifyProductSyncHistoryRun[];
 }
@@ -4944,6 +4815,11 @@ const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // deprecated full-form enum and requires updating (it is being phased out / force-replaced).
 const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const TERMINAL_DATA_MANAGER_LOG_STATUS_IDS = DATA_MANAGER_LOG_STATUS_IDS.filter((statusId) => {
+  const state = dataManagerLogState(statusId, { total: 0, success: 0, failed: 0 });
+
+  return state === "completed" || state === "partial" || state === "failed";
+});
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -5163,12 +5039,6 @@ function assertStringField(value: any, fieldName: string, context: string) {
   }
 }
 
-function assertArrayField(value: any, fieldName: string, context: string) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${context} response must include array ${fieldName}.`);
-  }
-}
-
 function validateSetupState(response: any): ShopifyProductSyncSetupState {
   const context = "Product sync setup state";
   assertPlainObject(response, context);
@@ -5318,28 +5188,32 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
 
   if (!remoteIds.length) return candidates[0]?.systemMessageRemoteId;
 
-  try {
-    const response = await requestBackend<SystemMessagesResponse>({
-      url: "admin/systemMessages",
-      method: "get",
-      params: {
-        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
-        systemMessageRemoteId: remoteIds,
-        systemMessageRemoteId_op: "in",
-        pageSize: remoteIds.length
-      }
-    });
+  const remoteChecks = await Promise.all(remoteIds.map(async (systemMessageRemoteId: string) => {
+    try {
+      const response = await requestBackend<SystemMessagesResponse>({
+        url: "admin/systemMessages",
+        method: "get",
+        params: {
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+          systemMessageRemoteId,
+          pageSize: 1
+        }
+      });
 
-    const validRemoteIds = new Set(response?.systemMessages?.map((msg: any) => msg.systemMessageRemoteId));
-    // Pick the first remoteId from the original candidates list that is valid
-    const firstValid = remoteIds.find(id => validRemoteIds.has(id));
+      const matchesRemote = response?.systemMessages?.some((message: any) =>
+        String(message?.systemMessageRemoteId || "") === systemMessageRemoteId);
 
-    if (firstValid) {
-      return firstValid;
+      return matchesRemote ? systemMessageRemoteId : "";
+    } catch (error) {
+      logger.warn(`Failed to check product-sync history for remote ${systemMessageRemoteId}`, error);
+
+      return "";
     }
-  } catch (e) {
-    logger.error("Failed to resolve system message remote IDs in bulk", e);
-  }
+  }));
+
+  // `Promise.all` preserves candidate order, so access-priority remains deterministic.
+  const firstValid = remoteChecks.find(Boolean);
+  if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
 };
@@ -5367,13 +5241,20 @@ export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProd
 
 const getSystemMessageRank = (systemMessage: any) => {
   const statusId = String(systemMessage?.statusId || "").toLowerCase();
-  const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
+  const logStatusId = String(systemMessage?.logStatusId || "");
   const logId = systemMessage?.logId;
+  const logState = logId
+    ? dataManagerLogState(logStatusId, {
+      total: Number(systemMessage?.totalRecordCount || 0),
+      success: Number(systemMessage?.successRecordCount || 0),
+      failed: Number(systemMessage?.failedRecordCount || 0),
+    })
+    : undefined;
 
   // Terminal status:
-  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
+  // 1. mdm logId is present AND its canonical DataManager status is terminal
   // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
+  const isTerminal = (logId && (logState === "completed" || logState === "partial" || logState === "failed")) ||
                      (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
 
   if (isTerminal) {
@@ -5381,8 +5262,8 @@ const getSystemMessageRank = (systemMessage: any) => {
   }
 
   // Any other case is considered "In Progress" and gets a higher rank (>= 2)
-  if (logStatusId === "dmlsrunning") return 5;
-  if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
+  if(logState === "active") {return 5;}
+  if(logState === "pending" || statusId === "smsgconsumed" || statusId === "consumed") {return 4.5;}
   if (statusId === "smsgreceived") return 3.5;
   if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
   if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
@@ -5563,45 +5444,6 @@ async function cachedSyncMessageHistory(query: {
     return null;
   }
 }
-
-export const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
-  const shopId = payload.shopId || payload.shop?.shopId;
-  if (!shopId) {
-    throw new Error("Shop ID is required to count pending product update requests.");
-  }
-
-  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
-  const cachedPending = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    statusId: "SmsgProduced",
-  });
-  if (cachedPending) {
-    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
-  }
-
-  const response = await requestBackend<any>({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-        remoteInternalId: shopId,
-        remoteInternalIdType: "HOTWAX_SHOP_ID",
-        statusId: "SmsgProduced"
-      },
-      pageSize: payload.pageSize || 1,
-      pageIndex: 0,
-      orderByField: "-initDate"
-    }
-  }, "Pending product update requests");
-
-  return {
-    count: Number(response?.entityValueListCount || 0),
-    latestSystemMessage: response?.entityValueList?.[0]
-  };
-};
 
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
@@ -5897,42 +5739,6 @@ export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductS
   }, "Shopify product sync endpoint");
 };
 
-const sendShopifyBulkQueryMessage = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const systemMessageRemoteId = String(payload?.systemMessageRemoteId || "").trim();
-  const queryText = String(payload?.queryText || "").trim();
-
-  if (!systemMessageRemoteId) {
-    throw new Error("System message remote id is required to send a Shopify bulk query message.");
-  }
-  if (!queryText) {
-    throw new Error("Query text is required to send a Shopify bulk query message.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/graphql",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      queryText
-    }
-  }, "Shopify GraphQL send endpoint");
-};
-
-const pollBulkOperationResult = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const parentSystemMessageTypeId = String(payload?.parentSystemMessageTypeId || "").trim();
-  if (!parentSystemMessageTypeId) {
-    throw new Error("Parent system message type id is required to poll a Shopify bulk operation result.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/bulk/result/poll",
-    method: "post",
-    data: {
-      parentSystemMessageTypeId
-    }
-  }, "Shopify bulk result poll endpoint");
-};
-
 export const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProductSyncActionResult> => {
   if (!String(systemMessageId || "").trim()) {
     throw new Error("System message id is required to cancel a Shopify product sync message.");
@@ -6107,36 +5913,6 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
 // did not — without that the new job stays invisible to every cached read until the next login.
 
 
-const fetchErrorRecordCount = async (payload: any): Promise<number> => {
-  const { shopId, configId } = payload;
-  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
-
-  try {
-    const response = await requestBackend<any>({
-      url: "oms/dataDocumentView",
-      method: "post",
-      data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
-        customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
-          parameterName: "shopId",
-          parameterValue: shopId,
-          failedRecordCount: 0,
-          failedRecordCount_op: "equals",
-          failedRecordCount_not: "true",
-          finishDateTime_from: finishDateTimeFrom.toString()
-        },
-        fieldsToSelect: "failedRecordCount"
-      }
-    });
-
-    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
-  } catch (error) {
-    logger.warn("Failed to fetch error record count using dataDocumentView", error);
-    return 0;
-  }
-};
-
 export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
   const { shopId, configId } = payload;
   try {
@@ -6151,7 +5927,7 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
           configId: configId || "SYNC_SHOPIFY_PRODUCT",
           parameterName: "shopId",
           parameterValue: shopId,
-          statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
+          statusId: TERMINAL_DATA_MANAGER_LOG_STATUS_IDS,
           statusId_not: "true"
         }
       }
@@ -6162,36 +5938,6 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
     logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
     return 0;
   }
-};
-
-export const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDashboardSummary> => {
-  const { systemMessageRemoteId } = payload;
-
-  const [syncRunState, pendingRequests, runningOperation, updateFilesToProcess] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload).catch(e => { logger.error("Failed to fetch product update sync run state", e); return { systemMessages: [], lastSyncedAt: "" } as any }),
-    fetchPendingProductUpdateRequests(payload).catch(e => { logger.error("Failed to fetch pending product update requests", e); return { count: 0 } as any }),
-    fetchRunningBulkOperation(payload).catch(e => { logger.warn("Failed to fetch running bulk operation (likely GraphQL error)", e); return null }),
-    fetchUpdateFilesToProcessCount(payload).catch(e => { logger.error("Failed to fetch update files to process count", e); return 0 })
-  ]);
-
-  let unsyncedUpdates = { count: 0, products: [] } as any;
-  try {
-    unsyncedUpdates = await fetchShopifyShopProductCount({
-      ...payload,
-      systemMessageRemoteId,
-      syncRunState
-    });
-  } catch (error) {
-    logger.warn("Failed to fetch unsynced product updates (likely GraphQL error)", error);
-  }
-
-  return {
-    syncRunState,
-    pendingRequests,
-    runningOperation,
-    unsyncedUpdates,
-    updateFilesToProcess
-  };
 };
 
 export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {

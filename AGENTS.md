@@ -12,7 +12,7 @@ stands up and administers an OMS tenant. Functional areas, each a route family:
 
 | Area | Routes | Views |
 | --- | --- | --- |
-| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store`, `/add-configurations/:id` | `ProductStore*`, `AddConfigurations` |
+| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store` | `ProductStore*` |
 | Facilities & groups | `/facilities/*`, `/facility-details/:id`, `/facility-group-detail/:id`, `/parking`, `/create-facility/*` | `Find*`, `Facility*`, `CreateFacility`, `AddFacility*` |
 | Users & security | `/users`, `/user-details/:partyId`, `/create-user`, `/user-quick-setup/:partyId`, `/security-groups`, `/app-permissions` | `User*`, `Security*`, `AppPermissions` |
 | Shopify integration | `/shopify`, `/shopify-connection-details/:id/**` (locations, shipment/payment methods, sales channels, product types, product-sync, order-sync) | `Shopify*` |
@@ -57,8 +57,7 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
   `pinia-plugin-persistedstate`) · vue-i18n · Dexie (IndexedDB) · Comlink web worker · Luxon.
 - [`src/main.ts`](src/main.ts) — creates the app, registers Ionic/i18n/pinia/router, and calls
   `initialiseConfig()` from `@common` to hand the shared layer the user store's session getters,
-  `postLogin`/`postLogout` hooks, and the router. Also defines the legacy `$filters.formatDate`
-  global used by older views.
+  `postLogin`/`postLogout` hooks, and the router.
 - [`src/App.vue`](src/App.vue) — split-pane shell (`Menu` + router outlet), `FastTravel` app
   switcher, `presentLoader`/`dismissLoader` emitter bridge, and the **class-B cache bootstrap**:
   it *watches* `useAuth().isAuthenticated` and calls `startReferenceSync()` on login (a one-time
@@ -294,8 +293,8 @@ once, and each composable holding module-level session state registers its own r
 - Components are grouped by domain: `components/{common,facility,product-store,shopify,
   shopify-product-sync,shopify-order-sync,klaviyo,security,shipping-payment,
   product-store-onboarding,chat}/`. Put a new component in its domain folder; `common/` is for
-  genuinely cross-domain pieces (`Menu`, `FilterMenu`, `SearchFilterCard`, `UniformFilterLayout`,
-  `TimezoneModal`, `Image`, `Logo`, animated number/duration).
+  genuinely cross-domain pieces (`Menu`, `SearchFilterCard`, `UniformFilterLayout`,
+  `TimezoneModal`, `Image`, animated number/duration).
 - Modals and popovers live with their domain and are opened from the view that owns the interaction.
 - Add a route by adding a lazy `() => import(...)` plus the right guard. Permission-gated routes use
   `requirePermission` with an `"A OR B"` expression matching the backend permission ids.
@@ -343,12 +342,10 @@ The cache/worker data layer is built and in use, and **the screen conversion is 
   survive (§6), so every one of those imports is correct rather than debt.
 - `store/util.ts` is deleted. Its reference reads live in `useSeed`/`useFacilities` and
   `bootstrapOrganization` in `useOrganization`; `ProductStoreOnboarding.vue` was its last consumer.
-- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval is
-  gone — progress is derived from cached messages, bulk operations and MDM logs that the worker
-  refreshes. **Vestigial scaffolding remains** and is worth removing: `startProgressPolling()` is now a
-  documented no-op, `progressPoll` is declared but never assigned, and nine call sites still invoke
-  the pair. The only surviving interval on that page is a 15s clock for relative-time labels, which
-  loads no data.
+- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval and
+  vestigial no-op polling scaffolding are gone — progress is derived from cached messages, bulk
+  operations and MDM logs that the worker refreshes. The only surviving interval on that page is a
+  15s clock for relative-time labels, which loads no data.
 - Organization management phases 1 and 2 are implemented at `/organizations` and
   `/organization-details/:partyId`. The `organization` and `organizationRelationship` class-B
   domains feed a cycle-safe forest; writes use the existing party/group/role/relationship endpoints
