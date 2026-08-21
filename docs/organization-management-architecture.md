@@ -378,7 +378,7 @@ own product requirements say otherwise:
 - `ProductStoreOnboarding.vue`: company bootstrap, `payToPartyId`, and facility owner;
 - `CreateFacility.vue`: default `ownerPartyId`;
 - `Parking.vue`: default `ownerPartyId`;
-- `useProductStoreData.ts`: organization detail during setup;
+- `useProductStores.ts`: organization detail during setup;
 - `CreateProductStore.vue`: editing the displayed parent-company name.
 
 The company-name edit in product-store creation is especially sensitive: after multiple
@@ -552,7 +552,7 @@ typed party-identification model rather than assuming one global external ID.
 | Organization screens | new views in `src/views/`; organization components/modals in `src/components/organization/` |
 | Facility owner UI | `src/views/FacilityDetails.vue`; add `changeOwner` to `useFacilityMutations` in `src/composables/useFacilities.ts` |
 | Facility create defaults | `src/views/CreateFacility.vue`, `src/views/Parking.vue`, onboarding facility creation |
-| Product-store compatibility | `src/views/CreateProductStore.vue`, `src/views/ProductStoreOnboarding.vue`, `src/composables/useProductStoreData.ts` |
+| Product-store compatibility | `src/views/CreateProductStore.vue`, `src/views/ProductStoreOnboarding.vue`, `src/composables/useProductStores.ts` |
 | Routing and navigation | `src/router/index.ts`, `src/components/common/Menu.vue` |
 | Permissions | route guards, mutation controls, and potentially backend artifact authorization/permission seed |
 | Copy and accessibility | `src/locales/en.json`; nested-list semantics, keyboard operation, focus return from modals |

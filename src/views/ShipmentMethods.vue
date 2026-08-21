@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, closeCircleOutline, informationCircleOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
 import { computed } from "vue";
@@ -99,14 +99,24 @@ import { useRouter } from "vue-router";
 
 const router = useRouter();
 const shipmentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.SHIPPING_METHOD_TYPE_ID
-const { netSuiteProductStore } = useNetSuiteProductStore();
 const { mappings: integrationTypeMappings, editNetSuiteId, removeNetSuiteId } = useNetSuite(shipmentMethodTypeId);
 
-// Every read is cached. The store's shipping methods come from one fixed product store for now
-// (see PRODUCT_STORE_ID_FOR_SHIPPING_METHODS) — this page previously requested
-// `admin/productStores/undefined/shippingMethods` because the id was never resolved.
+// Every read is cached. Resolve the NetSuite-linked ProductStore reactively: on a cold cache its ID
+// lands after setup, and the all-store shipment-method cache must then reveal only that partition.
 const { shipmentMethodTypes } = useShipmentMethodTypes();
-const { shippingMethods: productStoreShipmentMethods, hydrated } = useProductStoreShippingMethods();
+const {
+  netSuiteProductStore,
+  hydrated: productStoresHydrated,
+} = useNetSuiteProductStore();
+const netSuiteProductStoreId = computed<string | undefined>(
+  () => netSuiteProductStore.value?.productStoreId,
+);
+const {
+  shippingMethods: productStoreShipmentMethods,
+  hydrated: shipmentMethodsHydrated,
+} = useProductStoreShippingMethods(netSuiteProductStoreId);
+const hydrated = computed(() =>
+  productStoresHydrated.value && shipmentMethodsHydrated.value);
 const { byCarrierAndMethod: shopifyShopsCarrierShipments } = useShopifyCarrierShipments(undefined);
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 

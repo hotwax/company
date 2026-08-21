@@ -149,6 +149,13 @@ export async function pageAll(options: {
   ctx: SyncContext;
   url: string;
   collectionKey?: string | null;
+  /**
+   * Require the configured collection shape instead of letting `unwrapCollection` guess.
+   *
+   * Snapshot replacement treats an empty collection as authoritative, so a payload-level error or
+   * an unexpected success envelope must not silently become `[]` for mutation-sensitive domains.
+   */
+  strictCollection?: boolean;
   params?: Record<string, unknown>;
   batchSize?: number;
   maxPages?: number;
@@ -157,7 +164,7 @@ export async function pageAll(options: {
   label?: string;
 }): Promise<any[]> {
   const {
-    ctx, url, collectionKey, params = {},
+    ctx, url, collectionKey, strictCollection = false, params = {},
     batchSize = 250, maxPages = 40, keyOf, label = url,
   } = options;
 
@@ -174,6 +181,15 @@ export async function pageAll(options: {
     }
 
     const resp = await workerGet(ctx, url, { ...params, pageSize: batchSize, pageIndex });
+    if(strictCollection) {
+      if(collectionKey) {
+        if(!Array.isArray(resp?.[collectionKey])) {
+          throw new Error(`[sync] ${label}: response must contain an array at \`${collectionKey}\`.`);
+        }
+      } else if(!Array.isArray(resp)) {
+        throw new Error(`[sync] ${label}: response must be a bare array.`);
+      }
+    }
     const page = unwrapCollection(resp, collectionKey);
     if (!page.length) break;
 

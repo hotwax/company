@@ -141,11 +141,12 @@ import {
 } from "@/composables/useOrganizations";
 import { useAuth } from "@/composables/useSecurity";
 import router from "@/router";
+import Actions from "@/authorization/actions";
 
 const { organizations, forest, hydrated } = useOrganizations();
 const { primaryOrganizationId, load: loadPrimaryOrganization } = usePrimaryOrganization();
 const { hasPermission } = useAuth();
-const canManage = computed(() => hasPermission("PARTYMGR_ADMIN"));
+const canManage = computed(() => hasPermission(Actions.APP_ORGANIZATION_UPDATE));
 const searchText = ref("");
 const showCreate = ref(false);
 
