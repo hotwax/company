@@ -164,13 +164,13 @@
               <!-- What feeds this channel, and how much of it has actually landed at Shopify lately. -->
               <div class="channel-stats">
                 <div class="channel-stat">
-                  <span class="overline">Feeding this channel</span>
+                  <ion-note>Feeding this channel</ion-note>
                   <!-- The composition carries its own counts, so a separate total would just repeat one
                        of them on a single-type group. -->
                   <span>{{ channelStats(channel).composition }}</span>
                 </div>
                 <div class="channel-stat">
-                  <span class="overline">Delivered in 24h</span>
+                  <ion-note>Delivered in 24h</ion-note>
                   <span>{{ channelStats(channel).delivered }}</span>
                   <p>From cached events</p>
                 </div>
@@ -672,7 +672,7 @@
                   <p>{{ group.eventCount }} events, oldest recorded {{ group.oldestAge }}</p>
                 </ion-label>
                 <div slot="end" class="reason-cell">
-                  <span class="overline">Publishes under</span>
+                  <ion-note>Publishes under</ion-note>
                   <ion-badge :color="group.reasonMapped ? 'primary' : 'warning'">
                     {{ group.reason }}
                   </ion-badge>
