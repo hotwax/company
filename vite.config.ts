@@ -57,6 +57,9 @@ function resolveCommonDeps() {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  // Guarded because this file is loaded by vitest too, where the app's .env is not always present.
+  // An absent variable arrives as the string "undefined", which JSON.parse rejects, and the throw
+  // happens before any test runs — that is the "Order Sync unit tests" failure on every PR.
   let appBuild = ''
   try {
     appBuild = env.VITE_APP_VERSION_CONFIG && env.VITE_APP_VERSION_CONFIG !== "undefined" ? JSON.parse(env.VITE_APP_VERSION_CONFIG).buildVersion : ''

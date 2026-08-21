@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/utils/cacheEntities", () => ({
   serviceJobRunCache: {
+    // refreshUnfinished scans every cached row to find running jobs worth re-reading.
+    all: vi.fn(async () => state.cached ?? []),
     newestCursor: vi.fn(async () => state.cursor),
     upsertMany: vi.fn(async (rows: any[]) => {
       state.upserts.push(rows);
