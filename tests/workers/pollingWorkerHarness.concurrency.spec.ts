@@ -23,6 +23,10 @@ vi.mock("comlink", () => ({
 
 vi.mock("@/utils/appCacheDb", () => ({
   ensureCacheReady: vi.fn(() => Promise.resolve()),
+  // executeDomain consults this to decide whether a class-B snapshot actually completed before it
+  // stamps the activation clock. Unmocked it throws, and every domain in the tick reports
+  // sync-error instead of sync-end.
+  hasSyncedThisLogin: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock("@/utils/pollingTokenChannel", () => ({
@@ -87,7 +91,11 @@ describe("polling worker tick concurrency", () => {
       baseTickMs: 60_000,
       domains: [{ name: "live" }],
     });
-    for(let microtask = 0; microtask < 5 && calls === 0; microtask += 1) {
+    // Drain until the first sync lands rather than guessing a hop count. Reaching domain.sync now
+    // crosses more microtasks than it used to — beginTick defers a tick, runDomain queues through
+    // the per-domain exclusive lock, and executeDomain awaits hasSyncedThisLogin — and the contract
+    // under test is "exactly one sync before any forced refresh", not the depth of that chain.
+    for(let microtask = 0; microtask < 50 && calls === 0; microtask += 1) {
       await Promise.resolve();
     }
     expect(calls).toBe(1);
