@@ -117,7 +117,7 @@
       </div>
 
       <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN')" @click="createUser()">
+        <ion-fab-button :disabled="!userStore.hasPermission(Actions.APP_SECURITY_CREATE)" @click="createUser()">
           <ion-icon :icon="addOutline" />
         </ion-fab-button>
       </ion-fab>
@@ -145,6 +145,7 @@ import { computed, ref } from "vue";
 import router from "@/router";
 import { useUserGroups } from "@/composables/useSecurity";
 import { useUserStore } from "@/store/user";
+import Actions from "@/authorization/actions";
 
 const userStore = useUserStore();
 const USERS_PAGE_SIZE = 25;

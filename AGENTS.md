@@ -93,7 +93,9 @@ re-introduces exactly the load waterfalls this layer exists to remove.
   the view re-renders on every cache write, including writes made in the worker thread.
 - **Writes:** the owning composable calls `api()` directly, then `refreshAfterMutation(domain, pk)`
   (re-reads that one record) or `resyncDomain(domain)` (re-snapshots the domain). Never hand-patch
-  cached rows.
+  cached rows. A failed post-write refetch rejects as `CacheReconciliationError`: the server write
+  is already committed, so presentation must warn and dismiss any retryable create/edit alert
+  rather than misreporting a write failure or replaying it.
 - **Cadence:** owned entirely by the worker. Nothing on the main thread polls.
 - The cache is durable across reloads and **cleared on logout only** (`postLogout` →
   `clearAllCaches()`); it is *not* shared cross-tab or cross-session by design.
@@ -105,7 +107,7 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
-| **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
+| **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
 | **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage` |
 | **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation` |
 
@@ -197,6 +199,46 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
 - **Cache-miss ≠ absence for "no rows" results.** `systemMessageErrorCache` can only hold errors
   that exist, so a cache-first read of a clean message misses forever and re-requests per row.
   `useSystemMessage` keeps a session-level "confirmed clean" set for exactly this.
+- **Fan-out domains follow their cached parents, and consumers scope the aggregate.**
+  `carrierFacility` fans out over `carrier`; `productStoreShippingMethod` fans out over
+  `productStore`; keep each child after its parent in `cacheDomainCatalog`. The fan-out stamps the
+  parent id authoritatively — overriding a stale response value as well as filling an omission.
+  Store shipping methods now contain **every** cached store, so Shopify, NetSuite, and carrier
+  consumers must scope by `productStoreId` (and by `partyId` where relevant). If the store id
+  arrives asynchronously, use a reactive scope/getter or filter the live aggregate — a static
+  undefined scope silently reads every store.
+- **Carrier associations do not share one lifecycle.** `carrierShipmentMethod` is a hard-deleted,
+  non-date-effective row keyed by `(partyId, roleTypeId, shipmentMethodTypeId)`;
+  `carrierFacility` is date-effective and includes `fromDate` in its synthetic key. Do not invent
+  dates for carrier methods or remove a method before closing its active product-store associations.
+- **Destructive dependency discovery is live and fail-closed.** Carrier-method deletion reads every
+  authoritative store association immediately before the write, deduplicates by association PK,
+  and refuses the delete on an unsupported response shape, a repeated/no-progress page, the paging
+  backstop, or an active target row it cannot classify and expire. Never use a caller's cached
+  association list or a coerced empty response as deletion proof.
+- **A committed write and its cache reconciliation are different stages.** Throw
+  `CacheReconciliationError` after a successful write whose refetch/resync fails. Retryable UI must
+  dismiss or resume after the committed stage; it must never replay the POST. When one write changes
+  several cache domains, attempt every reconciliation and report the exact failed domains.
+- **Partition replacement defines the concurrency lock.** Serialize targeted worker refetches by
+  domain plus canonical PK scope, retain stale errors per scope, and clear them only with a matching
+  scoped success or a successful full-domain snapshot. A full-domain snapshot is exclusive with
+  every targeted refetch for that domain; different PK scopes remain concurrent only while no full
+  snapshot is waiting or running. UI that can replace the same partition must lock the whole
+  partition while a write is pending, not only the clicked row.
+- **Mutation-sensitive snapshots validate their collection envelope before pruning.** Set
+  `strictCollection` when a payload-level error, `null`, or an unsupported success envelope must
+  not be interpreted as an authoritative empty list. A cold empty cache is not permission to mark
+  an unrecognized response shape synced.
+- **Translation keys are static.** IDs, page numbers, server text, and partial-failure diagnostics
+  are interpolation values under a fixed locale key; never pass runtime error text directly to
+  `translate()`.
+- **Date-effective cached views need a clock dependency.** Use `useEffectiveNow(records)` when a
+  computed filters `fromDate`/`thruDate`; reading `Date.now()` directly inside a computed does not
+  invalidate it when time passes.
+- **Startup and forced-sync failures are real failures.** Global cache-open errors live under
+  `bootstrapState.errors.__start` until a verified later start succeeds. Manual/forced domain sync
+  rejects on failure; an attempt timestamp is only a throttle clock, never success evidence.
 - Cached-row projections must tolerate real backend payloads — several fields the schema declares are
   absent live (e.g. `systemMessages` carries no `lastUpdatedStamp`; `initDate` is the usable cursor).
 
@@ -209,10 +251,11 @@ concept is the smell this rule prevents.
 | Composable | Owns |
 | --- | --- |
 | [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
-| [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate) |
+| [`useCarriers.ts`](src/composables/useCarriers.ts) | Carrier catalog/detail aggregates, carrier-method joins and counts, facility/store association views, observable Unigate readiness, and carrier/carrier-method mutations. Method removal closes dependent store associations before the hard delete |
+| [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate), plus date-effective carrier-facility association writes |
 | [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
-| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them (shipment-method counts, shipping methods, settings, facilities, and the onboarding/setup surface). Merged `useProductStoreData` |
-| [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables, maarg config. Replaced `utilStore` |
+| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them: shipment-method counts, all-store shipping-method reads, date-effective store-method writes, settings, facilities, and the onboarding/setup surface. Merged `useProductStoreData`. Consumers must scope shipping methods by `productStoreId` |
+| [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables (including shipment-method type create/rename), maarg config. Replaced `utilStore` |
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
 | [`useSystemMessage.ts`](src/composables/useSystemMessage.ts) | System messages, remotes, and error lookups |
 | [`useDataManager.ts`](src/composables/useDataManager.ts) | DataManager configs/logs — the newest imports for a config, live from cache |
