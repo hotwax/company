@@ -33,6 +33,13 @@
       </ion-card>
 
       <template v-else>
+        <ion-item v-if="requestedSystemMessageId" class="requested-run-context" color="light" lines="full">
+          <ion-label class="ion-text-wrap">
+            <strong>{{ translate("Viewing requested sync run") }}</strong>
+            <p>{{ translate("System message") }}: {{ requestedSystemMessageId }}</p>
+          </ion-label>
+        </ion-item>
+
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
           :is-secondary-loading="isSecondaryLoading"
@@ -635,6 +642,7 @@ import {
   selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
+import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
@@ -760,6 +768,15 @@ const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystem
 const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
 const latestConsumedSystemMessage = computed<any>(() => spineRunState.value.latestConsumedSystemMessage);
 const lastProductUpdateSyncedAt = computed(() => spineRunState.value.lastSyncedAt || "");
+const requestedSystemMessageId = computed(() =>
+  getSafeSyncRunQueryId(router.currentRoute.value.query.systemMessageId));
+const requestedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? spineRunState.value.systemMessages.find((message: any) =>
+    String(message.systemMessageId) === requestedSystemMessageId.value) || null
+  : null);
+const displayedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? currentSyncRun.value?.systemMessage || requestedSystemMessage.value || null
+  : latestSystemMessage.value);
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
 const hasEverLoadedSecondary = ref(false);
@@ -897,7 +914,7 @@ const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
 const { statusItems } = useStatuses();
-const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(displayedSystemMessage.value));
 const productSyncBackHref = computed(() => {
   return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
 });
@@ -994,7 +1011,7 @@ const shopifyAccessDetail = computed(() => {
   return translate("Shopify access scope could not be verified for this connection.");
 });
 const shopifyAccessBlockingMessage = computed(() => {
-  const syncMessageText = String(currentSyncRun.value?.systemMessage?.messageText || latestSystemMessage.value?.messageText || "").trim();
+  const syncMessageText = String(displayedSystemMessage.value?.messageText || "").trim();
 
   if (isShopifyWriteAccessError(syncMessageText)) {
     return translate("Product sync could not start. Shopify write access is required for bulk query creation.");
@@ -1125,7 +1142,7 @@ const systemMessageFsmState = computed(() => {
   });
 });
 const productSystemMessageDetails = computed(() => {
-  const message = currentSyncRun.value?.systemMessage || latestSystemMessage.value || {};
+  const message = displayedSystemMessage.value || {};
   const completed = !!currentSyncRun.value?.completed;
 
   return {
@@ -1719,6 +1736,9 @@ async function loadWizard() {
     // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
     await loadSelectedShopSystemMessageRemoteId();
+    if(requestedSystemMessageId.value) {
+      await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+    }
 
     setupState.value = await fetchSetupState({
       shopId: props.id,
@@ -1833,7 +1853,9 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
     await loadLiveDashboardCounts();
 
     try {
-      if (latestSystemMessage.value?.systemMessageId) {
+      if(requestedSystemMessageId.value) {
+        await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+      } else if(latestSystemMessage.value?.systemMessageId) {
         await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
       } else {
         clearSyncRun();
@@ -2281,7 +2303,9 @@ async function loadLatestSystemMessage() {
   // The latest message is a spine computed; refresh only the live counts, then point the run join.
   await loadLiveDashboardCounts();
 
-  if (latestSystemMessage.value?.systemMessageId) {
+  if(requestedSystemMessageId.value) {
+    await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+  } else if(latestSystemMessage.value?.systemMessageId) {
     await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
   } else {
     clearSyncRun();
@@ -3277,17 +3301,17 @@ async function loadProgress() {
     loadedRunState = true;
 
     // Prioritize the system message ID we already have in state if it's still active
-    const currentMessageId = progressState.value?.systemMessageId;
+    const currentMessageId = requestedSystemMessageId.value || progressState.value?.systemMessageId;
     let latestMessage = syncRunState.latestSystemMessage;
 
     if (currentMessageId && syncRunState.systemMessages) {
       const currentMessage = syncRunState.systemMessages.find((m: any) => m.systemMessageId === currentMessageId);
       if (currentMessage) {
         latestMessage = currentMessage;
-      } else if (!progressState.value?.completed) {
+      } else if(requestedSystemMessageId.value || !progressState.value?.completed) {
         // If the message we are tracking is NOT in the list yet and it's not completed,
         // it means there's a backend lag for a newly started sync.
-        // We should NOT overwrite the progressState with an older message.
+        // A route-selected message is also never replaced by a newer, unrelated run.
         latestMessage = null;
       }
     }

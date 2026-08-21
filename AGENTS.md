@@ -240,6 +240,16 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
   rejects on failure; an attempt timestamp is only a throttle clock, never success evidence.
 - Cached-row projections must tolerate real backend payloads — several fields the schema declares are
   absent live (e.g. `systemMessages` carries no `lastUpdatedStamp`; `initDate` is the usable cursor).
+- **A forced class-A refresh must wait for the requested worker pass.** `pollingWorkerHarness`
+  coalesces simultaneous forced ticks and queues one behind an active scheduled tick; it emits
+  whole-cycle boundaries around all domains. `useCacheSync.busy` covers that complete worker cycle,
+  while `manualRefreshing` is only for a user-triggered `syncNow()` affordance — background cadence
+  must not flash a page's Refresh spinner or unlock actions between domain commits.
+- **`ServiceJobRun` rows are mutable after their start cursor is written.** The incremental list uses
+  `startTime`, so an unfinished cached run would otherwise never receive its later `endTime` and
+  serialized `results`. `serviceJobRunDomain` therefore re-reads a bounded set of watched unfinished
+  rows by exact `(jobName, jobRunId)` (five per job, no older than six hours). Do not remove that
+  targeted convergence or replace it with an unbounded history poll.
 
 ## 5. Composables — one module per master entity
 

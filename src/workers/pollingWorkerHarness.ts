@@ -54,7 +54,9 @@ let ctx: SyncContext = { maargUrl: "", token: "" };
 let active: ActiveDomain[] = [];
 let baseTickMs = DEFAULT_BASE_TICK_MS;
 let timer: ReturnType<typeof setInterval> | null = null;
-let running = false;
+let activeTick: Promise<void> | null = null;
+let activeTickForced = false;
+let queuedForcedTick: Promise<void> | null = null;
 const lastRunAt: Record<string, number> = {};
 const refetchQueues = new Map<string, Promise<void>>();
 const domainExclusiveQueues = new Map<string, Promise<void>>();
@@ -172,14 +174,14 @@ function runDomain(
   );
 }
 
-async function tick(force = false, propagateErrors = false): Promise<void> {
-  if(running || !ctx.token) {return;} // don't overlap; wait until start() supplies a token
-  running = true;
+async function executeTick(force: boolean, propagateErrors = false): Promise<void> {
+  const now = Date.now();
+  const due = force
+    ? active
+    : dueDomains(active, lastRunAt, now, (entry) => effectiveInterval(entry, getSyncDomain(entry.name)));
+  if(!due.length) {return;}
+  post({ type: "sync-cycle-start", domains: due.map(({ name }) => name), force });
   try {
-    const now = Date.now();
-    const due = force
-      ? active
-      : dueDomains(active, lastRunAt, now, (entry) => effectiveInterval(entry, getSyncDomain(entry.name)));
     // Sequential: these share one thread and one backend; parallel bursts buy nothing here.
     const failures: Array<{ domain: string; error: unknown }> = [];
     for(const entry of due) {
@@ -196,8 +198,43 @@ async function tick(force = false, propagateErrors = false): Promise<void> {
       );
     }
   } finally {
-    running = false;
+    post({ type: "sync-cycle-end", at: Date.now(), force });
   }
+}
+
+function beginTick(force: boolean, propagateErrors = false): Promise<void> {
+  activeTickForced = force;
+  // Defer execution one microtask so `tracked` is assigned before its cleanup can run, including
+  // a zero-domain tick that completes immediately.
+  const operation = Promise.resolve().then(() => executeTick(force, propagateErrors));
+  const tracked = operation.finally(() => {
+    if(activeTick === tracked) {
+      activeTick = null;
+      activeTickForced = false;
+    }
+  });
+  activeTick = tracked;
+
+  return tracked;
+}
+
+function tick(force = false, propagateErrors = false): Promise<void> {
+  if(!ctx.token) {return Promise.resolve();} // wait until start() supplies a token
+  if(!activeTick) {return beginTick(force, propagateErrors);}
+  // Scheduled ticks may share the current work. A manual refresh may share an already-forced tick,
+  // but it must queue behind a scheduled tick so its forced pass is never silently dropped.
+  if(!force || activeTickForced) {return activeTick;}
+  if(queuedForcedTick) {return queuedForcedTick;}
+
+  const predecessor = activeTick;
+  // Domain failures are normally reported by runDomain. Even if the tick itself rejects,
+  // a caller-requested forced pass still has to run after it.
+  const queued = predecessor.catch(() => undefined).then(() => beginTick(true, propagateErrors)).finally(() => {
+    if(queuedForcedTick === queued) {queuedForcedTick = null;}
+  });
+  queuedForcedTick = queued;
+
+  return queued;
 }
 
 function stop(): void {
