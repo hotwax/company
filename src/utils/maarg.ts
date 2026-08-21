@@ -84,8 +84,9 @@ export function getUnigateSendUrlWarning(sendUrl: string, maargInfo: any) {
   const configuredEnv = envForUnigateUrl(configuredSendUrl);
 
   // Reverse-lookup signal: configured URL belongs to a known env that doesn't
-  // match the instance.
-  if (configuredEnv && instanceEnv && configuredEnv !== instanceEnv) {
+  // match the instance (dev instances share the UAT unigate host).
+  const isCompatible = configuredEnv === instanceEnv || (instanceEnv === "dev" && configuredEnv === "uat");
+  if (configuredEnv && instanceEnv && !isCompatible) {
     const configuredLabel = ENV_LABEL[configuredEnv];
     const instanceLabel = ENV_LABEL[instanceEnv];
     return `This is the ${configuredLabel} Unigate URL configured on a ${instanceLabel} OMS instance. Klaviyo calls will be proxied to the wrong environment.`;

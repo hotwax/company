@@ -1338,7 +1338,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility archive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
 
@@ -1353,7 +1359,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate, thruDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility unarchive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
   };
