@@ -185,14 +185,18 @@ async function createFacility() {
       commonUtil.showToast(translate("Facility created successfully."));
 
       // create default pick location (locations are live-read, so no cache consequence)
-      await useFacilityMutations(facilityId).saveLocation({
-        locationTypeEnumId: "FLT_PICKLOC",
-        areaId: "TL",
-        aisleId: "TL",
-        sectionId: "TL",
-        levelId: "LL",
-        positionId: "01"
-      });
+      try {
+        await useFacilityMutations(facilityId).saveLocation({
+          locationTypeEnumId: "FLT_PICKLOC",
+          areaId: "TL",
+          aisleId: "TL",
+          sectionId: "TL",
+          levelId: "LL",
+          positionId: "01"
+        });
+      } catch(e) {
+        logger.error(e);
+      }
 
       router.replace(`/create-facility/address/${facilityId}`);
     } else {
