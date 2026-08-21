@@ -1,6 +1,6 @@
 {
   "name": "company",
-  "version": "2.1.0",
+  "version": "2.2.1",
   "private": true,
   "description": "An Ionic project",
   "type": "module",
@@ -52,6 +52,7 @@
     "eslint": "catalog:",
     "eslint-plugin-vue": "^9.0.0",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vite-plugin-pwa": "catalog:"
   }
 }

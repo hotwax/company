@@ -80,13 +80,7 @@ function cloneStoreSettings() {
 }
 
 function viewFacilities(productStoreId: string) {
-  // Pass OMS + auth context so the external Facilities app lands in the right
-  // authenticated instance (parity with the pre-migration deep link).
-  const oms = commonUtil.getMaargURL()
-  const token = commonUtil.getToken()
-  const expirationTime = commonUtil.getTokenExpiration()
-  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${oms}&token=${token}&expirationTime=${expirationTime}&productStoreId=${productStoreId}`
-  window.open(facilitiesListUrl, "_blank")
+  router.push(`/facilities/find?productStoreId=${productStoreId}`)
 }
 </script>
 

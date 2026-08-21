@@ -1,5 +1,6 @@
 import { expose } from "comlink";
-import { ensureCacheReady } from "@/utils/appCacheDb";
+import { ensureCacheReady, hasSyncedThisLogin } from "@/utils/appCacheDb";
+import { cacheScopeKey } from "@/utils/cacheScopeKey";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
   type ActiveDomain,
@@ -57,6 +58,9 @@ let activeTick: Promise<void> | null = null;
 let activeTickForced = false;
 let queuedForcedTick: Promise<void> | null = null;
 const lastRunAt: Record<string, number> = {};
+const refetchQueues = new Map<string, Promise<void>>();
+const domainExclusiveQueues = new Map<string, Promise<void>>();
+const domainSharedOperations = new Map<string, Set<Promise<void>>>();
 
 // Token stays fresh via push from the main thread — held, never frozen at start().
 subscribeToken((next) => { ctx = { ...ctx, token: next }; });
@@ -72,12 +76,63 @@ function classifyError(err: any): { isAuth: boolean; message: string } {
   return { isAuth, message };
 }
 
-async function runDomain(entry: ActiveDomain, force = false): Promise<void> {
+/**
+ * Run a full snapshot exclusively with respect to targeted refetches for the same domain.
+ *
+ * The exclusive tail is installed immediately, before this operation starts, so a later refetch
+ * cannot overtake it. Capturing the currently registered shared operations provides the opposite
+ * ordering too: a snapshot requested after a mutation waits for every earlier targeted read.
+ */
+function runExclusiveDomainOperation<T>(
+  domain: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previousExclusive = domainExclusiveQueues.get(domain) ?? Promise.resolve();
+  const previousShared = [...(domainSharedOperations.get(domain) ?? [])];
+  const operation = Promise.all([previousExclusive, ...previousShared]).then(() => action());
+  const tail = operation.then(() => undefined, () => undefined);
+  domainExclusiveQueues.set(domain, tail);
+
+  return operation.finally(() => {
+    if(domainExclusiveQueues.get(domain) === tail) {domainExclusiveQueues.delete(domain);}
+  });
+}
+
+/**
+ * Run a targeted refetch concurrently with other scopes, but never across a full snapshot for the
+ * same domain. Different domains do not share either map and remain fully independent.
+ */
+function runSharedDomainOperation<T>(
+  domain: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previousExclusive = domainExclusiveQueues.get(domain) ?? Promise.resolve();
+  const operation = previousExclusive.then(() => action());
+  const tail = operation.then(() => undefined, () => undefined);
+  const active = domainSharedOperations.get(domain) ?? new Set<Promise<void>>();
+  active.add(tail);
+  domainSharedOperations.set(domain, active);
+
+  return operation.finally(() => {
+    active.delete(tail);
+    if(!active.size && domainSharedOperations.get(domain) === active) {
+      domainSharedOperations.delete(domain);
+    }
+  });
+}
+
+async function executeDomain(
+  entry: ActiveDomain,
+  force = false,
+  propagateError = false,
+): Promise<number> {
   const domain = getSyncDomain(entry.name);
   if(!domain) {
-    post({ type: "sync-error", domain: entry.name, message: `unregistered domain "${entry.name}"` });
+    const error = new Error(`unregistered domain "${entry.name}"`);
+    post({ type: "sync-error", domain: entry.name, message: error.message });
+    if(propagateError) {throw error;}
 
-    return;
+    return 0;
   }
   post({ type: "sync-start", domain: entry.name });
   // Per-ACTIVATION clock, not per-domain: one page can activate the same domain twice with different
@@ -85,17 +140,41 @@ async function runDomain(entry: ActiveDomain, force = false): Promise<void> {
   const clockKey = activationKey(entry);
   try {
     const written = await domain.sync(ctx, entry.args, { force });
-    lastRunAt[clockKey] = Date.now();
-    post({ type: "sync-end", domain: entry.name, written, at: lastRunAt[clockKey] });
+    const interval = effectiveInterval(entry, domain);
+    // A class-B sync can deliberately refuse a destructive snapshot and return 0 without throwing.
+    // Its durable login marker is the completion signal: until that marker exists, leave the
+    // activation unclocked so the next base tick retries it. Cadenced domains and forced runs use
+    // the in-memory clock as before.
+    const completed = force || interval !== undefined || await hasSyncedThisLogin(entry.name);
+    const at = Date.now();
+    if(completed) {lastRunAt[clockKey] = at;}
+    post({ type: "sync-end", domain: entry.name, written, at, retryPending: !completed });
+
+    return written;
   } catch (err) {
-    // Record the attempt so one failing domain can't spin every base tick.
-    lastRunAt[clockKey] = Date.now();
+    // Cadenced domains record failed attempts so one bad endpoint cannot spin faster than its
+    // declared interval. A no-cadence/class-B domain must remain due until one pass succeeds.
+    if(effectiveInterval(entry, domain) !== undefined) {lastRunAt[clockKey] = Date.now();}
     const { isAuth, message } = classifyError(err);
     post({ type: isAuth ? "auth-error" : "sync-error", domain: entry.name, message });
+    if(propagateError) {throw err;}
+
+    return 0;
   }
 }
 
-async function executeTick(force: boolean): Promise<void> {
+function runDomain(
+  entry: ActiveDomain,
+  force = false,
+  propagateError = false,
+): Promise<number> {
+  return runExclusiveDomainOperation(
+    entry.name,
+    () => executeDomain(entry, force, propagateError),
+  );
+}
+
+async function executeTick(force: boolean, propagateErrors = false): Promise<void> {
   const now = Date.now();
   const due = force
     ? active
@@ -104,17 +183,30 @@ async function executeTick(force: boolean): Promise<void> {
   post({ type: "sync-cycle-start", domains: due.map(({ name }) => name), force });
   try {
     // Sequential: these share one thread and one backend; parallel bursts buy nothing here.
-    for(const entry of due) {await runDomain(entry, force);}
+    const failures: Array<{ domain: string; error: unknown }> = [];
+    for(const entry of due) {
+      try {
+        await runDomain(entry, force, propagateErrors);
+      } catch (error) {
+        failures.push({ domain: entry.name, error });
+      }
+    }
+    if(failures.length) {
+      throw new Error(
+        `Failed to sync domains: ${failures.map(({ domain }) => domain).join(", ")}.`,
+        { cause: failures[0].error },
+      );
+    }
   } finally {
     post({ type: "sync-cycle-end", at: Date.now(), force });
   }
 }
 
-function beginTick(force: boolean): Promise<void> {
+function beginTick(force: boolean, propagateErrors = false): Promise<void> {
   activeTickForced = force;
   // Defer execution one microtask so `tracked` is assigned before its cleanup can run, including
   // a zero-domain tick that completes immediately.
-  const operation = Promise.resolve().then(() => executeTick(force));
+  const operation = Promise.resolve().then(() => executeTick(force, propagateErrors));
   const tracked = operation.finally(() => {
     if(activeTick === tracked) {
       activeTick = null;
@@ -126,9 +218,9 @@ function beginTick(force: boolean): Promise<void> {
   return tracked;
 }
 
-function tick(force = false): Promise<void> {
+function tick(force = false, propagateErrors = false): Promise<void> {
   if(!ctx.token) {return Promise.resolve();} // wait until start() supplies a token
-  if(!activeTick) {return beginTick(force);}
+  if(!activeTick) {return beginTick(force, propagateErrors);}
   // Scheduled ticks may share the current work. A manual refresh may share an already-forced tick,
   // but it must queue behind a scheduled tick so its forced pass is never silently dropped.
   if(!force || activeTickForced) {return activeTick;}
@@ -137,7 +229,7 @@ function tick(force = false): Promise<void> {
   const predecessor = activeTick;
   // Domain failures are normally reported by runDomain. Even if the tick itself rejects,
   // a caller-requested forced pass still has to run after it.
-  const queued = predecessor.catch(() => undefined).then(() => beginTick(true)).finally(() => {
+  const queued = predecessor.catch(() => undefined).then(() => beginTick(true, propagateErrors)).finally(() => {
     if(queuedForcedTick === queued) {queuedForcedTick = null;}
   });
   queuedForcedTick = queued;
@@ -161,9 +253,9 @@ async function start(payload: HarnessStartPayload): Promise<void> {
   try {
     await ensureCacheReady();
   } catch (err) {
-    post({ type: "sync-error", message: `cache open failed: ${(err as any)?.message ?? err}` });
-
-    return;
+    const error = new Error(`cache open failed: ${(err as any)?.message ?? err}`, { cause: err });
+    post({ type: "sync-error", domain: "__start", message: error.message });
+    throw error;
   }
   for(const key of Object.keys(lastRunAt)) {delete lastRunAt[key];}
   await tick(); // immediate first pass (seeds the cache for every activated domain)
@@ -182,39 +274,69 @@ function setDomains(domains: ActiveDomain[]): void {
   for(const key of Object.keys(lastRunAt)) {if(!keys.has(key)) {delete lastRunAt[key];}}
 }
 
-async function refetchOne(request: { domain: string; pk: Record<string, unknown> }): Promise<number> {
+async function runTargetedRefetch(
+  request: { domain: string; pk: Record<string, unknown> },
+  scope: string,
+): Promise<number> {
   const domain = getSyncDomain(request.domain);
   if(!domain?.refetchOne) {
-    post({ type: "sync-error", domain: request.domain, message: "domain has no refetchOne" });
-
-    return 0;
+    const error = new Error("domain has no refetchOne");
+    post({ type: "sync-error", domain: request.domain, scope, message: error.message });
+    throw error;
   }
   const entry = active.find((candidate) => candidate.name === request.domain);
   try {
     const written = await domain.refetchOne(ctx, request.pk, entry?.args);
-    post({ type: "refetch-end", domain: request.domain, written });
+    post({ type: "refetch-end", domain: request.domain, scope, written });
 
     return written;
   } catch (err) {
     const { isAuth, message } = classifyError(err);
-    post({ type: isAuth ? "auth-error" : "sync-error", domain: request.domain, message });
-
-    return 0;
+    post({
+      type: isAuth ? "auth-error" : "sync-error",
+      domain: request.domain,
+      scope,
+      message,
+    });
+    // The HTTP write has already succeeded when callers reach this path. Rejecting is deliberate:
+    // resolving 0 lets a mutation UI report success while its cache stays stale and its controls
+    // are disabled by the recorded domain error.
+    throw err;
   }
 }
 
-async function syncDomainNow(domain: string): Promise<number> {
-  const entry = active.find((candidate) => candidate.name === domain) ?? { name: domain };
-  await runDomain(entry, true);
+function refetchOne(request: {
+  domain: string;
+  pk: Record<string, unknown>;
+}): Promise<number> {
+  const scope = cacheScopeKey(request.pk);
+  const queueKey = `${request.domain}:${scope}`;
+  const previous = refetchQueues.get(queueKey) ?? Promise.resolve();
+  // Same-scope reads must preserve call order: an older HTTP response must never land after a
+  // newer one and prune the newer cache state. Independent PK scopes remain concurrent.
+  const operation = runSharedDomainOperation(
+    request.domain,
+    () => previous.then(() => runTargetedRefetch(request, scope)),
+  );
+  const tail = operation.then(() => undefined, () => undefined);
+  refetchQueues.set(queueKey, tail);
 
-  // Read back under the SAME key `runDomain` stamped, otherwise a domain activated with args always
-  // reports 0 — the clock is keyed per activation, not per name.
-  return lastRunAt[activationKey(entry)] ? 1 : 0;
+  return operation.finally(() => {
+    if(refetchQueues.get(queueKey) === tail) {refetchQueues.delete(queueKey);}
+  });
+}
+
+function syncDomainNow(domain: string): Promise<number> {
+  const entry = active.find((candidate) => candidate.name === domain) ?? { name: domain };
+
+  // Forced/manual work must propagate failure. A timestamp records an attempt for throttling; it is
+  // never evidence that the snapshot succeeded.
+  return runDomain(entry, true, true);
 }
 
 expose({
   start,
-  syncNow: () => tick(true),
+  syncNow: () => tick(true, true),
   syncDomainNow,
   refetchOne,
   setDomains,

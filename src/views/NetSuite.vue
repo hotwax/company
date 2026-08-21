@@ -10,35 +10,46 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding-horizontal">
-      <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-      <!-- <section class="analytics-header">
-        <ion-card>
-          <ion-item lines="none">
-            <ion-label class="count-size">4</ion-label>
-          </ion-item>
-          <ion-item lines="none">
-            <ion-label>{{ translate("Orders pending sync") }}</ion-label>
-          </ion-item>
-        </ion-card>
-        <ion-card>
-          <ion-item lines="none">
-            <ion-label class="count-size">15</ion-label>
-          </ion-item>
-          <ion-item lines="none">
-            <ion-label>{{ translate("Customers pending sync") }}</ion-label>
-          </ion-item>
-        </ion-card>
-        <ion-card>
-          <ion-item lines="none">
-            <ion-label class="count-size">2</ion-label>
-          </ion-item>
-          <ion-item lines="none">
-            <ion-label>{{ ("Products pending sync") }}</ion-label>
-          </ion-item>
-        </ion-card>
-      </section> -->
+      <!--
+        Sync monitoring. This replaces three hardcoded placeholder counts; only the order backlog is
+        shown because it is the only one the OMS can actually answer today. Customer and product
+        "pending" counts had no backing query, and inventing plausible numbers for an operations
+        screen is worse than omitting them.
+      -->
+      <ion-card button class="ion-margin-top" @click="openSyncMonitor()">
+        <ion-card-header>
+          <ion-card-subtitle>{{ translate("Orders pending sync") }}</ion-card-subtitle>
+          <ion-card-title>
+            <template v-if="!backlogHydrated">
+              <ion-skeleton-text :animated="true" class="count-skeleton" />
+            </template>
+            <template v-else-if="pendingCount !== undefined">{{ pendingCount }}</template>
+            <template v-else>{{ translate("Unavailable") }}</template>
+          </ion-card-title>
+        </ion-card-header>
+        <ion-card-content>
+          <p v-if="pendingCount !== undefined">
+            {{ translate("Sales orders with no NetSuite order ID yet.") }}
+          </p>
+          <p v-else-if="backlogHydrated">
+            {{ translate("This OMS does not expose the pending order count yet.") }}
+          </p>
+          <p v-if="failedRuns.length" class="overline">
+            {{ failedRuns.length }} {{ translate("recent sync failures") }}
+          </p>
+        </ion-card-content>
+      </ion-card>
 
-      <div>
+      <div class="ion-margin-top">
+        <h1>{{ translate("Monitoring") }}</h1>
+        <section>
+          <ion-item detail :disabled="!netSuiteProductStore?.productStoreId" class="item-box" lines="none" button @click="openSyncMonitor()">
+            <ion-label>{{ translate("Order sync monitoring") }}</ion-label>
+          </ion-item>
+        </section>
+      </div>
+
+      <div class="ion-margin-top">
         <h1>{{ translate("Configuration") }}</h1>
         <section>
           <ion-item detail class="item-box" lines="none" button @click="openSftpModal()">
@@ -291,12 +302,18 @@
 <script setup lang="ts">
 import { useNetSuiteProductStore, useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
 import { useIntegrationTypeMappings } from "@/composables/useNetSuite";
-import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar } from "@ionic/vue";
+import { IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonModal, IonPage, IonRadio, IonRadioGroup, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
 import { closeOutline, informationCircleOutline, openOutline, saveOutline, search } from "ionicons/icons";
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
-import { computed, ref } from "vue";
+import { useCacheSync } from "@/composables/useCacheSync";
+import {
+  useNetSuiteOrderPushBacklog,
+  useNetSuiteRecentRuns,
+  useNetSuiteRuleGroups,
+} from "@/composables/useNetSuiteSync";
+import { computed, ref, watch } from "vue";
 
 
 const priceLevelTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PRICE_LEVEL_TYPE_ID
@@ -306,6 +323,33 @@ const { addNetSuiteId: addDiscountNetSuiteId, updateNetSuiteId: updateDiscountNe
 
 const { updateSftpConfig } = useNetSuite();
 const { netSuiteProductStore } = useNetSuiteProductStore();
+
+// Sync monitoring — the card reads the cache the `netSuiteOrderPush` worker domain writes, so it
+// costs no main-thread request and refreshes itself while the page is open.
+const { pendingCount, hydrated: backlogHydrated } =
+  useNetSuiteOrderPushBacklog(() => netSuiteProductStore.value?.productStoreId);
+const { groups: netSuiteRuleGroups } =
+  useNetSuiteRuleGroups(() => netSuiteProductStore.value?.productStoreId);
+const { failed: failedRuns } =
+  useNetSuiteRecentRuns(() => netSuiteRuleGroups.value.map((group: any) => group.ruleGroupId));
+const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+
+function netSuiteSyncDomains() {
+  const productStoreId = netSuiteProductStore.value?.productStoreId;
+  return productStoreId
+    ? [{ name: "netSuiteOrderPush", args: { productStoreId, runsPerGroup: 25 } }]
+    : [];
+}
+
+// The store comes from the cache, so it typically resolves after first paint.
+watch(() => netSuiteProductStore.value?.productStoreId, () => { void startSyncDomains(netSuiteSyncDomains()); });
+onIonViewWillEnter(() => { void startSyncDomains(netSuiteSyncDomains()); });
+onIonViewDidLeave(() => { stopSyncDomains(); });
+
+function openSyncMonitor() {
+  if (!netSuiteProductStore.value?.productStoreId) return;
+  router.push("/netsuite/sync-monitor")
+}
 
 function openShipmentMethod() {
   router.push("/netsuite/shipment-methods")
@@ -568,6 +612,10 @@ section {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacer-sm);
+}
+
+.count-skeleton {
+  width: var(--spacer-3xl);
 }
 
 </style>

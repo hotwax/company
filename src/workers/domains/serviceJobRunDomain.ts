@@ -31,11 +31,20 @@ export interface ServiceJobRunArgs {
   refreshMaxAgeMs?: number;
 }
 
+/** Boundary cursors confirmed terminal during this worker lifetime; terminal rows are immutable. */
+const terminalBoundaryByJob = new Map<string, number>();
+
 async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArgs): Promise<number> {
   const cursor = await serviceJobRunCache.newestCursor("startTime", {
     field: "jobName",
     value: jobName,
   });
+  // A running row keeps the same startTime when it later gains endTime/hasError. Include that
+  // boundary until it becomes terminal; otherwise the strict cursor permanently freezes the cached
+  // row in its running state. Once terminal, resume the normal strict `>` cursor and quiet ticks.
+  // The worker-local terminal clock avoids scanning an ever-growing run cache every 10 seconds. On
+  // a worker restart the current boundary is read once, then becomes quiet again if already done.
+  const refreshBoundary = cursor !== undefined && terminalBoundaryByJob.get(jobName) !== cursor;
 
   const runs = await pageNewestFirst({
     ctx,
@@ -47,8 +56,18 @@ async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArg
     // Stop as soon as a page reaches runs already cached for this job.
     keep: cursor === undefined
       ? undefined
-      : (page) => page.filter((run: any) => Number(run?.startTime ?? 0) > cursor),
+      : (page) => page.filter((run: any) => {
+        const startTime = Number(run?.startTime ?? 0);
+
+        return startTime > cursor || (refreshBoundary && startTime === cursor);
+      }),
   });
+  if(cursor !== undefined && refreshBoundary) {
+    const boundary = runs.find((run: any) => Number(run?.startTime ?? 0) === cursor);
+    if(boundary?.endTime !== undefined && boundary?.endTime !== null && boundary?.endTime !== "") {
+      terminalBoundaryByJob.set(jobName, cursor);
+    }
+  }
 
   // `jobName` is only in the URL, not echoed per row, so stamp it in — otherwise the rows cannot be
   // scoped back to their job and the per-job cursor above would see every job at once.

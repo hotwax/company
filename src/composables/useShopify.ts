@@ -28,11 +28,11 @@ import {
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import { api, commonUtil, logger, translate } from "@common";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { onSessionCleared } from "./sessionScope";
 import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
   productStoreCache,
+  inventoryEventDocumentCache,
   serviceJobCache,
   shopifyBulkOperationCache,
   shopifyCarrierShipmentCache,
@@ -45,11 +45,17 @@ import {
   systemMessageRemoteCache,
 } from "@/utils/cacheEntities";
 import {
+  DATA_MANAGER_LOG_STATUS_IDS,
+  logState as dataManagerLogState,
+  isTerminal as isDataManagerLogTerminal,
+} from "@/utils/dataManagerLog";
+import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
-import { resolveShopRemoteIds, shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
+import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import type { ActiveDomain } from "@/workers/syncRegistry";
+import { onSessionCleared } from "./sessionScope";
 import { useCacheSync } from "./useCacheSync";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useStatuses } from "./useSeed";
@@ -76,6 +82,448 @@ import { useSystemMessage } from "./useSystemMessage";
 export function useShopifyShops() {
   const { records, hydrated } = useCachedList<any>(shopifyShopCache);
   return { shops: records, records, hydrated };
+}
+
+export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+export const SHOPIFY_INVENTORY_EVENT_FEED_MANUAL = "DTFDTP_MAN_PULL";
+export const SHOPIFY_INVENTORY_EVENT_FEED_PUSH = "DTFDTP_RT_PUSH";
+
+/**
+ * Switch the OMS-wide Shopify inventory event feed between manual and real-time push.
+ *
+ * This is intentionally global rather than shop-scoped: all ten Shopify inventory event
+ * DataDocuments currently belong to one Moqui DataFeed. The view makes that scope explicit before
+ * allowing the mutation.
+ */
+export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  const allowedTypes = [SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH];
+  if (!allowedTypes.includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported Shopify inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: {
+      dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+      dataFeedTypeEnumId,
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", {
+    dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  });
+}
+
+/**
+ * The DataDocuments this feature ships, in the order the pipeline reads best.
+ *
+ * Listed rather than discovered so a document that is NOT attached is visibly missing instead of
+ * simply absent - "why did no POS event fire?" is the question this screen exists to answer, and a
+ * discovered list answers it with silence. Mirrors data/DA_ExtSeed_ShopifyDocumentData.xml in the
+ * connector; a document added there needs adding here to become visible.
+ */
+export const SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS = [
+  "ShopifyShipmentReceiptEvent",
+  "ShopifyPosItemIssuanceEvent",
+  "ShopifyPhysicalInventoryEvent",
+  "ShopifyExternalInventoryResetEvent",
+  "ShopifyReservationCreatedEvent",
+  "ShopifyReservationReleaseEvent",
+  "ShopifyProductFacilityAuditEvent",
+  "ShopifyProductStoreFacilityAuditEvent",
+  "ShopifyFacilityGroupMemberEvent",
+  "ShopifyInventoryChannelAuditEvent",
+] as const;
+
+export interface InventoryEventDocument {
+  dataDocumentId: string;
+  documentName: string;
+  primaryEntityName: string;
+  /** false when the row exists but carries no DataFeedDocument for this feed. */
+  attached: boolean;
+  /** true when the OMS has no DataDocument by this id at all - the seed data never loaded. */
+  missing: boolean;
+}
+
+/** Collapse (document, feed) rows into one entry per document this feature ships. */
+function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
+  const byId = new Map<string, { row: any; attached: boolean }>();
+  for (const row of rows) {
+    const id = String(row?.dataDocumentId ?? "");
+    if (!id) continue;
+    const attached = String(row?.dataFeedId ?? "") === SHOPIFY_INVENTORY_EVENT_FEED_ID;
+    const seen = byId.get(id);
+    // Attached on any row wins: the same document can appear once per feed it belongs to.
+    byId.set(id, { row: seen?.row ?? row, attached: (seen?.attached ?? false) || attached });
+  }
+
+  return SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS.map((id) => {
+    const found = byId.get(id);
+    return {
+      dataDocumentId: id,
+      documentName: found?.row?.documentName || id,
+      primaryEntityName: found?.row?.primaryEntityName || "",
+      attached: found?.attached ?? false,
+      missing: !found,
+    };
+  });
+}
+
+/**
+ * Every inventory event document with its attachment state, from the cache.
+ *
+ * The cached table holds one row per (document, feed) because `DataDocumentAndFeed` left-joins:
+ * unattached documents arrive with no feed, and a document on two feeds arrives twice. Both shapes
+ * are collapsed here rather than in the projection, so the stored rows stay a faithful copy of what
+ * the OMS returned.
+ */
+export function useInventoryEventDocuments() {
+  const { records, hydrated } = useCachedList<any>(inventoryEventDocumentCache);
+  const documents = computed(() => toInventoryEventDocuments(
+    records.value.map((row: any) => row?.raw ?? row)));
+  return { documents, hydrated };
+}
+
+/**
+ * Attach or detach one document from the inventory event feed.
+ *
+ * Not cosmetic: for a real-time feed Moqui derives which entity writes fire the feed from the
+ * documents attached to it, so detaching one stops that class of inventory event being recorded at
+ * all. The change lands when the entity cache behind that lookup expires, not immediately.
+ */
+export async function setInventoryEventDocumentAttached(
+  dataDocumentId: string,
+  attached: boolean,
+): Promise<void> {
+  const base = `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}/documents`;
+  const resp: any = attached
+    ? await api({
+      url: base,
+      method: "post",
+      data: { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID, dataDocumentId },
+    })
+    : await api({ url: `${base}/${dataDocumentId}`, method: "delete" });
+  if (commonUtil.hasError(resp)) {
+    throw new Error(attached
+      ? "The OMS rejected attaching the document to the feed."
+      : "The OMS rejected detaching the document from the feed.");
+  }
+  // Write-through. The domain re-lists just this document and snapshot-replaces its slice, so the
+  // row for the feed it just left is pruned rather than left behind as a phantom attachment.
+  await refreshAfterMutation("inventoryEventDocument", { dataDocumentId });
+}
+
+/**
+ * Map one facility group to one Shopify location as an aggregate inventory channel.
+ */
+export async function createInventoryChannel(params: {
+  shopId: string;
+  facilityGroupId: string;
+  shopifyLocationId: string;
+  description?: string;
+  fromDate?: number | string;
+}): Promise<string | undefined> {
+  const resp: any = await api({
+    url: "sob/shopify/inventoryChannels",
+    method: "post",
+    data: {
+      shopId: params.shopId,
+      facilityGroupId: params.facilityGroupId,
+      shopifyLocationId: params.shopifyLocationId,
+      fromDate: params.fromDate ?? Date.now(),
+      ...(params.description ? { description: params.description } : {}),
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel mapping.");
+  }
+  const inventoryChannelId = resp?.data?.inventoryChannelId;
+  if (inventoryChannelId) await refreshAfterMutation("inventoryChannel", { inventoryChannelId });
+  return inventoryChannelId;
+}
+
+/**
+ * Edit an existing channel: its description, the Shopify location it feeds, or its thruDate.
+ *
+ * shopId and facilityGroupId are deliberately not editable. Either one changing makes this a mapping
+ * between different things rather than an edit of this one, and the pending deltas already recorded
+ * against the channel were calculated for the old pair.
+ *
+ * Moving shopifyLocationId is a real inventory operation, not a label change: the OMS records a
+ * clearing delta against the location being left so it does not keep the stock forever, and the new
+ * location is seeded by a full aggregate ATP reset. Expiring a channel (thruDate) clears its location
+ * the same way.
+ */
+export async function updateInventoryChannel(params: {
+  inventoryChannelId: string;
+  description?: string;
+  shopifyLocationId?: string;
+  thruDate?: string | null;
+}): Promise<void> {
+  const { inventoryChannelId, ...changes } = params;
+  const resp: any = await api({
+    url: `sob/shopify/inventoryChannels/${inventoryChannelId}`,
+    method: "put",
+    data: { inventoryChannelId, ...changes },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel change.");
+  }
+  // The PUT returns nothing useful and the sync screen reads the cached row.
+  await refreshAfterMutation("inventoryChannel", { inventoryChannelId });
+}
+
+const EVENT_PUBLISHER_TEMPLATE_JOB = "publish_PendingShopifyInventoryAdjustments";
+/** Shared by every `queue_*` feed job on this OMS; the message type is what differentiates them. */
+export const FEED_SYSTEM_MESSAGE_SERVICE =
+  "co.hotwax.shopify.system.ShopifySystemMessageServices.queue#FeedSystemMessage";
+/** Must match the sync panel's physicalResetJob matcher. */
+export const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+export const ABSOLUTE_CHANNEL_RESET_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+
+/** Existence probe so both ensure* helpers are safe to call twice. */
+async function serviceJobExists(jobName: string): Promise<boolean> {
+  try {
+    const resp: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if (commonUtil.hasError(resp)) return false;
+    return !!(resp?.data?.jobDetail?.jobName ?? resp?.data?.jobName);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One event publisher per CHANNEL.
+ *
+ * `publish#PendingShopifyInventoryAdjustments` takes a required inventoryChannelId and holds its
+ * semaphore on that same value, so publishing is per channel, not per shop. The seeded
+ * `publish_PendingShopifyInventoryAdjustments` row is a TEMPLATE that must stay paused - it carries
+ * no inventoryChannelId, and unpausing it only produces failed runs. Each channel gets its own clone.
+ * Created paused: activation is a separate reviewed step, per the release runbook.
+ *
+ * This was previously keyed by shopId and passed a `shopId` parameter. The service no longer accepts
+ * that, so a clone provisioned the old way could never run - it failed on the missing required
+ * inventoryChannelId, and one publisher per shop could not serve two channels on the same shop.
+ */
+export async function ensureChannelEventPublisherJob(inventoryChannelId: string): Promise<string> {
+  const jobName = `${EVENT_PUBLISHER_TEMPLATE_JOB}_${inventoryChannelId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: `admin/serviceJobs/${EVENT_PUBLISHER_TEMPLATE_JOB}/clone`,
+    method: "POST",
+    data: { newJobName: jobName },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: inventoryChannelId },
+        { parameterName: "maxChangeCount", parameterValue: "100" },
+        { parameterName: "staleSendingMinutes", parameterValue: "60" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+export const DISCARD_PENDING_EVENTS_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents";
+export const PRODUCED_SENDER_SERVICE =
+  "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages";
+export const INVENTORY_ADJUSTMENT_MESSAGE_TYPE = "ShopifyInventoryAdjustment";
+const DISCARD_PENDING_EVENTS_JOB = "cancel_PendingShopifyInventoryAdjustmentEvents";
+const INVENTORY_ADJUSTMENT_SENDER_JOB = "send_ShopifyInventoryAdjustmentProducedSystemMessages";
+
+/**
+ * A MANUAL, run-on-demand handle on `cancel#PendingShopifyInventoryAdjustmentEvents`.
+ *
+ * The service takes the channel as a parameter, so ONE job serves every channel: the operator points
+ * it at a channel by editing `inventoryChannelId`, then runs it. That is why this is created with NO
+ * cron expression - a schedule would silently discard a channel's unbatched events every few minutes,
+ * which is the opposite of what a discard tool is for. Created paused as well, so the only way it ever
+ * runs is a deliberate Run now.
+ *
+ * `reason` is required by the service and lands verbatim in the cancelled System Message's messageText,
+ * so it seeds to something that names the app rather than an empty string.
+ */
+export async function ensureChannelEventDiscardJob(params: {
+  inventoryChannelId?: string;
+  reason?: string;
+} = {}): Promise<string> {
+  const jobName = DISCARD_PENDING_EVENTS_JOB;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: DISCARD_PENDING_EVENTS_SERVICE,
+      description: "Discard unbatched aggregate inventory events for one inventory channel",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId ?? "" },
+        {
+          parameterName: "reason",
+          parameterValue: params.reason
+            || "Discarded from the Company app inventory event history.",
+        },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * A sender dedicated to ShopifyInventoryAdjustment messages.
+ *
+ * The aggregate inventory flow deliberately leaves its batch at SmsgProduced and relies on a scheduled
+ * `send#AllProducedSystemMessages` to deliver it - see the comment in
+ * createShopifyInventoryAdjustmentSystemMessage.groovy. The seeded `send_AllProducedSystemMessages_frequent`
+ * is UNSCOPED, so inventory delivery shares a queue with every other outgoing message type on the OMS
+ * and is held up by whatever else is backed up or erroring. `systemMessageTypeIds` restricts this clone
+ * to inventory adjustments only, so this flow cannot get stuck behind another queue.
+ *
+ * `mode: sync` sends each message inline instead of dispatching it on a worker thread. That is the point
+ * for this type: Shopify rate-limits per shop, and a throttled adjustment mutation freezes its rejection
+ * into messageText and replays verbatim, so parallel sends risk storing a permanently wrong adjustment.
+ *
+ * Created paused: activating a sender is a deliberate step, per the release runbook.
+ */
+export async function ensureInventoryAdjustmentSenderJob(): Promise<string> {
+  const jobName = INVENTORY_ADJUSTMENT_SENDER_JOB;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: PRODUCED_SENDER_SERVICE,
+      description: "Send produced Shopify inventory adjustment system messages",
+      // Matches the per-channel publisher cadence: delivery should keep pace with batching rather
+      // than lag it by the 15 minutes the unscoped seeded sender uses.
+      cronExpression: "0 0/5 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        // A plain comma-free string for a List parameter, the way the OMS's own
+        // send_BulkProductAndVariantsByIdQueryProducedSystemMessages job passes it.
+        { parameterName: "systemMessageTypeIds", parameterValue: INVENTORY_ADJUSTMENT_MESSAGE_TYPE },
+        { parameterName: "mode", parameterValue: "sync" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * One absolute reconciliation job per CHANNEL. No template ships for this one, so it is created
+ * outright. The sync panel finds it by serviceName plus the inventoryChannelId parameter, never by
+ * name, so the parameter is what makes it belong to the channel.
+ */
+export async function ensureChannelResetJob(params: {
+  inventoryChannelId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `reset_InventoryChannelInventory_${params.inventoryChannelId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE,
+      description: params.description || `Full aggregate ATP reset for ${params.inventoryChannelId}`,
+      cronExpression: "0 0 */4 * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
+}
+
+/**
+ * One physical-location QOH reset per SHOP REMOTE. No template ships, so it is created outright,
+ * mirroring the other `queue_*` feed jobs on this OMS (same service, same three parameters).
+ *
+ * The sync panel finds this job by parameter, never by name: systemMessageRemoteId must be the
+ * shop's remote, systemMessageTypeId must be ResetInventoryQoh, and runAsBatch must be "true".
+ * Miss any of the three and the panel reports "Not configured" - which is what it did before this
+ * existed, leaving a cold-start connection with no way to create the job from the UI at all.
+ */
+export async function ensureShopPhysicalInventoryResetJob(params: {
+  systemMessageRemoteId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `queue_ResetInventoryQoh_${params.systemMessageRemoteId}`;
+  if (await serviceJobExists(jobName)) return jobName;
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: FEED_SYSTEM_MESSAGE_SERVICE,
+      description: params.description
+        || `Reset physical location QOH for ${params.systemMessageRemoteId}`,
+      cronExpression: "0 0 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "systemMessageTypeId", parameterValue: PHYSICAL_RESET_MESSAGE_TYPE },
+        { parameterName: "systemMessageRemoteId", parameterValue: params.systemMessageRemoteId },
+        { parameterName: "runAsBatch", parameterValue: "true" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+  return jobName;
 }
 
 /** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
@@ -291,6 +739,53 @@ export function useShopifyShopIdForProductStore() {
   const shopifyShopIdFor = (productStoreId: string) =>
     shops.value.find((shop: any) => shop.productStoreId === productStoreId)?.shopifyShopId ?? "";
   return { shopifyShopIdFor };
+}
+
+export function useShopifyShopQueries(shopId: string) {
+  const fetchTypeMappingsForShop = async (mappedTypeId: string) => {
+    let mappings: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "get",
+        params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        mappings = [...mappings, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return mappings;
+  };
+
+  const fetchCarrierShipmentsForShop = async () => {
+    let shipments: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "get",
+        params: { shopId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        shipments = [...shipments, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return shipments;
+  };
+
+  return {
+    fetchTypeMappingsForShop,
+    fetchCarrierShipmentsForShop
+  };
 }
 
 export function useShopifyShopMutations(shopId: string) {
@@ -1575,9 +2070,7 @@ export function useShopifyProductSyncRun() {
       },
       status: getStatusLabel(effectiveStatus.value),
       statusColor: getStatusColor(effectiveStatus.value),
-      completed: log?.statusId === 'DmlSuccess' ||
-        log?.statusId === 'DmlError' ||
-        skippedEmptyImport.value,
+      completed: isDataManagerLogTerminal(log) || skippedEmptyImport.value,
     } as Record<string, any>;
   });
 
@@ -4042,15 +4535,58 @@ export function useShopifyAccessScopes() {
     return scopes;
   };
 
-  return { scopesFor, refreshAccessScopes };
+  /**
+   * Set the connection's read/write scope — `SystemMessageRemote.accessScopeEnumId`, an enum of type
+   * `ShopifyShopAccessScope`.
+   *
+   * NOT the same thing as the Shopify OAuth scopes above, despite the shared name: those are what
+   * Shopify granted the app, this is the OMS-side master shutoff that decides whether this OMS is
+   * allowed to write back at all. Services gate on it directly - `post#InventoryChannelInventory`
+   * refuses with "Shop [x] has no write-capable Shopify remote connection" unless it reads
+   * SHOP_RW_ACCESS - and nothing in this app could set it, so a shop could be fully configured for
+   * inventory sync and still fail every push with no field anywhere to explain why.
+   */
+  const setConnectionAccessScope = async (
+    systemMessageRemoteId: string,
+    accessScopeEnumId: string,
+  ): Promise<void> => {
+    const resp: any = await api({
+      url: `oms/systemMessageRemotes/${systemMessageRemoteId}`,
+      method: "put",
+      data: { systemMessageRemoteId, accessScopeEnumId },
+    });
+    if (commonUtil.hasError(resp)) throw resp;
+    // The PUT echoes nothing useful, and the screens read the cached remote row.
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  };
+
+  return { scopesFor, refreshAccessScopes, setConnectionAccessScope };
 }
 
 /**
- * Create a Shopify connection: the SystemMessageRemote (credentials + linkage) and the ShopifyShop.
+ * Create a Shopify connection: the ShopifyShop, then its credentials via the OMS's own install service.
  *
- * Moved verbatim from the store except the ending: the store pushed the new shop into its own array,
- * which no cached read ever saw — a freshly created connection was invisible on every converted page
- * until the next login snapshot. Write-through refreshes both cached sides instead.
+ * Two rows are not enough. Every publishing service resolves a shop's credentials through
+ * `ShopifyHelper.getShopRemote(shopId, 'SsctShopifyDefaultApp')`, which reads `ShopifyShopRemote` — a
+ * third, link row. This function used to create the `SystemMessageRemote` with a raw entity POST and
+ * never that link, so the app showed a healthy, fully-credentialed connection while the publisher
+ * resolved nothing: the absolute inventory reset failed with "no write-capable Shopify remote
+ * connection" and the real-time event fan-out recorded nothing at all.
+ *
+ * So the credential half is no longer ours to assemble. `POST sob/shop` (`store#ShopifyShop`) is the
+ * same entry point Keychain calls when a merchant installs the app, and it owns creating the remote,
+ * the link row and the purpose in one transaction. Manual creation now takes the automatic path, which
+ * is what stops the two from drifting apart again.
+ *
+ * The shop is created FIRST, and deliberately by us: given no existing shop for the domain,
+ * `store#ShopifyShop` runs its first-install branch, which assigns its own sequenced `shopId` and has
+ * nowhere to put `productStoreId`. Creating the shop up front means the caller's chosen id and product
+ * store survive, and the service takes its "shop exists, no remote yet" branch instead — which creates
+ * exactly the remote and link row that were missing.
+ *
+ * Write-through refreshes both cached sides: the store used to push the new shop into its own array,
+ * which no cached read ever saw, so a freshly created connection was invisible on every converted page
+ * until the next login snapshot.
  */
 export async function createShopifyConnection(payload: {
   shopId: string;
@@ -4062,27 +4598,7 @@ export async function createShopifyConnection(payload: {
   name?: string;
   productStoreId?: string;
 }) {
-  // Predictable remote id so the remote↔shop linkage is self-describing.
-  const systemMessageRemoteId = `${payload.shopId}_REMOTE`;
-  const remoteResp: any = await api({
-    url: "oms/systemMessageRemotes",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      sendUrl: payload.myshopifyDomain,
-      remoteAppCode: payload.clientId,
-      sharedSecret: payload.clientSecret,
-      sendSharedSecret: payload.shopAccessToken,
-      password: payload.shopAccessToken,
-      remoteId: payload.shopifyShopId,
-      remoteIdType: "SHOPIFY_SHOP_ID",
-      internalId: payload.shopId,
-      internalIdType: "HOTWAX_SHOP_ID",
-      authHeaderName: "X-Shopify-Access-Token",
-      description: payload.name || payload.myshopifyDomain,
-    },
-  });
-  if (commonUtil.hasError(remoteResp)) throw remoteResp;
+  const name = payload.name || payload.myshopifyDomain.split(".")[0];
 
   const shopResp: any = await api({
     url: "oms/shopifyShops/shops",
@@ -4091,23 +4607,50 @@ export async function createShopifyConnection(payload: {
       shopId: payload.shopId,
       shopifyShopId: payload.shopifyShopId,
       myshopifyDomain: payload.myshopifyDomain,
-      name: payload.name || payload.myshopifyDomain.split(".")[0],
+      name,
       productStoreId: payload.productStoreId || undefined,
       isEnabled: "Y",
     },
   });
   if (commonUtil.hasError(shopResp)) throw shopResp;
 
-  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  // Creates the SystemMessageRemote, the ShopifyShopRemote link for SsctShopifyDefaultApp, and syncs
+  // live shop metadata (currency, timezone, primaryLocationId) that the inventory-channel setup reads.
+  // It is idempotent: re-running with the same credentials updates in place rather than duplicating,
+  // which also makes it the repair path for a connection left without a link row.
+  const remoteResp: any = await api({
+    url: "sob/shop",
+    method: "post",
+    data: {
+      name,
+      shopifyShopId: payload.shopifyShopId,
+      myshopifyDomain: payload.myshopifyDomain,
+      clientId: payload.clientId,
+      clientSecret: payload.clientSecret,
+      shopAccessToken: payload.shopAccessToken,
+    },
+  });
+  if (commonUtil.hasError(remoteResp)) {
+    // The shop row is committed but has no usable credentials. Say so, because the failure the caller
+    // must act on is a rejected token, not a missing shop — and re-submitting the same form completes it.
+    logger.error("createShopifyConnection: shop created but credentials were rejected", remoteResp);
+    throw remoteResp;
+  }
+
+  const systemMessageRemoteId = remoteResp?.data?.systemMessageRemoteId;
+  if (systemMessageRemoteId) {
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  }
   await refreshAfterMutation("shopifyShop", { shopId: payload.shopId });
 
   return {
     shopId: payload.shopId,
     shopifyShopId: payload.shopifyShopId,
     myshopifyDomain: payload.myshopifyDomain,
-    name: payload.name || payload.myshopifyDomain.split(".")[0],
+    name,
     productStoreId: payload.productStoreId || null,
     isEnabled: "Y",
+    systemMessageRemoteId: systemMessageRemoteId || null,
   };
 }
 
@@ -4283,19 +4826,6 @@ export interface ShopifyProductUpdateSyncRunState {
   systemMessages?: any[];
 }
 
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
 export interface ShopifyRunningBulkOperation {
   id: string;
   status: string;
@@ -4389,125 +4919,6 @@ export interface ShopifyProductSyncHistoryRun {
 
 export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 
-
-export interface ShopifyShopProductCount {
-  count: number;
-  lastSyncedAt?: string;
-}
-
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
-export interface ShopifyRunningBulkOperation {
-  id: string;
-  status: string;
-  type: string;
-  createdAt: string;
-  objectCount: number;
-}
-
-export interface ShopifyUnsyncedProductUpdate {
-  id: string;
-  legacyResourceId?: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-}
-
-export interface ShopifyProductSyncProductSearchResult {
-  id: string;
-  legacyResourceId: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-  cursor: string;
-}
-
-export interface ShopifyProductSyncProductSearchState {
-  products: ShopifyProductSyncProductSearchResult[];
-  hasNextPage: boolean;
-  endCursor: string;
-}
-
-export interface ShopifyProductSyncOnDemandResult {
-  systemMessageId?: string;
-  syncedProductId?: string[];
-  missingProductId?: string[];
-  failedProductId?: string[];
-  rejectedProductId?: string[];
-  acceptedCount?: number;
-  syncedCount?: number;
-  failedCount?: number;
-  rejectedCount?: number;
-}
-
-export interface ShopifyProductSyncActionResult {
-  jobOutput?: string;
-  message?: string;
-  systemMessageId?: string;
-}
-
-export interface ShopifyProductSyncHistoryOperation {
-  id: string;
-  title: string;
-  subtitle: string;
-  status: string;
-  statusLabel: string;
-  metricValue?: number | string;
-  metricLabel?: string;
-  actionLabel?: string;
-  detailType: string;
-}
-
-export interface ShopifyProductSyncHistoryRun {
-  id: string;
-  systemMessageId: string;
-  createdTime: string;
-  bulkOperationStatus: string;
-  bulkOperationStatusLabel: string;
-  mdmStatus: string;
-  mdmStatusLabel: string;
-  bulkOperationId: string;
-  objectCount: number;
-  mdmImportId: string;
-  totalRecordCount: number;
-  failedRecordCount: number;
-  operations: ShopifyProductSyncHistoryOperation[];
-}
-
 export interface ShopifyProductSyncHistoryState {
   runs: ShopifyProductSyncHistoryRun[];
 }
@@ -4533,6 +4944,11 @@ const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // deprecated full-form enum and requires updating (it is being phased out / force-replaced).
 const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const TERMINAL_DATA_MANAGER_LOG_STATUS_IDS = DATA_MANAGER_LOG_STATUS_IDS.filter((statusId) => {
+  const state = dataManagerLogState(statusId, { total: 0, success: 0, failed: 0 });
+
+  return state === "completed" || state === "partial" || state === "failed";
+});
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -4752,12 +5168,6 @@ function assertStringField(value: any, fieldName: string, context: string) {
   }
 }
 
-function assertArrayField(value: any, fieldName: string, context: string) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${context} response must include array ${fieldName}.`);
-  }
-}
-
 function validateSetupState(response: any): ShopifyProductSyncSetupState {
   const context = "Product sync setup state";
   assertPlainObject(response, context);
@@ -4907,28 +5317,32 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
 
   if (!remoteIds.length) return candidates[0]?.systemMessageRemoteId;
 
-  try {
-    const response = await requestBackend<SystemMessagesResponse>({
-      url: "admin/systemMessages",
-      method: "get",
-      params: {
-        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
-        systemMessageRemoteId: remoteIds,
-        systemMessageRemoteId_op: "in",
-        pageSize: remoteIds.length
-      }
-    });
+  const remoteChecks = await Promise.all(remoteIds.map(async (systemMessageRemoteId: string) => {
+    try {
+      const response = await requestBackend<SystemMessagesResponse>({
+        url: "admin/systemMessages",
+        method: "get",
+        params: {
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+          systemMessageRemoteId,
+          pageSize: 1
+        }
+      });
 
-    const validRemoteIds = new Set(response?.systemMessages?.map((msg: any) => msg.systemMessageRemoteId));
-    // Pick the first remoteId from the original candidates list that is valid
-    const firstValid = remoteIds.find(id => validRemoteIds.has(id));
+      const matchesRemote = response?.systemMessages?.some((message: any) =>
+        String(message?.systemMessageRemoteId || "") === systemMessageRemoteId);
 
-    if (firstValid) {
-      return firstValid;
+      return matchesRemote ? systemMessageRemoteId : "";
+    } catch (error) {
+      logger.warn(`Failed to check product-sync history for remote ${systemMessageRemoteId}`, error);
+
+      return "";
     }
-  } catch (e) {
-    logger.error("Failed to resolve system message remote IDs in bulk", e);
-  }
+  }));
+
+  // `Promise.all` preserves candidate order, so access-priority remains deterministic.
+  const firstValid = remoteChecks.find(Boolean);
+  if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
 };
@@ -4956,13 +5370,20 @@ export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProd
 
 const getSystemMessageRank = (systemMessage: any) => {
   const statusId = String(systemMessage?.statusId || "").toLowerCase();
-  const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
+  const logStatusId = String(systemMessage?.logStatusId || "");
   const logId = systemMessage?.logId;
+  const logState = logId
+    ? dataManagerLogState(logStatusId, {
+      total: Number(systemMessage?.totalRecordCount || 0),
+      success: Number(systemMessage?.successRecordCount || 0),
+      failed: Number(systemMessage?.failedRecordCount || 0),
+    })
+    : undefined;
 
   // Terminal status:
-  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
+  // 1. mdm logId is present AND its canonical DataManager status is terminal
   // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
+  const isTerminal = (logId && (logState === "completed" || logState === "partial" || logState === "failed")) ||
                      (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
 
   if (isTerminal) {
@@ -4970,8 +5391,8 @@ const getSystemMessageRank = (systemMessage: any) => {
   }
 
   // Any other case is considered "In Progress" and gets a higher rank (>= 2)
-  if (logStatusId === "dmlsrunning") return 5;
-  if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
+  if(logState === "active") {return 5;}
+  if(logState === "pending" || statusId === "smsgconsumed" || statusId === "consumed") {return 4.5;}
   if (statusId === "smsgreceived") return 3.5;
   if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
   if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
@@ -5152,45 +5573,6 @@ async function cachedSyncMessageHistory(query: {
     return null;
   }
 }
-
-export const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
-  const shopId = payload.shopId || payload.shop?.shopId;
-  if (!shopId) {
-    throw new Error("Shop ID is required to count pending product update requests.");
-  }
-
-  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
-  const cachedPending = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    statusId: "SmsgProduced",
-  });
-  if (cachedPending) {
-    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
-  }
-
-  const response = await requestBackend<any>({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-        remoteInternalId: shopId,
-        remoteInternalIdType: "HOTWAX_SHOP_ID",
-        statusId: "SmsgProduced"
-      },
-      pageSize: payload.pageSize || 1,
-      pageIndex: 0,
-      orderByField: "-initDate"
-    }
-  }, "Pending product update requests");
-
-  return {
-    count: Number(response?.entityValueListCount || 0),
-    latestSystemMessage: response?.entityValueList?.[0]
-  };
-};
 
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
@@ -5486,42 +5868,6 @@ export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductS
   }, "Shopify product sync endpoint");
 };
 
-const sendShopifyBulkQueryMessage = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const systemMessageRemoteId = String(payload?.systemMessageRemoteId || "").trim();
-  const queryText = String(payload?.queryText || "").trim();
-
-  if (!systemMessageRemoteId) {
-    throw new Error("System message remote id is required to send a Shopify bulk query message.");
-  }
-  if (!queryText) {
-    throw new Error("Query text is required to send a Shopify bulk query message.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/graphql",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      queryText
-    }
-  }, "Shopify GraphQL send endpoint");
-};
-
-const pollBulkOperationResult = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const parentSystemMessageTypeId = String(payload?.parentSystemMessageTypeId || "").trim();
-  if (!parentSystemMessageTypeId) {
-    throw new Error("Parent system message type id is required to poll a Shopify bulk operation result.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/bulk/result/poll",
-    method: "post",
-    data: {
-      parentSystemMessageTypeId
-    }
-  }, "Shopify bulk result poll endpoint");
-};
-
 export const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProductSyncActionResult> => {
   if (!String(systemMessageId || "").trim()) {
     throw new Error("System message id is required to cancel a Shopify product sync message.");
@@ -5696,36 +6042,6 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
 // did not — without that the new job stays invisible to every cached read until the next login.
 
 
-const fetchErrorRecordCount = async (payload: any): Promise<number> => {
-  const { shopId, configId } = payload;
-  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
-
-  try {
-    const response = await requestBackend<any>({
-      url: "oms/dataDocumentView",
-      method: "post",
-      data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
-        customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
-          parameterName: "shopId",
-          parameterValue: shopId,
-          failedRecordCount: 0,
-          failedRecordCount_op: "equals",
-          failedRecordCount_not: "true",
-          finishDateTime_from: finishDateTimeFrom.toString()
-        },
-        fieldsToSelect: "failedRecordCount"
-      }
-    });
-
-    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
-  } catch (error) {
-    logger.warn("Failed to fetch error record count using dataDocumentView", error);
-    return 0;
-  }
-};
-
 export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
   const { shopId, configId } = payload;
   try {
@@ -5740,7 +6056,7 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
           configId: configId || "SYNC_SHOPIFY_PRODUCT",
           parameterName: "shopId",
           parameterValue: shopId,
-          statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
+          statusId: TERMINAL_DATA_MANAGER_LOG_STATUS_IDS,
           statusId_not: "true"
         }
       }
@@ -5751,36 +6067,6 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
     logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
     return 0;
   }
-};
-
-export const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDashboardSummary> => {
-  const { systemMessageRemoteId } = payload;
-
-  const [syncRunState, pendingRequests, runningOperation, updateFilesToProcess] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload).catch(e => { logger.error("Failed to fetch product update sync run state", e); return { systemMessages: [], lastSyncedAt: "" } as any }),
-    fetchPendingProductUpdateRequests(payload).catch(e => { logger.error("Failed to fetch pending product update requests", e); return { count: 0 } as any }),
-    fetchRunningBulkOperation(payload).catch(e => { logger.warn("Failed to fetch running bulk operation (likely GraphQL error)", e); return null }),
-    fetchUpdateFilesToProcessCount(payload).catch(e => { logger.error("Failed to fetch update files to process count", e); return 0 })
-  ]);
-
-  let unsyncedUpdates = { count: 0, products: [] } as any;
-  try {
-    unsyncedUpdates = await fetchShopifyShopProductCount({
-      ...payload,
-      systemMessageRemoteId,
-      syncRunState
-    });
-  } catch (error) {
-    logger.warn("Failed to fetch unsynced product updates (likely GraphQL error)", error);
-  }
-
-  return {
-    syncRunState,
-    pendingRequests,
-    runningOperation,
-    unsyncedUpdates,
-    updateFilesToProcess
-  };
 };
 
 export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {

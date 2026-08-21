@@ -43,7 +43,6 @@
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
           :is-secondary-loading="isSecondaryLoading"
-          :is-refreshing="isRefreshInFlight"
           :is-sync-scheduled="isSyncScheduled"
           :is-sync-paused="isSyncJobPaused"
           :last-sync-label="lastSyncLabel"
@@ -896,7 +895,6 @@ const systemMessageActionLoadingId = ref("");
 const webhookSubscriptions = ref<any[]>([]);
 const isWebhookLoading = ref(false);
 const isWebhookSupported = ref(false);
-let progressPoll: number | undefined;
 
 /**
  * Clock for RELATIVE-TIME LABELS only ("2 min ago") — it drives no data loading.
@@ -908,9 +906,6 @@ let progressPoll: number | undefined;
  */
 const currentTimeMs = ref(Date.now());
 let labelClock: number | undefined;
-
-/** Retained as a no-op binding: templates still reference it, and nothing is ever in flight now. */
-const isRefreshInFlight = computed(() => false);
 
 const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
 
@@ -1727,7 +1722,6 @@ function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => u
 
 
 onBeforeUnmount(() => {
-  stopProgressPolling();
   stopNextSyncRefreshPolling();
   clearSearchDebounce();
 });
@@ -1770,8 +1764,7 @@ async function loadWizard() {
       if (!reviewStats.value.loaded) {
         await loadReviewStats();
       }
-      const loadedProgress = await loadProgress();
-      if (loadedProgress) startProgressPolling();
+      await loadProgress();
     } else {
       currentStep.value = "home";
     }
@@ -1786,8 +1779,7 @@ async function loadWizard() {
         await loadReviewStats();
       }
       if (currentStep.value === "progress") {
-        const loadedProgress = await loadProgress();
-        if (loadedProgress) startProgressPolling();
+        await loadProgress();
       }
     }
 
@@ -1800,7 +1792,6 @@ async function loadWizard() {
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
     commonUtil.showToast(translate("Failed to load product sync"));
-    stopProgressPolling();
   } finally {
     isLoading.value = false;
   }
@@ -1902,7 +1893,6 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   } finally {
     isSecondaryLoading.value = false;
     hasEverLoadedSecondary.value = true;
-    updateScheduledJobRefreshAt();
   }
 }
 
@@ -2791,7 +2781,6 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
     if (!opts.silent) {
       isSyncJobDetailsLoading.value = false;
     }
-    updateScheduledJobRefreshAt();
   }
 }
 
@@ -3141,12 +3130,10 @@ async function startProductSync() {
       };
       currentStep.value = "progress";
       await loadProgress();
-      startProgressPolling();
     } else {
       // Fallback if no ID is returned
       currentStep.value = "progress";
-      const loadedProgress = await loadProgress();
-      if (loadedProgress) startProgressPolling();
+      await loadProgress();
     }
   } catch (err) {
     commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
@@ -3250,8 +3237,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
       completed: false
     };
     currentStep.value = "progress";
-    const loadedProgress = await loadProgress();
-    if (loadedProgress) startProgressPolling();
+    await loadProgress();
 
     modalRef.value = false;
     commonUtil.showToast(translate(successMsg));
@@ -3352,9 +3338,6 @@ async function loadProgress() {
       }
     }
 
-    if (isProgressComplete.value) {
-      stopProgressPolling();
-    }
     return true;
   } catch (error: any) {
     logger.error(error);
@@ -3364,27 +3347,8 @@ async function loadProgress() {
         status: "error",
         completed: true
       } as any;
-      stopProgressPolling();
     }
     return !!bulkOperationSendJob.value?.jobName || !!bulkOperationPollJob.value?.jobName;
-  }
-}
-
-/**
- * No-op: progress is now reactive.
- *
- * This used to re-run `loadProgress` every 5 seconds from the main thread. Progress is derived from
- * cached system messages, bulk operations and MDM logs, all of which the worker refreshes, so the
- * derived state advances on its own. Kept as a function so the existing call sites read unchanged.
- */
-function startProgressPolling() {
-  stopProgressPolling();
-}
-
-function stopProgressPolling() {
-  if (progressPoll) {
-    window.clearInterval(progressPoll);
-    progressPoll = undefined;
   }
 }
 
@@ -3462,18 +3426,6 @@ function getTrackedRefreshJobs() {
     return jobs.findIndex((candidate: any) => candidate?.jobName === job?.jobName) === index;
   });
 }
-
-/**
- * No-op: nothing schedules a main-thread refresh any more.
- *
- * This computed the next scheduled job run so the old 15s tick knew when to re-fetch. The worker
- * polls regardless of job schedules, so the answer is no longer needed. Kept as a function because
- * two call sites read naturally as "the schedule may have changed".
- */
-function updateScheduledJobRefreshAt() {}
-
-
-
 
 function isJobPaused(job: any) {
   const status = String(job?.statusId || job?.status || "").toLowerCase();

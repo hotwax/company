@@ -1,6 +1,8 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
+import { getResponseErrorMessage } from "@/utils";
 import { resyncDomain } from "@/services/appCacheBootstrap";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import {
   currencyCache,
   enumCache,
@@ -15,6 +17,7 @@ import {
   systemMessageTypeCache,
 } from "@/utils/cacheEntities";
 import { byDescription, useCachedList } from "./useCachedList";
+import { usePrimaryOrganization } from "./useOrganizations";
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -149,17 +152,49 @@ export function useProductTypes() {
  * callers must not resync it themselves.
  */
 export function useShipmentMethodTypeMutations() {
+  const assertSuccessful = (response: any, fallback: string) => {
+    if(commonUtil.hasError(response)) {
+      throw new Error(getResponseErrorMessage(response, fallback));
+    }
+  };
+
+  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
+    try {
+      await resyncDomain("shipmentMethodType");
+    } catch (error) {
+      throw new CacheReconciliationError(
+        "shipmentMethodType",
+        { shipmentMethodTypeId },
+        error,
+      );
+    }
+  };
+
   async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
     const resp: any = await api({
       url: "oms/shippingGateways/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    if (commonUtil.hasError(resp)) throw resp;
-    await resyncDomain("shipmentMethodType");
+    assertSuccessful(resp, "Failed to create the shipment method type.");
+    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
+
     return resp;
   }
-  return { createShipmentMethodType };
+
+  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
+    const resp: any = await api({
+      url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
+      method: "put",
+      data: { shipmentMethodTypeId, description: description.trim() },
+    });
+    assertSuccessful(resp, "Failed to rename the shipment method type.");
+    await resyncShipmentMethodTypes(shipmentMethodTypeId);
+
+    return resp;
+  }
+
+  return { createShipmentMethodType, renameShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
@@ -375,6 +410,11 @@ export function useOrganization() {
 
     organizationInFlight = (async () => {
       try {
+        const primaryOrgId = await usePrimaryOrganization().load();
+        if (primaryOrgId) {
+          organizationPartyId.value = primaryOrgId;
+          return primaryOrgId;
+        }
         const resp: any = await api({
           url: "admin/organizations",
           method: "get",

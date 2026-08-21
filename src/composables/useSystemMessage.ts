@@ -1,17 +1,18 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
-import { api, logger } from '@common'
+import { api, commonUtil, logger } from '@common'
 import {
   shopifyBulkOperationCache,
   systemMessageCache,
   systemMessageErrorCache,
   systemMessageRemoteCache,
 } from '@/utils/cacheEntities';
-import { useCachedList, useCachedRecord } from './useCachedList';
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
   getSystemMessageCandidateIds
 } from "@/utils/shopifyBulkOperation";
+import { onSessionCleared } from "./sessionScope";
+import { useCachedList, useCachedRecord } from "./useCachedList";
 
 const BULK_OPERATION_QUERY = `
   query BulkOperation($id: ID!) {
@@ -41,6 +42,12 @@ const BULK_OPERATION_QUERY = `
  * append-only against a terminal message, so "none" stays true for the session.
  */
 const messagesKnownToHaveNoErrors = new Set<string>();
+let noErrorMemoGeneration = 0;
+
+onSessionCleared(() => {
+  noErrorMemoGeneration += 1;
+  messagesKnownToHaveNoErrors.clear();
+});
 
 /**
  * Whether a message could carry errors at all.
@@ -154,6 +161,7 @@ export function useSystemMessage() {
   /** Fetch only if this message's errors are not cached yet — the on-demand entry point. */
   const ensureSystemMessageErrors = async (systemMessageId: string) => {
     if (!systemMessageId) return [];
+    const requestGeneration = noErrorMemoGeneration;
 
     // A confirmed-empty result is an answer, and re-asking for it is the whole N+1.
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
@@ -166,9 +174,18 @@ export function useSystemMessage() {
       // cache unavailable — fall through to the network
     }
 
-    const errors = await fetchSystemMessageErrors(systemMessageId).catch(() => []);
-    if (!errors.length) messagesKnownToHaveNoErrors.add(systemMessageId);
-    return errors;
+    try {
+      const errors = await fetchSystemMessageErrors(systemMessageId);
+      if(!errors.length && requestGeneration === noErrorMemoGeneration) {
+        messagesKnownToHaveNoErrors.add(systemMessageId);
+      }
+
+      return errors;
+    } catch {
+      // A failed request is not proof that the message has no errors. Keep the public fallback
+      // shape, but leave the id eligible for a later retry.
+      return [];
+    }
   };
 
   /**
@@ -414,12 +431,33 @@ export function useSystemMessage() {
     };
   };
 
+  /**
+   * Re-attempt delivery of a message that has already been produced.
+   *
+   * Re-sends the SAME stored message: the payload and its frozen Shopify idempotency key are never
+   * rebuilt, so a batch that did reach Shopify before failing cannot double-apply.
+   */
+  const resendSystemMessage = async (systemMessageId: string) => {
+    if (!systemMessageId) throw new Error("A system message is required to resend.");
+    const response = await api({
+      url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/send`,
+      method: "POST",
+      data: { systemMessageId }
+    }) as any;
+    if (commonUtil.hasError(response)) {
+      logger.error("Resend rejected for system message", systemMessageId, response);
+      throw new Error("The OMS rejected the resend request.");
+    }
+    return response?.data ?? {};
+  };
+
   return {
     ...toRefs(state),
     fetchSystemMessageById,
     ensureSystemMessageById,
     fetchSystemMessageErrors,
     ensureSystemMessageErrors,
+    resendSystemMessage,
     fetchShopifyBulkOperation,
     fetchShopifyBulkOperationBySystemMessageId,
     fetchSystemMessageLogDetailsPage,
