@@ -184,21 +184,6 @@
               </ion-item>
             </div>
 
-            <!-- The carrier's own narrative. Capped, because this connection grows with every scan and
-                 displayStatus above already summarises where it got to. -->
-            <template v-if="row.events.length">
-              <ion-item-divider>
-                <ion-label>{{ translate("Delivery events") }}</ion-label>
-              </ion-item-divider>
-              <ion-item v-for="event in row.events" :key="event.happenedAt" lines="full">
-                <ion-label class="ion-text-wrap">
-                  <p>{{ event.happenedAt }}</p>
-                  {{ event.message }}
-                </ion-label>
-                <ion-note slot="end">{{ event.status }}</ion-note>
-              </ion-item>
-            </template>
-
             <!-- The order-level view: whether anything is still owed, and what is blocking it. -->
             <ion-item-divider>
               <ion-label>{{ translate("Fulfillment order") }}</ion-label>
@@ -251,6 +236,27 @@
             </ion-item>
 
             <ion-accordion-group>
+              <!-- The carrier's own narrative, folded away: this connection grows with every scan, and
+                   displayStatus on the badge already says where it got to. -->
+              <ion-accordion value="events">
+                <ion-item slot="header" lines="full">
+                  <ion-label>{{ translate("events") }}</ion-label>
+                  <ion-note slot="end">{{ row.events.length }}</ion-note>
+                </ion-item>
+                <div slot="content">
+                  <ion-item v-for="event in row.events" :key="event.happenedAt" lines="full">
+                    <ion-label class="ion-text-wrap">
+                      <p>{{ event.happenedAt }}</p>
+                      {{ event.message }}
+                    </ion-label>
+                    <ion-note slot="end">{{ event.status }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="!row.events.length" lines="none">
+                    <ion-label>{{ translate("Shopify has recorded no delivery events yet.") }}</ion-label>
+                  </ion-item>
+                </div>
+              </ion-accordion>
+
               <ion-accordion value="tracking">
                 <ion-item slot="header" lines="full">
                   <ion-label>{{ translate("trackingInfo") }}</ion-label>
