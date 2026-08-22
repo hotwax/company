@@ -4,41 +4,27 @@
          history card uses. The state badge rides the identity item's end slot. -->
     <ion-item lines="none">
       <ion-label class="ion-text-wrap">
-        <p>{{ row.shipmentId }}</p>
+        <p v-if="row.shipmentId">{{ row.shipmentId }}</p>
         <h2>{{ row.orderName }}</h2>
-        <p>{{ row.facility }}</p>
+        <p v-if="row.facility">{{ row.facility }}</p>
       </ion-label>
       <ion-badge v-if="state" slot="end" :color="state.color">{{ state.label }}</ion-badge>
     </ion-item>
 
     <ion-card-content>
-      <div class="shipment-facts">
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="cartOutline" color="medium" />
+      <div v-if="row.facts.length" class="shipment-facts">
+        <ion-item v-for="fact in row.facts" :key="fact.label" lines="none">
+          <ion-icon v-if="fact.icon" slot="start" :icon="fact.icon" color="medium" />
           <ion-label>
-            <p>{{ translate("Order placed") }}</p>
-            {{ row.orderDate }}
-          </ion-label>
-        </ion-item>
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="sendOutline" color="medium" />
-          <ion-label>
-            <p>{{ translate("Shipment shipped") }}</p>
-            {{ row.shippedDate }}
-          </ion-label>
-        </ion-item>
-        <ion-item lines="none">
-          <ion-icon slot="start" :icon="timeOutline" color="medium" />
-          <ion-label>
-            <p>{{ row.trailing.label }}</p>
-            {{ row.trailing.value }}
+            <p>{{ fact.label }}</p>
+            {{ fact.value }}
           </ion-label>
         </ion-item>
       </div>
 
       <!-- The items themselves, scrolled rather than summarised: which product is stuck matters to
            whoever has to explain it, and a count never answers that. -->
-      <div class="item-strip">
+      <div v-if="row.items?.length" class="item-strip">
         <ion-item v-for="item in row.items" :key="item.orderItemSeqId" lines="none">
           <ion-thumbnail slot="start">
             <Image :src="item.imageUrl" />
@@ -56,11 +42,9 @@
 </template>
 
 <script setup lang="ts">
-import { translate } from "@common";
 import {
   IonBadge, IonCard, IonCardContent, IonIcon, IonItem, IonLabel, IonThumbnail,
 } from "@ionic/vue";
-import { cartOutline, sendOutline, timeOutline } from "ionicons/icons";
 import Image from "@/components/common/Image.vue";
 import type {
   FulfillmentShipmentRow, FulfillmentShipmentState,
@@ -68,7 +52,7 @@ import type {
 
 defineProps<{
   row: FulfillmentShipmentRow;
-  /** Omitted for a shipment with no SystemMessage behind it — there is no status to show. */
+  /** Omitted for a shipment with no status behind it — a badge must never be invented. */
   state?: FulfillmentShipmentState;
 }>();
 </script>
