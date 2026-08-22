@@ -282,8 +282,8 @@ describe("ShopifyFulfillmentSync - live cached data", () => {
         statusId: "SmsgProduced",
         failCount: 3,
         orderId: "RAI-100480",
-        // The live connector names its item list `lineItems`, which the layer's parser misses —
-        // this message exercises the view's fallback re-parse of the stored payload.
+        // The live connector names its item list `lineItems`; the layer's parser accepts the
+        // alias (tests/utils/shopifyFulfillment.spec.ts), so the row arrives with items parsed.
         messageText: JSON.stringify({
           shipmentId: "SHP-88604",
           orderId: "RAI-100480",
@@ -294,7 +294,7 @@ describe("ShopifyFulfillmentSync - live cached data", () => {
           orderId: "RAI-100480",
           shopifyOrderId: "5100200400",
           trackingNumber: "",
-          items: [],
+          items: [{ orderItemSeqId: "01", productId: "P2", quantity: 2, shopifyLineItemId: "L2" }],
         },
       }),
     ];

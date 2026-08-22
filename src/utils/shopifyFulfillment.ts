@@ -60,7 +60,14 @@ export function parseFulfillmentMessageText(messageText: unknown): ParsedFulfill
   }
   if(!payload || typeof payload !== "object" || Array.isArray(payload)) {return empty();}
 
-  const items: ParsedFulfillmentItem[] = (Array.isArray(payload.shipmentItems) ? payload.shipmentItems : [])
+  // The producing service's own aliases say `shipmentItems`, but the payloads rails-oms actually
+  // stores name the list `lineItems` (observed live, 54 messages). Accept both: the send services
+  // have two generations (V1 iterates shipmentItems, V2 forwards the map verbatim) and which key a
+  // message carries depends on which one queued it.
+  const rawItems = Array.isArray(payload.shipmentItems)
+    ? payload.shipmentItems
+    : Array.isArray(payload.lineItems) ? payload.lineItems : [];
+  const items: ParsedFulfillmentItem[] = rawItems
     .filter((item: any) => item && typeof item === "object")
     .map((item: any) => {
       const quantity = Number(item.quantity);

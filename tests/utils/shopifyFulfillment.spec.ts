@@ -42,6 +42,20 @@ describe("parseFulfillmentMessageText", () => {
     });
   });
 
+  it("accepts the lineItems alias the live connector actually stores", () => {
+    // rails-oms payloads name the list `lineItems` (older send path uses `shipmentItems`); which
+    // key a message carries depends on which service generation queued it.
+    const parsed = parseFulfillmentMessageText(JSON.stringify({
+      shipmentId: "SHP-88604",
+      orderId: "RAI-100480",
+      lineItems: [{ orderItemSeqId: "01", productId: "P2", quantity: 2, shopifyLineItemId: "L2" }],
+    }));
+
+    expect(parsed.items).toEqual([
+      { orderItemSeqId: "01", productId: "P2", quantity: 2, shopifyLineItemId: "L2" },
+    ]);
+  });
+
   it("degrades missing fields to empty values instead of undefined holes", () => {
     const parsed = parseFulfillmentMessageText(JSON.stringify({
       shipmentId: "SHP-88604",
