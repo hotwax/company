@@ -11,161 +11,150 @@
 
     <ion-content class="fulfillment-sync-page">
       <main class="fulfillment-sync-content">
-        <!-- Latency leads because the complaint is lateness. "Unconfirmed" only alarms once you know
-             how long it has been unconfirmed for. -->
         <div class="kpi-grid">
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Oldest unconfirmed") }}</ion-card-subtitle>
-              <ion-card-title>{{ oldestUnconfirmed }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Pending") }}</ion-card-subtitle>
+              <ion-card-title><AnimatedNumber :value="pending.length" /></ion-card-title>
             </ion-card-header>
           </ion-card>
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Median ship to confirmed") }}</ion-card-subtitle>
-              <ion-card-title>{{ medianLatency }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Oldest pending") }}</ion-card-subtitle>
+              <ion-card-title>{{ oldestPending }}</ion-card-title>
             </ion-card-header>
           </ion-card>
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Unconfirmed now") }}</ion-card-subtitle>
-              <ion-card-title><AnimatedNumber :value="unconfirmed.length" /></ion-card-title>
+              <ion-card-subtitle>{{ translate("Queued") }}</ion-card-subtitle>
+              <ion-card-title><AnimatedNumber :value="queued.length" /></ion-card-title>
             </ion-card-header>
           </ion-card>
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Needs a human") }}</ion-card-subtitle>
-              <ion-card-title><AnimatedNumber :value="needsHumanCount" /></ion-card-title>
+              <ion-card-subtitle>{{ translate("SmsgError") }}</ion-card-subtitle>
+              <ion-card-title><AnimatedNumber :value="gaveUpCount" /></ion-card-title>
             </ion-card-header>
           </ion-card>
         </div>
 
-        <!-- The tiles still have to say what the median counted. -->
-        <ion-note color="medium" class="stats-scope">
-          {{ translate("Median measured over 212 shipments in the last 24 hours.") }}
-        </ion-note>
+        <ion-segment v-model="segment">
+          <ion-segment-button value="pending">
+            <ion-label>{{ translate("Pending") }} ({{ pending.length }})</ion-label>
+          </ion-segment-button>
+          <ion-segment-button value="queued">
+            <ion-label>{{ translate("Queued") }} ({{ queued.length }})</ion-label>
+          </ion-segment-button>
+          <ion-segment-button value="synced">
+            <ion-label>{{ translate("Synced") }} ({{ synced.length }})</ion-label>
+          </ion-segment-button>
+        </ion-segment>
 
-        <!-- One card per shipment waiting on Shopify, newest problem first. The scannable row carries
-             only what identifies and dates the shipment; the payload and the attempt history stay folded
-             away, because a reader scanning ten of these is looking for which one to open, not reading
-             all ten. POS stays a filter rather than its own page: same service, same guards. What
-             differs is the expectation, because the customer is standing at the counter. -->
-        <ion-card v-for="row in unconfirmed" :key="row.shipmentId">
-          <!-- Identity, then facts, then disclosures — the shape the job run history card uses. The
-               state badge rides the identity item's end slot rather than competing for a grid column. -->
-          <ion-item lines="none">
-            <ion-icon slot="start" :icon="attemptState(row).icon" :color="attemptState(row).color" />
-            <ion-label class="ion-text-wrap">
-              <p>{{ row.shipmentId }}</p>
-              <h2>{{ row.orderName }}</h2>
-              <p>{{ row.facility }}</p>
-            </ion-label>
-            <ion-badge slot="end" :color="attemptState(row).color">{{ attemptState(row).label }}</ion-badge>
-          </ion-item>
+        <!-- Pending is the work remaining: qualified to send, no fulfillment recorded against the
+             order yet. There is no message and no attempt, so the card carries only the shipment. -->
+        <template v-if="segment === 'pending'">
+          <ion-note color="medium" class="segment-scope">
+            {{ translate("Shipped and eligible, with no Shopify fulfillment recorded against the order yet.") }}
+          </ion-note>
+          <FulfillmentShipmentCard
+            v-for="row in pending"
+            :key="row.shipmentId"
+            :row="row"
+          />
+          <ion-card v-if="!pending.length">
+            <ion-card-content>{{ translate("Nothing is pending.") }}</ion-card-content>
+          </ion-card>
+        </template>
 
-          <ion-card-content>
-            <div class="shipment-facts">
-              <ion-item lines="none">
-                <ion-icon slot="start" :icon="cartOutline" color="medium" />
-                <ion-label>
-                  <p>{{ translate("Order placed") }}</p>
-                  {{ row.orderDate }}
-                </ion-label>
-              </ion-item>
-              <ion-item lines="none">
-                <ion-icon slot="start" :icon="sendOutline" color="medium" />
-                <ion-label>
-                  <p>{{ translate("Shipment shipped") }}</p>
-                  {{ row.shippedDate }}
-                </ion-label>
-              </ion-item>
-              <ion-item lines="none">
-                <ion-icon slot="start" :icon="timeOutline" color="medium" />
-                <ion-label>
-                  <p>{{ translate("Waiting") }}</p>
-                  {{ row.age }}
-                </ion-label>
-              </ion-item>
-            </div>
-
-            <!-- The items themselves, scrolled rather than summarised: which product is stuck matters
-                 to whoever has to explain it, and a count never answers that. -->
-            <div class="item-strip">
-              <ion-item v-for="item in row.items" :key="item.orderItemSeqId" lines="none">
-                <ion-thumbnail slot="start">
-                  <Image :src="item.imageUrl" />
-                </ion-thumbnail>
-                <ion-label class="ion-text-wrap">
-                  {{ item.primary }}
-                  <p>{{ item.secondary }}</p>
-                </ion-label>
-              </ion-item>
-            </div>
-
-            <!-- The failure reason belongs on the surface, not behind a disclosure: it is the one
-                 thing that decides whether this row is a retry or a person's problem. -->
-            <ion-item v-if="attemptState(row).detail" lines="none">
+        <!-- Queued is the message view: a CreateShopifyFulfillment message on this shop's remotes
+             that has not reached SmsgSent. Its stored text and its error rows are the whole point. -->
+        <template v-else-if="segment === 'queued'">
+          <ion-note color="medium" class="segment-scope">
+            {{ translate("Fulfillment messages on this shop's remotes that have not reached SmsgSent.") }}
+          </ion-note>
+          <FulfillmentShipmentCard
+            v-for="row in queued"
+            :key="row.shipmentId"
+            :row="row"
+            :state="{ label: row.statusId, color: messageStatusColor(row.statusId) }"
+          >
+            <ion-item v-if="retryNote(row)" lines="none">
               <ion-label class="ion-text-wrap">
-                <p>{{ attemptState(row).detail }}</p>
+                <p>{{ retryNote(row) }}</p>
               </ion-label>
               <ion-button slot="end" fill="clear" size="small" @click="noop">
-                {{ attemptState(row).action }}
+                {{ translate("Retry") }}
               </ion-button>
             </ion-item>
 
             <ion-accordion-group>
-              <ion-accordion value="payload">
+              <ion-accordion value="messageText">
                 <ion-item slot="header" lines="full">
-                  <ion-label>{{ translate("Request payload") }}</ion-label>
-                  <ion-note slot="end">{{ translate("CreateShopifyFulfillment") }}</ion-note>
+                  <ion-label>{{ translate("Message text") }}</ion-label>
+                  <ion-note slot="end">{{ row.systemMessageTypeId }}</ion-note>
                 </ion-item>
                 <div slot="content" class="accordion-content">
                   <pre><code>{{ row.messageText }}</code></pre>
                 </div>
               </ion-accordion>
 
-              <ion-accordion value="history">
+              <!-- One ion-item per SystemMessageError row: its date, its text, and the status the
+                   attempt was reaching for. A message still in flight has none. -->
+              <ion-accordion value="errors">
                 <ion-item slot="header" lines="full">
-                  <ion-label>{{ translate("Sync history") }}</ion-label>
-                  <ion-note slot="end">
-                    {{ translate("{count} attempt(s)", { count: row.attempts.length }) }}
-                  </ion-note>
+                  <ion-label>{{ translate("System message errors") }}</ion-label>
+                  <ion-note slot="end">{{ row.errors.length }}</ion-note>
                 </ion-item>
-                <div slot="content" class="accordion-content">
-                  <div class="history-table">
-                    <div class="history-row history-header">
-                      <ion-label>{{ translate("Attempted") }}</ion-label>
-                      <ion-label>{{ translate("Status") }}</ion-label>
-                      <ion-label>{{ translate("Result") }}</ion-label>
-                    </div>
-                    <div v-for="attempt in row.attempts" :key="attempt.attemptedAt" class="history-row">
-                      <ion-label>{{ attempt.attemptedAt }}</ion-label>
-                      <ion-badge :color="messageStatusColor(attempt.statusId)">
-                        {{ messageStatusLabel(attempt.statusId) }}
-                      </ion-badge>
-                      <ion-label class="ion-text-wrap">{{ attempt.result }}</ion-label>
-                    </div>
-                  </div>
-
-                  <!-- Shopify's own answer, which is the difference between "retry this" and "stop":
-                       a fulfillment already recorded against the order means a retry duplicates it. -->
-                  <ion-item lines="none">
+                <div slot="content">
+                  <ion-item v-for="error in row.errors" :key="error.errorDate" lines="full">
                     <ion-label class="ion-text-wrap">
-                      {{ translate("On the Shopify side") }}
-                      <p>{{ row.shopifyState }}</p>
+                      <p>{{ error.errorDate }}</p>
+                      {{ error.errorText }}
                     </ion-label>
+                    <ion-note slot="end">{{ error.attemptedStatusId }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="!row.errors.length" lines="none">
+                    <ion-label>{{ translate("No errors recorded for this message.") }}</ion-label>
                   </ion-item>
                 </div>
               </ion-accordion>
             </ion-accordion-group>
-          </ion-card-content>
-        </ion-card>
+          </FulfillmentShipmentCard>
+          <ion-card v-if="!queued.length">
+            <ion-card-content>{{ translate("Nothing is queued.") }}</ion-card-content>
+          </ion-card>
+        </template>
 
-        <ion-card v-if="!unconfirmed.length">
-          <ion-card-content>
-            {{ translate("Nothing is waiting to sync.") }}
-          </ion-card-content>
-        </ion-card>
+        <!-- Synced is fulfillment history grouped by order. It holds no systemMessageId, so there
+             is no message text or error list to show; what confirms the push is Shopify's own record
+             of the fulfillment beside ours. -->
+        <template v-else>
+          <ion-note color="medium" class="segment-scope">
+            {{ translate("Fulfillments recorded against this shop, newest first, checked against Shopify.") }}
+          </ion-note>
+          <FulfillmentShipmentCard
+            v-for="row in synced"
+            :key="row.shipmentId"
+            :row="row"
+            :state="{ label: row.shopifyStatus, color: row.agrees ? 'success' : 'warning' }"
+          >
+            <div class="comparison">
+              <div class="comparison-row comparison-header">
+                <ion-label>{{ translate("Field") }}</ion-label>
+                <ion-label>{{ translate("HotWax") }}</ion-label>
+                <ion-label>{{ translate("Shopify") }}</ion-label>
+              </div>
+              <div v-for="field in row.comparison" :key="field.label" class="comparison-row">
+                <ion-label>{{ field.label }}</ion-label>
+                <ion-label class="ion-text-wrap">{{ field.hotwax }}</ion-label>
+                <ion-label class="ion-text-wrap">{{ field.shopify }}</ion-label>
+              </div>
+            </div>
+          </FulfillmentShipmentCard>
+          <ion-card v-if="!synced.length">
+            <ion-card-content>{{ translate("Nothing has synced yet.") }}</ion-card-content>
+          </ion-card>
+        </template>
 
       </main>
     </ion-content>
@@ -175,71 +164,61 @@
 <script setup lang="ts">
 import { translate } from "@common";
 import {
-  IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon,
-  IonItem, IonLabel, IonNote, IonPage, IonThumbnail, IonTitle, IonToolbar,
+  IonAccordion, IonAccordionGroup, IonBackButton, IonButton, IonButtons, IonCard,
+  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem,
+  IonLabel, IonNote, IonPage, IonSegment, IonSegmentButton, IonTitle, IonToolbar,
 } from "@ionic/vue";
-import {
-  alertCircleOutline, cartOutline, refreshOutline, sendOutline, timeOutline,
-} from "ionicons/icons";
 import { computed, ref } from "vue";
 import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
-import Image from "@/components/common/Image.vue";
+import type {
+  FulfillmentOrderItem, FulfillmentShipmentRow,
+} from "@/components/shopify-fulfillment/FulfillmentShipmentCard.types";
+import FulfillmentShipmentCard from "@/components/shopify-fulfillment/FulfillmentShipmentCard.vue";
 
 const props = defineProps<{ id: string }>();
 
 const connectionDetailsHref = computed(() => `/shopify-connection-details/${props.id}`);
 
+const segment = ref<"pending" | "queued" | "synced">("pending");
 
-type Channel = "pos" | "warehouse";
-type DiagnosisId =
-  "ALREADY_FULFILLED" |
-  "ORDER_NOT_MAPPED" |
-  "NO_WRITE_ACCESS" |
-  "NOT_ELIGIBLE" |
-  "NO_SHIPMENT_DETAIL" |
-  "UNDIAGNOSED";
-
-interface OrderItem {
-  orderItemSeqId: string;
-  /** Whatever the shop's primary product identifier resolves to — the name, here. */
-  primary: string;
-  /** And its secondary, conventionally the SKU. */
-  secondary: string;
-  /** Empty when the product has no image; Image falls back to the bundled placeholder. */
-  imageUrl: string;
+/** A moqui.service.message.SystemMessageError row, field for field. */
+interface SystemMessageError {
+  errorDate: string;
+  attemptedStatusId: string;
+  errorText: string;
 }
 
-interface SyncAttempt {
-  attemptedAt: string;
-  statusId: string;
-  result: string;
-}
-
-interface WaitingRow {
-  shipmentId: string;
-  orderName: string;
-  facility: string;
-  channel: Channel;
-  items: OrderItem[];
-  orderDate: string;
-  shippedDate: string;
-  age: string;
-  diagnosis: DiagnosisId;
-  /** SystemMessage.messageText — the shipment detail the send service turns into the Shopify body. */
+/** A message-backed row: every field below is one the SystemMessage actually stores. */
+interface QueuedRow extends FulfillmentShipmentRow {
+  systemMessageTypeId: string;
+  /** The shipment detail the send service turns into the Shopify body. */
   messageText: string;
-  attempts: SyncAttempt[];
-  /** What ShopifyFulfillmentHistory and the order's Shopify status say, which decides retry vs stop. */
-  shopifyState: string;
+  statusId: string;
+  failCount: number;
+  errors: SystemMessageError[];
 }
 
-/**
- * Fixture rows, oldest first, one per diagnosis. A real row is a CreateShopifyFulfillment
- * SystemMessage that has not reached SmsgSent, joined to its shipment — the payload, the status and
- * the attempt dates all come off that message, and the Shopify side comes off
- * ShopifyFulfillmentHistory.
- */
-function payloadFor(orderName: string, shipmentId: string, items: { id: string; qty: number }[]) {
+interface ComparisonField {
+  label: string;
+  hotwax: string;
+  shopify: string;
+}
+
+/** A history-backed row: one Shopify fulfillment, ours beside theirs. */
+interface SyncedRow extends FulfillmentShipmentRow {
+  fulfillmentId: string;
+  /** Shopify's own FulfillmentStatus, shown verbatim. */
+  shopifyStatus: string;
+  agrees: boolean;
+  comparison: ComparisonField[];
+}
+
+function items(...rows: [string, string, string][]): FulfillmentOrderItem[] {
+  return rows.map(([orderItemSeqId, primary, secondary]) =>
+    ({ orderItemSeqId, primary, secondary, imageUrl: "" }));
+}
+
+function payloadFor(orderName: string, shipmentId: string, lines: { id: string; qty: number }[]) {
   return JSON.stringify({
     shipmentId,
     orderId: orderName,
@@ -248,193 +227,161 @@ function payloadFor(orderName: string, shipmentId: string, items: { id: string; 
     carrierPartyId: "UPS",
     notifyCustomer: false,
     actualShopifyLocationId: "gid://shopify/Location/70000000001",
-    shipmentItems: items.map((item) => ({ shopifyOrderLineItemId: item.id, quantity: item.qty })),
+    shipmentItems: lines.map((line) => ({ shopifyOrderLineItemId: line.id, quantity: line.qty })),
   }, null, 2);
 }
 
-const unconfirmed = ref<WaitingRow[]>([
-  {
-    shipmentId: "SHP-88214", orderName: "RAI-100461", facility: "Store 118 Newbury St",
-    channel: "pos",
-    items: [
-      { orderItemSeqId: "00001", primary: "Matador Hoodie", secondary: "MTD-HD-BLK-M", imageUrl: "" },
-    ],
-    orderDate: "Aug 18, 1:42 PM", shippedDate: "Aug 19, 9:03 AM", age: "3d 4h",
-    diagnosis: "ALREADY_FULFILLED",
-    messageText: payloadFor("RAI-100461", "SHP-88214", [{ id: "14882301", qty: 1 }]),
-    attempts: [
-      { attemptedAt: "Aug 19, 9:03 AM", statusId: "SmsgError", result: "422 Unprocessable Entity: fulfillment already exists for this fulfillment order" },
-      { attemptedAt: "Aug 19, 9:31 AM", statusId: "SmsgError", result: "422 Unprocessable Entity: fulfillment already exists for this fulfillment order" },
-    ],
-    shopifyState: "Fulfillment 4471222891 recorded Aug 19, 8:58 AM, before the OMS posted. Order is open, fully fulfilled.",
-  },
+/**
+ * Work remaining: shipped, eligible, and no fulfillment recorded against the order. These never
+ * reached queue#SystemMessage — the service returns at one of its five guards before creating a
+ * message — so there is nothing to show but the shipment itself.
+ */
+const pending = ref<FulfillmentShipmentRow[]>([
   {
     shipmentId: "SHP-88407", orderName: "RAI-100477", facility: "Central DC",
-    channel: "warehouse",
-    items: [
-      { orderItemSeqId: "00001", primary: "Trail Pant", secondary: "TRL-PT-OLV-32", imageUrl: "" },
-      { orderItemSeqId: "00002", primary: "Trail Belt", secondary: "TRL-BLT-BRN-L", imageUrl: "" },
-    ],
-    orderDate: "Aug 19, 8:07 AM", shippedDate: "Aug 19, 6:11 PM", age: "2d 19h",
-    diagnosis: "ORDER_NOT_MAPPED",
-    messageText: payloadFor("RAI-100477", "SHP-88407", [{ id: "14882455", qty: 1 }, { id: "14882456", qty: 1 }]),
-    attempts: [
-      { attemptedAt: "Aug 19, 6:11 PM", statusId: "SmsgError", result: "No Shopify Shop record found for order RAI-100477 for shipment SHP-88407" },
-    ],
-    shopifyState: "No fulfillment recorded. The order could not be matched to a shop, so its Shopify state was never read.",
+    orderDate: "Aug 19, 8:07 AM", shippedDate: "Aug 19, 6:11 PM",
+    trailing: { label: translate("Waiting"), value: "2d 19h" },
+    items: items(["00001", "Trail Pant", "TRL-PT-OLV-32"], ["00002", "Trail Belt", "TRL-BLT-BRN-L"]),
   },
   {
     shipmentId: "SHP-88512", orderName: "RAI-100479", facility: "Store 302 Cambridge",
-    channel: "pos",
-    items: [
-      { orderItemSeqId: "00001", primary: "Alpine Vest", secondary: "ALP-VST-NVY-S", imageUrl: "" },
-      { orderItemSeqId: "00002", primary: "Alpine Beanie", secondary: "ALP-BN-NVY-OS", imageUrl: "" },
-    ],
-    orderDate: "Aug 20, 11:20 AM", shippedDate: "Aug 21, 10:48 AM", age: "1d 2h",
-    diagnosis: "NO_WRITE_ACCESS",
-    messageText: payloadFor("RAI-100479", "SHP-88512", [{ id: "14883001", qty: 1 }, { id: "14883002", qty: 1 }]),
-    attempts: [
-      { attemptedAt: "Aug 21, 10:48 AM", statusId: "SmsgError", result: "No Shopify SystemMessageRemote found for shop 100002, not fulfilling shipment SHP-88512" },
-    ],
-    shopifyState: "Not read. Without a write credential the connector never reached the shop.",
-  },
-  {
-    shipmentId: "SHP-88604", orderName: "RAI-100480", facility: "Reno DC",
-    channel: "warehouse",
-    items: [
-      { orderItemSeqId: "00001", primary: "Summit Parka", secondary: "SMT-PK-RED-L", imageUrl: "" },
-      { orderItemSeqId: "00002", primary: "Summit Shell", secondary: "SMT-SH-RED-L", imageUrl: "" },
-      { orderItemSeqId: "00003", primary: "Summit Glove", secondary: "SMT-GLV-BLK-M", imageUrl: "" },
-      { orderItemSeqId: "00004", primary: "Summit Liner", secondary: "SMT-LN-BLK-L", imageUrl: "" },
-    ],
-    orderDate: "Aug 21, 9:15 AM", shippedDate: "Aug 22, 6:24 AM", age: "6h 11m",
-    diagnosis: "NO_SHIPMENT_DETAIL",
-    messageText: "",
-    attempts: [
-      { attemptedAt: "Aug 22, 6:24 AM", statusId: "SmsgProduced", result: "No Shipment Details found for shipment SHP-88604 of shop 100002" },
-    ],
-    shopifyState: "No fulfillment recorded. Order is open and unfulfilled.",
-  },
-  {
-    shipmentId: "SHP-88655", orderName: "RAI-100481", facility: "Store 214 Boston",
-    channel: "pos",
-    items: [
-      { orderItemSeqId: "00001", primary: "Return Label", secondary: "RTN-LBL-STD", imageUrl: "" },
-    ],
-    orderDate: "Aug 22, 10:02 AM", shippedDate: "Aug 22, 11:43 AM", age: "52m",
-    diagnosis: "NOT_ELIGIBLE",
-    messageText: "",
-    attempts: [],
-    shopifyState: "Not applicable. This is not a sales shipment, so no fulfillment is expected.",
-  },
-  {
-    shipmentId: "SHP-88702", orderName: "RAI-100482", facility: "Store 214 Boston",
-    channel: "pos",
-    items: [
-      { orderItemSeqId: "00001", primary: "Geneva Cardigan", secondary: "GNV-CD-CRM-M", imageUrl: "" },
-    ],
-    orderDate: "Aug 22, 11:58 AM", shippedDate: "Aug 22, 12:29 PM", age: "6m",
-    diagnosis: "UNDIAGNOSED",
-    messageText: payloadFor("RAI-100482", "SHP-88702", [{ id: "14884110", qty: 1 }]),
-    attempts: [
-      { attemptedAt: "Aug 22, 12:29 PM", statusId: "SmsgSending", result: "In flight" },
-    ],
-    shopifyState: "No fulfillment recorded yet. Order is open and unfulfilled.",
+    orderDate: "Aug 20, 11:20 AM", shippedDate: "Aug 21, 10:48 AM",
+    trailing: { label: translate("Waiting"), value: "1d 2h" },
+    items: items(["00001", "Alpine Vest", "ALP-VST-NVY-S"], ["00002", "Alpine Beanie", "ALP-BN-NVY-OS"]),
   },
   {
     shipmentId: "SHP-88710", orderName: "RAI-100484", facility: "Central DC",
-    channel: "warehouse",
-    items: [
-      { orderItemSeqId: "00001", primary: "Coastal Tee", secondary: "CST-TEE-WHT-L", imageUrl: "" },
-    ],
-    orderDate: "Aug 22, 12:04 PM", shippedDate: "Aug 22, 12:31 PM", age: "4m",
-    diagnosis: "UNDIAGNOSED",
-    messageText: payloadFor("RAI-100484", "SHP-88710", [{ id: "14884210", qty: 1 }]),
-    attempts: [
-      { attemptedAt: "Aug 22, 12:31 PM", statusId: "SmsgProduced", result: "Queued" },
-    ],
-    shopifyState: "No fulfillment recorded yet. Order is open and unfulfilled.",
+    orderDate: "Aug 22, 12:04 PM", shippedDate: "Aug 22, 12:31 PM",
+    trailing: { label: translate("Waiting"), value: "4m" },
+    items: items(["00001", "Coastal Tee", "CST-TEE-WHT-L"]),
   },
 ]);
 
-/** Separate fixture: a latency distribution cannot be derived from the rows that never confirmed. */
-const medianLatency = "8 sec";
-
-const oldestUnconfirmed = computed(() => unconfirmed.value[0]?.age ?? translate("None"));
+/**
+ * Messages on this shop's remotes that have not reached SmsgSent. A failed send does not land on
+ * SmsgError — send#ProducedSystemMessage puts the status back where it started and increments
+ * failCount — so a retrying row reads SmsgProduced with failCount above zero.
+ */
+const queued = ref<QueuedRow[]>([
+  {
+    shipmentId: "SHP-88214", orderName: "RAI-100461", facility: "Store 118 Newbury St",
+    orderDate: "Aug 18, 1:42 PM", shippedDate: "Aug 19, 9:03 AM",
+    trailing: { label: translate("Waiting"), value: "3d 4h" },
+    items: items(["00001", "Matador Hoodie", "MTD-HD-BLK-M"]),
+    systemMessageTypeId: "CreateShopifyFulfillment",
+    messageText: payloadFor("RAI-100461", "SHP-88214", [{ id: "14882301", qty: 1 }]),
+    statusId: "SmsgError", failCount: 24,
+    errors: [
+      { errorDate: "Aug 19, 9:03 AM", attemptedStatusId: "SmsgSent", errorText: "422 Unprocessable Entity: fulfillment already exists for this fulfillment order" },
+      { errorDate: "Aug 19, 10:03 AM", attemptedStatusId: "SmsgSent", errorText: "422 Unprocessable Entity: fulfillment already exists for this fulfillment order" },
+      { errorDate: "Aug 20, 8:03 AM", attemptedStatusId: "SmsgSent", errorText: "422 Unprocessable Entity: fulfillment already exists for this fulfillment order" },
+    ],
+  },
+  {
+    shipmentId: "SHP-88604", orderName: "RAI-100480", facility: "Reno DC",
+    orderDate: "Aug 21, 9:15 AM", shippedDate: "Aug 22, 6:24 AM",
+    trailing: { label: translate("Waiting"), value: "6h 11m" },
+    items: items(
+      ["00001", "Summit Parka", "SMT-PK-RED-L"],
+      ["00002", "Summit Shell", "SMT-SH-RED-L"],
+      ["00003", "Summit Glove", "SMT-GLV-BLK-M"],
+      ["00004", "Summit Liner", "SMT-LN-BLK-L"],
+    ),
+    systemMessageTypeId: "CreateShopifyFulfillment",
+    messageText: payloadFor("RAI-100480", "SHP-88604", [{ id: "14883501", qty: 2 }]),
+    statusId: "SmsgProduced", failCount: 3,
+    errors: [
+      { errorDate: "Aug 22, 6:24 AM", attemptedStatusId: "SmsgSent", errorText: "503 Service Unavailable from Shopify" },
+      { errorDate: "Aug 22, 7:24 AM", attemptedStatusId: "SmsgSent", errorText: "503 Service Unavailable from Shopify" },
+      { errorDate: "Aug 22, 8:24 AM", attemptedStatusId: "SmsgSent", errorText: "503 Service Unavailable from Shopify" },
+    ],
+  },
+  {
+    shipmentId: "SHP-88702", orderName: "RAI-100482", facility: "Store 214 Boston",
+    orderDate: "Aug 22, 11:58 AM", shippedDate: "Aug 22, 12:29 PM",
+    trailing: { label: translate("Waiting"), value: "6m" },
+    items: items(["00001", "Geneva Cardigan", "GNV-CD-CRM-M"]),
+    systemMessageTypeId: "CreateShopifyFulfillment",
+    messageText: payloadFor("RAI-100482", "SHP-88702", [{ id: "14884110", qty: 1 }]),
+    statusId: "SmsgSending", failCount: 0,
+    errors: [],
+  },
+]);
 
 /**
- * A row's disposition, not just its label: whether a retry can help is the only thing the reader is
- * actually deciding, so it drives the badge colour and the button text together.
+ * Fulfillment history grouped by order. The Shopify column needs a fulfillment-by-id GraphQL query
+ * that the connector does not have yet — its only fulfillment templates are FulfillmentOrder
+ * mutations — so these values stand in for that call's response.
  */
-const diagnoses: Record<DiagnosisId, {
-  label: string; color: string; action: string; retryHelps: boolean;
-}> = {
-  ALREADY_FULFILLED: {
-    label: translate("Already fulfilled in Shopify"), color: "warning",
-    action: translate("Reconcile"), retryHelps: false,
+const synced = ref<SyncedRow[]>([
+  {
+    shipmentId: "SHP-88801", orderName: "RAI-100488", facility: "Store 118 Newbury St",
+    orderDate: "Aug 21, 3:12 PM", shippedDate: "Aug 22, 7:41 AM",
+    trailing: { label: translate("Recorded"), value: "Aug 22, 7:41 AM" },
+    items: items(["00001", "Harbor Jacket", "HBR-JK-NVY-L"]),
+    fulfillmentId: "4471301884", shopifyStatus: "SUCCESS", agrees: true,
+    comparison: [
+      { label: translate("Fulfillment"), hotwax: "4471301884", shopify: "4471301884" },
+      { label: translate("Status"), hotwax: translate("Not stored"), shopify: "SUCCESS" },
+      { label: translate("Recorded"), hotwax: translate("Not stored"), shopify: "Aug 22, 7:41 AM" },
+      { label: translate("Tracking"), hotwax: "1Z999AA10123456784 (UPS)", shopify: "1Z999AA10123456784 (UPS)" },
+      { label: translate("Quantity"), hotwax: "1", shopify: "1" },
+    ],
   },
-  ORDER_NOT_MAPPED: {
-    label: translate("Order not mapped to a shop"), color: "danger",
-    action: translate("Open order"), retryHelps: false,
+  {
+    shipmentId: "SHP-88815", orderName: "RAI-100491", facility: "Reno DC",
+    orderDate: "Aug 21, 5:48 PM", shippedDate: "Aug 22, 8:02 AM",
+    trailing: { label: translate("Recorded"), value: "Aug 22, 8:02 AM" },
+    items: items(["00001", "Cedar Flannel", "CDR-FL-GRN-M"], ["00002", "Cedar Scarf", "CDR-SC-GRN-OS"]),
+    fulfillmentId: "4471302915", shopifyStatus: "CANCELLED", agrees: false,
+    comparison: [
+      { label: translate("Fulfillment"), hotwax: "4471302915", shopify: "4471302915" },
+      { label: translate("Status"), hotwax: translate("Not stored"), shopify: "CANCELLED" },
+      { label: translate("Recorded"), hotwax: translate("Not stored"), shopify: "Aug 22, 8:02 AM" },
+      { label: translate("Tracking"), hotwax: "1Z999AA10123456791 (UPS)", shopify: translate("None") },
+      { label: translate("Quantity"), hotwax: "2", shopify: "2" },
+    ],
   },
-  NO_WRITE_ACCESS: {
-    label: translate("Shop has no write access"), color: "danger",
-    action: translate("Open connection"), retryHelps: false,
-  },
-  NOT_ELIGIBLE: {
-    label: translate("Not eligible"), color: "medium",
-    action: translate("Dismiss"), retryHelps: false,
-  },
-  NO_SHIPMENT_DETAIL: {
-    label: translate("No shipment detail"), color: "warning",
-    action: translate("Investigate"), retryHelps: false,
-  },
-  UNDIAGNOSED: {
-    label: translate("Not diagnosed yet"), color: "primary",
-    action: translate("Retry"), retryHelps: true,
-  },
-};
+]);
+
+const oldestPending = computed(() => pending.value[0]?.trailing.value ?? translate("None"));
+
+const gaveUpCount = computed(() =>
+  queued.value.filter((row) => row.statusId === "SmsgError").length);
 
 /**
- * What one card shows on its surface: the diagnosis drives the badge and the button, and the last
- * attempt's own result is the detail line — the error text is the single thing that decides whether
- * this row is a retry or a person's problem, so it does not go behind a disclosure.
+ * Prose about real fields, not a status. SmsgError is terminal and only the sweep sets it, once
+ * failCount reaches retryLimit. A message stranded in SmsgSending cannot self-heal, because
+ * send#ProducedSystemMessage refuses anything that is not SmsgProduced or SmsgError.
  */
-function attemptState(row: WaitingRow) {
-  const diagnosis = diagnoses[row.diagnosis];
-  const last = row.attempts[row.attempts.length - 1];
-  const inFlight = last?.statusId === "SmsgProduced" || last?.statusId === "SmsgSending";
+function retryNote(row: QueuedRow) {
+  if(row.statusId === "SmsgError") {
+    return translate("failCount reached {count} and the sweep stopped retrying. Set the status back to SmsgProduced to try again.", { count: row.failCount });
+  }
+  if(row.statusId === "SmsgSending") {
+    return translate("Left in SmsgSending. The sweep only picks up SmsgProduced or SmsgError, so this one needs its status reset.");
+  }
+  if(row.failCount > 0) {
+    return translate("failCount is {count}. The sweep retries once lastAttemptDate is older than its retry interval.", { count: row.failCount });
+  }
 
-  return {
-    label: diagnosis.label,
-    color: diagnosis.color,
-    action: diagnosis.action,
-    icon: diagnosis.retryHelps ? (inFlight ? timeOutline : refreshOutline) : alertCircleOutline,
-    // An in-flight row's "result" is just its own state, which the badge and the age already say.
-    detail: last && !inFlight ? last.result : "",
-  };
+  return "";
 }
 
-const messageStatuses: Record<string, { label: string; color: string }> = {
-  SmsgProduced: { label: translate("Queued"), color: "medium" },
-  SmsgSending: { label: translate("Sending"), color: "primary" },
-  SmsgSent: { label: translate("Sent"), color: "success" },
-  SmsgError: { label: translate("Error"), color: "danger" },
+/** Colour only. The label is always the statusId itself. */
+const messageStatusColors: Record<string, string> = {
+  SmsgProduced: "warning",
+  SmsgSending: "primary",
+  SmsgSent: "success",
+  SmsgError: "danger",
 };
-
-function messageStatusLabel(statusId: string) {
-  return messageStatuses[statusId]?.label ?? statusId;
-}
 
 function messageStatusColor(statusId: string) {
-  return messageStatuses[statusId]?.color ?? "medium";
+  return messageStatusColors[statusId] ?? "medium";
 }
 
-const needsHumanCount = computed(() =>
-  unconfirmed.value.filter((row) => !diagnoses[row.diagnosis].retryHelps).length);
-
 function noop() {
-  // Static layout. The retry, reconcile, and navigation actions are wired in a follow-up.
+  // Static layout. The retry, reconcile and reset actions are wired in a follow-up.
 }
 </script>
 
@@ -465,41 +412,9 @@ function noop() {
   margin: 0;
 }
 
-.stats-scope {
+.segment-scope {
   display: block;
   padding-inline: var(--spacer-2xs);
-}
-
-/* One fact per cell, each an ion-item so the icon, the label and the value get ion-item's own
-   left-aligned layout instead of a bare grid cell inheriting .list-item's centering. Same track
-   sizing as the run card's metrics, so it reflows to two-up and then one-up on its own. */
-.shipment-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--spacer-sm);
-}
-
-.shipment-facts ion-item {
-  --padding-start: 0;
-  --inner-padding-end: 0;
-}
-
-/* Items scroll sideways in their own track rather than wrapping the card taller. Each row keeps a
-   readable width (the 240px this app already uses for its widest list column) and does not shrink,
-   which is what makes the overflow scroll instead of squashing. */
-.item-strip {
-  display: flex;
-  gap: var(--spacer-sm);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding-block-start: var(--spacer-sm);
-}
-
-.item-strip ion-item {
-  flex: 0 0 auto;
-  inline-size: 240px;
-  --padding-start: 0;
-  --inner-padding-end: 0;
 }
 
 .accordion-content {
@@ -512,24 +427,26 @@ function noop() {
   margin: 0;
 }
 
-/* Attempt, status, result. Not the .list-item grid: every column here has to survive on a phone,
-   because an attempt with its date but no result is not worth reading. */
-.history-table {
+/* Side by side, as asked: field, ours, theirs. The value tracks are equal so the two columns line
+   up for scanning, and the field column stays narrow. */
+.comparison {
   display: flex;
   flex-direction: column;
+  padding-block-start: var(--spacer-sm);
 }
 
-.history-row {
+.comparison-row {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) max-content minmax(160px, 2fr);
+  grid-template-columns: minmax(90px, 0.6fr) minmax(120px, 1fr) minmax(120px, 1fr);
   align-items: start;
   gap: var(--spacer-xs);
   padding-block: var(--spacer-xs);
   border-block-end: var(--border-medium);
 }
 
-.history-row:last-child {
+.comparison-row:last-child {
   border-block-end: 0;
 }
+
 
 </style>
