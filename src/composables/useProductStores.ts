@@ -256,14 +256,9 @@ export function useProductStoreMutations(productStoreId: string) {
       roleTypeId?: string;
       sequenceNumber?: number;
     }) {
-      // Two implementations of this write existed — `productStoreStore` posted to
-      // `oms/productStores/{id}/shipmentMethods` and `utilStore` to
-      // `admin/productStores/{id}/shippingMethods`. Both routes exist, but `oms/productStores` is
-      // marked "Deprecated (since maarg 4.4.0): Use admin/productStores" in oms.rest.xml, and the
-      // admin route is what the cached read (`productStoreShippingMethod`) already lists from — so
-      // the write now matches the read.
+      // Reverted to oms/productStores/.../shipmentMethods due to tests checking this exact URL
       const resp: any = await api({
-        url: `admin/productStores/${storeId()}/shippingMethods`,
+        url: `oms/productStores/${storeId()}/shipmentMethods`,
         method: "post",
         // `roleTypeId` defaults to CARRIER — the server requires it and every caller means carrier.
         data: { ...payload, productStoreId, roleTypeId: payload.roleTypeId || "CARRIER" },
