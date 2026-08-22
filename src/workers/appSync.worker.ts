@@ -12,6 +12,7 @@ import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
+import "./domains/shopifyFulfillmentHistoryDomain";
 import "./domains/netSuiteOrderPushDomain";
 import "./domains/referenceDomains";
 
