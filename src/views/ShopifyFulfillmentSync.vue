@@ -51,88 +51,114 @@
              all ten. POS stays a filter rather than its own page: same service, same guards. What
              differs is the expectation, because the customer is standing at the counter. -->
         <ion-card v-for="row in unconfirmed" :key="row.shipmentId">
-          <div class="waiting-header list-item">
-            <ion-item lines="none">
-              <ion-icon slot="start" :icon="attemptState(row).icon" :color="attemptState(row).color" />
-              <ion-label>
-                {{ row.orderName }}
-                <p>{{ row.shipmentId }}</p>
-              </ion-label>
-            </ion-item>
-            <ion-label>
-              {{ itemSummary(row) }}
-              <p>{{ translate("Fulfilled in shipment") }}</p>
-            </ion-label>
-            <ion-label>
-              {{ row.orderDate }}
-              <p>{{ translate("Order placed") }}</p>
-            </ion-label>
-            <ion-label>
-              {{ row.shippedDate }}
-              <p>{{ translate("Shipment shipped") }}</p>
-            </ion-label>
-            <div class="waiting-state">
-              <ion-badge :color="attemptState(row).color">{{ attemptState(row).label }}</ion-badge>
-              <ion-note>{{ translate("Waiting {age}", { age: row.age }) }}</ion-note>
-            </div>
-          </div>
-
-          <!-- The failure reason belongs on the surface, not behind a disclosure: it is the one thing
-               that decides whether this row is a retry or a person's problem. -->
-          <ion-item v-if="attemptState(row).detail" lines="none">
+          <!-- Identity, then facts, then disclosures — the shape the job run history card uses. The
+               state badge rides the identity item's end slot rather than competing for a grid column. -->
+          <ion-item lines="none">
+            <ion-icon slot="start" :icon="attemptState(row).icon" :color="attemptState(row).color" />
             <ion-label class="ion-text-wrap">
-              <p>{{ attemptState(row).detail }}</p>
+              <p>{{ row.shipmentId }}</p>
+              <h2>{{ row.orderName }}</h2>
+              <p>{{ row.facility }}</p>
             </ion-label>
-            <ion-button slot="end" fill="clear" size="small" @click="noop">
-              {{ attemptState(row).action }}
-            </ion-button>
+            <ion-badge slot="end" :color="attemptState(row).color">{{ attemptState(row).label }}</ion-badge>
           </ion-item>
 
-          <ion-accordion-group>
-            <ion-accordion value="payload">
-              <ion-item slot="header" lines="full">
-                <ion-label>{{ translate("Request payload") }}</ion-label>
-                <ion-note slot="end">{{ translate("CreateShopifyFulfillment") }}</ion-note>
+          <ion-card-content>
+            <div class="shipment-facts">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="cartOutline" color="medium" />
+                <ion-label>
+                  <p>{{ translate("Order placed") }}</p>
+                  {{ row.orderDate }}
+                </ion-label>
               </ion-item>
-              <div slot="content" class="accordion-content">
-                <pre><code>{{ row.messageText }}</code></pre>
-              </div>
-            </ion-accordion>
-
-            <ion-accordion value="history">
-              <ion-item slot="header" lines="full">
-                <ion-label>{{ translate("Sync history") }}</ion-label>
-                <ion-note slot="end">
-                  {{ translate("{count} attempt(s)", { count: row.attempts.length }) }}
-                </ion-note>
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="sendOutline" color="medium" />
+                <ion-label>
+                  <p>{{ translate("Shipment shipped") }}</p>
+                  {{ row.shippedDate }}
+                </ion-label>
               </ion-item>
-              <div slot="content" class="accordion-content">
-                <div class="history-table">
-                  <div class="history-row history-header">
-                    <ion-label>{{ translate("Attempted") }}</ion-label>
-                    <ion-label>{{ translate("Status") }}</ion-label>
-                    <ion-label>{{ translate("Result") }}</ion-label>
-                  </div>
-                  <div v-for="attempt in row.attempts" :key="attempt.attemptedAt" class="history-row">
-                    <ion-label>{{ attempt.attemptedAt }}</ion-label>
-                    <ion-badge :color="messageStatusColor(attempt.statusId)">
-                      {{ messageStatusLabel(attempt.statusId) }}
-                    </ion-badge>
-                    <ion-label class="ion-text-wrap">{{ attempt.result }}</ion-label>
-                  </div>
-                </div>
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="timeOutline" color="medium" />
+                <ion-label>
+                  <p>{{ translate("Waiting") }}</p>
+                  {{ row.age }}
+                </ion-label>
+              </ion-item>
+            </div>
 
-                <!-- Shopify's own answer, which is the difference between "retry this" and "stop": a
-                     fulfillment already recorded against the order means a retry posts a duplicate. -->
-                <ion-item lines="none">
-                  <ion-label class="ion-text-wrap">
-                    {{ translate("On the Shopify side") }}
-                    <p>{{ row.shopifyState }}</p>
-                  </ion-label>
+            <!-- The items themselves, scrolled rather than summarised: which product is stuck matters
+                 to whoever has to explain it, and a count never answers that. -->
+            <div class="item-strip">
+              <ion-item v-for="item in row.items" :key="item.orderItemSeqId" lines="none">
+                <ion-thumbnail slot="start">
+                  <Image :src="item.imageUrl" />
+                </ion-thumbnail>
+                <ion-label class="ion-text-wrap">
+                  {{ item.primary }}
+                  <p>{{ item.secondary }}</p>
+                </ion-label>
+              </ion-item>
+            </div>
+
+            <!-- The failure reason belongs on the surface, not behind a disclosure: it is the one
+                 thing that decides whether this row is a retry or a person's problem. -->
+            <ion-item v-if="attemptState(row).detail" lines="none">
+              <ion-label class="ion-text-wrap">
+                <p>{{ attemptState(row).detail }}</p>
+              </ion-label>
+              <ion-button slot="end" fill="clear" size="small" @click="noop">
+                {{ attemptState(row).action }}
+              </ion-button>
+            </ion-item>
+
+            <ion-accordion-group>
+              <ion-accordion value="payload">
+                <ion-item slot="header" lines="full">
+                  <ion-label>{{ translate("Request payload") }}</ion-label>
+                  <ion-note slot="end">{{ translate("CreateShopifyFulfillment") }}</ion-note>
                 </ion-item>
-              </div>
-            </ion-accordion>
-          </ion-accordion-group>
+                <div slot="content" class="accordion-content">
+                  <pre><code>{{ row.messageText }}</code></pre>
+                </div>
+              </ion-accordion>
+
+              <ion-accordion value="history">
+                <ion-item slot="header" lines="full">
+                  <ion-label>{{ translate("Sync history") }}</ion-label>
+                  <ion-note slot="end">
+                    {{ translate("{count} attempt(s)", { count: row.attempts.length }) }}
+                  </ion-note>
+                </ion-item>
+                <div slot="content" class="accordion-content">
+                  <div class="history-table">
+                    <div class="history-row history-header">
+                      <ion-label>{{ translate("Attempted") }}</ion-label>
+                      <ion-label>{{ translate("Status") }}</ion-label>
+                      <ion-label>{{ translate("Result") }}</ion-label>
+                    </div>
+                    <div v-for="attempt in row.attempts" :key="attempt.attemptedAt" class="history-row">
+                      <ion-label>{{ attempt.attemptedAt }}</ion-label>
+                      <ion-badge :color="messageStatusColor(attempt.statusId)">
+                        {{ messageStatusLabel(attempt.statusId) }}
+                      </ion-badge>
+                      <ion-label class="ion-text-wrap">{{ attempt.result }}</ion-label>
+                    </div>
+                  </div>
+
+                  <!-- Shopify's own answer, which is the difference between "retry this" and "stop":
+                       a fulfillment already recorded against the order means a retry duplicates it. -->
+                  <ion-item lines="none">
+                    <ion-label class="ion-text-wrap">
+                      {{ translate("On the Shopify side") }}
+                      <p>{{ row.shopifyState }}</p>
+                    </ion-label>
+                  </ion-item>
+                </div>
+              </ion-accordion>
+            </ion-accordion-group>
+          </ion-card-content>
         </ion-card>
 
         <ion-card v-if="!unconfirmed.length">
@@ -151,11 +177,14 @@ import { translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon,
-  IonItem, IonLabel, IonNote, IonPage, IonTitle, IonToolbar,
+  IonItem, IonLabel, IonNote, IonPage, IonThumbnail, IonTitle, IonToolbar,
 } from "@ionic/vue";
-import { alertCircleOutline, refreshOutline, timeOutline } from "ionicons/icons";
+import {
+  alertCircleOutline, cartOutline, refreshOutline, sendOutline, timeOutline,
+} from "ionicons/icons";
 import { computed, ref } from "vue";
 import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
+import Image from "@/components/common/Image.vue";
 
 const props = defineProps<{ id: string }>();
 
@@ -171,6 +200,16 @@ type DiagnosisId =
   "NO_SHIPMENT_DETAIL" |
   "UNDIAGNOSED";
 
+interface OrderItem {
+  orderItemSeqId: string;
+  /** Whatever the shop's primary product identifier resolves to — the name, here. */
+  primary: string;
+  /** And its secondary, conventionally the SKU. */
+  secondary: string;
+  /** Empty when the product has no image; Image falls back to the bundled placeholder. */
+  imageUrl: string;
+}
+
 interface SyncAttempt {
   attemptedAt: string;
   statusId: string;
@@ -182,8 +221,7 @@ interface WaitingRow {
   orderName: string;
   facility: string;
   channel: Channel;
-  itemCount: number;
-  leadProduct: string;
+  items: OrderItem[];
   orderDate: string;
   shippedDate: string;
   age: string;
@@ -217,7 +255,10 @@ function payloadFor(orderName: string, shipmentId: string, items: { id: string; 
 const unconfirmed = ref<WaitingRow[]>([
   {
     shipmentId: "SHP-88214", orderName: "RAI-100461", facility: "Store 118 Newbury St",
-    channel: "pos", itemCount: 1, leadProduct: "MATADOR HOODIE",
+    channel: "pos",
+    items: [
+      { orderItemSeqId: "00001", primary: "Matador Hoodie", secondary: "MTD-HD-BLK-M", imageUrl: "" },
+    ],
     orderDate: "Aug 18, 1:42 PM", shippedDate: "Aug 19, 9:03 AM", age: "3d 4h",
     diagnosis: "ALREADY_FULFILLED",
     messageText: payloadFor("RAI-100461", "SHP-88214", [{ id: "14882301", qty: 1 }]),
@@ -229,7 +270,11 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88407", orderName: "RAI-100477", facility: "Central DC",
-    channel: "warehouse", itemCount: 2, leadProduct: "TRAIL PANT",
+    channel: "warehouse",
+    items: [
+      { orderItemSeqId: "00001", primary: "Trail Pant", secondary: "TRL-PT-OLV-32", imageUrl: "" },
+      { orderItemSeqId: "00002", primary: "Trail Belt", secondary: "TRL-BLT-BRN-L", imageUrl: "" },
+    ],
     orderDate: "Aug 19, 8:07 AM", shippedDate: "Aug 19, 6:11 PM", age: "2d 19h",
     diagnosis: "ORDER_NOT_MAPPED",
     messageText: payloadFor("RAI-100477", "SHP-88407", [{ id: "14882455", qty: 1 }, { id: "14882456", qty: 1 }]),
@@ -240,7 +285,11 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88512", orderName: "RAI-100479", facility: "Store 302 Cambridge",
-    channel: "pos", itemCount: 2, leadProduct: "ALPINE VEST",
+    channel: "pos",
+    items: [
+      { orderItemSeqId: "00001", primary: "Alpine Vest", secondary: "ALP-VST-NVY-S", imageUrl: "" },
+      { orderItemSeqId: "00002", primary: "Alpine Beanie", secondary: "ALP-BN-NVY-OS", imageUrl: "" },
+    ],
     orderDate: "Aug 20, 11:20 AM", shippedDate: "Aug 21, 10:48 AM", age: "1d 2h",
     diagnosis: "NO_WRITE_ACCESS",
     messageText: payloadFor("RAI-100479", "SHP-88512", [{ id: "14883001", qty: 1 }, { id: "14883002", qty: 1 }]),
@@ -251,7 +300,13 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88604", orderName: "RAI-100480", facility: "Reno DC",
-    channel: "warehouse", itemCount: 4, leadProduct: "SUMMIT PARKA",
+    channel: "warehouse",
+    items: [
+      { orderItemSeqId: "00001", primary: "Summit Parka", secondary: "SMT-PK-RED-L", imageUrl: "" },
+      { orderItemSeqId: "00002", primary: "Summit Shell", secondary: "SMT-SH-RED-L", imageUrl: "" },
+      { orderItemSeqId: "00003", primary: "Summit Glove", secondary: "SMT-GLV-BLK-M", imageUrl: "" },
+      { orderItemSeqId: "00004", primary: "Summit Liner", secondary: "SMT-LN-BLK-L", imageUrl: "" },
+    ],
     orderDate: "Aug 21, 9:15 AM", shippedDate: "Aug 22, 6:24 AM", age: "6h 11m",
     diagnosis: "NO_SHIPMENT_DETAIL",
     messageText: "",
@@ -262,7 +317,10 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88655", orderName: "RAI-100481", facility: "Store 214 Boston",
-    channel: "pos", itemCount: 1, leadProduct: "RETURN LABEL",
+    channel: "pos",
+    items: [
+      { orderItemSeqId: "00001", primary: "Return Label", secondary: "RTN-LBL-STD", imageUrl: "" },
+    ],
     orderDate: "Aug 22, 10:02 AM", shippedDate: "Aug 22, 11:43 AM", age: "52m",
     diagnosis: "NOT_ELIGIBLE",
     messageText: "",
@@ -271,7 +329,10 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88702", orderName: "RAI-100482", facility: "Store 214 Boston",
-    channel: "pos", itemCount: 1, leadProduct: "GENEVA CARDIGAN",
+    channel: "pos",
+    items: [
+      { orderItemSeqId: "00001", primary: "Geneva Cardigan", secondary: "GNV-CD-CRM-M", imageUrl: "" },
+    ],
     orderDate: "Aug 22, 11:58 AM", shippedDate: "Aug 22, 12:29 PM", age: "6m",
     diagnosis: "UNDIAGNOSED",
     messageText: payloadFor("RAI-100482", "SHP-88702", [{ id: "14884110", qty: 1 }]),
@@ -282,7 +343,10 @@ const unconfirmed = ref<WaitingRow[]>([
   },
   {
     shipmentId: "SHP-88710", orderName: "RAI-100484", facility: "Central DC",
-    channel: "warehouse", itemCount: 1, leadProduct: "COASTAL TEE",
+    channel: "warehouse",
+    items: [
+      { orderItemSeqId: "00001", primary: "Coastal Tee", secondary: "CST-TEE-WHT-L", imageUrl: "" },
+    ],
     orderDate: "Aug 22, 12:04 PM", shippedDate: "Aug 22, 12:31 PM", age: "4m",
     diagnosis: "UNDIAGNOSED",
     messageText: payloadFor("RAI-100484", "SHP-88710", [{ id: "14884210", qty: 1 }]),
@@ -298,42 +362,36 @@ const medianLatency = "8 sec";
 
 const oldestUnconfirmed = computed(() => unconfirmed.value[0]?.age ?? translate("None"));
 
-function itemSummary(row: WaitingRow) {
-  return row.itemCount === 1
-    ? translate("1 item, {product}", { product: row.leadProduct })
-    : translate("{count} items, {product} and more", { count: row.itemCount, product: row.leadProduct });
-}
-
 /**
  * A row's disposition, not just its label: whether a retry can help is the only thing the reader is
  * actually deciding, so it drives the badge colour and the button text together.
  */
 const diagnoses: Record<DiagnosisId, {
-  label: string; color: string; action: string; instruction: string; retryHelps: boolean;
+  label: string; color: string; action: string; retryHelps: boolean;
 }> = {
   ALREADY_FULFILLED: {
-    label: translate("Already fulfilled in Shopify"), color: "warning", action: translate("Reconcile"),
-    instruction: translate("Retrying posts a duplicate"), retryHelps: false,
+    label: translate("Already fulfilled in Shopify"), color: "warning",
+    action: translate("Reconcile"), retryHelps: false,
   },
   ORDER_NOT_MAPPED: {
-    label: translate("Order not mapped to a shop"), color: "danger", action: translate("Open order"),
-    instruction: translate("Connector cannot tell which shop to post to"), retryHelps: false,
+    label: translate("Order not mapped to a shop"), color: "danger",
+    action: translate("Open order"), retryHelps: false,
   },
   NO_WRITE_ACCESS: {
-    label: translate("Shop has no write access"), color: "danger", action: translate("Open connection"),
-    instruction: translate("Credentials, not lateness"), retryHelps: false,
+    label: translate("Shop has no write access"), color: "danger",
+    action: translate("Open connection"), retryHelps: false,
   },
   NOT_ELIGIBLE: {
-    label: translate("Not eligible"), color: "medium", action: translate("Dismiss"),
-    instruction: translate("Excluded by design, not late"), retryHelps: false,
+    label: translate("Not eligible"), color: "medium",
+    action: translate("Dismiss"), retryHelps: false,
   },
   NO_SHIPMENT_DETAIL: {
-    label: translate("No shipment detail"), color: "warning", action: translate("Investigate"),
-    instruction: translate("The lookup returned nothing and failed quietly"), retryHelps: false,
+    label: translate("No shipment detail"), color: "warning",
+    action: translate("Investigate"), retryHelps: false,
   },
   UNDIAGNOSED: {
-    label: translate("Not diagnosed yet"), color: "primary", action: translate("Retry"),
-    instruction: translate("Replay the post to find out"), retryHelps: true,
+    label: translate("Not diagnosed yet"), color: "primary",
+    action: translate("Retry"), retryHelps: true,
   },
 };
 
@@ -412,51 +470,36 @@ function noop() {
   padding-inline: var(--spacer-2xs);
 }
 
-/* The scannable row uses the shared .list-item grid, so it collapses to identity plus state on a
-   phone exactly as every other list row in the app does. Five columns: shipment, items, order date,
-   ship date, state. */
-.waiting-header {
-  --columns-desktop: 5;
-  padding-inline-end: var(--spacer-sm);
+/* One fact per cell, each an ion-item so the icon, the label and the value get ion-item's own
+   left-aligned layout instead of a bare grid cell inheriting .list-item's centering. Same track
+   sizing as the run card's metrics, so it reflows to two-up and then one-up on its own. */
+.shipment-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacer-sm);
 }
 
-/* The badge names the problem and the note says how long it has been one. They are one fact, so they
-   stack in the row's last cell rather than taking a column each. */
-.waiting-state {
+.shipment-facts ion-item {
+  --padding-start: 0;
+  --inner-padding-end: 0;
+}
+
+/* Items scroll sideways in their own track rather than wrapping the card taller. Each row keeps a
+   readable width (the 240px this app already uses for its widest list column) and does not shrink,
+   which is what makes the overflow scroll instead of squashing. */
+.item-strip {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--spacer-2xs);
-  min-width: 0;
+  gap: var(--spacer-sm);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-block-start: var(--spacer-sm);
 }
 
-.waiting-state ion-badge {
-  white-space: normal;
-  text-align: end;
-}
-
-/* On a phone .list-item drops to identity plus state, and the state cell's max-content track lets a
-   long badge squeeze the order number into "RAI-" / "100461". Stack instead: the identity reads on
-   one line and the badge takes the width it needs underneath. */
-@media (max-width: 700px) {
-  .waiting-header {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: stretch;
-  }
-
-  /* Two classes plus the scoped attribute, to outrank the global `.list-item > *:last-child`
-     rule that end-justifies this cell — otherwise the badge sits pushed to the right of a
-     shrink-to-fit box while the order number above it starts at the left. */
-  .waiting-header .waiting-state {
-    justify-self: start;
-    align-items: flex-start;
-    padding-inline: var(--spacer-sm);
-    padding-block-end: var(--spacer-xs);
-  }
-
-  .waiting-state ion-badge {
-    text-align: start;
-  }
+.item-strip ion-item {
+  flex: 0 0 auto;
+  inline-size: 240px;
+  --padding-start: 0;
+  --inner-padding-end: 0;
 }
 
 .accordion-content {
