@@ -125,31 +125,166 @@
           </ion-card>
         </template>
 
-        <!-- Synced is fulfillment history grouped by order. It holds no systemMessageId, so there
-             is no message text or error list to show; what confirms the push is Shopify's own record
-             of the fulfillment beside ours. -->
+        <!-- Synced is fulfillment history grouped by order. It holds no systemMessageId, so there is
+             no message text or error list; what confirms a push is Shopify's own record of the
+             fulfillment. displayStatus carries the lifecycle stage and status carries whether it still
+             counts, so the badge shows the first coloured by the second. -->
         <template v-else>
           <ion-note color="medium" class="segment-scope">
-            {{ translate("Fulfillments recorded against this shop, newest first, checked against Shopify.") }}
+            {{ translate("Fulfillments recorded against this shop, newest first, read back from Shopify.") }}
           </ion-note>
           <FulfillmentShipmentCard
             v-for="row in synced"
             :key="row.shipmentId"
             :row="row"
-            :state="{ label: row.shopifyStatus, color: row.agrees ? 'success' : 'warning' }"
+            :state="{ label: row.displayStatus, color: fulfillmentStatusColor(row.status) }"
           >
-            <div class="comparison">
-              <div class="comparison-row comparison-header">
-                <ion-label>{{ translate("Field") }}</ion-label>
-                <ion-label>{{ translate("HotWax") }}</ion-label>
-                <ion-label>{{ translate("Shopify") }}</ion-label>
-              </div>
-              <div v-for="field in row.comparison" :key="field.label" class="comparison-row">
-                <ion-label>{{ field.label }}</ion-label>
-                <ion-label class="ion-text-wrap">{{ field.hotwax }}</ion-label>
-                <ion-label class="ion-text-wrap">{{ field.shopify }}</ion-label>
-              </div>
+            <div class="detail-facts">
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Fulfillment") }}</p>
+                  {{ row.name }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("status") }}</p>
+                  {{ row.status }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Fulfilled from") }}</p>
+                  {{ row.locationName }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("totalQuantity") }}</p>
+                  {{ row.totalQuantity }}
+                </ion-label>
+              </ion-item>
+              <ion-item v-if="row.inTransitAt" lines="none">
+                <ion-label>
+                  <p>{{ translate("inTransitAt") }}</p>
+                  {{ row.inTransitAt }}
+                </ion-label>
+              </ion-item>
+              <ion-item v-if="row.estimatedDeliveryAt" lines="none">
+                <ion-label>
+                  <p>{{ translate("estimatedDeliveryAt") }}</p>
+                  {{ row.estimatedDeliveryAt }}
+                </ion-label>
+              </ion-item>
+              <ion-item v-if="row.deliveredAt" lines="none">
+                <ion-label>
+                  <p>{{ translate("deliveredAt") }}</p>
+                  {{ row.deliveredAt }}
+                </ion-label>
+              </ion-item>
             </div>
+
+            <!-- The carrier's own narrative. Capped, because this connection grows with every scan and
+                 displayStatus above already summarises where it got to. -->
+            <template v-if="row.events.length">
+              <ion-item-divider>
+                <ion-label>{{ translate("Delivery events") }}</ion-label>
+              </ion-item-divider>
+              <ion-item v-for="event in row.events" :key="event.happenedAt" lines="full">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ event.happenedAt }}</p>
+                  {{ event.message }}
+                </ion-label>
+                <ion-note slot="end">{{ event.status }}</ion-note>
+              </ion-item>
+            </template>
+
+            <!-- The order-level view: whether anything is still owed, and what is blocking it. -->
+            <ion-item-divider>
+              <ion-label>{{ translate("Fulfillment order") }}</ion-label>
+            </ion-item-divider>
+            <div class="detail-facts">
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("status") }}</p>
+                  {{ row.fulfillmentOrder.status }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("requestStatus") }}</p>
+                  {{ row.fulfillmentOrder.requestStatus }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label>
+                  <p>{{ translate("Unfulfilled lines") }}</p>
+                  {{ row.fulfillmentOrder.remainingLineItems }}
+                </ion-label>
+              </ion-item>
+              <ion-item v-if="row.fulfillmentOrder.fulfillBy" lines="none">
+                <ion-label>
+                  <p>{{ translate("fulfillBy") }}</p>
+                  {{ row.fulfillmentOrder.fulfillBy }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("deliveryMethod") }}</p>
+                  {{ row.fulfillmentOrder.deliveryMethod }}
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("destination") }}</p>
+                  {{ row.fulfillmentOrder.destination }}
+                </ion-label>
+              </ion-item>
+            </div>
+
+            <ion-item v-if="row.fulfillmentOrder.holds.length" lines="none">
+              <ion-label class="ion-text-wrap">
+                <p>{{ translate("fulfillmentHolds") }}</p>
+                {{ row.fulfillmentOrder.holds.join(", ") }}
+              </ion-label>
+              <ion-badge slot="end" color="warning">{{ translate("On hold") }}</ion-badge>
+            </ion-item>
+
+            <ion-accordion-group>
+              <ion-accordion value="tracking">
+                <ion-item slot="header" lines="full">
+                  <ion-label>{{ translate("trackingInfo") }}</ion-label>
+                  <ion-note slot="end">{{ row.trackingInfo.length }}</ion-note>
+                </ion-item>
+                <div slot="content">
+                  <ion-item v-for="tracking in row.trackingInfo" :key="tracking.number" lines="full">
+                    <ion-label class="ion-text-wrap">
+                      <p>{{ tracking.company }}</p>
+                      {{ tracking.number }}
+                    </ion-label>
+                  </ion-item>
+                  <ion-item v-if="!row.trackingInfo.length" lines="none">
+                    <ion-label>{{ translate("Shopify holds no tracking for this fulfillment.") }}</ion-label>
+                  </ion-item>
+                </div>
+              </ion-accordion>
+
+              <ion-accordion value="lineItems">
+                <ion-item slot="header" lines="full">
+                  <ion-label>{{ translate("fulfillmentLineItems") }}</ion-label>
+                  <ion-note slot="end">{{ row.lineItems.length }}</ion-note>
+                </ion-item>
+                <div slot="content">
+                  <ion-item v-for="line in row.lineItems" :key="line.sku" lines="full">
+                    <ion-label class="ion-text-wrap">
+                      <p>{{ line.sku }}</p>
+                      {{ line.name }}
+                    </ion-label>
+                    <ion-note slot="end">{{ line.quantity }}</ion-note>
+                  </ion-item>
+                </div>
+              </ion-accordion>
+            </ion-accordion-group>
           </FulfillmentShipmentCard>
           <ion-card v-if="!synced.length">
             <ion-card-content>{{ translate("Nothing has synced yet.") }}</ion-card-content>
@@ -164,9 +299,10 @@
 <script setup lang="ts">
 import { translate } from "@common";
 import {
-  IonAccordion, IonAccordionGroup, IonBackButton, IonButton, IonButtons, IonCard,
+  IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem,
-  IonLabel, IonNote, IonPage, IonSegment, IonSegmentButton, IonTitle, IonToolbar,
+  IonItemDivider, IonLabel, IonNote, IonPage, IonSegment, IonSegmentButton, IonTitle,
+  IonToolbar,
 } from "@ionic/vue";
 import { computed, ref } from "vue";
 import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
@@ -198,19 +334,49 @@ interface QueuedRow extends FulfillmentShipmentRow {
   errors: SystemMessageError[];
 }
 
-interface ComparisonField {
-  label: string;
-  hotwax: string;
-  shopify: string;
+/** A FulfillmentEvent, as the carrier reports it. */
+interface ShopifyFulfillmentEvent {
+  happenedAt: string;
+  /** FulfillmentEventStatus, verbatim. */
+  status: string;
+  message: string;
 }
 
-/** A history-backed row: one Shopify fulfillment, ours beside theirs. */
+/** The FulfillmentOrder behind a fulfillment: what is still owed, and what is blocking it. */
+interface ShopifyFulfillmentOrder {
+  /** FulfillmentOrderStatus: OPEN, IN_PROGRESS, CLOSED, INCOMPLETE, ON_HOLD, SCHEDULED, CANCELLED. */
+  status: string;
+  requestStatus: string;
+  holds: string[];
+  remainingLineItems: number;
+  destination: string;
+  deliveryMethod: string;
+  fulfillBy: string;
+}
+
+/**
+ * A history-backed row, read back from Shopify. Field names match the GraphQL Fulfillment object so
+ * a reviewer can map what they see here onto the API.
+ *
+ * Note on ids: ShopifyFulfillmentHistory.fulfillmentId is `id-long`, a legacy numeric id, while the
+ * query needs `gid://shopify/Fulfillment/{id}`. `name` is the reference a merchant sees in the admin.
+ */
 interface SyncedRow extends FulfillmentShipmentRow {
   fulfillmentId: string;
-  /** Shopify's own FulfillmentStatus, shown verbatim. */
-  shopifyStatus: string;
-  agrees: boolean;
-  comparison: ComparisonField[];
+  name: string;
+  /** FulfillmentStatus: SUCCESS, CANCELLED, ERROR, FAILURE. Whether the fulfillment still counts. */
+  status: string;
+  /** FulfillmentDisplayStatus: where it got to, in Shopify's own vocabulary. */
+  displayStatus: string;
+  locationName: string;
+  totalQuantity: number;
+  inTransitAt: string;
+  estimatedDeliveryAt: string;
+  deliveredAt: string;
+  events: ShopifyFulfillmentEvent[];
+  trackingInfo: { company: string; number: string }[];
+  lineItems: { quantity: number; name: string; sku: string }[];
+  fulfillmentOrder: ShopifyFulfillmentOrder;
 }
 
 function items(...rows: [string, string, string][]): FulfillmentOrderItem[] {
@@ -319,28 +485,65 @@ const synced = ref<SyncedRow[]>([
     orderDate: "Aug 21, 3:12 PM", shippedDate: "Aug 22, 7:41 AM",
     trailing: { label: translate("Recorded"), value: "Aug 22, 7:41 AM" },
     items: items(["00001", "Harbor Jacket", "HBR-JK-NVY-L"]),
-    fulfillmentId: "4471301884", shopifyStatus: "SUCCESS", agrees: true,
-    comparison: [
-      { label: translate("Fulfillment"), hotwax: "4471301884", shopify: "4471301884" },
-      { label: translate("Status"), hotwax: translate("Not stored"), shopify: "SUCCESS" },
-      { label: translate("Recorded"), hotwax: translate("Not stored"), shopify: "Aug 22, 7:41 AM" },
-      { label: translate("Tracking"), hotwax: "1Z999AA10123456784 (UPS)", shopify: "1Z999AA10123456784 (UPS)" },
-      { label: translate("Quantity"), hotwax: "1", shopify: "1" },
+    fulfillmentId: "4471301884", name: "#100488.1",
+    status: "SUCCESS", displayStatus: "DELIVERED",
+    locationName: "HotWax Routing Retail", totalQuantity: 1,
+    inTransitAt: "Aug 22, 2:10 PM", estimatedDeliveryAt: "Aug 24, 8:00 PM",
+    deliveredAt: "Aug 24, 3:22 PM",
+    events: [
+      { happenedAt: "Aug 24, 3:22 PM", status: "DELIVERED", message: "Delivered, left at front door" },
+      { happenedAt: "Aug 24, 8:04 AM", status: "OUT_FOR_DELIVERY", message: "Out for delivery, Boston MA" },
+      { happenedAt: "Aug 22, 2:10 PM", status: "IN_TRANSIT", message: "Departed carrier facility, Boston MA" },
     ],
+    trackingInfo: [{ company: "UPS", number: "1Z999AA10123456784" }],
+    lineItems: [{ quantity: 1, name: "Harbor Jacket", sku: "HBR-JK-NVY-L" }],
+    fulfillmentOrder: {
+      status: "CLOSED", requestStatus: "UNSUBMITTED", holds: [], remainingLineItems: 0,
+      destination: "Boston, MA 02116, US", deliveryMethod: "SHIPPING", fulfillBy: "",
+    },
   },
   {
     shipmentId: "SHP-88815", orderName: "RAI-100491", facility: "Reno DC",
     orderDate: "Aug 21, 5:48 PM", shippedDate: "Aug 22, 8:02 AM",
     trailing: { label: translate("Recorded"), value: "Aug 22, 8:02 AM" },
     items: items(["00001", "Cedar Flannel", "CDR-FL-GRN-M"], ["00002", "Cedar Scarf", "CDR-SC-GRN-OS"]),
-    fulfillmentId: "4471302915", shopifyStatus: "CANCELLED", agrees: false,
-    comparison: [
-      { label: translate("Fulfillment"), hotwax: "4471302915", shopify: "4471302915" },
-      { label: translate("Status"), hotwax: translate("Not stored"), shopify: "CANCELLED" },
-      { label: translate("Recorded"), hotwax: translate("Not stored"), shopify: "Aug 22, 8:02 AM" },
-      { label: translate("Tracking"), hotwax: "1Z999AA10123456791 (UPS)", shopify: translate("None") },
-      { label: translate("Quantity"), hotwax: "2", shopify: "2" },
+    fulfillmentId: "4471302915", name: "#100491.1",
+    status: "SUCCESS", displayStatus: "IN_TRANSIT",
+    locationName: "HotWax Routing Web", totalQuantity: 2,
+    inTransitAt: "Aug 22, 11:47 AM", estimatedDeliveryAt: "Aug 26, 8:00 PM",
+    deliveredAt: "",
+    events: [
+      { happenedAt: "Aug 23, 6:31 AM", status: "IN_TRANSIT", message: "Arrived at carrier facility, Salt Lake City UT" },
+      { happenedAt: "Aug 22, 11:47 AM", status: "IN_TRANSIT", message: "Picked up by carrier, Reno NV" },
+      { happenedAt: "Aug 22, 8:14 AM", status: "LABEL_PRINTED", message: "Shipping label created" },
     ],
+    trackingInfo: [{ company: "UPS", number: "1Z999AA10123456791" }],
+    lineItems: [
+      { quantity: 1, name: "Cedar Flannel", sku: "CDR-FL-GRN-M" },
+      { quantity: 1, name: "Cedar Scarf", sku: "CDR-SC-GRN-OS" },
+    ],
+    fulfillmentOrder: {
+      status: "IN_PROGRESS", requestStatus: "UNSUBMITTED", holds: [], remainingLineItems: 1,
+      destination: "Reno, NV 89501, US", deliveryMethod: "SHIPPING", fulfillBy: "Aug 26, 5:00 PM",
+    },
+  },
+  {
+    shipmentId: "SHP-88822", orderName: "RAI-100493", facility: "Store 214 Boston",
+    orderDate: "Aug 20, 9:02 AM", shippedDate: "Aug 21, 4:18 PM",
+    trailing: { label: translate("Recorded"), value: "Aug 21, 4:18 PM" },
+    items: items(["00001", "Bayside Chino", "BAY-CH-KHK-32"]),
+    fulfillmentId: "4471299410", name: "#100493.1",
+    status: "CANCELLED", displayStatus: "CANCELED",
+    locationName: "HotWax Routing Retail", totalQuantity: 1,
+    inTransitAt: "", estimatedDeliveryAt: "", deliveredAt: "",
+    events: [],
+    trackingInfo: [],
+    lineItems: [{ quantity: 1, name: "Bayside Chino", sku: "BAY-CH-KHK-32" }],
+    fulfillmentOrder: {
+      status: "ON_HOLD", requestStatus: "UNSUBMITTED",
+      holds: ["AWAITING_PAYMENT", "HIGH_RISK_OF_FRAUD"], remainingLineItems: 1,
+      destination: "Cambridge, MA 02139, US", deliveryMethod: "SHIPPING", fulfillBy: "",
+    },
   },
 ]);
 
@@ -366,6 +569,17 @@ function retryNote(row: QueuedRow) {
   }
 
   return "";
+}
+
+/**
+ * FulfillmentStatus decides the colour of a synced card, while displayStatus supplies its words: a
+ * CANCELLED fulfillment can still read DELIVERED, and the colour is what says it no longer counts.
+ */
+function fulfillmentStatusColor(status: string) {
+  if(status === "SUCCESS") { return "success"; }
+  if(status === "CANCELLED") { return "warning"; }
+
+  return "danger";
 }
 
 /** Colour only. The label is always the statusId itself. */
@@ -427,26 +641,17 @@ function noop() {
   margin: 0;
 }
 
-/* Side by side, as asked: field, ours, theirs. The value tracks are equal so the two columns line
-   up for scanning, and the field column stays narrow. */
-.comparison {
-  display: flex;
-  flex-direction: column;
+/* The Shopify record's own facts, laid out like the card's shipment facts so the two halves of a
+   synced card read as one thing rather than two conventions. */
+.detail-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacer-sm);
   padding-block-start: var(--spacer-sm);
 }
 
-.comparison-row {
-  display: grid;
-  grid-template-columns: minmax(90px, 0.6fr) minmax(120px, 1fr) minmax(120px, 1fr);
-  align-items: start;
-  gap: var(--spacer-xs);
-  padding-block: var(--spacer-xs);
-  border-block-end: var(--border-medium);
+.detail-facts ion-item {
+  --padding-start: 0;
+  --inner-padding-end: 0;
 }
-
-.comparison-row:last-child {
-  border-block-end: 0;
-}
-
-
 </style>
