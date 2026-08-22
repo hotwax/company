@@ -407,7 +407,7 @@ import {
 import { useSystemMessage, useSystemMessageErrors } from "@/composables/useSystemMessage";
 import { formatDateTime } from "@/utils";
 import {
-  type ParsedFulfillmentItem, type ShopifyFulfillmentDetails, fulfillmentSyncDomains,
+  type ShopifyFulfillmentDetails, fulfillmentSyncDomains,
 } from "@/utils/shopifyFulfillment";
 
 const props = defineProps<{ id: string }>();
@@ -513,37 +513,8 @@ function formatWaiting(initDate: number): string {
   return `${minutes}m`;
 }
 
-/**
- * The connector's live payloads name the item list `lineItems`, but the data layer's parser reads
- * `shipmentItems` — the alias drift its own docstring warns about, observed against rails-oms.
- * Worked around here rather than in the parser, which this change does not own: when the parsed
- * items come back empty, the stored payload is re-read for the alias production actually uses.
- */
-function messageItems(message: QueuedFulfillmentRow): ParsedFulfillmentItem[] {
-  if(message.parsed.items.length) {return message.parsed.items;}
-  try {
-    const payload = JSON.parse(message.messageText);
-    const lines = Array.isArray(payload?.lineItems) ? payload.lineItems : [];
-
-    return lines
-      .filter((line: any) => line && typeof line === "object")
-      .map((line: any) => {
-        const quantity = Number(line.quantity);
-
-        return {
-          orderItemSeqId: String(line.orderItemSeqId ?? ""),
-          productId: String(line.productId ?? ""),
-          ...(Number.isFinite(quantity) ? { quantity } : {}),
-          shopifyLineItemId: String(line.shopifyLineItemId ?? ""),
-        };
-      });
-  } catch {
-    return [];
-  }
-}
-
 function queuedItems(message: QueuedFulfillmentRow): FulfillmentOrderItem[] {
-  return messageItems(message).map((item, index) => {
+  return message.parsed.items.map((item, index) => {
     const product = resolvedProducts.value.get(item.productId);
 
     return {
@@ -582,7 +553,7 @@ const queuedCards = computed<QueuedCardView[]>(() => queuedRows.value.map((messa
 
 // Solr is asked once per new product id; `resolve` filters ids already requested.
 watch(queuedRows, (rows) => {
-  const productIds = rows.flatMap((row) => messageItems(row).map((item) => item.productId)).filter(Boolean);
+  const productIds = rows.flatMap((row) => row.parsed.items.map((item) => item.productId)).filter(Boolean);
   if(productIds.length) {void resolveProductNames(productIds);}
 }, { immediate: true });
 
