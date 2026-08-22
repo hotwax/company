@@ -95,7 +95,7 @@
       </div>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button :disabled="!isFacilitiesModified || isSaving" @click="saveFacilityMemberships()">
+        <ion-fab-button :disabled="!isFacilitiesModified" @click="saveFacilityMemberships()">
           <ion-icon :icon="saveOutline" />
         </ion-fab-button>
       </ion-fab>
@@ -138,7 +138,7 @@
                 >
                   <ion-select-option value="">{{ translate("None") }}</ion-select-option>
                   <ion-select-option
-                    v-for="type in facilityGroupTypeOptions"
+                    v-for="type in facilityGroupTypes"
                     :key="type.facilityGroupTypeId"
                     :value="type.facilityGroupTypeId"
                   >
@@ -249,9 +249,8 @@ import {
 } from '@ionic/vue';
 import { computed, ref, watch } from 'vue';
 import { commonUtil, logger, translate } from "@common";
-import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypeOptions, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
+import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
 import { useProductStores } from '@/composables/useProductStores';
-import { renumberSequence, sortMembersBySequence } from '@/utils/facilityGroupSequence';
 import { api } from '@common';
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
@@ -261,15 +260,12 @@ const props = defineProps<{ facilityGroupId: string }>();
 const groupMutations = useFacilityGroupMutations(props.facilityGroupId);
 
 // All three lists come from the login-time cache — nothing to fetch on entry.
-// `facilityGroupTypes` describes what the instance has, so it answers "what is this group's type?";
-// the edit picker needs `facilityGroupTypeOptions`, which also offers types no group carries yet.
 const { facilityGroupTypes } = useFacilityGroupTypes();
-const { facilityGroupTypeOptions } = useFacilityGroupTypeOptions();
 const { productStores, hydrated: productStoresHydrated } = useProductStores();
 // The group, its members and its product-store links are ALL cached domains — this screen makes no
 // requests. Mutations refresh those domains, so the cache is the current state, not a stale copy.
 const { record: cachedGroup } = useFacilityGroupRecord(props.facilityGroupId);
-const { members: cachedMembers, hydrated: membersHydrated } = useGroupFacilities(props.facilityGroupId);
+const { members: cachedMembers } = useGroupFacilities(props.facilityGroupId);
 const { associations: cachedGroupProductStores } = useFacilityGroupProductStores(props.facilityGroupId);
 const { facilities: cachedFacilities } = useFacilities();
 
@@ -278,15 +274,12 @@ const { facilities: cachedFacilities } = useFacilities();
 const group = computed<any>(() => (cachedGroup.value as any)?.raw ?? cachedGroup.value ?? {});
 const productStoreCount = computed(() => cachedGroupProductStores.value.length);
 const allFacilities = computed<any[]>(() => cachedFacilities.value ?? []);
-// Sorted, not merely joined: the cache hands these back in primary-key order (alphabetical by
-// facilityId), which is unrelated to the sequence the group actually applies. Rendering that raw
-// order is what made "Manage sequence" show — and then save — the wrong order.
 const memberFacilities = computed<any[]>(() => {
   const byId = Object.fromEntries(allFacilities.value.map((f: any) => [f.facilityId, f]));
-  return sortMembersBySequence((cachedMembers.value ?? []).map((m: any) => ({
+  return (cachedMembers.value ?? []).map((m: any) => ({
     ...m,
     facilityName: byId[m.facilityId]?.facilityName || m.facilityId,
-  })));
+  }));
 });
 const selectedFacilities = ref<any[]>([]);
 const filteredAvailableFacilities = ref<any[]>([]);
@@ -436,13 +429,8 @@ function seedSelection() {
   filterAvailableFacilities();
 }
 
-// Members arrive asynchronously and change after every save, so reseed on each emit — but NOT over
-// edits that have not been saved yet. A background sync landing mid-edit would otherwise discard
-// the user's staged adds, removals and drag order with no warning. `saveFacilityMemberships`
-// clears the flag before its refresh emits, so the post-save reseed still runs.
-watch(memberFacilities, () => {
-  if (!isFacilitiesModified.value) seedSelection();
-}, { immediate: true });
+// Members arrive asynchronously and change after every save, so reseed on each emit.
+watch(memberFacilities, () => seedSelection(), { immediate: true });
 
 function filterAvailableFacilities() {
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
@@ -456,18 +444,17 @@ function filterAvailableFacilities() {
   filteredAvailableFacilities.value = available;
 }
 
-// Additions land at the end of the arranged list and take their number from that position when the
-// save renumbers. They must NOT pick a number here: over a group with unsequenced members, any
-// number sorts the new facility ABOVE them (unsequenced ranks last), so a facility added at the
-// bottom of the list reappeared at the top after saving.
 function addFacility(facility: any) {
-  selectedFacilities.value = [...selectedFacilities.value, { ...facility }];
+  const lastSeq = selectedFacilities.value.at(-1)?.sequenceNum || 0;
+  selectedFacilities.value = [...selectedFacilities.value, { ...facility, sequenceNum: lastSeq + 1 }];
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
 }
 
 function addAll() {
-  selectedFacilities.value = [...selectedFacilities.value, ...filteredAvailableFacilities.value.map((facility) => ({ ...facility }))];
+  const lastSeq = selectedFacilities.value.at(-1)?.sequenceNum || 0;
+  const toAdd = filteredAvailableFacilities.value.map((facility, index) => ({ ...facility, sequenceNum: lastSeq + index + 1 }));
+  selectedFacilities.value = [...selectedFacilities.value, ...toAdd];
   filterAvailableFacilities();
   isFacilitiesModified.value = true;
 }
@@ -479,20 +466,15 @@ function removeFacility(facility: any) {
 }
 
 function doReorder(event: CustomEvent) {
-  selectedFacilities.value = event.detail.complete(JSON.parse(JSON.stringify(selectedFacilities.value)));
+  const prev = JSON.parse(JSON.stringify(selectedFacilities.value));
+  const updated = event.detail.complete(JSON.parse(JSON.stringify(selectedFacilities.value)));
+  const prevSeqNums = prev.map((facility: any) => facility.sequenceNum);
+  updated.forEach((facility: any, index: number) => { facility.sequenceNum = prevSeqNums[index]; });
+  selectedFacilities.value = updated;
   isFacilitiesModified.value = true;
 }
 
 async function saveFacilityMemberships() {
-  // Everything below is a DIFF against the cached membership, so saving before that cache has
-  // hydrated reads "this group has no members" and turns every existing member into an addition —
-  // a second active row for each, which is the duplicate-members bug. An unhydrated cache is not
-  // an empty group, so refuse rather than guess.
-  if (!membersHydrated.value) {
-    commonUtil.showToast(translate("Facilities are still loading, please try again"));
-    return;
-  }
-  if (isSaving.value) return; // a second click before the first save lands re-posts every addition
   isSaving.value = true;
   const memberIds = new Set(memberFacilities.value.map((facility: any) => facility.facilityId));
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
@@ -500,17 +482,8 @@ async function saveFacilityMemberships() {
 
   const now = DateTime.now().toMillis();
 
-  // Number the arranged list 1..N and save THAT, so what was on screen is what gets stored.
-  //
-  // Renumbering here rather than per-gesture is what keeps the two in step. The screen renders the
-  // arranged array, but a reload re-derives the order from the stored numbers, and any member left
-  // unsequenced ranks last no matter where it was shown. Assigning explicit positions to the whole
-  // list closes that gap for every edit — drag, add, remove — and heals the absent and duplicate
-  // numbers already in the data. `sortMembersBySequence` then reproduces this exact order.
-  const arranged = renumberSequence(selectedFacilities.value);
-
   // new members to add
-  const toCreate = arranged
+  const toCreate = selectedFacilities.value
     .filter((facility: any) => !memberIds.has(facility.facilityId))
     .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: now, sequenceNum: facility.sequenceNum }));
 
@@ -519,7 +492,7 @@ async function saveFacilityMemberships() {
     ...memberFacilities.value
       .filter((facility: any) => !selectedIds.has(facility.facilityId))
       .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: facility.fromDate, thruDate: now })),
-    ...arranged
+    ...selectedFacilities.value
       .filter((facility: any) => memberIds.has(facility.facilityId) && memberByFacilityId[facility.facilityId]?.sequenceNum !== facility.sequenceNum)
       .map((facility: any) => ({ facilityId: facility.facilityId, fromDate: memberByFacilityId[facility.facilityId].fromDate, sequenceNum: facility.sequenceNum }))
   ];

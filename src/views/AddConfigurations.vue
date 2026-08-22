@@ -82,9 +82,9 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonSegment, IonSegmentButton, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, logger, translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
-import { useProductStores } from "@/composables/useProductStores";
+import { useProductStores, useProductStoreQueries } from "@/composables/useProductStores";
 import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
 import { useProductStoreMutations } from "@/composables/useProductStores";
@@ -148,10 +148,8 @@ onIonViewWillEnter(async () => {
 
 async function fetchProductStore() {
   try {
-    const resp = await api({
-      url: `admin/productStores/${props.productStoreId}`,
-      method: "get"
-    })
+    const { fetchStoreDetails } = useProductStoreQueries();
+    const resp = await fetchStoreDetails(props.productStoreId);
     if(!commonUtil.hasError(resp)) {
       productStore.value = (resp as any).data;
     } else {
@@ -174,9 +172,10 @@ async function setupProductStore() {
       }
 
       // Fetch source store details and settings
+      const { fetchStoreDetails, fetchStoreSettings } = useProductStoreQueries();
       const [detailsResp, settingsResp] = await Promise.all([
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}`, method: "get" }),
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}/settings`, method: "get" })
+        fetchStoreDetails(selectedSourceStoreId.value),
+        fetchStoreSettings(selectedSourceStoreId.value)
       ]);
 
       if (commonUtil.hasError(detailsResp)) {

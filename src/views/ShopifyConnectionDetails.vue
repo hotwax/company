@@ -185,12 +185,6 @@
             <ion-item detail class="item-box" lines="none" button @click="openShopifyLocations()">
               <ion-label>{{ translate("Inventory locations") }}</ion-label>
             </ion-item>
-            <ion-item detail class="item-box" lines="none" button @click="openInventorySync()">
-              <ion-label>
-                {{ translate("Inventory sync") }}
-                <p>{{ translate("Monitor inventory reset jobs, aggregate events, batches, and errors") }}</p>
-              </ion-label>
-            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openProductTypes()">
               <ion-label>{{ translate("Product types") }}</ion-label>
             </ion-item>
@@ -384,39 +378,6 @@
             </ion-label>
           </ion-item>
 
-          <ion-list-header>{{ translate("Connection access") }}</ion-list-header>
-          <ion-item lines="none">
-            <ion-label class="ion-text-wrap">
-              <p>{{ translate("Whether this OMS may write back to Shopify. Inventory pushes are refused unless this is read and write.") }}</p>
-            </ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-select
-              :label="translate('Access')"
-              label-placement="stacked"
-              interface="popover"
-              :value="connectionAccessScopeId"
-              :disabled="!accessScopesRemoteId || isSavingAccessScope"
-              :placeholder="translate('Not set')"
-              @ionChange="onConnectionAccessScopeChange($event.detail.value)"
-            >
-              <!-- The id is shown, not just the description: SHOP_READ_WRITE_ACCESS and
-                   SHOP_RW_ACCESS are both described "Shopify Shop Read and Write Access", and only
-                   SHOP_RW_ACCESS is the one services gate on. On description alone the two are
-                   indistinguishable and picking the wrong one silently disables every write. -->
-              <ion-select-option v-for="option in connectionAccessScopeOptions" :key="option.enumId" :value="option.enumId">
-                {{ option.description || option.enumId }} ({{ option.enumId }})
-              </ion-select-option>
-            </ion-select>
-            <ion-spinner v-if="isSavingAccessScope" slot="end" name="crescent" />
-          </ion-item>
-          <ion-item v-if="!connectionAccessScopeId" lines="none">
-            <ion-label class="ion-text-wrap">
-              <ion-note color="warning">{{ translate("No access level is set, so this connection cannot write to Shopify.") }}</ion-note>
-            </ion-label>
-          </ion-item>
-
-          <ion-list-header>{{ translate("Granted OAuth scopes") }}</ion-list-header>
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
               <p>{{ translate("Shopify OAuth scopes granted to this shop's app. Order sync fails if the query asks for data outside these scopes, so refresh after changing the app's granted scopes in Shopify.") }}</p>
@@ -511,7 +472,7 @@
 
 
 <script setup lang="ts">
-import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
@@ -531,6 +492,7 @@ import {
   useShopifyProductSyncRunState,
   useShopifyShop,
   useShopifyShopMutations,
+  useShopifyShopQueries,
   useShopifyShops,
   fetchShopifyAccessState,
   updateShopifyRemote,
@@ -538,10 +500,6 @@ import {
 } from "@/composables/useShopify";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useProductStores } from "@/composables/useProductStores";
-import { useTypedEnums } from "@/composables/useSeed";
-
-/** Enum type behind SystemMessageRemote.accessScopeEnumId: SHOP_NO / SHOP_READ / SHOP_RW access. */
-const SHOPIFY_SHOP_ACCESS_SCOPE_ENUM_TYPE = "ShopifyShopAccessScope";
 
 const props = defineProps(['id']);
 const isLoading = ref(true);
@@ -1094,52 +1052,15 @@ async function onCloneSettingsDismiss() {
   await loadConnectionSummaries();
 }
 
-const fetchTypeMappingsForShop = async (shopId: string, mappedTypeId: string) => {
-  let mappings: any[] = [];
-  let pageIndex = 0;
-  let resp: any;
-  do {
-    resp = await api({
-      url: "oms/shopifyShops/typeMappings",
-      method: "get",
-      params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
-    });
-    if (!commonUtil.hasError(resp) && resp.data) {
-      mappings = [...mappings, ...resp.data];
-    } else {
-      break;
-    }
-    pageIndex++;
-  } while (resp.data && resp.data.length >= 100);
-  return mappings;
-};
-
-const fetchCarrierShipmentsForShop = async (shopId: string) => {
-  let shipments: any[] = [];
-  let pageIndex = 0;
-  let resp: any;
-  do {
-    resp = await api({
-      url: "oms/shopifyShops/carrierShipments",
-      method: "get",
-      params: { shopId, pageSize: 100, pageIndex }
-    });
-    if (!commonUtil.hasError(resp) && resp.data) {
-      shipments = [...shipments, ...resp.data];
-    } else {
-      break;
-    }
-    pageIndex++;
-  } while (resp.data && resp.data.length >= 100);
-  return shipments;
-};
-
 async function cloneTypeMappings(mappedTypeId: string) {
   const targetShopId = shop.value.shopId;
   // 1. Fetch source and target mappings
+  const sourceQueries = useShopifyShopQueries(sourceShopId.value);
+  const targetQueries = useShopifyShopQueries(targetShopId);
+
   const [sourceMappings, targetMappings] = await Promise.all([
-    fetchTypeMappingsForShop(sourceShopId.value, mappedTypeId),
-    fetchTypeMappingsForShop(targetShopId, mappedTypeId)
+    sourceQueries.fetchTypeMappingsForShop(mappedTypeId),
+    targetQueries.fetchTypeMappingsForShop(mappedTypeId)
   ]);
 
   // 2. Delete existing mappings in target
@@ -1169,7 +1090,8 @@ async function cloneTypeMappings(mappedTypeId: string) {
 async function cloneShippingMethods() {
   const targetShopId = shop.value.shopId;
   // 1. Fetch source shipments
-  const sourceShipments = await fetchCarrierShipmentsForShop(sourceShopId.value);
+  const sourceQueries = useShopifyShopQueries(sourceShopId.value);
+  const sourceShipments = await sourceQueries.fetchCarrierShipmentsForShop();
 
   // 2. Create cloned shipments in target (upsert handles overwrite)
   if (sourceShipments.length > 0) {
@@ -1351,30 +1273,6 @@ function closeAccessScopes() {
   showAccessScopes.value = false;
 }
 
-// ----- Connection access scope (the OMS-side read/write shutoff) -----
-// Distinct from the granted OAuth scopes in the same modal: this is
-// SystemMessageRemote.accessScopeEnumId, which services read directly to decide whether this OMS may
-// write to the shop at all.
-const { values: connectionAccessScopeOptions } = useTypedEnums(SHOPIFY_SHOP_ACCESS_SCOPE_ENUM_TYPE);
-const isSavingAccessScope = ref(false);
-const connectionAccessScopeId = computed(() => shopRemote.value?.accessScopeEnumId || '');
-
-async function onConnectionAccessScopeChange(accessScopeEnumId: string) {
-  const remoteId = accessScopesRemoteId.value;
-  // ion-select fires on programmatic value changes too, so ignore anything that is already stored.
-  if (!remoteId || !accessScopeEnumId || accessScopeEnumId === connectionAccessScopeId.value) return;
-
-  isSavingAccessScope.value = true;
-  try {
-    await setConnectionAccessScope(remoteId, accessScopeEnumId);
-    commonUtil.showToast(translate('Connection access updated'));
-  } catch (error: any) {
-    logger.error('setConnectionAccessScope', error);
-    commonUtil.showToast(translate('Failed to update connection access'));
-  }
-  isSavingAccessScope.value = false;
-}
-
 async function refresh() {
   if (!accessScopesRemoteId.value) return;
 
@@ -1393,7 +1291,7 @@ async function refresh() {
 const showProductStore = ref(false);
 const { productStores } = useProductStores();
 // Access scopes: persisted display cache + the live Shopify refresh (was Pinia `persist: true`).
-const { scopesFor, refreshAccessScopes, setConnectionAccessScope } = useShopifyAccessScopes();
+const { scopesFor, refreshAccessScopes } = useShopifyAccessScopes();
 const selectedProductStoreId = ref("");
 const currentProductStoreId = computed(() => shop.value?.productStoreId || "");
 
@@ -1475,10 +1373,6 @@ function openShopDetails() {
 
 function openShopifyLocations() {
   router.push(`/shopify-connection-details/${props.id}/locations`);
-}
-
-function openInventorySync() {
-  router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
 }
 
 function openShipmentMethods() {

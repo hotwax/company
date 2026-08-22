@@ -19,7 +19,7 @@
           <ion-label>{{ translate("Integrations") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle v-for="(p, i) in visibleIntegrationPages" :key="'integration-' + i" :auto-hide="false">
+        <ion-menu-toggle v-for="(p, i) in integrationPages" :key="'integration-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIntegrationIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -30,7 +30,7 @@
           <ion-label>{{ translate("Facilities") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle v-for="(p, i) in facilitiesPages" :key="'facilities-' + i" :auto-hide="false">
+        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in facilitiesPages" :key="'facilities-' + i">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedFacilitiesIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -71,32 +71,14 @@
         </ion-menu-toggle>
       </ion-list>
     </ion-content>
-
-    <!-- Which instance this app is pointed at, and the timezone its dates are rendered in. The clock
-         appears ONLY when that timezone is not the browser's: when they agree the time on screen is
-         the time on the wall, and repeating it would be noise. Mirrors order-manager's footer. -->
-    <ion-footer v-if="isAuthenticated">
-      <ion-toolbar>
-        <ion-item lines="none">
-          <ion-label class="ion-text-wrap">
-            <p class="overline">{{ omsInstanceLabel() }}</p>
-          </ion-label>
-          <ion-note v-if="currentTimeZone" slot="end" class="ion-text-end" :color="isTimeZoneMismatched ? 'danger' : ''">
-            {{ currentTimeZone }}
-            <p v-if="isTimeZoneMismatched">{{ selectedZoneTime }}</p>
-          </ion-note>
-        </ion-item>
-      </ion-toolbar>
-    </ion-footer>
   </ion-menu>
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { translate } from "@common";
 import { useAuth } from "@common/composables/useAuth";
 import {
   IonContent,
-  IonFooter,
   IonHeader,
   IonIcon,
   IonItem,
@@ -105,69 +87,16 @@ import {
   IonList,
   IonMenu,
   IonMenuToggle,
-  IonNote,
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { computed } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
-import { useMaargConfig } from "@/composables/useSeed";
-import { useUserStore } from "@/store/user";
 import router from "@/router";
 import Actions from "@/authorization/actions";
 
 const { isAuthenticated } = useAuth();
-const userStore = useUserStore();
-const { instanceInfo, load: loadMaargConfig } = useMaargConfig();
-
-const HOTWAX_HOST_SUFFIX = ".hotwax.io";
-
-/**
- * The instance this app is talking to. Company is Maarg-backed, so the config's own instanceName is
- * the authoritative label ("rails-uat") and beats parsing it out of a URL; the host is only a fallback
- * for a config that has not loaded yet.
- *
- * Called from the template rather than memoised, for the same reason order-manager does: getMaargURL()
- * reads a cookie, so a computed would cache the pre-login empty value for the life of the session.
- */
-function omsInstanceLabel() {
-  const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
-  if (instanceName) return instanceName;
-
-  const url = commonUtil.getMaargURL();
-  if (!url) return "";
-  const host = url.replace(/^https?:\/\//, "").split("/")[0];
-  return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
-}
-
-// Mirrors order-manager: resolve the same way the Settings page does so the two never disagree.
-const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const currentTimeZone = computed(() =>
-  userStore.getUserTimeZone || userStore.getUserProfile?.timeZone || browserTimeZone);
-const isTimeZoneMismatched = computed(() =>
-  !!currentTimeZone.value && currentTimeZone.value !== browserTimeZone);
-
-// The menu stays mounted for the whole session, so the clock is driven by a timer rather than frozen
-// at whatever the last render happened to be.
-const selectedZoneTime = ref("");
-let clockTimer: ReturnType<typeof setInterval> | undefined;
-
-function refreshSelectedZoneTime() {
-  selectedZoneTime.value = commonUtil.getCurrentTime(currentTimeZone.value, "t");
-}
-
-watch(currentTimeZone, refreshSelectedZoneTime);
-
-onMounted(() => {
-  void loadMaargConfig();
-  refreshSelectedZoneTime();
-  clockTimer = setInterval(refreshSelectedZoneTime, 30000);
-});
-
-onUnmounted(() => {
-  clearInterval(clockTimer);
-});
 const { hasPermission } = useAppAuth();
 const appPages = [
   {
@@ -192,22 +121,6 @@ const visibleAppPages = computed(() =>
 
 const integrationPages = [
   {
-    title: "Carriers",
-    url: "/carriers",
-    childRoutes: ["/carriers/", "/carrier-details/"],
-    permission: Actions.APP_CARRIERS_VIEW,
-    iosIcon: airplaneOutline,
-    mdIcon: airplaneOutline,
-  },
-  {
-    title: "Unigate",
-    url: "/unigate",
-    childRoutes: ["/unigate/"],
-    permission: Actions.APP_CARRIERS_VIEW,
-    iosIcon: layersOutline,
-    mdIcon: layersOutline,
-  },
-  {
     title: "Shopify",
     url: "/shopify",
     childRoutes: ["/shopify-connection-details"],
@@ -229,10 +142,6 @@ const integrationPages = [
     mdIcon: walletOutline
   },
 ];
-
-const visibleIntegrationPages = computed(() =>
-  integrationPages.filter((screen) =>
-    !screen.permission || hasPermission(screen.permission)))
 
 const userPages = [
   {
@@ -334,7 +243,7 @@ const selectedAgentIndex = computed(() => {
 const selectedIntegrationIndex = computed(() => {
   const path = router.currentRoute.value.path
 
-  return visibleIntegrationPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+  return integrationPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
 })
 
 const selectedUserIndex = computed(() => {
