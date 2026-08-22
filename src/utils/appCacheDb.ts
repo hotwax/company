@@ -84,6 +84,10 @@ class CompanyCacheDB extends Dexie {
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
   inventoryEventDocuments!: Table<CachedRow, string>;
+  /** Fulfillments Shopify holds per shop, from `sob/shopify/fulfillmentHistories`. */
+  shopifyFulfillmentHistories!: Table<CachedRow, string>;
+  /** One row per shop: does the fulfillment-history endpoint exist on this instance? */
+  shopifyFulfillmentHistorySupport!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -178,6 +182,17 @@ const CACHE_SCHEMA = {
    */
   shopifyInventoryAdjustmentDetails:
     "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+  /**
+   * ShopifyFulfillmentHistory — the "Synced" feed of the fulfillment sync screen. PK is composite
+   * (Shopify's numeric fulfillmentId is only unique per shop) → synthetic `fulfillmentKey`.
+   * `[shopId+lastUpdatedStamp]` serves both the per-shop incremental cursor and the screen's
+   * newest-first read; `shipmentId`/`omsOrderId` are indexed because they are the joins back to the
+   * OMS side (a queued message names a shipment, and the screen answers "did it land?").
+   */
+  shopifyFulfillmentHistories:
+    "fulfillmentKey, shopId, shopifyOrderId, fulfillmentId, shipmentId, omsOrderId, processedDate, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+  // One row per shop, not an entity — see `shopifyFulfillmentHistorySupportProjection`.
+  shopifyFulfillmentHistorySupport: "shopId, checkedAt",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",

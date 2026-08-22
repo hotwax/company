@@ -29,7 +29,7 @@ export const dataManagerLogCache = defineCachedEntity("dataManagerLogs", {
 });
 
 /** SystemMessage — class A (live, append-mostly). Cursor: `initDate`. */
-export const systemMessageCache = defineCachedEntity("systemMessages", {
+export const systemMessageProjection = {
   keyField: "systemMessageId",
   fields: {
     systemMessageId: "text",
@@ -39,6 +39,14 @@ export const systemMessageCache = defineCachedEntity("systemMessages", {
     initDate: "date",
     processedDate: "date",
     lastAttemptDate: "date",
+    /**
+     * Delivery attempts so far. The fulfillment sync screen renders it ("failCount reached N and
+     * the sweep stopped retrying"), and SmsgError only means anything next to it — the sweep sets
+     * that status when failCount reaches the retry limit, while a retrying message stays
+     * SmsgProduced with a rising count. Projected as a count so the string the server may send
+     * ("3") never leaks into arithmetic.
+     */
+    failCount: "count",
     // ⚠️ The response does NOT carry `lastUpdatedStamp` (verified live) — it stays declared because
     // the table indexes it, but expect `undefined`. `initDate` is the usable cursor.
     lastUpdatedStamp: "date",
@@ -59,7 +67,9 @@ export const systemMessageCache = defineCachedEntity("systemMessages", {
      */
     messageText: "text",
   },
-});
+} as const;
+
+export const systemMessageCache = defineCachedEntity("systemMessages", systemMessageProjection);
 
 // --- class B: reference/config. Field sets and PKs VERIFIED live 2026-07-26 (§6.1 probe). ---
 
@@ -1016,3 +1026,85 @@ export const netSuiteRuleGroupCache = defineCachedEntity("netSuiteRuleGroups", n
 export const netSuiteDecisionRuleCache = defineCachedEntity("netSuiteDecisionRules", netSuiteDecisionRuleProjection);
 export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRuns", netSuiteRuleGroupRunProjection);
 export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
+
+// =============================================================================================
+// Shopify fulfillment sync — the "Synced" half of the fulfillment sync screen.
+//
+// The queued half is plain SystemMessages (type CreateShopifyFulfillment) and needs nothing new.
+// The synced half reads `sob/shopify/fulfillmentHistories`, a Moqui entity-list endpoint over
+// ShopifyFulfillmentHistory added by a connector release that is rolling out IN PARALLEL with this
+// screen — an instance that has not taken it answers 404, which is a "cannot know", not an error.
+// =============================================================================================
+
+/**
+ * The stable message the fulfillment-history domain raises when the endpoint 404s.
+ *
+ * Shared here — the worker/view contract seam — because both sides must agree on it verbatim: the
+ * worker domain throws it (so `useCacheSync().error` reads
+ * `shopifyFulfillmentHistory: <this message>`), and the screen matches on it to render "endpoint
+ * not available" instead of a generic sync failure. Durable state lives in
+ * `shopifyFulfillmentHistorySupport` below; this string is only the error-channel face of it.
+ */
+export const FULFILLMENT_HISTORY_ENDPOINT_MISSING = "fulfillmentHistories endpoint not available (404)";
+
+/**
+ * ShopifyFulfillmentHistory — one fulfillment the OMS knows Shopify holds, per shop.
+ *
+ * The natural key is COMPOSITE: `fulfillmentId` is Shopify's legacy numeric id, which is only
+ * unique WITHIN a shop, so two shops can legitimately hold the same number. The synthetic key is
+ * `${shopId}:${fulfillmentId}` — the same key format the expand-time GraphQL detail cache uses, so
+ * a cached row and its Shopify enrichment address each other directly.
+ *
+ * `processedDate` is null on rows the OMS itself pushed (the connector only stamps it on rows it
+ * ingested), so its absence is a meaning, not a gap. Cursor/order on `lastUpdatedStamp`.
+ */
+export const shopifyFulfillmentHistoryProjection = {
+  keyField: "fulfillmentKey",
+  fields: {
+    fulfillmentKey: "text",
+    shopId: "text",
+    shopifyOrderId: "text",
+    fulfillmentId: "text",
+    processedDate: "date",
+    lastUpdatedStamp: "date",
+    omsOrderId: "text",
+    orderDate: "date",
+    shipmentId: "text",
+    originFacilityId: "text",
+    shippedDate: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if(!raw?.shopId || !raw?.fulfillmentId) {return undefined;}
+
+    return `${raw.shopId}:${raw.fulfillmentId}`;
+  },
+} as const;
+
+/**
+ * Whether `sob/shopify/fulfillmentHistories` exists on this instance, per shop.
+ *
+ * Same shape of answer as `netSuiteOrderPushBacklog.isSupported` and for the same reason: the
+ * endpoint ships in a connector release deployed independently of this app, and "the OMS cannot
+ * tell me" must render differently from "no fulfillments have synced". A cache row (not a worker
+ * module flag) because the worker and the screen are different realms — the row is how the 404
+ * verdict crosses to `useSyncedFulfillments().endpointMissing` reactively.
+ */
+export const shopifyFulfillmentHistorySupportProjection = {
+  keyField: "shopId",
+  fields: {
+    shopId: "text",
+    /** "Y" / "N". Absent means never probed this login. */
+    isSupported: "text",
+    /** When the verdict last CHANGED — the domain skips the write while the answer holds. */
+    checkedAt: "date",
+  },
+} as const;
+
+export const shopifyFulfillmentHistoryCache = defineCachedEntity(
+  "shopifyFulfillmentHistories",
+  shopifyFulfillmentHistoryProjection,
+);
+export const shopifyFulfillmentHistorySupportCache = defineCachedEntity(
+  "shopifyFulfillmentHistorySupport",
+  shopifyFulfillmentHistorySupportProjection,
+);
