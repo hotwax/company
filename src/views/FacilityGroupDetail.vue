@@ -95,7 +95,7 @@
       </div>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button :disabled="!isFacilitiesModified" @click="saveFacilityMemberships()">
+        <ion-fab-button :disabled="!isFacilitiesModified || isSaving" @click="saveFacilityMemberships()">
           <ion-icon :icon="saveOutline" />
         </ion-fab-button>
       </ion-fab>
@@ -269,7 +269,7 @@ const { productStores, hydrated: productStoresHydrated } = useProductStores();
 // The group, its members and its product-store links are ALL cached domains — this screen makes no
 // requests. Mutations refresh those domains, so the cache is the current state, not a stale copy.
 const { record: cachedGroup } = useFacilityGroupRecord(props.facilityGroupId);
-const { members: cachedMembers } = useGroupFacilities(props.facilityGroupId);
+const { members: cachedMembers, hydrated: membersHydrated } = useGroupFacilities(props.facilityGroupId);
 const { associations: cachedGroupProductStores } = useFacilityGroupProductStores(props.facilityGroupId);
 const { facilities: cachedFacilities } = useFacilities();
 
@@ -484,6 +484,15 @@ function doReorder(event: CustomEvent) {
 }
 
 async function saveFacilityMemberships() {
+  // Everything below is a DIFF against the cached membership, so saving before that cache has
+  // hydrated reads "this group has no members" and turns every existing member into an addition —
+  // a second active row for each, which is the duplicate-members bug. An unhydrated cache is not
+  // an empty group, so refuse rather than guess.
+  if (!membersHydrated.value) {
+    commonUtil.showToast(translate("Facilities are still loading, please try again"));
+    return;
+  }
+  if (isSaving.value) return; // a second click before the first save lands re-posts every addition
   isSaving.value = true;
   const memberIds = new Set(memberFacilities.value.map((facility: any) => facility.facilityId));
   const selectedIds = new Set(selectedFacilities.value.map((facility: any) => facility.facilityId));
