@@ -24,8 +24,8 @@ const HOSTED_APP_VERSIONS: Record<string, Record<string, string[]>> = {
   },
   COMPANY: {
     AppEnvDev: [],
-    AppEnvUAT: ["v2.2.1"],
-    AppEnvProd: ["v2.2.1"]
+    AppEnvUAT: ["v2.2.2"],
+    AppEnvProd: ["v2.2.2"]
   },
 };
 
