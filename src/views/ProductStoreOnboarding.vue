@@ -1069,6 +1069,7 @@ import { generateInternalId } from "@/utils"
 import router from "@/router"
 import { useProductStoreCreation, useProductStoreMutations, useProductStoreShippingMethodsLive } from "@/composables/useProductStores";
 import { useCurrencies, useOrganization, usePaymentMethodTypes, useProductTypes, useShipmentMethodTypes, useTypedEnums } from "@/composables/useSeed";
+import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
 
 const onboardingStore = useProductStoreOnboardingWizard()
 const productStoreStore = useProductStoreData()
@@ -2115,6 +2116,10 @@ async function loadSelectedProductStoreSetup() {
     onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
   }
 
+  if (productStoreStore.current?.defaultCurrencyUomId) {
+    onboardingStore.updateDraftField("defaultCurrencyUomId", productStoreStore.current.defaultCurrencyUomId)
+  }
+
   if (productStoreStore.current?.autoApproveOrder) {
     onboardingStore.updateDraftField("autoApproveOrder", productStoreStore.current.autoApproveOrder)
   }
@@ -2223,9 +2228,16 @@ async function handlePrimaryAction() {
             return
           }
         } catch (error) {
-          logger.error("Failed to update product store", error)
-          commonUtil.showToast(translate("Failed to update product store."))
-          return
+          if (isCacheReconciliationError(error)) {
+            logger.warn("Failed to reconcile product store update cache", error)
+            commonUtil.showToast(translate("Product store updated successfully, but failed to refresh local data."))
+            productStoreStore.current.storeName = onboardingStore.draft.storeName
+            productStoreStore.current.defaultCurrencyUomId = onboardingStore.draft.defaultCurrencyUomId
+          } else {
+            logger.error("Failed to update product store", error)
+            commonUtil.showToast(translate("Failed to update product store."))
+            return
+          }
         } finally {
           isSavingProductStore.value = false
         }
