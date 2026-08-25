@@ -501,7 +501,7 @@ export const useUserStore = defineStore("user", {
     },
 
     sendResetPasswordEmail(payload: any): Promise<any> {
-      const launchpadUrl = `${(import.meta.env.VITE_LAUNCHPAD_URL || window.location.origin.replace("company", "launchpad")).replace(/\/$/, "")}/reset-password`;
+      const launchpadUrl = import.meta.env.VITE_LOGIN_URL?.replace(/\/login\/?$/, "/reset-password");
 
       return api({
         baseURL: commonUtil.getOmsURL(),
