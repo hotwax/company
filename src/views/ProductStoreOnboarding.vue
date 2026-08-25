@@ -65,7 +65,8 @@
                   label-placement="stacked"
                   :label="translate('ID')"
                   :helper-text="translate('Product store ID represents an unique ID for your product store')"
-                  :clear-input="true"
+                  :clear-input="!selectedProductStoreId"
+                  :readonly="!!selectedProductStoreId"
                   @ionInput="onboardingStore.updateDraftField('productStoreId', String($event.detail.value || ''))"
                 />
               </ion-item>
@@ -1679,10 +1680,14 @@ const isPrimaryActionDisabled = computed(() => {
   if (isLoadingSetupData.value || isPrimaryActionLoading.value) return true
   if (isLastStep.value && currentStep.value.id !== "readiness") return true
 
-  if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
-    return !onboardingStore.draft.storeName.trim()
-      || !onboardingStore.draft.defaultCurrencyUomId
-      || (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim())
+  if (currentStep.value.id === "name") {
+    if (!selectedProductStoreId.value) {
+      return !onboardingStore.draft.storeName.trim()
+        || !onboardingStore.draft.defaultCurrencyUomId
+        || (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim())
+    } else {
+      return !onboardingStore.draft.storeName.trim() || !onboardingStore.draft.defaultCurrencyUomId
+    }
   }
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
@@ -1973,14 +1978,16 @@ async function refreshShopifyMappingStatus() {
 }
 
 onIonViewWillEnter(async () => {
-  if (routeProductStoreId.value) {
-    onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
-  } else {
+  if (!routeProductStoreId.value || onboardingStore.createdProductStoreId !== routeProductStoreId.value) {
     onboardingStore.resetDraft()
     productStoreStore.current = {}
     productStoreStore.currentStoreSettings = {}
     productStoreStore.currentFacilities = []
     productStoreStore.currentShopifyJobStatus = null
+  }
+
+  if (routeProductStoreId.value) {
+    onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
   }
 
   await loadSetupData()
@@ -2096,6 +2103,14 @@ async function loadSelectedProductStoreSetup() {
     refreshShopifyJobStatus()
   ])
 
+  if (productStoreStore.current?.storeName) {
+    onboardingStore.updateDraftField("storeName", productStoreStore.current.storeName)
+  }
+
+  if (productStoreStore.current?.productStoreId) {
+    onboardingStore.updateDraftField("productStoreId", productStoreStore.current.productStoreId)
+  }
+
   if (productStoreStore.current?.productIdentifierEnumId) {
     onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
   }
@@ -2184,9 +2199,38 @@ async function loadSelectedProductStoreSetup() {
 async function handlePrimaryAction() {
   let productStoreId = selectedProductStoreId.value
 
-  if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
-    productStoreId = await createProductStoreFromDraft()
-    if (!productStoreId) return
+  if (currentStep.value.id === "name") {
+    if (!selectedProductStoreId.value) {
+      productStoreId = await createProductStoreFromDraft()
+      if (!productStoreId) return
+    } else {
+      const currentName = productStoreStore.current.storeName || ""
+      const currentCurrency = productStoreStore.current.defaultCurrencyUomId || ""
+      
+      if (onboardingStore.draft.storeName !== currentName || onboardingStore.draft.defaultCurrencyUomId !== currentCurrency) {
+        isSavingProductStore.value = true
+        try {
+          const resp = await useProductStoreMutations(selectedProductStoreId.value).updateStore({
+            storeName: onboardingStore.draft.storeName,
+            defaultCurrencyUomId: onboardingStore.draft.defaultCurrencyUomId
+          })
+          if (!commonUtil.hasError(resp)) {
+            commonUtil.showToast(translate("Product store updated successfully."))
+            productStoreStore.current.storeName = onboardingStore.draft.storeName
+            productStoreStore.current.defaultCurrencyUomId = onboardingStore.draft.defaultCurrencyUomId
+          } else {
+            commonUtil.showToast(translate("Failed to update product store."))
+            return
+          }
+        } catch (error) {
+          logger.error("Failed to update product store", error)
+          commonUtil.showToast(translate("Failed to update product store."))
+          return
+        } finally {
+          isSavingProductStore.value = false
+        }
+      }
+    }
   }
 
   if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
