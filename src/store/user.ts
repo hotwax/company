@@ -4,6 +4,7 @@ import { api, commonUtil, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
+import { useMaargConfig } from "@/composables/useSeed"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -909,6 +910,8 @@ export const useUserStore = defineStore("user", {
       try {
         await this.fetchUserProfile()
         await this.fetchPermissions()
+        // Force fetch maarg config information so that the localStorage config gets correctly populated
+        useMaargConfig().load(true);
       } catch (error: any) {
         return Promise.reject(new Error(error))
       }
