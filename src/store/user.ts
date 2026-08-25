@@ -501,12 +501,7 @@ export const useUserStore = defineStore("user", {
     },
 
     sendResetPasswordEmail(payload: any): Promise<any> {
-      const launchpadBaseUrl = import.meta.env.VITE_LAUNCHPAD_URL ||
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-          ? "http://localhost:8100"
-          : window.location.origin.replace("company", "launchpad"));
-
-      const companyAppUrl = `${launchpadBaseUrl.replace(/\/$/, "")}/reset-password`;
+      const launchpadUrl = `${(import.meta.env.VITE_LAUNCHPAD_URL || window.location.origin.replace("company", "launchpad")).replace(/\/$/, "")}/reset-password`;
 
       return api({
         baseURL: commonUtil.getOmsURL(),
@@ -516,7 +511,7 @@ export const useUserStore = defineStore("user", {
           username: payload.userName || payload.userLoginId || payload.username,
           emailTemplateId: "APP_USER_PWD_RET",
           bodyParameters: {
-            companyAppUrl,
+            resetPasswordUrl: launchpadUrl,
             maargInstanceUrl: commonUtil.getOmsURL()
           }
         }
