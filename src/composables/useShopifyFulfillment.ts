@@ -277,3 +277,80 @@ export function useShopifyFulfillmentDetails() {
 
   return { getFulfillmentDetails };
 }
+
+/**
+ * One OMS shipment, the fields the queued card needs for full order context.
+ *
+ * `GET poorti/shipments` reads ShipmentDetailView (poorti/entity/FulfillmentViewEntities.xml),
+ * which joins the shipment to its OrderHeader and to its SHIPMENT_SHIPPED status row — the shipped
+ * date the fulfillment-history view deliberately could not alias without fanning rows out. The
+ * card shows orderDate, shippedDate, and the facility name; tracking and carrier ride along.
+ */
+export interface OmsShipmentContext {
+  orderId: string;
+  /** The human-facing name, when this runtime's OrderHeader carries one. */
+  orderName: string;
+  orderDate?: number;
+  shippedDate?: number;
+  originFacilityId: string;
+  facilityName?: string;
+  carrierPartyId?: string;
+  trackingNumber?: string;
+}
+
+const shipmentContextSessionCache = new Map<string, OmsShipmentContext>();
+
+onSessionCleared(() => shipmentContextSessionCache.clear());
+
+export interface OmsShipmentContextQuery {
+  shipmentId?: string;
+  /** Used only when the payload names no shipment; poorti/shipments filters on either. */
+  orderId?: string;
+}
+
+export function useOmsShipmentContext() {
+  const getShipmentContext = async (query: OmsShipmentContextQuery): Promise<OmsShipmentContext | undefined> => {
+    const shipmentId = String(query?.shipmentId ?? "").trim();
+    const orderId = String(query?.orderId ?? "").trim();
+    // Whichever identifier the payload actually carries, sent under its own parameter name.
+    const params: Record<string, string> = shipmentId ? { shipmentId } : orderId ? { orderId } : {};
+    const cacheKey = shipmentId ? `shipment:${shipmentId}` : orderId ? `order:${orderId}` : "";
+    if(!cacheKey) {return undefined;}
+
+    const cached = shipmentContextSessionCache.get(cacheKey);
+    if(cached) {return cached;}
+
+    try {
+      const response = await api({
+        url: "poorti/shipments",
+        method: "get",
+        params,
+      }) as any;
+      // The service returns { shipments: [...], shipmentCount } — one row for a PK query. An empty
+      // list is a meaning too: the payload names no live shipment, so render nothing rather than
+      // pinning the card to a loading skeleton forever.
+      const shipment = response?.data?.shipments?.[0];
+      if(!shipment) {return undefined;}
+
+      const context: OmsShipmentContext = {
+        orderId: String(shipment.orderId ?? ""),
+        orderName: String(shipment.orderName ?? ""),
+        orderDate: toMillis(shipment.orderDate),
+        shippedDate: toMillis(shipment.shippedDate),
+        originFacilityId: String(shipment.originFacilityId ?? ""),
+        facilityName: String(shipment.facilityName ?? "") || undefined,
+        carrierPartyId: String(shipment.carrierPartyId ?? "") || undefined,
+        trackingNumber: String(shipment.trackingIdNumber ?? "") || undefined,
+      };
+      shipmentContextSessionCache.set(cacheKey, context);
+
+      return context;
+    } catch (err) {
+      logger.error(`Failed to fetch OMS shipment context for ${cacheKey}`, err);
+
+      return undefined;
+    }
+  };
+
+  return { getShipmentContext };
+}

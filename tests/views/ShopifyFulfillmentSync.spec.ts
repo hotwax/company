@@ -75,7 +75,13 @@ vi.mock("@/composables/useCacheSync", () => ({
   }),
 }));
 
+const shipmentContexts = new Map<string, any>();
+
 vi.mock("@/composables/useShopifyFulfillment", () => ({
+  useOmsShipmentContext: () => ({
+    getShipmentContext: (query: { shipmentId?: string; orderId?: string }) =>
+      Promise.resolve(shipmentContexts.get(query?.shipmentId ?? "")),
+  }),
   useQueuedFulfillments: () => ({ rows: queuedRows, hydrated: queuedHydrated }),
   useSyncedFulfillments: () => ({ rows: syncedRows, hydrated: syncedHydrated, endpointMissing }),
   useShopifyFulfillmentDetails: () => ({
