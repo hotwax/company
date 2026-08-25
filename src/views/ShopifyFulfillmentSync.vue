@@ -401,8 +401,9 @@ import { useFacilities } from "@/composables/useFacilities";
 import { useProductNames } from "@/composables/useProductNames";
 import { useShopifySyncContext } from "@/composables/useShopify";
 import {
-  type QueuedFulfillmentRow, type SyncedFulfillmentRow, useQueuedFulfillments,
-  useShopifyFulfillmentDetails, useSyncedFulfillments,
+  type OmsShipmentContext, type QueuedFulfillmentRow, type SyncedFulfillmentRow,
+  useOmsShipmentContext, useQueuedFulfillments, useShopifyFulfillmentDetails,
+  useSyncedFulfillments,
 } from "@/composables/useShopifyFulfillment";
 import { useSystemMessage, useSystemMessageErrors } from "@/composables/useSystemMessage";
 import { formatDateTime } from "@/utils";
@@ -418,6 +419,7 @@ const segment = ref<"pending" | "queued" | "synced">("pending");
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { rows: queuedRows, hydrated: queuedHydrated } = useQueuedFulfillments(() => props.id);
+const { getShipmentContext } = useOmsShipmentContext();
 const { rows: syncedRows, hydrated: syncedHydrated, endpointMissing } = useSyncedFulfillments(() => props.id);
 const { getFulfillmentDetails } = useShopifyFulfillmentDetails();
 const { products: resolvedProducts, resolve: resolveProductNames } = useProductNames();
@@ -483,6 +485,51 @@ const syncedSegmentLabel = computed(() =>
 // Queued — CreateShopifyFulfillment messages, straight off the cache.
 // ---------------------------------------------------------------------------------------------
 
+type ShipmentContextState =
+  { state: "loading" } |
+  { state: "loaded"; context?: OmsShipmentContext };
+
+/** Per-queued-message order context, fetched once per message and held for the session. */
+const shipmentContexts = ref(new Map<string, ShipmentContextState>());
+
+async function loadShipmentContext(message: QueuedFulfillmentRow) {
+  const key = message.systemMessageId;
+  if(shipmentContexts.value.has(key)) {return;}
+  const loading = new Map(shipmentContexts.value);
+  loading.set(key, { state: "loading" });
+  shipmentContexts.value = loading;
+
+  // A payload naming neither settles immediately with no context: the card keeps its message facts
+  // only, and no spinner that will not end.
+  const context = await getShipmentContext({
+    shipmentId: message.parsed.shipmentId,
+    orderId: message.parsed.orderId || message.orderId,
+  });
+  const settled = new Map(shipmentContexts.value);
+  settled.set(key, { state: "loaded", context });
+  shipmentContexts.value = settled;
+}
+
+/**
+ * Eager, not lazy: the two dates are what an operator opens this page for, so hiding them behind a
+ * disclosure would defeat the point. But eager over the whole list is a request burst — this shop
+ * carries 54 queued messages — so the reads run a few at a time instead of all at once. Each is a
+ * read-only PK query, cached for the session, so the queue drains once and never re-runs.
+ */
+const SHIPMENT_CONTEXT_CONCURRENCY = 6;
+
+async function loadShipmentContexts(rows: QueuedFulfillmentRow[]) {
+  const pending = rows.filter((row) => !shipmentContexts.value.has(row.systemMessageId));
+  for(let start = 0; start < pending.length; start += SHIPMENT_CONTEXT_CONCURRENCY) {
+    const batch = pending.slice(start, start + SHIPMENT_CONTEXT_CONCURRENCY);
+    await Promise.all(batch.map((row) => loadShipmentContext(row)));
+  }
+}
+
+watch(queuedRows, (rows) => {
+  void loadShipmentContexts(rows);
+}, { immediate: true });
+
 interface QueuedCardView {
   key: string;
   message: QueuedFulfillmentRow;
@@ -528,28 +575,40 @@ function queuedItems(message: QueuedFulfillmentRow): FulfillmentOrderItem[] {
   });
 }
 
-const queuedCards = computed<QueuedCardView[]>(() => queuedRows.value.map((message) => ({
-  key: message.systemMessageId,
-  message,
-  state: { label: message.statusId, color: messageStatusColor(message.statusId) },
-  row: {
-    shipmentId: message.parsed.shipmentId,
-    orderName: message.orderId || message.parsed.orderId,
-    // No facility: the SystemMessage does not store one, and the card renders nothing for it.
-    facts: [
-      ...(message.initDate ? [
-        { icon: calendarOutline, label: translate("Queued at"), value: formatDateTime(message.initDate) },
-      ] : []),
-      ...(message.lastAttemptDate ? [
-        { icon: refreshOutline, label: translate("Last attempt"), value: formatDateTime(message.lastAttemptDate) },
-      ] : []),
-      ...(message.initDate ? [
-        { icon: timeOutline, label: translate("Waiting"), value: formatWaiting(message.initDate) },
-      ] : []),
-    ],
-    items: queuedItems(message),
-  },
-})));
+const queuedCards = computed<QueuedCardView[]>(() => queuedRows.value.map((message) => {
+  const ctxState = shipmentContexts.value.get(message.systemMessageId);
+  const ctx = ctxState?.state === "loaded" ? ctxState.context : undefined;
+
+  return {
+    key: message.systemMessageId,
+    message,
+    state: { label: message.statusId, color: messageStatusColor(message.statusId) },
+    row: {
+      shipmentId: message.parsed.shipmentId,
+      // The human-facing name from OrderHeader when enrichment found it; ids only as a fallback.
+      orderName: ctx?.orderName || message.orderId || message.parsed.orderId,
+      facility: ctx?.facilityName,
+      facts: [
+        ...(ctx?.orderDate ? [
+          { icon: cartOutline, label: translate("Order placed"), value: formatDateTime(ctx.orderDate) },
+        ] : []),
+        ...(ctx?.shippedDate ? [
+          { icon: sendOutline, label: translate("Shipment shipped"), value: formatDateTime(ctx.shippedDate) },
+        ] : []),
+        ...(message.initDate ? [
+          { icon: calendarOutline, label: translate("Queued at"), value: formatDateTime(message.initDate) },
+        ] : []),
+        ...(message.lastAttemptDate ? [
+          { icon: refreshOutline, label: translate("Last attempt"), value: formatDateTime(message.lastAttemptDate) },
+        ] : []),
+        ...(message.initDate ? [
+          { icon: timeOutline, label: translate("Waiting"), value: formatWaiting(message.initDate) },
+        ] : []),
+      ],
+      items: queuedItems(message),
+    },
+  };
+}));
 
 // Solr is asked once per new product id; `resolve` filters ids already requested.
 watch(queuedRows, (rows) => {

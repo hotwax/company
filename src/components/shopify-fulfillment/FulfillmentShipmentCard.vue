@@ -58,12 +58,12 @@ defineProps<{
 </script>
 
 <style scoped>
-/* One fact per cell, each an ion-item so the icon, the label and the value get ion-item's own
-   left-aligned layout. Same track sizing as the job run card's metrics, so it reflows on its own. */
+/* One fact per row: order context reads as a ledger, and a cramped grid hid the two dates this
+   page exists to surface. Each row keeps ion-item's icon/label/value layout. */
 .shipment-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--spacer-sm);
+  grid-template-columns: 1fr;
+  gap: var(--spacer-xs);
 }
 
 .shipment-facts ion-item,
