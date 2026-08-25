@@ -501,7 +501,7 @@ export const useUserStore = defineStore("user", {
     },
 
     sendResetPasswordEmail(payload: any): Promise<any> {
-      const launchpadBaseUrl = process.env.VUE_APP_LAUNCHPAD_URL ||
+      const launchpadBaseUrl = import.meta.env.VITE_LAUNCHPAD_URL ||
         (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
           ? "http://localhost:8100"
           : window.location.origin.replace("company", "launchpad"));
