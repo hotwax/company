@@ -1,11 +1,6 @@
-import { api, commonUtil, translate } from "@common";
+import { translate } from "@common";
 
-/**
- * Shopify transfer sync — non-composable helpers (stage presentation + the un-cached detail-bundle
- * read). Kept out of `useShopifyTransferSync.ts` because that file's exports must all be composables.
- */
-
-const LIST_ENDPOINT = "sob/shopify/transferSync";
+/** Shopify transfer sync presentation and normalization helpers. */
 
 /**
  * `syncStage` → Ionic color. `syncStage` itself is SERVER-COMPUTED (see the domain) — this only
@@ -61,23 +56,4 @@ export function normalizeTransferSyncLines(rows: any[]): any[] {
     shopifyInventoryTransferLineItemId: line.shopifyInventoryTransferLineItemId,
     removed: Number(line.lineQuantity ?? -1) === 0,
   }));
-}
-
-/**
- * `GET sob/shopify/transferSync/{orderId}` (shopId as a query param) — the owner header, lines,
- * activities+details, DataManagerLog rows, webhook SystemMessage rows, and suppression WorkEffort
- * tasks for one order. Every consumer must treat a missing field as "Not available", not blank —
- * the bundle is a join across several entities and any leg of it can come back partial.
- */
-export async function fetchTransferSyncDetail(shopId: string, orderId: string): Promise<any> {
-  const resp = await api({
-    url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}`,
-    method: "GET",
-    params: { shopId },
-  }) as any;
-  if(commonUtil.hasError(resp)) {
-    throw new Error("The OMS could not load this transfer's detail.");
-  }
-
-  return resp?.data ?? {};
 }

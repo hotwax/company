@@ -11,9 +11,9 @@ import { useCachedList, useCachedRecord } from "./useCachedList";
  * the API and then ask the worker to refetch the affected row, because these endpoints return only
  * a status/PK rather than the updated record.
  *
- * Stage presentation (`stageColor`/`stageLabel`) and the un-cached detail-bundle read
- * (`fetchTransferSyncDetail`) live in `@/utils/shopifyTransferSync` — this file's exports must all
- * be composables.
+ * Stage presentation (`stageColor`/`stageLabel`) remains a pure concern in
+ * `@/utils/shopifyTransferSync`; the un-cached detail-bundle read lives here with the rest of the
+ * feature's application logic.
  */
 
 const LIST_ENDPOINT = "sob/shopify/transferSync";
@@ -108,6 +108,28 @@ export function useShopifyTransferWebhookHealth(shopId: () => string | undefined
 
 export const useShopifyTransferSyncRecord = (orderId: string | undefined) =>
   useCachedRecord(shopifyTransferSyncCache, "orderId", orderId);
+
+/**
+ * `GET sob/shopify/transferSync/{orderId}` (shopId as a query param) — the owner header, lines,
+ * activities+details, DataManagerLog rows, webhook SystemMessage rows, and suppression WorkEffort
+ * tasks for one order.
+ */
+export function useShopifyTransferSyncDetail() {
+  async function fetchTransferSyncDetail(shopId: string, orderId: string): Promise<any> {
+    const resp = await api({
+      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}`,
+      method: "GET",
+      params: { shopId },
+    }) as any;
+    if(commonUtil.hasError(resp)) {
+      throw new Error("The OMS could not load this transfer's detail.");
+    }
+
+    return resp?.data ?? {};
+  }
+
+  return { fetchTransferSyncDetail };
+}
 
 // =============================================================================================
 // Writes — the four §5.5.1 resolution actions, each 1:1 to a backend service

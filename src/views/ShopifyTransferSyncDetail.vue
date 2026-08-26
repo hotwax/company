@@ -157,10 +157,10 @@
               <!-- DataManagerLog: source/error JSON, inline (ShopifyOrderSyncMdmLogModal has no
                    field for this, so it is shown here rather than forking that shared component). -->
               <template v-if="entry.kind === 'dm-create' || entry.kind === 'dm-update'">
-                <ion-button fill="clear" size="small" @click="entry.jsonOpen = !entry.jsonOpen">
-                  {{ entry.jsonOpen ? translate("Hide source / error details") : translate("Show source / error details") }}
+                <ion-button fill="clear" size="small" @click="toggleJson(entry.key)">
+                  {{ isJsonOpen(entry.key) ? translate("Hide source / error details") : translate("Show source / error details") }}
                 </ion-button>
-                <div v-if="entry.jsonOpen" class="accordion-content">
+                <div v-if="isJsonOpen(entry.key)" class="accordion-content">
                   <pre><code>{{ entry.jsonText }}</code></pre>
                 </div>
                 <ion-button fill="clear" size="small" @click="openMdmLogModal(entry.raw)">
@@ -334,13 +334,13 @@ import { useCacheSync } from "@/composables/useCacheSync";
 import {
   SUPPRESSION_PURPOSES,
   type SuppressionPurpose,
+  useShopifyTransferSyncDetail,
   useShopifyTransferSyncMutations,
   useShopifyTransferSyncRow,
 } from "@/composables/useShopifyTransferSync";
 import { useUserStore } from "@/store/user";
 import { formatDateTime } from "@/utils";
 import {
-  fetchTransferSyncDetail,
   normalizeTransferSyncLines,
   stageColor,
   stageLabel,
@@ -359,11 +359,27 @@ const canAdminister = computed(() => userStore.hasPermission(Actions.APP_SHOPIFY
 // on this page, the service is null and the post-action cache refresh would silently no-op.
 const { start: startSyncDomains, stop: stopSyncDomains, afterMutation } = useCacheSync();
 const { row: headerRow } = useShopifyTransferSyncRow(() => shopId.value, () => orderId.value);
+const { fetchTransferSyncDetail } = useShopifyTransferSyncDetail();
 
 const detail = ref<any>(null);
 const loading = ref(false);
 const loadError = ref("");
 const actionPending = ref(false);
+const openJsonKeys = ref<Set<string>>(new Set());
+
+function isJsonOpen(key: string): boolean {
+  return openJsonKeys.value.has(key);
+}
+
+function toggleJson(key: string) {
+  const next = new Set(openJsonKeys.value);
+  if(next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  openJsonKeys.value = next;
+}
 
 async function loadDetail() {
   if(!shopId.value || !orderId.value) {return;}
@@ -411,7 +427,6 @@ interface TimelineEntry {
   title: string;
   subtitleLines: string[];
   raw: any;
-  jsonOpen?: boolean;
   jsonText?: string;
   blocked?: boolean;
   cancelable?: boolean;
@@ -501,7 +516,6 @@ const timeline = computed<TimelineEntry[]>(() => {
         row.failedRecordCount !== undefined ? `${translate("Failed records")}: ${row.failedRecordCount}` : "",
       ].filter(Boolean),
       raw: row,
-      jsonOpen: false,
       jsonText: JSON.stringify({ source: row.sourceContent, error: row.errorContent }, null, 2),
       blocked: logKind === "update" && isDmLogBlocked(row),
     });

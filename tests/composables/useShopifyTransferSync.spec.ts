@@ -10,7 +10,10 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-import { useShopifyTransferSyncMutations } from "@/composables/useShopifyTransferSync";
+import {
+  useShopifyTransferSyncDetail,
+  useShopifyTransferSyncMutations,
+} from "@/composables/useShopifyTransferSync";
 
 beforeEach(() => {
   harness.api.mockReset();
@@ -59,5 +62,21 @@ describe("Shopify transfer sync mutation contracts", () => {
 
     await expect(useShopifyTransferSyncMutations().retryUpdateLog("ORDER-1", "LOG-1"))
       .rejects.toThrow("Action service unavailable");
+  });
+});
+
+describe("Shopify transfer sync detail contract", () => {
+  it("loads the order-scoped detail bundle through the feature composable", async () => {
+    harness.api.mockResolvedValueOnce({ data: { header: { orderId: "ORDER/1" } } });
+    const { fetchTransferSyncDetail } = useShopifyTransferSyncDetail();
+
+    await expect(fetchTransferSyncDetail("10000", "ORDER/1")).resolves.toEqual({
+      header: { orderId: "ORDER/1" },
+    });
+    expect(harness.api).toHaveBeenLastCalledWith({
+      url: "sob/shopify/transferSync/ORDER%2F1",
+      method: "GET",
+      params: { shopId: "10000" },
+    });
   });
 });
