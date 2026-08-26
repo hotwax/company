@@ -11,7 +11,7 @@
 
     <ion-content class="ion-padding-horizontal">
       <!-- Fatal: the cache never hydrated for this shop and the worker is reporting an error. -->
-      <ion-card v-if="!hydrated && transferSyncError" class="ion-margin-top">
+      <ion-card v-if="!monitoringLoaded && transferSyncError" class="ion-margin-top">
         <ion-card-content class="fatal-error">
           <ion-icon :icon="warningOutline" color="danger" />
           <ion-label class="ion-text-wrap">
@@ -29,7 +29,7 @@
 
       <template v-else>
         <!-- Non-blocking: cached rows are still shown, but they may be stale. -->
-        <ion-card v-if="hydrated && transferSyncError" color="warning" class="ion-margin-top stale-banner">
+        <ion-card v-if="monitoringLoaded && transferSyncError" color="warning" class="ion-margin-top stale-banner">
           <ion-card-content>
             <ion-icon :icon="warningOutline" />
             <ion-label class="ion-text-wrap">
@@ -39,7 +39,7 @@
           </ion-card-content>
         </ion-card>
 
-        <template v-if="!hydrated">
+        <template v-if="!monitoringLoaded">
           <div class="kpi-grid ion-margin-top">
             <ion-card v-for="i in 4" :key="i">
               <ion-card-header>
@@ -238,7 +238,12 @@ import {
   useShopifyTransferWebhookHealth,
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
-import { TRANSFER_SYNC_STAGE_COLORS, stageColor, stageLabel } from "@/utils/shopifyTransferSync";
+import {
+  TRANSFER_SYNC_STAGE_COLORS,
+  isTransferSyncMonitoringLoaded,
+  stageColor,
+  stageLabel,
+} from "@/utils/shopifyTransferSync";
 
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
@@ -294,13 +299,29 @@ const {
   start: startSyncDomains,
   stop: stopSyncDomains,
   error: transferSyncError,
+  domainStatus,
   syncNow,
 } = useCacheSync();
+const viewSyncBaselineAt = ref(0);
+
+const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
+  cacheHydrated: hydrated.value,
+  cachedRowCount: allRows.value.length,
+  liveSyncAt: Number(domainStatus.value.shopifyTransferSync?.at ?? 0),
+  viewSyncBaselineAt: viewSyncBaselineAt.value,
+}));
 
 function activeSyncDomains() {
   return shopId.value
     ? [{ name: "shopifyTransferSync", args: { shopId: shopId.value, total: 300 } }]
     : [];
+}
+
+function startTransferSyncDomains() {
+  // Ionic retains this component between visits. Use the last completed pass as this visit's
+  // baseline so an old sync-end cannot authorize a new cold empty state.
+  viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
+  void startSyncDomains(activeSyncDomains());
 }
 
 async function retry() {
@@ -316,8 +337,8 @@ function openDetail(row: any) {
   router.push(`/shopify-connection-details/${props.id}/transfer-sync/${row.orderId}`);
 }
 
-watch(shopId, () => { void startSyncDomains(activeSyncDomains()); });
-onIonViewWillEnter(() => { void startSyncDomains(activeSyncDomains()); });
+watch(shopId, startTransferSyncDomains);
+onIonViewWillEnter(startTransferSyncDomains);
 onIonViewDidLeave(() => { stopSyncDomains(); });
 </script>
 

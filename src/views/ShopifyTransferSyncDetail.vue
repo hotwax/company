@@ -598,8 +598,22 @@ const { retryUpdateLog, resolveUpdateLog, suppressActivityCandidate, cancelSuppr
 
 async function afterActionSuccess(message: string) {
   commonUtil.showToast(message);
-  await afterMutation("shopifyTransferSync", { shopId: shopId.value, orderId: orderId.value });
+  // The POST has committed. Retire the stale actionable bundle before reconciliation so a failed
+  // cache/detail refresh cannot invite the operator to repeat the same server mutation.
+  detail.value = null;
+  let cacheRefreshFailed = false;
+  try {
+    await afterMutation("shopifyTransferSync", { shopId: shopId.value, orderId: orderId.value });
+  } catch (error) {
+    cacheRefreshFailed = true;
+    logger.warn("Transfer action committed, but its cache row could not be refreshed", error);
+  }
   await loadDetail();
+  if(!detail.value) {
+    commonUtil.showToast("The action completed, but refreshed data could not be loaded. Refresh before acting again.");
+  } else if(cacheRefreshFailed) {
+    commonUtil.showToast("The action completed and this detail was reloaded, but the transfer list could not be refreshed.");
+  }
 }
 
 async function confirmRetry(log: any) {

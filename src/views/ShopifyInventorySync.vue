@@ -1187,6 +1187,7 @@ import {
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
+import { locationInventoryDeliveryErrorCount } from "@/utils/shopifyLocationInventory";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
@@ -2163,7 +2164,7 @@ const unassignedBacklogWarn = computed(() =>
   oldestUnassignedCreatedAt.value !== undefined
   && Date.now() - oldestUnassignedCreatedAt.value > LOCATION_PUBLISH_INTERVAL_MS * 2);
 const locationDeliveryErrorCount = computed(() =>
-  locationDetailRows.value.filter((row) => row.stateColor === "danger").length);
+  locationInventoryDeliveryErrorCount(locationInventorySummary.value) ?? translate("Not available"));
 const locationNoOpOrQuarantinedCount = computed(() =>
   locationInventorySummary.value?.noOpOrQuarantinedCount ?? translate("Not available"));
 
