@@ -304,8 +304,8 @@
             <ion-card>
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
-                <ion-card-title :color="locationDeliveryErrorCount ? 'danger' : undefined">
-                  {{ locationDeliveryErrorCount }}
+                <ion-card-title :color="(locationDeliveryErrorCount ?? 0) > 0 ? 'danger' : undefined">
+                  {{ locationDeliveryErrorCount ?? translate("Not available") }}
                 </ion-card-title>
               </ion-card-header>
               <ion-card-content>{{ translate("Details linked to a SystemMessage in error or stalled sending") }}</ion-card-content>
@@ -2163,8 +2163,8 @@ const oldestUnassignedAgeLabel = computed(() => {
 const unassignedBacklogWarn = computed(() =>
   oldestUnassignedCreatedAt.value !== undefined
   && Date.now() - oldestUnassignedCreatedAt.value > LOCATION_PUBLISH_INTERVAL_MS * 2);
-const locationDeliveryErrorCount = computed(() =>
-  locationInventoryDeliveryErrorCount(locationInventorySummary.value) ?? translate("Not available"));
+const locationDeliveryErrorCount = computed<number | undefined>(() =>
+  locationInventoryDeliveryErrorCount(locationInventorySummary.value));
 const locationNoOpOrQuarantinedCount = computed(() =>
   locationInventorySummary.value?.noOpOrQuarantinedCount ?? translate("Not available"));
 
