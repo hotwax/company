@@ -1,7 +1,9 @@
 import {
   shopifyLocationInventoryAdjustmentDetailCache,
+  shopifyLocationInventorySummaryCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
+import { normalizeLocationInventorySummary } from "@/utils/shopifyLocationInventory";
 import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, pageNewestFirst, workerGet } from "./workerFetch";
 
@@ -100,7 +102,7 @@ registerSyncDomain({
     const cached = await shopifyLocationInventoryAdjustmentDetailCache.count({ field: "shopId", value: shopId });
     const wanted = cached < target ? target : batchSize;
 
-    const [recent, unassigned, unresolved] = await Promise.all([
+    const [recent, unassigned, unresolved, summaryResponse] = await Promise.all([
       fetchRecentDetails(ctx, shopId, wanted, batchSize),
       // Unassigned = no linked SystemMessage yet AND computedInventoryChange != 0 — mode
       // UNASSIGNED_NONZERO on the backend; there is no client-side entity-list filter for this.
@@ -122,6 +124,7 @@ registerSyncDomain({
         keyOf: detailKey,
         label: "locationInventoryAdjustmentDetails:unresolved",
       }),
+      workerGet(ctx, DETAIL_ENDPOINT, { shopId, mode: "RECENT", pageIndex: 0, pageSize: 1 }),
     ]);
 
     const merged = new Map<string, any>();
@@ -132,6 +135,8 @@ registerSyncDomain({
     let written = merged.size
       ? await shopifyLocationInventoryAdjustmentDetailCache.upsertMany([...merged.values()])
       : 0;
+    const summary = normalizeLocationInventorySummary(shopId, summaryResponse?.summary);
+    if(summary) {written += await shopifyLocationInventorySummaryCache.upsertMany([summary]);}
     written += await enrichBatchMessages(ctx, shopId, args.enrichMax ?? 40);
 
     return written;

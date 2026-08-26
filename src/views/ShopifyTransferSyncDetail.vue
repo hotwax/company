@@ -106,14 +106,14 @@
                 <p>{{ translate("Order item") }} {{ line.orderItemSeqId || translate("Not available") }}</p>
               </ion-label>
               <ion-label slot="end" class="ion-text-end">
-                {{ line.frozenQuantity ?? translate("Not available") }}
+                {{ line.lineQuantity ?? translate("Not available") }}
                 <p>{{ translate("Frozen quantity") }}</p>
               </ion-label>
               <ion-badge v-if="line.removed" slot="end" color="danger">
                 {{ translate("Removed") }}
               </ion-badge>
               <ion-note v-else slot="end">
-                {{ line.remoteLineId || translate("Unconfirmed") }}
+                {{ line.shopifyInventoryTransferLineItemId || translate("Unconfirmed") }}
               </ion-note>
             </ion-item>
           </ion-list>
@@ -339,7 +339,12 @@ import {
 } from "@/composables/useShopifyTransferSync";
 import { useUserStore } from "@/store/user";
 import { formatDateTime } from "@/utils";
-import { fetchTransferSyncDetail, stageColor, stageLabel } from "@/utils/shopifyTransferSync";
+import {
+  fetchTransferSyncDetail,
+  normalizeTransferSyncLines,
+  stageColor,
+  stageLabel,
+} from "@/utils/shopifyTransferSync";
 
 const props = defineProps<{ id?: string; orderId?: string }>();
 
@@ -394,18 +399,7 @@ const originLocation = computed(() => owner.value.originFacilityName || owner.va
 const destinationLocation = computed(() => owner.value.destinationFacilityName || owner.value.destinationFacilityId || translate("Not available"));
 
 // --- Lines ------------------------------------------------------------------------------------
-const lines = computed(() => {
-  const rows: any[] = detail.value?.lines ?? [];
-
-  return rows.map((line: any, index: number) => ({
-    key: line.orderItemSeqId ? `${line.orderItemSeqId}-${index}` : `line-${index}`,
-    orderItemSeqId: line.orderItemSeqId,
-    product: line.productName || line.productId,
-    frozenQuantity: line.frozenQuantity,
-    remoteLineId: line.remoteLineId,
-    removed: Number(line.frozenQuantity ?? line.quantity ?? -1) === 0,
-  }));
-});
+const lines = computed(() => normalizeTransferSyncLines(detail.value?.lines ?? []));
 
 // --- Timeline -----------------------------------------------------------------------------------
 interface TimelineEntry {
@@ -679,7 +673,7 @@ async function confirmSuppress() {
     await suppressActivityCandidate({
       shopId: shopId.value,
       orderId: orderId.value,
-      eventReferenceId: artifact.eventReferenceId,
+      sourceReferenceId: artifact.eventReferenceId,
       workEffortPurposeTypeId: suppressPurpose.value,
       reason: suppressReason.value.trim(),
     });

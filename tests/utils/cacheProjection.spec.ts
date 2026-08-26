@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dataFeedProjection, shopifyTransferSyncProjection } from "@/utils/cacheEntities";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -11,7 +12,6 @@ import {
   toMillis,
   toText,
 } from "@/utils/cacheProjection";
-import { dataFeedProjection } from "@/utils/cacheEntities";
 
 const NOW = 1_700_000_000_000;
 
@@ -119,6 +119,17 @@ describe("projectRow", () => {
     expect(row.dataFeedId).toBe("ShopifyInventoryChannelEventFeed");
     expect(row.dataFeedTypeEnumId).toBe("DTFDTP_RT_PUSH");
     expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
+  });
+
+  it("keeps transfer needsAttention as a Boolean through projection", () => {
+    const row = projectRow({
+      shopId: "10000",
+      orderId: "ORDER-1",
+      needsAttention: true,
+    }, shopifyTransferSyncProjection, NOW)!;
+
+    expect(row.needsAttention).toBe(true);
+    expect(typeof row.needsAttention).toBe("boolean");
   });
 });
 

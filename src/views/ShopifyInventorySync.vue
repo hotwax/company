@@ -313,9 +313,9 @@
             <ion-card>
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("No-op / quarantined") }}</ion-card-subtitle>
-                <ion-card-title>{{ locationNoOpCount }}</ion-card-title>
+                <ion-card-title>{{ locationNoOpOrQuarantinedCount }}</ion-card-title>
               </ion-card-header>
-              <ion-card-content>{{ translate("Unassigned details with a zero net inventory change") }}</ion-card-content>
+              <ion-card-content>{{ translate("Zero-change details or details quarantined in a cancelled SystemMessage") }}</ion-card-content>
             </ion-card>
             <ion-card>
               <ion-card-header>
@@ -1180,6 +1180,7 @@ import {
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyLocationInventoryAdjustmentDetailCache,
+  shopifyLocationInventorySummaryCache,
   shopifyShopCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
@@ -2057,9 +2058,13 @@ async function requestShopInventoryPushChange(event: Event) {
 // =================================================================================================
 const { records: allLocationInventoryDetails, hydrated: locationInventoryDetailsHydrated } =
   useCachedList<any>(shopifyLocationInventoryAdjustmentDetailCache);
+const { records: allLocationInventorySummaries } =
+  useCachedList<any>(shopifyLocationInventorySummaryCache);
 
 const locationInventoryDetailsForShop = computed(() => allLocationInventoryDetails.value
   .filter((row: any) => String(row.shopId ?? "") === String(props.id ?? "")));
+const locationInventorySummary = computed(() => allLocationInventorySummaries.value
+  .find((row: any) => String(row.shopId ?? "") === String(props.id ?? "")));
 
 /** `publish_PendingShopifyLocationInventoryAdjustments` runs every minute; the backlog age badge
  *  warns once the oldest unassigned row has outlived two publish intervals. */
@@ -2159,8 +2164,8 @@ const unassignedBacklogWarn = computed(() =>
   && Date.now() - oldestUnassignedCreatedAt.value > LOCATION_PUBLISH_INTERVAL_MS * 2);
 const locationDeliveryErrorCount = computed(() =>
   locationDetailRows.value.filter((row) => row.stateColor === "danger").length);
-const locationNoOpCount = computed(() =>
-  locationDetailRows.value.filter((row) => !row.systemMessageId && row.computedInventoryChange === 0).length);
+const locationNoOpOrQuarantinedCount = computed(() =>
+  locationInventorySummary.value?.noOpOrQuarantinedCount ?? translate("Not available"));
 
 // --- Row expand modal: decisionComment verbatim + the linked message's error text ---
 const selectedLocationDetail = ref<any>(null);

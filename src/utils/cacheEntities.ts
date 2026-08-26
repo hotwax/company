@@ -1068,7 +1068,7 @@ export const shopifyTransferSyncProjection = {
     shopifyInventoryTransferId: "text",
     syncStage: "text",
     lastActivityDate: "date",
-    needsAttention: "text",
+    needsAttention: "boolean",
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
@@ -1078,6 +1078,23 @@ export const shopifyTransferSyncProjection = {
 } as const;
 
 export const shopifyTransferSyncCache = defineCachedEntity("shopifyTransferSyncs", shopifyTransferSyncProjection);
+
+/** Server-computed location inventory KPI totals, one authoritative summary per shop. */
+export const shopifyLocationInventorySummaryProjection = {
+  keyField: "shopId",
+  fields: {
+    shopId: "text",
+    backlogCount: "count",
+    oldestBacklogDate: "date",
+    errorLinkedCount: "count",
+    noOpOrQuarantinedCount: "count",
+  },
+} as const;
+
+export const shopifyLocationInventorySummaryCache = defineCachedEntity(
+  "shopifyLocationInventorySummaries",
+  shopifyLocationInventorySummaryProjection,
+);
 
 /**
  * Latest `verify#ShopifyInventoryTransferWebhookSubscriptions` result for a shop — one row per

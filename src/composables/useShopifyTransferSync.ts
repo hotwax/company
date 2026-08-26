@@ -115,6 +115,9 @@ export const useShopifyTransferSyncRecord = (orderId: string | undefined) =>
 
 function unwrap<T = any>(resp: any): T {
   if(commonUtil.hasError(resp)) {throw resp?.data ?? resp;}
+  if(resp?.data?.available === false) {
+    throw new Error(resp.data.message || "This action is not available.");
+  }
 
   return resp?.data as T;
 }
@@ -129,10 +132,10 @@ export const SUPPRESSION_PURPOSES = [
 export type SuppressionPurpose = typeof SUPPRESSION_PURPOSES[number];
 
 export function useShopifyTransferSyncMutations() {
-  /** POST `sob/shopify/transferSync/{orderId}/updateLogRetry` — retry a blocked update log. */
-  async function retryUpdateLog(orderId: string, logId: string) {
+  /** POST `sob/shopify/transferSync/updateLogRetry` — retry a blocked update log. */
+  async function retryUpdateLog(_orderId: string, logId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/updateLogRetry`,
+      url: `${LIST_ENDPOINT}/updateLogRetry`,
       method: "POST",
       data: { logId },
     });
@@ -141,12 +144,12 @@ export function useShopifyTransferSyncMutations() {
   }
 
   /**
-   * POST `sob/shopify/transferSync/{orderId}/updateLogResolve` — supersede a blocked log; a reason
+   * POST `sob/shopify/transferSync/updateLogResolve` — supersede a blocked log; a reason
    * is required.
    */
-  async function resolveUpdateLog(orderId: string, logId: string, reason: string) {
+  async function resolveUpdateLog(_orderId: string, logId: string, reason: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/updateLogResolve`,
+      url: `${LIST_ENDPOINT}/updateLogResolve`,
       method: "POST",
       data: { logId, reason },
     });
@@ -155,33 +158,33 @@ export function useShopifyTransferSyncMutations() {
   }
 
   /**
-   * POST `sob/shopify/transferSync/{orderId}/activityCandidateSuppress` — suppress an eligible
+   * POST `sob/shopify/transferSync/activityCandidateSuppress` — suppress an eligible
    * candidate.
    */
   async function suppressActivityCandidate(params: {
     shopId: string;
     orderId: string;
-    eventReferenceId: string;
+    sourceReferenceId: string;
     workEffortPurposeTypeId: SuppressionPurpose;
     reason: string;
   }) {
-    const { shopId, orderId, workEffortPurposeTypeId, eventReferenceId, reason } = params;
+    const { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason } = params;
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/activityCandidateSuppress`,
+      url: `${LIST_ENDPOINT}/activityCandidateSuppress`,
       method: "POST",
-      data: { shopId, orderId, workEffortPurposeTypeId, eventReferenceId, reason },
+      data: { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason },
     });
 
     return unwrap(resp);
   }
 
   /**
-   * POST `sob/shopify/transferSync/{orderId}/suppressionCancel` — a normal WorkEffort status
+   * POST `sob/shopify/transferSync/suppressionCancel` — a normal WorkEffort status
    * update to `TASK_CANCELLED`, applied server-side.
    */
   async function cancelSuppressionTask(shopId: string, orderId: string, workEffortId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/suppressionCancel`,
+      url: `${LIST_ENDPOINT}/suppressionCancel`,
       method: "POST",
       data: { shopId, orderId, workEffortId },
     });

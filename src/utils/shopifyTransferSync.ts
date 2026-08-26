@@ -51,6 +51,18 @@ export function stageLabel(syncStage: unknown): string {
   return label ? translate(label) : (key || translate("Not available"));
 }
 
+/** Normalize the exact line aliases returned by ShopifyShopInventoryTransferAndItem. */
+export function normalizeTransferSyncLines(rows: any[]): any[] {
+  return rows.map((line: any, index: number) => ({
+    key: line.orderItemSeqId ? `${line.orderItemSeqId}-${index}` : `line-${index}`,
+    orderItemSeqId: line.orderItemSeqId,
+    product: line.productName || line.productId,
+    lineQuantity: line.lineQuantity,
+    shopifyInventoryTransferLineItemId: line.shopifyInventoryTransferLineItemId,
+    removed: Number(line.lineQuantity ?? -1) === 0,
+  }));
+}
+
 /**
  * `GET sob/shopify/transferSync/{orderId}` (shopId as a query param) — the owner header, lines,
  * activities+details, DataManagerLog rows, webhook SystemMessage rows, and suppression WorkEffort

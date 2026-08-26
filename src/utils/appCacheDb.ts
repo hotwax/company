@@ -82,6 +82,8 @@ class CompanyCacheDB extends Dexie {
   shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify per-location real-time inventory push ledger, scoped by shop. */
   shopifyLocationInventoryAdjustmentDetails!: Table<CachedRow, string>;
+  /** Backend-authoritative location inventory KPI totals, one row per shop. */
+  shopifyLocationInventorySummaries!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
@@ -269,10 +271,12 @@ const CACHE_SCHEMA = {
   // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
   netSuiteOrderPushBacklog: "productStoreId, checkedAt",
   // --- Shopify transfer sync monitoring (sob/shopify/transferSync) ---
-  // One row per (shopId, orderId). `syncStage` is indexed because the list view filters on it, and
-  // `needsAttention` because those rows sort first.
+  // One row per (shopId, orderId). `syncStage` is indexed because the list view filters on it.
   shopifyTransferSyncs:
-    "transferSyncKey, shopId, orderId, syncStage, needsAttention, lastActivityDate, [shopId+lastActivityDate], [shopId+syncStage]",
+    "transferSyncKey, shopId, orderId, syncStage, lastActivityDate, [shopId+lastActivityDate], [shopId+syncStage]",
+  // Boolean values are not valid IndexedDB keys, so needsAttention stays a projected Boolean but
+  // is deliberately not indexed. This one-row-per-shop summary supplies authoritative KPI totals.
+  shopifyLocationInventorySummaries: "shopId",
   // One row per shop, not an entity — see `shopifyTransferWebhookHealthProjection`.
   shopifyTransferWebhookHealth: "shopId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
