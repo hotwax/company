@@ -75,14 +75,14 @@
             </ion-item>
             <ion-item>
               <ion-label>
-                {{ translate("Shipping endpoint") }}
-                <p>{{ owner.shippingEndpoint || translate("Not available") }}</p>
+                {{ translate("Origin") }}
+                <p>{{ originLocation }}</p>
               </ion-label>
             </ion-item>
             <ion-item>
               <ion-label>
-                {{ translate("Fulfillment endpoint") }}
-                <p>{{ owner.fulfillmentEndpoint || translate("Not available") }}</p>
+                {{ translate("Destination") }}
+                <p>{{ destinationLocation }}</p>
               </ion-label>
             </ion-item>
             <ion-item lines="none">
@@ -388,6 +388,10 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
 
 // --- Owner header ---------------------------------------------------------------------------
 const owner = computed<any>(() => detail.value?.owner ?? detail.value?.header ?? headerRow.value ?? {});
+
+/** Facility name/id may each be independently null (ambiguous resolution) — never re-derive them. */
+const originLocation = computed(() => owner.value.originFacilityName || owner.value.originFacilityId || translate("Not available"));
+const destinationLocation = computed(() => owner.value.destinationFacilityName || owner.value.destinationFacilityId || translate("Not available"));
 
 // --- Lines ------------------------------------------------------------------------------------
 const lines = computed(() => {
