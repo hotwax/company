@@ -31,6 +31,33 @@ function transferKey(raw: Record<string, unknown>): string | undefined {
   return `${raw.shopId}|${raw.orderId}`;
 }
 
+async function syncWebhookHealth(ctx: SyncContext, shopId: string): Promise<number> {
+  try {
+    const response = await workerGet(ctx, WEBHOOK_HEALTH_ENDPOINT, { shopId });
+    // `available: false` (verifier not present on this branch, or the check itself errored) must
+    // not be cached as a fabricated "0 missing / 0 duplicate" result. Remove any older answer so
+    // the KPI cannot keep rendering stale healthy counts as current.
+    if(!response || !response.available) {
+      await shopifyTransferWebhookHealthCache.remove(shopId);
+
+      return 0;
+    }
+
+    return shopifyTransferWebhookHealthCache.upsertMany([{
+      shopId,
+      missingTopics: response.missingTopics ?? [],
+      duplicateTopics: response.duplicateTopics ?? [],
+      checkedAt: response.checkedDate ?? Date.now(),
+    }]);
+  } catch {
+    // A failed health check must not sink the list sync for this tick; the next tick retries it,
+    // and the KPI card renders its own "unavailable" state from an absent cached row.
+    await shopifyTransferWebhookHealthCache.remove(shopId);
+
+    return 0;
+  }
+}
+
 registerSyncDomain({
   name: "shopifyTransferSync",
   intervalMs: 15_000,

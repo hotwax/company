@@ -10,3 +10,11 @@ export function normalizeLocationInventorySummary(shopId: string, summary: any):
     noOpOrQuarantinedCount: summary.noOpOrQuarantinedCount,
   };
 }
+
+/** Backend-authoritative count of ledger rows linked to an unresolved delivery error. */
+export function locationInventoryDeliveryErrorCount(summary: any): number | undefined {
+  if(summary?.errorLinkedCount === undefined || summary?.errorLinkedCount === null) {return undefined;}
+  const count = Number(summary.errorLinkedCount);
+
+  return Number.isFinite(count) ? count : undefined;
+}
