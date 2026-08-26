@@ -1,22 +1,20 @@
-import { shopifyTransferSyncCache, shopifyTransferWebhookHealthCache } from "@/utils/cacheEntities";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { pageAll, pageNewestFirst, workerGet } from "./workerFetch";
+import { shopifyTransferSyncCache } from "@/utils/cacheEntities";
+import { registerSyncDomain } from "../syncRegistry";
+import { pageAll, pageNewestFirst } from "./workerFetch";
 
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
  *
- * One domain, not several, following `netSuiteOrderPushDomain.ts`'s reasoning: the reads here are
- * coupled by shop scope (the list and the webhook health both need `shopId`, and both feed the
- * same monitor screen), so splitting them into separate domains would mean either duplicating the
- * shop guard or racing two domains that write caches the monitor joins together.
+ * Per tick: the transfer list (`sob/shopify/transferSync`), scoped by shopId — server-computed
+ * `syncStage` is stored and rendered exactly as returned, never re-derived here.
  *
- * Per tick:
- *   1. the transfer list (`sob/shopify/transferSync`), scoped by shopId — server-computed
- *      `syncStage` is stored and rendered exactly as returned, never re-derived here;
- *   2. the webhook subscription health check (`sob/shopify/transferWebhookSubscriptionHealth`).
+ * Webhook subscription health is deliberately NOT synced here. It used to call
+ * `sob/shopify/transferWebhookSubscriptionHealth` every tick, and that endpoint runs the live
+ * verifier — one Shopify GraphQL call per topic, so fourteen per shop, every 15 seconds while the
+ * page was open. The page now derives the same answer from the subscription list it already reads
+ * on demand, so nothing polls Shopify in the background.
  */
 const LIST_ENDPOINT = "sob/shopify/transferSync";
-const WEBHOOK_HEALTH_ENDPOINT = "sob/shopify/transferWebhookSubscriptionHealth";
 /** get#ShopifyTransferSyncList wraps its rows in a `transfers` list, not a bare array. */
 const LIST_COLLECTION = "transfers";
 
@@ -31,27 +29,6 @@ function transferKey(raw: Record<string, unknown>): string | undefined {
   if(!raw?.shopId || !raw?.orderId) {return undefined;}
 
   return `${raw.shopId}|${raw.orderId}`;
-}
-
-async function syncWebhookHealth(ctx: SyncContext, shopId: string): Promise<number> {
-  try {
-    const response = await workerGet(ctx, WEBHOOK_HEALTH_ENDPOINT, { shopId });
-    // `available: false` (verifier not present on this branch, or the check itself errored) must
-    // not be cached as a fabricated "0 missing / 0 duplicate" result — leave the cache as-is so the
-    // KPI card renders its own "Not available" state from a stale/absent row.
-    if(!response || !response.available) {return 0;}
-
-    return shopifyTransferWebhookHealthCache.upsertMany([{
-      shopId,
-      missingTopics: response.missingTopics ?? [],
-      duplicateTopics: response.duplicateTopics ?? [],
-      checkedAt: response.checkedDate ?? Date.now(),
-    }]);
-  } catch {
-    // A failed health check must not sink the list sync for this tick; the next tick retries it,
-    // and the KPI card renders its own "unavailable" state from a stale/absent cached row.
-    return 0;
-  }
 }
 
 registerSyncDomain({
@@ -96,8 +73,7 @@ registerSyncDomain({
       const key = transferKey(row);
       if(key) {merged.set(key, row);}
     }
-    let written = merged.size ? await shopifyTransferSyncCache.upsertMany([...merged.values()]) : 0;
-    written += await syncWebhookHealth(ctx, shopId);
+    const written = merged.size ? await shopifyTransferSyncCache.upsertMany([...merged.values()]) : 0;
 
     return written;
   },

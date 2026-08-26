@@ -154,14 +154,15 @@
                 {{ line }}
               </p>
 
-              <!-- DataManagerLog: source/error JSON, inline (ShopifyOrderSyncMdmLogModal has no
-                   field for this, so it is shown here rather than forking that shared component). -->
+              <!-- DataManagerLog source/error payloads, rendered like job-manager's file-history
+                   detail: Original / Errors tabs over the real file content. The log row carries
+                   only content REFERENCES, so MdmLogPayload fetches the bytes on expand. -->
               <template v-if="entry.kind === 'dm-create' || entry.kind === 'dm-update'">
                 <ion-button fill="clear" size="small" @click="toggleJson(entry.key)">
                   {{ isJsonOpen(entry.key) ? translate("Hide source / error details") : translate("Show source / error details") }}
                 </ion-button>
                 <div v-if="isJsonOpen(entry.key)" class="accordion-content">
-                  <pre><code>{{ entry.jsonText }}</code></pre>
+                  <MdmLogPayload :log="entry.raw" />
                 </div>
                 <ion-button fill="clear" size="small" @click="openMdmLogModal(entry.raw)">
                   {{ translate("View Data Manager log") }}
@@ -328,6 +329,7 @@ import {
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
 import Actions from "@/authorization/actions";
+import MdmLogPayload from "@/components/common/MdmLogPayload.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";

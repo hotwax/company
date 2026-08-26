@@ -260,7 +260,8 @@ export const groupFacilityProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     const group = raw?.facilityGroupId;
     const facility = raw?.facilityId;
-    if (!group || !facility) return undefined;
+    if(!group || !facility) {return undefined;}
+
     return `${group}|${facility}|${raw?.fromDate ?? ""}`;
   },
 } as const;
@@ -396,7 +397,8 @@ export const shopifyLocationProjection = {
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId || !raw?.shopifyLocationId) return undefined;
+    if(!raw?.shopId || !raw?.shopifyLocationId) {return undefined;}
+
     return `${raw.shopId}|${raw.shopifyLocationId}`;
   },
 } as const;
@@ -498,7 +500,8 @@ export const shopifyInventoryAdjustmentDetailProjection = {
       raw?.inventoryChannelId,
       raw?.shopifyInventoryItemId,
     ];
-    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
     return JSON.stringify(identity.map(String));
   },
 } as const;
@@ -529,7 +532,8 @@ export const shopifyLocationInventoryAdjustmentDetailProjection = {
   },
   buildKey: (raw: Record<string, unknown>) => {
     const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId];
-    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
     return JSON.stringify(identity.map(String));
   },
 } as const;
@@ -550,7 +554,8 @@ export const shopifyTypeMappingProjection = {
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId || !raw?.mappedTypeId) return undefined;
+    if(!raw?.shopId || !raw?.mappedTypeId) {return undefined;}
+
     return `${raw.shopId}|${raw.mappedTypeId}|${raw.mappedKey ?? ""}`;
   },
 } as const;
@@ -576,7 +581,8 @@ export const inventoryEventDocumentProjection = {
   },
   buildKey: (raw: Record<string, unknown>) => {
     const dataDocumentId = raw?.dataDocumentId;
-    if (!dataDocumentId) return undefined;
+    if(!dataDocumentId) {return undefined;}
+
     return `${String(dataDocumentId)}|${raw?.dataFeedId ? String(raw.dataFeedId) : ""}`;
   },
 } as const;
@@ -628,7 +634,8 @@ export const carrierShipmentMethodProjection = {
     deliveryDays: "count",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) return undefined;
+    if(!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) {return undefined;}
+
     return `${raw.partyId}|${raw.roleTypeId}|${raw.shipmentMethodTypeId}`;
   },
 } as const;
@@ -647,7 +654,8 @@ export const carrierFacilityProjection = {
     thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) return undefined;
+    if(!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) {return undefined;}
+
     return `${raw.partyId}|${raw.facilityId}|${raw.roleTypeId}|${raw.fromDate ?? ""}`;
   },
 } as const;
@@ -667,7 +675,8 @@ export const shopifyCarrierShipmentProjection = {
     shipmentMethodTypeId: "text", shopifyShippingMethod: "text", lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId) return undefined;
+    if(!raw?.shopId) {return undefined;}
+
     return `${raw.shopId}|${raw.carrierPartyId ?? ""}|${raw.shipmentMethodTypeId ?? ""}`;
   },
 } as const;
@@ -694,7 +703,8 @@ export const enumGroupMemberProjection = {
     description: "text", fromDate: "date", thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.enumId) return undefined;
+    if(!raw?.enumId) {return undefined;}
+
     return `${raw.enumerationGroupId ?? "NETSUITE_IIV_REASON"}|${raw.enumId}`;
   },
 } as const;
@@ -711,7 +721,8 @@ export const facilityIdentificationProjection = {
     // survivable while only that type was cached — now that every type is, defaulting would make
     // two different identifications on one facility collide and silently overwrite each other.
     // Returning undefined drops the row loudly instead (see `isUnkeyableFetch`).
-    if (!raw?.facilityId || !raw?.facilityIdenTypeId) return undefined;
+    if(!raw?.facilityId || !raw?.facilityIdenTypeId) {return undefined;}
+
     return `${raw.facilityId}|${raw.facilityIdenTypeId}`;
   },
 } as const;
@@ -737,7 +748,8 @@ export const geoAssocProjection = {
   // The server field is `toGeoId` (verified live). An earlier `geoIdTo` guess made buildKey
   // return undefined for every row, so all 1225 associations were silently dropped.
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.geoId || !raw?.toGeoId) return undefined;
+    if(!raw?.geoId || !raw?.toGeoId) {return undefined;}
+
     return `${raw.geoId}|${raw.toGeoId}`;
   },
 } as const;
@@ -756,7 +768,8 @@ export const productStoreFacilityProjection = {
     facilityName: "text", facilityTypeId: "text", sequenceNum: "count", fromDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.productStoreId || !raw?.facilityId) return undefined;
+    if(!raw?.productStoreId || !raw?.facilityId) {return undefined;}
+
     return `${raw.productStoreId}|${raw.facilityId}`;
   },
 } as const;
@@ -818,7 +831,8 @@ export const systemMessageErrorProjection = {
   },
   buildKey: (raw: Record<string, unknown>) => {
     const message = raw?.systemMessageId;
-    if (!message) return undefined;
+    if(!message) {return undefined;}
+
     return `${message}|${raw?.errorDate ?? ""}`;
   },
 } as const;
@@ -852,7 +866,8 @@ export const productUpdateHistoryProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     const product = raw?.productId;
     const shop = raw?.shopId;
-    if (!product || !shop) return undefined;
+    if(!product || !shop) {return undefined;}
+
     return `${shop}|${product}`;
   },
 } as const;
@@ -897,7 +912,8 @@ export const facilityGroupProductStoreProjection = {
     sequenceNumber: "count", fromDate: "date", thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.facilityGroupId || !raw?.productStoreId) return undefined;
+    if(!raw?.facilityGroupId || !raw?.productStoreId) {return undefined;}
+
     return `${raw.facilityGroupId}|${raw.productStoreId}|${raw.fromDate ?? ""}`;
   },
 } as const;
@@ -935,7 +951,8 @@ export const appVersionProjection = {
     enumDesc: "text",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.appId || !raw?.environmentTypeId) return undefined;
+    if(!raw?.appId || !raw?.environmentTypeId) {return undefined;}
+
     return `${raw.appId}|${raw.environmentTypeId}`;
   },
 } as const;
@@ -1072,7 +1089,8 @@ export const shopifyTransferSyncProjection = {
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId || !raw?.orderId) return undefined;
+    if(!raw?.shopId || !raw?.orderId) {return undefined;}
+
     return `${raw.shopId}|${raw.orderId}`;
   },
 } as const;
@@ -1096,24 +1114,3 @@ export const shopifyLocationInventorySummaryCache = defineCachedEntity(
   shopifyLocationInventorySummaryProjection,
 );
 
-/**
- * Latest `verify#ShopifyInventoryTransferWebhookSubscriptions` result for a shop — one row per
- * shop, like `netSuiteOrderPushBacklogProjection`, because it is a single computed health check
- * rather than an entity of its own.
- */
-export const shopifyTransferWebhookHealthProjection = {
-  keyField: "shopId",
-  fields: {
-    shopId: "text",
-    missingTopics: "structured",
-    duplicateTopics: "structured",
-    // Not a backend field name: the worker domain writes this as its own sync-time stamp, mapped
-    // from the backend's `checkedDate` (see shopifyTransferSyncDomain.ts).
-    checkedAt: "date",
-  },
-} as const;
-
-export const shopifyTransferWebhookHealthCache = defineCachedEntity(
-  "shopifyTransferWebhookHealth",
-  shopifyTransferWebhookHealthProjection,
-);

@@ -80,6 +80,7 @@ export function useShopifyShops() {
 }
 
 export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+export const SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID = "ShopifyShopLocationInventoryEventFeed";
 export const SHOPIFY_INVENTORY_EVENT_FEED_MANUAL = "DTFDTP_MAN_PULL";
 export const SHOPIFY_INVENTORY_EVENT_FEED_PUSH = "DTFDTP_RT_PUSH";
 
@@ -111,6 +112,32 @@ export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: st
     dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
   });
 }
+
+/**
+ * Switch the OMS-wide Shopify shop location inventory event feed between manual and real-time push.
+ */
+export async function updateShopifyLocationInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  const allowedTypes = [SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH];
+  if (!allowedTypes.includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported Shopify location inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: {
+      dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+      dataFeedTypeEnumId,
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the location inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", {
+    dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+  });
+}
+
 
 /**
  * The DataDocuments this feature ships, in the order the pipeline reads best.

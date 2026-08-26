@@ -1,4 +1,4 @@
-import Dexie, { type Table, liveQuery, type Observable } from "dexie";
+import Dexie, { type Observable, type Table, liveQuery } from "dexie";
 import {
   type CachedRow,
   type EntityProjection,
@@ -91,7 +91,6 @@ class CompanyCacheDB extends Dexie {
   /** Shopify inventory transfer sync — one row per (shopId, orderId). */
   shopifyTransferSyncs!: Table<CachedRow, string>;
   /** Latest transfer webhook subscription health check, one row per shop. */
-  shopifyTransferWebhookHealth!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -277,8 +276,6 @@ const CACHE_SCHEMA = {
   // Boolean values are not valid IndexedDB keys, so needsAttention stays a projected Boolean but
   // is deliberately not indexed. This one-row-per-shop summary supplies authoritative KPI totals.
   shopifyLocationInventorySummaries: "shopId",
-  // One row per shop, not an entity — see `shopifyTransferWebhookHealthProjection`.
-  shopifyTransferWebhookHealth: "shopId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;
@@ -386,7 +383,8 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
 
     async upsertMany(rawRows) {
       const rows = projectRows(rawRows, projection, Date.now());
-      if (rows.length) await dexieTable().bulkPut(rows);
+      if(rows.length) {await dexieTable().bulkPut(rows);}
+
       return rows.length;
     },
 
@@ -401,12 +399,13 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
           existing as string[],
           rows.map((row) => String(row[projection.keyField])),
         );
-        if (stale.length) {
+        if(stale.length) {
           await dexieTable().bulkDelete(stale);
           pruned = stale.length;
         }
-        if (rows.length) await dexieTable().bulkPut(rows);
+        if(rows.length) {await dexieTable().bulkPut(rows);}
       });
+
       return { written: rows.length, pruned };
     },
 
@@ -414,47 +413,48 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
       const table = dexieTable();
       const equalityFields = equals ? Object.keys(equals) : [];
 
-      if (scope && equalityFields.length) {
+      if(scope && equalityFields.length) {
         // Prefer `[scope+...equals+date]` — one index seek for the newest row of this partition.
         const path = `[${[scope.field, ...equalityFields, dateField].join("+")}]`;
-        const indexed = (table.schema.indexes ?? []).some(
-          (index: any) => normalizeIndexName(index?.name ?? "") === path,
-        );
+        const indexed = (table.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === path,);
         const prefix = [scope.value, ...equalityFields.map((field) => equals![field])];
-        if (indexed) {
+        if(indexed) {
           const newest = await table
             .where(path)
             .between([...prefix, -Infinity], [...prefix, Infinity])
             .last();
+
           return newest?.[dateField] as number | undefined;
         }
         const rows = (await table.where(scope.field).equals(scope.value as any).toArray())
           .filter((row) => equalityFields.every((field) => row[field] === equals![field]));
+
         return newestValue(rows, dateField);
       }
 
-      if (scope) {
+      if(scope) {
         // Scoped: walk the scoped rows (small by construction) and take the max.
         const rows = await table.where(scope.field).equals(scope.value as any).toArray();
+
         return newestValue(rows, dateField);
       }
 
-      if (equalityFields.length) {
+      if(equalityFields.length) {
         // No partition, but still narrowed (e.g. one message type across all remotes). Seek on the
         // first equality field when it is indexed, then apply the rest in memory.
         const [first, ...rest] = equalityFields;
-        const firstIndexed = (table.schema.indexes ?? []).some(
-          (index: any) => normalizeIndexName(index?.name ?? "") === first,
-        );
+        const firstIndexed = (table.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === first,);
         const rows = firstIndexed
           ? await table.where(first).equals(equals![first] as any).toArray()
           : await table.toCollection().toArray();
         const narrowed = rows.filter((row) =>
           (firstIndexed ? rest : equalityFields).every((field) => row[field] === equals![field]));
+
         return newestValue(narrowed, dateField);
       }
 
       const newest = await table.orderBy(dateField).last();
+
       return newest?.[dateField] as number | undefined;
     },
 
@@ -466,9 +466,7 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
       // every cached row. Rows with no `since` value at all are excluded: without one there is no
       // way to tell a still-in-flight record from an abandoned one.
       const indexed = since
-        ? (table.schema.indexes ?? []).some(
-            (index: any) => normalizeIndexName(index?.name ?? "") === since.field,
-          )
+        ? (table.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === since.field,)
         : false;
 
       const collection = since && indexed
@@ -477,9 +475,10 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
 
       const rows = await collection
         .filter((row) => {
-          if (row[dateField] !== undefined) return false;
-          if (!since || indexed) return true;
+          if(row[dateField] !== undefined) {return false;}
+          if(!since || indexed) {return true;}
           const stamp = row[since.field];
+
           return typeof stamp === "number" && stamp > since.afterMs;
         })
         .limit(limit)
@@ -490,11 +489,13 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
 
     async count(scope, equals) {
       const rows = await dexieTable().toArray();
+
       return rows.filter((row: any) => {
-        if (scope && String(row?.[scope.field]) !== String(scope.value)) return false;
-        for (const [field, value] of Object.entries(equals ?? {})) {
-          if (String(row?.[field]) !== String(value)) return false;
+        if(scope && String(row?.[scope.field]) !== String(scope.value)) {return false;}
+        for(const [field, value] of Object.entries(equals ?? {})) {
+          if(String(row?.[field]) !== String(value)) {return false;}
         }
+
         return true;
       }).length;
     },
@@ -516,13 +517,13 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
 
         let rows: CachedRow[];
 
-        if (scope) {
+        if(scope) {
           // Prefer the widest compound index that covers scope + equalities (+ the date, which
           // gives sorted output for free).
           const compoundWithDate = `[${[scope.field, ...equalityFields, dateField].filter(Boolean).join("+")}]`;
           const compound = `[${[scope.field, ...equalityFields].join("+")}]`;
 
-          if (dateField && equalityFields.length && hasIndex(compoundWithDate)) {
+          if(dateField && equalityFields.length && hasIndex(compoundWithDate)) {
             // Range over [scope, ...equals, *] — every row of this partition, index-ordered by date.
             const prefix = [scope.value, ...equalityFields.map((field) => equals![field])];
             rows = await table
@@ -530,12 +531,12 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
               .between([...prefix, -Infinity], [...prefix, Infinity])
               .reverse()
               .toArray();
-          } else if (equalityFields.length && hasIndex(compound)) {
+          } else if(equalityFields.length && hasIndex(compound)) {
             rows = await table
               .where(compound)
               .equals([scope.value, ...equalityFields.map((field) => equals![field])] as any)
               .toArray();
-          } else if (dateField && !equalityFields.length && hasIndex(`[${scope.field}+${dateField}]`)) {
+          } else if(dateField && !equalityFields.length && hasIndex(`[${scope.field}+${dateField}]`)) {
             rows = await table
               .where(`[${scope.field}+${dateField}]`)
               .between([scope.value, -Infinity], [scope.value, Infinity])
@@ -544,33 +545,31 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
           } else {
             rows = await table.where(scope.field).equals(scope.value as any).toArray();
             // Equalities the index could not absorb still have to hold.
-            if (equalityFields.length) {
+            if(equalityFields.length) {
               rows = rows.filter((row) =>
                 equalityFields.every((field) => row[field] === equals![field]));
             }
           }
-        } else if (dateField) {
+        } else if(dateField) {
           rows = await table.orderBy(dateField).reverse().toArray();
-          if (equalityFields.length) {
+          if(equalityFields.length) {
             rows = rows.filter((row) => equalityFields.every((field) => row[field] === equals![field]));
           }
         } else {
           rows = await table.toCollection().toArray();
-          if (equalityFields.length) {
+          if(equalityFields.length) {
             rows = rows.filter((row) => equalityFields.every((field) => row[field] === equals![field]));
           }
         }
 
-        if (filter) rows = rows.filter(filter);
+        if(filter) {rows = rows.filter(filter);}
 
         // Re-sort only when the index did not already deliver date order.
-        const indexOrdered = Boolean(
-          scope && dateField && (
-            hasIndex(`[${[scope.field, ...equalityFields, dateField].filter(Boolean).join("+")}]`) ||
+        const indexOrdered = Boolean(scope && dateField && (
+          hasIndex(`[${[scope.field, ...equalityFields, dateField].filter(Boolean).join("+")}]`) ||
             (!equalityFields.length && hasIndex(`[${scope.field}+${dateField}]`))
-          ),
-        );
-        if (dateField && !indexOrdered) {
+        ),);
+        if(dateField && !indexOrdered) {
           rows = [...rows].sort((a, b) => ((b[dateField] as number) ?? 0) - ((a[dateField] as number) ?? 0));
         }
 
@@ -609,13 +608,14 @@ export async function clearAllCaches(): Promise<void> {
  * Call before the first cache operation in each context (worker and main thread).
  */
 export async function ensureCacheReady(): Promise<void> {
-  if (appCacheDb.isOpen() && !hasSchemaDrift()) return;
+  if(appCacheDb.isOpen() && !hasSchemaDrift()) {return;}
 
   try {
-    if (!appCacheDb.isOpen()) await appCacheDb.open();
+    if(!appCacheDb.isOpen()) {await appCacheDb.open();}
   } catch {
     // Any open failure on a disposable cache is resolved the same way: rebuild.
     await rebuild();
+
     return;
   }
 
@@ -623,11 +623,9 @@ export async function ensureCacheReady(): Promise<void> {
   // domain was added; an orphaned one means a domain was renamed or removed and its old rows are
   // still being served under a previous key field.
   const drift = schemaDrift();
-  if (drift.missing.length || drift.orphaned.length) {
-    console.warn(
-      `[cache] schema drift — rebuilding. missing: [${drift.missing.join(", ")}], ` +
-      `orphaned: [${drift.orphaned.join(", ")}]`,
-    );
+  if(drift.missing.length || drift.orphaned.length) {
+    console.warn(`[cache] schema drift — rebuilding. missing: [${drift.missing.join(", ")}], ` +
+      `orphaned: [${drift.orphaned.join(", ")}]`,);
     await rebuild();
   }
 }
@@ -653,6 +651,7 @@ function schemaDrift(): { missing: string[]; orphaned: string[] } {
     const backend = appCacheDb.backendDB();
     const actual = [...(backend?.objectStoreNames ?? [])] as string[];
     const declared = new Set(CACHE_TABLES);
+
     return {
       missing: CACHE_TABLES.filter((table) => !actual.includes(table)),
       orphaned: actual.filter((table) => !declared.has(table)),
@@ -664,6 +663,7 @@ function schemaDrift(): { missing: string[]; orphaned: string[] } {
 
 function hasSchemaDrift(): boolean {
   const { missing, orphaned } = schemaDrift();
+
   return missing.length > 0 || orphaned.length > 0;
 }
 
@@ -720,6 +720,7 @@ const IDENTITY_KEY = "identity";
 export async function hasSyncedThisLogin(domain: string): Promise<boolean> {
   await ensureCacheReady();
   const row = await appCacheDb.syncMeta.get(DOMAIN_MARKER_PREFIX + domain);
+
   return !!row;
 }
 
@@ -732,7 +733,7 @@ export async function clearSyncMarkers(): Promise<void> {
   await ensureCacheReady();
   const keys = await appCacheDb.syncMeta.toCollection().primaryKeys();
   const domainKeys = (keys as string[]).filter((key) => key.startsWith(DOMAIN_MARKER_PREFIX));
-  if (domainKeys.length) await appCacheDb.syncMeta.bulkDelete(domainKeys);
+  if(domainKeys.length) {await appCacheDb.syncMeta.bulkDelete(domainKeys);}
 }
 
 /**
@@ -746,8 +747,9 @@ export async function clearSyncMarkers(): Promise<void> {
 export async function ensureCacheIdentity(identity: string): Promise<boolean> {
   await ensureCacheReady();
   const stored = await appCacheDb.syncMeta.get(IDENTITY_KEY);
-  if (stored?.identity === identity) return false;
+  if(stored?.identity === identity) {return false;}
   await clearAllCaches();
   await appCacheDb.syncMeta.put({ key: IDENTITY_KEY, identity, at: Date.now() });
+
   return true;
 }

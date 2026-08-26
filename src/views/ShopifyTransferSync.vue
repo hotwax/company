@@ -80,43 +80,136 @@
 
             <ion-card>
               <ion-card-header>
-                <ion-card-subtitle>{{ translate("Webhook subscription health") }}</ion-card-subtitle>
-                <ion-card-title v-if="!webhookHealthHydrated">
-                  <ion-skeleton-text :animated="true" class="count-skeleton" />
+                <ion-card-subtitle>{{ translate("Webhook subscriptions") }}</ion-card-subtitle>
+                <ion-card-title v-if="!webhookSummary" color="medium">
+                  <ion-skeleton-text v-if="webhooksLoading" :animated="true" class="count-skeleton" />
+                  <template v-else>
+                    {{ translate("Not checked") }}
+                  </template>
                 </ion-card-title>
-                <ion-card-title v-else-if="webhookMissingCount === undefined" color="medium">
-                  {{ translate("Not available") }}
-                </ion-card-title>
-                <ion-card-title v-else :color="(webhookMissingCount || webhookDuplicateCount) ? 'warning' : 'success'">
-                  {{ webhookMissingCount }} / {{ webhookDuplicateCount }}
+                <ion-card-title v-else :color="webhookSummaryColor">
+                  {{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}
                 </ion-card-title>
               </ion-card-header>
               <ion-card-content>
-                {{ translate("Missing / duplicate webhook topics") }}
-                <p v-if="webhookCheckedAt" class="overline">
-                  {{ translate("Checked") }} {{ formatDateTime(webhookCheckedAt) || translate("Not available") }}
+                {{ translate("Subscribed of the topics this OMS can consume") }}
+                <p v-if="webhookSummary && webhookProblems.length" class="ion-text-wrap">
+                  {{ webhookProblems.join(" · ") }}
                 </p>
-              </ion-card-content>
-            </ion-card>
-
-            <ion-card>
-              <ion-card-header>
-                <ion-card-subtitle>{{ translate("Update job") }}</ion-card-subtitle>
-                <ion-card-title v-if="!jobsHydrated">
-                  <ion-skeleton-text :animated="true" class="count-skeleton" />
-                </ion-card-title>
-                <ion-card-title v-else :color="updateJobBadgeColor">
-                  {{ updateJobStatus }}
-                </ion-card-title>
-              </ion-card-header>
-              <ion-card-content>
-                {{ translate("update_ShopifyInventoryTransfer") }}
-                <p v-if="updateJobNextRun" class="overline">
-                  {{ translate("Next run") }} {{ formatDateTime(updateJobNextRun) || translate("Not available") }}
+                <p v-if="webhookSummary && !webhookSummary.endpointAsserted" class="ion-text-wrap">
+                  {{ translate("Callback URLs are not being checked.") }}
                 </p>
               </ion-card-content>
             </ion-card>
           </section>
+
+          <!-- Every job the sync depends on, in pipeline order. Neither stager calls Shopify: they
+               write MDM files that the framework's ScheduledDataManagerRunner picks up, so an
+               active stager and a delivered transfer are still two different questions. -->
+          <h2 class="section-heading">
+            {{ translate("Jobs") }}
+          </h2>
+          <section class="kpi-grid">
+            <ion-card v-for="card in jobCards" :key="card.definition.key">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate(card.definition.label) }}</ion-card-subtitle>
+                <ion-card-title v-if="!jobsHydrated">
+                  <ion-skeleton-text :animated="true" class="count-skeleton" />
+                </ion-card-title>
+                <ion-card-title v-else :color="jobStatusColor(card.status)">
+                  {{ jobStatusLabel(card) }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                <p class="message-type">
+                  {{ card.jobName }}
+                </p>
+                <p class="ion-text-wrap">
+                  {{ translate(card.definition.purpose) }}
+                </p>
+                <p v-if="card.nextRun" class="overline">
+                  {{ translate("Next run") }} {{ formatDateTime(card.nextRun) || translate("Not available") }}
+                </p>
+                <ion-button
+                  v-if="jobsHydrated && (card.job || card.definition.scope === 'shop')"
+                  size="small"
+                  fill="outline"
+                  class="job-action"
+                  :disabled="configuringJobKey === card.definition.key"
+                  @click="card.job ? openJobModal(card) : configureJob(card)"
+                >
+                  <ion-spinner v-if="configuringJobKey === card.definition.key" name="crescent" />
+                  <template v-else>
+                    {{ card.job ? translate("Manage job") : translate("Configure job") }}
+                  </template>
+                </ion-button>
+              </ion-card-content>
+            </ion-card>
+          </section>
+
+          <!-- Topics subscribed at Shopify, the OMS message type each one is consumed by, and the
+               received-status backlog per type — reconciled in one table so an operator never has
+               to open three screens to answer "is this topic actually wired end to end?". -->
+          <ion-card class="webhook-card">
+            <ion-card-header>
+              <ion-card-subtitle>{{ translate("Webhook subscriptions") }}</ion-card-subtitle>
+              <ion-card-title>{{ translate("Transfer and shipment topics registered at Shopify") }}</ion-card-title>
+            </ion-card-header>
+            <ion-card-content>
+              <div class="webhook-actions">
+                <ion-button size="small" fill="outline" :disabled="webhooksLoading" @click="loadWebhookReconciliation()">
+                  <ion-spinner v-if="webhooksLoading" name="crescent" />
+                  <template v-else>
+                    {{ translate("Refresh") }}
+                  </template>
+                </ion-button>
+                <span v-if="otherWebhookCount" class="overline">
+                  {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
+                </span>
+                <span v-if="webhookSummary && webhookSummary.elsewhereCount" class="overline">
+                  {{ translate("Delivering to") }} {{ elsewhereHosts.join(", ") }}, {{ translate("not this OMS") }}
+                </span>
+                <span v-if="receivedTruncated" class="overline">
+                  {{ translate("Received counts are a floor; the backlog is deeper than one page.") }}
+                </span>
+              </div>
+
+              <ion-label v-if="webhooksError" class="ion-text-wrap webhook-error">
+                <ion-icon :icon="warningOutline" color="danger" />
+                {{ webhooksError }}
+              </ion-label>
+
+              <ion-label v-else-if="webhooksLoading && !webhookRows.length" class="ion-text-wrap">
+                <ion-skeleton-text :animated="true" style="width: 45%" />
+              </ion-label>
+
+              <ion-label v-else-if="!webhookRows.length" class="ion-text-wrap">
+                <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
+              </ion-label>
+            </ion-card-content>
+
+            <ion-list v-if="webhookRows.length" lines="full">
+              <ion-item v-for="row in webhookRows" :key="row.topic">
+                <ion-label class="ion-text-wrap">
+                  {{ row.topic }}
+                  <p>{{ row.uri || translate("No callback URL registered") }}</p>
+                  <p v-if="row.status === 'elsewhere'" class="overline">
+                    {{ translate("Delivers to") }} {{ row.uriHost }}
+                  </p>
+                  <p class="message-type">
+                    {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
+                  </p>
+                </ion-label>
+                <ion-label slot="end" class="ion-text-end received-count">
+                  {{ row.receivedCount }}
+                  <p>{{ translate("Received") }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="webhookStatusColor(row.status)">
+                  {{ webhookStatusLabel(row.status) }}
+                </ion-badge>
+              </ion-item>
+            </ion-list>
+          </ion-card>
 
           <ion-card class="filter-card">
             <ion-card-content>
@@ -216,11 +309,23 @@
         </template>
       </template>
     </ion-content>
+
+    <!-- Schedule, activate, and run the shop's update-stager job without leaving this page. -->
+    <ServiceJobDetailsModal
+      :is-open="showJobModal"
+      :job-name="selectedJobName"
+      :title="translate('Update job')"
+      :allowed-parameter-names="['shopId', 'configId', 'overlapMinutes']"
+      :protected-parameter-names="['shopId']"
+      :parameter-description="translate('Parameters used when staging this shop\'s Shopify transfer updates.')"
+      @updated="handleJobUpdated"
+      @close="showJobModal = false"
+    />
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { translate } from "@common";
+import { commonUtil, translate } from "@common";
 import {
   IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
   IonCardSubtitle, IonCardTitle, IonCheckbox, IonContent, IonDatetime, IonDatetimeButton, IonHeader,
@@ -231,11 +336,13 @@ import { swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
+  useShopifyTransferSyncJobs,
   useShopifyTransferSyncList,
-  useShopifyTransferWebhookHealth,
+  useShopifyWebhookReconciliation,
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { TRANSFER_SYNC_STAGE_COLORS, stageColor, stageLabel } from "@/utils/shopifyTransferSync";
@@ -267,28 +374,122 @@ const { rows, hydrated, needsAttentionCount } = useShopifyTransferSyncList(() =>
 // masked by an active filter selection.
 const { rows: allRows } = useShopifyTransferSyncList(() => shopId.value);
 
+// Shopify topic prefixes this flow owns. The vocabulary itself stays in the connector — these
+// only decide which of the shop's subscriptions belong on this page.
+const TRANSFER_TOPIC_PREFIXES = ["INVENTORY_TRANSFERS_", "INVENTORY_SHIPMENTS_"];
+
 const {
-  missingCount: webhookMissingCount,
-  duplicateCount: webhookDuplicateCount,
-  checkedAt: webhookCheckedAt,
-  hydrated: webhookHealthHydrated,
-} = useShopifyTransferWebhookHealth(() => shopId.value);
+  rows: webhookRows,
+  summary: webhookSummary,
+  otherSubscriptionCount: otherWebhookCount,
+  receivedTruncated,
+  loading: webhooksLoading,
+  error: webhooksError,
+  refresh: refreshWebhookReconciliation,
+} = useShopifyWebhookReconciliation(() => shopId.value, TRANSFER_TOPIC_PREFIXES);
+
+const webhookSummaryColor = computed(() => {
+  const s = webhookSummary.value;
+  if(!s) { return "medium"; }
+  if(s.missingCount || s.noConsumerCount) { return "danger"; }
+  if(s.duplicateCount || s.elsewhereCount) { return "warning"; }
+
+  return "success";
+});
+
+/** Only the problems that actually apply, so a healthy shop's card stays quiet. */
+const webhookProblems = computed(() => {
+  const s = webhookSummary.value;
+  if(!s) { return []; }
+  const problems: string[] = [];
+  if(s.missingCount) { problems.push(`${s.missingCount} ${translate("missing")}`); }
+  if(s.noConsumerCount) { problems.push(`${s.noConsumerCount} ${translate("with no consumer")}`); }
+  if(s.duplicateCount) { problems.push(`${s.duplicateCount} ${translate("duplicate")}`); }
+  if(s.elsewhereCount) { problems.push(`${s.elsewhereCount} ${translate("delivering elsewhere")}`); }
+
+  return problems;
+});
+
+const elsewhereHosts = computed(() =>
+  [...new Set(webhookRows.value.filter((r: any) => r.status === "elsewhere").map((r: any) => r.uriHost).filter(Boolean))]);
+
+/**
+ * Live read: the subscription half comes from the Shopify Admin API, so this is the one thing on
+ * the page outside the cached sync domain. It still runs automatically — an operator should not
+ * have to ask for the reconciliation to see whether a topic is wired end to end.
+ */
+function loadWebhookReconciliation() {
+  void refreshWebhookReconciliation();
+}
+
+function webhookStatusColor(status: string) {
+  if(status === "missing" || status === "noConsumer") { return "danger"; }
+  if(status === "duplicate" || status === "elsewhere") { return "warning"; }
+
+  return "success";
+}
+
+/**
+ * "Subscribed", not "Connected": all that is verified is that Shopify has a registration. Whether
+ * it reaches THIS OMS is the separate `elsewhere` state.
+ */
+function webhookStatusLabel(status: string) {
+  if(status === "missing") { return translate("Missing"); }
+  if(status === "noConsumer") { return translate("No consumer"); }
+  if(status === "duplicate") { return translate("Duplicate"); }
+  if(status === "elsewhere") { return translate("Delivers elsewhere"); }
+
+  return translate("Subscribed");
+}
 
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const updateJob = computed(() => cachedJobs.value.find((job: any) =>
-  String(job.jobName ?? "").startsWith("update_ShopifyInventoryTransfer") &&
-  (job.serviceJobParameters ?? []).some((p: any) => p.parameterName === "shopId" && String(p.parameterValue) === shopId.value)));
-const updateJobStatus = computed(() => {
-  if(!updateJob.value) {return translate("Not configured");}
+const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 
-  return updateJob.value.paused === "Y" ? translate("Paused") : translate("Active");
-});
-const updateJobBadgeColor = computed(() => {
-  if(!updateJob.value) {return "medium";}
+const showJobModal = ref(false);
+const selectedJobName = ref("");
+const configuringJobKey = ref("");
 
-  return updateJob.value.paused === "Y" ? "warning" : "success";
-});
-const updateJobNextRun = computed(() => updateJob.value?.nextExecutionDateTime);
+function jobStatusColor(status: string) {
+  if(status === "active") { return "success"; }
+  if(status === "paused") { return "warning"; }
+
+  return "medium";
+}
+
+function jobStatusLabel(card: any) {
+  if(card.status === "active") { return translate("Active"); }
+  if(card.status === "paused") { return translate("Paused"); }
+
+  // A global job is installed by the data load, never from this page, so say which is missing.
+  return card.definition.scope === "shop" ? translate("Not configured") : translate("Not installed");
+}
+
+function openJobModal(card: any) {
+  selectedJobName.value = card.jobName;
+  showJobModal.value = true;
+}
+
+/**
+ * Create this shop's clone of a seeded template, then open the modal on it.
+ *
+ * The clone is created paused: this makes the job exist and schedulable, it does not start pushing
+ * to Shopify. Activating is the operator's next, explicit step in the modal.
+ */
+async function configureJob(card: any) {
+  configuringJobKey.value = card.definition.key;
+  try {
+    selectedJobName.value = await ensureJob(card.definition.key);
+    showJobModal.value = true;
+  } catch (error: any) {
+    commonUtil.showToast(error?.message || translate("The job could not be created."));
+  } finally {
+    configuringJobKey.value = "";
+  }
+}
+
+function handleJobUpdated() {
+  showJobModal.value = false;
+}
 
 const {
   start: startSyncDomains,
@@ -316,8 +517,14 @@ function openDetail(row: any) {
   router.push(`/shopify-connection-details/${props.id}/transfer-sync/${row.orderId}`);
 }
 
-watch(shopId, () => { void startSyncDomains(activeSyncDomains()); });
-onIonViewWillEnter(() => { void startSyncDomains(activeSyncDomains()); });
+watch(shopId, () => {
+  void startSyncDomains(activeSyncDomains());
+  void loadWebhookReconciliation();
+});
+onIonViewWillEnter(() => {
+  void startSyncDomains(activeSyncDomains());
+  void loadWebhookReconciliation();
+});
 onIonViewDidLeave(() => { stopSyncDomains(); });
 </script>
 
@@ -396,5 +603,42 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
 
 .last-activity {
   max-width: 50%;
+}
+
+.webhook-card {
+  margin-block-end: var(--spacer-base);
+}
+
+.webhook-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-sm);
+  flex-wrap: wrap;
+  margin-block-end: var(--spacer-sm);
+}
+
+.webhook-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-xs);
+}
+
+/* Not .overline: these are CamelCase SystemMessageType ids, and uppercasing them is unreadable. */
+.message-type {
+  font-size: 0.75rem;
+  color: var(--ion-color-medium);
+}
+
+.section-heading {
+  margin-block: var(--spacer-base) var(--spacer-sm);
+}
+
+.job-action {
+  margin-block-start: var(--spacer-sm);
+}
+
+.received-count {
+  max-width: 6rem;
+  margin-inline-end: var(--spacer-sm);
 }
 </style>
