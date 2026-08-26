@@ -272,7 +272,7 @@ const CACHE_SCHEMA = {
   // One row per (shopId, orderId). `syncStage` is indexed because the list view filters on it, and
   // `needsAttention` because those rows sort first.
   shopifyTransferSyncs:
-    "transferSyncKey, shopId, orderId, syncStage, needsAttention, lastActivityAt, [shopId+lastActivityAt], [shopId+syncStage]",
+    "transferSyncKey, shopId, orderId, syncStage, needsAttention, lastActivityDate, [shopId+lastActivityDate], [shopId+syncStage]",
   // One row per shop, not an entity — see `shopifyTransferWebhookHealthProjection`.
   shopifyTransferWebhookHealth: "shopId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.

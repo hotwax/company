@@ -25,9 +25,9 @@ const LIST_ENDPOINT = "sob/shopify/transferSync";
 export interface TransferSyncFilters {
   stage?: string;
   needsAttentionOnly?: boolean;
-  /** Millis; inclusive lower bound on `lastActivityAt`. */
+  /** Millis; inclusive lower bound on `lastActivityDate`. */
   fromMs?: number;
-  /** Millis; inclusive upper bound on `lastActivityAt`. */
+  /** Millis; inclusive upper bound on `lastActivityDate`. */
   toMs?: number;
 }
 
@@ -36,7 +36,7 @@ export interface TransferSyncFilters {
  * primary read.
  */
 export function useShopifyTransferSyncList(shopId: () => string | undefined, filters: () => TransferSyncFilters = () => ({})) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferSyncCache, { dateField: "lastActivityAt" });
+  const { records, hydrated } = useCachedList<any>(shopifyTransferSyncCache, { dateField: "lastActivityDate" });
 
   const rows = computed<any[]>(() => {
     const wanted = String(shopId() ?? "");
@@ -46,21 +46,21 @@ export function useShopifyTransferSyncList(shopId: () => string | undefined, fil
     return records.value
       .filter((row: any) => String(row?.shopId ?? "") === wanted)
       .filter((row: any) => !stage || row?.syncStage === stage)
-      .filter((row: any) => !needsAttentionOnly || row?.needsAttention === "Y")
-      .filter((row: any) => fromMs === undefined || Number(row?.lastActivityAt ?? 0) >= fromMs)
-      .filter((row: any) => toMs === undefined || Number(row?.lastActivityAt ?? 0) <= toMs)
+      .filter((row: any) => !needsAttentionOnly || row?.needsAttention === true)
+      .filter((row: any) => fromMs === undefined || Number(row?.lastActivityDate ?? 0) >= fromMs)
+      .filter((row: any) => toMs === undefined || Number(row?.lastActivityDate ?? 0) <= toMs)
       .sort((a: any, b: any) => {
-        const attentionDelta = (b?.needsAttention === "Y" ? 1 : 0) - (a?.needsAttention === "Y" ? 1 : 0);
+        const attentionDelta = (b?.needsAttention === true ? 1 : 0) - (a?.needsAttention === true ? 1 : 0);
         if(attentionDelta !== 0) {return attentionDelta;}
 
-        return Number(b?.lastActivityAt ?? 0) - Number(a?.lastActivityAt ?? 0);
+        return Number(b?.lastActivityDate ?? 0) - Number(a?.lastActivityDate ?? 0);
       });
   });
 
   return {
     rows,
     hydrated,
-    needsAttentionCount: computed(() => rows.value.filter((row: any) => row?.needsAttention === "Y").length),
+    needsAttentionCount: computed(() => rows.value.filter((row: any) => row?.needsAttention === true).length),
   };
 }
 
@@ -119,7 +119,7 @@ function unwrap<T = any>(resp: any): T {
   return resp?.data as T;
 }
 
-/** `purpose` accepted by `suppress#ShopifyInventoryTransferActivityCandidate`. */
+/** `workEffortPurposeTypeId` accepted by `suppress#ShopifyInventoryTransferActivityCandidate`. */
 export const SUPPRESSION_PURPOSES = [
   "SUPRS_TO_SHIPPED",
   "SUPRS_TO_RECEIPT",
@@ -129,52 +129,61 @@ export const SUPPRESSION_PURPOSES = [
 export type SuppressionPurpose = typeof SUPPRESSION_PURPOSES[number];
 
 export function useShopifyTransferSyncMutations() {
-  /** `retry#ShopifyInventoryTransferUpdateLog` — retry a blocked update log. */
-  async function retryUpdateLog(shopId: string, orderId: string, dataManagerLogId: string) {
+  /** POST `sob/shopify/transferSync/{orderId}/updateLogRetry` — retry a blocked update log. */
+  async function retryUpdateLog(orderId: string, logId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/retryUpdateLog`,
+      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/updateLogRetry`,
       method: "POST",
-      data: { shopId, orderId, dataManagerLogId },
+      data: { logId },
     });
 
     return unwrap(resp);
   }
 
-  /** `resolve#ShopifyInventoryTransferUpdateLog` — supersede a blocked log; a reason is required. */
-  async function resolveUpdateLog(shopId: string, orderId: string, dataManagerLogId: string, reason: string) {
+  /**
+   * POST `sob/shopify/transferSync/{orderId}/updateLogResolve` — supersede a blocked log; a reason
+   * is required.
+   */
+  async function resolveUpdateLog(orderId: string, logId: string, reason: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/resolveUpdateLog`,
+      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/updateLogResolve`,
       method: "POST",
-      data: { shopId, orderId, dataManagerLogId, reason },
+      data: { logId, reason },
     });
 
     return unwrap(resp);
   }
 
-  /** `suppress#ShopifyInventoryTransferActivityCandidate` — suppress an eligible candidate. */
+  /**
+   * POST `sob/shopify/transferSync/{orderId}/activityCandidateSuppress` — suppress an eligible
+   * candidate.
+   */
   async function suppressActivityCandidate(params: {
     shopId: string;
     orderId: string;
-    eventTypeId: string;
     eventReferenceId: string;
-    purpose: SuppressionPurpose;
+    workEffortPurposeTypeId: SuppressionPurpose;
     reason: string;
   }) {
+    const { shopId, orderId, workEffortPurposeTypeId, eventReferenceId, reason } = params;
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(params.orderId)}/suppressActivityCandidate`,
+      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/activityCandidateSuppress`,
       method: "POST",
-      data: params,
+      data: { shopId, orderId, workEffortPurposeTypeId, eventReferenceId, reason },
     });
 
     return unwrap(resp);
   }
 
-  /** Cancel a suppression task — a normal WorkEffort status update to `TASK_CANCELLED`. */
+  /**
+   * POST `sob/shopify/transferSync/{orderId}/suppressionCancel` — a normal WorkEffort status
+   * update to `TASK_CANCELLED`, applied server-side.
+   */
   async function cancelSuppressionTask(shopId: string, orderId: string, workEffortId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/cancelSuppressionTask`,
+      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}/suppressionCancel`,
       method: "POST",
-      data: { shopId, orderId, workEffortId, statusId: "TASK_CANCELLED" },
+      data: { shopId, orderId, workEffortId },
     });
 
     return unwrap(resp);

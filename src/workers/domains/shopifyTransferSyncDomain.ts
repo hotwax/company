@@ -17,8 +17,8 @@ import { pageAll, pageNewestFirst, workerGet } from "./workerFetch";
  */
 const LIST_ENDPOINT = "sob/shopify/transferSync";
 const WEBHOOK_HEALTH_ENDPOINT = "sob/shopify/transferWebhookSubscriptionHealth";
-/** Moqui entity-list responses are a bare array; unwrapCollection (inside pageAll/pageNewestFirst) handles both shapes. */
-const LIST_COLLECTION = null;
+/** get#ShopifyTransferSyncList wraps its rows in a `transfers` list, not a bare array. */
+const LIST_COLLECTION = "transfers";
 
 export interface ShopifyTransferSyncArgs {
   shopId?: string;
@@ -36,13 +36,16 @@ function transferKey(raw: Record<string, unknown>): string | undefined {
 async function syncWebhookHealth(ctx: SyncContext, shopId: string): Promise<number> {
   try {
     const response = await workerGet(ctx, WEBHOOK_HEALTH_ENDPOINT, { shopId });
-    if(!response) {return 0;}
+    // `available: false` (verifier not present on this branch, or the check itself errored) must
+    // not be cached as a fabricated "0 missing / 0 duplicate" result — leave the cache as-is so the
+    // KPI card renders its own "Not available" state from a stale/absent row.
+    if(!response || !response.available) {return 0;}
 
     return shopifyTransferWebhookHealthCache.upsertMany([{
       shopId,
-      missingTopics: response.missingTopics ?? response.missing ?? [],
-      duplicateTopics: response.duplicateTopics ?? response.duplicates ?? [],
-      checkedAt: response.checkedAt ?? Date.now(),
+      missingTopics: response.missingTopics ?? [],
+      duplicateTopics: response.duplicateTopics ?? [],
+      checkedAt: response.checkedDate ?? Date.now(),
     }]);
   } catch {
     // A failed health check must not sink the list sync for this tick; the next tick retries it,
@@ -64,21 +67,25 @@ registerSyncDomain({
     const target = args.total ?? 300;
 
     const [recent, needsAttention] = await Promise.all([
+      // get#ShopifyTransferSyncList has no orderByField param — it already sorts needs-attention
+      // first, then newest lastActivityDate, server-side; no client-side ordering param exists to
+      // pass through.
       pageNewestFirst({
         ctx,
         url: LIST_ENDPOINT,
         collectionKey: LIST_COLLECTION,
-        params: { shopId, orderByField: "-lastActivityAt" },
+        params: { shopId },
         total: target,
         batchSize,
       }),
       // Kept as its own fetch so an older row still needing attention is not evicted from the
-      // cache just because it fell outside the recent window above.
+      // cache just because it fell outside the recent window above. needsAttention is a Boolean
+      // out-parameter, not a "Y"/"N" indicator.
       pageAll({
         ctx,
         url: LIST_ENDPOINT,
         collectionKey: LIST_COLLECTION,
-        params: { shopId, needsAttention: "Y" },
+        params: { shopId, needsAttention: true },
         keyOf: transferKey,
         label: "transferSync:needsAttention",
       }),

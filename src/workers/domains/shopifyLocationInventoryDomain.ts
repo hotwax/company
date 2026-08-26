@@ -16,8 +16,8 @@ import { pageAll, pageNewestFirst, workerGet } from "./workerFetch";
  * domain: three-way paging merged by dedup key, then one `upsertMany`.
  */
 const DETAIL_ENDPOINT = "sob/shopify/locationInventoryAdjustmentDetails";
-/** Moqui entity-list responses are a bare array; unwrapCollection handles both shapes. */
-const DETAIL_COLLECTION = null;
+/** get#ShopifyLocationInventoryAdjustmentDetails wraps its rows in a `details` list, not a bare array. */
+const DETAIL_COLLECTION = "details";
 
 /** Mirrors `shopifyLocationInventoryAdjustmentDetailProjection.buildKey` in cacheEntities.ts. */
 function detailKey(raw: Record<string, unknown>): string | undefined {
@@ -42,11 +42,13 @@ function fetchRecentDetails(
   wanted: number,
   batchSize: number,
 ): Promise<any[]> {
+  // mode is the only read-mode control the service exposes (RECENT/UNASSIGNED_NONZERO/UNRESOLVED);
+  // there is no orderByField or entity-list-style `_op` filter on this service-backed resource.
   return pageNewestFirst({
     ctx,
     url: DETAIL_ENDPOINT,
     collectionKey: DETAIL_COLLECTION,
-    params: { shopId, orderByField: "-createdDate" },
+    params: { shopId, mode: "RECENT" },
     total: wanted,
     batchSize,
   });
@@ -100,27 +102,23 @@ registerSyncDomain({
 
     const [recent, unassigned, unresolved] = await Promise.all([
       fetchRecentDetails(ctx, shopId, wanted, batchSize),
-      // Unassigned = no linked SystemMessage yet. Includes zero-change (no-op) rows too — the UI
-      // tells those apart from "unassigned publishable" by `computedInventoryChange`, not by a
-      // separate fetch, so the cache holds the whole unassigned set either way.
+      // Unassigned = no linked SystemMessage yet AND computedInventoryChange != 0 — mode
+      // UNASSIGNED_NONZERO on the backend; there is no client-side entity-list filter for this.
       pageAll({
         ctx,
         url: DETAIL_ENDPOINT,
         collectionKey: DETAIL_COLLECTION,
-        params: { shopId, systemMessageId_op: "empty", orderByField: "createdDate" },
+        params: { shopId, mode: "UNASSIGNED_NONZERO" },
         keyOf: detailKey,
         label: "locationInventoryAdjustmentDetails:unassigned",
       }),
+      // Unresolved = linked message in SmsgError or SmsgSending — mode UNRESOLVED on the backend
+      // (it does not include SmsgProduced).
       pageAll({
         ctx,
         url: DETAIL_ENDPOINT,
         collectionKey: DETAIL_COLLECTION,
-        params: {
-          shopId,
-          systemMessageStatusId: "SmsgProduced,SmsgSending,SmsgError",
-          systemMessageStatusId_op: "in",
-          orderByField: "-systemMessageInitDate",
-        },
+        params: { shopId, mode: "UNRESOLVED" },
         keyOf: detailKey,
         label: "locationInventoryAdjustmentDetails:unresolved",
       }),
@@ -144,11 +142,14 @@ registerSyncDomain({
     const shopId = String(pk?.shopId ?? "");
     const shopifyLocationId = String(pk?.shopifyLocationId ?? "");
     if(!eventTypeId || !eventReferenceId || !shopId || !shopifyLocationId) {return 0;}
+    // get#ShopifyLocationInventoryAdjustmentDetails has no eventReferenceId filter, so this pulls
+    // the RECENT-mode page for (shopId, shopifyLocationId, eventTypeId) rather than the exact row;
+    // the merge below still refreshes the target row along with its siblings.
     const rows = await pageAll({
       ctx,
       url: DETAIL_ENDPOINT,
       collectionKey: DETAIL_COLLECTION,
-      params: { eventTypeId, eventReferenceId, shopId, shopifyLocationId },
+      params: { shopId, shopifyLocationId, eventTypeId, mode: "RECENT" },
       keyOf: detailKey,
       batchSize: 50,
       label: "locationInventoryAdjustmentDetails:refetchOne",

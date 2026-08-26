@@ -1065,9 +1065,9 @@ export const shopifyTransferSyncProjection = {
     orderId: "text",
     orderName: "text",
     orderStatusId: "text",
-    remoteTransferId: "text",
+    shopifyInventoryTransferId: "text",
     syncStage: "text",
-    lastActivityAt: "date",
+    lastActivityDate: "date",
     needsAttention: "text",
     lastUpdatedStamp: "date",
   },
@@ -1090,6 +1090,8 @@ export const shopifyTransferWebhookHealthProjection = {
     shopId: "text",
     missingTopics: "structured",
     duplicateTopics: "structured",
+    // Not a backend field name: the worker domain writes this as its own sync-time stamp, mapped
+    // from the backend's `checkedDate` (see shopifyTransferSyncDomain.ts).
     checkedAt: "date",
   },
 } as const;

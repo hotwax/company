@@ -202,13 +202,13 @@
               <ion-label class="ion-text-wrap">
                 {{ row.orderName || row.orderId }}
                 <p>{{ row.orderStatusId || translate("Not available") }}</p>
-                <p>{{ row.remoteTransferId || translate("Not created yet") }}</p>
+                <p>{{ row.shopifyInventoryTransferId || translate("Not created yet") }}</p>
               </ion-label>
               <ion-badge slot="end" :color="stageColor(row.syncStage)">
                 {{ stageLabel(row.syncStage) }}
               </ion-badge>
               <ion-label slot="end" class="ion-text-end last-activity">
-                {{ formatDateTime(row.lastActivityAt) || translate("Not available") }}
+                {{ formatDateTime(row.lastActivityDate) || translate("Not available") }}
                 <p>{{ translate("Last activity") }}</p>
               </ion-label>
             </ion-item>

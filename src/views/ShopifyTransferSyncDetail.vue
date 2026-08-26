@@ -70,7 +70,7 @@
             <ion-item>
               <ion-label>{{ translate("Remote transfer ID") }}</ion-label>
               <ion-note slot="end">
-                {{ owner.remoteTransferId || translate("Not created yet") }}
+                {{ owner.shopifyInventoryTransferId || translate("Not created yet") }}
               </ion-note>
             </ion-item>
             <ion-item>
@@ -88,7 +88,7 @@
             <ion-item lines="none">
               <ion-label>{{ translate("Owner created") }}</ion-label>
               <ion-note slot="end">
-                {{ formatDateTime(owner.ownerCreatedDate) || translate("Not available") }}
+                {{ formatDateTime(owner.orderEntryDate) || translate("Not available") }}
               </ion-note>
             </ion-item>
           </ion-list>
@@ -531,7 +531,7 @@ const timeline = computed<TimelineEntry[]>(() => {
       kindLabel: translate("Suppression"),
       badgeColor: task.statusId === "TASK_CANCELLED" ? "medium" : "warning",
       happenedAt: task.createdDate,
-      title: task.name || task.purpose || translate("Not available"),
+      title: task.workEffortName || task.workEffortPurposeTypeId || translate("Not available"),
       subtitleLines: [task.description || "", task.statusId || ""].filter(Boolean),
       raw: task,
       cancelable: task.statusId && task.statusId !== "TASK_CANCELLED" && task.statusId !== "TASK_COMPLETED",
@@ -547,7 +547,7 @@ const timelineArtifacts = computed(() => {
   const activities: any[] = bundle?.activities ?? [];
   const seen = new Map<string, { key: string; eventTypeId: string; eventReferenceId: string }>();
   for(const activity of activities) {
-    for(const artifact of activity.artifacts ?? []) {
+    for(const artifact of activity.events ?? []) {
       const key = `${artifact.eventTypeId}|${artifact.eventReferenceId}`;
       if(!seen.has(key) && artifact.eventTypeId && artifact.eventReferenceId) {
         seen.set(key, { key, eventTypeId: artifact.eventTypeId, eventReferenceId: artifact.eventReferenceId });
@@ -604,7 +604,7 @@ async function confirmRetry(log: any) {
 
   actionPending.value = true;
   try {
-    await retryUpdateLog(shopId.value, orderId.value, log.logId);
+    await retryUpdateLog(orderId.value, log.logId);
     await afterActionSuccess(translate("Retry started"));
   } catch (error: any) {
     logger.error("Failed to retry transfer update log", log?.logId, error);
@@ -635,7 +635,7 @@ async function confirmResolve() {
 
   actionPending.value = true;
   try {
-    await resolveUpdateLog(shopId.value, orderId.value, resolveTarget.value.logId, resolveReason.value.trim());
+    await resolveUpdateLog(orderId.value, resolveTarget.value.logId, resolveReason.value.trim());
     resolveTarget.value = null;
     await afterActionSuccess(translate("Log superseded"));
   } catch (error: any) {
@@ -675,9 +675,8 @@ async function confirmSuppress() {
     await suppressActivityCandidate({
       shopId: shopId.value,
       orderId: orderId.value,
-      eventTypeId: artifact.eventTypeId,
       eventReferenceId: artifact.eventReferenceId,
-      purpose: suppressPurpose.value,
+      workEffortPurposeTypeId: suppressPurpose.value,
       reason: suppressReason.value.trim(),
     });
     showSuppressModal.value = false;
