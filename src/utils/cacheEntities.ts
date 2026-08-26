@@ -503,6 +503,42 @@ export const shopifyInventoryAdjustmentDetailProjection = {
   },
 } as const;
 
+/**
+ * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time inventory push
+ * ledger. Distinct from `shopifyInventoryAdjustmentDetailProjection` (the AGGREGATE channel
+ * ledger): this row carries `shopId`/`shopifyLocationId` directly rather than resolving them
+ * through a channel, because real-time location push targets one Shopify location per mapped
+ * facility rather than a facility-group aggregate. PK is eventTypeId + eventReferenceId + shopId +
+ * shopifyLocationId, so `locationAdjustmentKey` is the synthetic cache key for that.
+ */
+export const shopifyLocationInventoryAdjustmentDetailProjection = {
+  keyField: "locationAdjustmentKey",
+  fields: {
+    locationAdjustmentKey: "text",
+    eventTypeId: "text",
+    eventReferenceId: "text",
+    eventTypeDescription: "text",
+    shopId: "text",
+    shopifyLocationId: "text",
+    shopifyInventoryItemId: "text",
+    computedInventoryChange: "count",
+    decisionComment: "text",
+    systemMessageId: "text",
+    createdDate: "date",
+    lastUpdatedStamp: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId];
+    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    return JSON.stringify(identity.map(String));
+  },
+} as const;
+
+export const shopifyLocationInventoryAdjustmentDetailCache = defineCachedEntity(
+  "shopifyLocationInventoryAdjustmentDetails",
+  shopifyLocationInventoryAdjustmentDetailProjection,
+);
+
 export const shopifyTypeMappingProjection = {
   keyField: "typeMappingKey",
   fields: {
@@ -1009,3 +1045,56 @@ export const netSuiteRuleGroupCache = defineCachedEntity("netSuiteRuleGroups", n
 export const netSuiteDecisionRuleCache = defineCachedEntity("netSuiteDecisionRules", netSuiteDecisionRuleProjection);
 export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRuns", netSuiteRuleGroupRunProjection);
 export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
+
+// =============================================================================================
+// Shopify transfer sync monitoring (sob/shopify/transferSync)
+// =============================================================================================
+
+/**
+ * ShopifyShopInventoryTransfer — one order's transfer row, scoped by (shopId, orderId).
+ *
+ * `syncStage` is SERVER-COMPUTED and rendered exactly as returned — never re-derived client-side
+ * (see the §5.5.1 predicate note in the monitor/detail views, which applies only to DataManagerLog
+ * status, not this field).
+ */
+export const shopifyTransferSyncProjection = {
+  keyField: "transferSyncKey",
+  fields: {
+    transferSyncKey: "text",
+    shopId: "text",
+    orderId: "text",
+    orderName: "text",
+    orderStatusId: "text",
+    remoteTransferId: "text",
+    syncStage: "text",
+    lastActivityAt: "date",
+    needsAttention: "text",
+    lastUpdatedStamp: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if (!raw?.shopId || !raw?.orderId) return undefined;
+    return `${raw.shopId}|${raw.orderId}`;
+  },
+} as const;
+
+export const shopifyTransferSyncCache = defineCachedEntity("shopifyTransferSyncs", shopifyTransferSyncProjection);
+
+/**
+ * Latest `verify#ShopifyInventoryTransferWebhookSubscriptions` result for a shop — one row per
+ * shop, like `netSuiteOrderPushBacklogProjection`, because it is a single computed health check
+ * rather than an entity of its own.
+ */
+export const shopifyTransferWebhookHealthProjection = {
+  keyField: "shopId",
+  fields: {
+    shopId: "text",
+    missingTopics: "structured",
+    duplicateTopics: "structured",
+    checkedAt: "date",
+  },
+} as const;
+
+export const shopifyTransferWebhookHealthCache = defineCachedEntity(
+  "shopifyTransferWebhookHealth",
+  shopifyTransferWebhookHealthProjection,
+);

@@ -277,6 +277,231 @@
           </ion-card>
         </section>
 
+        <section class="location-inventory">
+          <ion-item lines="none">
+            <ion-label>
+              <h2>{{ translate("Real-time location inventory") }}</h2>
+              <p>{{ translate("Per-location push ledger for real-time inventory updates sent directly to mapped Shopify locations") }}</p>
+            </ion-label>
+          </ion-item>
+
+          <div class="kpi-grid">
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Unassigned backlog") }}</ion-card-subtitle>
+                <ion-card-title :color="unassignedBacklogWarn ? 'warning' : undefined">
+                  {{ unassignedNonZeroCount }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                {{ translate("Location adjustments not yet linked to a batch") }}
+                <p v-if="oldestUnassignedAgeLabel" class="overline">
+                  <ion-badge v-if="unassignedBacklogWarn" color="warning">{{ translate("Oldest") }}: {{ oldestUnassignedAgeLabel }}</ion-badge>
+                  <template v-else>{{ translate("Oldest") }}: {{ oldestUnassignedAgeLabel }}</template>
+                </p>
+              </ion-card-content>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
+                <ion-card-title :color="locationDeliveryErrorCount ? 'danger' : undefined">
+                  {{ locationDeliveryErrorCount }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>{{ translate("Details linked to a SystemMessage in error or stalled sending") }}</ion-card-content>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("No-op / quarantined") }}</ion-card-subtitle>
+                <ion-card-title>{{ locationNoOpCount }}</ion-card-title>
+              </ion-card-header>
+              <ion-card-content>{{ translate("Unassigned details with a zero net inventory change") }}</ion-card-content>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Publish job") }}</ion-card-subtitle>
+                <ion-card-title v-if="!jobsHydrated">
+                  <ion-skeleton-text :animated="true" class="count-skeleton" />
+                </ion-card-title>
+                <ion-card-title v-else :color="locationPublishJobBadgeColor">{{ locationPublishJobStatus }}</ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                {{ translate("publish_PendingShopifyLocationInventoryAdjustments") }}
+                <p v-if="locationPublishJobNextRun" class="overline">
+                  {{ translate("Next run") }} {{ formatDateTime(locationPublishJobNextRun) || translate("Not available") }}
+                </p>
+              </ion-card-content>
+            </ion-card>
+          </div>
+
+          <ion-card class="location-filter-card">
+            <ion-card-content>
+              <div class="filter-grid">
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterLocationId"
+                    :label="translate('Location')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterLocationId = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationLocationOptions" :key="option" :value="option">
+                      {{ option }}
+                    </ion-select-option>
+                  </ion-select>
+                </div>
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterEventType"
+                    :label="translate('Event type')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterEventType = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationEventTypeOptions" :key="option" :value="option">
+                      {{ option }}
+                    </ion-select-option>
+                  </ion-select>
+                </div>
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterState"
+                    :label="translate('Delivery state')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterState = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationStateOptions" :key="option" :value="option">
+                      {{ option }}
+                    </ion-select-option>
+                  </ion-select>
+                </div>
+                <div class="filter-item">
+                  <ion-item lines="none" class="date-filter-item">
+                    <ion-label>{{ translate("From") }}</ion-label>
+                    <ion-datetime-button slot="end" datetime="location-inventory-from" />
+                    <ion-popover :keep-contents-on-did-dismiss="true">
+                      <ion-datetime id="location-inventory-from" presentation="date" v-model="locationFilterFrom" />
+                    </ion-popover>
+                  </ion-item>
+                </div>
+                <div class="filter-item">
+                  <ion-item lines="none" class="date-filter-item">
+                    <ion-label>{{ translate("To") }}</ion-label>
+                    <ion-datetime-button slot="end" datetime="location-inventory-to" />
+                    <ion-popover :keep-contents-on-did-dismiss="true">
+                      <ion-datetime id="location-inventory-to" presentation="date" v-model="locationFilterTo" />
+                    </ion-popover>
+                  </ion-item>
+                </div>
+              </div>
+            </ion-card-content>
+          </ion-card>
+
+          <ion-card v-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
+            <ion-card-content>{{ translate("No location inventory events match this view.") }}</ion-card-content>
+          </ion-card>
+
+          <ion-list v-else lines="full">
+            <ion-item
+              v-for="row in filteredLocationDetailRows"
+              :key="row.rowKey"
+              button
+              detail
+              @click="selectedLocationDetail = row"
+            >
+              <ion-label class="ion-text-wrap">
+                {{ row.eventTypeDescription || row.eventTypeId }}
+                <p>{{ row.eventReferenceId }}</p>
+              </ion-label>
+              <ion-label slot="end">
+                {{ row.shopifyLocationId }}
+                <p>{{ translate("Location") }}</p>
+              </ion-label>
+              <ion-label slot="end">
+                {{ row.shopifyInventoryItemId }}
+                <p>{{ translate("Inventory item") }}</p>
+              </ion-label>
+              <ion-note slot="end" :color="row.computedInventoryChange < 0 ? 'danger' : 'success'">
+                {{ row.computedInventoryChange > 0 ? "+" : "" }}{{ row.computedInventoryChange }}
+              </ion-note>
+              <ion-label slot="end">
+                {{ formatDateTime(row.createdDate) || translate("Not available") }}
+                <p>{{ translate("Created") }}</p>
+              </ion-label>
+              <ion-badge slot="end" :color="row.stateColor">{{ row.stateLabel }}</ion-badge>
+            </ion-item>
+          </ion-list>
+
+          <ion-card>
+            <ion-card-header>
+              <ion-card-title>{{ translate("Mapping gaps") }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Locations excluded from real-time push, intentionally or otherwise") }}</ion-card-subtitle>
+            </ion-card-header>
+            <ion-list lines="full">
+              <ion-item v-if="!shopInventoryPush" lines="none">
+                <ion-label class="ion-text-wrap" color="medium">
+                  {{ shopDisplayName }}
+                  <p>{{ translate("Real-time inventory push is off for this connection (intentional opt-out)") }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Not available") }}</p>
+                  <p>{{ translate("This OMS does not yet expose recent unusable location mapping omissions from posting-run outputs.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+          </ion-card>
+
+          <ion-modal :is-open="!!selectedLocationDetail" @did-dismiss="selectedLocationDetail = null">
+            <ion-header>
+              <ion-toolbar>
+                <ion-buttons slot="start">
+                  <ion-button :aria-label="translate('Close')" @click="selectedLocationDetail = null">
+                    <ion-icon slot="icon-only" :icon="closeOutline" />
+                  </ion-button>
+                </ion-buttons>
+                <ion-title>{{ translate("Location inventory event") }}</ion-title>
+              </ion-toolbar>
+            </ion-header>
+            <ion-content class="ion-padding" v-if="selectedLocationDetail">
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>{{ translate("Event type") }}</ion-label>
+                  <ion-note slot="end">{{ selectedLocationDetail.eventTypeDescription || selectedLocationDetail.eventTypeId }}</ion-note>
+                </ion-item>
+                <ion-item>
+                  <ion-label>{{ translate("Delivery state") }}</ion-label>
+                  <ion-badge slot="end" :color="selectedLocationDetail.stateColor">{{ selectedLocationDetail.stateLabel }}</ion-badge>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Decision comment") }}
+                    <p>{{ selectedLocationDetail.decisionComment || translate("Not available") }}</p>
+                  </ion-label>
+                </ion-item>
+                <ion-item v-if="locationDetailErrorText" lines="none">
+                  <ion-label class="ion-text-wrap">
+                    <ion-text color="danger">
+                      {{ translate("Linked message error") }}
+                      <p>{{ locationDetailErrorText }}</p>
+                    </ion-text>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+            </ion-content>
+          </ion-modal>
+        </section>
 
         <section class="run-section">
           <div class="section-header">
@@ -906,11 +1131,11 @@
 <script setup lang="ts">
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
-  IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
-  IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner,
-  IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewDidLeave,
-  onIonViewWillEnter,
+  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent, IonDatetime,
+  IonDatetimeButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
+  IonPage, IonPopover, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
+  IonSpinner, IonText, IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, modalController,
+  onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import {
   addOutline, checkmarkCircleOutline, chevronForwardOutline,
@@ -919,6 +1144,7 @@ import {
   refreshOutline, sendOutline, storefrontOutline, timeOutline, trashBinOutline, trashOutline,
   warningOutline,
 } from "ionicons/icons";
+import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import cronstrue from "cronstrue";
@@ -953,6 +1179,7 @@ import {
   dataFeedCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
+  shopifyLocationInventoryAdjustmentDetailCache,
   shopifyShopCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
@@ -1822,6 +2049,133 @@ async function requestShopInventoryPushChange(event: Event) {
   }
 }
 
+// =================================================================================================
+// Real-time location inventory (per-Shopify-location push ledger; ui.md §2) — additive section.
+// Distinct from the AGGREGATE channel ledger above: this row carries shopId/shopifyLocationId
+// directly, since real-time location push targets one Shopify location per mapped facility rather
+// than a facility-group aggregate, so it needs no channel indirection to scope by shop.
+// =================================================================================================
+const { records: allLocationInventoryDetails, hydrated: locationInventoryDetailsHydrated } =
+  useCachedList<any>(shopifyLocationInventoryAdjustmentDetailCache);
+
+const locationInventoryDetailsForShop = computed(() => allLocationInventoryDetails.value
+  .filter((row: any) => String(row.shopId ?? "") === String(props.id ?? "")));
+
+/** `publish_PendingShopifyLocationInventoryAdjustments` runs every minute; the backlog age badge
+ *  warns once the oldest unassigned row has outlived two publish intervals. */
+const LOCATION_PUBLISH_INTERVAL_MS = 60_000;
+
+const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
+  String(job.jobName ?? "").startsWith("publish_PendingShopifyLocationInventoryAdjustments")
+  && (job.serviceJobParameters ?? []).some((p: any) => p.parameterName === "shopId" && String(p.parameterValue) === String(props.id ?? ""))));
+const locationPublishJobStatus = computed(() => {
+  if (!locationPublishJob.value) return translate("Not configured");
+  return locationPublishJob.value.paused === "Y" ? translate("Paused") : translate("Active");
+});
+const locationPublishJobBadgeColor = computed(() => {
+  if (!locationPublishJob.value) return "medium";
+  return locationPublishJob.value.paused === "Y" ? "warning" : "success";
+});
+const locationPublishJobNextRun = computed(() => locationPublishJob.value?.nextExecutionDateTime);
+
+/**
+ * Delivery state, derived ONLY from the linked message — never synthesized beyond the three cases
+ * the blueprint names: unassigned+non-zero, unassigned+zero (no-op), and "whatever the message says".
+ */
+function locationDeliveryState(row: any): { label: string; color: string } {
+  const messageId = String(row.systemMessageId ?? "");
+  const change = Number(row.computedInventoryChange ?? 0);
+  if (!messageId) {
+    return change !== 0
+      ? { label: translate("Unassigned (publishable)"), color: "warning" }
+      : { label: translate("No-op"), color: "medium" };
+  }
+  const message = cachedSystemMessages.value.find((m: any) => String(m.systemMessageId) === messageId);
+  if (!message) return { label: translate("Not available"), color: "medium" };
+  const label = statusDescriptionFor(message.statusId) || message.statusId || translate("Not available");
+  const errorish = /error|fail/i.test(String(message.statusId ?? ""));
+  return { label, color: errorish ? "danger" : "medium" };
+}
+
+const locationDetailRows = computed(() => locationInventoryDetailsForShop.value.map((row: any) => {
+  const state = locationDeliveryState(row);
+  return {
+    rowKey: row.locationAdjustmentKey,
+    eventTypeId: row.eventTypeId,
+    eventReferenceId: row.eventReferenceId,
+    eventTypeDescription: row.eventTypeDescription,
+    shopifyLocationId: row.shopifyLocationId,
+    shopifyInventoryItemId: row.shopifyInventoryItemId,
+    computedInventoryChange: Number(row.computedInventoryChange ?? 0),
+    createdDate: row.createdDate,
+    decisionComment: row.decisionComment,
+    systemMessageId: row.systemMessageId,
+    stateLabel: state.label,
+    stateColor: state.color,
+  };
+}));
+
+const locationFilterLocationId = ref("");
+const locationFilterEventType = ref("");
+const locationFilterState = ref("");
+const locationFilterFrom = ref<string | null>(null);
+const locationFilterTo = ref<string | null>(null);
+
+const locationLocationOptions = computed(() =>
+  [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
+const locationEventTypeOptions = computed(() =>
+  [...new Set(locationDetailRows.value.map((row) => row.eventTypeId).filter(Boolean))]);
+const locationStateOptions = computed(() =>
+  [...new Set(locationDetailRows.value.map((row) => row.stateLabel).filter(Boolean))]);
+
+const filteredLocationDetailRows = computed(() => locationDetailRows.value
+  .filter((row) => !locationFilterLocationId.value || row.shopifyLocationId === locationFilterLocationId.value)
+  .filter((row) => !locationFilterEventType.value || row.eventTypeId === locationFilterEventType.value)
+  .filter((row) => !locationFilterState.value || row.stateLabel === locationFilterState.value)
+  .filter((row) => !locationFilterFrom.value
+    || Number(row.createdDate ?? 0) >= DateTime.fromISO(locationFilterFrom.value).startOf("day").toMillis())
+  .filter((row) => !locationFilterTo.value
+    || Number(row.createdDate ?? 0) <= DateTime.fromISO(locationFilterTo.value).endOf("day").toMillis())
+  .sort((a, b) => Number(b.createdDate ?? 0) - Number(a.createdDate ?? 0)));
+
+// --- 2.1 Summary tiles ---
+const unassignedNonZeroRows = computed(() => locationDetailRows.value
+  .filter((row) => !row.systemMessageId && row.computedInventoryChange !== 0));
+const unassignedNonZeroCount = computed(() => unassignedNonZeroRows.value.length);
+const oldestUnassignedCreatedAt = computed(() => unassignedNonZeroRows.value.reduce(
+  (oldest: number | undefined, row) => {
+    const created = Number(row.createdDate ?? 0);
+    return created && (oldest === undefined || created < oldest) ? created : oldest;
+  },
+  undefined as number | undefined,
+));
+const oldestUnassignedAgeLabel = computed(() => {
+  if (oldestUnassignedCreatedAt.value === undefined) return "";
+  const minutes = Math.round((Date.now() - oldestUnassignedCreatedAt.value) / 60_000);
+  return minutes < 1 ? translate("< 1 min") : `${minutes} ${translate("min")}`;
+});
+const unassignedBacklogWarn = computed(() =>
+  oldestUnassignedCreatedAt.value !== undefined
+  && Date.now() - oldestUnassignedCreatedAt.value > LOCATION_PUBLISH_INTERVAL_MS * 2);
+const locationDeliveryErrorCount = computed(() =>
+  locationDetailRows.value.filter((row) => row.stateColor === "danger").length);
+const locationNoOpCount = computed(() =>
+  locationDetailRows.value.filter((row) => !row.systemMessageId && row.computedInventoryChange === 0).length);
+
+// --- Row expand modal: decisionComment verbatim + the linked message's error text ---
+const selectedLocationDetail = ref<any>(null);
+const locationDetailErrorText = ref("");
+watch(() => selectedLocationDetail.value?.systemMessageId, async (systemMessageId) => {
+  locationDetailErrorText.value = "";
+  if (!systemMessageId) return;
+  try {
+    const errors = await ensureSystemMessageErrors(String(systemMessageId));
+    locationDetailErrorText.value = errors?.[0]?.errorText || "";
+  } catch (error) {
+    logger.error("Could not load delivery errors for a location inventory detail", systemMessageId, error);
+  }
+});
+
 function activeSyncDomains() {
   return [
     // Skipped entirely until the channels are known: with no channel list the domain cannot tell
@@ -1834,6 +2188,11 @@ function activeSyncDomains() {
       : []),
     ...(watchedJobNames.value.length
       ? [{ name: "serviceJobRun", args: { jobNames: watchedJobNames.value, total: 5 } }]
+      : []),
+    // The location ledger carries shopId natively, so it needs only the shop id to scope — no
+    // channel resolution required.
+    ...(props.id
+      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id), total: 300 } }]
       : []),
   ];
 }
@@ -2191,6 +2550,38 @@ function formatAge(timestamp: number): string {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
   align-items: flex-start;
+}
+
+/* Location inventory section (ui.md §2) — kpi-grid copied from ShopifyInventoryJobRuns.vue. */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacer-base);
+  margin-block-end: var(--spacer-base);
+}
+
+.kpi-grid ion-card {
+  margin: 0;
+}
+
+.count-skeleton {
+  width: var(--spacer-3xl);
+}
+
+.location-filter-card {
+  margin-block-end: var(--spacer-base);
+}
+
+.date-filter-item {
+  width: 100%;
+}
+
+/* Copied from the same idiom already used in NetSuiteSyncMonitor.vue / ShopifyInventoryJobRuns.vue. */
+.overline {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ion-color-medium);
 }
 
 .summary-grid ion-card-header,

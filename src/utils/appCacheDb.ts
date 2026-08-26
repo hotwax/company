@@ -80,10 +80,16 @@ class CompanyCacheDB extends Dexie {
   dataFeeds!: Table<CachedRow, string>;
   /** Shopify aggregate inventory event ledger, scoped by shop. */
   shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
+  /** Shopify per-location real-time inventory push ledger, scoped by shop. */
+  shopifyLocationInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
   inventoryEventDocuments!: Table<CachedRow, string>;
+  /** Shopify inventory transfer sync — one row per (shopId, orderId). */
+  shopifyTransferSyncs!: Table<CachedRow, string>;
+  /** Latest transfer webhook subscription health check, one row per shop. */
+  shopifyTransferWebhookHealth!: Table<CachedRow, string>;
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -178,6 +184,14 @@ const CACHE_SCHEMA = {
    */
   shopifyInventoryAdjustmentDetails:
     "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+  /**
+   * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time push ledger.
+   * PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId, so `locationAdjustmentKey`
+   * is the synthetic cache key. Indexed by shopId directly (unlike the aggregate ledger, this row
+   * carries its shop identity natively rather than through a channel indirection).
+   */
+  shopifyLocationInventoryAdjustmentDetails:
+    "locationAdjustmentKey, eventTypeId, eventReferenceId, shopId, shopifyLocationId, systemMessageId, createdDate, lastUpdatedStamp, [shopId+createdDate], [shopId+systemMessageId]",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
@@ -254,6 +268,13 @@ const CACHE_SCHEMA = {
   netSuiteRuleGroupRuns: "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
   // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
   netSuiteOrderPushBacklog: "productStoreId, checkedAt",
+  // --- Shopify transfer sync monitoring (sob/shopify/transferSync) ---
+  // One row per (shopId, orderId). `syncStage` is indexed because the list view filters on it, and
+  // `needsAttention` because those rows sort first.
+  shopifyTransferSyncs:
+    "transferSyncKey, shopId, orderId, syncStage, needsAttention, lastActivityAt, [shopId+lastActivityAt], [shopId+syncStage]",
+  // One row per shop, not an entity — see `shopifyTransferWebhookHealthProjection`.
+  shopifyTransferWebhookHealth: "shopId, checkedAt",
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;

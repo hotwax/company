@@ -191,6 +191,12 @@
                 <p>{{ translate("Monitor inventory reset jobs, aggregate events, batches, and errors") }}</p>
               </ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openTransferSync()">
+              <ion-label>
+                {{ translate("Transfer sync") }}
+                <p>{{ translate("Monitor inventory transfer orders synced to Shopify and resolve blocked syncs") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openProductTypes()">
               <ion-label>{{ translate("Product types") }}</ion-label>
             </ion-item>
@@ -1479,6 +1485,10 @@ function openShopifyLocations() {
 
 function openInventorySync() {
   router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
+}
+
+function openTransferSync() {
+  router.push(`/shopify-connection-details/${props.id}/transfer-sync`);
 }
 
 function openShipmentMethods() {
