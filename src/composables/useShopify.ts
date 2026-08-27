@@ -3512,7 +3512,7 @@ export function useShopifyOrderSync() {
       }));
       state.recentAudits = state.recentOrders;
     } catch (error) {
-      logger.error("Failed to load Order Sync history via system messages", error);
+      logger.error("Order Sync [System Messages] - Failed to load history", error);
       state.recentOrders = [];
       state.recentAudits = [];
     }
