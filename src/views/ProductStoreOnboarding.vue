@@ -2229,12 +2229,12 @@ async function handlePrimaryAction() {
           }
         } catch (error) {
           if (isCacheReconciliationError(error)) {
-            logger.warn("Failed to reconcile product store update cache", error)
+            logger.warn("Product Store - Failed to reconcile update cache", error)
             commonUtil.showToast(translate("Product store updated successfully, but failed to refresh local data."))
             productStoreStore.current.storeName = onboardingStore.draft.storeName
             productStoreStore.current.defaultCurrencyUomId = onboardingStore.draft.defaultCurrencyUomId
           } else {
-            logger.error("Failed to update product store", error)
+            logger.error("Product Store - Failed to update", error)
             commonUtil.showToast(translate("Failed to update product store."))
             return
           }
