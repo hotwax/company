@@ -91,7 +91,7 @@ export const useUserStore = defineStore("user", {
       } catch (error: any) {
         //added to bypass the login check for local
         if (error?.response?.status === 400 && error.response?.data?.errors?.includes('createdStamp')) {
-          console.warn("Ignoring createdStamp error for local Moqui login, using fallback profile data.");
+          console.warn("Login [Local Moqui] - Ignoring createdStamp error, using fallback profile data");
           this.current = { userId: "hotwax.user", timeZone: "Asia/Calcutta" } as any;
           useAuth().updateUserId(this.current.userId);
           this.fetchStatus.profile = 'success';
