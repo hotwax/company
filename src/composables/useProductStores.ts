@@ -223,10 +223,14 @@ export interface ProductStoreShipmentMethodInput {
   fromDate?: number;
 }
 
-// Store shipment method mutations write through `oms/productStores/{id}/shipmentMethods`
-// as declared in the Moqui REST contract.
+// The write must match the read: the cached `productStoreShippingMethod` domain fans out over
+// `admin/productStores/{id}/shippingMethods`, and `oms/productStores` is marked
+// "Deprecated (since maarg 4.4.0): Use admin/productStores" in oms.rest.xml. Both routes resolve to
+// the same `ProductStoreShipmentMeth` entity, so POST/PUT are equivalent here — admin's PUT is
+// `store` (upsert) rather than `update`. The admin resource exposes no DELETE, which is fine: this
+// module expires rows by setting `thruDate` and never hard-deletes them.
 const productStoreShipmentMethodUrl = (productStoreId: string) =>
-  `oms/productStores/${encodeURIComponent(productStoreId)}/shipmentMethods`;
+  `admin/productStores/${encodeURIComponent(productStoreId)}/shippingMethods`;
 
 function assertProductStoreMutation(response: any, fallback: string): void {
   if (commonUtil.hasError(response)) {
