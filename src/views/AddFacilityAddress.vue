@@ -158,6 +158,7 @@ import { computed, ref } from "vue";
 import { colorWandOutline, locationOutline } from "ionicons/icons";
 import { api, commonUtil, logger, translate } from "@common";
 import { useGeocode, useGeos } from "@/composables/useSeed";
+import { useFacilityMutations } from "@/composables/useFacilities";
 import router from "@/router";
 
 const props = defineProps<{ facilityId: string }>();
@@ -184,6 +185,7 @@ const emailAddress = ref("");
 const { countries, statesOf, hydrated: geosReady } = useGeos();
 const { latLongForPostalCode } = useGeocode();
 const statesForCountry = computed(() => statesOf(formData.value.countryGeoId));
+const mutations = useFacilityMutations(props.facilityId);
 
 function inputValidation(event: any) {
   if (/[^0-9-]/.test(event.key) && event.key !== "Backspace") event.preventDefault();
@@ -221,14 +223,9 @@ async function addAddress() {
   }
 
   try {
-    const resp = await api({
-      url: "oms/facilityContactMechs/facilityAddress",
-      method: "post",
-      data: {
-        facilityId: props.facilityId,
-        contactMechPurposeTypeId: "PRIMARY_LOCATION",
-        ...formData.value
-      }
+    const resp = await mutations.createPostalAddress({
+      contactMechPurposeTypeId: "PRIMARY_LOCATION",
+      ...formData.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Facility address created successfully."));
@@ -243,16 +240,11 @@ async function addAddress() {
 
   if (contactNumber.value) {
     try {
-      await api({
-        url: "oms/facilityContactMechs/facilityPhone",
-        method: "post",
-        data: {
-          facilityId: props.facilityId,
-          contactMechPurposeTypeId: "PRIMARY_PHONE",
-          contactNumber: contactNumber.value.trim(),
-          countryCode: countryCode.value.replace("+", "")
-        }
-      });
+      await mutations.createTelecomNumber({
+      contactMechPurposeTypeId: "PRIMARY_PHONE",
+      contactNumber: contactNumber.value.trim(),
+      countryCode: countryCode.value.replace("+", "")
+    });
     } catch (err) {
       // The address already toasted success and we navigate on regardless, so without this the
       // phone silently vanishes from a form the user believes saved in full.
@@ -263,15 +255,10 @@ async function addAddress() {
 
   if (emailAddress.value) {
     try {
-      await api({
-        url: "oms/facilityContactMechs/facilityEmail",
-        method: "post",
-        data: {
-          facilityId: props.facilityId,
-          contactMechPurposeTypeId: "PRIMARY_EMAIL",
-          infoString: emailAddress.value
-        }
-      });
+      await mutations.createEmailAddress({
+      contactMechPurposeTypeId: "PRIMARY_EMAIL",
+      infoString: emailAddress.value
+    });
     } catch (err) {
       commonUtil.showToast(translate("Facility address saved, but the email address could not be saved."));
       logger.error("Failed to save email.", err);

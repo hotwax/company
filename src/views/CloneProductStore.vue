@@ -70,7 +70,7 @@ import { alertCircleOutline, copyOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from "@common";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
+import { useProductStoreMutations, useProductStores, fetchProductStoreDetail, fetchProductStoreSettings } from "@/composables/useProductStores";
 
 
 const sourceStoreId = ref("");
@@ -159,19 +159,15 @@ async function executeClone() {
   emitter.emit("presentLoader");
   try {
     // 1. Fetch details and settings of source store, and details of target store
-    const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
-      api({ url: `admin/productStores/${sourceStoreId.value}`, method: "get" }),
-      api({ url: `admin/productStores/${sourceStoreId.value}/settings`, method: "get" }),
-      api({ url: `admin/productStores/${targetStoreId.value}`, method: "get" })
+    const [sourceDetails, { activeSettings: sourceSettings }, targetDetails] = await Promise.all([
+      fetchProductStoreDetail(sourceStoreId.value),
+      fetchProductStoreSettings(sourceStoreId.value),
+      fetchProductStoreDetail(targetStoreId.value)
     ]);
 
-    if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {
+    if (!sourceDetails.productStoreId || !targetDetails.productStoreId) {
       throw new Error("Failed to fetch product store details");
     }
-
-    const sourceDetails = (sourceDetailsResp as any).data;
-    const sourceSettings = !commonUtil.hasError(sourceSettingsResp) ? (sourceSettingsResp as any).data : [];
-    const targetDetails = (targetDetailsResp as any).data;
 
     // 2. Build direct fields payload for target store
     let targetPayload = { ...targetDetails };

@@ -161,6 +161,35 @@ export function useProductStoreShippingMethods(productStoreId?: MaybeRefOrGetter
  * data — they are date-effective and edited in place, so caching them would only add a staleness
  * problem the page does not otherwise have.
  */
+export async function fetchProductStoreDetail(productStoreId: string) {
+  try {
+    const resp: any = await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" });
+    return resp?.data && typeof resp.data === "object" ? resp.data : {};
+  } catch (error) {
+    logger.error("Failed to load product store detail", error);
+    return {};
+  }
+}
+
+export async function fetchProductStoreSettings(productStoreId: string) {
+  try {
+    const resp: any = await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`, method: "get" });
+    const rows: any[] = Array.isArray(resp?.data) ? resp.data : [];
+    const byType: Record<string, any> = {};
+    for (const row of rows) {
+      if (!row?.thruDate && row?.settingTypeEnumId) byType[row.settingTypeEnumId] = row;
+    }
+    // Also return raw list for operations that need active settings as array
+    return {
+      byType,
+      activeSettings: rows.filter((s: any) => !s.thruDate && s.settingValue)
+    };
+  } catch (error) {
+    logger.error("Failed to load product store settings", error);
+    return { byType: {}, activeSettings: [] };
+  }
+}
+
 export function useProductStoreDetail(productStoreId: string) {
   const { record: cachedRecord, hydrated } = useProductStoreRecord(productStoreId);
   const detail = ref<Record<string, any>>({});
@@ -170,27 +199,13 @@ export function useProductStoreDetail(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
 
   async function loadDetail() {
-    try {
-      const resp: any = await api({ url: `admin/productStores/${storeId()}`, method: "get" });
-      detail.value = resp?.data && typeof resp.data === "object" ? resp.data : {};
-    } catch (error) {
-      logger.error("Failed to load product store detail", error);
-    }
+    detail.value = await fetchProductStoreDetail(productStoreId);
   }
 
   /** Keyed by `settingTypeEnumId`, active only — a thru-dated setting is no longer in force. */
   async function loadSettings() {
-    try {
-      const resp: any = await api({ url: `admin/productStores/${storeId()}/settings`, method: "get" });
-      const rows: any[] = Array.isArray(resp?.data) ? resp.data : [];
-      const byType: Record<string, any> = {};
-      for (const row of rows) {
-        if (!row?.thruDate && row?.settingTypeEnumId) byType[row.settingTypeEnumId] = row;
-      }
-      settings.value = byType;
-    } catch (error) {
-      logger.error("Failed to load product store settings", error);
-    }
+    const { byType } = await fetchProductStoreSettings(productStoreId);
+    settings.value = byType;
   }
 
   async function load() {
