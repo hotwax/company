@@ -122,21 +122,6 @@
           </ion-card-content>
         </ion-card>
 
-        <!-- Action bar -->
-        <ion-card v-if="canAdminister">
-          <ion-card-header>
-            <ion-card-title>{{ translate("Actions") }}</ion-card-title>
-          </ion-card-header>
-          <ion-card-content class="action-bar">
-            <ion-button
-              fill="outline"
-              :disabled="!timelineArtifacts.length || actionPending"
-              @click="openSuppressModal()"
-            >
-              {{ translate("Suppress candidate") }}
-            </ion-button>
-          </ion-card-content>
-        </ion-card>
 
         <!-- Timeline -->
         <h1>{{ translate("Timeline") }}</h1>
@@ -167,14 +152,6 @@
                 <ion-button fill="clear" size="small" @click="openMdmLogModal(entry.raw)">
                   {{ translate("View Data Manager log") }}
                 </ion-button>
-                <span v-if="canAdminister && entry.blocked" class="log-actions">
-                  <ion-button fill="outline" size="small" :disabled="actionPending" @click="confirmRetry(entry.raw)">
-                    {{ translate("Retry") }}
-                  </ion-button>
-                  <ion-button fill="outline" size="small" color="medium" :disabled="actionPending" @click="openResolveModal(entry.raw)">
-                    {{ translate("Supersede") }}
-                  </ion-button>
-                </span>
               </template>
 
               <template v-else-if="entry.kind === 'webhook'">
@@ -183,13 +160,6 @@
                 </ion-button>
               </template>
 
-              <template v-else-if="entry.kind === 'suppression'">
-                <span v-if="canAdminister && entry.cancelable" class="log-actions">
-                  <ion-button fill="outline" size="small" color="danger" :disabled="actionPending" @click="confirmCancelSuppression(entry.raw)">
-                    {{ translate("Cancel suppression") }}
-                  </ion-button>
-                </span>
-              </template>
             </ion-label>
             <ion-note slot="end">
               {{ formatDateTime(entry.happenedAt) || translate("Not available") }}
@@ -198,107 +168,7 @@
         </ion-list>
       </template>
 
-      <!-- Supersede reason modal -->
-      <ion-modal :is-open="!!resolveTarget" @did-dismiss="resolveTarget = null">
-        <ion-header>
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-button :aria-label="translate('Close')" @click="resolveTarget = null">
-                <ion-icon slot="icon-only" :icon="closeOutline" />
-              </ion-button>
-            </ion-buttons>
-            <ion-title>{{ translate("Supersede blocked log") }}</ion-title>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-textarea
-            v-model="resolveReason"
-            fill="outline"
-            :label="translate('Reason') + ' *'"
-            label-placement="stacked"
-            :placeholder="translate('Explain why this log is being superseded instead of retried')"
-            :auto-grow="true"
-          />
-        </ion-content>
-        <ion-footer>
-          <ion-toolbar>
-            <ion-buttons slot="end">
-              <ion-button fill="clear" @click="resolveTarget = null">
-                {{ translate("Cancel") }}
-              </ion-button>
-              <ion-button fill="solid" :disabled="!resolveReason.trim() || actionPending" @click="confirmResolve()">
-                {{ translate("Supersede") }}
-              </ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-footer>
-      </ion-modal>
 
-      <!-- Suppress candidate modal -->
-      <ion-modal :is-open="showSuppressModal" @did-dismiss="showSuppressModal = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-button :aria-label="translate('Close')" @click="showSuppressModal = false">
-                <ion-icon slot="icon-only" :icon="closeOutline" />
-              </ion-button>
-            </ion-buttons>
-            <ion-title>{{ translate("Suppress candidate") }}</ion-title>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-item lines="full">
-            <ion-select
-              v-model="suppressArtifactKey"
-              :label="translate('Artifact')"
-              label-placement="stacked"
-              interface="popover"
-              :placeholder="translate('Select')"
-            >
-              <ion-select-option v-for="artifact in timelineArtifacts" :key="artifact.key" :value="artifact.key">
-                {{ artifact.eventTypeId }} / {{ artifact.eventReferenceId }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-item lines="full">
-            <ion-select
-              v-model="suppressPurpose"
-              :label="translate('Purpose')"
-              label-placement="stacked"
-              interface="popover"
-              :placeholder="translate('Select')"
-            >
-              <ion-select-option v-for="purpose in SUPPRESSION_PURPOSES" :key="purpose" :value="purpose">
-                {{ purpose }}
-              </ion-select-option>
-            </ion-select>
-          </ion-item>
-          <ion-textarea
-            v-model="suppressReason"
-            class="ion-margin-top"
-            fill="outline"
-            :label="translate('Reason') + ' *'"
-            label-placement="stacked"
-            :auto-grow="true"
-          />
-        </ion-content>
-        <ion-footer>
-          <ion-toolbar>
-            <ion-buttons slot="end">
-              <ion-button fill="clear" @click="showSuppressModal = false">
-                {{ translate("Cancel") }}
-              </ion-button>
-              <ion-button
-                fill="solid"
-                :disabled="!suppressArtifactKey || !suppressPurpose || !suppressReason.trim() || actionPending"
-                @click="confirmSuppress()"
-              >
-                {{ translate("Suppress") }}
-              </ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-footer>
-      </ion-modal>
 
       <ShopifyOrderSyncMdmLogModal
         :is-open="!!mdmLogModalTarget"
@@ -333,12 +203,7 @@ import MdmLogPayload from "@/components/common/MdmLogPayload.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import ShopifyOrderSyncMdmLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
-import {
-  SUPPRESSION_PURPOSES,
-  type SuppressionPurpose,
-  useShopifyTransferSyncDetail,
-  useShopifyTransferSyncMutations,
-} from "@/composables/useShopifyTransferSync";
+import { useShopifyTransferSyncDetail } from "@/composables/useShopifyTransferSync";
 import { useUserStore } from "@/store/user";
 import { formatDateTime } from "@/utils";
 import {
@@ -364,7 +229,6 @@ const { fetchTransferSyncDetail } = useShopifyTransferSyncDetail();
 const detail = ref<any>(null);
 const loading = ref(false);
 const loadError = ref("");
-const actionPending = ref(false);
 const openJsonKeys = ref<Set<string>>(new Set());
 
 function isJsonOpen(key: string): boolean {
@@ -555,23 +419,6 @@ const timeline = computed<TimelineEntry[]>(() => {
   return entries.sort((a, b) => Number(b.happenedAt ?? 0) - Number(a.happenedAt ?? 0));
 });
 
-/** Distinct {eventTypeId, eventReferenceId} artifacts seen across activities — suppress candidates. */
-const timelineArtifacts = computed(() => {
-  const bundle = detail.value;
-  const activities: any[] = bundle?.activities ?? [];
-  const seen = new Map<string, { key: string; eventTypeId: string; eventReferenceId: string }>();
-  for(const activity of activities) {
-    for(const artifact of activity.events ?? []) {
-      const key = `${artifact.eventTypeId}|${artifact.eventReferenceId}`;
-      if(!seen.has(key) && artifact.eventTypeId && artifact.eventReferenceId) {
-        seen.set(key, { key, eventTypeId: artifact.eventTypeId, eventReferenceId: artifact.eventReferenceId });
-      }
-    }
-  }
-
-  return [...seen.values()];
-});
-
 // --- Read-only detail modals ---------------------------------------------------------------------
 const mdmLogModalTarget = ref<any>(null);
 const mdmLogModalDetails = computed(() => mdmLogModalTarget.value ? {
@@ -595,151 +442,7 @@ const webhookModalDetails = computed(() => webhookModalTarget.value ? {
 function openWebhookModal(row: any) { webhookModalTarget.value = row; }
 
 // --- Actions --------------------------------------------------------------------------------
-const { retryUpdateLog, resolveUpdateLog, suppressActivityCandidate, cancelSuppressionTask } =
-  useShopifyTransferSyncMutations();
 
-async function afterActionSuccess(message: string) {
-  commonUtil.showToast(message);
-  // The POST has committed. Retire the stale actionable bundle before reconciliation so a failed
-  // cache/detail refresh cannot invite the operator to repeat the same server mutation.
-  detail.value = null;
-  let cacheRefreshFailed = false;
-  try {
-    await afterMutation("shopifyTransferSync", { shopId: shopId.value, orderId: orderId.value });
-  } catch (error) {
-    cacheRefreshFailed = true;
-    logger.warn("Transfer action committed, but its cache row could not be refreshed", error);
-  }
-  await loadDetail();
-  if(!detail.value) {
-    commonUtil.showToast("The action completed, but refreshed data could not be loaded. Refresh before acting again.");
-  } else if(cacheRefreshFailed) {
-    commonUtil.showToast("The action completed and this detail was reloaded, but the transfer list could not be refreshed.");
-  }
-}
-
-async function confirmRetry(log: any) {
-  const alert = await alertController.create({
-    header: translate("Retry this blocked log?"),
-    message: translate("The update will be re-attempted with the same data. This does not change what will be sent to Shopify."),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      { text: translate("Retry"), role: "confirm" },
-    ],
-  });
-  await alert.present();
-  if((await alert.onDidDismiss()).role !== "confirm") {return;}
-
-  actionPending.value = true;
-  try {
-    await retryUpdateLog(orderId.value, log.logId);
-    await afterActionSuccess(translate("Retry started"));
-  } catch (error: any) {
-    logger.error("Failed to retry transfer update log", log?.logId, error);
-    commonUtil.showToast(error?.message || translate("Failed to retry this log"));
-  } finally {
-    actionPending.value = false;
-  }
-}
-
-const resolveTarget = ref<any>(null);
-const resolveReason = ref("");
-function openResolveModal(log: any) {
-  resolveTarget.value = log;
-  resolveReason.value = "";
-}
-async function confirmResolve() {
-  if(!resolveTarget.value || !resolveReason.value.trim()) {return;}
-  const alert = await alertController.create({
-    header: translate("Supersede this blocked log?"),
-    message: translate("This marks the log resolved without retrying it. The transfer will no longer be blocked by it."),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      { text: translate("Supersede"), role: "confirm" },
-    ],
-  });
-  await alert.present();
-  if((await alert.onDidDismiss()).role !== "confirm") {return;}
-
-  actionPending.value = true;
-  try {
-    await resolveUpdateLog(orderId.value, resolveTarget.value.logId, resolveReason.value.trim());
-    resolveTarget.value = null;
-    await afterActionSuccess(translate("Log superseded"));
-  } catch (error: any) {
-    logger.error("Failed to supersede transfer update log", error);
-    commonUtil.showToast(error?.message || translate("Failed to supersede this log"));
-  } finally {
-    actionPending.value = false;
-  }
-}
-
-const showSuppressModal = ref(false);
-const suppressArtifactKey = ref("");
-const suppressPurpose = ref<SuppressionPurpose | "">("");
-const suppressReason = ref("");
-function openSuppressModal() {
-  showSuppressModal.value = true;
-  suppressArtifactKey.value = "";
-  suppressPurpose.value = "";
-  suppressReason.value = "";
-}
-async function confirmSuppress() {
-  const artifact = timelineArtifacts.value.find((a) => a.key === suppressArtifactKey.value);
-  if(!artifact || !suppressPurpose.value || !suppressReason.value.trim()) {return;}
-  const alert = await alertController.create({
-    header: translate("Suppress this candidate?"),
-    message: translate("This stops the selected activity from generating further sync actions. It cannot be automatically undone."),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      { text: translate("Suppress"), role: "confirm" },
-    ],
-  });
-  await alert.present();
-  if((await alert.onDidDismiss()).role !== "confirm") {return;}
-
-  actionPending.value = true;
-  try {
-    await suppressActivityCandidate({
-      shopId: shopId.value,
-      orderId: orderId.value,
-      sourceReferenceId: artifact.eventReferenceId,
-      workEffortPurposeTypeId: suppressPurpose.value,
-      reason: suppressReason.value.trim(),
-    });
-    showSuppressModal.value = false;
-    await afterActionSuccess(translate("Candidate suppressed"));
-  } catch (error: any) {
-    logger.error("Failed to suppress transfer activity candidate", error);
-    commonUtil.showToast(error?.message || translate("Failed to suppress this candidate"));
-  } finally {
-    actionPending.value = false;
-  }
-}
-
-async function confirmCancelSuppression(task: any) {
-  const alert = await alertController.create({
-    header: translate("Cancel this suppression?"),
-    message: translate("The suppressed activity becomes eligible for sync again on the next pass."),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      { text: translate("Cancel suppression"), role: "confirm" },
-    ],
-  });
-  await alert.present();
-  if((await alert.onDidDismiss()).role !== "confirm") {return;}
-
-  actionPending.value = true;
-  try {
-    await cancelSuppressionTask(shopId.value, orderId.value, task.workEffortId);
-    await afterActionSuccess(translate("Suppression cancelled"));
-  } catch (error: any) {
-    logger.error("Failed to cancel suppression task", task?.workEffortId, error);
-    commonUtil.showToast(error?.message || translate("Failed to cancel this suppression"));
-  } finally {
-    actionPending.value = false;
-  }
-}
 </script>
 
 <style scoped>

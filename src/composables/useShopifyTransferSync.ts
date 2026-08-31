@@ -10,17 +10,7 @@ import {
 } from "@/utils/shopifyWebhookReconciliation";
 import { useCachedList } from "./useCachedList";
 
-/**
- * The order-scoped resources under this prefix: the detail bundle (`/{orderId}`) and the four
- * operator actions below.
- *
- * ⚠️ The four action paths — updateLogRetry, updateLogResolve, activityCandidateSuppress,
- * suppressionCancel — no longer exist on the connector. Their services and REST resources were
- * removed when the staging gate was dropped: an unsent transfer is simply restaged on the next
- * sweep, so there was nothing left to retry or unstick, and suppression became a generic
- * create#OrderTask. These calls are left in place, and failing, rather than silently removed with
- * the detail-page UI that drives them; that removal is its own change.
- */
+/** The order-scoped detail bundle: `sob/shopify/transferSync/{orderId}`. */
 const TRANSFER_SYNC_ENDPOINT = "sob/shopify/transferSync";
 
 /**
@@ -483,90 +473,4 @@ export function useShopifyTransferSyncDetail() {
   }
 
   return { fetchTransferSyncDetail };
-}
-
-// =============================================================================================
-// Writes — the four §5.5.1 resolution actions, each 1:1 to a backend service
-// =============================================================================================
-
-function unwrap<T = any>(resp: any): T {
-  if(commonUtil.hasError(resp)) {throw resp?.data ?? resp;}
-  if(resp?.data?.available === false) {
-    throw new Error(resp.data.message || "This action is not available.");
-  }
-
-  return resp?.data as T;
-}
-
-/** `workEffortPurposeTypeId` accepted by `suppress#ShopifyInventoryTransferActivityCandidate`. */
-export const SUPPRESSION_PURPOSES = [
-  "SUPRS_TO_SHIPPED",
-  "SUPRS_TO_RECEIPT",
-  "SUPRS_TO_CANCEL",
-  "SUPRS_TO_ITEM_CHG",
-] as const;
-export type SuppressionPurpose = typeof SUPPRESSION_PURPOSES[number];
-
-export function useShopifyTransferSyncMutations() {
-  /** POST `sob/shopify/transferSync/updateLogRetry` — retry a blocked update log. */
-  async function retryUpdateLog(_orderId: string, logId: string) {
-    const resp = await api({
-      url: `${TRANSFER_SYNC_ENDPOINT}/updateLogRetry`,
-      method: "POST",
-      data: { logId },
-    });
-
-    return unwrap(resp);
-  }
-
-  /**
-   * POST `sob/shopify/transferSync/updateLogResolve` — supersede a blocked log; a reason
-   * is required.
-   */
-  async function resolveUpdateLog(_orderId: string, logId: string, reason: string) {
-    const resp = await api({
-      url: `${TRANSFER_SYNC_ENDPOINT}/updateLogResolve`,
-      method: "POST",
-      data: { logId, reason },
-    });
-
-    return unwrap(resp);
-  }
-
-  /**
-   * POST `sob/shopify/transferSync/activityCandidateSuppress` — suppress an eligible
-   * candidate.
-   */
-  async function suppressActivityCandidate(params: {
-    shopId: string;
-    orderId: string;
-    sourceReferenceId: string;
-    workEffortPurposeTypeId: SuppressionPurpose;
-    reason: string;
-  }) {
-    const { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason } = params;
-    const resp = await api({
-      url: `${TRANSFER_SYNC_ENDPOINT}/activityCandidateSuppress`,
-      method: "POST",
-      data: { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason },
-    });
-
-    return unwrap(resp);
-  }
-
-  /**
-   * POST `sob/shopify/transferSync/suppressionCancel` — a normal WorkEffort status
-   * update to `TASK_CANCELLED`, applied server-side.
-   */
-  async function cancelSuppressionTask(shopId: string, orderId: string, workEffortId: string) {
-    const resp = await api({
-      url: `${TRANSFER_SYNC_ENDPOINT}/suppressionCancel`,
-      method: "POST",
-      data: { shopId, orderId, workEffortId },
-    });
-
-    return unwrap(resp);
-  }
-
-  return { retryUpdateLog, resolveUpdateLog, suppressActivityCandidate, cancelSuppressionTask };
 }
