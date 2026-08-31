@@ -161,17 +161,23 @@ export function useProductStoreShippingMethods(productStoreId?: MaybeRefOrGetter
  * data — they are date-effective and edited in place, so caching them would only add a staleness
  * problem the page does not otherwise have.
  */
+export async function fetchProductStoreDetails(productStoreId: string) {
+  return await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" });
+}
+
+export async function fetchProductStoreSettings(productStoreId: string) {
+  return await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`, method: "get" });
+}
+
 export function useProductStoreDetail(productStoreId: string) {
   const { record: cachedRecord, hydrated } = useProductStoreRecord(productStoreId);
   const detail = ref<Record<string, any>>({});
   const settings = ref<Record<string, any>>({});
   const loading = ref(false);
 
-  const storeId = () => encodeURIComponent(productStoreId);
-
   async function loadDetail() {
     try {
-      const resp: any = await api({ url: `admin/productStores/${storeId()}`, method: "get" });
+      const resp: any = await fetchProductStoreDetails(productStoreId);
       detail.value = resp?.data && typeof resp.data === "object" ? resp.data : {};
     } catch (error) {
       logger.error("Failed to load product store detail", error);
@@ -181,7 +187,7 @@ export function useProductStoreDetail(productStoreId: string) {
   /** Keyed by `settingTypeEnumId`, active only — a thru-dated setting is no longer in force. */
   async function loadSettings() {
     try {
-      const resp: any = await api({ url: `admin/productStores/${storeId()}/settings`, method: "get" });
+      const resp: any = await fetchProductStoreSettings(productStoreId);
       const rows: any[] = Array.isArray(resp?.data) ? resp.data : [];
       const byType: Record<string, any> = {};
       for (const row of rows) {

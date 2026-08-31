@@ -84,7 +84,7 @@ import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeade
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
-import { useProductStores } from "@/composables/useProductStores";
+import { fetchProductStoreDetails, fetchProductStoreSettings, useProductStores, useProductStoreDetail } from "@/composables/useProductStores";
 import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
 import { useProductStoreMutations } from "@/composables/useProductStores";
@@ -93,7 +93,7 @@ const { productStores: cachedProductStores } = useProductStores();
 
 const props = defineProps(["productStoreId"]);
 
-const productStore = ref({}) as any;
+const { current: productStore, load: loadProductStore } = useProductStoreDetail(props.productStoreId);
 const configMode = ref("manual");
 const selectedSourceStoreId = ref("");
 const formData = ref({
@@ -143,24 +143,8 @@ const { values: productIdentifiers, hydrated: identifiersReady } = useTypedEnums
 const productStores = computed(() => cachedProductStores.value.filter((s: any) => s.productStoreId !== props.productStoreId))
 
 onIonViewWillEnter(async () => {
-  fetchProductStore();
+  loadProductStore();
 })
-
-async function fetchProductStore() {
-  try {
-    const resp = await api({
-      url: `admin/productStores/${props.productStoreId}`,
-      method: "get"
-    })
-    if(!commonUtil.hasError(resp)) {
-      productStore.value = (resp as any).data;
-    } else {
-      throw (resp as any).data;
-    }
-  } catch(error: any) {
-    logger.error("Failed to fetch product store details.")
-  }
-}
 
 async function setupProductStore() {
   emitter.emit("presentLoader");
@@ -175,8 +159,8 @@ async function setupProductStore() {
 
       // Fetch source store details and settings
       const [detailsResp, settingsResp] = await Promise.all([
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}`, method: "get" }),
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}/settings`, method: "get" })
+        fetchProductStoreDetails(selectedSourceStoreId.value),
+        fetchProductStoreSettings(selectedSourceStoreId.value)
       ]);
 
       if (commonUtil.hasError(detailsResp)) {
