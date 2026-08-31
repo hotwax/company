@@ -140,7 +140,7 @@
                 >
                   <ion-spinner v-if="configuringJobKey === card.definition.key" name="crescent" />
                   <template v-else>
-                    {{ card.job ? translate("Manage job") : translate("Configure job") }}
+                    {{ card.job ? translate("Manage job") : translate("Set up and manage job") }}
                   </template>
                 </ion-button>
               </ion-card-content>
@@ -310,14 +310,14 @@
       </template>
     </ion-content>
 
-    <!-- Schedule, activate, and run the shop's update-stager job without leaving this page. -->
+    <!-- Schedule, activate, and run the selected transfer job without leaving this page. -->
     <ServiceJobDetailsModal
       :is-open="showJobModal"
       :job-name="selectedJobName"
-      :title="translate('Update job')"
-      :allowed-parameter-names="['shopId', 'configId', 'overlapMinutes']"
+      :title="selectedJobTitle"
+      :allowed-parameter-names="selectedJobParameterNames"
       :protected-parameter-names="['shopId']"
-      :parameter-description="translate('Parameters used when staging this shop\'s Shopify transfer updates.')"
+      :parameter-description="selectedJobParameterDescription"
       @updated="handleJobUpdated"
       @close="showJobModal = false"
     />
@@ -452,7 +452,19 @@ const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => 
 
 const showJobModal = ref(false);
 const selectedJobName = ref("");
+const selectedJob = ref<any>(null);
 const configuringJobKey = ref("");
+
+const selectedJobTitle = computed(() => selectedJob.value
+  ? translate(selectedJob.value.definition.label)
+  : "");
+const selectedJobParameterNames = computed(() =>
+  selectedJob.value?.definition.key === "update"
+    ? ["shopId", "configId", "overlapMinutes"]
+    : ["shopId", "configId"]);
+const selectedJobParameterDescription = computed(() => selectedJob.value
+  ? translate(selectedJob.value.definition.purpose)
+  : "");
 
 function jobStatusColor(status: string) {
   if(status === "active") { return "success"; }
@@ -470,6 +482,7 @@ function jobStatusLabel(card: any) {
 }
 
 function openJobModal(card: any) {
+  selectedJob.value = card;
   selectedJobName.value = card.jobName;
   showJobModal.value = true;
 }
@@ -483,6 +496,7 @@ function openJobModal(card: any) {
 async function configureJob(card: any) {
   configuringJobKey.value = card.definition.key;
   try {
+    selectedJob.value = card;
     selectedJobName.value = await ensureJob(card.definition.key);
     showJobModal.value = true;
   } catch (error: any) {
