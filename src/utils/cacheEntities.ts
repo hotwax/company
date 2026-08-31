@@ -1064,38 +1064,58 @@ export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRu
 export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
 
 // =============================================================================================
-// Shopify transfer sync monitoring (sob/shopify/transferSync)
+// Shopify transfer sync monitoring (sob/shopify/transferSync/pending*)
 // =============================================================================================
 
 /**
- * ShopifyShopInventoryTransfer — one order's transfer row, scoped by (shopId, orderId).
+ * Outstanding transfer work — one row per artifact Shopify has not been told about yet.
  *
- * `syncStage` is SERVER-COMPUTED and rendered exactly as returned — never re-derived client-side
- * (see the §5.5.1 predicate note in the monitor/detail views, which applies only to DataManagerLog
- * status, not this field).
+ * Five server resources feed this one table, discriminated by `segment`, because they answer the
+ * same question at different grains and the page shows them as tabs. Each server view already
+ * encodes "not synced" as a join against the provenance ledger, so a row being here IS the
+ * outstanding state; there is no client-side derivation and no status field to interpret.
+ *
+ * `occurredAt` is the artifact's own timestamp, normalised across segments so one sort works for
+ * every tab. Numbers are projected as text: the cache layer stores text, date and boolean only.
  */
-export const shopifyTransferSyncProjection = {
-  keyField: "transferSyncKey",
+export const shopifyTransferPendingProjection = {
+  keyField: "pendingKey",
   fields: {
-    transferSyncKey: "text",
+    pendingKey: "text",
+    segment: "text",
     shopId: "text",
     orderId: "text",
-    orderName: "text",
-    orderStatusId: "text",
     shopifyInventoryTransferId: "text",
-    syncStage: "text",
-    lastActivityDate: "date",
-    needsAttention: "boolean",
+    orderItemSeqId: "text",
+    productId: "text",
+    quantity: "text",
+    // Exactly one of these identifies the artifact, according to `segment`.
+    shipmentId: "text",
+    shipmentStatusId: "text",
+    receiptId: "text",
+    orderStatusId: "text",
+    orderItemChangeId: "text",
+    occurredAt: "date",
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if(!raw?.shopId || !raw?.orderId) {return undefined;}
+    const segment = String(raw?.segment ?? "");
+    const shopId = String(raw?.shopId ?? "");
+    const orderId = String(raw?.orderId ?? "");
+    if(!segment || !shopId || !orderId) {return undefined;}
+    // The artifact PK per segment; the create segment has no artifact of its own, so its identity
+    // is the order item that has not been pushed.
+    const artifactId = String(
+      raw?.shipmentStatusId ?? raw?.receiptId ?? raw?.orderStatusId ??
+      raw?.orderItemChangeId ?? raw?.orderItemSeqId ?? "",
+    );
+    if(!artifactId) {return undefined;}
 
-    return `${raw.shopId}|${raw.orderId}`;
+    return `${segment}|${shopId}|${orderId}|${artifactId}`;
   },
 } as const;
 
-export const shopifyTransferSyncCache = defineCachedEntity("shopifyTransferSyncs", shopifyTransferSyncProjection);
+export const shopifyTransferPendingCache = defineCachedEntity("shopifyTransferPending", shopifyTransferPendingProjection);
 
 /** Server-computed location inventory KPI totals, one authoritative summary per shop. */
 export const shopifyLocationInventorySummaryProjection = {

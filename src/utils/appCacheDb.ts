@@ -89,7 +89,7 @@ class CompanyCacheDB extends Dexie {
   /** Which DataDocuments the Shopify inventory event feed listens to. */
   inventoryEventDocuments!: Table<CachedRow, string>;
   /** Shopify inventory transfer sync — one row per (shopId, orderId). */
-  shopifyTransferSyncs!: Table<CachedRow, string>;
+  shopifyTransferPending!: Table<CachedRow, string>;
   /** Latest transfer webhook subscription health check, one row per shop. */
   syncMeta!: Table<Record<string, any>, string>;
 
@@ -269,10 +269,11 @@ const CACHE_SCHEMA = {
   netSuiteRuleGroupRuns: "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
   // One row per product store, not an entity — see `netSuiteOrderPushBacklogProjection`.
   netSuiteOrderPushBacklog: "productStoreId, checkedAt",
-  // --- Shopify transfer sync monitoring (sob/shopify/transferSync) ---
-  // One row per (shopId, orderId). `syncStage` is indexed because the list view filters on it.
-  shopifyTransferSyncs:
-    "transferSyncKey, shopId, orderId, syncStage, lastActivityDate, [shopId+lastActivityDate], [shopId+syncStage]",
+  // --- Shopify transfer sync monitoring (sob/shopify/transferSync/pending*) ---
+  // One row per outstanding artifact. The page is tabs over `segment`, so [shopId+segment] is the
+  // index every read uses; [shopId+segment+occurredAt] serves the oldest-first ordering within a tab.
+  shopifyTransferPending:
+    "pendingKey, segment, shopId, orderId, occurredAt, [shopId+segment], [shopId+segment+occurredAt]",
   // Boolean values are not valid IndexedDB keys, so needsAttention stays a projected Boolean but
   // is deliberately not indexed. This one-row-per-shop summary supplies authoritative KPI totals.
   shopifyLocationInventorySummaries: "shopId",

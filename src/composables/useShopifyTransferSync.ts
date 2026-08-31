@@ -1,13 +1,27 @@
 import { api, commonUtil } from "@common";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { shopifyTransferSyncCache } from "@/utils/cacheEntities";
+import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
+import type { PendingSegment } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
   reconcileWebhookTopics,
 } from "@/utils/shopifyWebhookReconciliation";
-import { useCachedList, useCachedRecord } from "./useCachedList";
+import { useCachedList } from "./useCachedList";
+
+/**
+ * The order-scoped resources under this prefix: the detail bundle (`/{orderId}`) and the four
+ * operator actions below.
+ *
+ * ⚠️ The four action paths — updateLogRetry, updateLogResolve, activityCandidateSuppress,
+ * suppressionCancel — no longer exist on the connector. Their services and REST resources were
+ * removed when the staging gate was dropped: an unsent transfer is simply restaged on the next
+ * sweep, so there was nothing left to retry or unstick, and suppression became a generic
+ * create#OrderTask. These calls are left in place, and failing, rather than silently removed with
+ * the detail-page UI that drives them; that removal is its own change.
+ */
+const TRANSFER_SYNC_ENDPOINT = "sob/shopify/transferSync";
 
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
@@ -22,68 +36,71 @@ import { useCachedList, useCachedRecord } from "./useCachedList";
  * feature's application logic.
  */
 
-const LIST_ENDPOINT = "sob/shopify/transferSync";
-
 // =============================================================================================
 // Reads — cache-backed, reactive
 // =============================================================================================
 
-export interface TransferSyncFilters {
-  stage?: string;
-  needsAttentionOnly?: boolean;
-  /** Millis; inclusive lower bound on `lastActivityDate`. */
-  fromMs?: number;
-  /** Millis; inclusive upper bound on `lastActivityDate`. */
-  toMs?: number;
-}
-
 /**
- * Transfer rows for a shop, needs-attention first, then newest activity first — the list page's
- * primary read.
+ * Outstanding work for a shop, one segment at a time — the list page's primary read.
+ *
+ * There is no filtering, ranking or status derivation here, and deliberately so. A row exists
+ * because the server view found no provenance for that artifact; that IS the outstanding state.
+ * The previous version of this composable filtered and sorted a whole shop's transfers in the
+ * browser by a server-derived stage badge, which is what forced the server to compute that badge
+ * for every transfer on every page view.
+ *
+ * Oldest first: the longest-outstanding work is what an operator needs to see. Rows with no
+ * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
-export function useShopifyTransferSyncList(shopId: () => string | undefined, filters: () => TransferSyncFilters = () => ({})) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferSyncCache, { dateField: "lastActivityDate" });
+export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
 
   const rows = computed<any[]>(() => {
-    const wanted = String(shopId() ?? "");
-    if(!wanted) {return [];}
-    const { stage, needsAttentionOnly, fromMs, toMs } = filters();
+    const wantedShop = String(shopId() ?? "");
+    const wantedSegment = String(segment() ?? "");
+    if(!wantedShop || !wantedSegment) {return [];}
 
     return records.value
-      .filter((row: any) => String(row?.shopId ?? "") === wanted)
-      .filter((row: any) => !stage || row?.syncStage === stage)
-      .filter((row: any) => !needsAttentionOnly || row?.needsAttention === true)
-      .filter((row: any) => fromMs === undefined || Number(row?.lastActivityDate ?? 0) >= fromMs)
-      .filter((row: any) => toMs === undefined || Number(row?.lastActivityDate ?? 0) <= toMs)
+      .filter((row: any) => String(row?.shopId ?? "") === wantedShop
+        && String(row?.segment ?? "") === wantedSegment)
       .sort((a: any, b: any) => {
-        const attentionDelta = (b?.needsAttention === true ? 1 : 0) - (a?.needsAttention === true ? 1 : 0);
-        if(attentionDelta !== 0) {return attentionDelta;}
+        const delta = Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0);
+        if(delta !== 0) {return delta;}
 
-        return Number(b?.lastActivityDate ?? 0) - Number(a?.lastActivityDate ?? 0);
+        return String(a?.orderId ?? "").localeCompare(String(b?.orderId ?? ""));
       });
   });
 
+  return { rows, hydrated, count: computed(() => rows.value.length) };
+}
+
+/**
+ * Outstanding count per segment, for the tab badges. One pass over the shop's cached rows rather
+ * than one query per tab, because they all live in the same table.
+ */
+export function useShopifyPendingCounts(shopId: () => string | undefined) {
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
+
+  const counts = computed<Record<string, number>>(() => {
+    const wanted = String(shopId() ?? "");
+    const totals: Record<string, number> = {};
+    if(!wanted) {return totals;}
+    for(const row of records.value as any[]) {
+      if(String(row?.shopId ?? "") !== wanted) {continue;}
+      const segment = String(row?.segment ?? "");
+      if(segment) {totals[segment] = (totals[segment] ?? 0) + 1;}
+    }
+
+    return totals;
+  });
+
   return {
-    rows,
+    counts,
     hydrated,
-    needsAttentionCount: computed(() => rows.value.filter((row: any) => row?.needsAttention === true).length),
+    total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
 }
 
-/** One transfer row by (shopId, orderId) — used by the detail page's header while the deep bundle loads. */
-export function useShopifyTransferSyncRow(shopId: () => string | undefined, orderId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferSyncCache);
-  const row = computed<any>(() => {
-    const wantedShop = String(shopId() ?? "");
-    const wantedOrder = String(orderId() ?? "");
-    if(!wantedShop || !wantedOrder) {return undefined;}
-
-    return records.value.find((entry: any) =>
-      String(entry?.shopId ?? "") === wantedShop && String(entry?.orderId ?? "") === wantedOrder);
-  });
-
-  return { row, hydrated };
-}
 
 
 /**
@@ -238,13 +255,6 @@ export const TRANSFER_SYNC_JOBS: TransferSyncJobDefinition[] = [
     purpose: "Consumes received webhook messages. Paused here is what leaves topics with a Received backlog.",
     scope: "global",
   },
-  {
-    key: "verify",
-    template: "verify_ShopifyInventoryTransferWebhookSubscriptions_daily",
-    label: "Webhook verifier",
-    purpose: "Daily check that every pinned transfer and shipment topic is still subscribed.",
-    scope: "global",
-  },
 ];
 
 function shopJobName(template: string, shopId: string) {
@@ -392,9 +402,6 @@ export function useShopifyWebhookReconciliation(
   return { rows, summary, otherSubscriptionCount, receivedTruncated, loading, error, refresh };
 }
 
-export const useShopifyTransferSyncRecord = (orderId: string | undefined) =>
-  useCachedRecord(shopifyTransferSyncCache, "orderId", orderId);
-
 /**
  * `GET sob/shopify/transferSync/{orderId}` (shopId as a query param) — the owner header, lines,
  * activities+details, DataManagerLog rows, webhook SystemMessage rows, and suppression WorkEffort
@@ -403,7 +410,7 @@ export const useShopifyTransferSyncRecord = (orderId: string | undefined) =>
 export function useShopifyTransferSyncDetail() {
   async function fetchTransferSyncDetail(shopId: string, orderId: string): Promise<any> {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/${encodeURIComponent(orderId)}`,
+      url: `${TRANSFER_SYNC_ENDPOINT}/${encodeURIComponent(orderId)}`,
       method: "GET",
       params: { shopId },
     }) as any;
@@ -443,7 +450,7 @@ export function useShopifyTransferSyncMutations() {
   /** POST `sob/shopify/transferSync/updateLogRetry` — retry a blocked update log. */
   async function retryUpdateLog(_orderId: string, logId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/updateLogRetry`,
+      url: `${TRANSFER_SYNC_ENDPOINT}/updateLogRetry`,
       method: "POST",
       data: { logId },
     });
@@ -457,7 +464,7 @@ export function useShopifyTransferSyncMutations() {
    */
   async function resolveUpdateLog(_orderId: string, logId: string, reason: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/updateLogResolve`,
+      url: `${TRANSFER_SYNC_ENDPOINT}/updateLogResolve`,
       method: "POST",
       data: { logId, reason },
     });
@@ -478,7 +485,7 @@ export function useShopifyTransferSyncMutations() {
   }) {
     const { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason } = params;
     const resp = await api({
-      url: `${LIST_ENDPOINT}/activityCandidateSuppress`,
+      url: `${TRANSFER_SYNC_ENDPOINT}/activityCandidateSuppress`,
       method: "POST",
       data: { shopId, orderId, workEffortPurposeTypeId, sourceReferenceId, reason },
     });
@@ -492,7 +499,7 @@ export function useShopifyTransferSyncMutations() {
    */
   async function cancelSuppressionTask(shopId: string, orderId: string, workEffortId: string) {
     const resp = await api({
-      url: `${LIST_ENDPOINT}/suppressionCancel`,
+      url: `${TRANSFER_SYNC_ENDPOINT}/suppressionCancel`,
       method: "POST",
       data: { shopId, orderId, workEffortId },
     });

@@ -62,20 +62,10 @@
           <section class="kpi-grid ion-margin-top">
             <ion-card>
               <ion-card-header>
-                <ion-card-subtitle>{{ translate("Owned transfers") }}</ion-card-subtitle>
-                <ion-card-title>{{ allRows.length }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Outstanding") }}</ion-card-subtitle>
+                <ion-card-title :color="pendingTotal ? 'warning' : undefined">{{ pendingTotal }}</ion-card-title>
               </ion-card-header>
-              <ion-card-content>{{ translate("Transfer orders owned by this shop") }}</ion-card-content>
-            </ion-card>
-
-            <ion-card>
-              <ion-card-header>
-                <ion-card-subtitle>{{ translate("Needing attention") }}</ion-card-subtitle>
-                <ion-card-title :color="needsAttentionCount ? 'warning' : undefined">
-                  {{ needsAttentionCount }}
-                </ion-card-title>
-              </ion-card-header>
-              <ion-card-content>{{ translate("Blocked, conflicted, or otherwise flagged transfers") }}</ion-card-content>
+              <ion-card-content>{{ translate("Changes this shop has not sent to Shopify yet") }}</ion-card-content>
             </ion-card>
 
             <ion-card>
@@ -150,159 +140,126 @@
           <!-- Topics subscribed at Shopify, the OMS message type each one is consumed by, and the
                received-status backlog per type — reconciled in one table so an operator never has
                to open three screens to answer "is this topic actually wired end to end?". -->
-          <ion-card class="webhook-card">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Webhook subscriptions") }}</ion-card-subtitle>
-              <ion-card-title>{{ translate("Transfer and shipment topics registered at Shopify") }}</ion-card-title>
-            </ion-card-header>
-            <ion-card-content>
-              <div class="webhook-actions">
-                <ion-button size="small" fill="outline" :disabled="webhooksLoading" @click="loadWebhookReconciliation()">
-                  <ion-spinner v-if="webhooksLoading" name="crescent" />
-                  <template v-else>
-                    {{ translate("Refresh") }}
-                  </template>
-                </ion-button>
-                <span v-if="otherWebhookCount" class="overline">
-                  {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
-                </span>
-                <span v-if="webhookSummary && webhookSummary.elsewhereCount" class="overline">
-                  {{ translate("Delivering to") }} {{ elsewhereHosts.join(", ") }}, {{ translate("not this OMS") }}
-                </span>
-                <span v-if="receivedTruncated" class="overline">
-                  {{ translate("Received counts are a floor; the backlog is deeper than one page.") }}
-                </span>
-              </div>
-
-              <ion-label v-if="webhooksError" class="ion-text-wrap webhook-error">
-                <ion-icon :icon="warningOutline" color="danger" />
-                {{ webhooksError }}
-              </ion-label>
-
-              <ion-label v-else-if="webhooksLoading && !webhookRows.length" class="ion-text-wrap">
-                <ion-skeleton-text :animated="true" style="width: 45%" />
-              </ion-label>
-
-              <ion-label v-else-if="!webhookRows.length" class="ion-text-wrap">
-                <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
-              </ion-label>
-            </ion-card-content>
-
-            <ion-list v-if="webhookRows.length" lines="full">
-              <ion-item v-for="row in webhookRows" :key="row.topic">
+          <ion-accordion-group class="webhook-card" expand="inset">
+            <ion-accordion value="webhook-subscriptions">
+              <ion-item slot="header" lines="none" class="webhook-header">
                 <ion-label class="ion-text-wrap">
-                  {{ row.topic }}
-                  <p>{{ row.uri || translate("No callback URL registered") }}</p>
-                  <p v-if="row.status === 'elsewhere'" class="overline">
-                    {{ translate("Delivers to") }} {{ row.uriHost }}
-                  </p>
-                  <p class="message-type">
-                    {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
-                  </p>
+                  <p class="webhook-subtitle">{{ translate("Webhook subscriptions") }}</p>
+                  <h2 class="webhook-title">{{ translate("Transfer and shipment topics registered at Shopify") }}</h2>
                 </ion-label>
-                <ion-label slot="end" class="ion-text-end received-count">
-                  {{ row.receivedCount }}
-                  <p>{{ translate("Received") }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="webhookStatusColor(row.status)">
-                  {{ webhookStatusLabel(row.status) }}
-                </ion-badge>
               </ion-item>
-            </ion-list>
-          </ion-card>
 
-          <ion-card class="filter-card">
-            <ion-card-content>
-              <div class="filter-grid">
-                <div class="filter-item">
-                  <ion-select
-                    :value="stageFilter"
-                    :label="translate('Stage')"
-                    label-placement="stacked"
-                    fill="outline"
-                    interface="popover"
-                    :placeholder="translate('All')"
-                    @ion-change="stageFilter = $event.detail.value || ''"
-                  >
-                    <ion-select-option value="">
-                      {{ translate("All") }}
-                    </ion-select-option>
-                    <ion-select-option v-for="stage in STAGE_OPTIONS" :key="stage" :value="stage">
-                      {{ stageLabel(stage) }}
-                    </ion-select-option>
-                  </ion-select>
-                </div>
+              <div slot="content" class="webhook-content">
+                <ion-card-content>
+                  <div class="webhook-actions">
+                    <ion-button size="small" fill="outline" :disabled="webhooksLoading" @click="loadWebhookReconciliation()">
+                      <ion-spinner v-if="webhooksLoading" name="crescent" />
+                      <template v-else>
+                        {{ translate("Refresh") }}
+                      </template>
+                    </ion-button>
+                    <span v-if="otherWebhookCount" class="overline">
+                      {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
+                    </span>
+                    <span v-if="webhookSummary && webhookSummary.elsewhereCount" class="overline">
+                      {{ translate("Delivering to") }} {{ elsewhereHosts.join(", ") }}, {{ translate("not this OMS") }}
+                    </span>
+                    <span v-if="receivedTruncated" class="overline">
+                      {{ translate("Received counts are a floor; the backlog is deeper than one page.") }}
+                    </span>
+                  </div>
 
-                <div class="filter-item">
-                  <ion-item lines="none" class="date-filter-item">
-                    <ion-label>{{ translate("From") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="transfer-sync-from" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="transfer-sync-from" v-model="dateFrom" presentation="date" />
-                    </ion-popover>
+                  <ion-label v-if="webhooksError" class="ion-text-wrap webhook-error">
+                    <ion-icon :icon="warningOutline" color="danger" />
+                    {{ webhooksError }}
+                  </ion-label>
+
+                  <ion-label v-else-if="webhooksLoading && !webhookRows.length" class="ion-text-wrap">
+                    <ion-skeleton-text :animated="true" style="width: 45%" />
+                  </ion-label>
+
+                  <ion-label v-else-if="!webhookRows.length" class="ion-text-wrap">
+                    <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
+                  </ion-label>
+                </ion-card-content>
+
+                <ion-list v-if="webhookRows.length" lines="full">
+                  <ion-item v-for="row in webhookRows" :key="row.topic">
+                    <ion-label class="ion-text-wrap">
+                      {{ row.topic }}
+                      <p>{{ row.uri || translate("No callback URL registered") }}</p>
+                      <p v-if="row.status === 'elsewhere'" class="overline">
+                        {{ translate("Delivers to") }} {{ row.uriHost }}
+                      </p>
+                      <p class="message-type">
+                        {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
+                      </p>
+                    </ion-label>
+                    <ion-label slot="end" class="ion-text-end received-count">
+                      {{ row.receivedCount }}
+                      <p>{{ translate("Received") }}</p>
+                    </ion-label>
+                    <ion-badge slot="end" :color="webhookStatusColor(row.status)">
+                      {{ webhookStatusLabel(row.status) }}
+                    </ion-badge>
                   </ion-item>
-                </div>
-
-                <div class="filter-item">
-                  <ion-item lines="none" class="date-filter-item">
-                    <ion-label>{{ translate("To") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="transfer-sync-to" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="transfer-sync-to" v-model="dateTo" presentation="date" />
-                    </ion-popover>
-                  </ion-item>
-                </div>
-
-                <div class="filter-item">
-                  <ion-item lines="none">
-                    <ion-checkbox slot="start" v-model="needsAttentionOnly" />
-                    <ion-label>{{ translate("Needs attention only") }}</ion-label>
-                  </ion-item>
-                </div>
+                </ion-list>
               </div>
-            </ion-card-content>
-          </ion-card>
+            </ion-accordion>
+          </ion-accordion-group>
 
-          <!-- Genuine empty state: this shop owns zero transfers. Eligibility is decided at
-               approval time (exactly one common shop between the order and the receiving
-               location), so an operator seeing this needs to know WHY, not just that the list
-               is empty. -->
-          <ion-card v-if="!allRows.length">
+          <!-- Four tabs over five resources. Each row is one artifact the shop has not sent to
+               Shopify yet; the server view decides that from the provenance ledger, so there is no
+               status to interpret here and nothing to re-derive. Cancellations and item reductions
+               share a tab because they are the same operator concern at two different grains. -->
+          <ion-segment
+            :value="segment"
+            scrollable
+            class="segment-tabs"
+            @ion-change="segment = ($event.detail.value as PendingSegment) || 'create'"
+          >
+            <ion-segment-button v-for="tab in SEGMENT_TABS" :key="tab.key" :value="tab.key">
+              <ion-label>
+                {{ translate(tab.label) }}
+                <ion-badge v-if="tabCount(tab)" :color="tab.key === segment ? 'primary' : 'medium'">
+                  {{ tabCount(tab) }}
+                </ion-badge>
+              </ion-label>
+            </ion-segment-button>
+          </ion-segment>
+
+          <ion-card v-if="!pendingTotal">
             <ion-card-content class="empty-state">
               <ion-icon :icon="swapHorizontalOutline" />
               <ion-label class="ion-text-wrap">
-                <h2>{{ translate("No transfers owned by this shop") }}</h2>
-                <p>{{ translate("A transfer becomes owned by exactly one shop at approval time, when the order and the receiving location share exactly one common Shopify shop. This shop has none right now.") }}</p>
-                <p>{{ translate("Approved transfers not yet owned by any shop are not shown on this page. This OMS does not yet have an operational query for that list.") }}</p>
+                <h2>{{ translate("Everything is in sync") }}</h2>
+                <p>{{ translate("This shop has no transfer work waiting to reach Shopify. A transfer becomes owned by exactly one shop at approval time, when the order and the receiving location share exactly one common Shopify shop; a shop that owns none will also show nothing here.") }}</p>
               </ion-label>
             </ion-card-content>
           </ion-card>
 
-          <ion-card v-else-if="!rows.length">
+          <ion-card v-else-if="!segmentRows.length">
             <ion-card-content>
-              {{ translate("No transfers match the current filters.") }}
+              {{ translate("Nothing outstanding in this tab.") }}
             </ion-card-content>
           </ion-card>
 
           <ion-list v-else lines="full">
             <ion-item
-              v-for="row in rows"
-              :key="`${row.shopId}-${row.orderId}`"
+              v-for="row in segmentRows"
+              :key="row.pendingKey"
               button
               detail
               @click="openDetail(row)"
             >
               <ion-label class="ion-text-wrap">
-                {{ row.orderName || row.orderId }}
-                <p>{{ row.orderStatusId || translate("Not available") }}</p>
+                {{ row.orderId }}
+                <p>{{ artifactLabel(row) }}</p>
                 <p>{{ row.shopifyInventoryTransferId || translate("Not created yet") }}</p>
               </ion-label>
-              <ion-badge slot="end" :color="stageColor(row.syncStage)">
-                {{ stageLabel(row.syncStage) }}
-              </ion-badge>
               <ion-label slot="end" class="ion-text-end last-activity">
-                {{ formatDateTime(row.lastActivityDate) || translate("Not available") }}
-                <p>{{ translate("Last activity") }}</p>
+                {{ formatDateTime(row.occurredAt) || translate("Not available") }}
+                <p>{{ translate("Outstanding since") }}</p>
               </ion-label>
             </ion-item>
           </ion-list>
@@ -327,57 +284,73 @@
 <script setup lang="ts">
 import { commonUtil, translate } from "@common";
 import {
-  IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
-  IonCardSubtitle, IonCardTitle, IonCheckbox, IonContent, IonDatetime, IonDatetimeButton, IonHeader,
-  IonIcon, IonItem, IonLabel, IonList, IonPage, IonPopover, IonSelect, IonSelectOption,
+  IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
+  IonCardSubtitle, IonCardTitle, IonContent, IonHeader,
+  IonIcon, IonItem, IonLabel, IonList, IonPage, IonSegment, IonSegmentButton,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import { swapHorizontalOutline, warningOutline } from "ionicons/icons";
-import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
+  useShopifyPendingCounts,
+  useShopifyPendingSegment,
   useShopifyTransferSyncJobs,
-  useShopifyTransferSyncList,
   useShopifyWebhookReconciliation,
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
-import {
-  TRANSFER_SYNC_STAGE_COLORS,
-  isTransferSyncMonitoringLoaded,
-  stageColor,
-  stageLabel,
-} from "@/utils/shopifyTransferSync";
+import { isTransferSyncMonitoringLoaded } from "@/utils/shopifyTransferSync";
+import type { PendingSegment } from "@/workers/domains/shopifyTransferSyncDomain";
 
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
 
-const stageFilter = ref("");
-const needsAttentionOnly = ref(false);
-const dateFrom = ref<string | null>(null);
-const dateTo = ref<string | null>(null);
 const retrying = ref(false);
-
-const STAGE_OPTIONS = Object.keys(TRANSFER_SYNC_STAGE_COLORS);
 
 const shopId = computed(() => String(props.id ?? ""));
 
-const dateFilterMs = computed(() => ({
-  fromMs: dateFrom.value ? DateTime.fromISO(dateFrom.value).startOf("day").toMillis() : undefined,
-  toMs: dateTo.value ? DateTime.fromISO(dateTo.value).endOf("day").toMillis() : undefined,
-}));
+/**
+ * The tabs. `cancellation` and `itemChange` share one tab: they are the same operator concern -
+ * something was reduced or cancelled and Shopify has not been told - at two different grains
+ * (whole transfer, and one line). They stay two resources because merging them in one query would
+ * need a distinct over a mixed projection; merging them in one tab costs nothing.
+ */
+const SEGMENT_TABS = [
+  { key: "create" as PendingSegment, label: "Not yet created", also: undefined as PendingSegment | undefined },
+  { key: "shipment" as PendingSegment, label: "Shipments", also: undefined as PendingSegment | undefined },
+  { key: "receipt" as PendingSegment, label: "Receipts", also: undefined as PendingSegment | undefined },
+  { key: "cancellation" as PendingSegment, label: "Cancellations", also: "itemChange" as PendingSegment | undefined },
+] as const;
 
-const { rows, hydrated, needsAttentionCount } = useShopifyTransferSyncList(() => shopId.value, () => ({
-  stage: stageFilter.value || undefined,
-  needsAttentionOnly: needsAttentionOnly.value,
-  ...dateFilterMs.value,
-}));
-// Unfiltered count for the KPI card and the "owns zero transfers" empty state, which must not be
-// masked by an active filter selection.
-const { rows: allRows } = useShopifyTransferSyncList(() => shopId.value);
+const segment = ref<PendingSegment>("create");
+
+const { counts, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
+const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
+// The paired segment for the combined tab; empty for every other tab.
+const { rows: pairedRows } = useShopifyPendingSegment(
+  () => shopId.value,
+  () => (segment.value === "cancellation" ? "itemChange" : ("" as PendingSegment)),
+);
+
+const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
+  .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
+
+function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
+  return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
+}
+
+/** Which artifact this row is, named the way the tab it sits in would name it. */
+function artifactLabel(row: any): string {
+  if(row?.shipmentStatusId) {return `${translate("Shipment")} ${row.shipmentId}`;}
+  if(row?.receiptId) {return `${translate("Receipt")} ${row.receiptId}`;}
+  if(row?.orderStatusId) {return translate("Transfer cancelled");}
+  if(row?.orderItemChangeId) {return `${translate("Line")} ${row.orderItemSeqId}`;}
+
+  return `${translate("Line")} ${row?.orderItemSeqId ?? ""}`.trim();
+}
 
 // Shopify topic prefixes this flow owns. The vocabulary itself stays in the connector — these
 // only decide which of the shop's subscriptions belong on this page.
@@ -521,14 +494,14 @@ const viewSyncBaselineAt = ref(0);
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
   cacheHydrated: hydrated.value,
-  cachedRowCount: allRows.value.length,
+  cachedRowCount: pendingTotal.value,
   liveSyncAt: Number(domainStatus.value.shopifyTransferSync?.at ?? 0),
   viewSyncBaselineAt: viewSyncBaselineAt.value,
 }));
 
 function activeSyncDomains() {
   return shopId.value
-    ? [{ name: "shopifyTransferSync", args: { shopId: shopId.value, total: 300 } }]
+    ? [{ name: "shopifyTransferSync", args: { shopId: shopId.value } }]
     : [];
 }
 
@@ -638,6 +611,28 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
 
 .webhook-card {
   margin-block-end: var(--spacer-base);
+}
+
+.webhook-header {
+  --background: var(--ion-card-background, var(--ion-background-color));
+  --inner-padding-end: var(--spacer-base);
+  --padding-start: var(--spacer-base);
+}
+
+.webhook-subtitle {
+  margin: 0 0 var(--spacer-xs);
+  color: var(--ion-color-medium);
+  font-size: 0.875rem;
+}
+
+.webhook-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.webhook-content {
+  background: var(--ion-card-background, var(--ion-background-color));
 }
 
 .webhook-actions {

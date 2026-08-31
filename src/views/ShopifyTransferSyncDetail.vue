@@ -5,7 +5,7 @@
         <ion-buttons slot="start">
           <ion-back-button :default-href="`/shopify-connection-details/${props.id}/transfer-sync`" />
         </ion-buttons>
-        <ion-title>{{ headerRow?.orderName || props.orderId }}</ion-title>
+        <ion-title>{{ owner?.orderName || props.orderId }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -338,7 +338,6 @@ import {
   type SuppressionPurpose,
   useShopifyTransferSyncDetail,
   useShopifyTransferSyncMutations,
-  useShopifyTransferSyncRow,
 } from "@/composables/useShopifyTransferSync";
 import { useUserStore } from "@/store/user";
 import { formatDateTime } from "@/utils";
@@ -360,7 +359,6 @@ const canAdminister = computed(() => userStore.hasPermission(Actions.APP_SHOPIFY
 // `afterMutation` below routes through this composable's OWN worker service — without starting it
 // on this page, the service is null and the post-action cache refresh would silently no-op.
 const { start: startSyncDomains, stop: stopSyncDomains, afterMutation } = useCacheSync();
-const { row: headerRow } = useShopifyTransferSyncRow(() => shopId.value, () => orderId.value);
 const { fetchTransferSyncDetail } = useShopifyTransferSyncDetail();
 
 const detail = ref<any>(null);
@@ -410,7 +408,9 @@ onIonViewWillEnter(() => {
 onIonViewDidLeave(() => { stopSyncDomains(); });
 
 // --- Owner header ---------------------------------------------------------------------------
-const owner = computed<any>(() => detail.value?.owner ?? detail.value?.header ?? headerRow.value ?? {});
+// The bundle carries the owner header; there is no longer a cached per-transfer row to fall back
+// on, because the list page no longer caches one row per transfer.
+const owner = computed<any>(() => detail.value?.owner ?? detail.value?.header ?? {});
 
 /** Facility name/id may each be independently null (ambiguous resolution) — never re-derive them. */
 const originLocation = computed(() => owner.value.originFacilityName || owner.value.originFacilityId || translate("Not available"));

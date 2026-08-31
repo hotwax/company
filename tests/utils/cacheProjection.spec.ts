@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dataFeedProjection, shopifyTransferSyncProjection } from "@/utils/cacheEntities";
+import { dataFeedProjection, shopifyTransferPendingProjection } from "@/utils/cacheEntities";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -121,15 +121,24 @@ describe("projectRow", () => {
     expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
   });
 
-  it("keeps transfer needsAttention as a Boolean through projection", () => {
-    const row = projectRow({
+  it("keys a pending row by segment and artifact, so two segments never collide", () => {
+    const shipment = projectRow({
+      segment: "shipment",
       shopId: "10000",
       orderId: "ORDER-1",
-      needsAttention: true,
-    }, shopifyTransferSyncProjection, NOW)!;
+      shipmentStatusId: "STATUS-1",
+    }, shopifyTransferPendingProjection, NOW)!;
+    const receipt = projectRow({
+      segment: "receipt",
+      shopId: "10000",
+      orderId: "ORDER-1",
+      receiptId: "RECEIPT-1",
+    }, shopifyTransferPendingProjection, NOW)!;
 
-    expect(row.needsAttention).toBe(true);
-    expect(typeof row.needsAttention).toBe("boolean");
+    expect(shipment.pendingKey).toBe("shipment|10000|ORDER-1|STATUS-1");
+    expect(receipt.pendingKey).toBe("receipt|10000|ORDER-1|RECEIPT-1");
+    // Same shop and order, different segments and artifacts: one row must never overwrite the other.
+    expect(shipment.pendingKey).not.toBe(receipt.pendingKey);
   });
 });
 

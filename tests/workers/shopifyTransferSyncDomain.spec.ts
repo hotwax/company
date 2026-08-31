@@ -3,28 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   domains: [] as any[],
-  webhookResponse: undefined as any,
-  webhookUpserts: [] as any[][],
-  webhookRemovals: [] as string[],
+  /** Rows each endpoint should return, keyed by url. */
+  pages: {} as Record<string, any[]>,
+  fetched: [] as Array<{ url: string; params: any }>,
+  snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
 vi.mock("@/workers/domains/workerFetch", () => ({
-  pageAll: vi.fn(async () => []),
-  pageNewestFirst: vi.fn(async () => []),
-  workerGet: vi.fn(async () => state.webhookResponse),
+  pageAll: vi.fn(async ({ url, params }: any) => {
+    state.fetched.push({ url, params });
+
+    return state.pages[url] ?? [];
+  }),
 }));
 
 vi.mock("@/utils/cacheEntities", () => ({
-  shopifyTransferSyncCache: {
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-  },
-  shopifyTransferWebhookHealthCache: {
-    upsertMany: vi.fn(async (rows: any[]) => {
-      state.webhookUpserts.push(rows);
+  shopifyTransferPendingCache: {
+    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
+      state.snapshots.push({ rows, scope });
 
-      return rows.length;
+      return { written: rows.length, pruned: 0 };
     }),
-    remove: vi.fn(async (shopId: string) => { state.webhookRemovals.push(shopId); }),
   },
 }));
 
@@ -40,20 +39,72 @@ async function loadDomain() {
   return state.domains.find((domain) => domain.name === "shopifyTransferSync");
 }
 
+const CTX = { maargUrl: "https://example.test", token: "token" };
+
 describe("Shopify transfer sync worker domain", () => {
   beforeEach(() => {
-    state.webhookResponse = undefined;
-    state.webhookUpserts = [];
-    state.webhookRemovals = [];
+    state.pages = {};
+    state.fetched = [];
+    state.snapshots = [];
   });
 
-  it("removes a previously cached health result when the verifier reports unavailable", async () => {
-    state.webhookResponse = { available: false, message: "Verifier unavailable" };
+  it("reads all five outstanding-work segments, each scoped to the shop", async () => {
     const domain = await loadDomain();
 
-    await domain.sync({ maargUrl: "https://example.test", token: "token" }, { shopId: "SHOP_A" });
+    await domain.sync(CTX, { shopId: "SHOP_A" });
 
-    expect(state.webhookUpserts).toEqual([]);
-    expect(state.webhookRemovals).toEqual(["SHOP_A"]);
+    expect(state.fetched.map((call) => call.url).sort()).toEqual([
+      "sob/shopify/transferSync/pendingCancellation",
+      "sob/shopify/transferSync/pendingCreate",
+      "sob/shopify/transferSync/pendingItemChange",
+      "sob/shopify/transferSync/pendingReceipt",
+      "sob/shopify/transferSync/pendingShipment",
+    ]);
+    // Every read is shop-scoped: an unscoped one would cache another shop's work as this shop's.
+    expect(state.fetched.every((call) => call.params.shopId === "SHOP_A")).toBe(true);
+  });
+
+  it("tags each row with its segment and normalises the segment's own timestamp", async () => {
+    state.pages["sob/shopify/transferSync/pendingShipment"] = [
+      { shopId: "SHOP_A", orderId: "ORDER-1", shipmentStatusId: "ST-1", statusDate: 1000 },
+    ];
+    state.pages["sob/shopify/transferSync/pendingReceipt"] = [
+      { shopId: "SHOP_A", orderId: "ORDER-1", receiptId: "R-1", datetimeReceived: 2000 },
+    ];
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A" });
+
+    const rows = state.snapshots[0].rows;
+    const shipment = rows.find((row: any) => row.shipmentStatusId === "ST-1");
+    const receipt = rows.find((row: any) => row.receiptId === "R-1");
+
+    expect(shipment.segment).toBe("shipment");
+    expect(shipment.occurredAt).toBe(1000);
+    expect(receipt.segment).toBe("receipt");
+    // Each segment carries its own date field; the cache sorts on the normalised one.
+    expect(receipt.occurredAt).toBe(2000);
+  });
+
+  it("snapshots scoped to the shop, so a drained segment stops rendering as outstanding", async () => {
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A" });
+
+    expect(state.snapshots).toHaveLength(1);
+    // Scoped, not global: pruning must never reach another shop's cached rows.
+    expect(state.snapshots[0].scope).toEqual({ field: "shopId", value: "SHOP_A" });
+    // Zero rows back from every segment still snapshots, which is what prunes a resolved backlog.
+    expect(state.snapshots[0].rows).toEqual([]);
+  });
+
+  it("does nothing without a shop, rather than pruning on an unscoped read", async () => {
+    const domain = await loadDomain();
+
+    const written = await domain.sync(CTX, {});
+
+    expect(written).toBe(0);
+    expect(state.fetched).toEqual([]);
+    expect(state.snapshots).toEqual([]);
   });
 });
