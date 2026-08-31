@@ -10,9 +10,6 @@ import {
 } from "@/utils/shopifyWebhookReconciliation";
 import { useCachedList } from "./useCachedList";
 
-/** The order-scoped detail bundle: `sob/shopify/transferSync/{orderId}`. */
-const TRANSFER_SYNC_ENDPOINT = "sob/shopify/transferSync";
-
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
  *
@@ -451,26 +448,4 @@ export function useShopifyWebhookReconciliation(
   }
 
   return { rows, summary, otherSubscriptionCount, receivedTruncated, loading, error, refresh };
-}
-
-/**
- * `GET sob/shopify/transferSync/{orderId}` (shopId as a query param) — the owner header, lines,
- * activities+details, DataManagerLog rows, webhook SystemMessage rows, and suppression WorkEffort
- * tasks for one order.
- */
-export function useShopifyTransferSyncDetail() {
-  async function fetchTransferSyncDetail(shopId: string, orderId: string): Promise<any> {
-    const resp = await api({
-      url: `${TRANSFER_SYNC_ENDPOINT}/${encodeURIComponent(orderId)}`,
-      method: "GET",
-      params: { shopId },
-    }) as any;
-    if(commonUtil.hasError(resp)) {
-      throw new Error("The OMS could not load this transfer's detail.");
-    }
-
-    return resp?.data ?? {};
-  }
-
-  return { fetchTransferSyncDetail };
 }

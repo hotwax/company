@@ -246,7 +246,7 @@
               </ion-card-content>
             </ion-card>
             <ion-list v-else-if="syncedRows.length" lines="full">
-              <ion-item v-for="(row, index) in syncedRows" :key="`${row.orderId}-${index}`" button detail @click="openDetail(row)">
+              <ion-item v-for="(row, index) in syncedRows" :key="`${row.orderId}-${index}`">
                 <ion-label class="ion-text-wrap">
                   {{ row.orderId }}
                   <p>{{ artifactLabel(row) }}</p>
@@ -287,13 +287,7 @@
           </ion-card>
 
           <ion-list v-else lines="full">
-            <ion-item
-              v-for="row in segmentRows"
-              :key="row.pendingKey"
-              button
-              detail
-              @click="openDetail(row)"
-            >
+            <ion-item v-for="row in segmentRows" :key="row.pendingKey">
               <ion-label class="ion-text-wrap">
                 {{ row.orderId }}
                 <p>{{ artifactLabel(row) }}</p>
@@ -334,7 +328,6 @@ import {
 } from "@ionic/vue";
 import { swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
@@ -350,7 +343,6 @@ import { isTransferSyncMonitoringLoaded } from "@/utils/shopifyTransferSync";
 import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
 const props = defineProps<{ id?: string }>();
-const router = useRouter();
 
 const retrying = ref(false);
 
@@ -593,10 +585,6 @@ async function retry() {
   } finally {
     retrying.value = false;
   }
-}
-
-function openDetail(row: any) {
-  router.push(`/shopify-connection-details/${props.id}/transfer-sync/${row.orderId}`);
 }
 
 watch(shopId, startTransferSyncDomains);

@@ -9,27 +9,6 @@ vi.mock("@common", () => ({
 import * as locationInventory from "@/utils/shopifyLocationInventory";
 import * as transferSync from "@/utils/shopifyTransferSync";
 
-describe("Shopify transfer detail lines", () => {
-  it("maps the backend line quantity and remote transfer line id", () => {
-    const normalize = (transferSync as any).normalizeTransferSyncLines;
-    const rows = normalize([{
-      orderItemSeqId: "00001",
-      productId: "SKU-1",
-      lineQuantity: 0,
-      shopifyInventoryTransferLineItemId: "987654321",
-    }]);
-
-    expect(rows).toEqual([{
-      key: "00001-0",
-      orderItemSeqId: "00001",
-      product: "SKU-1",
-      lineQuantity: 0,
-      shopifyInventoryTransferLineItemId: "987654321",
-      removed: true,
-    }]);
-  });
-});
-
 describe("location inventory summary", () => {
   it("preserves the backend-authoritative no-op/quarantine total", () => {
     expect(locationInventory.normalizeLocationInventorySummary("10000", {
