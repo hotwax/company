@@ -2,7 +2,7 @@ import { api, commonUtil } from "@common";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
-import type { PendingSegment } from "@/workers/domains/shopifyTransferSyncDomain";
+import { type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
@@ -98,6 +98,67 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
     counts,
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
+  };
+}
+
+/** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */
+const SYNCED_ORDER_BY = "-syncedDate";
+const SYNCED_PAGE_SIZE = 50;
+
+/**
+ * Synced history for one segment — read on demand, never cached.
+ *
+ * Outstanding work is a backlog the worker polls; synced rows are history an operator opens
+ * occasionally and pages through. Caching them would grow without bound for data nobody is
+ * waiting on, so this goes straight to the resource and keeps only what is on screen.
+ */
+export function useShopifySyncedSegment() {
+  const rows = ref<any[]>([]);
+  const total = ref(0);
+  const pageIndex = ref(0);
+  const loading = ref(false);
+  const error = ref("");
+
+  async function load(shopId: string, segment: PendingSegment, append = false) {
+    if(!shopId || !segment) {rows.value = []; total.value = 0; return;}
+    loading.value = true;
+    error.value = "";
+    try {
+      const nextIndex = append ? pageIndex.value + 1 : 0;
+      const resp: any = await api({
+        url: SYNCED_SEGMENT_ENDPOINTS[segment],
+        method: "GET",
+        params: {
+          shopId,
+          orderByField: SYNCED_ORDER_BY,
+          pageIndex: nextIndex,
+          pageSize: SYNCED_PAGE_SIZE,
+        },
+      });
+      if(commonUtil.hasError(resp)) {throw new Error("Shopify sync history could not be read.");}
+      // Entity resources return a bare array and put the count in a header, so a short page is the
+      // only reliable end-of-list signal when the header is not surfaced.
+      const page: any[] = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      const headerTotal = Number(resp?.headers?.["x-total-count"] ?? NaN);
+      pageIndex.value = nextIndex;
+      rows.value = append ? [...rows.value, ...page] : page;
+      total.value = Number.isFinite(headerTotal) ? headerTotal : rows.value.length;
+    } catch (err: any) {
+      error.value = err?.message || "Shopify sync history could not be read.";
+      if(!append) {rows.value = []; total.value = 0;}
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  return {
+    rows,
+    total,
+    loading,
+    error,
+    hasMore: computed(() => rows.value.length < total.value),
+    load,
+    loadMore: (shopId: string, segment: PendingSegment) => load(shopId, segment, true),
   };
 }
 

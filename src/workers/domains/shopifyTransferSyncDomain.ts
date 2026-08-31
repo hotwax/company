@@ -5,8 +5,10 @@ import { pageAll } from "./workerFetch";
 /**
  * Shopify transfer sync — what has not reached Shopify yet.
  *
- * Per tick: five outstanding-work resources under `sob/shopify/transferSync`, each scoped by
- * shopId. Every one is a plain entity resource over a view whose join already means "no provenance
+ * Per tick: the five OUTSTANDING resources under `sob/shopify/transferSync`, each scoped by
+ * shopId. Their synced counterparts (`synced*`) are read on demand when an operator asks for that
+ * direction - it is history to browse, not a backlog to monitor, and polling it would double every
+ * tick for rows nobody is waiting on. Every one is a plain entity resource over a view whose join already means "no provenance
  * row, therefore not sent" — so a row existing IS the outstanding state. Nothing is derived here
  * and nothing is ranked here; the page renders exactly what the server returned.
  *
@@ -30,7 +32,23 @@ export const PENDING_SEGMENT_ENDPOINTS = {
   itemChange: "sob/shopify/transferSync/pendingItemChange",
 } as const;
 
+/** The same five segments, read the other way. Own views, own resources - not a direction flag. */
+export const SYNCED_SEGMENT_ENDPOINTS = {
+  create: "sob/shopify/transferSync/syncedCreate",
+  shipment: "sob/shopify/transferSync/syncedShipment",
+  receipt: "sob/shopify/transferSync/syncedReceipt",
+  cancellation: "sob/shopify/transferSync/syncedCancellation",
+  itemChange: "sob/shopify/transferSync/syncedItemChange",
+} as const;
+
 export type PendingSegment = keyof typeof PENDING_SEGMENT_ENDPOINTS;
+export type SyncDirection = "pending" | "synced";
+
+export function segmentEndpoint(segment: PendingSegment, direction: SyncDirection): string {
+  return direction === "pending"
+    ? PENDING_SEGMENT_ENDPOINTS[segment]
+    : SYNCED_SEGMENT_ENDPOINTS[segment];
+}
 
 export const PENDING_SEGMENTS = Object.keys(PENDING_SEGMENT_ENDPOINTS) as PendingSegment[];
 

@@ -228,6 +228,48 @@
             </ion-segment-button>
           </ion-segment>
 
+          <!-- Outstanding vs synced are two different resources over two different views, not a
+               filter over one. Outstanding is polled into the cache; synced is fetched on demand. -->
+          <ion-segment :value="direction" class="direction-toggle" @ion-change="setDirection($event.detail.value as SyncDirection)">
+            <ion-segment-button value="pending">
+              <ion-label>{{ translate("Outstanding") }}</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="synced">
+              <ion-label>{{ translate("Synced") }}</ion-label>
+            </ion-segment-button>
+          </ion-segment>
+
+          <template v-if="direction === 'synced'">
+            <ion-card v-if="syncedError">
+              <ion-card-content class="ion-text-wrap">
+                <ion-icon :icon="warningOutline" color="danger" /> {{ syncedError }}
+              </ion-card-content>
+            </ion-card>
+            <ion-list v-else-if="syncedRows.length" lines="full">
+              <ion-item v-for="(row, index) in syncedRows" :key="`${row.orderId}-${index}`" button detail @click="openDetail(row)">
+                <ion-label class="ion-text-wrap">
+                  {{ row.orderId }}
+                  <p>{{ artifactLabel(row) }}</p>
+                  <p>{{ row.shopifyInventoryTransferId || translate("Not available") }}</p>
+                </ion-label>
+                <ion-label slot="end" class="ion-text-end last-activity">
+                  {{ formatDateTime(row.syncedDate) || translate("Not available") }}
+                  <p>{{ translate("Synced") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+            <ion-card v-else-if="!syncedLoading">
+              <ion-card-content>{{ translate("Nothing has synced in this tab yet.") }}</ion-card-content>
+            </ion-card>
+            <div v-if="syncedLoading" class="ion-text-center ion-padding">
+              <ion-spinner name="crescent" />
+            </div>
+            <ion-button v-else-if="syncedHasMore" expand="block" fill="outline" @click="loadMoreSynced()">
+              {{ translate("Load more") }}
+            </ion-button>
+          </template>
+
+          <template v-else>
           <ion-card v-if="!pendingTotal">
             <ion-card-content class="empty-state">
               <ion-icon :icon="swapHorizontalOutline" />
@@ -263,6 +305,7 @@
               </ion-label>
             </ion-item>
           </ion-list>
+          </template>
         </template>
       </template>
     </ion-content>
@@ -298,12 +341,13 @@ import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
   useShopifyPendingCounts,
   useShopifyPendingSegment,
+  useShopifySyncedSegment,
   useShopifyTransferSyncJobs,
   useShopifyWebhookReconciliation,
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { isTransferSyncMonitoringLoaded } from "@/utils/shopifyTransferSync";
-import type { PendingSegment } from "@/workers/domains/shopifyTransferSyncDomain";
+import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
@@ -341,6 +385,35 @@ const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.v
 function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
   return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
 }
+
+const direction = ref<SyncDirection>("pending");
+const {
+  rows: syncedRows,
+  loading: syncedLoading,
+  error: syncedError,
+  hasMore: syncedHasMore,
+  load: loadSynced,
+  loadMore: loadMoreSyncedPage,
+} = useShopifySyncedSegment();
+
+/**
+ * The combined tab shows two segments at once, which the cache can merge but a paged on-demand
+ * read cannot. Synced history therefore shows the primary segment of the tab; the paired one has
+ * its own resource and is reachable from the transfer's detail timeline.
+ */
+function setDirection(next: SyncDirection) {
+  direction.value = next || "pending";
+  if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+}
+
+function loadMoreSynced() {
+  void loadMoreSyncedPage(shopId.value, segment.value);
+}
+
+// Switching tab while looking at history re-reads that tab's history, not the previous tab's.
+watch(segment, () => {
+  if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+});
 
 /** Which artifact this row is, named the way the tab it sits in would name it. */
 function artifactLabel(row: any): string {

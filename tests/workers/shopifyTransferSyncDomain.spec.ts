@@ -98,6 +98,23 @@ describe("Shopify transfer sync worker domain", () => {
     expect(state.snapshots[0].rows).toEqual([]);
   });
 
+  it("maps every segment to a distinct pending and synced resource", async () => {
+    const mod: any = await import("@/workers/domains/shopifyTransferSyncDomain");
+    const segments = mod.PENDING_SEGMENTS as string[];
+
+    const urls = segments.flatMap((segment) => [
+      mod.segmentEndpoint(segment, "pending"),
+      mod.segmentEndpoint(segment, "synced"),
+    ]);
+
+    // Ten resources, no collisions: a direction is chosen by picking a resource, so a pending
+    // list can never be turned into a synced one by dropping a query parameter.
+    expect(urls).toHaveLength(10);
+    expect(new Set(urls).size).toBe(10);
+    expect(mod.segmentEndpoint("receipt", "pending")).toBe("sob/shopify/transferSync/pendingReceipt");
+    expect(mod.segmentEndpoint("receipt", "synced")).toBe("sob/shopify/transferSync/syncedReceipt");
+  });
+
   it("does nothing without a shop, rather than pruning on an unscoped read", async () => {
     const domain = await loadDomain();
 
