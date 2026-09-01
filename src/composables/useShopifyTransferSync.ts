@@ -2,7 +2,7 @@ import { api, commonUtil } from "@common";
 import { computed, ref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
-import { type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
+import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
@@ -89,67 +89,104 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
 }
 
 /**
- * The per-shop transfer sync launch date — the one-time setting every sweep gates on.
+ * The per-shop transfer sync start date — the one-time setting every sweep gates on.
  *
- * Nothing stages for a shop that has not set one. That is deliberate on the connector side: the
- * first run on a live shop would otherwise push its entire transfer history at once. So this is
- * setup, not a preference, and the preview exists to make the consequence visible before it is
- * committed — the counts are what WOULD stage at the candidate date, not at the saved one.
+ * Nothing stages for a shop that has not set one: the first run on a live shop would otherwise push
+ * its entire transfer history at once. So this is setup, not a preference, and the preview exists to
+ * make the consequence visible before it is committed.
+ *
+ * No backing service. The setting is a row (`ShopifyShopSetting`, `SHPFY_TO_SYNC_FROM`), the presets
+ * are either the browser's own clock or one ordered row, and each count is the `X-Total-Count`
+ * header of the segment resource the page already reads. Every piece was already reachable.
  */
-const LAUNCH_ENDPOINT = "sob/shopify/transferSync/launch";
+const SHOP_SETTING_ENDPOINT = "sob/shopify/shopSetting";
+const OWNERS_ENDPOINT = "sob/shopify/transferSync/owners";
+const SYNC_FROM_SETTING = "SHPFY_TO_SYNC_FROM";
 
-export interface TransferSyncLaunch {
-  currentDate?: string | number | null;
-  candidateDate?: string | number | null;
-  oldestApprovedDate?: string | number | null;
-  startOfToday?: string | number | null;
-  now?: string | number | null;
-  counts?: Record<string, number>;
-  totalOrderCount?: number;
-}
+export interface TransferSyncLaunchCounts { [segment: string]: number }
 
 export function useShopifyTransferSyncLaunch() {
-  const preview = ref<TransferSyncLaunch | null>(null);
+  const currentDate = ref<string | null>(null);
+  const oldestOwnedDate = ref<string | null>(null);
+  const counts = ref<TransferSyncLaunchCounts>({});
   const loading = ref(false);
   const saving = ref(false);
   const error = ref("");
 
-  /** Preview a candidate date. Omit it to load the shop's current setting and the presets. */
-  async function load(shopId: string, candidateDate?: string) {
-    if(!shopId) {return;}
+  /** X-Total-Count is the whole answer, so ask for a single row and read the header. */
+  async function countAt(shopId: string, segment: PendingSegment, from: string): Promise<number> {
+    const resp: any = await api({
+      url: PENDING_SEGMENT_ENDPOINTS[segment],
+      method: "GET",
+      params: { shopId, orderEntryDate: from, orderEntryDate_op: "greater-equals", pageSize: 1 },
+    });
+    const total = Number(resp?.headers?.["x-total-count"] ?? NaN);
+    if(Number.isFinite(total)) { return total; }
+    // No header (some clients drop it): fall back to what came back, which is at most one row.
+    const rows = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+
+    return rows.length;
+  }
+
+  /** The saved setting and the "everything" preset. Both are single rows. */
+  async function loadContext(shopId: string) {
+    const settingResp: any = await api({
+      url: SHOP_SETTING_ENDPOINT,
+      method: "GET",
+      params: { shopId, settingTypeEnumId: SYNC_FROM_SETTING, pageSize: 1 },
+    });
+    const settingRows = Array.isArray(settingResp?.data) ? settingResp.data : (Array.isArray(settingResp) ? settingResp : []);
+    currentDate.value = settingRows[0]?.settingValue ?? null;
+
+    const ownerResp: any = await api({
+      url: OWNERS_ENDPOINT,
+      method: "GET",
+      params: { shopId, orderByField: "orderEntryDate", pageSize: 1 },
+    });
+    const ownerRows = Array.isArray(ownerResp?.data) ? ownerResp.data : (Array.isArray(ownerResp) ? ownerResp : []);
+    oldestOwnedDate.value = ownerRows[0]?.orderEntryDate ?? null;
+  }
+
+  async function load(shopId: string, candidateDate?: string, withContext = false) {
+    if(!shopId) { return; }
     loading.value = true;
     error.value = "";
     try {
-      const resp: any = await api({
-        url: LAUNCH_ENDPOINT,
-        method: "GET",
-        params: candidateDate ? { shopId, candidateDate } : { shopId },
-      });
-      if(commonUtil.hasError(resp)) {throw new Error("The sync launch date could not be read.");}
-      preview.value = (resp?.data ?? resp) as TransferSyncLaunch;
+      if(withContext) { await loadContext(shopId); }
+      if(candidateDate) {
+        const segments = Object.keys(PENDING_SEGMENT_ENDPOINTS) as PendingSegment[];
+        const totals = await Promise.all(segments.map((segment) => countAt(shopId, segment, candidateDate)));
+        counts.value = Object.fromEntries(segments.map((segment, index) => [segment, totals[index]]));
+      }
     } catch (err: any) {
-      error.value = err?.message || "The sync launch date could not be read.";
-      preview.value = null;
+      error.value = err?.message || "The sync start date could not be read.";
     } finally {
       loading.value = false;
     }
   }
 
+  /** The setting is a row; storing it needs no service. */
   async function save(shopId: string, syncFromDate: string): Promise<boolean> {
-    if(!shopId || !syncFromDate) {return false;}
+    if(!shopId || !syncFromDate) { return false; }
     saving.value = true;
     error.value = "";
     try {
       const resp: any = await api({
-        url: LAUNCH_ENDPOINT,
+        url: SHOP_SETTING_ENDPOINT,
         method: "POST",
-        data: { shopId, syncFromDate },
+        data: {
+          shopId,
+          settingTypeEnumId: SYNC_FROM_SETTING,
+          // ISO-8601 instant: what the connector parses back out of settingValue.
+          settingValue: new Date(syncFromDate).toISOString(),
+        },
       });
-      if(commonUtil.hasError(resp)) {throw new Error("The sync launch date could not be saved.");}
+      if(commonUtil.hasError(resp)) { throw new Error("The sync start date could not be saved."); }
+      currentDate.value = new Date(syncFromDate).toISOString();
 
       return true;
     } catch (err: any) {
-      error.value = err?.message || "The sync launch date could not be saved.";
+      error.value = err?.message || "The sync start date could not be saved.";
 
       return false;
     } finally {
@@ -157,7 +194,7 @@ export function useShopifyTransferSyncLaunch() {
     }
   }
 
-  return { preview, loading, saving, error, load, save };
+  return { currentDate, oldestOwnedDate, counts, loading, saving, error, load, save };
 }
 
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */

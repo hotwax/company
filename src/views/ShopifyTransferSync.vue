@@ -264,16 +264,32 @@
                 <ion-icon :icon="warningOutline" color="danger" /> {{ syncedError }}
               </ion-card-content>
             </ion-card>
-            <ion-list v-else-if="syncedRows.length" lines="full">
-              <ion-item v-for="(row, index) in syncedRows" :key="`${row.orderId}-${index}`">
+            <ion-list v-else-if="presentationRows.length" lines="full">
+              <ion-item v-for="row in presentationRows" :key="row.key">
                 <ion-label class="ion-text-wrap">
-                  {{ row.orderId }}
-                  <p>{{ artifactLabel(row) }}</p>
-                  <p>{{ row.shopifyInventoryTransferId || translate("Not available") }}</p>
+                  <h2>{{ row.title }}</h2>
+                  <p>{{ translate(row.action) }}</p>
+                  <p>{{ row.detail }}</p>
+                  <p v-if="row.occurredAt" class="activity-timing">
+                    {{ translate("OMS event") }} {{ formatDateTime(row.occurredAt) || translate("Not available") }}
+                    <template v-if="row.syncedAt">
+                      · {{ translate("Shopify confirmed") }} {{ formatDateTime(row.syncedAt) || translate("Not available") }}
+                    </template>
+                  </p>
+                  <details class="identifier-details">
+                    <summary>{{ translate("Identifiers") }}</summary>
+                    <p>{{ translate("OMS transfer") }}: {{ row.orderId }}</p>
+                  </details>
                 </ion-label>
                 <ion-label slot="end" class="ion-text-end last-activity">
-                  {{ formatDateTime(row.syncedDate) || translate("Not available") }}
-                  <p>{{ translate("Synced") }}</p>
+                  <template v-if="row.syncDurationMs !== undefined">
+                    {{ formatSyncDuration(row.syncDurationMs) }}
+                    <p>{{ translate("OMS to Shopify") }}</p>
+                  </template>
+                  <template v-else>
+                    {{ formatDateTime(row.syncedAt) || translate("Not available") }}
+                    <p>{{ translate(row.status) }}</p>
+                  </template>
                 </ion-label>
               </ion-item>
             </ion-list>
@@ -299,22 +315,29 @@
             </ion-card-content>
           </ion-card>
 
-          <ion-card v-else-if="!segmentRows.length">
+          <ion-card v-else-if="!presentationRows.length">
             <ion-card-content>
               {{ translate("Nothing outstanding in this tab.") }}
             </ion-card-content>
           </ion-card>
 
           <ion-list v-else lines="full">
-            <ion-item v-for="row in segmentRows" :key="row.pendingKey">
+            <ion-item v-for="row in presentationRows" :key="row.key">
               <ion-label class="ion-text-wrap">
-                {{ row.orderId }}
-                <p>{{ artifactLabel(row) }}</p>
-                <p>{{ row.shopifyInventoryTransferId || translate("Not created yet") }}</p>
+                <h2>{{ row.title }}</h2>
+                <p>{{ translate(row.action) }}</p>
+                <p>{{ row.detail }}</p>
+                <p v-if="row.occurredAt" class="activity-timing">
+                  {{ translate("OMS event") }} {{ formatDateTime(row.occurredAt) || translate("Not available") }}
+                </p>
+                <details class="identifier-details">
+                  <summary>{{ translate("Identifiers") }}</summary>
+                  <p>{{ translate("OMS transfer") }}: {{ row.orderId }}</p>
+                </details>
               </ion-label>
               <ion-label slot="end" class="ion-text-end last-activity">
                 {{ formatDateTime(row.occurredAt) || translate("Not available") }}
-                <p>{{ translate("Outstanding since") }}</p>
+                <p>{{ translate(row.status) }}</p>
               </ion-label>
             </ion-item>
           </ion-list>
@@ -374,7 +397,7 @@
             <ion-card-title>
               <ion-skeleton-text v-if="launchLoading" :animated="true" class="count-skeleton" />
               <template v-else>
-                {{ launchPreview?.totalOrderCount ?? 0 }} {{ translate("transfer orders would sync") }}
+                {{ launchTotal }} {{ translate("changes would sync") }}
               </template>
             </ion-card-title>
           </ion-card-header>
@@ -386,7 +409,7 @@
               </ion-item>
             </ion-list>
             <p class="ion-text-wrap overline">
-              {{ translate("Counted as orders, not individual changes — one order can carry several shipments or receipts, so the totals are not a sum.") }}
+              {{ translate("Each row counts that kind of change. One transfer order can appear in several rows.") }}
             </p>
           </ion-card-content>
         </ion-card>
@@ -434,10 +457,13 @@ import {
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
+import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
+import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
+import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
   useShopifyPendingCounts,
   useShopifyTransferSyncLaunch,
@@ -447,7 +473,9 @@ import {
   useShopifyWebhookReconciliation,
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
+import { facilityCache } from "@/utils/cacheEntities";
 import { isTransferSyncMonitoringLoaded } from "@/utils/shopifyTransferSync";
+import { buildTransferSyncPresentation, formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
 const props = defineProps<{ id?: string }>();
@@ -463,7 +491,7 @@ const shopId = computed(() => String(props.id ?? ""));
  * need a distinct over a mixed projection; merging them in one tab costs nothing.
  */
 const SEGMENT_TABS = [
-  { key: "create" as PendingSegment, label: "Not yet created", also: undefined as PendingSegment | undefined },
+  { key: "create" as PendingSegment, label: "Creation", also: undefined as PendingSegment | undefined },
   { key: "shipment" as PendingSegment, label: "Shipments", also: undefined as PendingSegment | undefined },
   { key: "receipt" as PendingSegment, label: "Receipts", also: undefined as PendingSegment | undefined },
   { key: "cancellation" as PendingSegment, label: "Cancellations", also: "itemChange" as PendingSegment | undefined },
@@ -482,13 +510,22 @@ const { rows: pairedRows } = useShopifyPendingSegment(
 const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
   .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
 
+const { records: facilities } = useCachedList<any>(facilityCache);
+const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntries(
+  facilities.value
+    .filter((facility: any) => facility?.facilityId)
+    .map((facility: any) => [String(facility.facilityId), String(facility.facilityName || facility.facilityId)]),
+));
+
 function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
   return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
 }
 
 // ---------------------------------------------------------------- sync start date
 const {
-  preview: launchPreview,
+  currentDate: launchDate,
+  oldestOwnedDate,
+  counts: launchCounts,
   loading: launchLoading,
   saving: launchSaving,
   error: launchError,
@@ -500,13 +537,16 @@ const showLaunchModal = ref(false);
 const launchChoice = ref("now");
 const launchCustom = ref<string | null>(null);
 
-const launchDate = computed(() => launchPreview.value?.currentDate ?? null);
-
-/** Presets, in the order an operator narrows through: least history first. */
+/**
+ * Presets, in the order an operator narrows through: least history first.
+ *
+ * "Now" and "start of today" come from the browser's own clock - asking a server what time it is
+ * would be a round trip for something already in hand.
+ */
 const launchOptions = computed(() => [
-  { key: "now", label: "Now — only transfers entered from this moment", value: launchPreview.value?.now },
-  { key: "startOfToday", label: "Start of today", value: launchPreview.value?.startOfToday },
-  { key: "oldest", label: "Everything — this shop's oldest transfer order", value: launchPreview.value?.oldestApprovedDate },
+  { key: "now", label: "Now — only transfers entered from this moment", value: new Date().toISOString() },
+  { key: "startOfToday", label: "Start of today", value: DateTime.now().startOf("day").toISO() },
+  { key: "oldest", label: "Everything — this shop's oldest transfer order", value: oldestOwnedDate.value },
 ]);
 
 const selectedLaunchDate = computed<string | null>(() => {
@@ -526,14 +566,19 @@ const LAUNCH_COUNT_LABELS: Array<{ key: string; label: string }> = [
 
 const launchCountRows = computed(() => LAUNCH_COUNT_LABELS.map((entry) => ({
   ...entry,
-  count: launchPreview.value?.counts?.[entry.key] ?? 0,
+  count: launchCounts.value?.[entry.key] ?? 0,
 })));
+
+// Each segment counts its own artifacts, so these do not add up to a count of transfer orders -
+// one order can carry several shipments. Shown as a checked total rather than a headline number.
+const launchTotal = computed(() => launchCountRows.value.reduce((sum, row) => sum + row.count, 0));
 
 function openLaunchModal() {
   showLaunchModal.value = true;
   launchChoice.value = "now";
   launchCustom.value = null;
-  void loadLaunch(shopId.value);
+  // Context (saved setting, oldest owned order) plus the counts for the default choice.
+  void loadLaunch(shopId.value, new Date().toISOString(), true);
 }
 
 /** Every choice re-previews, because the count IS the decision. */
@@ -553,7 +598,6 @@ async function confirmLaunch() {
   if(await saveLaunch(shopId.value, chosen)) {
     showLaunchModal.value = false;
     // The gate changed, so what is outstanding changed with it.
-    void loadLaunch(shopId.value);
     void syncNow();
   }
 }
@@ -567,6 +611,18 @@ const {
   load: loadSynced,
   loadMore: loadMoreSyncedPage,
 } = useShopifySyncedSegment();
+
+const rawTransferRows = computed<Record<string, unknown>[]>(() =>
+  direction.value === "synced" ? syncedRows.value : segmentRows.value);
+const { enrichment, load: loadEnrichment } = useShopifyTransferSyncEnrichment();
+const presentationRows = computed(() => buildTransferSyncPresentation(rawTransferRows.value, direction.value, {
+  ...enrichment.value,
+  facilityNamesById: facilityNamesById.value,
+}));
+
+watch(rawTransferRows, (rows) => {
+  void loadEnrichment(rows);
+}, { immediate: true });
 
 /**
  * The combined tab shows two segments at once, which the cache can merge but a paged on-demand
@@ -586,16 +642,6 @@ function loadMoreSynced() {
 watch(segment, () => {
   if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
 });
-
-/** Which artifact this row is, named the way the tab it sits in would name it. */
-function artifactLabel(row: any): string {
-  if(row?.shipmentStatusId) {return `${translate("Shipment")} ${row.shipmentId}`;}
-  if(row?.receiptId) {return `${translate("Receipt")} ${row.receiptId}`;}
-  if(row?.orderStatusId) {return translate("Transfer cancelled");}
-  if(row?.orderItemChangeId) {return `${translate("Line")} ${row.orderItemSeqId}`;}
-
-  return `${translate("Line")} ${row?.orderItemSeqId ?? ""}`.trim();
-}
 
 // Shopify topic prefixes this flow owns. The vocabulary itself stays in the connector — these
 // only decide which of the shop's subscriptions belong on this page.
@@ -751,7 +797,7 @@ function activeSyncDomains() {
 }
 
 function startTransferSyncDomains() {
-  void loadLaunch(shopId.value);
+  void loadLaunch(shopId.value, undefined, true);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
   viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
@@ -849,6 +895,25 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
 
 .last-activity {
   max-width: 50%;
+}
+
+.activity-timing {
+  color: var(--ion-color-medium);
+  font-size: 0.875rem;
+}
+
+.identifier-details {
+  color: var(--ion-color-medium);
+  font-size: 0.75rem;
+  margin-block-start: var(--spacer-xs);
+}
+
+.identifier-details summary {
+  cursor: pointer;
+}
+
+.identifier-details p {
+  margin-block: var(--spacer-xs) 0;
 }
 
 .webhook-card {
