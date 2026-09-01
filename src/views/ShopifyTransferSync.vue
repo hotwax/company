@@ -264,35 +264,56 @@
                 <ion-icon :icon="warningOutline" color="danger" /> {{ syncedError }}
               </ion-card-content>
             </ion-card>
-            <ion-list v-else-if="presentationRows.length" lines="full">
-              <ion-item v-for="row in presentationRows" :key="row.key">
-                <ion-label class="ion-text-wrap">
-                  <h2>{{ row.title }}</h2>
-                  <p>{{ translate(row.action) }}</p>
-                  <p>{{ row.detail }}</p>
-                  <p v-if="row.occurredAt" class="activity-timing">
-                    {{ translate("OMS event") }} {{ formatDateTime(row.occurredAt) || translate("Not available") }}
-                    <template v-if="row.syncedAt">
-                      · {{ translate("Shopify confirmed") }} {{ formatDateTime(row.syncedAt) || translate("Not available") }}
+            <ion-accordion-group v-else-if="presentationRows.length" class="transfer-row-accordion" expand="inset">
+              <ion-accordion v-for="row in presentationRows" :key="row.key" :value="row.key">
+                <ion-item slot="header" lines="full" class="transfer-row-header">
+                  <ion-label class="ion-text-wrap">
+                    <h2>{{ row.title }}</h2>
+                    <p>{{ row.detail }}</p>
+                  </ion-label>
+                  <ion-label slot="end" class="ion-text-end last-activity">
+                    <template v-if="row.syncDurationMs !== undefined">
+                      {{ formatSyncDuration(row.syncDurationMs) }}
+                      <p>{{ translate("OMS to Shopify") }}</p>
                     </template>
-                  </p>
-                  <details class="identifier-details">
-                    <summary>{{ translate("Identifiers") }}</summary>
-                    <p>{{ translate("OMS transfer") }}: {{ row.orderId }}</p>
-                  </details>
-                </ion-label>
-                <ion-label slot="end" class="ion-text-end last-activity">
-                  <template v-if="row.syncDurationMs !== undefined">
-                    {{ formatSyncDuration(row.syncDurationMs) }}
-                    <p>{{ translate("OMS to Shopify") }}</p>
-                  </template>
-                  <template v-else>
-                    {{ formatDateTime(row.syncedAt) || translate("Not available") }}
-                    <p>{{ translate(row.status) }}</p>
-                  </template>
-                </ion-label>
-              </ion-item>
-            </ion-list>
+                    <template v-else>
+                      {{ formatDateTime(row.syncedAt) || translate("Not available") }}
+                      <p>{{ translate(row.status) }}</p>
+                    </template>
+                  </ion-label>
+                </ion-item>
+                <ion-list slot="content" class="transfer-row-content" lines="full">
+                  <ion-item v-if="row.occurredAt">
+                    <ion-label>{{ translate("OMS recorded") }}</ion-label>
+                    <ion-note slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="row.syncedAt">
+                    <ion-label>{{ translate("Shopify confirmed") }}</ion-label>
+                    <ion-note slot="end">{{ formatDateTime(row.syncedAt) || translate("Not available") }}</ion-note>
+                  </ion-item>
+                  <ion-item>
+                    <ion-label>{{ translate("OMS transfer") }}</ion-label>
+                    <ion-note slot="end">{{ row.orderId }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="row.shopifyTransferId">
+                    <ion-label>{{ translate("Shopify transfer") }}</ion-label>
+                    <ion-note slot="end">{{ row.shopifyTransferId }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="row.shipmentEventStatus">
+                    <ion-label>{{ translate("Shipment event") }}</ion-label>
+                    <ion-note slot="end">{{ translate(row.shipmentEventStatus) }}</ion-note>
+                  </ion-item>
+                  <ion-item v-if="row.omsShipmentId">
+                    <ion-label>{{ translate("OMS shipment ID") }}</ion-label>
+                    <ion-note slot="end">{{ row.omsShipmentId }}</ion-note>
+                  </ion-item>
+                  <ion-item v-for="shopifyShipmentId in row.shopifyShipmentIds" :key="shopifyShipmentId">
+                    <ion-label>{{ translate("Shopify shipment ID") }}</ion-label>
+                    <ion-note slot="end">{{ shopifyShipmentId }}</ion-note>
+                  </ion-item>
+                </ion-list>
+              </ion-accordion>
+            </ion-accordion-group>
             <ion-card v-else-if="!syncedLoading">
               <ion-card-content>{{ translate("Nothing has synced in this tab yet.") }}</ion-card-content>
             </ion-card>
@@ -307,7 +328,7 @@
           <template v-else>
           <ion-card v-if="!pendingTotal">
             <ion-card-content class="empty-state">
-              <ion-icon :icon="swapHorizontalOutline" />
+              <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label class="ion-text-wrap">
                 <h2>{{ translate("Everything is in sync") }}</h2>
                 <p>{{ translate("This shop has no transfer work waiting to reach Shopify. A transfer becomes owned by exactly one shop at approval time, when the order and the receiving location share exactly one common Shopify shop; a shop that owns none will also show nothing here.") }}</p>
@@ -321,26 +342,46 @@
             </ion-card-content>
           </ion-card>
 
-          <ion-list v-else lines="full">
-            <ion-item v-for="row in presentationRows" :key="row.key">
-              <ion-label class="ion-text-wrap">
-                <h2>{{ row.title }}</h2>
-                <p>{{ translate(row.action) }}</p>
-                <p>{{ row.detail }}</p>
-                <p v-if="row.occurredAt" class="activity-timing">
-                  {{ translate("OMS event") }} {{ formatDateTime(row.occurredAt) || translate("Not available") }}
-                </p>
-                <details class="identifier-details">
-                  <summary>{{ translate("Identifiers") }}</summary>
-                  <p>{{ translate("OMS transfer") }}: {{ row.orderId }}</p>
-                </details>
-              </ion-label>
-              <ion-label slot="end" class="ion-text-end last-activity">
-                {{ formatDateTime(row.occurredAt) || translate("Not available") }}
-                <p>{{ translate(row.status) }}</p>
-              </ion-label>
-            </ion-item>
-          </ion-list>
+          <ion-accordion-group v-else class="transfer-row-accordion" expand="inset">
+            <ion-accordion v-for="row in presentationRows" :key="row.key" :value="row.key">
+              <ion-item slot="header" lines="full" class="transfer-row-header">
+                <ion-label class="ion-text-wrap">
+                  <h2>{{ row.title }}</h2>
+                  <p>{{ row.detail }}</p>
+                </ion-label>
+                <ion-label slot="end" class="ion-text-end last-activity">
+                  {{ formatDateTime(row.occurredAt) || translate("Not available") }}
+                  <p>{{ translate(row.status) }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-list slot="content" class="transfer-row-content" lines="full">
+                <ion-item v-if="row.occurredAt">
+                  <ion-label>{{ translate("OMS recorded") }}</ion-label>
+                  <ion-note slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-note>
+                </ion-item>
+                <ion-item>
+                  <ion-label>{{ translate("OMS transfer") }}</ion-label>
+                  <ion-note slot="end">{{ row.orderId }}</ion-note>
+                </ion-item>
+                <ion-item v-if="row.shopifyTransferId">
+                  <ion-label>{{ translate("Shopify transfer") }}</ion-label>
+                  <ion-note slot="end">{{ row.shopifyTransferId }}</ion-note>
+                </ion-item>
+                <ion-item v-if="row.shipmentEventStatus">
+                  <ion-label>{{ translate("Shipment event") }}</ion-label>
+                  <ion-note slot="end">{{ translate(row.shipmentEventStatus) }}</ion-note>
+                </ion-item>
+                <ion-item v-if="row.omsShipmentId">
+                  <ion-label>{{ translate("OMS shipment ID") }}</ion-label>
+                  <ion-note slot="end">{{ row.omsShipmentId }}</ion-note>
+                </ion-item>
+                <ion-item v-for="shopifyShipmentId in row.shopifyShipmentIds" :key="shopifyShipmentId">
+                  <ion-label>{{ translate("Shopify shipment ID") }}</ion-label>
+                  <ion-note slot="end">{{ shopifyShipmentId }}</ion-note>
+                </ion-item>
+              </ion-list>
+            </ion-accordion>
+          </ion-accordion-group>
           </template>
         </template>
       </template>
@@ -452,11 +493,11 @@ import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
   IonCardSubtitle, IonCardTitle, IonContent, IonHeader,
   IonDatetime, IonDatetimeButton, IonFooter,
-  IonIcon, IonItem, IonLabel, IonList, IonModal, IonPage, IonPopover, IonRadio, IonRadioGroup,
+  IonIcon, IonItem, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
   IonSegment, IonSegmentButton,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
-import { closeOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, closeOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -900,23 +941,14 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
   max-width: 50%;
 }
 
-.activity-timing {
-  color: var(--ion-color-medium);
-  font-size: 0.875rem;
+.transfer-row-accordion {
+  margin-block: var(--spacer-sm);
 }
 
-.identifier-details {
+.transfer-row-content {
   color: var(--ion-color-medium);
   font-size: 0.75rem;
-  margin-block-start: var(--spacer-xs);
-}
-
-.identifier-details summary {
-  cursor: pointer;
-}
-
-.identifier-details p {
-  margin-block: var(--spacer-xs) 0;
+  margin: 0;
 }
 
 .webhook-card {

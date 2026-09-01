@@ -224,7 +224,8 @@ export function useShopifySyncedSegment() {
       if(commonUtil.hasError(resp)) {throw new Error("Shopify sync history could not be read.");}
       // Entity resources return a bare array and put the count in a header, so a short page is the
       // only reliable end-of-list signal when the header is not surfaced.
-      const page: any[] = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      const page: any[] = (Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []))
+        .map((row: any) => ({ ...row, segment }));
       const headerTotal = Number(resp?.headers?.["x-total-count"] ?? NaN);
       pageIndex.value = nextIndex;
       rows.value = append ? [...rows.value, ...page] : page;
