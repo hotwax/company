@@ -88,6 +88,78 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
   };
 }
 
+/**
+ * The per-shop transfer sync launch date — the one-time setting every sweep gates on.
+ *
+ * Nothing stages for a shop that has not set one. That is deliberate on the connector side: the
+ * first run on a live shop would otherwise push its entire transfer history at once. So this is
+ * setup, not a preference, and the preview exists to make the consequence visible before it is
+ * committed — the counts are what WOULD stage at the candidate date, not at the saved one.
+ */
+const LAUNCH_ENDPOINT = "sob/shopify/transferSync/launch";
+
+export interface TransferSyncLaunch {
+  currentDate?: string | number | null;
+  candidateDate?: string | number | null;
+  oldestApprovedDate?: string | number | null;
+  startOfToday?: string | number | null;
+  now?: string | number | null;
+  counts?: Record<string, number>;
+  totalOrderCount?: number;
+}
+
+export function useShopifyTransferSyncLaunch() {
+  const preview = ref<TransferSyncLaunch | null>(null);
+  const loading = ref(false);
+  const saving = ref(false);
+  const error = ref("");
+
+  /** Preview a candidate date. Omit it to load the shop's current setting and the presets. */
+  async function load(shopId: string, candidateDate?: string) {
+    if(!shopId) {return;}
+    loading.value = true;
+    error.value = "";
+    try {
+      const resp: any = await api({
+        url: LAUNCH_ENDPOINT,
+        method: "GET",
+        params: candidateDate ? { shopId, candidateDate } : { shopId },
+      });
+      if(commonUtil.hasError(resp)) {throw new Error("The sync launch date could not be read.");}
+      preview.value = (resp?.data ?? resp) as TransferSyncLaunch;
+    } catch (err: any) {
+      error.value = err?.message || "The sync launch date could not be read.";
+      preview.value = null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function save(shopId: string, syncFromDate: string): Promise<boolean> {
+    if(!shopId || !syncFromDate) {return false;}
+    saving.value = true;
+    error.value = "";
+    try {
+      const resp: any = await api({
+        url: LAUNCH_ENDPOINT,
+        method: "POST",
+        data: { shopId, syncFromDate },
+      });
+      if(commonUtil.hasError(resp)) {throw new Error("The sync launch date could not be saved.");}
+
+      return true;
+    } catch (err: any) {
+      error.value = err?.message || "The sync launch date could not be saved.";
+
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return { preview, loading, saving, error, load, save };
+}
+
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */
 const SYNCED_ORDER_BY = "-syncedDate";
 const SYNCED_PAGE_SIZE = 50;

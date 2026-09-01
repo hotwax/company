@@ -68,6 +68,25 @@
               <ion-card-content>{{ translate("Changes this shop has not sent to Shopify yet") }}</ion-card-content>
             </ion-card>
 
+            <!-- Not a preference: nothing syncs at all until this is set, so an unset shop has to say
+                 so loudly rather than looking like a shop with no work. -->
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Syncing from") }}</ion-card-subtitle>
+                <ion-card-title :color="launchDate ? undefined : 'danger'">
+                  {{ launchDate ? formatDateTime(launchDate) : translate("Not set") }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                {{ launchDate
+                  ? translate("Only transfer orders entered on or after this date sync to Shopify.")
+                  : translate("Nothing will sync until a start date is set.") }}
+                <ion-button size="small" fill="outline" class="job-action" @click="openLaunchModal()">
+                  {{ launchDate ? translate("Change start date") : translate("Set start date") }}
+                </ion-button>
+              </ion-card-content>
+            </ion-card>
+
             <ion-card>
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Webhook subscriptions") }}</ion-card-subtitle>
@@ -304,6 +323,92 @@
       </template>
     </ion-content>
 
+    <!-- Sync start date. Every preset shows what it would actually stage, because the number is the
+         decision: "start of today" and "everything" can differ by thousands of orders. -->
+    <ion-modal :is-open="showLaunchModal" @did-dismiss="showLaunchModal = false">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="showLaunchModal = false">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Sync transfers from") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="ion-padding">
+        <ion-label v-if="launchError" class="ion-text-wrap launch-error">
+          <ion-icon :icon="warningOutline" color="danger" /> {{ launchError }}
+        </ion-label>
+
+        <p class="ion-text-wrap launch-intro">
+          {{ translate("Transfer orders entered before this date are never sent to Shopify. Pick the point you want the sync to begin.") }}
+        </p>
+
+        <ion-radio-group :value="launchChoice" @ion-change="selectLaunchChoice($event.detail.value)">
+          <ion-item v-for="option in launchOptions" :key="option.key" lines="full" :disabled="!option.value">
+            <ion-radio :value="option.key" justify="start" label-placement="end">
+              <ion-label class="ion-text-wrap">
+                {{ translate(option.label) }}
+                <p>{{ option.value ? formatDateTime(option.value) : translate("Not available") }}</p>
+              </ion-label>
+            </ion-radio>
+          </ion-item>
+
+          <ion-item lines="full">
+            <ion-radio value="custom" justify="start" label-placement="end">
+              <ion-label>{{ translate("Custom") }}</ion-label>
+            </ion-radio>
+            <ion-datetime-button slot="end" datetime="transfer-launch-custom" />
+            <ion-popover :keep-contents-on-did-dismiss="true">
+              <ion-datetime id="transfer-launch-custom" v-model="launchCustom" presentation="date-time" />
+            </ion-popover>
+          </ion-item>
+        </ion-radio-group>
+
+        <!-- What this date actually admits, per sweep. -->
+        <ion-card class="launch-preview">
+          <ion-card-header>
+            <ion-card-subtitle>{{ translate("If the jobs ran now") }}</ion-card-subtitle>
+            <ion-card-title>
+              <ion-skeleton-text v-if="launchLoading" :animated="true" class="count-skeleton" />
+              <template v-else>
+                {{ launchPreview?.totalOrderCount ?? 0 }} {{ translate("transfer orders would sync") }}
+              </template>
+            </ion-card-title>
+          </ion-card-header>
+          <ion-card-content>
+            <ion-list lines="none">
+              <ion-item v-for="row in launchCountRows" :key="row.key">
+                <ion-label>{{ translate(row.label) }}</ion-label>
+                <ion-badge slot="end" :color="row.count ? 'primary' : 'medium'">{{ row.count }}</ion-badge>
+              </ion-item>
+            </ion-list>
+            <p class="ion-text-wrap overline">
+              {{ translate("Counted as orders, not individual changes — one order can carry several shipments or receipts, so the totals are not a sum.") }}
+            </p>
+          </ion-card-content>
+        </ion-card>
+      </ion-content>
+
+      <ion-footer>
+        <ion-toolbar>
+          <ion-buttons slot="end">
+            <ion-button fill="clear" @click="showLaunchModal = false">
+              {{ translate("Cancel") }}
+            </ion-button>
+            <ion-button fill="solid" :disabled="!selectedLaunchDate || launchSaving" @click="confirmLaunch()">
+              <ion-spinner v-if="launchSaving" name="crescent" />
+              <template v-else>
+                {{ translate("Save") }}
+              </template>
+            </ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-footer>
+    </ion-modal>
+
     <!-- Schedule, activate, and run the selected transfer job without leaving this page. -->
     <ServiceJobDetailsModal
       :is-open="showJobModal"
@@ -323,16 +428,19 @@ import { commonUtil, translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
   IonCardSubtitle, IonCardTitle, IonContent, IonHeader,
-  IonIcon, IonItem, IonLabel, IonList, IonPage, IonSegment, IonSegmentButton,
+  IonDatetime, IonDatetimeButton, IonFooter,
+  IonIcon, IonItem, IonLabel, IonList, IonModal, IonPage, IonPopover, IonRadio, IonRadioGroup,
+  IonSegment, IonSegmentButton,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
-import { swapHorizontalOutline, warningOutline } from "ionicons/icons";
+import { closeOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import {
   useShopifyPendingCounts,
+  useShopifyTransferSyncLaunch,
   useShopifyPendingSegment,
   useShopifySyncedSegment,
   useShopifyTransferSyncJobs,
@@ -376,6 +484,78 @@ const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.v
 
 function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
   return (counts.value[tab.key] ?? 0) + (tab.also ? (counts.value[tab.also] ?? 0) : 0);
+}
+
+// ---------------------------------------------------------------- sync start date
+const {
+  preview: launchPreview,
+  loading: launchLoading,
+  saving: launchSaving,
+  error: launchError,
+  load: loadLaunch,
+  save: saveLaunch,
+} = useShopifyTransferSyncLaunch();
+
+const showLaunchModal = ref(false);
+const launchChoice = ref("now");
+const launchCustom = ref<string | null>(null);
+
+const launchDate = computed(() => launchPreview.value?.currentDate ?? null);
+
+/** Presets, in the order an operator narrows through: least history first. */
+const launchOptions = computed(() => [
+  { key: "now", label: "Now — only transfers entered from this moment", value: launchPreview.value?.now },
+  { key: "startOfToday", label: "Start of today", value: launchPreview.value?.startOfToday },
+  { key: "oldest", label: "Everything — this shop's oldest transfer order", value: launchPreview.value?.oldestApprovedDate },
+]);
+
+const selectedLaunchDate = computed<string | null>(() => {
+  if(launchChoice.value === "custom") { return launchCustom.value; }
+  const option = launchOptions.value.find((entry) => entry.key === launchChoice.value);
+
+  return option?.value ? String(option.value) : null;
+});
+
+const LAUNCH_COUNT_LABELS: Array<{ key: string; label: string }> = [
+  { key: "create", label: "Transfers to create" },
+  { key: "shipment", label: "Shipments" },
+  { key: "receipt", label: "Receipts" },
+  { key: "cancellation", label: "Cancellations" },
+  { key: "itemChange", label: "Line reductions" },
+];
+
+const launchCountRows = computed(() => LAUNCH_COUNT_LABELS.map((entry) => ({
+  ...entry,
+  count: launchPreview.value?.counts?.[entry.key] ?? 0,
+})));
+
+function openLaunchModal() {
+  showLaunchModal.value = true;
+  launchChoice.value = "now";
+  launchCustom.value = null;
+  void loadLaunch(shopId.value);
+}
+
+/** Every choice re-previews, because the count IS the decision. */
+function selectLaunchChoice(next: string) {
+  launchChoice.value = next || "now";
+  if(selectedLaunchDate.value) { void loadLaunch(shopId.value, selectedLaunchDate.value); }
+}
+
+// A custom date only previews once the picker settles, not on every intermediate value.
+watch(launchCustom, (next) => {
+  if(launchChoice.value === "custom" && next) { void loadLaunch(shopId.value, next); }
+});
+
+async function confirmLaunch() {
+  const chosen = selectedLaunchDate.value;
+  if(!chosen) { return; }
+  if(await saveLaunch(shopId.value, chosen)) {
+    showLaunchModal.value = false;
+    // The gate changed, so what is outstanding changed with it.
+    void loadLaunch(shopId.value);
+    void syncNow();
+  }
 }
 
 const direction = ref<SyncDirection>("pending");
@@ -571,6 +751,7 @@ function activeSyncDomains() {
 }
 
 function startTransferSyncDomains() {
+  void loadLaunch(shopId.value);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
   viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
