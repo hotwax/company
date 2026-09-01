@@ -95,19 +95,17 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
  * its entire transfer history at once. So this is setup, not a preference, and the preview exists to
  * make the consequence visible before it is committed.
  *
- * No backing service. The setting is a row (`ShopifyShopSetting`, `SHPFY_TO_SYNC_FROM`), the presets
- * are either the browser's own clock or one ordered row, and each count is the `X-Total-Count`
- * header of the segment resource the page already reads. Every piece was already reachable.
+ * No backing service and no dedicated resource. The setting is a row (`ShopifyShopSetting`,
+ * `SHPFY_TO_SYNC_FROM`), the presets are the browser's own clock or a fixed epoch, and each count is
+ * the `X-Total-Count` header of the segment resource the page already reads.
  */
 const SHOP_SETTING_ENDPOINT = "sob/shopify/shopSetting";
-const OWNERS_ENDPOINT = "sob/shopify/transferSync/owners";
 const SYNC_FROM_SETTING = "SHPFY_TO_SYNC_FROM";
 
 export interface TransferSyncLaunchCounts { [segment: string]: number }
 
 export function useShopifyTransferSyncLaunch() {
   const currentDate = ref<string | null>(null);
-  const oldestOwnedDate = ref<string | null>(null);
   const counts = ref<TransferSyncLaunchCounts>({});
   const loading = ref(false);
   const saving = ref(false);
@@ -128,7 +126,7 @@ export function useShopifyTransferSyncLaunch() {
     return rows.length;
   }
 
-  /** The saved setting and the "everything" preset. Both are single rows. */
+  /** The saved setting. One row. */
   async function loadContext(shopId: string) {
     const settingResp: any = await api({
       url: SHOP_SETTING_ENDPOINT,
@@ -137,14 +135,6 @@ export function useShopifyTransferSyncLaunch() {
     });
     const settingRows = Array.isArray(settingResp?.data) ? settingResp.data : (Array.isArray(settingResp) ? settingResp : []);
     currentDate.value = settingRows[0]?.settingValue ?? null;
-
-    const ownerResp: any = await api({
-      url: OWNERS_ENDPOINT,
-      method: "GET",
-      params: { shopId, orderByField: "orderEntryDate", pageSize: 1 },
-    });
-    const ownerRows = Array.isArray(ownerResp?.data) ? ownerResp.data : (Array.isArray(ownerResp) ? ownerResp : []);
-    oldestOwnedDate.value = ownerRows[0]?.orderEntryDate ?? null;
   }
 
   async function load(shopId: string, candidateDate?: string, withContext = false) {
@@ -194,7 +184,7 @@ export function useShopifyTransferSyncLaunch() {
     }
   }
 
-  return { currentDate, oldestOwnedDate, counts, loading, saving, error, load, save };
+  return { currentDate, counts, loading, saving, error, load, save };
 }
 
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */

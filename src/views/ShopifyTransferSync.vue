@@ -524,7 +524,6 @@ function tabCount(tab: { key: PendingSegment; also?: PendingSegment }): number {
 // ---------------------------------------------------------------- sync start date
 const {
   currentDate: launchDate,
-  oldestOwnedDate,
   counts: launchCounts,
   loading: launchLoading,
   saving: launchSaving,
@@ -540,13 +539,17 @@ const launchCustom = ref<string | null>(null);
 /**
  * Presets, in the order an operator narrows through: least history first.
  *
- * "Now" and "start of today" come from the browser's own clock - asking a server what time it is
- * would be a round trip for something already in hand.
+ * Nothing here needs the server. "Now" and "start of today" are the browser's own clock, and
+ * "everything" is any instant early enough to precede the shop's history - the exact date of its
+ * oldest transfer order would be prettier to display but changes nothing, and the count below
+ * already says precisely how much that choice admits.
  */
+const EVERYTHING_FROM = "1970-01-01T00:00:00.000Z";
+
 const launchOptions = computed(() => [
   { key: "now", label: "Now — only transfers entered from this moment", value: new Date().toISOString() },
   { key: "startOfToday", label: "Start of today", value: DateTime.now().startOf("day").toISO() },
-  { key: "oldest", label: "Everything — this shop's oldest transfer order", value: oldestOwnedDate.value },
+  { key: "oldest", label: "Everything — every transfer this shop owns", value: EVERYTHING_FROM },
 ]);
 
 const selectedLaunchDate = computed<string | null>(() => {
