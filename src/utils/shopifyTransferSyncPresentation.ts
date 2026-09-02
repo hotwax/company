@@ -260,28 +260,35 @@ export function buildTransferSyncPresentation(
     const shipmentId = String(row.shipmentId ?? "");
     const orderItemSeqId = String(row.orderItemSeqId ?? "");
     if(!orderId || !receivedAt) {continue;}
-    const receipt = (enrichment.receiptsByOrderId[orderId] ?? []).find((candidate) =>
+    const orderReceipts = enrichment.receiptsByOrderId[orderId] ?? [];
+    const receipt = orderReceipts.find((candidate) =>
       String(candidate.orderItemSeqId ?? "") === orderItemSeqId
       && String(candidate.datetimeReceived ?? "") === receivedAt,
     );
     const receiverId = String(receipt?.receivedByUserLoginId ?? "");
+    const actionReceipts = orderReceipts.filter((candidate) =>
+      String(candidate.datetimeReceived ?? "") === receivedAt
+      && String(candidate.receivedByUserLoginId ?? "") === receiverId,
+    );
     const key = `${orderId}:${shipmentId}:${receivedAt}:${receiverId}`;
     const group = receiptGroups.get(key) ?? {
       orderId,
       shipmentId,
       receivedAt,
       receiverId,
-      receipts: [],
+      receipts: actionReceipts,
       occurredAt: String(row.happenedAt ?? row.occurredAt ?? receivedAt),
       syncedAt: String(row.syncedDate ?? ""),
       shopifyTransferId: shopifyTransferId(row),
     };
-    group.receipts.push(receipt ?? {
-      orderItemSeqId,
-      datetimeReceived: receivedAt,
-      quantityAccepted: Number(row.quantityAccepted ?? 0),
-      quantityRejected: Number(row.quantityRejected ?? 0),
-    });
+    if(!actionReceipts.length) {
+      group.receipts.push(receipt ?? {
+        orderItemSeqId,
+        datetimeReceived: receivedAt,
+        quantityAccepted: Number(row.quantityAccepted ?? 0),
+        quantityRejected: Number(row.quantityRejected ?? 0),
+      });
+    }
     receiptGroups.set(key, group);
   }
 

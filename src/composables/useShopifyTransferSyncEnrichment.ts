@@ -11,7 +11,10 @@ import type {
   TransferSyncReceipt,
 } from "@/utils/shopifyTransferSyncPresentation";
 
-const RECEIPT_PAGE_SIZE = 100;
+// Poorti caps this resource at 50 rows even when a larger page is requested. Matching the real
+// server limit is what lets a full 50-row response mean "there may be another page" instead of
+// being mistaken for the final page on large transfer receipts.
+const RECEIPT_PAGE_SIZE = 50;
 const SHIPMENT_MAPPING_PAGE_SIZE = 100;
 
 function responseData(response: any): any {
@@ -35,12 +38,19 @@ export function createTransferSyncEnrichmentClient(): TransferSyncEnrichmentClie
     },
     async fetchCreationTime(orderId: string): Promise<string | undefined> {
       const response: any = await api({
-        url: `oms/orders/${encodeURIComponent(orderId)}`,
+        url: "oms/transferOrders",
         method: "GET",
+        params: {
+          orderId,
+          fieldsToSelect: "orderId,entryDate",
+          limit: 1,
+        },
       });
-      const orderDetail = assertReadable(response, "The OMS could not load this transfer's creation time.")?.orderDetail;
-      const entryDate = String(orderDetail?.entryDate ?? "");
-      return entryDate || undefined;
+      const orders = assertReadable(response, "The OMS could not load this transfer's creation time.")?.orders;
+      const entryDate = Array.isArray(orders) ? orders[0]?.entryDate : undefined;
+      if(entryDate === undefined || entryDate === null || entryDate === "") {return undefined;}
+      const entryDateMillis = Number(entryDate);
+      return Number.isFinite(entryDateMillis) ? new Date(entryDateMillis).toISOString() : String(entryDate);
     },
     async fetchReceipts(orderId: string): Promise<TransferSyncReceipt[]> {
       const receipts: TransferSyncReceipt[] = [];

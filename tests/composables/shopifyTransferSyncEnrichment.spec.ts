@@ -32,7 +32,7 @@ describe("createTransferSyncEnrichmentClient", () => {
     expect(api).toHaveBeenNthCalledWith(2, {
       url: "poorti/transferOrders/M200103/receipts",
       method: "GET",
-      params: { pageIndex: 0, pageSize: 100 },
+      params: { pageIndex: 0, pageSize: 50 },
     });
     expect(api).toHaveBeenNthCalledWith(3, {
       url: "oms/users",
@@ -47,12 +47,15 @@ describe("createTransferSyncEnrichmentClient", () => {
   });
 
   it("loads every receipt page so a large transfer is summarized rather than truncated", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) => ({ orderItemSeqId: String(index + 1) }));
-    const secondPage = Array.from({ length: 100 }, (_, index) => ({ orderItemSeqId: String(index + 101) }));
+    const pages = Array.from({ length: 4 }, (_, pageIndex) =>
+      Array.from({ length: 50 }, (_, index) => ({ orderItemSeqId: String((pageIndex * 50) + index + 1) })),
+    );
     const finalPage = Array.from({ length: 48 }, (_, index) => ({ orderItemSeqId: String(index + 201) }));
     api
-      .mockResolvedValueOnce({ data: firstPage })
-      .mockResolvedValueOnce({ data: secondPage })
+      .mockResolvedValueOnce({ data: pages[0] })
+      .mockResolvedValueOnce({ data: pages[1] })
+      .mockResolvedValueOnce({ data: pages[2] })
+      .mockResolvedValueOnce({ data: pages[3] })
       .mockResolvedValueOnce({ data: finalPage });
     const client = createTransferSyncEnrichmentClient();
 
@@ -61,34 +64,47 @@ describe("createTransferSyncEnrichmentClient", () => {
     expect(api).toHaveBeenNthCalledWith(1, {
       url: "poorti/transferOrders/M200103/receipts",
       method: "GET",
-      params: { pageIndex: 0, pageSize: 100 },
+      params: { pageIndex: 0, pageSize: 50 },
     });
     expect(api).toHaveBeenNthCalledWith(2, {
       url: "poorti/transferOrders/M200103/receipts",
       method: "GET",
-      params: { pageIndex: 1, pageSize: 100 },
+      params: { pageIndex: 1, pageSize: 50 },
     });
     expect(api).toHaveBeenNthCalledWith(3, {
       url: "poorti/transferOrders/M200103/receipts",
       method: "GET",
-      params: { pageIndex: 2, pageSize: 100 },
+      params: { pageIndex: 2, pageSize: 50 },
+    });
+    expect(api).toHaveBeenNthCalledWith(4, {
+      url: "poorti/transferOrders/M200103/receipts",
+      method: "GET",
+      params: { pageIndex: 3, pageSize: 50 },
+    });
+    expect(api).toHaveBeenNthCalledWith(5, {
+      url: "poorti/transferOrders/M200103/receipts",
+      method: "GET",
+      params: { pageIndex: 4, pageSize: 50 },
     });
   });
 
-  it("reuses the OMS order document to find when a transfer was recorded", async () => {
+  it("reuses the transfer-order list to find when a transfer was recorded", async () => {
     api.mockResolvedValueOnce({
       data: {
-        orderDetail: {
-          entryDate: "2026-08-31T10:00:00Z",
-        },
+        orders: [{ orderId: "M200103", entryDate: 1788303332478 }],
       },
     });
     const client = createTransferSyncEnrichmentClient();
 
-    await expect((client as any).fetchCreationTime("M200103")).resolves.toBe("2026-08-31T10:00:00Z");
+    await expect((client as any).fetchCreationTime("M200103")).resolves.toBe("2026-09-01T22:55:32.478Z");
     expect(api).toHaveBeenCalledWith({
-      url: "oms/orders/M200103",
+      url: "oms/transferOrders",
       method: "GET",
+      params: {
+        orderId: "M200103",
+        fieldsToSelect: "orderId,entryDate",
+        limit: 1,
+      },
     });
   });
 

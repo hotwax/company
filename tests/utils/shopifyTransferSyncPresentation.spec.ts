@@ -108,6 +108,34 @@ describe("buildTransferSyncPresentation", () => {
     ]);
   });
 
+  it("summarizes the full receiving action when the sync ledger page contains only its first 50 lines", () => {
+    const datetimeReceived = "2026-08-31T13:42:00Z";
+    const receipts = Array.from({ length: 85 }, (_, index) => ({
+      orderItemSeqId: String(index + 1).padStart(5, "0"),
+      datetimeReceived,
+      receivedByUserLoginId: "JANE",
+      quantityAccepted: 5,
+      quantityRejected: 0,
+    }));
+    const ledgerPage = receipts.slice(0, 50).map((receipt) => ({
+      segment: "receipt",
+      orderId: "M200103",
+      shipmentId: "S100",
+      orderItemSeqId: receipt.orderItemSeqId,
+      datetimeReceived,
+    }));
+
+    const rows = buildTransferSyncPresentation(ledgerPage, "synced", {
+      ...emptyEnrichment(),
+      receiptsByOrderId: { M200103: receipts },
+      receiverNamesById: { JANE: "Jane Doe" },
+    });
+
+    expect(rows).toEqual([expect.objectContaining({
+      detail: "Received by Jane Doe · 425 accepted · 0 rejected · 85 lines",
+    })]);
+  });
+
   it("keeps the OMS event time and verified Shopify completion time on synced rows", () => {
     const rows = buildTransferSyncPresentation([
       {
