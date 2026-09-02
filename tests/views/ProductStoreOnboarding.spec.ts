@@ -89,8 +89,8 @@ vi.mock("@/composables/useShopify", () => ({
 }))
 
 vi.mock("@/composables/useFacilities", () => ({
-  useFacilities: () => ({ facilities: ref([]) }),
-  useFacilityCreation: () => ({ createFacility: vi.fn() })
+  useFacilities: () => ({ records: ref([]) }),
+  useFacilityMutations: () => ({ createFacility: vi.fn() })
 }))
 
 vi.mock("@/composables/useSeed", () => ({

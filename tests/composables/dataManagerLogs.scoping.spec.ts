@@ -1,4 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@common", () => ({ api: vi.fn(), logger: { error: vi.fn() } }));
+vi.mock("@/utils/cacheEntities", () => ({ dataManagerLogCache: {} }));
+vi.mock("@/composables/useCachedList", () => ({
+  useCachedList: vi.fn(),
+  useCachedRecord: vi.fn(),
+}));
+vi.mock("@/utils/storage", () => ({
+  clearStorage: vi.fn(),
+  getErrorRecords: vi.fn(),
+  setErrorRecords: vi.fn(),
+}));
+vi.mock("papaparse", () => ({ default: { parse: vi.fn() } }));
+
 import { scopeDataManagerLogsToMessages } from "@/composables/useDataManager";
 
 describe("scopeDataManagerLogsToMessages", () => {
