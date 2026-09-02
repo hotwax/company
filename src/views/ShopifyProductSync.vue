@@ -735,7 +735,6 @@ const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetc
  * already in IndexedDB — `fetchRecentLogsByConfigId` was re-requesting them on entry and again after
  * every action that might have produced one.
  */
-const { logs: recentMdmLogs } = useRecentDataManagerLogs(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT);
 // Reactive cached read — the `productUpdateHistory` worker domain keeps it current, so there is
 // nothing to fetch and no loading state between updates.
 const { productUpdateHistories } = useProductUpdateHistories(props.id);
@@ -756,6 +755,11 @@ const {
   runState: spineRunState,
   pendingRequests: spinePendingRequests,
 } = useShopifyProductSyncRunState(() => props.id);
+const { logs: recentMdmLogs } = useRecentDataManagerLogs(
+  PRODUCT_SYNC_MDM_CONFIG_ID,
+  PRODUCT_SYNC_ERROR_LOG_LIMIT,
+  () => spineRunState.value.systemMessages.map((message) => String(message.systemMessageId || "")),
+);
 
 const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystemMessage);
 const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
@@ -1374,10 +1378,20 @@ const nextDisabled = computed(() => {
   });
 });
 const startSyncDisabled = computed(() => !canStartProductSync(draft.value.startConfirmed) || !hasShopifyWriteAccess.value);
-const progressStatus = computed(() => normalizeProductSyncStatus(progressState.value));
-const isProgressComplete = computed(() => normalizeProductSyncStatus(progressState.value) === "completed");
+const progressStatus = computed(() => normalizeProductSyncStatus({
+  ...progressState.value,
+  totalRecordCount: progressState.value?.totalRecordCount ?? currentSyncRun.value?.mdmLog?.totalRecordCount,
+  successRecordCount: progressState.value?.successRecordCount ?? currentSyncRun.value?.mdmLog?.successRecordCount,
+  failedRecordCount: progressState.value?.failedRecordCount ?? currentSyncRun.value?.mdmLog?.failedRecordCount,
+}));
+const isProgressComplete = computed(() => ["completed", "partial"].includes(progressStatus.value));
 const importStatusLabel = computed(() => {
-  if (currentStep.value === "progress") return progressStatus.value;
+  if (currentStep.value === "progress") {
+    if (progressStatus.value === "partial") return translate("Completed with errors");
+    if (progressStatus.value === "error") return translate("Failed");
+    if (progressStatus.value === "completed") return translate("Complete");
+    return translate(progressStatus.value);
+  }
   return translate("Not started");
 });
 const importStatusBadgeColor = computed(() => {
@@ -1387,6 +1401,7 @@ const importStatusBadgeColor = computed(() => {
 const progressBadgeColor = computed(() => {
   if (progressStatus.value === "completed") return "success";
   if (progressStatus.value === "error" || progressStatus.value === "cancelled") return "danger";
+  if (progressStatus.value === "partial") return "warning";
   if (progressStatus.value === "running" || progressStatus.value === "sent") return "primary";
   return "medium";
 });
@@ -3310,7 +3325,10 @@ async function loadProgress() {
       const status = normalizeProductSyncStatus({ 
         systemMessageState: latestMessage.statusId,
         logStatusId: latestMessage.logStatusId,
-        logId: latestMessage.logId
+        logId: latestMessage.logId,
+        totalRecordCount: latestMessage.totalRecordCount,
+        successRecordCount: latestMessage.successRecordCount,
+        failedRecordCount: latestMessage.failedRecordCount,
       });
 
       progressState.value = {
@@ -3319,8 +3337,11 @@ async function loadProgress() {
         systemMessageState: latestMessage.statusId,
         logStatusId: latestMessage.logStatusId,
         logId: latestMessage.logId,
+        totalRecordCount: latestMessage.totalRecordCount,
+        successRecordCount: latestMessage.successRecordCount,
+        failedRecordCount: latestMessage.failedRecordCount,
         systemMessageId: latestMessage.systemMessageId,
-        completed: ["completed", "error", "cancelled"].includes(status)
+        completed: ["completed", "partial", "error", "cancelled"].includes(status)
       } as any;
 
       if (latestMessage.systemMessageId) {
