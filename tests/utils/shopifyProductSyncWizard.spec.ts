@@ -13,6 +13,26 @@ describe("normalizeProductSyncStatus", () => {
         expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsFinished" })).toBe("completed");
       });
 
+      it("returns error when every record in a finished import failed", () => {
+        expect(normalizeProductSyncStatus({
+          logId: "123",
+          logStatusId: "DmlsFinished",
+          totalRecordCount: 462,
+          successRecordCount: 0,
+          failedRecordCount: 462,
+        })).toBe("error");
+      });
+
+      it("returns partial when a finished import contains both successes and failures", () => {
+        expect(normalizeProductSyncStatus({
+          logId: "123",
+          logStatusId: "DmlsFinished",
+          totalRecordCount: 462,
+          successRecordCount: 460,
+          failedRecordCount: 2,
+        })).toBe("partial");
+      });
+
       it("returns error when logStatusId is DmlsError", () => {
         expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsError" })).toBe("error");
       });

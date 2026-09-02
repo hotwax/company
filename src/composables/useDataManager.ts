@@ -1,4 +1,4 @@
-import { computed, reactive, toRefs, type Ref } from 'vue';
+import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { api, logger } from '@common'
 import { dataManagerLogCache } from '@/utils/cacheEntities';
 import { useCachedList, useCachedRecord } from './useCachedList';
@@ -15,12 +15,29 @@ import Papa from 'papaparse';
  *
  * ⚠️ Empty means the `dataManagerLog` domain was never activated for this config, not "no imports".
  */
-export function useRecentDataManagerLogs(configId: string, limit = 10) {
-  const { records, hydrated } = useCachedList<any>(dataManagerLogCache, {
+export function scopeDataManagerLogsToMessages<T extends { systemMessageId?: unknown }>(
+  logs: readonly T[],
+  systemMessageIds: readonly string[],
+  limit: number,
+): T[] {
+  const wanted = new Set(systemMessageIds.map(String).filter(Boolean));
+  if (!wanted.size) return [];
+  return logs.filter((log) => wanted.has(String(log.systemMessageId ?? ""))).slice(0, limit);
+}
+
+export function useRecentDataManagerLogs(
+  configId: string,
+  limit = 10,
+  systemMessageIds?: MaybeRefOrGetter<readonly string[]>,
+) {
+  const { records: configLogs, hydrated } = useCachedList<any>(dataManagerLogCache, {
     dateField: "createdDate",
     equals: { configId },
-    limit,
   });
+
+  const records = computed(() => systemMessageIds
+    ? scopeDataManagerLogsToMessages(configLogs.value, toValue(systemMessageIds), limit)
+    : configLogs.value.slice(0, limit));
 
   const totalFailedRecords = computed(() =>
     records.value.reduce((sum: number, log: any) => sum + Number(log.failedRecordCount || 0), 0));

@@ -1346,7 +1346,10 @@ const productImportProgressStatus = computed(() => {
     status: productImportProgressState.value?.status,
     systemMessageState: productImportProgressState.value?.systemMessageState || productImportRun.value?.systemMessage?.statusId,
     logStatusId: productImportProgressState.value?.logStatusId || productImportRun.value?.mdmLog?.statusId,
-    logId: productImportProgressState.value?.logId || productImportRun.value?.mdmLog?.id
+    logId: productImportProgressState.value?.logId || productImportRun.value?.mdmLog?.id,
+    totalRecordCount: productImportProgressState.value?.totalRecordCount ?? productImportRun.value?.mdmLog?.totalRecordCount,
+    successRecordCount: productImportProgressState.value?.successRecordCount ?? productImportRun.value?.mdmLog?.successRecordCount,
+    failedRecordCount: productImportProgressState.value?.failedRecordCount ?? productImportRun.value?.mdmLog?.failedRecordCount,
   })
 })
 const productImportProgressVisible = computed(() => {
@@ -1357,6 +1360,7 @@ const productImportProgressLabel = computed(() => {
 
   switch (productImportProgressStatus.value) {
     case "completed": return translate("Complete")
+    case "partial": return translate("Completed with errors")
     case "error": return translate("Error")
     case "cancelled": return translate("Canceled")
     case "importing": return translate("Importing")
@@ -1369,6 +1373,7 @@ const productImportProgressLabel = computed(() => {
 const productImportProgressBadgeColor = computed(() => {
   switch (productImportProgressStatus.value) {
     case "completed": return "success"
+    case "partial": return "warning"
     case "error":
     case "cancelled": return "danger"
     case "queued": return "warning"
@@ -1894,7 +1899,10 @@ async function refreshProductImportProgress() {
     const status = normalizeProductSyncStatus({
       systemMessageState: latestMessage.statusId,
       logStatusId: latestMessage.logStatusId,
-      logId: latestMessage.logId
+      logId: latestMessage.logId,
+      totalRecordCount: latestMessage.totalRecordCount,
+      successRecordCount: latestMessage.successRecordCount,
+      failedRecordCount: latestMessage.failedRecordCount,
     })
     productImportProgressState.value = {
       ...productImportProgressState.value,
@@ -1904,7 +1912,7 @@ async function refreshProductImportProgress() {
       logStatusId: latestMessage.logStatusId,
       logId: latestMessage.logId,
       status,
-      completed: ["completed", "error", "cancelled"].includes(status)
+      completed: ["completed", "partial", "error", "cancelled"].includes(status)
     }
     productImportRun.value = await fetchProductImportSyncRun(latestMessage.systemMessageId, latestMessage)
 
