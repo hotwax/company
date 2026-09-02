@@ -4476,6 +4476,7 @@ export async function createShopifyConnection(payload: {
       clientId: payload.clientId,
       clientSecret: payload.clientSecret,
       shopAccessToken: payload.shopAccessToken,
+      accessScope: "SHOP_READ_WRITE",
     },
   });
   if (commonUtil.hasError(remoteResp)) {
@@ -4504,16 +4505,19 @@ export async function createShopifyConnection(payload: {
 
 /** Rotate/replace a shop remote's Shopify credentials. Returns the server's response data. */
 export async function updateShopifyRemote(payload: {
-  myShopifydomain: string;
+  myshopifyDomain: string;
   shopifyShopId: string;
   shopAccessToken: string;
   clientId: string;
   clientSecret: string;
   oldClientSecret?: string;
   name?: string;
-  hotwaxShopId?: string;
 }) {
-  const resp: any = await api({ url: "sob/shop/remote", method: "post", data: payload });
+  const resp: any = await api({
+    url: "sob/shop",
+    method: "post",
+    data: { ...payload, accessScope: "SHOP_READ_WRITE" },
+  });
   if (commonUtil.hasError(resp)) throw resp;
   return resp.data;
 }
