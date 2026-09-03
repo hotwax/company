@@ -248,6 +248,11 @@ const completedCount = computed(() =>
   PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS.filter((stepId) => state.stepStatuses[stepId] === "complete").length)
 const totalStepCount = computed(() => PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS.length)
 const progressValue = computed(() => totalStepCount.value ? completedCount.value / totalStepCount.value : 0)
+const stepProgressValue = computed(() => {
+  const index = currentStepIndex.value
+  const total = PRODUCT_STORE_ONBOARDING_STEPS.length
+  return total && index >= 0 ? (index + 1) / total : 0
+})
 
 function selectStep(stepId: ProductStoreOnboardingStepId) {
   if(isProductStoreOnboardingStepId(stepId)) {state.currentStepId = stepId}
@@ -337,6 +342,7 @@ export function useProductStoreOnboardingWizard() {
     completedCount,
     totalStepCount,
     progressValue,
+    stepProgressValue,
     selectStep,
     updateDraftField,
     markStepComplete,

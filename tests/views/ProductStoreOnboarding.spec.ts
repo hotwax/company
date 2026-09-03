@@ -766,6 +766,22 @@ describe("ProductStoreOnboarding", () => {
     expect(mobileCount.attributes("aria-live")).toBe("polite")
   })
 
+  it("dynamically updates toolbar progress bar value as user navigates steps", async () => {
+    harness.wizard.currentStepIndex = 0
+    const wrapper = await mountView()
+
+    const progress = wrapper.findComponent({ name: "IonProgressBar" })
+    expect(progress.props("value")).toBe(1 / 8)
+
+    harness.wizard.selectStep("shopify")
+    await wrapper.vm.$nextTick()
+    expect(progress.props("value")).toBe(2 / 8)
+
+    harness.wizard.selectStep("readiness")
+    await wrapper.vm.$nextTick()
+    expect(progress.props("value")).toBe(1)
+  })
+
   it("keeps Store ID and locale validation visible and reachable", async () => {
     harness.wizard.draft.storeName = "Test store"
     harness.wizard.draft.productStoreId = ""

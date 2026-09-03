@@ -5,7 +5,7 @@
         <ion-back-button slot="start" default-href="/product-store" />
         <ion-title>{{ translate("Product Store setup") }}</ion-title>
         <ion-progress-bar
-          :value="onboarding.progressValue"
+          :value="userProgressValue"
           role="progressbar"
           :aria-label="setupProgressLabel"
           :aria-valuemin="0"
@@ -790,6 +790,12 @@ const setupProgressLabel = computed(() => translate("{complete} of {total} setup
   complete: onboarding.completedCount,
   total: onboarding.totalStepCount
 }))
+const userProgressValue = computed(() => {
+  const index = onboarding.currentStepIndex
+  const total = PRODUCT_STORE_ONBOARDING_STEPS.length
+  if(!total || index < 0) {return 0}
+  return (index + 1) / total
+})
 const isReadyToFinish = computed(() => PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS.every((stepId) =>
   onboarding.stepStatuses[stepId] === "complete") &&
   productSyncConfiguration.value.status === "configured" &&
