@@ -594,3 +594,25 @@ export function useMaargConfig() {
     clear,
   };
 }
+
+export function useGoodIdentificationTypes() {
+  async function fetchGoodIdentificationTypes(parentTypeId = "HC_GOOD_ID_TYPE", pageSize = 50): Promise<any[]> {
+    try {
+      const resp: any = await api({
+        url: "oms/goodIdentificationTypes",
+        params: { parentTypeId, pageSize },
+        cache: true,
+      });
+      if (!commonUtil.hasError(resp) && resp?.data) {
+        return resp.data;
+      }
+      return [];
+    } catch (err) {
+      logger.error("Failed to fetch good identification types", err);
+      return [];
+    }
+  }
+
+  return { fetchGoodIdentificationTypes };
+}
+

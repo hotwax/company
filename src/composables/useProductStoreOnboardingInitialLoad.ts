@@ -350,7 +350,15 @@ export function selectOnboardingInitialLoadRun(input: {
     return { run, jobRun, systemMessageId }
   }
 
-  const run = input.runs[0] ?? null
+  const completedRun = input.runs.find((candidate) => {
+    const log = candidate.mdmLog ?? null
+    const logStatus = String(candidate.logStatusId ?? log?.statusId ?? "")
+    const hasLog = Boolean(candidate.logId || log?.logId)
+    const isFinished = logStatus === "DmlsFinished" || Boolean(candidate.finishDateTime) || Boolean(log?.finishDateTime) || Boolean(candidate.completed)
+
+    return hasLog && isFinished
+  })
+  const run = completedRun ?? input.runs[0] ?? null
 
   return {
     run,

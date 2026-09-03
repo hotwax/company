@@ -21,7 +21,9 @@ const harness = vi.hoisted(() => ({
   loadOrderLandmarkDates: vi.fn(),
   recordOrderLandmarkDates: vi.fn(),
   initialLoadStatus: null as any,
-  initialLoadRequestSource: null as any
+  initialLoadRequestSource: null as any,
+  productSyncRunState: null as any,
+  serviceJobs: null as any
 }))
 
 vi.mock("@ionic/vue", async (importOriginal) => ({
@@ -32,7 +34,13 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
 }))
 
 vi.mock("@common", () => ({
-  commonUtil: { hasError: (response: any) => Boolean(response?.data?._ERROR_MESSAGE_) },
+  api: vi.fn().mockResolvedValue({ data: [] }),
+  commonUtil: {
+    hasError: (response: any) => Boolean(response?.data?._ERROR_MESSAGE_),
+    formatDateTime: (value: any) => String(value),
+    getProductIdentificationValue: (id: string, product: any) => product?.[id] || id
+  },
+  DxpShopifyImg: { name: "DxpShopifyImg", template: "<div><slot /></div>" },
   logger: { error: vi.fn(), warn: vi.fn() },
   translate: (key: string, parameters?: Record<string, unknown>) => {
     if(!parameters) {return key}
@@ -41,7 +49,12 @@ vi.mock("@common", () => ({
       (text, [name, value]) => text.replace(`{${name}}`, String(value)),
       key
     )
-  }
+  },
+  useSolrSearch: () => ({
+    searchProducts: vi.fn().mockResolvedValue({
+      products: [{ productId: "PROD-1", mainImageUrl: "image.png" }]
+    })
+  })
 }))
 
 vi.mock("vue-router", () => ({
@@ -78,14 +91,29 @@ vi.mock("@/composables/useProductStores", () => ({
 }))
 
 vi.mock("@/composables/useShopify", () => ({
+  fetchLiveCatalogCounts: vi.fn().mockResolvedValue({ shopifyProductCount: 0 }),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
   useOrderSyncLandmarkDates: () => ({
     landmarkDates: harness.landmarkDates,
     load: harness.loadOrderLandmarkDates,
     record: harness.recordOrderLandmarkDates
   }),
+  useShopifyProductSyncRunState: () => ({
+    runState: harness.productSyncRunState
+  }),
   useShopifyShopMutations: () => ({ updateShop: harness.updateShop }),
   useShopifyShops: () => ({ shops: harness.shops, hydrated: harness.shopsHydrated })
+}))
+
+vi.mock("@/composables/useServiceJobs", () => ({
+  useServiceJobs: () => ({ jobs: harness.serviceJobs }),
+  useServiceJobRunsByJob: () => ({ runsFor: () => [] }),
+  useServiceJob: () => ({
+    fetchJobDetail: vi.fn().mockResolvedValue({}),
+    fetchJobRuns: vi.fn().mockResolvedValue([]),
+    fetchJobAuditHistory: vi.fn().mockResolvedValue([]),
+    updateJob: vi.fn().mockResolvedValue({})
+  })
 }))
 
 vi.mock("@/composables/useFacilities", () => ({
@@ -103,7 +131,10 @@ vi.mock("@/composables/useSeed", () => ({
   useTimeZones: () => ({
     loadTimeZones: vi.fn().mockResolvedValue([{ id: "America/New_York", label: "Eastern Time" }])
   }),
-  useTypedEnums: () => ({ values: ref([{ enumId: "SHOPIFY_PRODUCT_SKU", description: "SKU" }]) })
+  useTypedEnums: () => ({ values: ref([{ enumId: "SHOPIFY_PRODUCT_SKU", description: "SKU" }]) }),
+  useGoodIdentificationTypes: () => ({
+    fetchGoodIdentificationTypes: vi.fn().mockResolvedValue([])
+  })
 }))
 
 function buildWizard() {
@@ -252,7 +283,22 @@ async function mountView(props: Record<string, unknown> = {}) {
       stubs: {
         IonBackButton: true,
         IonContent: { template: "<div><slot /></div>" },
-        IonIcon: true
+        IonIcon: true,
+        AnimatedNumber: { name: "AnimatedNumber", template: "<span><slot /></span>" },
+        ServiceJobDetailsModal: {
+          name: "ServiceJobDetailsModal",
+          props: ["isOpen", "jobName", "title"],
+          template: "<div v-if=\"isOpen\" class=\"service-job-details-modal\" />"
+        },
+        DxpShopifyImg: { name: "DxpShopifyImg", template: "<img />" },
+        IonSelect: {
+          props: ["label", "value"],
+          template: "<div><label>{{ label }}</label><slot /></div>"
+        },
+        IonSelectOption: {
+          props: ["value"],
+          template: "<option :value=\"value\"><slot /></option>"
+        }
       }
     }
   })
@@ -350,6 +396,8 @@ describe("ProductStoreOnboarding", () => {
     harness.productStoreData = buildProductStoreData()
     harness.shops = ref([])
     harness.shopsHydrated = ref(true)
+    harness.productSyncRunState = ref({ systemMessages: [] })
+    harness.serviceJobs = ref([])
     harness.landmarkDates = ref({ status: "idle", error: null, launchDate: "", historyLastSyncDate: "" })
     harness.initialLoadStatus = buildInitialLoadStatus()
     harness.initialLoadRequestSource = null
@@ -385,92 +433,53 @@ describe("ProductStoreOnboarding", () => {
     expect(text).not.toContain("SQS")
   })
 
-  it("shows Product Sync-style configuration and terminal stage evidence", async () => {
+  it("shows Product Sync configuration with jobs, live Shopify count, and product identifiers", async () => {
     configureExistingShopifySetup("products")
     harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
-    harness.initialLoadStatus.products.value = {
-      ...initialLoadSnapshot("products", "completed"),
-      run: {
-        status: "completed",
-        summary: "Product sync request completed.",
-        lastRunLabel: "Aug 12, 2026, 10:00 AM",
-        totalRecordCount: 120,
-        failedRecordCount: 0,
-        stages: [
-          { id: "system-message", label: "System message", status: "completed", detail: "M100" },
-          { id: "shopify-bulk-operation", label: "Shopify bulk operation", status: "completed", detail: "gid://100" },
-          { id: "hotwax-import", label: "HotWax bulk import", status: "completed", detail: "L100", totalRecordCount: 120 }
-        ]
-      },
-      details: {
-        ...initialLoadSnapshot("products").details,
-        systemMessageId: "M100"
-      }
+    harness.productSyncRunState.value = {
+      systemMessages: [
+        {
+          systemMessageId: "M100",
+          logId: "L100",
+          logStatusId: "DmlsFinished",
+          statusId: "SmsgConsumed"
+        }
+      ]
     }
-    harness.wizard.setRunRequest("products", {
-      shopId: "SHOP",
-      setupSnapshot: JSON.stringify(["STORE", "SHOP", "SHOPIFY_PRODUCT_SKU", "", ""]),
-      baselineSystemMessageId: "",
-      systemMessageId: "M100",
-      jobRunId: "",
-      requestedAt: Date.now()
-    })
+    harness.serviceJobs.value = [
+      { jobName: "sync_ShopifyProductUpdates_SHOP", serviceName: "sync_ShopifyProductUpdates", paused: "N" },
+      { jobName: "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery", serviceName: "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery", paused: "N" },
+      { jobName: "poll_ShopifyBulkOperationResult", serviceName: "poll_ShopifyBulkOperationResult", paused: "N" }
+    ]
 
     const wrapper = await mountView({ productStoreId: "STORE" })
 
-    expect(wrapper.text()).toContain("Track sync progress")
-    expect(wrapper.text()).toContain("Monitor each step as products get imported from Shopify")
+    expect(wrapper.text()).toContain("Shopify primary identifier")
+    expect(wrapper.text()).toContain("Product sync jobs")
     expect(wrapper.text()).toContain("Queue update requests")
     expect(wrapper.text()).toContain("Send update request")
     expect(wrapper.text()).toContain("Import completed requests")
-    expect(wrapper.text()).toContain("System message")
-    expect(wrapper.text()).toContain("Shopify bulk operation")
-    expect(wrapper.text()).toContain("HotWax bulk import")
-    expect(wrapper.text()).toContain("120 records processed")
+    expect(wrapper.text()).toContain("Products in Shopify")
+    expect(wrapper.text()).toContain("Product Identifier")
+    expect(wrapper.text()).toContain("Primary")
+    expect(wrapper.text()).toContain("Secondary")
     expect(harness.wizard.stepStatuses.products).toBe("complete")
-
-    await buttonNamed(wrapper, "View details").trigger("click")
-    expect(harness.push).toHaveBeenCalledWith({
-      path: "/shopify-connection-details/SHOP/product-sync",
-      query: {
-        returnTo: "/product-store-onboarding",
-        systemMessageId: "M100"
-      }
-    })
   })
 
-  it.each(["productStoreDetails", "currentStoreSettings"] as const)(
-    "shows Product configuration as Unknown when the %s fetch fails",
-    async (failedSource) => {
-      configureExistingShopifySetup("products")
-      harness.productStoreData.fetchStatus[failedSource] = "error"
-      if(failedSource === "productStoreDetails") {harness.productStoreData.current = {}}
-      if(failedSource === "currentStoreSettings") {harness.productStoreData.currentStoreSettings = {}}
-
-      const wrapper = await mountView({ productStoreId: "STORE" })
-      const configuration = wrapper.find(".status-row")
-
-      expect(configuration.text()).toContain("Configuration status could not be loaded. Refresh to try again.")
-      expect(configuration.text()).toContain("Product Store")
-      expect(configuration.text()).toContain("Global identifier")
-      expect(configuration.text()).toContain("Unknown")
-      expect(configuration.text()).not.toContain("Missing")
-    }
-  )
-
-  it("keeps store-backed Product checks Unknown while their evidence is loading", async () => {
+  it("renders sample product preview only when products are imported", async () => {
     configureExistingShopifySetup("products")
-    harness.productStoreData.fetchStatus.productStoreDetails = "pending"
-    harness.productStoreData.fetchStatus.currentStoreSettings = "pending"
-    harness.productStoreData.current = {}
-    harness.productStoreData.currentStoreSettings = {}
-
+    harness.productSyncRunState.value = {
+      systemMessages: [{ systemMessageId: "M100", logId: "L100", logStatusId: "DmlsFinished", statusId: "SmsgConsumed" }]
+    }
     const wrapper = await mountView({ productStoreId: "STORE" })
-    const configuration = wrapper.find(".status-row")
+    expect(wrapper.text()).toContain("Preview Product Identifier")
+  })
 
-    expect(configuration.text()).toContain("Configuration status is still loading.")
-    expect(configuration.text()).toContain("Unknown")
-    expect(configuration.text()).not.toContain("Missing")
+  it("does not render sample product preview when no products are imported", async () => {
+    configureExistingShopifySetup("products")
+    harness.productSyncRunState.value = { systemMessages: [] }
+    const wrapper = await mountView({ productStoreId: "STORE" })
+    expect(wrapper.text()).not.toContain("Preview Product Identifier")
   })
 
   it.each([
@@ -533,29 +542,25 @@ describe("ProductStoreOnboarding", () => {
     expect(harness.initialLoadRequestSource()).toBe(harness.wizard.runRequests)
   })
 
-  it("refreshes live import evidence and opens the existing Product Sync details route", async () => {
+  it("opens service job details modal when a product sync job item is clicked", async () => {
     configureExistingShopifySetup("products")
-    harness.productStoreData.fetchStatus.shopifyJobStatus = "success"
+    harness.serviceJobs.value = [
+      { jobName: "sync_ShopifyProductUpdates_SHOP", serviceName: "sync_ShopifyProductUpdates", paused: "N" }
+    ]
+
     const wrapper = await mountView({ productStoreId: "STORE" })
+    const queueJobItem = wrapper.findAll("ion-item").find((item) => item.text().includes("Queue update requests"))
+    expect(queueJobItem).toBeDefined()
+    await queueJobItem!.trigger("click")
+    await nextTick()
 
-    await buttonNamed(wrapper, "Refresh").trigger("click")
-    await flushPromises()
-    expect(harness.initialLoadStatus.refresh).toHaveBeenCalledOnce()
-
-    await buttonNamed(wrapper, "View details").trigger("click")
-    expect(harness.push).toHaveBeenCalledWith({
-      path: "/shopify-connection-details/SHOP/product-sync",
-      query: { returnTo: "/product-store-onboarding" }
-    })
+    const modal = wrapper.findComponent({ name: "ServiceJobDetailsModal" })
+    expect(modal.exists()).toBe(true)
+    expect(modal.props("isOpen")).toBe(true)
+    expect(modal.props("jobName")).toBe("sync_ShopifyProductUpdates_SHOP")
   })
 
   it.each([
-    {
-      stepId: "products" as const,
-      saveLabel: "Save product setup",
-      runLabel: "Load all products",
-      runSpy: () => harness.productStoreData.runProductStoreShopifyProductImport
-    },
     {
       stepId: "inventory" as const,
       saveLabel: "Save inventory setup",
@@ -607,29 +612,6 @@ describe("ProductStoreOnboarding", () => {
     expect((refreshButton.element as any).disabled).toBe(false)
     expect((runButton.element as any).disabled).toBe(false)
     expect(wrapper.text()).toContain("Sync status refreshed.")
-  })
-
-  it("does not save Product setup while its full status refresh is active", async () => {
-    configureExistingShopifySetup("products")
-    const wrapper = await mountView({ productStoreId: "STORE" })
-    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
-    await nextTick()
-
-    const configurationRefresh = deferred<void>()
-    harness.productStoreData.fetchProductStoreDetails.mockReturnValueOnce(configurationRefresh.promise)
-    harness.productStoreData.setupProductStoreShopifyProductImport.mockClear()
-    const saveButton = buttonNamed(wrapper, "Save product setup")
-    expect((saveButton.element as any).disabled).toBe(false)
-
-    await buttonNamed(wrapper, "Refresh").trigger("click")
-    await nextTick()
-    expect((saveButton.element as any).disabled).toBe(true)
-
-    await saveButton.trigger("click")
-    expect(harness.productStoreData.setupProductStoreShopifyProductImport).not.toHaveBeenCalled()
-
-    configurationRefresh.resolve()
-    await flushPromises()
   })
 
   it("opens Order history scoped to the exact accepted job and correlated message", async () => {
@@ -968,11 +950,6 @@ describe("ProductStoreOnboarding", () => {
 
   it.each([
     {
-      stepId: "products" as const,
-      loadLabel: "Load all products",
-      edit: () => { harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU" }
-    },
-    {
       stepId: "inventory" as const,
       loadLabel: "Load inventory",
       edit: () => { harness.wizard.draft.reserveInventory = "N" }
@@ -995,57 +972,42 @@ describe("ProductStoreOnboarding", () => {
     expect((loadButton.element as any).disabled).toBe(true)
   })
 
-  it("does not treat configured jobs without persisted product settings as saved setup", async () => {
+  it("saves product setup and transitions to complete when finished MDM log exists", async () => {
     configureExistingShopifySetup("products")
-    harness.productStoreData.currentStoreSettings = {}
-    const wrapper = await mountView({ productStoreId: "STORE" })
-
-    expect((buttonNamed(wrapper, "Load all products").element as any).disabled).toBe(true)
-  })
-
-  it("keeps Load blocked when product fields change while Save is resolving", async () => {
-    configureExistingShopifySetup("products")
-    harness.productStoreData.currentStoreSettings = {}
-    const pending = deferred<any>()
-    harness.productStoreData.setupProductStoreShopifyProductImport.mockReturnValueOnce(pending.promise)
+    harness.productSyncRunState.value = {
+      systemMessages: [{ systemMessageId: "M100", logId: "L100", logStatusId: "DmlsFinished", statusId: "SmsgConsumed" }]
+    }
     const wrapper = await mountView({ productStoreId: "STORE" })
     const saveButton = buttonNamed(wrapper, "Save product setup")
-    const loadButton = buttonNamed(wrapper, "Load all products")
-
     await saveButton.trigger("click")
-    expect((saveButton.element as any).disabled).toBe(true)
-    expect((loadButton.element as any).disabled).toBe(true)
-    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
-    pending.resolve({ data: {} })
     await flushPromises()
 
-    expect(harness.productStoreData.setupProductStoreShopifyProductImport).toHaveBeenCalledOnce()
-    expect((loadButton.element as any).disabled).toBe(true)
+    expect(harness.updateStore).toHaveBeenCalledWith({ productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU" })
+    expect(harness.saveSettings).toHaveBeenCalledWith({
+      settingTypeEnumId: "PRDT_IDEN_PREF",
+      settingValue: "{}"
+    })
+    expect(harness.productStoreData.setupProductStoreShopifyProductImport).toHaveBeenCalledWith({
+      productStoreId: "STORE",
+      shopId: "SHOP",
+      productIdentifierEnumId: "SHOPIFY_PRODUCT_SKU",
+      activateJobs: true
+    })
+    expect(harness.wizard.stepStatuses.products).toBe("complete")
   })
 
-  it("does not report a product load as accepted when its saved setup changes in flight", async () => {
+  it("only shows products step in-progress when there is not 1 or more finished MDM log", async () => {
     configureExistingShopifySetup("products")
-    const pending = deferred<any>()
-    harness.productStoreData.runProductStoreShopifyProductImport.mockReturnValueOnce(pending.promise)
+    harness.productSyncRunState.value = { systemMessages: [] }
     const wrapper = await mountView({ productStoreId: "STORE" })
-
-    await buttonNamed(wrapper, "Load all products").trigger("click")
-    harness.wizard.draft.primaryProductIdentification = "SHOPIFY_PRODUCT_SKU"
-    pending.resolve({ data: {} })
+    const saveButton = buttonNamed(wrapper, "Save product setup")
+    await saveButton.trigger("click")
     await flushPromises()
 
-    expect(harness.wizard.stepStatuses.products).not.toBe("complete")
-    expect(wrapper.text()).not.toContain("The initial product import was queued.")
-    expect((buttonNamed(wrapper, "Load all products").element as any).disabled).toBe(true)
+    expect(harness.wizard.stepStatuses.products).toBe("in-progress")
   })
 
   it.each([
-    {
-      stepId: "products" as const,
-      saveLabel: "Save product setup",
-      loadLabel: "Load all products",
-      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport
-    },
     {
       stepId: "inventory" as const,
       saveLabel: "Save inventory setup",
@@ -1079,12 +1041,6 @@ describe("ProductStoreOnboarding", () => {
 
   it.each([
     {
-      stepId: "products" as const,
-      loadLabel: "Load all products",
-      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport,
-      expectedMessage: "The initial product import was queued. This step stays in progress until the import finishes successfully."
-    },
-    {
       stepId: "inventory" as const,
       loadLabel: "Load inventory",
       importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset,
@@ -1116,12 +1072,6 @@ describe("ProductStoreOnboarding", () => {
   })
 
   it.each([
-    {
-      stepId: "products" as const,
-      saveLabel: "Save product setup",
-      loadLabel: "Load all products",
-      trackingId: "MSG-ACCEPTED"
-    },
     {
       stepId: "inventory" as const,
       saveLabel: "Save inventory setup",
@@ -1271,12 +1221,6 @@ describe("ProductStoreOnboarding", () => {
 
   it.each([
     {
-      stepId: "products" as const,
-      loadLabel: "Load all products",
-      importSpy: () => harness.productStoreData.runProductStoreShopifyProductImport,
-      response: { data: { jobRunId: "WRONG-ID-TYPE" } }
-    },
-    {
       stepId: "inventory" as const,
       loadLabel: "Load inventory",
       importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset,
@@ -1308,21 +1252,18 @@ describe("ProductStoreOnboarding", () => {
     expect(wrapper.text()).not.toContain("Request accepted. Waiting for its sync run to appear.")
   })
 
-  it.each(["products", "inventory", "orders"] as const)(
+  it.each(["inventory", "orders"] as const)(
     "treats a payload-level $stepId run failure as Needs attention",
     async (stepId) => {
       configureExistingShopifySetup(stepId)
       const labels = {
-        products: "Load all products",
         inventory: "Load inventory",
         orders: "Load order history"
       }
       harness.productStoreData[
-        stepId === "products"
-          ? "runProductStoreShopifyProductImport"
-          : stepId === "inventory"
-            ? "runProductStoreShopifyInventoryReset"
-            : "runProductStoreShopifyOrderHistoryImport"
+        stepId === "inventory"
+          ? "runProductStoreShopifyInventoryReset"
+          : "runProductStoreShopifyOrderHistoryImport"
       ].mockResolvedValueOnce({ hasError: true, errorMessages: ["Backend rejected the run"] })
       const wrapper = await mountView({ productStoreId: "STORE" })
 

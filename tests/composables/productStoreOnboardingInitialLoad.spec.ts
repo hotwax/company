@@ -454,6 +454,25 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
     expect(selected.systemMessageId).toBe("REQUESTED")
   })
 
+  it("prioritizes a completed run with finished MDM log when no request is active", () => {
+    const selected = selectOnboardingInitialLoadRun({
+      kind: "products",
+      shopId: "SHOP",
+      runs: [
+        { systemMessageId: "NEWER-PENDING-POLL", statusId: "SmsgProduced" },
+        {
+          systemMessageId: "HISTORICAL-IMPORT",
+          logId: "L100",
+          logStatusId: "DmlsFinished",
+          statusId: "SmsgConsumed"
+        }
+      ]
+    })
+
+    expect(selected.run?.systemMessageId).toBe("HISTORICAL-IMPORT")
+    expect(selected.systemMessageId).toBe("HISTORICAL-IMPORT")
+  })
+
   it("correlates inventory through the exact requested ServiceJobRun and its result message", () => {
     const selected = selectOnboardingInitialLoadRun({
       kind: "inventory",

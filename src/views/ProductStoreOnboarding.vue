@@ -253,72 +253,141 @@
             </ion-card-content>
 
             <ion-card-content v-else-if="currentStep.id === 'products'" class="form-stack">
-              <ion-select
-                fill="outline"
-                label-placement="stacked"
-                interface="popover"
-                :label="translate('Global identifier')"
-                :helper-text="translate('Choose the identifier HotWax should use to match Shopify products.')"
-                :value="onboarding.draft.productIdentifierEnumId"
-                @ion-change="updateDraft('productIdentifierEnumId', $event.detail.value)"
-              >
-                <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                  {{ identifier.description || identifier.enumId }}
-                </ion-select-option>
-              </ion-select>
-              <ion-select
-                fill="outline"
-                label-placement="stacked"
-                interface="popover"
-                :label="translate('Primary product identification')"
-                :value="onboarding.draft.primaryProductIdentification"
-                @ion-change="updateDraft('primaryProductIdentification', $event.detail.value)"
-              >
-                <ion-select-option value="">
-                  {{ translate("None") }}
-                </ion-select-option>
-                <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                  {{ identifier.description || identifier.enumId }}
-                </ion-select-option>
-              </ion-select>
-              <ion-select
-                fill="outline"
-                label-placement="stacked"
-                interface="popover"
-                :label="translate('Secondary product identification')"
-                :value="onboarding.draft.secondaryProductIdentification"
-                @ion-change="updateDraft('secondaryProductIdentification', $event.detail.value)"
-              >
-                <ion-select-option value="">
-                  {{ translate("None") }}
-                </ion-select-option>
-                <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                  {{ identifier.description || identifier.enumId }}
-                </ion-select-option>
-              </ion-select>
-              <ion-note>
-                {{ translate("Save the matching rules before queuing the initial catalog load.") }}
-              </ion-note>
-              <onboarding-sync-status
-                subtitle="Monitor each step as products get imported from Shopify"
-                :configuration="productSyncConfiguration"
-                :initial-load="productDisplayedInitialLoad"
-                :hydrated="productInitialLoad.hydrated"
-                :load-error="initialLoadError"
-                save-action-label="Save product setup"
-                :show-run-action="true"
-                :run-action-label="initialLoadActionLabel('products', 'Load all products')"
-                :show-refresh-action="!!linkedShopId"
-                :show-details-action="!!productInitialLoad.details.route"
-                :save-disabled="!canConfigureProducts || !productSetupDirty || initialLoadRunBlocked('products', productInitialLoad.run.status)"
-                :run-disabled="!canLoadProducts || initialLoadRunBlocked('products', productInitialLoad.run.status)"
-                :refresh-disabled="!linkedShopId"
-                :busy-action="productSyncBusyAction"
-                @save="saveProductSetup"
-                @run="loadProducts"
-                @refresh="refreshInitialLoadStatus('products')"
-                @open-details="openInitialLoadDetails('products', productInitialLoad)"
-              />
+              <!-- 1. Set shopify primary identifier -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Shopify primary identifier") }}</ion-card-title>
+                  <ion-card-subtitle>{{ translate("The identifier controls how Shopify products match HotWax products.") }}</ion-card-subtitle>
+                </ion-card-header>
+                <ion-card-content>
+                  <ion-select
+                    fill="outline"
+                    label-placement="stacked"
+                    interface="popover"
+                    :label="translate('Shopify primary identifier')"
+                    :value="onboarding.draft.productIdentifierEnumId"
+                    @ion-change="updateDraft('productIdentifierEnumId', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identifier in shopifyPrimaryIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                      {{ identifier.description || identifier.enumId }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-card-content>
+              </ion-card>
+
+              <!-- 2. List of jobs needed to make sure sync will work for given shop -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Product sync jobs") }}</ion-card-title>
+                  <ion-card-subtitle>{{ translate("Review the jobs that move product updates through the sync pipeline") }}</ion-card-subtitle>
+                </ion-card-header>
+                <ion-list lines="full">
+                  <ion-item button detail :disabled="!syncJobObj" @click="openSyncJobDetails(syncJobObj)">
+                    <ion-label>
+                      {{ translate("Queue update requests") }}
+                      <p>{{ queueUpdateRequestsLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isSyncJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                  <ion-item button detail :disabled="!sendUpdateRequestJobObj?.jobName" @click="openSyncJobDetails(sendUpdateRequestJobObj)">
+                    <ion-label>
+                      {{ translate("Send update request") }}
+                      <p>{{ sendUpdateRequestLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isBulkOperationSendJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                  <ion-item button detail :disabled="!importCompletedRequestsJobObj?.jobName" @click="openSyncJobDetails(importCompletedRequestsJobObj)">
+                    <ion-label>
+                      {{ translate("Import completed requests") }}
+                      <p>{{ importCompletedRequestsLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isBulkOperationPollJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                </ion-list>
+              </ion-card>
+
+              <!-- 2.5 Show how many products are in shopify -->
+              <ion-card>
+                <ion-card-content>
+                  <h1 class="ion-text-center">
+                    <AnimatedNumber v-if="shopifyProductCount !== undefined && shopifyProductCount !== null" :value="Number(shopifyProductCount)" />
+                    <template v-else>
+                      {{ shopifyProductCountLabel }}
+                    </template>
+                  </h1>
+                </ion-card-content>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-center">
+                    {{ translate("Products in Shopify") }}
+                  </ion-label>
+                  <ion-spinner v-if="isShopifyProductCountLoading" slot="end" name="crescent" />
+                </ion-item>
+              </ion-card>
+
+              <!-- 3. Product store setting for selecting primary and secondary identifier -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Product Identifier") }}</ion-card-title>
+                </ion-card-header>
+                <ion-card-content>
+                  {{ translate("Choosing a product identifier allows you to view products with your preferred identifiers.") }}
+                </ion-card-content>
+                <ion-item>
+                  <ion-select
+                    :label="translate('Primary')"
+                    interface="popover"
+                    :placeholder="translate('primary identifier')"
+                    :value="onboarding.draft.primaryProductIdentification"
+                    @ion-change="updateDraft('primaryProductIdentification', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identification in productIdentificationOptions" :key="identification.goodIdentificationTypeId" :value="identification.goodIdentificationTypeId">
+                      {{ identification.description ? identification.description : identification.goodIdentificationTypeId }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-select
+                    :label="translate('Secondary')"
+                    interface="popover"
+                    :placeholder="translate('secondary identifier')"
+                    :value="onboarding.draft.secondaryProductIdentification"
+                    @ion-change="updateDraft('secondaryProductIdentification', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identification in productIdentificationOptions" :key="identification.goodIdentificationTypeId" :value="identification.goodIdentificationTypeId">
+                      {{ identification.description ? identification.description : identification.goodIdentificationTypeId }}
+                    </ion-select-option>
+                    <ion-select-option value="">
+                      {{ translate("None") }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <template v-if="currentSampleProduct">
+                  <ion-item lines="full" color="light">
+                    <ion-label color="medium">
+                      {{ translate("Preview Product Identifier") }}
+                    </ion-label>
+                  </ion-item>
+                  <ion-item lines="none">
+                    <ion-thumbnail slot="start">
+                      <DxpShopifyImg size="small" :src="currentSampleProduct.mainImageUrl" />
+                    </ion-thumbnail>
+                    <ion-label>
+                      {{ commonUtil.getProductIdentificationValue(onboarding.draft.primaryProductIdentification, currentSampleProduct) ? commonUtil.getProductIdentificationValue(onboarding.draft.primaryProductIdentification, currentSampleProduct) : currentSampleProduct.productId }}
+                      <p>{{ commonUtil.getProductIdentificationValue(onboarding.draft.secondaryProductIdentification, currentSampleProduct) }}</p>
+                    </ion-label>
+                    <ion-button size="default" fill="clear" @click="shuffleProduct">
+                      <ion-icon slot="icon-only" :icon="shuffleOutline" />
+                    </ion-button>
+                  </ion-item>
+                </template>
+              </ion-card>
+
+              <div class="actions">
+                <ion-button :disabled="busy.products || !canConfigureProducts" @click="saveProductSetup">
+                  <ion-spinner v-if="busy.products" slot="start" name="crescent" />
+                  {{ translate("Save product setup") }}
+                </ion-button>
+              </div>
               <step-feedback step-id="products" />
             </ion-card-content>
 
@@ -554,11 +623,17 @@
         </section>
       </main>
     </ion-content>
+    <ServiceJobDetailsModal
+      :is-open="showSyncJobDetailsModal"
+      :job-name="selectedSyncJobDetailsJob?.jobName || ''"
+      :title="selectedSyncJobDetailsJob?.jobName || ''"
+      @close="showSyncJobDetailsModal = false"
+    />
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { commonUtil, logger, translate } from "@common"
+import { DxpShopifyImg, commonUtil, logger, translate, useSolrSearch } from "@common"
 import {
   IonBackButton,
   IonBadge,
@@ -584,6 +659,7 @@ import {
   IonSelect,
   IonSelectOption,
   IonSpinner,
+  IonThumbnail,
   IonTitle,
   IonToggle,
   IonToolbar,
@@ -599,13 +675,17 @@ import {
   ellipseOutline,
   linkOutline,
   openOutline,
+  pauseCircleOutline,
   saveOutline,
+  shuffleOutline,
   storefrontOutline,
   syncOutline,
   timeOutline
 } from "ionicons/icons"
 import { computed, defineComponent, h, nextTick, reactive, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import AnimatedNumber from "@/components/common/AnimatedNumber.vue"
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue"
 import ImportShopifyLocationsModal from "@/components/facility/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import type {
@@ -623,10 +703,13 @@ import {
 } from "@/composables/useProductStoreOnboardingInitialLoad"
 import { type ProductStoreOnboardingDraft, useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
 import { useProductStoreCreation, useProductStoreMutations } from "@/composables/useProductStores"
-import { useCurrencies, useOrganization, useTimeZones, useTypedEnums } from "@/composables/useSeed"
+import { useCurrencies, useGoodIdentificationTypes, useOrganization, useTimeZones, useTypedEnums } from "@/composables/useSeed"
+import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs"
 import {
+  fetchLiveCatalogCounts,
   fetchShopifyShopLocations,
   useOrderSyncLandmarkDates,
+  useShopifyProductSyncRunState,
   useShopifyShopMutations,
   useShopifyShops
 } from "@/composables/useShopify"
@@ -639,6 +722,7 @@ import {
   isProductStoreOnboardingStepId
 } from "@/config/productStoreOnboarding"
 import { generateInternalId, getResponseErrorMessage } from "@/utils"
+import { isPaused } from "@/utils/serviceJob"
 
 const props = defineProps<{ productStoreId?: string }>()
 const route = useRoute()
@@ -762,7 +846,6 @@ const initialLoadError = computed(() => String(initialLoadStatus.refreshError?.v
 const INITIAL_LOAD_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
 const initialLoadClock = ref(Date.now())
 let initialLoadClockTimer: ReturnType<typeof setInterval> | null = null
-const productDisplayedInitialLoad = computed(() => displayedInitialLoad("products", productInitialLoad.value))
 const inventoryDisplayedInitialLoad = computed(() => displayedInitialLoad("inventory", inventoryInitialLoad.value))
 const orderDisplayedInitialLoad = computed(() => displayedInitialLoad("orders", orderInitialLoad.value))
 const {
@@ -777,6 +860,171 @@ const savedSetupSnapshots = reactive<Record<"products" | "inventory" | "orders",
   inventory: null,
   orders: null
 })
+
+const { runState: spineRunState } = useShopifyProductSyncRunState(() => linkedShopId.value)
+const finishedMdmLogs = computed(() => {
+  return (spineRunState.value?.systemMessages || []).filter((msg: any) =>
+    Boolean(msg.logId) && (msg.logStatusId === "DmlsFinished" || Boolean(msg.finishDateTime) || msg.statusId === "SmsgConsumed"))
+})
+const hasFinishedMdmLog = computed(() => {
+  if(finishedMdmLogs.value.length > 0) {return true}
+  const initialLoadCompleted = productInitialLoad.value?.run?.stages?.some((stage: any) => stage.id === "hotwax-import" && stage.status === "completed")
+
+  return Boolean(initialLoadCompleted)
+})
+
+const { jobs } = useServiceJobs()
+
+const shopifyPrimaryIdentifierOptions = computed(() => {
+  if(productIdentifierOptions.value?.length) {
+    return productIdentifierOptions.value
+  }
+
+  return [
+    { enumId: "SHOPIFY_PRODUCT_SKU", description: translate("SKU") },
+    { enumId: "SHOPIFY_BARCODE", description: translate("UPCA / Barcode") },
+    { enumId: "SHOPIFY_PRODUCT_ID", description: translate("Shopify internal id") }
+  ]
+})
+
+const syncJobObj = computed(() => {
+  const shopId = linkedShopId.value
+  if(!shopId) {return jobs.value.find((j: any) => j.serviceName === "sync_ShopifyProductUpdates") || null}
+  const specificName = `sync_ShopifyProductUpdates_${shopId}`
+
+  return jobs.value.find((j: any) => j.jobName === specificName) ||
+    jobs.value.find((j: any) => (j.serviceName === "sync_ShopifyProductUpdates" || j.jobName?.includes("sync_ShopifyProductUpdates")) && j.jobName?.includes(shopId)) ||
+    jobs.value.find((j: any) => j.serviceName === "sync_ShopifyProductUpdates") ||
+    null
+})
+const sendUpdateRequestJobObj = computed(() => {
+  return jobs.value.find((j: any) => j.jobName === "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery" || j.serviceName === "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery") || null
+})
+const importCompletedRequestsJobObj = computed(() => {
+  return jobs.value.find((j: any) => j.jobName === "poll_ShopifyBulkOperationResult" || j.serviceName === "poll_ShopifyBulkOperationResult") || null
+})
+
+const watchedProductJobNames = computed(() => [
+  syncJobObj.value?.jobName,
+  sendUpdateRequestJobObj.value?.jobName,
+  importCompletedRequestsJobObj.value?.jobName
+].filter(Boolean) as string[])
+const serviceJobRuns = useServiceJobRunsByJob(() => watchedProductJobNames.value, 10)
+
+const isSyncJobPaused = computed(() => isPaused(syncJobObj.value))
+const isBulkOperationSendJobPaused = computed(() => isPaused(sendUpdateRequestJobObj.value))
+const isBulkOperationPollJobPaused = computed(() => isPaused(importCompletedRequestsJobObj.value))
+
+function formatJobLastRun(job: any, isPausedState: boolean) {
+  if(!job?.jobName) {return translate("Not configured")}
+  if(isPausedState) {return translate("Paused")}
+  const runs = serviceJobRuns.runsFor(job.jobName)
+  if(runs?.length) {
+    const latest = runs[0]
+    const startedAt = latest.runTime || latest.startDate || latest.startTime || latest.createdDate || ""
+    const status = latest.statusDesc || latest.statusId || (latest.hasError === "Y" ? translate("Error") : translate("Finished"))
+    const dateLabel = startedAt ? commonUtil.formatDateTime(startedAt) : ""
+
+    return dateLabel ? `${translate("Last run")}: ${dateLabel} · ${status}` : String(status)
+  }
+
+  return job.cronString || translate("No recent runs")
+}
+
+const queueUpdateRequestsLastRunLabel = computed(() => formatJobLastRun(syncJobObj.value, isSyncJobPaused.value))
+const sendUpdateRequestLastRunLabel = computed(() => formatJobLastRun(sendUpdateRequestJobObj.value, isBulkOperationSendJobPaused.value))
+const importCompletedRequestsLastRunLabel = computed(() => formatJobLastRun(importCompletedRequestsJobObj.value, isBulkOperationPollJobPaused.value))
+
+const showSyncJobDetailsModal = ref(false)
+const selectedSyncJobDetailsJob = ref<any>(null)
+function openSyncJobDetails(job: any) {
+  if(!job?.jobName) {return}
+  selectedSyncJobDetailsJob.value = job
+  showSyncJobDetailsModal.value = true
+}
+
+// 2.5 Live Shopify products count
+const shopifyProductCount = ref<number | undefined>(undefined)
+const isShopifyProductCountLoading = ref(false)
+const shopifyProductCountLabel = computed(() => {
+  if(isShopifyProductCountLoading.value) {return "..."}
+  if(shopifyProductCount.value !== undefined && shopifyProductCount.value !== null) {
+    return String(shopifyProductCount.value)
+  }
+
+  return translate("Unavailable")
+})
+async function loadShopifyProductCount() {
+  if(!linkedShopId.value) {return}
+  isShopifyProductCountLoading.value = true
+  try {
+    const remoteId = linkedShopifyShop.value?.systemMessageRemoteId || linkedShopId.value
+    const stats = await fetchLiveCatalogCounts({
+      systemMessageRemoteId: remoteId,
+      shop: linkedShopifyShop.value
+    })
+    if(stats?.shopifyProductCount !== undefined) {
+      shopifyProductCount.value = stats.shopifyProductCount
+    }
+  } catch (err) {
+    logger.error("Failed to fetch Shopify catalog counts", err)
+  } finally {
+    isShopifyProductCountLoading.value = false
+  }
+}
+
+// 3. Product Store setting for selecting primary and secondary identifier with sample product shown
+const STATIC_PRODUCT_IDENTIFIER_OPTIONS = [
+  { goodIdentificationTypeId: "productId", description: translate("Product ID") },
+  { goodIdentificationTypeId: "groupId", description: translate("Group ID") },
+  { goodIdentificationTypeId: "groupName", description: translate("Group Name") },
+  { goodIdentificationTypeId: "internalName", description: translate("Internal Name") },
+  { goodIdentificationTypeId: "parentProductName", description: translate("Parent Product Name") },
+  { goodIdentificationTypeId: "primaryProductCategoryName", description: translate("Primary Product Category Name") },
+  { goodIdentificationTypeId: "title", description: translate("Title") }
+]
+const fetchedGoodIdentificationOptions = ref<any[]>([])
+const productIdentificationOptions = computed(() => {
+  return [...STATIC_PRODUCT_IDENTIFIER_OPTIONS, ...fetchedGoodIdentificationOptions.value]
+})
+const { fetchGoodIdentificationTypes } = useGoodIdentificationTypes()
+async function loadGoodIdentificationTypes() {
+  try {
+    const data = await fetchGoodIdentificationTypes("HC_GOOD_ID_TYPE", 50)
+    if(Array.isArray(data)) {
+      fetchedGoodIdentificationOptions.value = data
+    }
+  } catch (error) {
+    logger.error("Failed to fetch good identification types", error)
+  }
+}
+
+const sampleProducts = ref<any[]>([])
+const currentSampleProduct = ref<any>(null)
+function shuffleProduct() {
+  if(sampleProducts.value.length) {
+    const randomIndex = Math.floor(Math.random() * sampleProducts.value.length)
+    currentSampleProduct.value = sampleProducts.value[randomIndex]
+  }
+}
+async function fetchSampleProducts() {
+  // Only show after product is imported from shopify!
+  if(!hasFinishedMdmLog.value) {
+    sampleProducts.value = []
+    currentSampleProduct.value = null
+
+    return
+  }
+  try {
+    const resp = await useSolrSearch().searchProducts({ viewSize: 10 })
+    if(resp?.products?.length) {
+      sampleProducts.value = resp.products
+      shuffleProduct()
+    }
+  } catch (error) {
+    logger.error("Failed to fetch sample products for preview", error)
+  }
+}
 const availableShopifyShops = computed(() => cachedShopifyShops.value.filter((shop: any) =>
   !shop.productStoreId))
 const selectedAvailableShopifyShop = computed(() => availableShopifyShops.value.find((shop: any) =>
@@ -794,6 +1042,7 @@ const userProgressValue = computed(() => {
   const index = onboarding.currentStepIndex
   const total = PRODUCT_STORE_ONBOARDING_STEPS.length
   if(!total || index < 0) {return 0}
+
   return (index + 1) / total
 })
 const isReadyToFinish = computed(() => PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS.every((stepId) =>
@@ -856,8 +1105,6 @@ const canConfigureProducts = computed(() =>
   !!selectedProductStoreId.value && !!linkedShopId.value && !!onboarding.draft.productIdentifierEnumId)
 const productSetupDirty = computed(() =>
   savedSetupSnapshots.products === null || savedSetupSnapshots.products !== captureProductSetup().snapshot)
-const canLoadProducts = computed(() =>
-  canConfigureProducts.value && !productSetupDirty.value)
 const inventoryResetJobStatus = computed(() =>
   productStoreData.currentShopifyJobStatus?.jobs?.find((job: any) => job.key === "inventoryReset") || null)
 const inventoryResetSetupAvailability = computed<"available" | "missing" | "unknown">(() => {
@@ -998,11 +1245,6 @@ const orderSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncC
     syncCheck("order-history-job", "Historic order import", jobReady("orderHistory"), shopifyConfigurationKnown.value)
   ],
   shopifyConfigurationFailed.value || productStoreConfigurationFailed.value || orderLandmarkDatesFailed.value
-))
-const productSyncBusyAction = computed<OnboardingSyncBusyAction>(() => syncBusyAction(
-  "products",
-  busy.products,
-  busy.productImport
 ))
 const inventorySyncBusyAction = computed<OnboardingSyncBusyAction>(() => syncBusyAction(
   "inventory",
@@ -1462,8 +1704,7 @@ function productPreferenceValue(primaryId: string, secondaryId: string) {
 }
 
 async function saveProductSetup() {
-  if(!canConfigureProducts.value || !productSetupDirty.value ||
-    initialLoadRunBlocked("products", productInitialLoad.value.run.status) ||
+  if(!canConfigureProducts.value ||
     busy.products || busy.productImport || initialLoadRefreshBusy.products) {return}
 
   const setup = captureProductSetup()
@@ -1489,46 +1730,23 @@ async function saveProductSetup() {
     })
     if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
+    await loadSelectedProductStore(setup.productStoreId)
     savedSetupSnapshots.products = setup.snapshot
     onboarding.setRunRequest("products", null)
-    onboarding.markStepInProgress("products")
-    setFeedback("products", translate("Product setup saved. You can now load the catalog."), "success")
+    if(hasFinishedMdmLog.value) {
+      onboarding.markStepComplete("products")
+      setFeedback("products", translate("Product setup saved."), "success")
+      void fetchSampleProducts()
+    } else {
+      onboarding.markStepInProgress("products")
+      setFeedback("products", translate("Product setup saved. You can now load the catalog."), "success")
+    }
   } catch (error: any) {
     logger.error(error)
     onboarding.markStepAttention("products")
     setFeedback("products", feedbackForError(error, "Failed to save product setup."), "danger")
   } finally {
     busy.products = false
-  }
-}
-
-async function loadProducts() {
-  if(!canLoadProducts.value || initialLoadRunBlocked("products", productInitialLoad.value.run.status) ||
-    busy.products || busy.productImport || initialLoadRefreshBusy.products) {return}
-
-  const setup = captureProductSetup()
-  const savedSnapshot = savedSetupSnapshots.products
-  busy.productImport = true
-  feedback.products = null
-  beginInitialLoadRequest("products", setup.shopId, setup.snapshot)
-  try {
-    const response = await productStoreData.runProductStoreShopifyProductImport({
-      shopId: setup.shopId,
-      includeAll: true
-    })
-    if(responseFailed(response)) {throw response?.data || response}
-    acceptInitialLoadRequest("products", response)
-    if(savedSetupSnapshots.products !== savedSnapshot || captureProductSetup().snapshot !== savedSnapshot) {return}
-
-    onboarding.markStepInProgress("products")
-    setFeedback("products", translate("The initial product import was queued. This step stays in progress until the import finishes successfully."), "medium")
-  } catch (error: any) {
-    onboarding.setRunRequest("products", null)
-    logger.error(error)
-    onboarding.markStepAttention("products")
-    setFeedback("products", feedbackForError(error, "Failed to queue the initial product import."), "danger")
-  } finally {
-    busy.productImport = false
   }
 }
 
@@ -1826,6 +2044,17 @@ function reconcileInitialLoadStep(kind: OnboardingInitialLoadKind, snapshot: Onb
   const status = snapshot.run.status
   const configured = initialLoadConfiguration(kind).status === "configured"
   const matchesRequest = initialLoadMatchesRequest(kind, snapshot)
+
+  if(kind === "products" && hasFinishedMdmLog.value) {
+    if(configured || (productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId)) {
+      onboarding.markStepComplete("products")
+    } else {
+      onboarding.markStepAttention("products")
+    }
+
+    return
+  }
+
   if(status === "completed" && configured && matchesRequest) {
     onboarding.markStepComplete(kind)
 
@@ -1839,6 +2068,15 @@ function reconcileInitialLoadStep(kind: OnboardingInitialLoadKind, snapshot: Onb
     return
   }
   if(["pending", "queued", "sent", "running", "importing"].includes(status)) {
+    if(kind === "products" && hasFinishedMdmLog.value) {
+      if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+        onboarding.markStepComplete("products")
+      } else {
+        onboarding.markStepAttention("products")
+      }
+
+      return
+    }
     onboarding.markStepInProgress(kind)
 
     return
@@ -2115,6 +2353,13 @@ function reconcileRequiredJobs(
   const configured = requiredJobKeys.every(jobReady)
   const status = onboarding.stepStatuses[stepId]
   if(configured) {
+    if(stepId === "products" && hasFinishedMdmLog.value) {
+      if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+        onboarding.markStepComplete("products")
+      }
+
+      return
+    }
     if(status === "not-started") {
       onboarding.markStepInProgress(stepId)
     }
@@ -2182,6 +2427,14 @@ function reconcileSetupFacts() {
     reconcileRequiredJobs("inventory", ["inventoryReset"])
     reconcileRequiredJobs("orders", ["orderImport", "orderHistory"])
   }
+
+  if(hasFinishedMdmLog.value) {
+    if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+      onboarding.markStepComplete("products")
+    } else if(onboarding.stepStatuses.products === "in-progress") {
+      onboarding.markStepAttention("products")
+    }
+  }
 }
 
 let setupLoadGeneration = 0
@@ -2229,6 +2482,9 @@ function loadSelectedProductStore(productStoreId: string, loadGeneration?: numbe
       String(productStoreData.current?.productStoreId || "") !== requestedProductStoreId) {return false}
 
     reconcileSetupFacts()
+    void loadShopifyProductCount()
+    void loadGoodIdentificationTypes()
+    void fetchSampleProducts()
 
     return true
   })
@@ -2315,6 +2571,26 @@ watch(
   },
   { deep: true, immediate: true }
 )
+
+watch(currentStep, (step) => {
+  if(step?.id === "products") {
+    if(shopifyProductCount.value === undefined) {
+      void loadShopifyProductCount()
+    }
+    if(productIdentificationOptions.value.length <= STATIC_PRODUCT_IDENTIFIER_OPTIONS.length) {
+      void loadGoodIdentificationTypes()
+    }
+    if(hasFinishedMdmLog.value && !sampleProducts.value.length) {
+      void fetchSampleProducts()
+    }
+  }
+})
+
+watch(hasFinishedMdmLog, (finished) => {
+  if(finished && !sampleProducts.value.length) {
+    void fetchSampleProducts()
+  }
+})
 
 onIonViewWillEnter(() => {
   initialLoadClock.value = Date.now()

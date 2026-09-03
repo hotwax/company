@@ -2866,5 +2866,18 @@
   "Store": "Store",
   "Save store": "Save store",
   "Location mapping": "Location mapping",
-  "Readiness review": "Readiness review"
+  "Readiness review": "Readiness review",
+  "Shopify primary identifier": "Shopify primary identifier",
+  "Products in Shopify": "Products in Shopify",
+  "Secondary": "Secondary",
+  "primary identifier": "primary identifier",
+  "secondary identifier": "secondary identifier",
+  "Preview Product Identifier": "Preview Product Identifier",
+  "Product setup saved.": "Product setup saved.",
+  "Finished": "Finished",
+  "Group ID": "Group ID",
+  "Group Name": "Group Name",
+  "Internal Name": "Internal Name",
+  "Parent Product Name": "Parent Product Name",
+  "Primary Product Category Name": "Primary Product Category Name"
 }
