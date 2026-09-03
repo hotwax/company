@@ -2307,7 +2307,7 @@ watch(
 onIonViewWillEnter(() => {
   initialLoadClock.value = Date.now()
   initialLoadClockTimer ||= setInterval(() => { initialLoadClock.value = Date.now() }, 30_000)
-  void initialLoadStatus.activate().catch((error) => logger.error("Failed to monitor onboarding imports", error))
+  void initialLoadStatus.activate().catch((error) => logger.error("Import [Onboarding] - Failed to monitor imports", error))
 
   return initialiseSetup()
 })

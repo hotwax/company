@@ -682,7 +682,7 @@ async function fetchProductStoreShopifyJobStatus(productStoreId: string) {
     })
     state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: 'success', lastFetched: Date.now() }
   } catch (error: any) {
-    logger.warn('Failed to fetch product store Shopify job status', error)
+    logger.warn('Product Store [Shopify] - Failed to fetch job status', error)
     state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: 'error' }
   }
 
