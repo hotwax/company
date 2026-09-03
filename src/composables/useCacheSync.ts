@@ -1,5 +1,5 @@
 import { onUnmounted, ref } from "vue";
-import { createSyncService, type SyncService } from "@/services/pollingService";
+import { type SyncService, createSyncService } from "@/services/pollingService";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 
 /**
@@ -34,6 +34,28 @@ export function useCacheSync() {
   const registeredDomains = ref<string[]>([]);
 
   let service: SyncService | null = null;
+  const errorsByDomain = new Map<string, string>();
+
+  function refreshError() {
+    error.value = [...errorsByDomain.values()].pop() ?? "";
+  }
+
+  function recordError(domain: string, message: string) {
+    // Reinsert so the most recently failing domain remains the visible error.
+    errorsByDomain.delete(domain);
+    errorsByDomain.set(domain, message);
+    refreshError();
+  }
+
+  function clearError(domain: string) {
+    errorsByDomain.delete(domain);
+    refreshError();
+  }
+
+  function clearErrors() {
+    errorsByDomain.clear();
+    refreshError();
+  }
 
   function onStatus(data: Record<string, any>) {
     switch (data.type) {
@@ -43,17 +65,21 @@ export function useCacheSync() {
       case "sync-end": {
         busy.value = false;
         lastSyncAt.value = data.at ?? Date.now();
-        if (data.domain) {
+        if(data.domain) {
           domainStatus.value = {
             ...domainStatus.value,
             [data.domain]: { written: data.written ?? 0, at: data.at ?? Date.now() },
           };
+          clearError(String(data.domain));
         }
         break;
       }
       case "sync-error":
         busy.value = false;
-        error.value = `${data.domain ?? "sync"}: ${data.message ?? "failed"}`;
+        recordError(
+          String(data.domain ?? "sync"),
+          `${data.domain ?? "sync"}: ${data.message ?? "failed"}`,
+        );
         break;
       default:
         break;
@@ -63,30 +89,33 @@ export function useCacheSync() {
   /** Activate domains and start polling. Safe to call again to change the domain set. */
   async function start(domains: ActiveDomain[], options: { baseTickMs?: number } = {}) {
     activeDomains.value = domains;
-    if (service) {
+    if(service) {
       // Already running — just swap the domain set, no respawn.
       await service.setDomains(domains);
+
       return;
     }
-    error.value = "";
+    clearErrors();
     service = createSyncService({
       domains,
       baseTickMs: options.baseTickMs,
       onStatus,
-      onAuthError: (message) => { error.value = `auth: ${message}`; },
+      onAuthError: (message) => { recordError("auth", `auth: ${message}`); },
     });
     try {
       await service.start();
       registeredDomains.value = await service.registeredDomains();
       ready.value = true;
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+      recordError("__start", err instanceof Error ? err.message : String(err));
     }
   }
 
   /** Manual refresh — routed to the worker, never fetched on the main thread. */
   async function syncNow() {
-    if (service) await service.syncNow();
+    if(service) {
+      await service.syncNow();
+    }
   }
 
   /**
@@ -94,11 +123,16 @@ export function useCacheSync() {
    * or effectively nothing (update), so the record must be re-read to refresh the cache.
    */
   async function afterMutation(domain: string, pk: Record<string, unknown>) {
-    if (service) await service.refetchOne(domain, pk);
+    if(service) {
+      await service.refetchOne(domain, pk);
+    }
   }
 
   function stop() {
-    if (service) { service.stop(); service = null; } // terminates the worker + its timer
+    if(service) {
+      service.stop(); // terminates the worker + its timer
+      service = null;
+    }
     ready.value = false;
     busy.value = false;
   }

@@ -128,6 +128,17 @@ const routes: Array<RouteRecordRaw> = [
     beforeEnter: authGuard,
   },
   {
+    path: "/shopify-connection-details/:id/inventory-sync/location-history",
+    name: "ShopifyInventorySyncLocationHistory",
+    component: ShopifyInventorySync,
+    props: (route) => ({
+      id: route.params.id,
+      initialView: "location-history",
+      initialHistoryMode: typeof route.query.mode === "string" ? route.query.mode : "events",
+    }),
+    beforeEnter: authGuard,
+  },
+  {
     // Full run history for one inventory sync job. jobName is a route param rather than a query so
     // the page is linkable; `title` carries the human name the sync screen already has.
     path: "/shopify-connection-details/:id/inventory-sync/job-runs/:jobName",
@@ -143,6 +154,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync", name: "ShopifyOrderSync", component: () => import("@/views/ShopifyOrderSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },
+  { path: "/shopify-connection-details/:id/transfer-sync", name: "ShopifyTransferSync", component: () => import("@/views/ShopifyTransferSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/instance-details", name: "ShopifyInstanceDetails", component: () => import("@/views/ShopifyShopDetails.vue"), props: true, beforeEnter: authGuard },
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },

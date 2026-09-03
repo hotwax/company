@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dataFeedProjection, shopifyTransferPendingProjection } from "@/utils/cacheEntities";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -11,7 +12,6 @@ import {
   toMillis,
   toText,
 } from "@/utils/cacheProjection";
-import { dataFeedProjection } from "@/utils/cacheEntities";
 
 const NOW = 1_700_000_000_000;
 
@@ -119,6 +119,26 @@ describe("projectRow", () => {
     expect(row.dataFeedId).toBe("ShopifyInventoryChannelEventFeed");
     expect(row.dataFeedTypeEnumId).toBe("DTFDTP_RT_PUSH");
     expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
+  });
+
+  it("keys a pending row by segment and artifact, so two segments never collide", () => {
+    const shipment = projectRow({
+      segment: "shipment",
+      shopId: "10000",
+      orderId: "ORDER-1",
+      shipmentStatusId: "STATUS-1",
+    }, shopifyTransferPendingProjection, NOW)!;
+    const receipt = projectRow({
+      segment: "receipt",
+      shopId: "10000",
+      orderId: "ORDER-1",
+      receiptId: "RECEIPT-1",
+    }, shopifyTransferPendingProjection, NOW)!;
+
+    expect(shipment.pendingKey).toBe("shipment|10000|ORDER-1|STATUS-1");
+    expect(receipt.pendingKey).toBe("receipt|10000|ORDER-1|RECEIPT-1");
+    // Same shop and order, different segments and artifacts: one row must never overwrite the other.
+    expect(shipment.pendingKey).not.toBe(receipt.pendingKey);
   });
 });
 

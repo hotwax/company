@@ -32,11 +32,12 @@ const DETAIL_ENDPOINT = "sob/shopify/inventoryAdjustmentDetails";
 /** Moqui entity-list responses are a bare array; unwrapCollection handles both shapes. */
 const DETAIL_COLLECTION = null;
 const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+const SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID = "ShopifyShopLocationInventoryEventFeed";
 
-async function fetchInventoryEventFeed(ctx: SyncContext): Promise<any | null> {
+async function fetchInventoryEventFeed(ctx: SyncContext, feedId: string = SHOPIFY_INVENTORY_EVENT_FEED_ID): Promise<any | null> {
   const response = await workerGet(
     ctx,
-    `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}`,
+    `admin/dataFeeds/${feedId}`,
     {},
   );
   return response?.dataFeedId ? response : null;
@@ -46,16 +47,21 @@ registerSyncDomain({
   name: "shopifyInventoryEventFeed",
   async sync(ctx, _args, options) {
     if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
-    const feed = await fetchInventoryEventFeed(ctx);
-    const result = await dataFeedCache.snapshotReplace(feed ? [feed] : []);
+    const [channelFeed, locationFeed] = await Promise.all([
+      fetchInventoryEventFeed(ctx, SHOPIFY_INVENTORY_EVENT_FEED_ID),
+      fetchInventoryEventFeed(ctx, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID),
+    ]);
+    const feeds = [channelFeed, locationFeed].filter(Boolean);
+    const result = await dataFeedCache.snapshotReplace(feeds);
     await markSyncedThisLogin("shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
-    if (String(pk?.dataFeedId ?? "") !== SHOPIFY_INVENTORY_EVENT_FEED_ID) return 0;
-    const feed = await fetchInventoryEventFeed(ctx);
+    const feedId = String(pk?.dataFeedId ?? "");
+    if (feedId !== SHOPIFY_INVENTORY_EVENT_FEED_ID && feedId !== SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID) return 0;
+    const feed = await fetchInventoryEventFeed(ctx, feedId);
     if (!feed) {
-      await dataFeedCache.remove(SHOPIFY_INVENTORY_EVENT_FEED_ID);
+      await dataFeedCache.remove(feedId);
       return 0;
     }
     return dataFeedCache.upsertMany([feed]);

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 const cachedJobs = ref<any[]>([]);
 const cachedChannels = ref<any[]>([]);
 const cachedShops = ref<any[]>([]);
 const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
+const cachedLocationSummaries = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
 
 const harness = vi.hoisted(() => ({
@@ -63,21 +64,25 @@ vi.mock("@/composables/useCacheSync", () => ({
 vi.mock("@/composables/useCachedList", () => ({
   useCachedList: (cache: any) => {
     const table = String(cache?.table || cache?.name || "");
-    if (table.includes("shopifyShop") || table.includes("ShopifyShop")) {
+    if(table.includes("shopifyShop") || table.includes("ShopifyShop")) {
       return { records: cachedShops, rows: cachedShops, hydrated: ref(true) };
     }
-    if (table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
+    if(table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
       return { records: cachedChannels, rows: cachedChannels, hydrated: ref(true) };
     }
-    if (table.includes("dataFeed") || table.includes("DataFeed")) {
+    if(table.includes("dataFeed") || table.includes("DataFeed")) {
       return { records: cachedDataFeeds, rows: cachedDataFeeds, hydrated: ref(true) };
     }
-    if (table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
+    if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
       return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: ref(true) };
     }
-    if (table.includes("systemMessage") || table.includes("SystemMessage")) {
+    if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
+      return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
+    }
+    if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
     }
+
     return { records: ref([]), rows: ref([]), hydrated: ref(true) };
   },
 }));
@@ -173,9 +178,39 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         inventoryFeedType: "manual",
       },
     ];
+    cachedLocationSummaries.value = [];
     harness.ensureChannelResetJob.mockReset();
     harness.showToast.mockReset();
     harness.push.mockReset();
+  });
+
+  it.each([
+    { summary: undefined, label: "Not available", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 0 }, label: "0", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 47 }, label: "47", danger: true },
+  ])("renders authoritative delivery-error count $label with danger=$danger", async ({ summary, label, danger }) => {
+    cachedLocationSummaries.value = summary ? [summary] : [];
+    const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonBackButton: true,
+          IonModal: { template: "<div><slot /></div>" },
+          IonSkeletonText: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const deliveryErrorsTitle = () => wrapper.findAll("ion-card")
+      .find((card) => card.text().includes("Delivery errors"))!
+      .findComponent({ name: "IonCardTitle" });
+    expect(deliveryErrorsTitle().text()).toBe(label);
+    expect(deliveryErrorsTitle().props("color") === "danger").toBe(danger);
   });
 
   it("lists each channel's aggregate reset job individually in monitored sync jobs", async () => {
@@ -208,7 +243,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -242,7 +277,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -276,7 +311,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
