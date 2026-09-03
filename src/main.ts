@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import { cookieHelper, createDxpI18n, initialiseConfig, logger } from '@common'
+import { createDxpI18n, initialiseConfig, logger } from '@common'
 
 import { IonicVue } from '@ionic/vue'
 
@@ -47,7 +47,7 @@ const app = createApp(App)
 initialiseConfig({
   postLogin: useUserStore().postLogin,
   postLogout: useUserStore().postLogout,
-  get oms() { return useUserStore().oms || (cookieHelper().get("oms") as string) || "" },
+  get oms() { return useUserStore().oms },
   set oms(val: string) { useUserStore().oms = val },
   get appVersion() { return useUserStore().appVersion },
   set appVersion(val: string | undefined) { useUserStore().appVersion = val },
