@@ -2041,7 +2041,13 @@ function hydrateDraftFromStore(expectedProductStoreId: string) {
   // incomplete persisted record appears complete without ever having saved the displayed value.
   for(const field of STORE_DRAFT_FIELDS) {
     const value = values[field]
-    onboarding.updateDraftField(field, value === undefined || value === null ? "" : String(value))
+    if(field === "timezone" && (value === undefined || value === null || value === "")) {
+      if(!onboarding.draft.timezone) {
+        onboarding.updateDraftField("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York")
+      }
+    } else {
+      onboarding.updateDraftField(field, value === undefined || value === null ? "" : String(value))
+    }
   }
   for(const field of ["reserveInventory", "productIdentifierEnumId", "showSystemicInventory"] as const) {
     const value = values[field]
@@ -2146,7 +2152,7 @@ function reconcileSavedSetupSnapshots() {
 function reconcileSetupFacts() {
   if(persistedStoreMatches()) {
     onboarding.markStepComplete("name")
-  } else if(onboarding.stepStatuses.name === "complete") {
+  } else if(selectedProductStoreId.value) {
     onboarding.markStepAttention("name")
   }
   reconcileShopifyLink()

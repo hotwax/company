@@ -2862,5 +2862,9 @@
   "{label} turned on": "{label} turned on",
   "{mapping} mapping is missing.": "{mapping} mapping is missing.",
   "{processed} objects processed / {total} products requested": "{processed} objects processed / {total} products requested",
-  "{summary} Details: {details}": "{summary} Details: {details}"
+  "{summary} Details: {details}": "{summary} Details: {details}",
+  "Store": "Store",
+  "Save store": "Save store",
+  "Location mapping": "Location mapping",
+  "Readiness review": "Readiness review"
 }
