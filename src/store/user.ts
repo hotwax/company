@@ -301,7 +301,7 @@ export const useUserStore = defineStore("user", {
       })
     },
 
-    createUser(payload: { partyTypeId: string; person?: { firstName: string; lastName: string }; partyGroup?: { groupName: string }; externalId?: string }): Promise<any> {
+    createUser(payload: { partyTypeId: string; createdByUserLogin: string; person?: { firstName: string; lastName: string }; partyGroup?: { groupName: string }; externalId?: string }): Promise<any> {
       return api({
         url: "oms/parties",
         method: "post",
