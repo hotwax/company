@@ -194,8 +194,9 @@ async function createFacility() {
           levelId: "LL",
           positionId: "01"
         });
-      } catch(e) {
-        logger.error(e);
+      } catch (locationError) {
+        logger.warn("Facility created, but default pick location setup failed.", locationError);
+        commonUtil.showToast(translate("Facility created, but default pick location could not be set up."));
       }
 
       router.replace(`/create-facility/address/${facilityId}`);
