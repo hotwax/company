@@ -606,7 +606,7 @@
   "Created after": "Created after",
   "Created after {date}": "Created after {date}",
   "Created before": "Created before",
-  "Created by": "Created by",
+  "Created by": "Created by {userLoginId}",
   "Created date unavailable": "Created date unavailable",
   "Created product store": "Created product store",
   "Created ProductStore is available.": "Created ProductStore is available.",
