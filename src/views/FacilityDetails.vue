@@ -655,7 +655,7 @@
           <form @keyup.enter="saveGeoPoint">
             <ion-item class="ion-margin-bottom">
               <ion-input aria-label="zipcode" :placeholder="translate('Zipcode')" v-model="geoPoint.postalCode" @keydown="validateZipCode($event)" @ionInput="postalCodeUpdate"/>
-              <ion-button slot="end" fill="outline" :disabled="!isPostalCodeChanged" @click="generateLatLong">
+              <ion-button slot="end" fill="outline" @click="generateLatLong">
                 {{ translate("Generate") }}
                 <ion-icon v-if="!isGeneratingLatLong" slot="end" :icon="colorWandOutline" />
                 <ion-spinner v-else data-spinner-size="small"/>
@@ -841,8 +841,9 @@ import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMa
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
-import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
+import { api } from '@common';
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -944,8 +945,7 @@ function getParentFacilityTypeId(typeId: string): string {
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
 async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
   const { roleTypeId, ...params } = payload;
-  const { fetchPartyRoleDetails } = usePartyQueries();
-  return fetchPartyRoleDetails(roleTypeId, params);
+  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
 }
 
 function getFacilityTypesByParentTypeId() {
@@ -1218,8 +1218,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const { geocode } = useGeocode();
-    const resp = await geocode(payload);
+    const resp = (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1400,8 +1399,7 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const { fetchFacilityOrderCountsHistory } = useFacilityOrderCounts();
-    const resp = await fetchFacilityOrderCountsHistory(props.facilityId, { orderByField: 'entryDate DESC', pageSize: 10 });
+    const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId: props.facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
     if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
       facilityOrderCounts.value = resp.data.map((item: any) => ({
         ...item,
@@ -2011,16 +2009,17 @@ async function generateLatLong() {
   }
   isGeneratingLatLong.value = true;
   const postalCode = geoPoint.value.postalCode;
+  const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const { latLongForPostalCode } = useGeocode();
-    const result = await latLongForPostalCode(postalCode);
+    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { query: `postcode: ${query}` } } }) as any).data;
 
-    if (result) {
+    if (resp.docs.length > 0) {
+      const result = resp.docs[0];
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {
-      throw new Error('Not found');
+      throw resp;
     }
   } catch (err) {
     commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));

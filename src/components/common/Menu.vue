@@ -79,7 +79,7 @@
       <ion-toolbar>
         <ion-item lines="none">
           <ion-label class="ion-text-wrap">
-            <p class="overline">{{ omsInstanceLabel() }}</p>
+            <p class="overline">{{ omsInstanceLabel }}</p>
           </ion-label>
           <ion-note v-if="currentTimeZone" slot="end" class="ion-text-end" :color="isTimeZoneMismatched ? 'danger' : ''">
             {{ currentTimeZone }}
@@ -131,7 +131,7 @@ const HOTWAX_HOST_SUFFIX = ".hotwax.io";
  * Called from the template rather than memoised, for the same reason order-manager does: getMaargURL()
  * reads a cookie, so a computed would cache the pre-login empty value for the life of the session.
  */
-function omsInstanceLabel() {
+let omsInstanceLabel = computed(() => {
   const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
   if (instanceName) return instanceName;
 
@@ -139,7 +139,7 @@ function omsInstanceLabel() {
   if (!url) return "";
   const host = url.replace(/^https?:\/\//, "").split("/")[0];
   return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
-}
+})
 
 // Mirrors order-manager: resolve the same way the Settings page does so the two never disagree.
 const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
