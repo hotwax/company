@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { DateTime, Settings } from "luxon"
-import { api, commonUtil, emitter, logger, translate } from "@common"
+import { api, commonUtil, cookieHelper, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
@@ -907,6 +907,10 @@ export const useUserStore = defineStore("user", {
 
     // Called by @common's initialiseConfig after successful login
     async postLogin() {
+      const cookieOms = (cookieHelper().get("oms") as string) || ""
+      if (cookieOms) {
+        this.oms = cookieOms
+      }
       try {
         await this.fetchUserProfile()
         await this.fetchPermissions()
