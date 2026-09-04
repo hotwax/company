@@ -756,7 +756,7 @@
                 <ion-icon slot="start" :icon="cloudUploadOutline" color="primary" />
                 <ion-label class="ion-text-wrap">
                   <h2>{{ translate("In flight and failed") }}</h2>
-                  <p>{{ translate("Batches the OMS has produced that Shopify has not confirmed. A rejection freezes into the message and replays identically on every retry.") }}</p>
+                  <p>{{ translate("Batches the OMS has produced that Shopify has not confirmed: staged, sending, retrying after an error, or refused outright. A refused batch is flagged, because nothing retries it.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-badge color="primary">
@@ -779,6 +779,14 @@
                     {{ batch.reason }}
                   </ion-badge>
                 </div>
+              </ion-item>
+              <!-- A retrying batch needs patience; a refused one needs a person, and nothing on this
+                   page will change on its own until someone acts. Say which this is. -->
+              <ion-item v-if="batch.terminalFailure" lines="full">
+                <ion-icon slot="start" :icon="warningOutline" color="danger" />
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Refused and closed. The sender will not retry this batch: correct the cause and record a new event.") }}</p>
+                </ion-label>
               </ion-item>
               <ion-list lines="full">
                 <ion-item v-for="entry in batch.entries" :key="entry.key">
@@ -1255,6 +1263,17 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
+import {
+  deltaOutcome,
+  deliveryStatusOf,
+  isDeliveryTerminalFailure,
+  isWaitingDetail,
+  roundDelta,
+  sectionOfBatch,
+  sectionOfEvent,
+  sumDelta,
+} from "@/utils/shopifyInventoryPipeline";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -1280,6 +1299,8 @@ interface Batch {
   mixedEventTypes: boolean;
   reason: string;
   reasonMapped: boolean;
+  /** Rejected or cancelled: nothing will retry this batch on its own. */
+  terminalFailure: boolean;
   messageText?: string;
 }
 
@@ -1334,6 +1355,13 @@ interface InventoryEvent {
   deliveryColor?: string;
   /** The raw SmsgProduced/Sending/Sent/Error id. Sections branch on this, never on the label. */
   deliveryStatusId?: string;
+  /** Rejected or cancelled: failed and NOT retryable, unlike SmsgError which the sweep picks up again. */
+  deliveryTerminalFailure: boolean;
+  /**
+   * Which pipeline section owns this row, from `sectionOfEvent`. Every row gets exactly one, including
+   * statuses this app has never seen — the rule is total so nothing can fall off the page.
+   */
+  section: PipelineSectionId;
   createdAt: number;
   /** Raw, so the search box still matches what the server actually wrote. */
   decisionComment?: string;
@@ -2227,6 +2255,8 @@ const batches = computed<Batch[]>(() => {
       id,
       statusId,
       ...state,
+      // Nothing retries a rejected or cancelled batch; a person has to act on it.
+      terminalFailure: isDeliveryTerminalFailure(statusId),
       created: createdAt ? formatDateTime(createdAt) : "Unknown",
       createdAt,
       age: formatAge(createdAt),
@@ -2262,13 +2292,18 @@ function detailState(detail: any): { label: string; color: string } {
 }
 
 /** Delivery of the batch this row was assigned to. Absent while the row is still unbatched. */
-function deliveryState(detail: any): { label: string; color: string; statusId: string } | null {
+function deliveryState(detail: any): { label: string; color: string; statusId: string; terminalFailure: boolean } | null {
   const systemMessageId = String(detail.systemMessageId ?? "");
   if (!systemMessageId) return null;
-  const statusId = String(messageById.value.get(systemMessageId)?.statusId ||
-    detail.systemMessageStatusId || "");
+  const statusId = deliveryStatusOf(detail, messageById.value.get(systemMessageId)?.statusId);
   const state = batchState(statusId);
-  return { label: state.status, color: state.badgeColor, statusId };
+
+  return {
+    label: state.status,
+    color: state.badgeColor,
+    statusId,
+    terminalFailure: isDeliveryTerminalFailure(statusId),
+  };
 }
 
 /**
@@ -2339,11 +2374,6 @@ interface ChangeEntry {
   outcomeColor: string;
 }
 
-/** Binary floating point makes a summed decimal delta like 0.1 + 0.2 fail an exact integer test. */
-function isWholeNumber(value: number): boolean {
-  return Number.isInteger(Math.round(value * 1e6) / 1e6);
-}
-
 function changeEntriesOf(details: any[]): ChangeEntry[] {
   const grouped = new Map<string, any[]>();
   for (const detail of details) {
@@ -2351,8 +2381,8 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
     grouped.set(key, [...(grouped.get(key) ?? []), detail]);
   }
   return [...grouped.entries()].map(([key, rows]) => {
-    const delta = rows.reduce((total, row) => total + Number(row.computedInventoryChange || 0), 0);
-    const outcome = delta === 0 ? "noChange" : isWholeNumber(delta) ? "publish" : "quarantine";
+    const delta = sumDelta(rows.map((row: any) => row.computedInventoryChange));
+    const outcome = deltaOutcome(delta);
     const { productId } = calculationOf(rows[0]);
     const product = productId ? resolvedProducts.value.get(productId) : undefined;
     return {
@@ -2416,8 +2446,7 @@ function eventsFor(details: any[]): InventoryEvent[] {
  * on each run.
  */
 const waitingBatches = computed(() => {
-  const pending = inventoryDetails.value.filter((detail: any) =>
-    detail.detailStatusId === "DETAIL_PENDING" && !detail.systemMessageId);
+  const pending = inventoryDetails.value.filter(isWaitingDetail);
   const grouped = new Map<string, any[]>();
   for (const detail of pending) {
     const key = publisherGroupBy.value.map((field) => `${field}=${detail[field] ?? ""}`).join(", ");
@@ -2449,9 +2478,8 @@ const waitingBatches = computed(() => {
 });
 
 /** SECTION 2 -- batches the OMS has produced but Shopify has not confirmed, including outright failures. */
-const IN_FLIGHT_STATUS_IDS = ["SmsgProduced", "SmsgSending", "SmsgError"];
 const inFlightBatches = computed(() => batches.value
-  .filter((batch: any) => IN_FLIGHT_STATUS_IDS.includes(String(batch.statusId))));
+  .filter((batch: any) => sectionOfBatch(batch.statusId) === "inFlight"));
 
 /**
  * SECTION 3 -- terminal quarantine. These rows are never claimed again and are deliberately excluded
@@ -2459,14 +2487,14 @@ const inFlightBatches = computed(() => batches.value
  * be fixed and a NEW event recorded.
  */
 const quarantinedEvents = computed(() => inventoryEvents.value
-  .filter((event) => event.detailStatusId === "DETAIL_ERROR"));
+  .filter((event) => event.section === "quarantined"));
 
 /**
  * SECTION 4 -- the settled tail. Retention-bound, not an archive: the scheduled purge removes terminal
  * rows after five days by default, so this can only ever be a rolling window.
  */
-const settledEvents = computed(() => inventoryEvents.value.filter((event) =>
-  event.detailStatusId === "DETAIL_NOOP" || event.deliveryStatusId === "SmsgSent"));
+const settledEvents = computed(() => inventoryEvents.value
+  .filter((event) => event.section === "settled"));
 
 /**
  * The server owns this label. `eventTypeDescription` is joined from ShopifyInventoryEventType --
@@ -2489,7 +2517,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
   const source = sourceOf(detail);
   const { productId, calculation } = calculationOf(detail);
   const product = productId ? resolvedProducts.value.get(productId) : undefined;
-  const delta = Number(detail.computedInventoryChange || 0);
+  const delta = roundDelta(detail.computedInventoryChange);
   // Same identity as the server PK and the cache key: event type + reference + channel + item.
   const identity = [
     detail.eventTypeId,
@@ -2526,6 +2554,9 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     delivery: delivery?.label,
     deliveryColor: delivery?.color,
     deliveryStatusId: delivery?.statusId,
+    deliveryTerminalFailure: !!delivery?.terminalFailure,
+    // Decided once, by the pipeline rule, so the sections cannot disagree about a row.
+    section: sectionOfEvent(detail, delivery?.statusId),
     createdAt: toMillis(detail.createdDate),
     decisionComment: detail.decisionComment,
     productId,
@@ -2545,12 +2576,10 @@ watch(inventoryEvents, (events) => {
 }, { immediate: true });
 
 
-const pendingEventCount = computed(() => inventoryDetails.value.filter((detail: any) =>
-  detail.detailStatusId === "DETAIL_PENDING").length);
-const pendingBatchCount = computed(() => batches.value.filter((batch) =>
-  ["SmsgProduced", "SmsgSending", "SmsgError"].includes(String(batch.statusId))).length);
+const pendingEventCount = computed(() => inventoryDetails.value.filter(isWaitingDetail).length);
+const pendingBatchCount = computed(() => inFlightBatches.value.length);
 const oldestUnbatchedEvent = computed(() => {
-  const oldest = inventoryEvents.value.filter((event) => event.detailStatusId === "DETAIL_PENDING")
+  const oldest = inventoryEvents.value.filter((event) => event.section === "waiting")
     .sort((a, b) => a.createdAt - b.createdAt)[0];
   return oldest ? formatDateTime(oldest.createdAt) : "None waiting";
 });
@@ -2780,7 +2809,13 @@ onIonViewDidLeave(() => {
   stopSyncDomains();
 });
 
-const historyStatusOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.detailState))]);
+/**
+ * Both state machines are selectable. Offering only the ledger state left an operator triaging
+ * "which events failed to reach Shopify" with no filter value for it.
+ */
+const historyStatusOptions = computed(() => [...new Set(inventoryEvents.value
+  .flatMap((event) => [event.detailState, event.delivery])
+  .filter(Boolean) as string[])]);
 const eventTypeOptions = computed(() => [...new Set(inventoryEvents.value.map((event) => event.type))]);
 /**
  * Channel choices for the history filter and the discard job's channel parameter.
@@ -2817,12 +2852,23 @@ const filteredEvents = computed(() => {
       event.productId, event.productName, event.productSku]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
     return matchesQuery &&
-      (!selectedHistoryStatus.value || event.detailState === selectedHistoryStatus.value) &&
+      (!selectedHistoryStatus.value || event.detailState === selectedHistoryStatus.value ||
+        event.delivery === selectedHistoryStatus.value) &&
       (!selectedEventType.value || event.type === selectedEventType.value) &&
       (!selectedChannel.value || event.inventoryChannelId === selectedChannel.value);
   });
-  return historySortOrder.value === "oldest" ? events.reverse() : events;
+  return events;
 });
+
+/**
+ * `inventoryEvents` is hard-sorted newest-first, and `filteredEvents` is consumed as a membership set
+ * rather than as an order, so the Sort select has to be applied to the lists that are actually
+ * rendered. Applying it there and not to the batch groups is deliberate: a waiting group's order is
+ * the publisher's own drain order, not a user preference.
+ */
+function sortEvents(events: InventoryEvent[]): InventoryEvent[] {
+  return historySortOrder.value === "oldest" ? [...events].reverse() : events;
+}
 
 /**
  * The four pipeline sections all read `filteredEvents`, so the search box and the selects narrow every
@@ -2837,11 +2883,11 @@ const visibleWaitingBatches = computed(() => waitingBatches.value
 const visibleInFlightBatches = computed(() => inFlightBatches.value
   .filter((batch: any) => filteredEvents.value.some((event) => event.batchId === batch.id)));
 
-const visibleQuarantinedEvents = computed(() => quarantinedEvents.value
-  .filter((event) => visibleRowKeys.value.has(event.rowKey)));
+const visibleQuarantinedEvents = computed(() => sortEvents(quarantinedEvents.value
+  .filter((event) => visibleRowKeys.value.has(event.rowKey))));
 
-const visibleSettledEvents = computed(() => settledEvents.value
-  .filter((event) => visibleRowKeys.value.has(event.rowKey)));
+const visibleSettledEvents = computed(() => sortEvents(settledEvents.value
+  .filter((event) => visibleRowKeys.value.has(event.rowKey))));
 
 /**
  * Only the rows near the viewport get DOM nodes. The history can hold tens of thousands of events,
