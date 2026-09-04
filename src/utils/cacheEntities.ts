@@ -471,6 +471,13 @@ export const shopifyInventoryAdjustmentDetailProjection = {
     lastUpdatedStamp: "date",
     facilityGroupId: "text",
     inventoryChannelDescription: "text",
+    // Aliased onto the view from the channel, so a row carries its own target location without
+    // depending on the channel cache being warm.
+    shopifyLocationId: "text",
+    // Normally null. Set only on a delta written to drain a location the channel has stopped pointing
+    // at, and dropping it here made that row indistinguishable from an ordinary one on screen -- while
+    // the publisher still sends it to the OLD location. This is the field a retarget turns on.
+    publishShopifyLocationId: "text",
     systemMessageStatusId: "text",
     systemMessageInitDate: "date",
     systemMessageProcessedDate: "date",

@@ -655,7 +655,7 @@
           <form @keyup.enter="saveGeoPoint">
             <ion-item class="ion-margin-bottom">
               <ion-input aria-label="zipcode" :placeholder="translate('Zipcode')" v-model="geoPoint.postalCode" @keydown="validateZipCode($event)" @ionInput="postalCodeUpdate"/>
-              <ion-button slot="end" fill="outline" :disabled="!isPostalCodeChanged" @click="generateLatLong">
+              <ion-button slot="end" fill="outline" @click="generateLatLong">
                 {{ translate("Generate") }}
                 <ion-icon v-if="!isGeneratingLatLong" slot="end" :icon="colorWandOutline" />
                 <ion-spinner v-else data-spinner-size="small"/>
@@ -2012,10 +2012,10 @@ async function generateLatLong() {
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { params: { q: `postcode: ${query}` } } } }) as any).data;
+    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { query: `postcode: ${query}` } } }) as any).data;
 
-    if (resp.response.docs.length > 0) {
-      const result = resp.response.docs[0];
+    if (resp.docs.length > 0) {
+      const result = resp.docs[0];
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {

@@ -77,7 +77,7 @@
          the time on the wall, and repeating it would be noise. Mirrors order-manager's footer. -->
     <DxpOmsInstanceFooter
       v-if="isAuthenticated"
-      :instance-label="omsInstanceLabel()"
+      :instance-label="omsInstanceLabel"
     />
   </ion-menu>
 </template>
@@ -120,7 +120,7 @@ const HOTWAX_HOST_SUFFIX = ".hotwax.io";
  * Called from the template rather than memoised, for the same reason order-manager does: getMaargURL()
  * reads a cookie, so a computed would cache the pre-login empty value for the life of the session.
  */
-function omsInstanceLabel() {
+let omsInstanceLabel = computed(() => {
   const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
   if (instanceName) return instanceName;
 
@@ -128,7 +128,7 @@ function omsInstanceLabel() {
   if (!url) return "";
   const host = url.replace(/^https?:\/\//, "").split("/")[0];
   return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
-}
+})
 
 onMounted(() => {
   void loadMaargConfig();

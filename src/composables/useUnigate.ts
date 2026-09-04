@@ -110,7 +110,7 @@ const status = reactive({
   billingConfigs: "none" as FetchStatus,
 });
 
-onSessionCleared("useUnigate", () => {
+onSessionCleared(() => {
   state.unigateConfig = null;
   state.shippingGatewayConfigs = [];
   state.shippingGatewayAuths = [];

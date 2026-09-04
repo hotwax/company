@@ -1052,8 +1052,8 @@ import ImportShopifyLocationsModal from "@/components/facility/ImportShopifyLoca
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { useProductStoreData } from "@/composables/useProductStoreData"
-import { useFacilities, useFacilityCreation, useFacilityGroups } from "@/composables/useFacilities"
+import { useProductStoreData } from "@/composables/useProductStores"
+import { useFacilities, useFacilityMutations, useFacilityGroups } from "@/composables/useFacilities"
 import {
   fetchProductUpdateSyncRunState,
   fetchShopifyCarrierShipments,
@@ -1083,7 +1083,7 @@ const { productTypes } = useProductTypes()
 const { shipmentMethodTypes } = useShipmentMethodTypes()
 const { facilityGroups } = useFacilityGroups()
 const { records: allFacilities } = useFacilities()
-const { createFacility } = useFacilityCreation()
+const { createFacility } = useFacilityMutations()
 const { fetchSyncRun: fetchProductImportSyncRun } = useShopifyProductSyncRun()
 const props = defineProps<{ productStoreId?: string }>()
 const isSavingProductStore = ref(false)
@@ -3120,7 +3120,7 @@ async function createStarterFacility() {
     const existingFacility = allFacilities.value.find((facility: any) => facility.facilityId === facilityId)
 
     if (!existingFacility) {
-      // `useFacilityCreation` writes through to the facility cache, which is what the existence
+      // `useFacilityMutations` writes through to the facility cache, which is what the existence
       // check above reads — the util store's separate facility list (and its refetch) went away.
       const facilityResp = await createFacility({
         facilityId,

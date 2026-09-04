@@ -12,7 +12,7 @@ stands up and administers an OMS tenant. Functional areas, each a route family:
 
 | Area | Routes | Views |
 | --- | --- | --- |
-| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store`, `/add-configurations/:id` | `ProductStore*`, `AddConfigurations` |
+| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store` | `ProductStore*` |
 | Facilities & groups | `/facilities/*`, `/facility-details/:id`, `/facility-group-detail/:id`, `/parking`, `/create-facility/*` | `Find*`, `Facility*`, `CreateFacility`, `AddFacility*` |
 | Users & security | `/users`, `/user-details/:partyId`, `/create-user`, `/user-quick-setup/:partyId`, `/security-groups`, `/app-permissions` | `User*`, `Security*`, `AppPermissions` |
 | Shopify integration | `/shopify`, `/shopify-connection-details/:id/**` (locations, shipment/payment methods, sales channels, product types, product-sync, order-sync) | `Shopify*` |
@@ -57,8 +57,7 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
   `pinia-plugin-persistedstate`) · vue-i18n · Dexie (IndexedDB) · Comlink web worker · Luxon.
 - [`src/main.ts`](src/main.ts) — creates the app, registers Ionic/i18n/pinia/router, and calls
   `initialiseConfig()` from `@common` to hand the shared layer the user store's session getters,
-  `postLogin`/`postLogout` hooks, and the router. Also defines the legacy `$filters.formatDate`
-  global used by older views.
+  `postLogin`/`postLogout` hooks, and the router.
 - [`src/App.vue`](src/App.vue) — split-pane shell (`Menu` + router outlet), `FastTravel` app
   switcher, `presentLoader`/`dismissLoader` emitter bridge, and the **class-B cache bootstrap**:
   it *watches* `useAuth().isAuthenticated` and calls `startReferenceSync()` on login (a one-time
@@ -250,11 +249,11 @@ concept is the smell this rule prevents.
 
 | Composable | Owns |
 | --- | --- |
-| [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
+| [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, worker activation, and **inventory event source resolution** (§1.5: the order, count, reset or receipt behind a `ShopifyInventoryAdjustmentDetail` row, one resolver per event family). Sectioned 1–8 by a header comment — keep that structure |
 | [`useCarriers.ts`](src/composables/useCarriers.ts) | Carrier catalog/detail aggregates, carrier-method joins and counts, facility/store association views, observable Unigate readiness, and carrier/carrier-method mutations. Method removal closes dependent store associations before the hard delete |
 | [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate), plus date-effective carrier-facility association writes |
 | [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
-| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them: shipment-method counts, all-store shipping-method reads, and date-effective store-method writes. Consumers must scope shipping methods by `productStoreId` |
+| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them: shipment-method counts, all-store shipping-method reads, date-effective store-method writes, settings, facilities, and the onboarding/setup surface. Merged `useProductStoreData`. Consumers must scope shipping methods by `productStoreId` |
 | [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables (including shipment-method type create/rename), maarg config. Replaced `utilStore` |
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
 | [`useSystemMessage.ts`](src/composables/useSystemMessage.ts) | System messages, remotes, and error lookups |
@@ -262,12 +261,12 @@ concept is the smell this rule prevents.
 | [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups and the permission catalog |
 | [`useNetSuite.ts`](src/composables/useNetSuite.ts) | The NetSuite surface: cached reads + direct REST writes with a domain resync |
 | [`useProductUpdateHistory.ts`](src/composables/useProductUpdateHistory.ts) | Product-update history rows |
-| [`useProductStoreData.ts`](src/composables/useProductStoreData.ts) | The product-store SETUP surface the onboarding wizard drives: store settings, its facilities, and the Shopify job status. Replaced `store/productStore` |
 | [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |
 | [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
+| `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
 | [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |
 
 ## 6. Pinia stores — what survives
@@ -295,8 +294,8 @@ once, and each composable holding module-level session state registers its own r
 - Components are grouped by domain: `components/{common,facility,product-store,shopify,
   shopify-product-sync,shopify-order-sync,klaviyo,security,shipping-payment,
   product-store-onboarding,chat}/`. Put a new component in its domain folder; `common/` is for
-  genuinely cross-domain pieces (`Menu`, `FilterMenu`, `SearchFilterCard`, `UniformFilterLayout`,
-  `TimezoneModal`, `Image`, `Logo`, animated number/duration).
+  genuinely cross-domain pieces (`Menu`, `SearchFilterCard`, `UniformFilterLayout`,
+  `TimezoneModal`, `Image`, animated number/duration).
 - Modals and popovers live with their domain and are opened from the view that owns the interaction.
 - Add a route by adding a lazy `() => import(...)` plus the right guard. Permission-gated routes use
   `requirePermission` with an `"A OR B"` expression matching the backend permission ids.
@@ -344,12 +343,10 @@ The cache/worker data layer is built and in use, and **the screen conversion is 
   survive (§6), so every one of those imports is correct rather than debt.
 - `store/util.ts` is deleted. Its reference reads live in `useSeed`/`useFacilities` and
   `bootstrapOrganization` in `useOrganization`; `ProductStoreOnboarding.vue` was its last consumer.
-- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval is
-  gone — progress is derived from cached messages, bulk operations and MDM logs that the worker
-  refreshes. **Vestigial scaffolding remains** and is worth removing: `startProgressPolling()` is now a
-  documented no-op, `progressPoll` is declared but never assigned, and nine call sites still invoke
-  the pair. The only surviving interval on that page is a 15s clock for relative-time labels, which
-  loads no data.
+- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval and
+  vestigial no-op polling scaffolding are gone — progress is derived from cached messages, bulk
+  operations and MDM logs that the worker refreshes. The only surviving interval on that page is a
+  15s clock for relative-time labels, which loads no data.
 - Organization management phases 1 and 2 are implemented at `/organizations` and
   `/organization-details/:partyId`. The `organization` and `organizationRelationship` class-B
   domains feed a cycle-safe forest; writes use the existing party/group/role/relationship endpoints

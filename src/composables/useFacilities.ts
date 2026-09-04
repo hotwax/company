@@ -644,6 +644,14 @@ export function useFacilityCalendars() {
   return { calendarOptions, catalogAvailable, loadCalendarOptions, createCalendar, fetchFacilityCalendar };
 }
 
+export function usePartyQueries() {
+  const fetchPartyRoleDetails = async (roleTypeId: string, params: Record<string, any>) => {
+    return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  };
+
+  return { fetchPartyRoleDetails };
+}
+
 export function useFacilityOrderCounts() {
   async function fetchOrderCounts(facilityIds: string[]): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
@@ -669,7 +677,15 @@ export function useFacilityOrderCounts() {
     return counts;
   }
 
-  return { fetchOrderCounts };
+  async function fetchFacilityOrderCountsHistory(facilityId: string, params: Record<string, any> = {}) {
+    return api({
+      url: "oms/facilities/facilityOrderCounts",
+      method: "get",
+      params: { facilityId, ...params }
+    });
+  }
+
+  return { fetchOrderCounts, fetchFacilityOrderCountsHistory };
 }
 
 export function useFacilityDetail(facilityId: string) {
@@ -922,15 +938,40 @@ export async function setCarrierFacilityAssociation(
   return response;
 }
 
-export function useFacilityMutations(facilityId: string) {
+export function useFacilityMutations(facilityId?: string) {
   const put = (url: string, data: any) => api({ url, method: "put", data }) as Promise<any>;
   const post = (url: string, data: any) => api({ url, method: "post", data }) as Promise<any>;
   const del = (url: string, data?: any) => api({ url, method: "delete", data }) as Promise<any>;
 
+  const requireFacilityId = () => {
+    if (!facilityId) throw new Error("useFacilityMutations: facilityId is required for this operation");
+    return encodeURIComponent(facilityId);
+  };
+
   /** The facility row itself is cached — re-read it after any core change. */
-  const refreshFacility = () => refreshAfterMutation("facility", { facilityId });
+  const refreshFacility = () => {
+    if (facilityId) return refreshAfterMutation("facility", { facilityId });
+    return Promise.resolve();
+  };
+
+  async function createFacility(payload: Record<string, any>) {
+    const resp: any = await api({ url: "oms/facilities", method: "post", data: payload });
+    if (commonUtil.hasError(resp)) return resp;
+    const newFacilityId = resp?.data?.facilityId || payload.facilityId;
+    if (newFacilityId) await refreshAfterMutation("facility", { facilityId: newFacilityId });
+    return resp;
+  }
+
 
   return {
+    createFacility,
+    /**
+     * A parking is a facility of type `VIRTUAL_FACILITY` — same endpoint, same cache consequence.
+     * Named separately because the caller reads as parking, not facility.
+     */
+    createVirtualFacility: (payload: Record<string, any>) =>
+      createFacility({ ...payload, facilityTypeId: "VIRTUAL_FACILITY" }),
+
     // ---------------------------------------------------------------- core (CACHED)
     /**
      * Every field on the facility row goes through here — time zone, days-to-ship, name, type,
@@ -939,20 +980,20 @@ export function useFacilityMutations(facilityId: string) {
      * wrapper, e.g. `saveTimeZone = (tz) => updateFacility({ facilityTimeZone: tz })`.
      */
     async updateFacility(payload: Record<string, any>) {
-      const resp = await put(`oms/facilities/${encodeURIComponent(facilityId)}`, { ...payload, facilityId });
+      const resp = await put(`oms/facilities/${requireFacilityId()}`, { ...payload, facilityId });
       await refreshFacility();
       return resp;
     },
 
     // ------------------------------------------------- groups (CACHED: groupFacilities)
     async addToGroup(payload: Record<string, any>) {
-      const resp = await post(`oms/facilities/${encodeURIComponent(facilityId)}/groups`, { ...payload, facilityId });
+      const resp = await post(`oms/facilities/${requireFacilityId()}/groups`, { ...payload, facilityId });
       await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
       return resp;
     },
     async updateGroupAssociation(payload: Record<string, any>) {
       const resp = await put(
-        `oms/facilities/${encodeURIComponent(facilityId)}/groups/${encodeURIComponent(payload.facilityGroupId)}`,
+        `oms/facilities/${requireFacilityId()}/groups/${encodeURIComponent(payload.facilityGroupId)}`,
         { ...payload, facilityId },
       );
       await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
@@ -967,13 +1008,13 @@ export function useFacilityMutations(facilityId: string) {
 
     // ------------------------------- product stores (CACHED: productStoreFacilities)
     async addProductStore(payload: Record<string, any>) {
-      const resp = await post(`oms/facilities/${encodeURIComponent(facilityId)}/productStores`, { ...payload, facilityId });
+      const resp = await post(`oms/facilities/${requireFacilityId()}/productStores`, { ...payload, facilityId });
       await refreshAfterMutation("productStoreFacility", { productStoreId: payload.productStoreId });
       return resp;
     },
     async updateProductStore(payload: Record<string, any>) {
       const resp = await put(
-        `oms/facilities/${encodeURIComponent(facilityId)}/productStores/${encodeURIComponent(payload.productStoreId)}`,
+        `oms/facilities/${requireFacilityId()}/productStores/${encodeURIComponent(payload.productStoreId)}`,
         { ...payload, facilityId },
       );
       await refreshAfterMutation("productStoreFacility", { productStoreId: payload.productStoreId });
@@ -982,7 +1023,7 @@ export function useFacilityMutations(facilityId: string) {
 
     // ------------------------- identifications (CACHED: facilityIdentifications, global list)
     async saveIdentification(payload: Record<string, any>) {
-      const resp = await post(`oms/facilities/${encodeURIComponent(facilityId)}/identifications`, { ...payload, facilityId });
+      const resp = await post(`oms/facilities/${requireFacilityId()}/identifications`, { ...payload, facilityId });
       await resyncDomain("facilityIdentification"); // global endpoint — no by-PK route
       return resp;
     },
@@ -1000,7 +1041,7 @@ export function useFacilityMutations(facilityId: string) {
     },
     async deleteShopifyLocation(payload: { shopId: string } & Record<string, any>) {
       const resp = await del(
-        `oms/shopifyShops/locations/${encodeURIComponent(payload.shopId)}/${encodeURIComponent(facilityId)}`,
+        `oms/shopifyShops/locations/${encodeURIComponent(payload.shopId)}/${requireFacilityId()}`,
       );
       await refreshAfterMutation("shopifyLocation", { shopId: payload.shopId });
       return resp;
@@ -1038,14 +1079,14 @@ export function useFacilityMutations(facilityId: string) {
 
     /** Upsert: create and update were always the same POST, distinguished only by locationSeqId. */
     saveLocation: (payload: Record<string, any>) =>
-      post(`oms/facilities/${encodeURIComponent(facilityId)}/locations`, { ...payload, facilityId }),
+      post(`oms/facilities/${requireFacilityId()}/locations`, { ...payload, facilityId }),
     deleteLocation: (payload: { locationSeqId: string } & Record<string, any>) =>
-      del(`oms/facilities/${encodeURIComponent(facilityId)}/locations/${encodeURIComponent(payload.locationSeqId)}`),
+      del(`oms/facilities/${requireFacilityId()}/locations/${encodeURIComponent(payload.locationSeqId)}`),
 
     addParty: (payload: Record<string, any>) =>
-      post(`oms/facilities/${encodeURIComponent(facilityId)}/parties`, { ...payload, facilityId }),
+      post(`oms/facilities/${requireFacilityId()}/parties`, { ...payload, facilityId }),
     removeParty: (payload: Record<string, any>) =>
-      put(`oms/facilities/${encodeURIComponent(facilityId)}/parties`, { ...payload, facilityId }),
+      put(`oms/facilities/${requireFacilityId()}/parties`, { ...payload, facilityId }),
     setCarrierAssociation: (
       partyId: string,
       enabled: boolean,
@@ -1054,7 +1095,7 @@ export function useFacilityMutations(facilityId: string) {
 
     /** The calendar association endpoint. Associating and removing are both POSTs to it. */
     saveCalendar: (payload: Record<string, any>) =>
-      post(`oms/facilities/${encodeURIComponent(facilityId)}/calendars`, { ...payload, facilityId }),
+      post(`oms/facilities/${requireFacilityId()}/calendars`, { ...payload, facilityId }),
 
     /**
      * The one alias kept deliberately. It is not a restated UI intent — it encodes a fact about
@@ -1063,7 +1104,7 @@ export function useFacilityMutations(facilityId: string) {
      * being re-derived by every component that removes operating hours.
      */
     removeCalendar: (payload: Record<string, any> = {}) =>
-      post(`oms/facilities/${encodeURIComponent(facilityId)}/calendars`, {
+      post(`oms/facilities/${requireFacilityId()}/calendars`, {
         ...payload, facilityId, facilityCalendarTypeId: "OPERATING_HOURS", thruDate: Date.now(),
       }),
 
@@ -1076,34 +1117,6 @@ export function useFacilityMutations(facilityId: string) {
 
 /** The id of the group parkings are archived into. Created on first archive if absent. */
 
-/**
- * Creating a facility — the one write with no facility id to scope to.
- *
- * The list pages read facilities from the cache, so a create MUST end in a cache write or the new
- * row simply does not appear until the next login sync. `byPk` re-read is used rather than a full
- * re-snapshot: one GET for the row just created.
- */
-export function useFacilityCreation() {
-  async function create(payload: Record<string, any>) {
-    const resp: any = await api({ url: "oms/facilities", method: "post", data: payload });
-    if (commonUtil.hasError(resp)) return resp;
-    // Moqui create echoes the PK back, but the client generated it here anyway (see
-    // `generateInternalId`), so fall back to the payload rather than skipping the refresh.
-    const facilityId = resp?.data?.facilityId || payload.facilityId;
-    if (facilityId) await refreshAfterMutation("facility", { facilityId });
-    return resp;
-  }
-
-  return {
-    createFacility: create,
-    /**
-     * A parking is a facility of type `VIRTUAL_FACILITY` — same endpoint, same cache consequence.
-     * Named separately because the caller reads as parking, not facility.
-     */
-    createVirtualFacility: (payload: Record<string, any>) =>
-      create({ ...payload, facilityTypeId: "VIRTUAL_FACILITY" }),
-  };
-}
 
 /**
  * Facility-group writes: the group row, its facility members, and its product-store associations.
@@ -1322,7 +1335,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility archive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
 
@@ -1337,7 +1356,13 @@ export function useFacilityArchive() {
         method: "post",
         data: { fromDate, thruDate: Date.now() },
       });
-      if (!commonUtil.hasError(resp)) await refreshArchive();
+      if (!commonUtil.hasError(resp)) {
+        try {
+          await refreshArchive();
+        } catch (refreshError) {
+          logger.warn("Facility unarchive association succeeded, but cache refresh failed.", refreshError);
+        }
+      }
       return resp;
     },
   };
