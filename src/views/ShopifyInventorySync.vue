@@ -1,5 +1,18 @@
 <template>
   <ion-page>
+    <!-- Outside the monitor/history split on purpose: the history route is linkable and can be opened
+         cold, and a reader who cannot see this banner reads every empty section as "nothing pending". -->
+    <ion-card v-if="inventorySyncError" color="warning" class="sync-error-banner">
+      <ion-card-content>
+        <ion-icon :icon="warningOutline" />
+        <ion-label>
+          <h2>{{ translate("Inventory data could not be loaded from the OMS") }}</h2>
+          <p>{{ inventorySyncError }}</p>
+          <p>{{ translate("The counts below are unavailable, not confirmed empty. Do not read them as \"nothing pending\".") }}</p>
+        </ion-label>
+      </ion-card-content>
+    </ion-card>
+
     <template v-if="activeView === 'monitor'">
       <ion-header>
         <ion-toolbar>
@@ -15,17 +28,6 @@
       <ion-content class="ion-padding-horizontal">
         <!-- A failed cache sync must never look like a healthy empty queue: without this the
              counts below render 0 / "None waiting" after the OMS rejects the query. -->
-        <ion-card v-if="inventorySyncError" color="warning" class="sync-error-banner">
-          <ion-card-content>
-            <ion-icon :icon="warningOutline" />
-            <ion-label>
-              <h2>Inventory data could not be loaded from the OMS</h2>
-              <p>{{ inventorySyncError }}</p>
-              <p>The counts below are unavailable, not confirmed empty. Do not read them as "nothing pending".</p>
-            </ion-label>
-          </ion-card-content>
-        </ion-card>
-
         <section class="summary-grid">
           <ion-card>
             <ion-card-header>
@@ -739,12 +741,24 @@
               </ion-accordion-group>
             </ion-card>
 
-            <ion-card v-if="!visibleWaitingBatches.length">
+            <!-- The all-clear is a POSITIVE claim about the data, so it may only be made once the
+                 ledger is readable. Before that, say the section is not loaded rather than clear. -->
+            <ion-card v-if="!visibleWaitingBatches.length && pipelineReadable">
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
                   {{ translate("Nothing waiting") }}
                   <p>{{ translate("Every recorded event has been claimed into a batch or settled.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+
+            <ion-card v-else-if="!visibleWaitingBatches.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="warningOutline" color="medium" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Not loaded") }}
+                  <p>{{ translate("This section is unavailable until the inventory event cache loads. It is not confirmed empty.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -810,12 +824,24 @@
               </ion-list>
             </ion-card>
 
-            <ion-card v-if="!visibleInFlightBatches.length">
+            <!-- The all-clear is a POSITIVE claim about the data, so it may only be made once the
+                 ledger is readable. Before that, say the section is not loaded rather than clear. -->
+            <ion-card v-if="!visibleInFlightBatches.length && pipelineReadable">
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
                   {{ translate("Nothing in flight") }}
                   <p>{{ translate("Every batch produced for this connection has reached Shopify.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+
+            <ion-card v-else-if="!visibleInFlightBatches.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="warningOutline" color="medium" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Not loaded") }}
+                  <p>{{ translate("This section is unavailable until the inventory event cache loads. It is not confirmed empty.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -855,12 +881,23 @@
               </ion-list>
             </ion-card>
 
-            <ion-card v-else>
+            <!-- Same rule as the sections above: "nothing quarantined" is a claim, not a default. -->
+            <ion-card v-else-if="pipelineReadable">
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
                   {{ translate("Nothing quarantined") }}
                   <p>{{ translate("No event has produced a summed delta the publisher had to refuse.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+
+            <ion-card v-else>
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="warningOutline" color="medium" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Not loaded") }}
+                  <p>{{ translate("This section is unavailable until the inventory event cache loads. It is not confirmed empty.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -2575,6 +2612,17 @@ watch(inventoryEvents, (events) => {
   void resolveProductNames(events.map((event) => event.productId).filter(Boolean));
 }, { immediate: true });
 
+
+/**
+ * Is the ledger actually readable right now?
+ *
+ * An empty section only means "nothing there" once the cache has hydrated and the sync is healthy;
+ * before that it means "not known yet". The monitor view has carried this rule since it was written --
+ * a failed cache sync must never look like a healthy empty queue -- and the pipeline rewrite dropped
+ * it, so three green all-clear cards rendered over a cold or failed cache.
+ */
+const pipelineReadable = computed(() =>
+  inventoryDetailsHydrated.value && inventorySyncReady.value && !inventorySyncError.value);
 
 const pendingEventCount = computed(() => inventoryDetails.value.filter(isWaitingDetail).length);
 const pendingBatchCount = computed(() => inFlightBatches.value.length);

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SYSTEM_MESSAGE_STATUS_IDS } from "@/utils/systemMessage";
 import {
   DETAIL_STATUS_IDS,
-  deltaOutcome,
   deliveryStatusOf,
+  deltaOutcome,
   isDeliveryTerminalFailure,
   isDeliveryUnsettled,
   isWaitingDetail,
@@ -12,6 +11,7 @@ import {
   sectionOfEvent,
   sumDelta,
 } from "@/utils/shopifyInventoryPipeline";
+import { SYSTEM_MESSAGE_STATUS_IDS } from "@/utils/systemMessage";
 
 const SECTIONS = ["waiting", "inFlight", "quarantined", "settled"];
 const SETTLED_MESSAGE_STATUS_IDS = ["SmsgSent", "SmsgConsumed", "SmsgConfirmed"];
@@ -31,11 +31,11 @@ describe("sectionOfEvent — every row lands in exactly one section", () => {
   it("classifies every ledger status against every message status, with no gaps", () => {
     const unclassified: string[] = [];
 
-    for (const detailStatusId of [...DETAIL_STATUS_IDS, "DETAIL_SOMETHING_NEW", "", undefined]) {
-      for (const statusId of [...SYSTEM_MESSAGE_STATUS_IDS, "SmsgSomethingNew", ""]) {
-        for (const systemMessageId of ["BATCH_1", ""]) {
+    for(const detailStatusId of [...DETAIL_STATUS_IDS, "DETAIL_SOMETHING_NEW", "", undefined]) {
+      for(const statusId of [...SYSTEM_MESSAGE_STATUS_IDS, "SmsgSomethingNew", ""]) {
+        for(const systemMessageId of ["BATCH_1", ""]) {
           const section = sectionOfEvent(detail({ detailStatusId, systemMessageId }), statusId);
-          if (!SECTIONS.includes(section)) {
+          if(!SECTIONS.includes(section)) {
             unclassified.push(`${detailStatusId}/${statusId}/${systemMessageId || "no-batch"} -> ${section}`);
           }
         }
@@ -46,7 +46,7 @@ describe("sectionOfEvent — every row lands in exactly one section", () => {
   });
 
   it("keeps a rejected or cancelled batch on the page instead of dropping it", () => {
-    for (const statusId of ["SmsgRejected", "SmsgCancelled"]) {
+    for(const statusId of ["SmsgRejected", "SmsgCancelled"]) {
       expect(sectionOfEvent(detail(), statusId)).toBe("inFlight");
       expect(sectionOfBatch(statusId)).toBe("inFlight");
       expect(isDeliveryTerminalFailure(statusId)).toBe(true);
@@ -59,7 +59,7 @@ describe("sectionOfEvent — every row lands in exactly one section", () => {
   });
 
   it("settles a row once Shopify confirms it, whichever terminal success it is", () => {
-    for (const statusId of SETTLED_MESSAGE_STATUS_IDS) {
+    for(const statusId of SETTLED_MESSAGE_STATUS_IDS) {
       expect(sectionOfEvent(detail(), statusId)).toBe("settled");
       expect(sectionOfBatch(statusId)).toBe("settled");
       expect(isDeliveryUnsettled(statusId)).toBe(false);

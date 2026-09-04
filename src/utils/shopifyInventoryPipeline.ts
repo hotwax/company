@@ -18,7 +18,7 @@
  * labels and colors stay in the view, so a section can be renamed without touching the rule.
  */
 
-import { isSuccess, messageState } from "./systemMessage";
+import { isSuccess } from "./systemMessage";
 
 /** The four sections of the pipeline, in the order the publisher acts on them. */
 export type PipelineSectionId = "waiting" | "inFlight" | "quarantined" | "settled";
@@ -62,7 +62,8 @@ export function deliveryStatusOf(
   detail: Record<string, any> | null | undefined,
   messageStatusId?: string | null,
 ): string {
-  if (!detail?.systemMessageId) return "";
+  if(!detail?.systemMessageId) {return "";}
+
   return String(messageStatusId || detail.systemMessageStatusId || "");
 }
 
@@ -77,16 +78,16 @@ export function sectionOfEvent(
   messageStatusId?: string | null,
 ): PipelineSectionId {
   // Terminal on the ledger: never batched again, and excluded from the absolute reset gate.
-  if (detail?.detailStatusId === "DETAIL_ERROR") return "quarantined";
+  if(detail?.detailStatusId === "DETAIL_ERROR") {return "quarantined";}
   // Closed as no change: the delta netted to zero, so no mutation was ever owed to Shopify.
-  if (detail?.detailStatusId === "DETAIL_NOOP") return "settled";
+  if(detail?.detailStatusId === "DETAIL_NOOP") {return "settled";}
   // Nothing has claimed it yet. Deliberately not gated on DETAIL_PENDING: a row with no batch is
   // waiting whatever its status says, and a status the app does not know must still be visible.
-  if (!detail?.systemMessageId) return "waiting";
+  if(!detail?.systemMessageId) {return "waiting";}
 
   const statusId = deliveryStatusOf(detail, messageStatusId);
   // Shopify confirmed it (Sent / Consumed / Confirmed).
-  if (isSuccess(statusId)) return "settled";
+  if(isSuccess(statusId)) {return "settled";}
 
   // Everything else has a batch that has not settled — staged, sending, retrying, refused, or a
   // status this app has not seen. The catch-all is the point: no row can fall out of the page.
@@ -122,6 +123,7 @@ const DELTA_PRECISION = 1e6;
 /** One summed delta, rounded to the precision the publisher's own arithmetic settles on. */
 export function roundDelta(value: number): number {
   const rounded = Math.round(Number(value || 0) * DELTA_PRECISION) / DELTA_PRECISION;
+
   // `-0` formats as "-0" and reads as a decrease that is not one.
   return rounded === 0 ? 0 : rounded;
 }
@@ -140,7 +142,7 @@ export function sumDelta(values: Array<number | string | null | undefined>): num
  */
 export function deltaOutcome(delta: number): "noChange" | "publish" | "quarantine" {
   const rounded = roundDelta(delta);
-  if (rounded === 0) return "noChange";
+  if(rounded === 0) {return "noChange";}
 
   return Number.isInteger(rounded) ? "publish" : "quarantine";
 }

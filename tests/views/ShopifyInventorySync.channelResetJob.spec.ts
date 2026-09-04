@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { computed, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { computed, ref } from "vue";
 
 const cachedJobs = ref<any[]>([]);
 const cachedChannels = ref<any[]>([]);
@@ -9,6 +9,10 @@ const cachedShops = ref<any[]>([]);
 const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
+// The read layer's health, controllable: an empty section means "nothing there" only when these say so.
+const detailsHydrated = ref(true);
+const syncReady = ref(true);
+const syncError = ref<string | null>(null);
 
 const harness = vi.hoisted(() => ({
   ensureChannelResetJob: vi.fn(),
@@ -55,8 +59,8 @@ vi.mock("@/composables/useCacheSync", () => ({
   useCacheSync: () => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-    ready: ref(true),
-    error: ref(null),
+    ready: syncReady,
+    error: syncError,
     afterMutation: vi.fn(),
   }),
 }));
@@ -64,21 +68,22 @@ vi.mock("@/composables/useCacheSync", () => ({
 vi.mock("@/composables/useCachedList", () => ({
   useCachedList: (cache: any) => {
     const table = String(cache?.table || cache?.name || "");
-    if (table.includes("shopifyShop") || table.includes("ShopifyShop")) {
+    if(table.includes("shopifyShop") || table.includes("ShopifyShop")) {
       return { records: cachedShops, rows: cachedShops, hydrated: ref(true) };
     }
-    if (table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
+    if(table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
       return { records: cachedChannels, rows: cachedChannels, hydrated: ref(true) };
     }
-    if (table.includes("dataFeed") || table.includes("DataFeed")) {
+    if(table.includes("dataFeed") || table.includes("DataFeed")) {
       return { records: cachedDataFeeds, rows: cachedDataFeeds, hydrated: ref(true) };
     }
-    if (table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
-      return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: ref(true) };
+    if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
+      return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: detailsHydrated };
     }
-    if (table.includes("systemMessage") || table.includes("SystemMessage")) {
+    if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
     }
+
     return { records: ref([]), rows: ref([]), hydrated: ref(true) };
   },
 }));
@@ -97,6 +102,8 @@ vi.mock("@/composables/useServiceJobs", () => ({
 vi.mock("@/composables/useSeed", () => ({
   useStatuses: () => ({
     statuses: ref([]),
+    // The real composable returns the StatusItem description; the view falls back to the raw id.
+    labelFor: (statusId: string) => statusId,
   }),
 }));
 
@@ -126,6 +133,7 @@ vi.mock("@/composables/useVirtualRows", () => ({
 }));
 
 vi.mock("@/composables/useShopify", () => ({
+  fetchLocationsFromShopify: vi.fn().mockResolvedValue([]),
   useInventoryEventSources: () => ({
     sources: ref(new Map()),
     resolve: vi.fn(),
@@ -163,6 +171,9 @@ vi.mock("@/composables/useShopify", () => ({
 describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
   beforeEach(() => {
     vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
     cachedJobs.value = [];
     cachedChannels.value = [
       {
@@ -224,7 +235,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -274,7 +285,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -314,7 +325,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
             props: ["isOpen", "jobName", "title"],
-            template: `<div data-testid="service-job-modal" v-if="isOpen">{{ title }}: {{ jobName }}</div>`,
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -354,3 +365,88 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1002");
   });
 }, 20000);
+
+describe("ShopifyInventorySync - the pipeline never claims all-clear over unreadable data", () => {
+  const mountHistory = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "history" as const },
+      global: {
+        stubs: {
+          IonModal: { template: "<div><slot /></div>" },
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  const allClearText = [
+    "Every recorded event has been claimed into a batch or settled.",
+    "Every batch produced for this connection has reached Shopify.",
+    "No event has produced a summed delta the publisher had to refuse.",
+  ];
+
+  beforeEach(() => {
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedAdjustmentDetails.value = [];
+    cachedMessages.value = [];
+    cachedChannels.value = [];
+  });
+
+  it("says the sections are all clear when the ledger really is readable and empty", async () => {
+    const wrapper = await mountHistory();
+
+    for(const claim of allClearText) {
+      expect(wrapper.text()).toContain(claim);
+    }
+    expect(wrapper.text()).not.toContain("Not loaded");
+  });
+
+  it("makes no all-clear claim before the ledger cache has hydrated", async () => {
+    detailsHydrated.value = false;
+    const wrapper = await mountHistory();
+
+    for(const claim of allClearText) {
+      expect(wrapper.text()).not.toContain(claim);
+    }
+    expect(wrapper.text()).toContain("Not loaded");
+  });
+
+  it("makes no all-clear claim when the sync reported an error, and shows the banner in this view", async () => {
+    syncError.value = "inventoryAdjustmentDetails returned 500";
+    const wrapper = await mountHistory();
+
+    for(const claim of allClearText) {
+      expect(wrapper.text()).not.toContain(claim);
+    }
+    // The banner used to live inside the monitor template, so the history route never showed it.
+    expect(wrapper.text()).toContain("Inventory data could not be loaded from the OMS");
+    expect(wrapper.text()).toContain("inventoryAdjustmentDetails returned 500");
+  });
+
+  it("keeps a rejected batch on the page instead of dropping it out of every section", async () => {
+    cachedChannels.value = [{
+      inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
+      facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
+    }];
+    cachedAdjustmentDetails.value = [{
+      eventTypeId: "RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
+      shopifyInventoryItemId: "ITEM_1", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_REJECTED", systemMessageStatusId: "SmsgRejected",
+      computedInventoryChange: 1, createdDate: 1000,
+    }];
+    cachedMessages.value = [{ systemMessageId: "BATCH_REJECTED", statusId: "SmsgRejected" }];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("BATCH_REJECTED");
+    expect(wrapper.text()).toContain("The sender will not retry this batch");
+    expect(wrapper.text()).not.toContain("Every batch produced for this connection has reached Shopify.");
+  });
+});
