@@ -83,12 +83,12 @@ import {
 import { computed, ref, watch } from "vue";
 import { addOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
-import { useFacilityCreation, useFacilityMutations, useFacilityTypes } from "@/composables/useFacilities";
+import { useFacilityMutations, useFacilityTypes } from "@/composables/useFacilities";
 import { useOrganization } from "@/composables/useSeed";
 import { generateInternalId } from "@/utils";
 import router from "@/router";
 
-const { createFacility: createFacilityRecord } = useFacilityCreation();
+const { createFacility: createFacilityRecord } = useFacilityMutations();
 
 const facilityIdRef = ref<any>(null);
 const isAutoGenerateId = ref(true);
