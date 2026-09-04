@@ -59,16 +59,17 @@
 <script setup lang="ts">
 import { IonBackButton, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToggle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { cloudUploadOutline, saveOutline } from "ionicons/icons";
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, defineProps, ref, watch } from "vue";
-import { useShopifyStore } from '@/store/shopify';
-import TimezoneModal from "@/components/TimezoneModal.vue";
+import TimezoneModal from "@/components/common/TimezoneModal.vue";
+import { useShopifyShop, useShopifyShopMutations } from "@/composables/useShopify";
 
 const props = defineProps(['id']);
-const shopifyStore = useShopifyStore();
 const isLoading = ref(true);
 
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
+// Cached record; `updateShop` refreshes it, so no manual re-fetch after saving.
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => (shopRecord.value as any)?.raw ?? shopRecord.value ?? {});
 const shopDetails = ref({
   name: "",
   timezone: "",
@@ -83,9 +84,6 @@ const isDirty = computed(() => {
 
 onIonViewWillEnter(async () => {
   isLoading.value = true;
-  if (!shop.value.shopId) {
-    await shopifyStore.fetchShopifyShops()
-  }
   setShopDetails();
   isLoading.value = false;
 });
@@ -124,14 +122,10 @@ function updateRefundProcessing(event: any) {
 async function saveShopDetails() {
   emitter.emit("presentLoader");
   try {
-    const resp = await shopifyStore.updateShopifyShop({
-      shopId: props.id,
-      ...shopDetails.value
-    });
+    const resp = await useShopifyShopMutations(props.id).updateShop({ ...shopDetails.value });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Shop details updated successfully"));
-      await shopifyStore.fetchShopifyShops();
     } else {
       throw resp.data;
     }

@@ -94,7 +94,8 @@
                   <p>{{ tool.description }}</p>
                 </ion-label>
 
-                <ion-checkbox slot="end" label-placement="bottom" justify="center"
+                <!-- `bottom`/`center` are not valid ion-checkbox values; Ionic ignored them. -->
+                <ion-checkbox slot="end"
                   :checked="tool.autoApprove" @ionChange="tool.autoApprove = $event.detail.checked">
                   {{ translate("Auto approve") }}
                 </ion-checkbox>

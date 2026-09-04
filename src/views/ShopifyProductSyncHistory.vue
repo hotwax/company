@@ -122,13 +122,12 @@ import {
   IonToolbar
 } from "@ionic/vue";
 import { commonUtil, logger, translate } from '@common'
-import { computed, defineProps, reactive, ref } from "vue";
-import { useShopifyStore } from '@/store/shopify';
-import { useUtilStore } from '@/store/util';
-import ShopifyProductSyncHistoryView from "@/components/ShopifyProductSyncHistoryView.vue";
-import { useShopifyProductSyncStore } from "@/store/shopifyProductSync";
+import { computed, defineProps, reactive, ref, watch } from "vue";
+import ShopifyProductSyncHistoryView from "@/components/shopify-product-sync/ShopifyProductSyncHistoryView.vue";
 import { useSystemMessage } from "@/composables/useSystemMessage";
-import { useDataManagerLog } from "@/composables/useDataManagerLog";
+import { useShopifySyncContext, useShopifyShop } from "@/composables/useShopify";
+import { useStatuses } from "@/composables/useSeed";
+import { useDataManager } from "@/composables/useDataManager";
 import { downloadTextFile, getDownloadFileContent, parseDateTimeValue } from '@/utils';
 import {
   getSystemMessageTime,
@@ -140,11 +139,8 @@ import { getSystemMessageBulkOperationId } from "@/utils/shopifyBulkOperation";
 
 import { getRawShopifyFileName } from "@/utils/shopifyProductSyncWizard";
 const props = defineProps(["id"]);
-const shopifyStore = useShopifyStore();
-const utilStore = useUtilStore();
-const shopifyProductSyncStore = useShopifyProductSyncStore();
 const { fetchShopifyBulkOperationBySystemMessageId, fetchSystemMessageLogDetailsPage } = useSystemMessage();
-const { downloadDataManagerFile, fetchLogDetails } = useDataManagerLog();
+const { downloadDataManagerFile, fetchLogDetails } = useDataManager();
 
 const PAGE_SIZE = 25;
 const PRODUCT_SYNC_MDM_CONFIG_ID = "SYNC_SHOPIFY_PRODUCT";
@@ -209,12 +205,34 @@ const sortOptions = [
   { value: "oldest", label: translate("Oldest first") }
 ];
 
-const shop = computed(() => shopifyStore.getShopById(props.id) || {});
-const statusItems = computed(() => utilStore.statusItems || {});
+const { record: shopRecord } = useShopifyShop(props.id);
+const shop = computed<any>(() => shopRecord.value ?? {});
+/**
+ * The shop's remotes, resolved from the CACHE — no request, and no dependence on load order.
+ *
+ * This used to call `fetchShopSystemMessageRemoteId({ shopifyShopId: shop.value.shopifyShopId })`,
+ * which threw "Shopify shop id is required to resolve SystemMessageRemote.remoteId" whenever the
+ * view entered before the shop cache had hydrated — i.e. on every cold entry, leaving the page stuck
+ * on an error card. The shop↔remote join is a local computation over two cached tables, so the only
+ * thing to wait for is hydration.
+ */
+const { remoteIds: cachedRemoteIds, hydrated: shopContextHydrated } = useShopifySyncContext(() => props.id);
+const { statusItems } = useStatuses();
 const hasMoreHistory = computed(() => bufferedSystemMessages.value.length > 0 || hasMoreBackendHistory.value);
 
-onIonViewWillEnter(async () => {
-  await loadHistory();
+onIonViewWillEnter(() => {
+  // Load as soon as the shop cache has emitted — instantly on a revisit, within a tick on a cold one.
+  // NOT `watch(..., { immediate: true })` with a self-referencing `stop`: when the source is already
+  // true the callback runs before `stop` is assigned and throws. See the same fix in ShopifyProductSync.
+  if (shopContextHydrated.value) {
+    void loadHistory();
+  } else {
+    const stop = watch(shopContextHydrated, (ready) => {
+      if (!ready) return;
+      stop();
+      void loadHistory();
+    });
+  }
 });
 
 async function loadHistory() {
@@ -222,22 +240,9 @@ async function loadHistory() {
   isLoading.value = true;
   loadErrorMessage.value = "";
   try {
-    if (!shop.value.shopId) {
-      await shopifyStore.fetchShopifyShops();
-    }
-
     if (isStaleHistoryLoad(loadToken)) return;
 
-    const resolvedSystemMessageRemoteIds = await shopifyProductSyncStore.fetchShopSystemMessageRemoteId({
-      shopId: props.id,
-      shopifyShopId: shop.value.shopifyShopId,
-      shop: shop.value,
-      returnAllSystemMessageRemoteIds: true
-    });
-
-    if (isStaleHistoryLoad(loadToken)) return;
-
-    systemMessageRemoteIds.value = resolvedSystemMessageRemoteIds;
+    systemMessageRemoteIds.value = cachedRemoteIds.value;
     if (!systemMessageRemoteIds.value.length) {
       throw new Error("Could not resolve systemMessageRemoteIds");
     }
@@ -550,8 +555,9 @@ function getRunQueryContent(systemMessage: any) {
 
 function getStatusLabel(status: string) {
   if (!status) return translate("Pending");
-  const statusItem = statusItems.value[status];
-  if (statusItem) return statusItem.description || statusItem.statusId;
+  // Cached `statusItems` maps statusId → description directly (the store held objects).
+  const description = statusItems.value[status];
+  if (description) return description;
 
   const normalizedStatus = String(status).toLowerCase();
   if (normalizedStatus === "completed") return translate("Complete");

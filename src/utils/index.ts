@@ -41,8 +41,24 @@ const getResponseErrorMessage = (error: any, defaultMessage: string) => {
     return responseData._ERROR_MESSAGE_;
   }
 
+  if(typeof responseData?.error?.message === "string" && responseData.error.message.trim()) {
+    return responseData.error.message;
+  }
+
+  if(typeof responseData?.errorMessage === "string" && responseData.errorMessage.trim()) {
+    return responseData.errorMessage;
+  }
+
+  if(typeof responseData?.error === "string" && responseData.error.trim()) {
+    return responseData.error;
+  }
+
   if (typeof responseData?.message === "string" && responseData.message.trim()) {
     return responseData.message;
+  }
+
+  if(typeof error?.errorMessage === "string" && error.errorMessage.trim()) {
+    return error.errorMessage;
   }
 
   if (typeof error?.message === "string" && error.message.trim()) {
@@ -51,10 +67,28 @@ const getResponseErrorMessage = (error: any, defaultMessage: string) => {
 
   return defaultMessage;
 }
+const customSort = (list: any[], customValues: string[], sortParameter: string) => {
+  return [...list].sort((first: any, second: any) => {
+    const firstVal = customValues.indexOf(first[sortParameter]);
+    const secondVal = customValues.indexOf(second[sortParameter]);
+    return secondVal - firstVal;
+  });
+}
+
 const generateInternalId = (name: string) => {
   return name.trim().toUpperCase().split(' ').join('_');
 }
 
+const isValidPhone = (phoneNumber: string) => {
+  if (!phoneNumber) return false;
+  const trimmed = phoneNumber.trim();
+  // Constrain optional leading +, followed by structured digits, spaces, hyphens, and balanced parentheses
+  const phonePattern = /^\+?(?:[\d\s-]*|\(\d+\))*[\d\s-]*$/;
+  if (!phonePattern.test(trimmed)) return false;
+
+  const digitCount = trimmed.replace(/\D/g, "").length;
+  return digitCount >= 7 && digitCount <= 20;
+}
 
 const getDownloadFileContent = (data: any) => {
   const fileContent = data?.csvData ?? data?.fileData ?? data?.data ?? data;
@@ -72,7 +106,9 @@ const downloadTextFile = (content: string, fileName: string) => {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Chromium may still be reading the object URL after the synthetic click.
+  // Revoking it in the same task starts the download and then cancels it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const formatDateTime = (value: any, format?: string) => {
@@ -84,10 +120,18 @@ const formatDateTime = (value: any, format?: string) => {
   return format ? dateTime.toFormat(format) : dateTime.toLocaleString(DateTime.DATETIME_MED);
 }
 
-const parseDateTimeValue = (value: string | number) => {
+const parseDateTimeValue = (value: string | number | Date | null | undefined) => {
   if (!value) return null;
 
   if (DateTime.isDateTime(value)) return value;
+
+  // A native Date used to fall through to the `typeof !== "string"` bail below and format as "",
+  // which is how the Order Sync "next batch sync" preview rendered "Not available" for a schedule
+  // that was previewing correctly — `getNextSyncRun` returns a Date.
+  if (value instanceof Date) {
+    const dateTime = DateTime.fromJSDate(value);
+    return dateTime.isValid ? dateTime : null;
+  }
 
   if (typeof value === "number") {
     const dateTime = DateTime.fromMillis(value);
@@ -116,4 +160,4 @@ const parseDateTimeValue = (value: string | number) => {
   return candidates.find((candidate) => candidate.isValid) || null;
 }
 
-export { generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue }
+export { customSort, generateInternalId, getResponseErrorMessage, hasError, showToast, getCurrentTime, getDownloadFileContent, downloadTextFile, formatDateTime, parseDateTimeValue, isValidPhone }

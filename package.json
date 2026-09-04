@@ -1,13 +1,16 @@
 {
   "name": "company",
-  "version": "1.3.0",
+  "version": "2.2.2",
   "private": true,
   "description": "An Ionic project",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "serve": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:unit": "vitest run --no-cache",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -49,6 +52,7 @@
     "eslint": "catalog:",
     "eslint-plugin-vue": "^9.0.0",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vite-plugin-pwa": "catalog:"
   }
 }

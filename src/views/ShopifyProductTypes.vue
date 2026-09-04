@@ -70,22 +70,26 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, arrowBackOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
-import { useUtilStore } from '@/store/util';
-import { useShopifyStore } from '@/store/shopify';
+import { commonUtil, emitter, logger, translate } from '@common'
+import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify";
+import { useProductTypes } from '@/composables/useSeed';
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { shouldPopHistoryOnBack } from "@/utils/navigation";
 
 const props = defineProps(['id']);
-const utilStore = useUtilStore();
-const shopifyStore = useShopifyStore();
-const isLoading = ref(true);
+// Writes still go through the store; every READ comes from the cache.
+const shopMutations = useShopifyShopMutations(props.id);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 
-const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PRODUCT_TYPE"))
+const { mappings: shopifyTypeMappings, hydrated } = useShopifyTypeMappings(props.id, "SHOPIFY_PRODUCT_TYPE");
+const { productTypes: cachedProductTypes } = useProductTypes();
+const isLoading = computed(() => !hydrated.value);
+
+// Fall back to the types present in the mappings when the catalog is empty (unchanged behavior).
 const productTypes = computed(() => {
-  if (utilStore.productTypes.length) return utilStore.productTypes
+  if (cachedProductTypes.value.length) return cachedProductTypes.value
 
   return shopifyTypeMappings.value.map((mapping: any) => ({
     productTypeId: mapping.mappedValue,
@@ -105,19 +109,14 @@ const isDirty = computed(() => {
   });
 });
 
-onIonViewWillEnter(async () => {
-  isLoading.value = true;
-  await Promise.all([
-    utilStore.fetchProductTypes(),
-    shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id })
-  ]);
-  initializeLocalMappings();
-  isLoading.value = false;
-})
 
-watch(shopifyTypeMappings, () => {
+// `initializeLocalMappings` reads BOTH cached sources, which emit from IndexedDB independently.
+// Watching only one meant that if the other had not arrived yet the local map was built empty and
+// never rebuilt — every row then compared `undefined` against its real mapping, looked "dirty",
+// and rendered the edit input instead of the mapped value. `immediate` also seeds a warm cache.
+watch([shopifyTypeMappings, productTypes], () => {
   initializeLocalMappings();
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 function initializeLocalMappings() {
   const mappings: any = {};
@@ -161,23 +160,21 @@ async function saveMapping(productTypeId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopifyStore.deleteShopifyShopTypeMapping({
-        shopId: props.id,
+      await shopMutations.retireTypeMapping({
         mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
         mappedKey: oldMappedKey
-      });
+      }, { refresh: false });
     }
 
-    const resp = await shopifyStore.createShopifyShopTypeMapping({
-      shopId: props.id,
+    const resp = await shopMutations.saveTypeMapping({
       mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
       mappedKey: newMappedKey,
       mappedValue: productTypeId
-    });
+    }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id });
+      await shopMutations.refreshTypeMappings();
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -199,21 +196,19 @@ async function saveAllDirtyMappings() {
       const oldMappedKey = getShopifyMappingId(id);
 
       if (oldMappedKey) {
-        await shopifyStore.deleteShopifyShopTypeMapping({
-          shopId: props.id,
+        await shopMutations.retireTypeMapping({
           mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
           mappedKey: oldMappedKey
-        });
+        }, { refresh: false });
       }
 
-      await shopifyStore.createShopifyShopTypeMapping({
-        shopId: props.id,
+      await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
         mappedKey: newMappedKey,
         mappedValue: id
-      });
+      }, { refresh: false });
     }
-    await shopifyStore.fetchShopifyTypeMappings({ mappedTypeId: "SHOPIFY_PRODUCT_TYPE", shopId: props.id });
+    await shopMutations.refreshTypeMappings();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -263,7 +258,14 @@ const router = useRouter();
 onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
 
 function navigateBack() {
-  router.push(backHref.value);
+  // POP the entry we came from; do not push. Pushing left this page sitting ahead of the connection
+  // detail page in history, so its ion-back-button walked forward into here instead of reaching
+  // /shopify — an inescapable loop. See `shouldPopHistoryOnBack`.
+  if (shouldPopHistoryOnBack(window.location.search, router.options.history.state?.back)) {
+    router.back();
+    return;
+  }
+  router.replace(backHref.value);
 }
 </script>
 

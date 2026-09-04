@@ -1047,27 +1047,43 @@ import {
 import { computed, ref } from "vue"
 import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
 import { commonUtil, emitter, logger, translate } from "@common"
-import CreateShopifyConnectionModal from "@/components/CreateShopifyConnectionModal.vue"
-import ImportShopifyLocationsModal from "@/components/ImportShopifyLocationsModal.vue"
+import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConnectionModal.vue"
+import ImportShopifyLocationsModal from "@/components/facility/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
 import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
-import { useProductStoreOnboardingStore } from "@/store/productStoreOnboarding"
-import { useProductStore } from "@/store/productStore"
-import { useShopifyStore } from "@/store/shopify"
-import { useShopifyProductSyncStore } from "@/store/shopifyProductSync"
-import { useUtilStore } from "@/store/util"
-import { useNetSuiteStore } from "@/store/netSuite"
-import { useShopifyProductSyncRun } from "@/composables/useShopifyProductSyncRun"
+import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
+import { useProductStoreData } from "@/composables/useProductStores"
+import { useFacilities, useFacilityMutations, useFacilityGroups } from "@/composables/useFacilities"
+import {
+  fetchProductUpdateSyncRunState,
+  fetchShopifyCarrierShipments,
+  fetchShopifyShopLocations,
+  fetchShopifyTypeMappings,
+  useShopifyProductSyncRun,
+  useShopifyShopMutations,
+  useShopifyShops,
+} from "@/composables/useShopify";
 import { normalizeProductSyncStatus } from "@/utils/shopifyProductSyncWizard"
 import { generateInternalId } from "@/utils"
 import router from "@/router"
+import { useProductStoreCreation, useProductStoreMutations, useProductStoreShippingMethodsLive } from "@/composables/useProductStores";
+import { useCurrencies, useOrganization, usePaymentMethodTypes, useProductTypes, useShipmentMethodTypes, useTypedEnums } from "@/composables/useSeed";
 
-const onboardingStore = useProductStoreOnboardingStore()
-const productStoreStore = useProductStore()
-const shopifyStore = useShopifyStore()
-const shopifyProductSyncStore = useShopifyProductSyncStore()
-const utilStore = useUtilStore()
-const netSuiteStore = useNetSuiteStore()
+const onboardingStore = useProductStoreOnboardingWizard()
+const productStoreStore = useProductStoreData()
+const { createStore, updateCompany } = useProductStoreCreation();
+// Shops come from the CACHE (class-B snapshot) — reactive, no fetch, and write-throughs from the
+// connection/link mutations keep it current, which is what let the explicit fetches below go.
+const { shops: cachedShopifyShops } = useShopifyShops()
+// Reference data (currencies, types, groups, facilities) comes off the login cache; the wizard's
+// per-visit refetches went with the util store. Organization identity keeps its live memo.
+const { organizationPartyId, loadOrganizationPartyId, bootstrapOrganization } = useOrganization()
+const { currencies } = useCurrencies()
+const { productTypes } = useProductTypes()
+const { shipmentMethodTypes } = useShipmentMethodTypes()
+const { facilityGroups } = useFacilityGroups()
+const { records: allFacilities } = useFacilities()
+const { createFacility } = useFacilityMutations()
 const { fetchSyncRun: fetchProductImportSyncRun } = useShopifyProductSyncRun()
 const props = defineProps<{ productStoreId?: string }>()
 const isSavingProductStore = ref(false)
@@ -1109,7 +1125,6 @@ const currentStep = computed(() => onboardingStore.currentStep)
 const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
 const routeProductStoreId = computed(() => props.productStoreId || "")
 const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
-const organizationPartyId = computed(() => utilStore.organizationPartyId)
 const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0 || !organizationPartyId.value)
 const isPrimaryActionLoading = computed(() => {
   return isSavingProductStore.value
@@ -1133,7 +1148,7 @@ const isPrimaryActionLoading = computed(() => {
 })
 const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
 const availableShopifyShops = computed(() => {
-  return shopifyStore.shops.filter((shop: any) => {
+  return cachedShopifyShops.value.filter((shop: any) => {
     return !shop.productStoreId
       || shop.productStoreId === selectedProductStoreId.value
       || shop.shopId === onboardingStore.draft.linkedShopifyShopId
@@ -1141,9 +1156,9 @@ const availableShopifyShops = computed(() => {
 })
 const linkedShopifyShop = computed(() => {
   const linkedShopId = onboardingStore.draft.linkedShopifyShopId
-  if (linkedShopId) return shopifyStore.getShopById(linkedShopId) || { shopId: linkedShopId }
+  if (linkedShopId) return cachedShopifyShops.value.find((shop: any) => shop.shopId === linkedShopId) || { shopId: linkedShopId }
 
-  return shopifyStore.shops.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
+  return cachedShopifyShops.value.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
 })
 const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
 const shopifyJobStatus = computed(() => productStoreStore.currentShopifyJobStatus)
@@ -1190,12 +1205,14 @@ const starterFacilityDescription = computed(() => {
   const storeName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
   return `${translate("Create one Retail Store facility for")} ${storeName}.`
 })
-const facilityGroups = computed(() => utilStore.facilityGroups)
-const shipmentMethodTypes = computed(() => utilStore.shipmentMethodTypes)
-const productTypes = computed(() => utilStore.productTypes)
-const salesChannels = computed(() => netSuiteStore.salesChannel)
-const paymentMethods = computed(() => netSuiteStore.paymentMethods)
-const productStoreShipmentMethods = computed(() => netSuiteStore.productStoreShipmentMethods)
+const { values: salesChannels } = useTypedEnums('ORDER_SALES_CHANNEL')
+const { paymentMethodTypes: paymentMethods } = usePaymentMethodTypes()
+// Live, not cached: onboarding reads the methods of a store that may not have existed at login.
+const productStoreShipmentMethods = ref<any[]>([])
+const { fetchShippingMethodsFor } = useProductStoreShippingMethodsLive()
+async function loadProductStoreShipmentMethods() {
+  productStoreShipmentMethods.value = await fetchShippingMethodsFor(selectedProductStoreId.value)
+}
 const activeProductStoreShipmentMethods = computed(() => {
   const now = Date.now()
   return productStoreShipmentMethods.value.filter((method: any) => {
@@ -1203,7 +1220,7 @@ const activeProductStoreShipmentMethods = computed(() => {
   })
 })
 const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
-const productIdentifierOptions = computed(() => utilStore.productIdentifiers)
+const { values: productIdentifierOptions } = useTypedEnums("SHOP_PROD_IDENTITY")
 const shopifyMappingAreas = computed(() => [
   {
     id: "productTypes",
@@ -1625,8 +1642,8 @@ const productIdentityPreferences = computed(() => {
 const preferredPrimaryProductIdentification = computed(() => onboardingStore.draft.primaryProductIdentification || productIdentityPreferences.value.primaryId || "")
 const preferredSecondaryProductIdentification = computed(() => onboardingStore.draft.secondaryProductIdentification || productIdentityPreferences.value.secondaryId || "")
 const currencyOptions = computed(() => {
-  if (utilStore.currencies.length) {
-    return utilStore.currencies.map((currency: any) => ({
+  if (currencies.value.length) {
+    return currencies.value.map((currency: any) => ({
       uomId: currency.uomId,
       label: `${currency.description} (${currency.abbreviation})`
     }))
@@ -1861,7 +1878,7 @@ async function refreshProductImportProgress() {
   isLoadingProductImportProgress.value = true
   try {
     const trackedSystemMessageId = productImportProgressState.value?.systemMessageId || ""
-    const syncRunState = await shopifyProductSyncStore.fetchProductUpdateSyncRunState({
+    const syncRunState = await fetchProductUpdateSyncRunState({
       shopId: linkedShopifyShopId.value,
       systemMessageId: trackedSystemMessageId
     })
@@ -1935,10 +1952,10 @@ async function refreshShopifyMappingStatus() {
       paymentMethodMappings,
       shippingMethodMappings
     ] = await Promise.all([
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PRODUCT_TYPE" }),
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_ORDER_SOURCE" }),
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PAYMENT_TYPE" }),
-      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId })
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_TYPE"),
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_ORDER_SOURCE"),
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_PAYMENT_TYPE"),
+      fetchShopifyCarrierShipments(shopId)
     ])
 
     shopifyMappingCounts.value = {
@@ -1977,23 +1994,13 @@ async function loadSetupData() {
   isLoadingSetupData.value = true
 
   try {
-    if (!utilStore.organizationPartyId) await utilStore.fetchOrganizationPartyId()
+    // Currencies, types, identifiers, facilities and groups all read from the login cache now —
+    // the per-visit refetch fan-out went with the util store. Only live session data remains.
+    if (!organizationPartyId.value) await loadOrganizationPartyId()
 
-    await Promise.allSettled([
-      utilStore.fetchDBICCountries(),
-      utilStore.fetchCurrencies({ uomTypeEnumId: "UT_CURRENCY_MEASURE", pageSize: 250 }),
-      utilStore.fetchFacilities(),
-      utilStore.fetchFacilityGroups(),
-      utilStore.fetchProductIdentifiers(),
-      utilStore.fetchProductTypes(),
-      utilStore.fetchShipmentMethodTypes(),
-      netSuiteStore.fetchSalesChannel(),
-      netSuiteStore.fetchPaymentMethods(),
-      productStoreStore.fetchProductStores(),
-      shopifyStore.fetchShopifyShops()
-    ])
+    await productStoreStore.fetchProductStores()
 
-    if (utilStore.organizationPartyId) await productStoreStore.fetchCompany()
+    if (organizationPartyId.value) await productStoreStore.fetchCompany()
     await loadSelectedProductStoreSetup()
     await refreshShopifyMappingStatus()
     const loadedProductImportProgress = await refreshProductImportProgress()
@@ -2030,7 +2037,7 @@ async function createProductStoreFromDraft() {
   try {
     if (!organizationPartyId.value) {
       const bootstrapCompanyName = onboardingStore.draft.companyName.trim() || productStoreStore.company.companyName || storeName
-      await utilStore.bootstrapOrganization({ groupName: bootstrapCompanyName })
+      await bootstrapOrganization({ groupName: bootstrapCompanyName })
       if (organizationPartyId.value) await productStoreStore.fetchCompany()
     }
 
@@ -2049,7 +2056,7 @@ async function createProductStoreFromDraft() {
 
     if (shouldCollectCompanyName.value) payload.companyName = onboardingStore.draft.companyName.trim()
 
-    const resp = await productStoreStore.createProductStore(payload)
+    const resp = await createStore(payload)
 
     if (commonUtil.hasError(resp)) throw resp.data
 
@@ -2058,7 +2065,7 @@ async function createProductStoreFromDraft() {
     onboardingStore.updateDraftField("productStoreId", createdProductStoreId)
 
     if (shouldCollectCompanyName.value && onboardingStore.draft.companyName.trim()) {
-      await productStoreStore.updateCompany({
+      await updateCompany({
         ...productStoreStore.company,
         groupName: onboardingStore.draft.companyName.trim()
       })
@@ -2085,9 +2092,8 @@ async function loadSelectedProductStoreSetup() {
     productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
     productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
     productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
-    netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value }),
-    refreshShopifyJobStatus(),
-    refreshAccessPackageStatus()
+    loadProductStoreShipmentMethods(),
+    refreshShopifyJobStatus()
   ])
 
   if (productStoreStore.current?.productIdentifierEnumId) {
@@ -2312,17 +2318,12 @@ async function setupStarterShopifyMappings() {
   emitter.emit("presentLoader")
 
   try {
-    await Promise.allSettled([
-      utilStore.fetchProductTypes(),
-      utilStore.fetchShipmentMethodTypes(),
-      netSuiteStore.fetchSalesChannel(),
-      netSuiteStore.fetchPaymentMethods(),
-      netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value })
-    ])
+    // Product and shipment method types come from the login cache; only the store's own methods
+    // are live (the store may not have existed at login).
+    await loadProductStoreShipmentMethods()
 
     if (!activeProductStoreShipmentMethods.value.length) {
-      const shipmentMethodResp = await productStoreStore.createProductStoreShipmentMethod({
-        productStoreId: selectedProductStoreId.value,
+      const shipmentMethodResp = await useProductStoreMutations(selectedProductStoreId.value).addShipmentMethod({
         productStoreShipMethId: buildStarterShipmentMethodId(selectedProductStoreId.value, starterShipmentMethodTypeId.value),
         shipmentMethodTypeId: starterShipmentMethodTypeId.value,
         partyId: "_NA_",
@@ -2330,7 +2331,7 @@ async function setupStarterShopifyMappings() {
         sequenceNumber: 10
       })
       if (commonUtil.hasError(shipmentMethodResp)) throw shipmentMethodResp.data
-      await netSuiteStore.fetchProductStoreShipmentMethods({ productStoreId: selectedProductStoreId.value })
+      await loadProductStoreShipmentMethods()
     }
 
     const shopId = linkedShopifyShopId.value
@@ -2340,15 +2341,14 @@ async function setupStarterShopifyMappings() {
       paymentMethodMappings,
       shippingMethodMappings
     ] = await Promise.all([
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PRODUCT_TYPE" }),
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_ORDER_SOURCE" }),
-      shopifyStore.fetchShopifyTypeMappings({ shopId, mappedTypeId: "SHOPIFY_PAYMENT_TYPE" }),
-      shopifyStore.fetchShopifyShopsCarrierShipments({ shopId })
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_TYPE"),
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_ORDER_SOURCE"),
+      fetchShopifyTypeMappings(shopId, "SHOPIFY_PAYMENT_TYPE"),
+      fetchShopifyCarrierShipments(shopId)
     ])
 
     if (!productTypeMappings.length) {
-      const resp = await shopifyStore.createShopifyShopTypeMapping({
-        shopId,
+      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
         mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
         mappedKey: "Default",
         mappedValue: starterProductTypeId.value
@@ -2357,8 +2357,7 @@ async function setupStarterShopifyMappings() {
     }
 
     if (!orderSourceMappings.length) {
-      const resp = await shopifyStore.createShopifyShopTypeMapping({
-        shopId,
+      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
         mappedTypeId: "SHOPIFY_ORDER_SOURCE",
         mappedKey: "web",
         mappedValue: starterSalesChannelEnumId.value
@@ -2367,8 +2366,7 @@ async function setupStarterShopifyMappings() {
     }
 
     if (!paymentMethodMappings.length) {
-      const resp = await shopifyStore.createShopifyShopTypeMapping({
-        shopId,
+      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: "manual",
         mappedValue: starterPaymentMethodTypeId.value
@@ -2378,8 +2376,7 @@ async function setupStarterShopifyMappings() {
 
     if (!shippingMethodMappings.length) {
       const shippingMethod = starterShippingMethod.value
-      const resp = await shopifyStore.createShopifyShopCarrierShipment({
-        shopId,
+      const resp = await useShopifyShopMutations(shopId).saveCarrierShipment({
         shipmentMethodTypeId: shippingMethod.shipmentMethodTypeId,
         shopifyShippingMethod: "Standard",
         carrierPartyId: shippingMethod.partyId || "_NA_"
@@ -2423,14 +2420,14 @@ async function saveOrderDefaults() {
       autoApproveOrder: onboardingStore.draft.autoApproveOrder === "Y" ? "Y" : "N",
       orderNumberPrefix: onboardingStore.draft.orderNumberPrefix.trim()
     }
-    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
 
     if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
 
     productStoreStore.updateCurrent(productStorePayload)
 
     const billingSettingPayload = buildSaveBillingInformationPayload()
-    const billingSettingResp = await productStoreStore.saveCurrentStoreSettings(billingSettingPayload)
+    const billingSettingResp = await useProductStoreMutations(billingSettingPayload.productStoreId).saveSettings(billingSettingPayload)
 
     if (commonUtil.hasError(billingSettingResp)) throw billingSettingResp.data
 
@@ -2480,7 +2477,7 @@ async function saveInventorySettings() {
       productStoreId: selectedProductStoreId.value,
       reserveInventory: onboardingStore.draft.reserveInventory === "Y" ? "Y" : "N"
     }
-    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
 
     if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
 
@@ -2497,7 +2494,7 @@ async function saveInventorySettings() {
 
     const updatedSettings = { ...productStoreStore.currentStoreSettings }
     for (const payload of settingPayloads) {
-      const settingResp = await productStoreStore.saveCurrentStoreSettings(payload)
+      const settingResp = await useProductStoreMutations(payload.productStoreId).saveSettings(payload)
       if (commonUtil.hasError(settingResp)) throw settingResp.data
       updatedSettings[payload.settingTypeEnumId] = payload
     }
@@ -2742,7 +2739,7 @@ async function saveRoutingDefaults() {
       allowSplit: brokeringEnabled && onboardingStore.draft.allowSplit === "Y" ? "Y" : "N",
       daysToCancelNonPay
     }
-    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
 
     if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
 
@@ -2752,7 +2749,7 @@ async function saveRoutingDefaults() {
       "FULFILL_NOTIF",
       onboardingStore.draft.sendFulfillmentNotification === "Y" ? "Y" : "N"
     )
-    const notificationResp = await productStoreStore.saveCurrentStoreSettings(notificationPayload)
+    const notificationResp = await useProductStoreMutations(notificationPayload.productStoreId).saveSettings(notificationPayload)
 
     if (commonUtil.hasError(notificationResp)) throw notificationResp.data
 
@@ -2808,7 +2805,7 @@ async function savePickupSettings() {
 
     const updatedSettings = { ...productStoreStore.currentStoreSettings }
     for (const payload of settingPayloads) {
-      const settingResp = await productStoreStore.saveCurrentStoreSettings(payload)
+      const settingResp = await useProductStoreMutations(payload.productStoreId).saveSettings(payload)
       if (commonUtil.hasError(settingResp)) throw settingResp.data
       updatedSettings[payload.settingTypeEnumId] = payload
     }
@@ -2855,7 +2852,7 @@ async function saveProductIdentity() {
       productStoreId: selectedProductStoreId.value,
       productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId
     }
-    const productStoreResp = await productStoreStore.updateProductStore(productStorePayload)
+    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
 
     if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
 
@@ -2863,7 +2860,7 @@ async function saveProductIdentity() {
 
     const preferencePayload = buildProductIdentificationPreferencePayload()
     if (preferencePayload) {
-      const preferenceResp = await productStoreStore.saveCurrentStoreSettings(preferencePayload)
+      const preferenceResp = await useProductStoreMutations(preferencePayload.productStoreId).saveSettings(preferencePayload)
       if (commonUtil.hasError(preferenceResp)) throw preferenceResp.data
 
       productStoreStore.updateCurrentStoreSettings({
@@ -3009,9 +3006,8 @@ async function linkExistingShopifyShop() {
   emitter.emit("presentLoader")
 
   try {
-    const selectedShop = shopifyStore.getShopById(onboardingStore.draft.selectedShopifyShopId)
-    const resp = await shopifyStore.updateShopifyShop({
-      shopId: onboardingStore.draft.selectedShopifyShopId,
+    const selectedShop = cachedShopifyShops.value.find((shop: any) => shop.shopId === onboardingStore.draft.selectedShopifyShopId)
+    const resp = await useShopifyShopMutations(onboardingStore.draft.selectedShopifyShopId).updateShop({
       productStoreId: selectedProductStoreId.value
     })
 
@@ -3019,7 +3015,7 @@ async function linkExistingShopifyShop() {
 
     onboardingStore.updateDraftField("linkedShopifyShopId", onboardingStore.draft.selectedShopifyShopId)
     onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
-    await shopifyStore.fetchShopifyShops()
+    // No shop re-fetch: `updateShop` write-through refreshed the cached row already.
     await refreshShopifyJobStatus()
     await refreshShopifyMappingStatus()
     commonUtil.showToast(translate("Product store linked successfully"))
@@ -3051,8 +3047,8 @@ async function createShopifyConnectionForProductStore() {
   const { data } = await modal.onWillDismiss()
   if (!data?.shopId) return false
 
-  await shopifyStore.fetchShopifyShops()
-  const createdShop = shopifyStore.getShopById(data.shopId)
+  // `createShopifyConnection` (called inside the modal) write-through refreshed the cached shop list.
+  const createdShop = cachedShopifyShops.value.find((shop: any) => shop.shopId === data.shopId)
   onboardingStore.updateDraftField("linkedShopifyShopId", data.shopId)
   onboardingStore.updateDraftField("selectedShopifyShopId", data.shopId)
   onboardingStore.updateDraftField("shopifyDomain", createdShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
@@ -3067,14 +3063,8 @@ async function refreshShopifyLocationMappings() {
   if (!linkedShopifyShopId.value) return
 
   try {
-    const resp = await shopifyStore.fetchShopifyShopLocationsRaw({
-      shopId: linkedShopifyShopId.value,
-      pageSize: 200
-    })
-
-    if (!commonUtil.hasError(resp) && Array.isArray(resp.data)) {
-      shopifyLocationMappings.value = resp.data
-    }
+    // Returns the unwrapped mapping rows — the store version returned a raw axios envelope.
+    shopifyLocationMappings.value = await fetchShopifyShopLocations(linkedShopifyShopId.value, 200)
   } catch (error: any) {
     logger.error(error)
   }
@@ -3101,10 +3091,9 @@ async function openShopifyLocationImport() {
     const { data } = await modal.onDidDismiss()
 
     if (data?.imported) {
-      await Promise.allSettled([
-        utilStore.fetchFacilities(),
-        productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
-      ])
+      // The modal refreshes the facility cache for the rows it created; only the store-scoped
+      // association list is live-read here.
+      await productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
       await refreshShopifyMappingStatus()
       onboardingStore.markCurrentStepComplete()
     }
@@ -3128,29 +3117,27 @@ async function createStarterFacility() {
   try {
     const facilityId = generateInternalId(`${selectedProductStoreId.value}_STORE`).slice(0, 20)
     const facilityName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
-    const existingFacility = utilStore.facilities.find((facility: any) => facility.facilityId === facilityId)
+    const existingFacility = allFacilities.value.find((facility: any) => facility.facilityId === facilityId)
 
     if (!existingFacility) {
-      const facilityResp = await utilStore.createFacility({
+      // `useFacilityMutations` writes through to the facility cache, which is what the existence
+      // check above reads — the util store's separate facility list (and its refetch) went away.
+      const facilityResp = await createFacility({
         facilityId,
         facilityName,
         externalId: facilityId,
         facilityTypeId: "RETAIL_STORE",
-        defaultInventoryItemTypeId: "NON_SERIAL_INV_ITEM"
+        defaultInventoryItemTypeId: "NON_SERIAL_INV_ITEM",
+        ownerPartyId: organizationPartyId.value
       })
       if (commonUtil.hasError(facilityResp)) throw facilityResp.data
     }
 
-    const associationResp = await productStoreStore.associateProductStoreFacility({
-      productStoreId: selectedProductStoreId.value,
-      facilityId
-    })
+    const associationResp = await useProductStoreMutations(selectedProductStoreId.value).addFacility({ facilityId })
     if (commonUtil.hasError(associationResp)) throw associationResp.data
 
-    await Promise.allSettled([
-      utilStore.fetchFacilities(),
-      productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
-    ])
+    // The create wrote through to the facility cache; the store association list is live-read.
+    await productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
     onboardingStore.markCurrentStepComplete()
     commonUtil.showToast(translate("Store facility created successfully."))
     return true

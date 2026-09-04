@@ -1,6 +1,6 @@
 # Shopify Product Sync — Live Dashboard
 
-This document describes the intended behavior of the Shopify Product Sync page (`/shopify-connection-details/:shopId/product-sync`) as a live, dashboard-feel surface. It supersedes the ad-hoc auto-refresh logic currently in [`src/views/ShopifyProductSync.vue`](../src/views/ShopifyProductSync.vue) (`progressPoll`, `nextSyncRefreshPoll`, `refreshScheduledJobStateIfNeeded`), which will be refactored to match this spec.
+This document describes the intended behavior of the Shopify Product Sync page (`/shopify-connection-details/:shopId/product-sync`) as a live, dashboard-feel surface. The former view-owned progress and schedule polling has been removed; the Web Worker now owns refresh cadence.
 
 ## 1. Goal & principles
 
@@ -71,16 +71,21 @@ Each tier exposes a uniform shape:
   - `true` → render `data` with live transitions; `isFetching` drives only the section-level subtle indicator, never replaces content.
 - `lastFetchedAt` and `isFetching` are surfaced for debugging and for the activity probe to decide whether a tier needs a refresh.
 
-A single `useLiveDashboard` composable owns the tickers (§3) and exposes per-tier refs to the view. Views never own intervals directly.
+A single composable owns the tickers (§3) and exposes per-tier refs to the view. Views never own intervals directly.
+
+> **Superseded 2026-07-28.** This was implemented as `useLiveDashboard`, which has since been deleted:
+> the Web Worker owns the cadence (per-domain intervals from the sync registry) and the pages take
+> their manual path through `useShopifyOrderSyncPolling`/`useCacheSync`. The principle in this
+> paragraph still holds — a view still never owns an interval — only the owner changed.
 
 ## 6. What's being replaced
 
-Pointers to the current implementation in [`src/views/ShopifyProductSync.vue`](../src/views/ShopifyProductSync.vue), for reference during the refactor:
+The refactor removed the following view-owned refresh machinery from [`src/views/ShopifyProductSync.vue`](../src/views/ShopifyProductSync.vue):
 
-- `progressPoll` (5s `setInterval` around `loadProgress`) — kept conceptually, but gated to active runs only via the tier-1 ticker.
-- `nextSyncRefreshPoll` (15s `setInterval` + `refreshScheduledJobStateIfNeeded` heuristic) — replaced by the layered triggers in §3.
+- The 5s `loadProgress` interval — replaced by worker-refreshed cache domains.
+- The 15s scheduled-job refresh heuristic — reduced to a label-only clock that performs no data loading.
 - `isSecondaryLoading` skeleton paths inside `ShopifyProductSyncReturningView.vue` — kept for cold start, removed from refresh paths.
-- Inline `isScheduledJobRefreshInFlight`, `lastKnownJobRunStartTime`, `lastKnownJobRunEndTime`, `scheduledJobRefreshAtMs`, `scheduledJobRefreshGraceUntilMs` module-level state — moved into the composable.
+- The inline scheduled-job refresh state — no longer needed once cadence moved to the worker.
 
 ## 7. Non-goals
 

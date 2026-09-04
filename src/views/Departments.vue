@@ -21,6 +21,14 @@
         </ion-item>
       </div>
 
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-padding-end" v-for="facility in facilities" :key="facility.facilityId">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
@@ -68,23 +76,22 @@
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, alertController, onIonViewDidEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useUtilStore } from '@/store/util';
-import { useNetSuiteStore } from '@/store/netSuite';
 import { computed } from "vue";
+import { useFacilities } from '@/composables/useFacilities';
+import { useShopifyLocations } from '@/composables/useShopify';
+import { useFacilityIdentifications, useNetSuite } from '@/composables/useNetSuite';
 import { DateTime } from "luxon";
 
-const utilStore = useUtilStore();
-const netSuiteStore = useNetSuiteStore();
+// All three reads are cached; writes go through useNetSuite, which resyncs what it changed.
+const { facilities, hydrated } = useFacilities();
+const { identifications: facilitiesIdentifications } = useFacilityIdentifications();
+const { locations: shopifyLocations } = useShopifyLocations(undefined);
+const { updateFacilityIdentification } = useNetSuite();
 
-const facilities = computed(() => utilStore.facilities)
-const facilitiesIdentifications = computed(() => netSuiteStore.facilitiesIdentifications)
-const getShopifyShopLocation = computed(() => netSuiteStore.getShopifyShopLocation)
+/** facilityId → shopifyLocationId, read from the cached location mappings. */
+const getShopifyShopLocation = computed(() => (facilityId: string) =>
+  shopifyLocations.value.find((l: any) => l.facilityId === facilityId)?.shopifyLocationId)
 
-onIonViewDidEnter(async () => {
-  await utilStore.fetchFacilities()
-  await netSuiteStore.fetchFacilitiesIdentifications()
-  await netSuiteStore.fetchShopifyShopLocation()
-})
 
 function getFacilityInFacilityIdentification(facility: any) {
   return facilitiesIdentifications.value.find((identification: any) => identification.facilityId === facility.facilityId);
@@ -130,14 +137,17 @@ async function editNetSuiteId(facility: any) {
               fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()
             };
             
-            resp = await netSuiteStore.updateFacilityIdentification(payload);
+            resp = await updateFacilityIdentification(payload);
             if(!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("NetSuite department Id updated successfully"))
-              await netSuiteStore.fetchFacilitiesIdentifications()
             } else {
               throw resp.data;
             }
           } catch(err) {
+            // The server rejects this outright when `ORDR_ORGN_DPT` is not seeded as an
+            // Enumeration (FK violation). Without a toast the loader just dismisses and the row is
+            // unchanged, which reads as the click being ignored.
+            commonUtil.showToast(translate("Failed to update NetSuite department Id"))
             logger.error(err)
           }
           emitter.emit('dismissLoader')
@@ -159,14 +169,14 @@ async function removeNetSuiteId(facility: any) {
       thruDate: DateTime.now().toMillis()
     };
 
-    const resp = await netSuiteStore.updateFacilityIdentification(payload);
+    const resp = await updateFacilityIdentification(payload);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("NetSuite department Id removed successfully"));
-      await netSuiteStore.fetchFacilitiesIdentifications();
     } else {
       throw resp.data;
     }
   } catch (err) {
+    commonUtil.showToast(translate("Failed to remove NetSuite department Id"));
     logger.error(err);
   }
   emitter.emit('dismissLoader');
