@@ -506,6 +506,24 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
     expect(selected.unattributed).toBe(false)
   })
 
+  it("does not call a finished unattributed run 'in progress'", () => {
+    const snapshot = deriveOnboardingInitialLoadSnapshot({
+      kind: "inventory",
+      shopId: "SHOP",
+      hydrated: true,
+      unattributed: true,
+      run: {
+        systemMessageId: "SETTLED",
+        statusId: "SmsgConsumed",
+        initDate: "2026-09-04T05:15:20Z"
+      },
+      correlatedSystemMessageId: "SETTLED"
+    })
+
+    expect(snapshot.run.summary).toContain("most recent sync request")
+    expect(snapshot.run.summary).not.toContain("already in progress")
+  })
+
   /**
    * With no persisted request, the Product Store's creation time is the durable bound: a run that
    * began before this store existed cannot be its own. That is what lets a completed load still be

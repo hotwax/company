@@ -247,9 +247,14 @@ function importStatus(log: Record<string, any> | null): OnboardingSyncRunStatus 
 
 function summaryFor(status: OnboardingSyncRunStatus, kind: OnboardingInitialLoadKind, unattributed = false) {
   if(status === "not-started") {return "No sync request has been produced yet."}
-  // Said plainly, because the operator is about to wonder why the load button is disabled and the
-  // honest answer is that someone else's request is holding the shop's queue, not theirs.
-  if(unattributed) {return "A sync request for this shop is already in progress. It was not started from this setup."}
+  // Said plainly, because the operator is about to wonder whose run this is. An active one also
+  // explains why the load button is disabled: it holds the shop's queue, and the connector sends one
+  // bulk query at a time. A finished one must NOT claim to be in progress.
+  if(unattributed) {
+    return ["queued", "pending", "sent", "running", "importing"].includes(status)
+      ? "A sync request for this shop is already in progress. It was not started from this setup."
+      : "This is the shop's most recent sync request. It was not started from this setup."
+  }
   if(status === "completed" && kind === "products") {return "Product sync request completed."}
   if(status === "cancelled" && kind === "products") {return "Product sync run cancelled."}
   if(status === "unknown" || status === "unavailable") {return "Status unavailable"}
