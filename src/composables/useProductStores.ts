@@ -384,9 +384,9 @@ export function useProductStoreMutations(productStoreId: string) {
         method: "put",
         data: { ...payload, productStoreId },
       });
-      if (!commonUtil.hasError(resp)) {
+      if(!commonUtil.hasError(resp)) {
         await refreshStore();
-        if (isLoadedStore()) await fetchProductStoreDetails(productStoreId);
+        if(isLoadedStore()) {await fetchProductStoreDetails(productStoreId);}
       }
       return resp;
     },
@@ -412,7 +412,7 @@ export function useProductStoreMutations(productStoreId: string) {
           settingValue: payload.settingValue,
         },
       });
-      if (!commonUtil.hasError(resp) && isLoadedStore()) await fetchCurrentStoreSettings(productStoreId);
+      if(!commonUtil.hasError(resp) && isLoadedStore()) {await fetchCurrentStoreSettings(productStoreId);}
 
       return resp;
     },
@@ -619,7 +619,7 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
     // against the target. Without them a missing template surfaces as orphaned parameters and a
     // setup step that reports success while nothing was provisioned.
     const template = await fetchServiceJob(templateJobName)
-    if (!template?.jobName) {
+    if(!template?.jobName) {
       throw new Error(`Setup cannot be completed because the backend service-job template ${templateJobName} is missing. Ask the backend owner to load it, then refresh setup.`)
     }
 
@@ -633,7 +633,7 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
     })
 
     serviceJob = await fetchServiceJob(newJobName)
-    if (!serviceJob?.jobName) {
+    if(!serviceJob?.jobName) {
       throw new Error(`Setup cannot be completed because clone target ${newJobName} was not created from ${templateJobName}. Ask the backend owner to verify the template, then refresh setup.`)
     }
     created = true
@@ -1323,8 +1323,9 @@ async function runProductStoreShopifyInventoryReset(payload: {
  * This runs the shop's cloned `sync_ShopifyOrderHistory_<shopId>` job rather than posting to a
  * `sob/shopify/orderHistory` endpoint: the shopify-connector's REST resources carry `inventoryReset`
  * but no `orderHistory`, so that URL 404s. The dates are not passed here by design — setup writes the
- * window as job parameters and the cursor as shop-scoped ProductStoreSetting rows, and the job reads
- * them. They stay in the signature because the caller validates the range before it may run.
+ * window as a job parameter and the cursor as shop-scoped SystemProperty rows
+ * (`orderSyncHistory.lastSyncDate`, `newOrderSync.launchDate`), and the job reads them. They stay in
+ * the signature because the caller validates the range before it may run.
  */
 async function runProductStoreShopifyOrderHistoryImport(payload: {
   shopId: string
@@ -1334,7 +1335,7 @@ async function runProductStoreShopifyOrderHistoryImport(payload: {
   windowDays?: number
 }) {
   const shopId = valueText(payload.shopId)
-  if (!shopId) throw new Error("shopId is required.")
+  if(!shopId) {throw new Error("shopId is required.")}
 
   return useServiceJob().runNow(`sync_ShopifyOrderHistory_${shopId}`)
 }

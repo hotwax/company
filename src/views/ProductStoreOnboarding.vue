@@ -225,14 +225,19 @@
                   </ion-badge>
                 </ion-item>
               </ion-list>
-              <div v-if="linkedShopifyShop && !connectionIsWritable && connectionAccessScopeId" class="step-actions">
+              <div v-if="linkedShopifyShop && !connectionIsWritable" class="step-actions">
                 <ion-button
-                  :disabled="busy.connectionAccess || !shopifySyncContext.remoteId.value"
+                  v-if="connectionRemoteResolved"
+                  :disabled="busy.connectionAccess"
                   @click="grantConnectionWriteAccess"
                 >
                   <ion-spinner v-if="busy.connectionAccess" slot="start" name="crescent" />
                   <ion-icon v-else slot="start" :icon="lockOpenOutline" />
                   {{ translate("Grant write access") }}
+                </ion-button>
+                <ion-button v-else fill="outline" @click="openShopifyConnections">
+                  <ion-icon slot="start" :icon="openOutline" />
+                  {{ translate("Open Shopify connections") }}
                 </ion-button>
               </div>
               <template v-if="!linkedShopifyShop">
@@ -872,9 +877,24 @@ const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""
  * screen and the poller cannot disagree about which remote a shop owns.
  */
 const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)
+/**
+ * When the Product Store was created, as epoch milliseconds.
+ *
+ * The wizard's own record of having started a load lives in browser storage and is gone whenever the
+ * operator starts another setup or opens the store elsewhere. This is the durable half: a shop run
+ * that began before this store existed cannot belong to it, which is what lets the step report a run
+ * it did not personally start without resurrecting another store's history.
+ */
+const selectedProductStoreCreatedAt = computed(() => {
+  const value = productStoreData.current?.createdStamp
+  const parsed = typeof value === "number" ? value : Date.parse(String(value ?? ""))
+
+  return Number.isFinite(parsed) ? Number(parsed) : 0
+})
 const initialLoadStatus = useProductStoreOnboardingInitialLoad(
   () => linkedShopId.value,
-  () => onboarding.runRequests
+  () => onboarding.runRequests,
+  () => selectedProductStoreCreatedAt.value
 )
 const productInitialLoad = initialLoadStatus.products
 const inventoryInitialLoad = initialLoadStatus.inventory
@@ -1168,7 +1188,9 @@ const inventoryResetSetupAvailability = computed<"available" | "missing" | "unkn
  */
 const connectionAccessCheckDetail = computed(() => {
   if(connectionIsWritable.value) {return ""}
-  if(!connectionAccessScopeId.value) {return "The connection's access level has not loaded yet."}
+  if(!connectionRemoteResolved.value) {
+    return "This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it."
+  }
 
   return "Shopify bulk imports are sent as GraphQL mutations, which a read-only connection refuses. Grant write access on the Shopify step."
 })
@@ -1267,7 +1289,7 @@ const productSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syn
       "product-access",
       "Shopify write access",
       connectionIsWritable.value,
-      !!connectionAccessScopeId.value,
+      connectionRemoteResolved.value,
       connectionAccessCheckDetail.value
     ),
     syncCheck("product-identifier", "Global identifier", productPreferencesPersisted.value, productStoreConfigurationKnown.value),
@@ -1288,7 +1310,7 @@ const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => s
       "inventory-access",
       "Shopify write access",
       connectionIsWritable.value,
-      !!connectionAccessScopeId.value,
+      connectionRemoteResolved.value,
       connectionAccessCheckDetail.value
     ),
     syncCheck(
@@ -1323,7 +1345,7 @@ const orderSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncC
       "order-access",
       "Shopify write access",
       connectionIsWritable.value,
-      !!connectionAccessScopeId.value,
+      connectionRemoteResolved.value,
       connectionAccessCheckDetail.value
     ),
     syncCheck(
@@ -1692,19 +1714,31 @@ function openShopifyConnections() {
  * operator finished setup believing the store was live. So the level is shown here beside the shop
  * it belongs to, and can be raised without leaving the wizard.
  */
+/**
+ * Whether the shop's remote has RESOLVED, which is a separate question from what scope it carries.
+ *
+ * The remote is what decides both, and an empty `accessScopeEnumId` on a remote that exists is a real
+ * state the connector treats as read-only (see `getShopifyAccessStateFromCandidate`). Reading the
+ * scope string alone conflated it with "still loading", which hid the Grant button behind a message
+ * promising a value that was never going to arrive, while the load actions stayed disabled — a store
+ * that could not be imported into and offered no control to fix it.
+ */
+const connectionRemoteResolved = computed(() =>
+  !!String(shopifySyncContext.remote.value?.systemMessageRemoteId ?? "").trim())
 const connectionAccessScopeId = computed(() => String(shopifySyncContext.remote.value?.accessScopeEnumId || ""))
-const connectionIsWritable = computed(() => isWritableAccessScope(connectionAccessScopeId.value))
+const connectionIsWritable = computed(() =>
+  connectionRemoteResolved.value && isWritableAccessScope(connectionAccessScopeId.value))
 const connectionAccessLabel = computed(() => {
   if(connectionIsWritable.value) {return translate("Read and write")}
 
-  return connectionAccessScopeId.value ? translate("Read only") : translate("Unknown")
+  return connectionRemoteResolved.value ? translate("Read only") : translate("Unknown")
 })
 const connectionAccessDescription = computed(() => {
   if(connectionIsWritable.value) {
     return translate("This Product Store can publish inventory and fulfillments back to Shopify.")
   }
-  if(!connectionAccessScopeId.value) {
-    return translate("The connection's access level has not loaded yet.")
+  if(!connectionRemoteResolved.value) {
+    return translate("This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it.")
   }
 
   return translate("Imports work, but nothing this store records will reach Shopify until write access is granted.")

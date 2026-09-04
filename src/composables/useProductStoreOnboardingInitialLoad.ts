@@ -340,6 +340,8 @@ export function selectOnboardingInitialLoadRun(input: {
   runs: readonly Record<string, any>[]
   request?: ProductStoreOnboardingRunRequest | null
   jobRuns?: readonly Record<string, any>[]
+  /** Epoch ms the Product Store was created; runs older than this belong to some other store. */
+  storeCreatedAt?: number
 }): OnboardingInitialLoadRunSelection {
   const request = input.request
   if(request) {
@@ -376,28 +378,50 @@ export function selectOnboardingInitialLoadRun(input: {
     return { run, jobRun, systemMessageId }
   }
 
-  // No request from THIS setup. Finished history stays hidden — attributing a completed run from the
-  // shop's past to a store created minutes ago is the whole reason this selector exists.
+  // No request from THIS setup — the wizard's own record of starting a load lives in browser storage,
+  // and it is gone whenever the operator starts another setup, uses another browser, or clears data.
+  // Falling back to the shop's latest run is what this selector was rewritten to stop: runs are scoped
+  // to the SHOP, so a reconnected shop carries the previous store's history, and a brand-new store was
+  // shown a three-day-old failed import as its current run.
   //
-  // An UNFINISHED run is a different fact. `send#ProducedBulkOperationSystemMessage` serialises bulk
-  // queries across the entire instance: while any message under the parent type sits in SmsgSent it
-  // returns "Operation already in progress" and sends nothing. So a run in flight blocks this store's
-  // import whether or not this setup started it, and hiding it left the step offering a load the
-  // backend would silently refuse, stacking up messages nobody would send. It is surfaced, and the
-  // caller marks it as not started here rather than claiming it.
-  const unfinishedRun = input.runs.find((candidate) => isUnfinishedRunStatus(candidate?.statusId)) ?? null
+  // The bound that separates the two is the Product Store's own creation time, which is durable
+  // backend data rather than browser state: a run that began before this store existed cannot be its
+  // own. Runs at or after it are surfaced and marked `unattributed`, so the step reports what actually
+  // happened without claiming it started it. Nothing older is shown at all.
+  const since = Number(input.storeCreatedAt ?? 0)
+  const candidate = since
+    ? input.runs.find((run) => runStartedAt(run) >= since) ?? null
+    : input.runs.find((run) => isUnfinishedRunStatus(run)) ?? null
 
   return {
-    run: unfinishedRun,
+    run: candidate,
     jobRun: null,
-    systemMessageId: String(unfinishedRun?.systemMessageId ?? ""),
-    unattributed: Boolean(unfinishedRun)
+    systemMessageId: String(candidate?.systemMessageId ?? ""),
+    unattributed: Boolean(candidate)
   }
 }
 
-/** A run the connector still owns: produced, sending, or sent and awaiting Shopify. */
-function isUnfinishedRunStatus(value: unknown): boolean {
-  return ["queued", "sent", "running", "importing"].includes(messageStatus(value))
+/**
+ * A run the connector still owns: produced, sending, or sent and awaiting Shopify.
+ *
+ * Reads the SAME status the snapshot treats as authoritative. A run is assembled by joining the
+ * sync-run spine to a separately cached SystemMessage, and the two fetches land on different polls,
+ * so the spine can still say produced while the message already says consumed. Reading only the spine
+ * called a finished run unfinished and reported it as still in progress.
+ */
+function isUnfinishedRunStatus(run: Record<string, any> | null | undefined): boolean {
+  const statusId = run?.systemMessage?.statusId ?? run?.statusId
+
+  return ["queued", "sent", "running"].includes(messageStatus(statusId))
+}
+
+/** A run's start as epoch milliseconds; 0 when it carries no readable date. */
+function runStartedAt(run: Record<string, any> | null | undefined): number {
+  const value = run?.initDate ?? run?.createdDate ?? run?.createdStamp
+  if(value == null || value === "") {return 0}
+  const parsed = typeof value === "number" ? value : Date.parse(String(value))
+
+  return Number.isFinite(parsed) ? Number(parsed) : 0
 }
 
 function requestJobRunStatus(input: OnboardingInitialLoadInput): OnboardingSyncRunStatus {
@@ -624,10 +648,12 @@ export function deriveOnboardingInitialLoadSnapshot(input: OnboardingInitialLoad
  */
 export function useProductStoreOnboardingInitialLoad(
   shopIdSource: MaybeRefOrGetter<string | undefined>,
-  requestSource?: OnboardingInitialLoadRequestSource
+  requestSource?: OnboardingInitialLoadRequestSource,
+  storeCreatedAtSource?: MaybeRefOrGetter<number | undefined>
 ) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""))
   const requests = computed(() => toValue(requestSource) ?? {})
+  const storeCreatedAt = computed(() => Number(toValue(storeCreatedAtSource) ?? 0))
   const ctx = useShopifySyncContext(shopId)
   const selectedShopScopeKey = computed(() => {
     if(!shopId.value || !ctx.hydrated.value || !ctx.remoteIds.value.length) {return ""}
@@ -661,12 +687,14 @@ export function useProductStoreOnboardingInitialLoad(
   const productSelection = computed(() => selectOnboardingInitialLoadRun({
     kind: "products",
     shopId: shopId.value,
+    storeCreatedAt: storeCreatedAt.value,
     runs: productState.runState.value.systemMessages,
     request: requestFor("products")
   }))
   const inventorySelection = computed(() => selectOnboardingInitialLoadRun({
     kind: "inventory",
     shopId: shopId.value,
+    storeCreatedAt: storeCreatedAt.value,
     runs: inventoryRuns.value,
     request: requestFor("inventory"),
     jobRuns: serviceJobRuns.runsFor(inventoryJobName.value)
@@ -674,6 +702,7 @@ export function useProductStoreOnboardingInitialLoad(
   const orderSelection = computed(() => selectOnboardingInitialLoadRun({
     kind: "orders",
     shopId: shopId.value,
+    storeCreatedAt: storeCreatedAt.value,
     runs: orderRuns.value,
     request: requestFor("orders"),
     jobRuns: serviceJobRuns.runsFor(orderJobName.value)
@@ -703,6 +732,7 @@ export function useProductStoreOnboardingInitialLoad(
     kind: "products",
     shopId: shopId.value,
     hydrated: Boolean(selectedShopScopeKey.value) && scopeRefreshed.value && productState.hydrated.value,
+    unattributed: productSelection.value.unattributed,
     run: productSelection.value.run,
     productRun: productDetail.currentSyncRun.value?.systemMessageId === productSelection.value.systemMessageId
       ? productDetail.currentSyncRun.value

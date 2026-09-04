@@ -1252,6 +1252,24 @@ describe("ProductStoreOnboarding", () => {
   })
 
   /**
+   * An empty `accessScopeEnumId` on a remote that EXISTS is a real state the connector treats as
+   * read-only. Deciding "resolved" from the scope string instead of the remote conflated it with
+   * "still loading": the Grant button was hidden behind a message promising a value that would never
+   * arrive, while the load stayed disabled. The store could not be imported into and offered no
+   * control to fix it.
+   */
+  it("treats a resolved connection with no scope as read-only, not as still loading", async () => {
+    harness.accessScope = ""
+    configureExistingShopifySetup("inventory")
+    harness.wizard.selectStep("shopify")
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(wrapper.text()).toContain("Read only")
+    expect(wrapper.text()).not.toContain("access level is unknown")
+    expect(buttonNamed(wrapper, "Grant write access").exists()).toBe(true)
+  })
+
+  /**
    * A read-only connection completes every form in this wizard and fails only later, inside a job on
    * a fifteen-minute cron: `bulkOperationRunQuery` is a GraphQL mutation, and the connector answers
    * "Cannot post graphQL mutation, only read access is enabled for Shopify". Nothing reached the

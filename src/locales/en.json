@@ -47,6 +47,7 @@
   "The connection's access level has not loaded yet.": "The connection's access level has not loaded yet.",
   "This Product Store can publish inventory and fulfillments back to Shopify.": "This Product Store can publish inventory and fulfillments back to Shopify.",
   "This connection can now write to Shopify.": "This connection can now write to Shopify.",
+  "This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it.": "This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it.",
   "active hours": "active hours",
   "Active stage": "Active stage",
   "Active view": "Active view",

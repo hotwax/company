@@ -485,6 +485,54 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
     })
   })
 
+  /**
+   * The selector reads the SAME status the snapshot treats as authoritative. A run joins the sync-run
+   * spine to a separately cached SystemMessage and the two fetches land on different polls, so the
+   * spine can still say produced while the message says consumed. Reading only the spine reported a
+   * finished run as still in progress and demoted the step to Needs attention.
+   */
+  it("prefers the enriched message status over the stale spine row", () => {
+    const selected = selectOnboardingInitialLoadRun({
+      kind: "inventory",
+      shopId: "SHOP",
+      runs: [{
+        systemMessageId: "SETTLED",
+        statusId: "SmsgProduced",
+        systemMessage: { systemMessageId: "SETTLED", statusId: "SmsgConsumed" }
+      }]
+    })
+
+    expect(selected.run).toBeNull()
+    expect(selected.unattributed).toBe(false)
+  })
+
+  /**
+   * With no persisted request, the Product Store's creation time is the durable bound: a run that
+   * began before this store existed cannot be its own. That is what lets a completed load still be
+   * reported after the wizard's browser-side record of it is gone, without resurrecting the history
+   * of whatever store the shop was connected to before.
+   */
+  it("reports a run that began after the store was created, and hides anything older", () => {
+    const runs = [
+      { systemMessageId: "THIS-STORE", statusId: "SmsgConsumed", initDate: "2026-09-04T05:15:20Z" },
+      { systemMessageId: "PREVIOUS-STORE", statusId: "SmsgError", initDate: "2026-09-01T09:00:00Z" }
+    ]
+    const storeCreatedAt = Date.parse("2026-09-04T05:13:14Z")
+
+    const mine = selectOnboardingInitialLoadRun({ kind: "inventory", shopId: "SHOP", runs, storeCreatedAt })
+    expect(mine.systemMessageId).toBe("THIS-STORE")
+    expect(mine.unattributed).toBe(true)
+
+    // The same shop, a store created after that run: nothing of its predecessor's shows through.
+    const later = selectOnboardingInitialLoadRun({
+      kind: "inventory",
+      shopId: "SHOP",
+      runs,
+      storeCreatedAt: Date.parse("2026-09-04T06:00:00Z")
+    })
+    expect(later.run).toBeNull()
+  })
+
   it("claims no run when the shop's only history is finished", () => {
     const selected = selectOnboardingInitialLoadRun({
       kind: "products",
