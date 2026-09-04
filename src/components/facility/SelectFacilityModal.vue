@@ -78,7 +78,7 @@ const filteredFacilities = ref<any[]>([]);
 const selectedFacilityValues = ref<any[]>(JSON.parse(JSON.stringify(props.selectedFacilities)));
 
 // Cached at login; `watch` covers the case where the cache emits after mount.
-const { facilities } = useFacilities();
+const { facilities } = useFacilities({ excludeVirtual: true });
 
 onMounted(() => {
   filteredFacilities.value = facilities.value;

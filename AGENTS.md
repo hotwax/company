@@ -12,7 +12,7 @@ stands up and administers an OMS tenant. Functional areas, each a route family:
 
 | Area | Routes | Views |
 | --- | --- | --- |
-| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store`, `/add-configurations/:id` | `ProductStore*`, `AddConfigurations` |
+| Product stores | `/product-store`, `/product-store-details/:id`, `/create-product-store`, `/product-store-onboarding`, `/clone-product-store` | `ProductStore*` |
 | Facilities & groups | `/facilities/*`, `/facility-details/:id`, `/facility-group-detail/:id`, `/parking`, `/create-facility/*` | `Find*`, `Facility*`, `CreateFacility`, `AddFacility*` |
 | Users & security | `/users`, `/user-details/:partyId`, `/create-user`, `/user-quick-setup/:partyId`, `/security-groups`, `/app-permissions` | `User*`, `Security*`, `AppPermissions` |
 | Shopify integration | `/shopify`, `/shopify-connection-details/:id/**` (locations, shipment/payment methods, sales channels, product types, product-sync, order-sync) | `Shopify*` |
@@ -57,8 +57,7 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
   `pinia-plugin-persistedstate`) · vue-i18n · Dexie (IndexedDB) · Comlink web worker · Luxon.
 - [`src/main.ts`](src/main.ts) — creates the app, registers Ionic/i18n/pinia/router, and calls
   `initialiseConfig()` from `@common` to hand the shared layer the user store's session getters,
-  `postLogin`/`postLogout` hooks, and the router. Also defines the legacy `$filters.formatDate`
-  global used by older views.
+  `postLogin`/`postLogout` hooks, and the router.
 - [`src/App.vue`](src/App.vue) — split-pane shell (`Menu` + router outlet), `FastTravel` app
   switcher, `presentLoader`/`dismissLoader` emitter bridge, and the **class-B cache bootstrap**:
   it *watches* `useAuth().isAuthenticated` and calls `startReferenceSync()` on login (a one-time
@@ -93,7 +92,9 @@ re-introduces exactly the load waterfalls this layer exists to remove.
   the view re-renders on every cache write, including writes made in the worker thread.
 - **Writes:** the owning composable calls `api()` directly, then `refreshAfterMutation(domain, pk)`
   (re-reads that one record) or `resyncDomain(domain)` (re-snapshots the domain). Never hand-patch
-  cached rows.
+  cached rows. A failed post-write refetch rejects as `CacheReconciliationError`: the server write
+  is already committed, so presentation must warn and dismiss any retryable create/edit alert
+  rather than misreporting a write failure or replaying it.
 - **Cadence:** owned entirely by the worker. Nothing on the main thread polls.
 - The cache is durable across reloads and **cleared on logout only** (`postLogout` →
   `clearAllCaches()`); it is *not* shared cross-tab or cross-session by design.
@@ -105,7 +106,7 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
-| **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
+| **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
 | **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage` |
 | **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation` |
 
@@ -197,6 +198,46 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
 - **Cache-miss ≠ absence for "no rows" results.** `systemMessageErrorCache` can only hold errors
   that exist, so a cache-first read of a clean message misses forever and re-requests per row.
   `useSystemMessage` keeps a session-level "confirmed clean" set for exactly this.
+- **Fan-out domains follow their cached parents, and consumers scope the aggregate.**
+  `carrierFacility` fans out over `carrier`; `productStoreShippingMethod` fans out over
+  `productStore`; keep each child after its parent in `cacheDomainCatalog`. The fan-out stamps the
+  parent id authoritatively — overriding a stale response value as well as filling an omission.
+  Store shipping methods now contain **every** cached store, so Shopify, NetSuite, and carrier
+  consumers must scope by `productStoreId` (and by `partyId` where relevant). If the store id
+  arrives asynchronously, use a reactive scope/getter or filter the live aggregate — a static
+  undefined scope silently reads every store.
+- **Carrier associations do not share one lifecycle.** `carrierShipmentMethod` is a hard-deleted,
+  non-date-effective row keyed by `(partyId, roleTypeId, shipmentMethodTypeId)`;
+  `carrierFacility` is date-effective and includes `fromDate` in its synthetic key. Do not invent
+  dates for carrier methods or remove a method before closing its active product-store associations.
+- **Destructive dependency discovery is live and fail-closed.** Carrier-method deletion reads every
+  authoritative store association immediately before the write, deduplicates by association PK,
+  and refuses the delete on an unsupported response shape, a repeated/no-progress page, the paging
+  backstop, or an active target row it cannot classify and expire. Never use a caller's cached
+  association list or a coerced empty response as deletion proof.
+- **A committed write and its cache reconciliation are different stages.** Throw
+  `CacheReconciliationError` after a successful write whose refetch/resync fails. Retryable UI must
+  dismiss or resume after the committed stage; it must never replay the POST. When one write changes
+  several cache domains, attempt every reconciliation and report the exact failed domains.
+- **Partition replacement defines the concurrency lock.** Serialize targeted worker refetches by
+  domain plus canonical PK scope, retain stale errors per scope, and clear them only with a matching
+  scoped success or a successful full-domain snapshot. A full-domain snapshot is exclusive with
+  every targeted refetch for that domain; different PK scopes remain concurrent only while no full
+  snapshot is waiting or running. UI that can replace the same partition must lock the whole
+  partition while a write is pending, not only the clicked row.
+- **Mutation-sensitive snapshots validate their collection envelope before pruning.** Set
+  `strictCollection` when a payload-level error, `null`, or an unsupported success envelope must
+  not be interpreted as an authoritative empty list. A cold empty cache is not permission to mark
+  an unrecognized response shape synced.
+- **Translation keys are static.** IDs, page numbers, server text, and partial-failure diagnostics
+  are interpolation values under a fixed locale key; never pass runtime error text directly to
+  `translate()`.
+- **Date-effective cached views need a clock dependency.** Use `useEffectiveNow(records)` when a
+  computed filters `fromDate`/`thruDate`; reading `Date.now()` directly inside a computed does not
+  invalidate it when time passes.
+- **Startup and forced-sync failures are real failures.** Global cache-open errors live under
+  `bootstrapState.errors.__start` until a verified later start succeeds. Manual/forced domain sync
+  rejects on failure; an attempt timestamp is only a throttle clock, never success evidence.
 - Cached-row projections must tolerate real backend payloads — several fields the schema declares are
   absent live (e.g. `systemMessages` carries no `lastUpdatedStamp`; `initDate` is the usable cursor).
 
@@ -209,34 +250,42 @@ concept is the smell this rule prevents.
 | Composable | Owns |
 | --- | --- |
 | [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
-| [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate) |
-| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them (shipment-method counts, shipping methods) |
-| [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables, maarg config. Replaced `utilStore` |
+| [`useCarriers.ts`](src/composables/useCarriers.ts) | Carrier catalog/detail aggregates, carrier-method joins and counts, facility/store association views, observable Unigate readiness, and carrier/carrier-method mutations. Method removal closes dependent store associations before the hard delete |
+| [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate), plus date-effective carrier-facility association writes |
+| [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
+| [`useProductStores.ts`](src/composables/useProductStores.ts) | Product stores and the config hanging off them: shipment-method counts, all-store shipping-method reads, date-effective store-method writes, settings, facilities, and the onboarding/setup surface. Merged `useProductStoreData`. Consumers must scope shipping methods by `productStoreId` |
+| [`useSeed.ts`](src/composables/useSeed.ts) | Reference sets no single entity owns: statuses, enumerations, type tables (including shipment-method type create/rename), maarg config. Replaced `utilStore` |
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
 | [`useSystemMessage.ts`](src/composables/useSystemMessage.ts) | System messages, remotes, and error lookups |
 | [`useDataManager.ts`](src/composables/useDataManager.ts) | DataManager configs/logs — the newest imports for a config, live from cache |
 | [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups and the permission catalog |
 | [`useNetSuite.ts`](src/composables/useNetSuite.ts) | The NetSuite surface: cached reads + direct REST writes with a domain resync |
 | [`useProductUpdateHistory.ts`](src/composables/useProductUpdateHistory.ts) | Product-update history rows |
+| [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |
+| [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
+| [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
+| [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
-| [`useLiveDashboard.ts`](src/composables/useLiveDashboard.ts) | Tick/visibility/in-flight guard for dashboard-feel pages. **Currently unused** — the cache layer replaced most of its job |
+| [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |
 
 ## 6. Pinia stores — what survives
 
-Stores are **not** the place for server data any more. What legitimately remains:
+Stores are **not** the place for server data any more. **Three remain, and that is the whole list:**
 
-- Session and identity: [`user.ts`](src/store/user.ts) (also the `postLogin`/`postLogout` hooks),
-  [`authorization.ts`](src/store/authorization.ts), [`appPermissions.ts`](src/store/appPermissions.ts).
-- Multi-step UI/wizard state: [`productStoreOnboarding.ts`](src/store/productStoreOnboarding.ts).
+- Session and identity: [`user.ts`](src/store/user.ts) (also the `postLogin`/`postLogout` hooks).
 - The AI agent surface: [`composer.ts`](src/store/composer.ts), [`workforce.ts`](src/store/workforce.ts).
-- **Not yet converted** (server data still in a store; read them, don't extend them):
-  [`productStore.ts`](src/store/productStore.ts), [`shopify.ts`](src/store/shopify.ts),
-  [`shopifyProductSync.ts`](src/store/shopifyProductSync.ts),
-  [`shopifyProductSyncMigration.ts`](src/store/shopifyProductSyncMigration.ts),
-  [`klaviyo.ts`](src/store/klaviyo.ts), [`util.ts`](src/store/util.ts).
 
-`store/facility.ts`, `store/netSuite.ts`, and `store/shopifyOrderSync.ts` were deleted when their
-composables landed. **Do not add a new store for server data** — add or extend the entity composable.
+Everything else is gone. `facility.ts`, `netSuite.ts` and `shopifyOrderSync.ts` went first; then
+`shopify.ts`, `shopifyProductSync.ts`, `shopifyProductSyncMigration.ts`, `productStore.ts`,
+`productStoreOnboarding.ts`, `klaviyo.ts`, `appPermissions.ts`, `authorization.ts` and `util.ts` — see
+§5 for where each one's logic now lives. Wizard state did NOT need a store to survive: it moved to a
+composable with explicit `localStorage` persistence.
+
+Logout no longer imports stores in order to `$reset()` them; it calls `clearSessionScopedState()`
+once, and each composable holding module-level session state registers its own reset (§5,
+`sessionScope.ts`). That indirection is what allowed the stores to be deleted at all.
+
+**Do not add a new store for server data** — add or extend the entity composable.
 
 ## 7. Views, components, routing
 
@@ -244,8 +293,8 @@ composables landed. **Do not add a new store for server data** — add or extend
 - Components are grouped by domain: `components/{common,facility,product-store,shopify,
   shopify-product-sync,shopify-order-sync,klaviyo,security,shipping-payment,
   product-store-onboarding,chat}/`. Put a new component in its domain folder; `common/` is for
-  genuinely cross-domain pieces (`Menu`, `FilterMenu`, `SearchFilterCard`, `UniformFilterLayout`,
-  `TimezoneModal`, `Image`, `Logo`, animated number/duration).
+  genuinely cross-domain pieces (`Menu`, `SearchFilterCard`, `UniformFilterLayout`,
+  `TimezoneModal`, `Image`, animated number/duration).
 - Modals and popovers live with their domain and are opened from the view that owns the interaction.
 - Add a route by adding a lazy `() => import(...)` plus the right guard. Permission-gated routes use
   `requirePermission` with an `"A OR B"` expression matching the backend permission ids.
@@ -284,18 +333,24 @@ composables landed. **Do not add a new store for server data** — add or extend
   Async views that clear a flag in a `finally` need **two** `await flushPromises()`.
 - Assert visible facts and delegated intents. Never assert source text or CSS.
 
-## 10. State of the migration (as of 2026-07-27)
+## 10. State of the migration (as of 2026-07-28)
 
-The cache/worker data layer is built and in use; the conversion of screens onto it is partly done.
+The cache/worker data layer is built and in use, and **the screen conversion is done.**
 
-- 41 views read through composables. 17 still import a Pinia store — of those, 3
-  (`ShopifyOrderSync`, `ShopifyOrderSyncConfigure`, `UserConfirmation`) only touch the session store,
-  which is correct. The other **14 still read server data from a store**: the product-sync family,
-  Klaviyo, onboarding, `AppPermissions`, and the user/security pages.
-- **`store/util.ts` should already be gone** — `useSeed` replaced it, but 9 views still import it for
-  lookups and `maargInfo`. Highest-leverage cleanup left.
-- `ShopifyProductSync.vue` still carries its own `progressPoll` interval and is the largest
-  remaining pre-cache view.
+- **No view reads server data from a store.** 16 view/component files still import a store: 14 the
+  session store (`user`), one `workforce`, one `composer` — all three are the stores that legitimately
+  survive (§6), so every one of those imports is correct rather than debt.
+- `store/util.ts` is deleted. Its reference reads live in `useSeed`/`useFacilities` and
+  `bootstrapOrganization` in `useOrganization`; `ProductStoreOnboarding.vue` was its last consumer.
+- `ShopifyProductSync.vue` no longer polls from the main thread. Its 5s `loadProgress` interval and
+  vestigial no-op polling scaffolding are gone — progress is derived from cached messages, bulk
+  operations and MDM logs that the worker refreshes. The only surviving interval on that page is a
+  15s clock for relative-time labels, which loads no data.
+- Organization management phases 1 and 2 are implemented at `/organizations` and
+  `/organization-details/:partyId`. The `organization` and `organizationRelationship` class-B
+  domains feed a cycle-safe forest; writes use the existing party/group/role/relationship endpoints
+  and refresh their exact cache domains. Those multi-call writes are not backend-transactional, so
+  errors explicitly report partial commits. Facility owner editing remains phase 3.
 - Explicitly **out of scope** for now: offline write queue / mutation replay, cross-tab and
   cross-session cache persistence, class-A retention/pruning, service-worker background sync, and
   converting Solr-backed relevance search (`Users.vue`) to a client-side snapshot.

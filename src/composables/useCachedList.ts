@@ -128,13 +128,14 @@ export function useCachedList<T = Record<string, any>>(
 export function useCachedRecord<T = Record<string, any>>(
   entity: CachedEntity,
   keyField: string,
-  id: string | undefined,
+  id: string | Ref<string | undefined> | undefined,
 ) {
   const { records, hydrated } = useCachedList<any>(entity);
   return {
-    record: computed<T | undefined>(() =>
-      id ? (records.value.find((row) => String(row?.[keyField]) === String(id)) as T | undefined) : undefined,
-    ),
+    record: computed<T | undefined>(() => {
+      const targetId = typeof id === "object" && id && "value" in id ? id.value : id;
+      return targetId ? (records.value.find((row) => String(row?.[keyField]) === String(targetId)) as T | undefined) : undefined;
+    }),
     hydrated,
   };
 }

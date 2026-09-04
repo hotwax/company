@@ -179,7 +179,7 @@ export function removeUserGroupPermission(
   return api({
     url: `admin/userGroups/${encodeURIComponent(payload.userGroupId)}/permissions`,
     method: "put",
-    data: { userPermissionId: payload.userPermissionId, fromDate: payload.fromDate, thruDate: payload.thruDate },
+    data: { userPermissionId: payload.userPermissionId, fromDate: String(payload.fromDate), thruDate: String(payload.thruDate) },
   });
 }
 

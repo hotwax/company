@@ -655,7 +655,7 @@
           <form @keyup.enter="saveGeoPoint">
             <ion-item class="ion-margin-bottom">
               <ion-input aria-label="zipcode" :placeholder="translate('Zipcode')" v-model="geoPoint.postalCode" @keydown="validateZipCode($event)" @ionInput="postalCodeUpdate"/>
-              <ion-button slot="end" fill="outline" :disabled="!isPostalCodeChanged" @click="generateLatLong">
+              <ion-button slot="end" fill="outline" @click="generateLatLong">
                 {{ translate("Generate") }}
                 <ion-icon v-if="!isGeneratingLatLong" slot="end" :icon="colorWandOutline" />
                 <ion-spinner v-else data-spinner-size="small"/>
@@ -842,7 +842,7 @@ import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdMod
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
 import { api } from '@common';
-import { useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
 import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
@@ -875,7 +875,7 @@ const facilityCalendar = computed(() => current.value.calendar || {});
 const facilityProductStores = computed(() => current.value.productStores || []);
 const facilityParties = computed(() => current.value.parties || []);
 const facilityLogins = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId === 'FAC_LOGIN'));
-const staffParties = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId !== 'FAC_LOGIN'));
+const staffParties = computed(() => facilityParties.value.filter(isFacilityStaffParty));
 const calendars = calendarOptions;
 // Inventory channels are facility groups of the channel type — a filter, not a fetch.
 const inventoryGroups = computed(() => allFacilityGroups.value.filter((g: any) => g.facilityGroupTypeId === 'CHANNEL_FAC_GROUP'));
@@ -1748,21 +1748,14 @@ async function updateGroups() {
 
   let isFacilityGroupRespHasError = false;
 
-  for (const groupId of groupsToAdd.value) {
-    try {
-      await linkFacilityGroup(groupId);
-    } catch {
-      isFacilityGroupRespHasError = true;
-    }
-  }
+  const responses = await Promise.allSettled([
+    ...groupsToAdd.value.map((groupId) => linkFacilityGroup(groupId)),
+    ...groupsToRemove.value.map((groupId) => unlinkFacilityGroup(groupId))
+  ]);
 
-  for (const groupId of groupsToRemove.value) {
-    try {
-      await unlinkFacilityGroup(groupId);
-    } catch {
-      isFacilityGroupRespHasError = true;
-    }
-  }
+  isFacilityGroupRespHasError = responses.some(
+    (response) => response.status === 'rejected'
+  );
 
   if (isFacilityGroupRespHasError) {
     commonUtil.showToast(translate('Failed to update some groups for facility'));
@@ -2019,10 +2012,10 @@ async function generateLatLong() {
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { params: { q: `postcode: ${query}` } } } }) as any).data;
+    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { query: `postcode: ${query}` } } }) as any).data;
 
-    if (resp.response.docs.length > 0) {
-      const result = resp.response.docs[0];
+    if (resp.docs.length > 0) {
+      const result = resp.docs[0];
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {

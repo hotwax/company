@@ -301,7 +301,6 @@
   </section>
 
   <section class="sync-stat">
-    <ion-progress-bar v-if="isRefreshing" type="indeterminate" />
     <div class="stat-header">
       <ion-item class="stat-title" lines="none">
         <ion-label>
@@ -418,7 +417,7 @@
 
 
   <section class="sync-stat">
-    <ion-progress-bar v-if="isRefreshing || isErrorLogsLoading" type="indeterminate" />
+    <ion-progress-bar v-if="isErrorLogsLoading" type="indeterminate" />
     <div class="stat-header">
         <ion-item class="stat-title" lines="none">
           <ion-label>
@@ -555,7 +554,6 @@ const props = defineProps<{
   hasCurrentShopifyRequest?: boolean
   syncJobObj?: any
   isSecondaryLoading?: boolean
-  isRefreshing?: boolean
   isErrorLogsLoading?: boolean
   errorRecordCount: number | string
   failedRecords: Array<{ id: string, numericId?: string, logId?: string, title: string, vendor?: string, handle?: string, productType?: string, sku?: string, barcode?: string, error: string }>

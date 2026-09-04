@@ -14,8 +14,6 @@
             {{ translate("Inventory variances synced to NetSuite") }}
             <p>{{ translate("Select exactly which inventory variances should be synced to NetSuite") }}</p>
           </ion-label>
-          <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-          <!-- <ion-badge slot="end" color="dark">next sync in 15 minutes</ion-badge> -->
         </ion-item>
       </div>
 
@@ -34,12 +32,6 @@
             <p>{{ variance.enumId }}</p>
           </ion-label>
         </ion-item>
-        
-        <!-- TODO: Commenting out these hardcoded values; need to make them dynamic -->
-        <!-- <ion-label>
-          200
-          <p>{{ translate("variances in 7 days") }}</p>
-        </ion-label> -->
 
         <template v-if="updatedNetSuiteIds[variance.enumId]">
           <div class="ion-text-center">

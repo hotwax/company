@@ -2,6 +2,7 @@ import { api, commonUtil } from "@common";
 import { type Ref, computed, reactive, watch } from "vue";
 import type { AppPermissionDefinition } from "@/config/appPermissions";
 import { toEpochMillis } from "@/utils/appPermissionTime";
+import { onSessionCleared } from "./sessionScope";
 import { usePermissions, useUserGroups } from "./useSecurity";
 
 /**
@@ -47,6 +48,17 @@ const state = reactive<{
 
 /** Collapses concurrent expansions of the same group into one request. */
 const inflightUsersByGroup: Record<string, Promise<any[]>> = {};
+let sessionGeneration = 0;
+
+onSessionCleared(() => {
+  sessionGeneration += 1;
+  state.permissionRecordsByGroup = {};
+  state.usersByGroup = {};
+
+  for(const groupId of Object.keys(inflightUsersByGroup)) {
+    delete inflightUsersByGroup[groupId];
+  }
+});
 
 /**
  * The UserGroupPermission records of ONE group (`admin/userGroups/{id}/permissions`) — the only
@@ -54,6 +66,7 @@ const inflightUsersByGroup: Record<string, Promise<any[]>> = {};
  */
 export async function loadGroupPermissionRecords(groupId: string, force = false): Promise<void> {
   if(!force && state.permissionRecordsByGroup[groupId]) {return;}
+  const requestGeneration = sessionGeneration;
 
   const resp = await api({
     url: `admin/userGroups/${encodeURIComponent(groupId)}/permissions`,
@@ -62,6 +75,7 @@ export async function loadGroupPermissionRecords(groupId: string, force = false)
   }) as any;
 
   if(commonUtil.hasError(resp)) {throw resp.data;}
+  if(requestGeneration !== sessionGeneration) {return;}
   state.permissionRecordsByGroup[groupId] = resp.data || [];
 }
 
@@ -74,6 +88,7 @@ export async function loadGroupUsers(groupId: string, force = false): Promise<an
   if(!force && state.usersByGroup[groupId]) {return state.usersByGroup[groupId];}
   const pending = inflightUsersByGroup[groupId];
   if(!force && pending) {return pending;}
+  const requestGeneration = sessionGeneration;
 
   const request = (async () => {
     const resp = await api({
@@ -84,12 +99,23 @@ export async function loadGroupUsers(groupId: string, force = false): Promise<an
 
     if(commonUtil.hasError(resp)) {throw resp.data;}
     const users = Array.isArray(resp.data) ? resp.data : (resp.data?.users || resp.data?.docs || []);
-    state.usersByGroup[groupId] = users;
+    if(requestGeneration === sessionGeneration) {
+      state.usersByGroup[groupId] = users;
+    }
 
     return users;
-  })().finally(() => { delete inflightUsersByGroup[groupId]; });
+  })();
 
   inflightUsersByGroup[groupId] = request;
+
+  const clearInflight = () => {
+    // A request from the previous session can finish after a new request for the same group starts.
+    // It must not clear the new session's in-flight entry.
+    if(inflightUsersByGroup[groupId] === request) {
+      delete inflightUsersByGroup[groupId];
+    }
+  };
+  void request.then(clearInflight, clearInflight);
 
   return request;
 }
