@@ -25,12 +25,13 @@
 
       <ion-item
         v-if="!hydrated && loadError"
-        class="status-row status-error"
+        class="status-row"
+        color="danger"
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
       >
-        <ion-icon slot="start" aria-hidden="true" color="danger" :icon="alertCircleOutline" />
+        <ion-icon slot="start" aria-hidden="true" :icon="alertCircleOutline" />
         <ion-label class="ion-text-wrap">
           <h3>{{ translate("Sync status unavailable") }}</h3>
           <p>{{ translate(loadError) }}</p>
@@ -47,12 +48,13 @@
 
       <ion-item
         v-else-if="loadError"
-        class="status-row status-warning"
+        class="status-row"
+        color="warning"
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
       >
-        <ion-icon slot="start" aria-hidden="true" color="warning" :icon="alertCircleOutline" />
+        <ion-icon slot="start" aria-hidden="true" :icon="alertCircleOutline" />
         <ion-label class="ion-text-wrap">
           <h3>{{ translate("Latest refresh failed") }}</h3>
           <p>{{ translate(loadError) }}</p>
@@ -70,36 +72,30 @@
           <ion-label class="ion-text-wrap">
             <div class="status-heading">
               <h3>{{ translate("Configuration") }}</h3>
-              <ion-badge
-                :class="['status-badge', `status-badge--${configurationPresentation.color}`]"
-              >
+              <ion-badge :color="configurationPresentation.color">
                 {{ translate(configurationPresentation.label) }}
               </ion-badge>
             </div>
             <p>{{ translate(configuration.summary) }}</p>
-            <ul v-if="configuration.checks?.length" class="status-checks">
-              <li v-for="check in configuration.checks" :key="check.id">
-                <ion-icon
-                  aria-hidden="true"
-                  :color="checkPresentation(check.status).color"
-                  :icon="checkPresentation(check.status).icon"
-                />
-                <span>
-                  <strong>{{ translate(check.label) }}</strong>
-                  <small v-if="check.detail">{{ translate(check.detail) }}</small>
-                </span>
-                <ion-badge
-                  :class="[
-                    'status-badge',
-                    'check-badge',
-                    `status-badge--${checkPresentation(check.status).color}`
-                  ]"
-                >
-                  {{ translate(checkPresentation(check.status).label) }}
-                </ion-badge>
-              </li>
-            </ul>
           </ion-label>
+        </ion-item>
+
+        <ion-item v-for="check in configuration.checks ?? []" :key="check.id" class="check-row">
+          <ion-icon
+            slot="start"
+            aria-hidden="true"
+            :color="checkPresentation(check.status).color"
+            :icon="checkPresentation(check.status).icon"
+          />
+          <ion-label class="ion-text-wrap">
+            <h3>{{ translate(check.label) }}</h3>
+            <p v-if="check.detail">
+              {{ translate(check.detail) }}
+            </p>
+          </ion-label>
+          <ion-badge slot="end" :color="checkPresentation(check.status).color">
+            {{ translate(checkPresentation(check.status).label) }}
+          </ion-badge>
         </ion-item>
 
         <ion-item class="status-row">
@@ -112,7 +108,7 @@
           <ion-label class="ion-text-wrap">
             <div class="status-heading">
               <h3>{{ translate("Current or last run") }}</h3>
-              <ion-badge :class="['status-badge', `status-badge--${runPresentation.color}`]">
+              <ion-badge :color="runPresentation.color">
                 {{ translate(runPresentation.label) }}
               </ion-badge>
             </div>
@@ -140,12 +136,7 @@
             <ion-label class="ion-text-wrap">
               <div class="status-heading">
                 <h3>{{ translate(stage.label) }}</h3>
-                <ion-badge
-                  :class="[
-                    'status-badge',
-                    `status-badge--${runStatusPresentation(stage.status).color}`
-                  ]"
-                >
+                <ion-badge :color="runStatusPresentation(stage.status).color">
                   {{ translate(runStatusPresentation(stage.status).label) }}
                 </ion-badge>
               </div>
@@ -182,10 +173,12 @@
       :aria-label="`${translate('Status')}: ${translate(runPresentation.label)}`"
     />
 
-    <p v-if="initialLoad.recoveryHint" class="recovery-guidance">
-      <strong>{{ translate("Next action") }}:</strong>
-      {{ translate(initialLoad.recoveryHint) }}
-    </p>
+    <ion-item v-if="initialLoad.recoveryHint" lines="none">
+      <ion-note color="primary" class="ion-text-wrap">
+        <strong>{{ translate("Next action") }}:</strong>
+        {{ translate(initialLoad.recoveryHint) }}
+      </ion-note>
+    </ion-item>
 
     <div v-if="hasActions" class="status-actions">
       <ion-button
@@ -241,6 +234,7 @@ import {
   IonLabel,
   IonList,
   IonListHeader,
+  IonNote,
   IonProgressBar,
   IonSkeletonText,
   IonSpinner
@@ -434,12 +428,6 @@ function formatCount(value: number) {
 </script>
 
 <style scoped>
-.onboarding-sync-status {
-  --sync-detail-text: #475467;
-  --sync-danger-detail: #8a1c29;
-  --sync-warning-detail: #684500;
-}
-
 .onboarding-sync-status ion-list {
   padding: 0;
 }
@@ -449,20 +437,14 @@ function formatCount(value: number) {
 }
 
 .status-row,
-.stage-row {
+.stage-row,
+.check-row {
   --padding-start: 0;
 }
 
-.stage-row {
+.stage-row,
+.check-row {
   --padding-start: var(--spacer-lg);
-}
-
-.status-checks {
-  display: grid;
-  gap: var(--spacer-xs);
-  margin: var(--spacer-sm) 0 0;
-  padding: 0;
-  list-style: none;
 }
 
 .status-heading {
@@ -480,89 +462,6 @@ function formatCount(value: number) {
   overflow-wrap: anywhere;
 }
 
-.status-badge {
-  flex: 0 1 auto;
-  max-width: 100%;
-  border: 1px solid;
-  font-weight: 600;
-  line-height: 1.25;
-  white-space: normal;
-}
-
-.status-badge--success {
-  --background: #e7f6ec;
-  --color: #176b38;
-  border-color: #54a76d;
-}
-
-.status-badge--warning {
-  --background: #fff4d6;
-  --color: #714200;
-  border-color: #c68a15;
-}
-
-.status-badge--danger {
-  --background: #fdecec;
-  --color: #a61b29;
-  border-color: #d46b75;
-}
-
-.status-badge--primary {
-  --background: #e8f1ff;
-  --color: #174ea6;
-  border-color: #7da5e8;
-}
-
-.status-badge--medium {
-  --background: #f1f3f5;
-  --color: #39414a;
-  border-color: #98a1ab;
-}
-
-.check-badge {
-  align-self: start;
-}
-
-.status-checks li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--spacer-xs);
-}
-
-.status-checks ion-icon {
-  margin-top: 0.125rem;
-}
-
-.status-checks span {
-  display: grid;
-  min-width: 0;
-}
-
-.status-row p,
-.stage-row p,
-.status-checks small {
-  color: var(--sync-detail-text);
-}
-
-.status-error {
-  --background: #fff1f2;
-}
-
-.status-error h3,
-.status-error p {
-  color: var(--sync-danger-detail);
-}
-
-.status-warning {
-  --background: #fff8e7;
-}
-
-.status-warning h3,
-.status-warning p {
-  color: var(--sync-warning-detail);
-}
-
 .sync-progress {
   margin-top: calc(var(--spacer-xs) * -1);
 }
@@ -571,8 +470,6 @@ function formatCount(value: number) {
   margin-top: var(--spacer-sm);
   padding: var(--spacer-sm);
   border-inline-start: 3px solid var(--ion-color-danger);
-  background: rgba(var(--ion-color-danger-rgb), 0.08);
-  color: #5f1b24;
   white-space: normal;
 }
 
@@ -597,14 +494,6 @@ function formatCount(value: number) {
   overflow-wrap: anywhere;
 }
 
-.recovery-guidance {
-  margin: var(--spacer-sm) 0 0;
-  padding: var(--spacer-sm);
-  border-inline-start: 3px solid #175cd3;
-  background: #eff6ff;
-  color: #1d3f72;
-}
-
 .status-actions {
   display: flex;
   flex-wrap: wrap;
@@ -622,15 +511,6 @@ function formatCount(value: number) {
     flex-basis: auto;
   }
 
-  .status-checks li {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .check-badge {
-    grid-column: 2;
-    justify-self: start;
-  }
-
   .status-diagnostics dl > div {
     grid-template-columns: 1fr;
     gap: 0;
@@ -641,6 +521,7 @@ function formatCount(value: number) {
   }
 }
 
+/* Visually hidden live region. Ionic's ion-hide is display:none, which also hides it from assistive tech. */
 .sync-live-announcement {
   position: absolute;
   width: 1px;
@@ -651,60 +532,5 @@ function formatCount(value: number) {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .onboarding-sync-status {
-    --sync-detail-text: #d0d5dd;
-    --sync-danger-detail: #ffd2d8;
-    --sync-warning-detail: #ffe0a3;
-  }
-
-  .status-badge--success {
-    --background: #173d2a;
-    --color: #b7f5c9;
-    border-color: #55b77a;
-  }
-
-  .status-badge--warning {
-    --background: #493200;
-    --color: #ffe0a3;
-    border-color: #d1a640;
-  }
-
-  .status-badge--danger {
-    --background: #4b1d25;
-    --color: #ffd2d8;
-    border-color: #d9707d;
-  }
-
-  .status-badge--primary {
-    --background: #17385f;
-    --color: #d6e8ff;
-    border-color: #75a7ea;
-  }
-
-  .status-badge--medium {
-    --background: #30343a;
-    --color: #f2f4f7;
-    border-color: #98a1ab;
-  }
-
-  .status-error,
-  .status-diagnostics {
-    --background: #4b1d25;
-    background: #4b1d25;
-    color: #ffd2d8;
-  }
-
-  .status-warning {
-    --background: #493200;
-  }
-
-  .recovery-guidance {
-    border-inline-start-color: #75a7ea;
-    background: #17385f;
-    color: #d6e8ff;
-  }
 }
 </style>
