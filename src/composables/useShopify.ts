@@ -993,6 +993,12 @@ interface InventoryEventSourceAttempt {
 }
 
 const eventSourceAttempts = new Map<string, InventoryEventSourceAttempt>();
+/**
+ * Bumped by the logout sweep. A lookup already awaiting `api()` when the session is cleared captures
+ * this first and drops its answer if it moved, so the previous tenant's orders and operator names can
+ * never land in the next session's maps.
+ */
+let eventSourceGeneration = 0;
 /** How many times a thrown lookup is retried before the page stops asking. */
 const MAX_SOURCE_LOOKUP_FAILURES = 3;
 /** Independent lookups run together, but not unboundedly: this is a shared OMS. */
@@ -1004,6 +1010,7 @@ const eventSourceActorRequests = new Map<string, Promise<string>>();
 
 // Module state survives an SPA logout: without this, user B reads user A's resolved artifacts.
 onSessionCleared(() => {
+  eventSourceGeneration += 1;
   eventSources.value = new Map();
   eventSourceAttempts.clear();
   eventSourceActors.clear();
@@ -1050,12 +1057,14 @@ async function eventSourceActorName(userLoginId: string): Promise<string> {
   const existing = eventSourceActorRequests.get(id);
   if(existing) {return existing;}
 
+  const requestGeneration = eventSourceGeneration;
   const request = (async () => {
     try {
       const row = asEventSourceRows(await readEventSource("oms/users", { userLoginId: id, pageSize: 1 }))[0];
       const full = [row?.firstName, row?.lastName].filter(Boolean).join(" ").trim();
       const name = full || String(row?.groupName ?? "").trim() || id;
-      eventSourceActors.set(id, name);
+      // A logout landed while this was in flight: the name belongs to the previous session.
+      if(requestGeneration === eventSourceGeneration) {eventSourceActors.set(id, name);}
 
       return name;
     } catch (error) {
@@ -1179,6 +1188,9 @@ async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterF
     };
   }
 
+  // "Not found anywhere" is only true if every facility actually answered. A failed request that is
+  // reported as an absence gets cached as a confident wrong answer and never retried.
+  let anyFacilityFailed = false;
   for(const facilityId of lookup.facilityIds) {
     try {
       const row = asEventSourceRows(await readEventSource(
@@ -1201,8 +1213,14 @@ async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterF
       return { label, note: note || undefined };
     } catch (error) {
       // One unreachable facility must not end the walk: the movement may sit at the next one.
+      anyFacilityFailed = true;
       logger.warn(`Inventory history [facility ${facilityId}] - Lookup failed`, error);
     }
+  }
+
+  // Throwing hands this to the caller's retry-and-cap logic instead of storing a false diagnosis.
+  if(anyFacilityFailed) {
+    throw new Error("Inventory history - one or more facility lookups failed, so absence is not proven");
   }
 
   return { label: "", unresolved: translate("No movement row for this reference at any of the channel's facilities.") };
@@ -1270,6 +1288,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[], opts: 
   if(!pending.size) {return;}
 
   const entries = [...pending.entries()];
+  const requestGeneration = eventSourceGeneration;
   // Claimed up front: nothing below this line can be re-queued by a concurrent caller.
   for(const [key] of entries) {
     const attempt = eventSourceAttempts.get(key) ?? { pending: false, failures: 0, retryable: false };
@@ -1313,6 +1332,9 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[], opts: 
         }] as const;
       }
     }));
+
+    // A logout landed mid-batch: these answers describe the previous session's data.
+    if(requestGeneration !== eventSourceGeneration) {return;}
 
     const next = new Map(eventSources.value);
     let changed = false;

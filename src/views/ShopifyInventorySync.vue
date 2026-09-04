@@ -1326,6 +1326,7 @@ import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannel
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import { useCachedList } from "@/composables/useCachedList";
 import { useCacheSync } from "@/composables/useCacheSync";
+import { useEffectiveNow } from "@/composables/useEffectiveNow";
 import { useFacilityTypes } from "@/composables/useFacilities";
 import { useStatuses } from "@/composables/useSeed";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
@@ -1527,6 +1528,12 @@ const { records: cachedSystemMessages } = useCachedList<any>(systemMessageCache)
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
 const { records: cachedGroupFacilities } = useCachedList<any>(groupFacilityCache);
+/**
+ * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
+ * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
+ * composition and in the source-resolution search until some unrelated cache write happened.
+ */
+const groupFacilitiesEffectiveNow = useEffectiveNow(cachedGroupFacilities);
 const {
   start: startSyncDomains,
   stop: stopSyncDomains,
@@ -1580,9 +1587,8 @@ const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = u
 /** Effective member facilities of a channel's group, which is what a scoped lookup can search. */
 const facilityIdsByGroup = computed(() => {
   const byGroup = new Map<string, string[]>();
-  const now = Date.now();
   for(const member of cachedGroupFacilities.value) {
-    if(!isEffectiveNow(member, now)) {continue;}
+    if(!isEffectiveNow(member, groupFacilitiesEffectiveNow.value)) {continue;}
     const group = String(member.facilityGroupId ?? "");
     const facilityId = String(member.facilityId ?? "");
     if(!group || !facilityId) {continue;}
@@ -2106,15 +2112,17 @@ const channelStatsById = computed(() => {
   const deliveredByChannel = new Map<string, number>();
   for(const detail of inventoryDetails.value) {
     if(detail.systemMessageStatusId !== "SmsgSent") {continue;}
-    const created = toMillis(detail.createdDate);
-    if(!created || now - created > CHANNEL_ACTIVITY_WINDOW_MS) {continue;}
+    // The DELIVERY time, not the time the ledger recorded the event. An event from an older backlog
+    // that was sent today belongs in this window; `createdDate` excluded it.
+    const delivered = toMillis(detail.systemMessageProcessedDate) || toMillis(detail.createdDate);
+    if(!delivered || now - delivered > CHANNEL_ACTIVITY_WINDOW_MS) {continue;}
     const channelId = String(detail.inventoryChannelId ?? "");
     deliveredByChannel.set(channelId, (deliveredByChannel.get(channelId) ?? 0) + 1);
   }
 
   const typesByGroup = new Map<string, Map<string, number>>();
   for(const member of cachedGroupFacilities.value) {
-    if(!isEffectiveNow(member, now)) {continue;}
+    if(!isEffectiveNow(member, groupFacilitiesEffectiveNow.value)) {continue;}
     const groupId = String(member.facilityGroupId ?? "");
     const typeId = String(member.facilityTypeId ?? "").trim() || "NA";
     const byType = typesByGroup.get(groupId) ?? new Map<string, number>();
