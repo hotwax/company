@@ -78,9 +78,6 @@
     <DxpOmsInstanceFooter
       v-if="isAuthenticated"
       :instance-label="omsInstanceLabel()"
-      :time-zone="currentTimeZone"
-      :time-zone-mismatched="isTimeZoneMismatched"
-      :zone-time="isTimeZoneMismatched ? selectedZoneTime : ''"
     />
   </ion-menu>
 </template>
@@ -102,7 +99,7 @@ import {
   IonToolbar,
 } from "@ionic/vue";
 import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
 import { useUserStore } from "@/store/user";
@@ -133,32 +130,8 @@ function omsInstanceLabel() {
   return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
 }
 
-// Mirrors order-manager: resolve the same way the Settings page does so the two never disagree.
-const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const currentTimeZone = computed(() =>
-  userStore.getUserTimeZone || userStore.getUserProfile?.timeZone || browserTimeZone);
-const isTimeZoneMismatched = computed(() =>
-  !!currentTimeZone.value && currentTimeZone.value !== browserTimeZone);
-
-// The menu stays mounted for the whole session, so the clock is driven by a timer rather than frozen
-// at whatever the last render happened to be.
-const selectedZoneTime = ref("");
-let clockTimer: ReturnType<typeof setInterval> | undefined;
-
-function refreshSelectedZoneTime() {
-  selectedZoneTime.value = commonUtil.getCurrentTime(currentTimeZone.value, "t");
-}
-
-watch(currentTimeZone, refreshSelectedZoneTime);
-
 onMounted(() => {
   void loadMaargConfig();
-  refreshSelectedZoneTime();
-  clockTimer = setInterval(refreshSelectedZoneTime, 30000);
-});
-
-onUnmounted(() => {
-  clearInterval(clockTimer);
 });
 const { hasPermission } = useAppAuth();
 const appPages = [
