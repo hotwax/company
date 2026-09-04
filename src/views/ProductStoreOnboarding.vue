@@ -2,1012 +2,663 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-back-button default-href="/product-store" slot="start" />
-        <ion-title>{{ translate("Create product store") }}</ion-title>
-        <ion-progress-bar :value="onboardingStore.progressValue" />
+        <ion-back-button slot="start" default-href="/product-store" />
+        <ion-title>{{ translate("Product Store setup") }}</ion-title>
+        <ion-progress-bar
+          :value="userProgressValue"
+          role="progressbar"
+          :aria-label="setupProgressLabel"
+          :aria-valuemin="0"
+          :aria-valuemax="onboarding.totalStepCount"
+          :aria-valuenow="onboarding.completedCount"
+          :aria-valuetext="setupProgressLabel"
+        />
       </ion-toolbar>
     </ion-header>
 
-    <ion-content>
-      <main class="product-store-onboarding">
-        <section class="onboarding-steps">
+    <ion-content ref="contentRef">
+      <main class="onboarding-layout">
+        <aside class="desktop-steps" aria-label="Product Store setup progress">
           <ion-list lines="none">
             <ion-list-header>
               <ion-label>
                 {{ translate("Progress") }}
-                <p>{{ onboardingStore.completedCount }} {{ translate("of") }} {{ onboardingStore.totalStepCount }} {{ translate("steps complete") }}</p>
+                <p>
+                  {{ translate("{complete} of {total} setup steps complete", {
+                    complete: onboarding.completedCount,
+                    total: onboarding.totalStepCount
+                  }) }}
+                </p>
               </ion-label>
             </ion-list-header>
           </ion-list>
-
           <onboarding-step-list
             :groups="PRODUCT_STORE_ONBOARDING_GROUPS"
             :steps="PRODUCT_STORE_ONBOARDING_STEPS"
-            :current-step-id="onboardingStore.currentStepId"
-            :completed-step-ids="onboardingStore.completedStepIds"
-            @select-step="onboardingStore.selectStep"
+            :current-step-id="onboarding.currentStepId"
+            :step-statuses="onboarding.stepStatuses"
+            @select-step="selectStep"
           />
-        </section>
+        </aside>
 
         <section class="onboarding-task">
+          <ion-item class="mobile-step-picker" lines="none">
+            <ion-select
+              :label="translate('Setup step')"
+              label-placement="stacked"
+              interface="popover"
+              :value="onboarding.currentStepId"
+              @ion-change="selectStep(String($event.detail.value || ''))"
+            >
+              <ion-select-option
+                v-for="(step, index) in PRODUCT_STORE_ONBOARDING_STEPS"
+                :key="step.id"
+                :value="step.id"
+              >
+                {{ index + 1 }}. {{ translate(step.label) }} — {{ translate(statusLabel(onboarding.stepStatuses[step.id])) }}
+              </ion-select-option>
+            </ion-select>
+            <ion-note
+              slot="end"
+              class="mobile-progress-count"
+              data-testid="mobile-progress-count"
+              role="status"
+              aria-live="polite"
+              :aria-label="setupProgressLabel"
+            >
+              {{ onboarding.completedCount }} / {{ onboarding.totalStepCount }}
+            </ion-note>
+          </ion-item>
+
           <ion-card>
             <ion-card-header>
-              <ion-card-title>{{ translate(currentStep.label) }}</ion-card-title>
-              <ion-card-subtitle>{{ translate(currentStep.summary) }}</ion-card-subtitle>
+              <div class="step-heading-row">
+                <div>
+                  <ion-card-title ref="stepHeadingRef" tabindex="-1">
+                    {{ translate(currentStep.label) }}
+                  </ion-card-title>
+                  <ion-card-subtitle>{{ translate(currentStep.summary) }}</ion-card-subtitle>
+                </div>
+                <ion-badge :color="stepStatusPresentation.color">
+                  {{ translate(stepStatusPresentation.label) }}
+                </ion-badge>
+              </div>
             </ion-card-header>
 
-            <ion-list v-if="currentStep.id === 'name'" lines="full">
-              <ion-item v-if="shouldCollectCompanyName">
-                <ion-input
-                  :value="onboardingStore.draft.companyName"
-                  label-placement="stacked"
-                  :helper-text="translate('The parent organization that owns this first Product Store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('companyName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Company name") }} <ion-text color="danger">*</ion-text></div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.storeName"
-                  label-placement="stacked"
-                  :helper-text="translate('Product store represents a brand in OMS')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('storeName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Name") }} <ion-text color="danger">*</ion-text></div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.productStoreId"
-                  label-placement="stacked"
-                  :label="translate('ID')"
-                  :helper-text="translate('Product store ID represents an unique ID for your product store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('productStoreId', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.defaultCurrencyUomId"
-                  @ionChange="onboardingStore.updateDraftField('defaultCurrencyUomId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Currency") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="currency in currencyOptions" :key="currency.uomId" :value="currency.uomId">
-                    {{ currency.label }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-label>{{ translate("Locale") }}</ion-label>
-                <ion-note slot="end">{{ onboardingStore.draft.locale }}</ion-note>
-              </ion-item>
-              <ion-item>
-                <ion-label>{{ translate("Timezone") }}</ion-label>
-                <ion-note slot="end">{{ onboardingStore.draft.timezone }}</ion-note>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'general'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Order import defaults") }}
-                  <p>{{ translate("These values control how new imported orders are identified, approved, and stored.") }}</p>
-                </ion-label>
-                <ion-badge :color="selectedProductStoreId ? 'success' : 'warning'" slot="end">
-                  {{ selectedProductStoreId ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :value="onboardingStore.draft.orderNumberPrefix"
-                  label-placement="stacked"
-                  :label="translate('Sales order ID prefix')"
-                  :helper-text="translate('Added to HotWax sales order IDs generated for this Product Store')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('orderNumberPrefix', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.autoApproveOrder === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('autoApproveOrder', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Approve imported orders") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.saveBillingInformation === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('saveBillingInformation', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Save billing information") }}
-                </ion-toggle>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'shopify'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Connect a Shopify store") }}
-                  <p>{{ translate("A Shopify store cannot be linked to more than one product store at a time.") }}</p>
-                </ion-label>
-                <ion-badge :color="linkedShopifyShop ? 'success' : 'warning'" slot="end">
-                  {{ linkedShopifyShop ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-              </ion-item>
-              <ion-radio-group
-                :value="onboardingStore.draft.shopifyConnectionMode"
-                @ionChange="onboardingStore.updateDraftField('shopifyConnectionMode', String($event.detail.value || ''))"
+            <ion-card-content v-if="currentStep.id === 'name'" class="form-stack">
+              <ion-input
+                v-if="shouldCollectCompanyName"
+                ref="companyNameInputRef"
+                fill="outline"
+                label-placement="stacked"
+                :label="translate('Company name')"
+                :helper-text="translate('The organization that owns this first Product Store.')"
+                required
+                :value="onboarding.draft.companyName"
+                @ion-input="updateDraft('companyName', $event.detail.value)"
+              />
+              <ion-input
+                ref="storeNameInputRef"
+                fill="outline"
+                label-placement="stacked"
+                :label="translate('Store name')"
+                :helper-text="translate('The brand or storefront name operators will recognize.')"
+                required
+                :value="onboarding.draft.storeName"
+                @ion-input="updateDraft('storeName', $event.detail.value)"
+              />
+              <ion-input
+                ref="productStoreIdInputRef"
+                data-testid="product-store-id-input"
+                fill="outline"
+                label-placement="stacked"
+                :label="translate('Product Store ID')"
+                :helper-text="translate('A permanent identifier with 20 characters or fewer.')"
+                :error-text="productStoreIdError"
+                :class="{ 'ion-invalid ion-touched': !!productStoreIdError }"
+                :disabled="!!selectedProductStoreId"
+                required
+                :maxlength="20"
+                :counter="true"
+                :value="onboarding.draft.productStoreId"
+                @ion-input="updateDraft('productStoreId', $event.detail.value)"
+                @ion-blur="storeFieldTouched.productStoreId = true"
+              />
+              <ion-select
+                ref="currencyInputRef"
+                fill="outline"
+                label-placement="stacked"
+                interface="popover"
+                :label="translate('Currency')"
+                required
+                :value="onboarding.draft.defaultCurrencyUomId"
+                @ion-change="updateDraft('defaultCurrencyUomId', $event.detail.value)"
               >
-                <ion-item>
-                  <ion-radio slot="start" value="Connect now" />
-                  <ion-label>{{ translate("Connect now") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Use existing Shopify shop" />
-                  <ion-label>{{ translate("Use existing Shopify shop") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Prepare Shopify connection" />
-                  <ion-label>{{ translate("Prepare Shopify connection") }}</ion-label>
-                </ion-item>
-              </ion-radio-group>
-              <ion-item v-if="isExistingShopifyMode && linkedShopifyShop">
-                <ion-label>
-                  {{ translate("Linked Shopify shop") }}
-                  <p>{{ linkedShopifyShop.name || linkedShopifyShop.myshopifyDomain || linkedShopifyShop.shopId }}</p>
-                </ion-label>
-                <ion-badge color="success" slot="end">{{ translate("Ready") }}</ion-badge>
-              </ion-item>
-              <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && availableShopifyShops.length">
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.selectedShopifyShopId"
-                  @ionChange="onboardingStore.updateDraftField('selectedShopifyShopId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Existing Shopify shop") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="shop in availableShopifyShops" :key="shop.shopId" :value="shop.shopId">
-                    {{ getShopifyShopLabel(shop) }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-if="isExistingShopifyMode && !linkedShopifyShop && !availableShopifyShops.length">
-                <ion-label>
-                  {{ translate("No available Shopify connection") }}
-                  <p>{{ translate("Create the Shopify connection first, then return to link it here.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
-              </ion-item>
-              <ion-item v-if="!isExistingShopifyMode">
-                <ion-input
-                  :value="onboardingStore.draft.shopifyDomain"
-                  label-placement="stacked"
-                  :label="translate('Shopify domain')"
-                  :clear-input="true"
-                  @ionInput="onboardingStore.updateDraftField('shopifyDomain', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-label>
-                  {{ translate("Connection handoff") }}
-                  <p>{{ shopifyTokenHandoffDescription }}</p>
-                </ion-label>
-                <ion-badge :color="shopifyHandoffToken ? 'success' : 'primary'" slot="end">
-                  {{ shopifyHandoffToken ? translate("Ready") : translate("Generate") }}
-                </ion-badge>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-input
-                  :value="onboardingStore.draft.shopifyTokenSubjectUserLoginId"
-                  :label="translate('Integration user')"
-                  label-placement="stacked"
-                  :clear-input="true"
-                  @ionInput="updateShopifyTokenDraftField('shopifyTokenSubjectUserLoginId', String($event.detail.value || ''))"
-                />
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.shopifyTokenExpireIn"
-                  @ionChange="updateShopifyTokenDraftField('shopifyTokenExpireIn', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Token expiry") }}</div>
-                  <ion-select-option value="2592000">{{ translate("30 days") }}</ion-select-option>
-                  <ion-select-option value="15552000">{{ translate("6 months") }}</ion-select-option>
-                  <ion-select-option value="31536000">{{ translate("1 year") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-input
-                  :value="onboardingStore.draft.shopifyTokenPurpose"
-                  :label="translate('Token purpose')"
-                  label-placement="stacked"
-                  :clear-input="true"
-                  @ionInput="updateShopifyTokenDraftField('shopifyTokenPurpose', String($event.detail.value || ''))"
-                />
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Generate JWT token')"
-                  :disabled="!canGenerateShopifyToken || isGeneratingShopifyToken"
-                  @click="generateShopifyHandoffToken()"
-                >
-                  <ion-spinner v-if="isGeneratingShopifyToken" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="keyOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now'">
-                <ion-label>
-                  {{ translate("OMS URL") }}
-                  <p>{{ shopifyHandoffOmsUrl }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Copy OMS URL')"
-                  @click="copyShopifyHandoffValue(shopifyHandoffOmsUrl, 'OMS URL copied.')"
-                >
-                  <ion-icon slot="icon-only" :icon="copyOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffToken">
-                <ion-textarea
-                  :value="shopifyHandoffToken"
-                  :label="translate('JWT token')"
-                  label-placement="stacked"
-                  readonly
-                  auto-grow
-                />
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Copy JWT token')"
-                  @click="copyShopifyHandoffValue(shopifyHandoffToken, 'JWT token copied.')"
-                >
-                  <ion-icon slot="icon-only" :icon="copyOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="onboardingStore.draft.shopifyConnectionMode === 'Connect now' && shopifyHandoffTokenExpirationLabel">
-                <ion-label>
-                  {{ translate("Token expires") }}
-                  <p>{{ shopifyHandoffTokenExpirationLabel }}</p>
-                </ion-label>
-              </ion-item>
-              <ion-item v-if="selectedProductStoreId">
-                <ion-label>
-                  {{ translate("Shopify setup status") }}
-                  <p>{{ shopifySetupStatusDescription }}</p>
-                </ion-label>
-                <ion-badge :color="shopifyConnectionBadgeColor" slot="end">
-                  {{ shopifyConnectionStatusLabel }}
-                </ion-badge>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Refresh Shopify setup status')"
-                  :disabled="isLoadingShopifyJobStatus"
-                  @click="refreshShopifyJobStatus()"
-                >
-                  <ion-spinner v-if="isLoadingShopifyJobStatus" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-list-header v-if="linkedShopifyShop">
-                <ion-label>{{ translate("Shopify mappings") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-if="linkedShopifyShop">
-                <ion-label>
-                  {{ translate("Mapping readiness") }}
-                  <p>{{ shopifyMappingReadinessDescription }}</p>
-                </ion-label>
-                <ion-badge :color="shopifyMappingBadgeColor" slot="end">
-                  {{ shopifyMappingStatusLabel }}
-                </ion-badge>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :aria-label="translate('Refresh Shopify mappings')"
-                  :disabled="isLoadingShopifyMappingStatus"
-                  @click="refreshShopifyMappingStatus()"
-                >
-                  <ion-spinner v-if="isLoadingShopifyMappingStatus" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="linkedShopifyShop && hasShopifyMappingGaps">
-                <ion-icon slot="start" :icon="gitNetworkOutline" />
-                <ion-label>
-                  {{ translate("Starter mapping package") }}
-                  <p>{{ starterShopifyMappingDescription }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-create-starter-shopify-mappings"
-                  :aria-label="translate('Create starter Shopify mappings')"
-                  :disabled="isSavingShopifyStarterMappings"
-                  @click="setupStarterShopifyMappings()"
-                >
-                  <ion-spinner v-if="isSavingShopifyStarterMappings" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="syncOutline" />
-                </ion-button>
-              </ion-item>
-              <template v-if="linkedShopifyShop">
-                <ion-item
-                  v-for="mapping in shopifyMappingAreas"
-                  :key="mapping.id"
-                  button
-                  detail
-                  @click="openShopifyMappingPath(mapping.path)"
-                >
-                  <ion-icon slot="start" :icon="gitNetworkOutline" />
-                  <ion-label>
-                    {{ mapping.label }}
-                    <p>{{ mapping.description }}</p>
-                  </ion-label>
-                  <ion-note slot="end">{{ mapping.count }}</ion-note>
-                  <ion-badge :color="mapping.count ? 'success' : 'warning'" slot="end">
-                    {{ mapping.count ? translate("Ready") : translate("Gap") }}
-                  </ion-badge>
-                </ion-item>
-              </template>
-              <ion-item v-for="requirement in shopifyConnectionRequirements" :key="requirement.id">
-                <ion-label>
-                  {{ translate(requirement.label) }}
-                  <p>{{ requirement.message }}</p>
-                </ion-label>
-                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
-                  {{ getRequirementStatusLabel(requirement) }}
-                </ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'products'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Product matching") }}
-                  <p>{{ translate("Choose the identifier HotWax should trust when matching Shopify products and variants.") }}</p>
-                </ion-label>
-                <ion-badge :color="onboardingStore.draft.productIdentifierEnumId ? 'success' : 'warning'" slot="end">
-                  {{ onboardingStore.draft.productIdentifierEnumId ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.productIdentifierEnumId"
-                  @ionChange="onboardingStore.updateDraftField('productIdentifierEnumId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Global identifier") }} <ion-text color="danger">*</ion-text></div>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="preferredPrimaryProductIdentification"
-                  @ionChange="onboardingStore.updateDraftField('primaryProductIdentification', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Primary identifier") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="preferredSecondaryProductIdentification"
-                  @ionChange="onboardingStore.updateDraftField('secondaryProductIdentification', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Secondary identifier") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="identifier in productIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
-                    {{ identifier.description || identifier.enumId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-label>
-                  {{ translate("Shopify product import") }}
-                  <p>{{ productSyncHandoffDescription }}</p>
-                </ion-label>
-                <ion-badge :color="getShopifyJobBadgeColor('productSync')" slot="end">
-                  {{ getShopifyJobStatusLabel('productSync') }}
-                </ion-badge>
-              </ion-item>
-              <ion-item v-if="linkedShopifyShop">
-                <ion-icon slot="start" :icon="syncOutline" />
-                <ion-label>
-                  {{ translate("Product import workspace") }}
-                  <p>{{ translate("Review live Shopify catalog counts or troubleshoot product import history.") }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-open-product-sync"
-                  :aria-label="translate('Open product import')"
-                  :disabled="!canOpenShopifyProductSync || isSavingProductIdentity"
-                  @click="openShopifyProductSync()"
-                >
-                  <ion-spinner v-if="isSavingProductIdentity" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="openOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="linkedShopifyShop">
-                <ion-icon slot="start" :icon="cloudDownloadOutline" />
-                <ion-label>
-                  {{ translate("Initial product import") }}
-                  <p>{{ initialProductImportDescription }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-run-product-import"
-                  :aria-label="translate('Queue Shopify product import')"
-                  :disabled="!canRunProductImport || isSettingUpProductImportJob || isQueueingProductImport"
-                  @click="setupAndQueueInitialProductImport()"
-                >
-                  <ion-spinner v-if="isSettingUpProductImportJob || isQueueingProductImport" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-else>
-                <ion-label>
-                  {{ translate("Shopify shop required") }}
-                  <p>{{ translate("Link a Shopify shop before importing products.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
-              </ion-item>
-              <ion-item v-if="productImportProgressVisible">
-                <ion-label>
-                  {{ translate("Catalog import progress") }}
-                  <p>{{ productImportProgressDescription }}</p>
-                </ion-label>
-                <ion-badge :color="productImportProgressBadgeColor" slot="end">
-                  {{ productImportProgressLabel }}
-                </ion-badge>
-              </ion-item>
-              <template v-if="linkedShopifyShop">
-                <ion-list-header>
-                  <ion-label>{{ translate("Product import jobs") }}</ion-label>
-                </ion-list-header>
-                <ion-item v-for="job in productImportJobDetails" :key="job.key">
-                  <ion-label>
-                    {{ job.label }}
-                    <p>{{ job.detail }}</p>
-                  </ion-label>
-                  <ion-badge :color="job.color" slot="end">{{ job.status }}</ion-badge>
-                </ion-item>
-              </template>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'facilities'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Business locations") }}
-                  <p>{{ translate("Import Shopify locations as HotWax facilities, then map inventory locations before sync starts.") }}</p>
-                </ion-label>
-                <ion-badge :color="facilityCount ? 'success' : 'warning'" slot="end">
-                  {{ facilityCount ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-              </ion-item>
-              <ion-radio-group
-                :value="onboardingStore.draft.facilityMode"
-                @ionChange="onboardingStore.updateDraftField('facilityMode', String($event.detail.value || ''))"
+                <ion-select-option v-for="currency in currencyOptions" :key="currency.uomId" :value="currency.uomId">
+                  {{ currency.label }}
+                </ion-select-option>
+              </ion-select>
+              <ion-input
+                ref="localeInputRef"
+                data-testid="default-locale-input"
+                fill="outline"
+                label-placement="stacked"
+                :label="translate('Default locale')"
+                :helper-text="translate('Use a locale such as en_US.')"
+                :error-text="localeError"
+                :class="{ 'ion-invalid ion-touched': !!localeError }"
+                required
+                pattern="[a-z]{2,3}_[A-Z]{2}"
+                :value="onboarding.draft.locale"
+                @ion-input="updateDraft('locale', $event.detail.value)"
+                @ion-blur="storeFieldTouched.locale = true"
+              />
+              <ion-select
+                ref="timezoneInputRef"
+                fill="outline"
+                label-placement="stacked"
+                interface="popover"
+                :label="translate('Default time zone')"
+                required
+                :value="onboarding.draft.timezone"
+                @ion-change="updateDraft('timezone', $event.detail.value)"
               >
+                <ion-select-option v-for="timeZone in timeZoneOptions" :key="timeZone.id" :value="timeZone.id">
+                  {{ timeZone.label || timeZone.id }}
+                </ion-select-option>
+              </ion-select>
+              <ion-input
+                ref="orderNumberPrefixInputRef"
+                fill="outline"
+                label-placement="stacked"
+                :label="translate('Sales order ID prefix')"
+                required
+                :value="onboarding.draft.orderNumberPrefix"
+                @ion-input="updateDraft('orderNumberPrefix', $event.detail.value)"
+              />
+              <ion-list lines="full">
                 <ion-item>
-                  <ion-radio slot="start" value="One store" />
-                  <ion-label>{{ translate("One store") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Stores and warehouses" />
-                  <ion-label>{{ translate("Stores and warehouses") }}</ion-label>
-                </ion-item>
-                <ion-item>
-                  <ion-radio slot="start" value="Not sure yet" />
-                  <ion-label>{{ translate("Not sure yet") }}</ion-label>
-                </ion-item>
-              </ion-radio-group>
-              <ion-item>
-                <ion-icon slot="start" :icon="storefrontOutline" />
-                <ion-label>
-                  {{ translate("HotWax facilities") }}
-                  <p>{{ facilityCount }} {{ translate("facilities available for setup") }}</p>
-                </ion-label>
-                <ion-note slot="end">{{ facilityCount }}</ion-note>
-              </ion-item>
-              <ion-item v-if="shouldCreateStarterFacility">
-                <ion-icon slot="start" :icon="storefrontOutline" />
-                <ion-label>
-                  {{ translate("Starter store") }}
-                  <p>{{ starterFacilityDescription }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  :disabled="isCreatingStarterFacility"
-                  @click="createStarterFacility()"
-                >
-                  <ion-spinner v-if="isCreatingStarterFacility" name="crescent" />
-                  <ion-icon v-else slot="start" :icon="storefrontOutline" />
-                  {{ translate("Create store") }}
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="linkedShopifyShop">
-                <ion-icon slot="start" :icon="cloudDownloadOutline" />
-                <ion-label>
-                  {{ translate("Import from Shopify") }}
-                  <p>{{ linkedShopifyShop.myshopifyDomain || linkedShopifyShop.name || linkedShopifyShop.shopId }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-import-shopify-facilities"
-                  :aria-label="translate('Import from Shopify')"
-                  :disabled="isImportingShopifyFacilities"
-                  @click="openShopifyLocationImport()"
-                >
-                  <ion-spinner v-if="isImportingShopifyFacilities" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-else>
-                <ion-label>
-                  {{ translate("Shopify shop required") }}
-                  <p>{{ translate("Link a Shopify shop before importing locations as facilities.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'locations'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Shopify location mapping") }}
-                  <p>{{ translate("Each active Shopify inventory location should point to the matching HotWax facility.") }}</p>
-                </ion-label>
-                <ion-badge :color="mappedShopifyLocationCount ? 'success' : 'warning'" slot="end">
-                  {{ mappedShopifyLocationCount ? translate("Ready") : translate("Gap") }}
-                </ion-badge>
-              </ion-item>
-              <ion-item>
-                <ion-icon slot="start" :icon="gitNetworkOutline" />
-                <ion-label>
-                  {{ translate("Mapped facilities") }}
-                  <p>{{ mappedShopifyLocationCount }} {{ translate("of") }} {{ facilityCount }} {{ translate("facilities have Shopify locations") }}</p>
-                </ion-label>
-                <ion-note slot="end">{{ mappedShopifyLocationCount }}</ion-note>
-              </ion-item>
-              <ion-item v-if="linkedShopifyShop">
-                <ion-label>
-                  {{ translate("Open mapping workspace") }}
-                  <p>{{ translate("Use the existing inventory location audit and mapping screen.") }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-open-location-mapping"
-                  :aria-label="translate('Open mapping workspace')"
-                  @click="openShopifyLocationMapping()"
-                >
-                  <ion-icon slot="icon-only" :icon="gitNetworkOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-else>
-                <ion-label>
-                  {{ translate("Shopify shop required") }}
-                  <p>{{ translate("Link a Shopify shop before mapping inventory locations.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'inventory'" lines="full">
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.inventorySource"
-                  @ionChange="onboardingStore.updateDraftField('inventorySource', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Inventory source") }}</div>
-                  <ion-select-option value="Shopify">{{ translate("Shopify") }}</ion-select-option>
-                  <ion-select-option value="ERP or WMS">{{ translate("ERP or WMS") }}</ion-select-option>
-                  <ion-select-option value="HotWax file reset">{{ translate("HotWax file reset") }}</ion-select-option>
-                  <ion-select-option value="Not sure yet">{{ translate("Not sure yet") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.reserveInventory === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('reserveInventory', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Reserve inventory for imported orders") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.showSystemicInventory === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('showSystemicInventory', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Show systemic inventory") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Pre-order computation") }}</ion-label>
-              </ion-list-header>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.holdPreorderPhysicalInventory === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('holdPreorderPhysicalInventory', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Hold pre-order physical inventory") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.preorderFacilityGroupId"
-                  @ionChange="onboardingStore.updateDraftField('preorderFacilityGroupId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Pre-order group") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option v-for="group in facilityGroups" :key="group.facilityGroupId" :value="group.facilityGroupId">
-                    {{ group.facilityGroupName || group.facilityGroupId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-label>
-                  {{ translate("Initial inventory load") }}
-                  <p>{{ inventoryResetDescription }}</p>
-                </ion-label>
-                <ion-badge :color="inventoryResetBadgeColor" slot="end">
-                  {{ inventoryResetStatusLabel }}
-                </ion-badge>
-              </ion-item>
-              <ion-item v-if="shouldSetupShopifyInventoryReset">
-                <ion-icon slot="start" :icon="cloudDownloadOutline" />
-                <ion-label>
-                  {{ translate("Queue Shopify inventory import") }}
-                  <p>{{ initialInventoryImportDescription }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-run-inventory-import"
-                  :aria-label="translate('Queue Shopify inventory import')"
-                  :disabled="!canQueueInventoryImport || isQueueingInventoryImport"
-                  @click="queueInitialInventoryImport()"
-                >
-                  <ion-spinner v-if="isQueueingInventoryImport" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
-                </ion-button>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'orders'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Order import readiness") }}
-                  <p>{{ orderImportStatusDescription }}</p>
-                </ion-label>
-                <ion-badge :color="orderImportBadgeColor" slot="end">{{ orderImportStatusLabel }}</ion-badge>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.orderImportMode"
-                  @ionChange="onboardingStore.updateDraftField('orderImportMode', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Order import mode") }}</div>
-                  <ion-select-option value="Realtime and fallback batch">{{ translate("Realtime and fallback batch") }}</ion-select-option>
-                  <ion-select-option value="Fallback batch only">{{ translate("Fallback batch only") }}</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  type="date"
-                  :value="preferredOrderHistoryStartDate"
-                  label-placement="stacked"
-                  :helper-text="translate('Start of the Shopify bulk query window')"
-                  @ionInput="onboardingStore.updateDraftField('orderHistoryStartDate', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Load Shopify orders updated since") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  type="date"
-                  :value="preferredOrderLaunchDate"
-                  label-placement="stacked"
-                  :helper-text="translate('Orders created before this date stay historical and bypass live fulfillment inventory')"
-                  @ionInput="onboardingStore.updateDraftField('orderLaunchDate', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("HotWax go-live date") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item>
-                <ion-icon slot="start" :icon="cloudDownloadOutline" />
-                <ion-label>
-                  {{ translate("Initial order history") }}
-                  <p>{{ initialOrderHistoryImportDescription }}</p>
-                </ion-label>
-                <ion-button
-                  slot="end"
-                  fill="clear"
-                  data-testid="onboarding-run-order-history-import"
-                  :aria-label="translate('Queue Shopify order history')"
-                  :disabled="!linkedShopifyShopId || !preferredOrderHistoryStartDate || !preferredOrderLaunchDate || isQueueingOrderHistoryImport"
-                  @click="queueInitialOrderHistoryImport()"
-                >
-                  <ion-spinner v-if="isQueueingOrderHistoryImport" name="crescent" />
-                  <ion-icon v-else slot="icon-only" :icon="cloudDownloadOutline" />
-                </ion-button>
-              </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  :value="onboardingStore.draft.orderSqsQueueName"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsQueueName', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Realtime SQS queue") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  :value="onboardingStore.draft.orderSqsAwsRemoteId"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsAwsRemoteId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("AWS remote ID") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-if="shouldConfigureRealtimeOrderImport">
-                <ion-input
-                  type="number"
-                  :value="onboardingStore.draft.orderSqsExpireLockTime"
-                  @ionInput="onboardingStore.updateDraftField('orderSqsExpireLockTime', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Lock timeout minutes") }}</div>
-                </ion-input>
-              </ion-item>
-              <ion-item v-for="requirement in orderJobRequirements" :key="requirement.id">
-                <ion-label>
-                  {{ translate(requirement.label) }}
-                  <p>{{ requirement.message }}</p>
-                </ion-label>
-                <ion-badge :color="getRequirementBadgeColor(requirement)" slot="end">
-                  {{ getRequirementStatusLabel(requirement) }}
-                </ion-badge>
-              </ion-item>
-              <ion-item v-if="!hasShopifyJobStatus">
-                <ion-label>
-                  {{ translate("Shopify setup status") }}
-                  <p>{{ translate("The setup flow could not read Shopify readiness from the existing ProductStore, ShopifyShop, SystemMessageRemote, ServiceJob, and DataManager records.") }}</p>
-                </ion-label>
-                <ion-badge color="warning" slot="end">{{ translate("Gap") }}</ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'routing'" lines="full">
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.enableBrokering === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('enableBrokering', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Order brokering") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.allowSplit === 'Y'"
-                  :disabled="onboardingStore.draft.enableBrokering !== 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('allowSplit', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Order splitting") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.sendFulfillmentNotification === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('sendFulfillmentNotification', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Send notification to Shopify") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Cancellations") }}</ion-label>
-              </ion-list-header>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.autoCancelOrders === 'Y'"
-                  @ionChange="onboardingStore.updateDraftField('autoCancelOrders', $event.detail.checked ? 'Y' : 'N')"
-                >
-                  {{ translate("Auto order cancellation") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-input
-                  :label="translate('Auto cancellations days')"
-                  :placeholder="translate('days count')"
-                  type="number"
-                  min="0"
-                  :disabled="onboardingStore.draft.autoCancelOrders !== 'Y'"
-                  :value="onboardingStore.draft.daysToCancelNonPay"
-                  @ionInput="onboardingStore.updateDraftField('daysToCancelNonPay', String($event.detail.value || ''))"
-                />
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'pickup'" lines="full">
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.bopisPartialRejection === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('bopisPartialRejection', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Partial order rejection") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Order edit permissions") }}</ion-label>
-              </ion-list-header>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.customerDeliveryMethodUpdate === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('customerDeliveryMethodUpdate', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Delivery method") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-select
-                  interface="popover"
-                  :value="onboardingStore.draft.rerouteShippingMethodId"
-                  @ionChange="onboardingStore.updateDraftField('rerouteShippingMethodId', String($event.detail.value || ''))"
-                >
-                  <div slot="label">{{ translate("Shipment method") }}</div>
-                  <ion-select-option value="">{{ translate("Not selected") }}</ion-select-option>
-                  <ion-select-option
-                    v-for="shipmentMethod in shipmentMethodTypes"
-                    :key="shipmentMethod.shipmentMethodTypeId"
-                    :value="shipmentMethod.shipmentMethodTypeId"
+                  <ion-toggle
+                    :checked="onboarding.draft.autoApproveOrder === 'Y'"
+                    @ion-change="updateDraft('autoApproveOrder', $event.detail.checked ? 'Y' : 'N')"
                   >
-                    {{ shipmentMethod.description || shipmentMethod.shipmentMethodTypeId }}
-                  </ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.customerDeliveryAddressUpdate === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('customerDeliveryAddressUpdate', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Delivery address") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.customerPickupUpdate === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('customerPickupUpdate', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Pick up location") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.customerCancelBeforeFulfillment === 'true'"
-                  @ionChange="onboardingStore.updateDraftField('customerCancelBeforeFulfillment', $event.detail.checked ? 'true' : 'false')"
-                >
-                  {{ translate("Cancel order before fulfillment") }}
-                </ion-toggle>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.id === 'readiness'" lines="full">
-              <ion-item>
-                <ion-label>
-                  {{ translate("Cold-start readiness") }}
-                  <p>{{ readinessSummaryDescription }}</p>
-                </ion-label>
-                <ion-badge :color="readinessBadgeColor" slot="end">
-                  {{ readinessStatusLabel }}
-                </ion-badge>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Required setup") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-for="item in requiredReadinessItems" :key="item.id">
-                <ion-label>
-                  {{ item.label }}
-                  <p>{{ item.detail }}</p>
-                </ion-label>
-                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Workflow settings") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-for="item in workflowReadinessItems" :key="item.id">
-                <ion-label>
-                  {{ item.label }}
-                  <p>{{ item.detail }}</p>
-                </ion-label>
-                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
-              </ion-item>
-              <ion-list-header>
-                <ion-label>{{ translate("Next actions") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-for="item in nextReadinessActions" :key="item.id">
-                <ion-label>
-                  {{ item.label }}
-                  <p>{{ item.detail }}</p>
-                </ion-label>
-                <ion-badge :color="item.color" slot="end">{{ item.status }}</ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else-if="currentStep.group === 'workflows'" lines="full">
-              <ion-item>
-                <ion-toggle
-                  :checked="onboardingStore.draft.selectedWorkflows.includes(currentStep.id)"
-                  @ionChange="onboardingStore.toggleWorkflow(currentStep.id, $event.detail.checked)"
-                >
-                  {{ translate("Enable workflow") }}
-                </ion-toggle>
-              </ion-item>
-              <ion-item v-for="question in currentStep.questions" :key="question">
-                <ion-label>{{ translate(question) }}</ion-label>
-                <ion-icon slot="end" :icon="radioButtonOffOutline" color="medium" />
-              </ion-item>
-            </ion-list>
-
-            <ion-list v-else lines="full">
-              <ion-item v-for="question in currentStep.questions" :key="question">
-                <ion-label>{{ translate(question) }}</ion-label>
-                <ion-icon slot="end" :icon="radioButtonOffOutline" color="medium" />
-              </ion-item>
-            </ion-list>
-
-            <ion-list lines="full">
-              <ion-list-header>
-                <ion-label>{{ translate("Setup package") }}</ion-label>
-              </ion-list-header>
-              <ion-item v-if="selectedProductStoreId">
-                <ion-label>
-                  {{ translate("Created product store") }}
-                  <p>{{ selectedProductStoreId }}</p>
-                </ion-label>
-                <ion-badge slot="end" color="success">{{ translate("Ready") }}</ion-badge>
-              </ion-item>
-              <ion-item v-for="output in currentStep.outputs" :key="output">
-                <ion-label>{{ translate(output) }}</ion-label>
-                <ion-badge slot="end" :color="capabilityColor">{{ translate(capabilityLabel) }}</ion-badge>
-              </ion-item>
-            </ion-list>
-
-            <ion-card-content>
-              <ion-button fill="clear" :disabled="onboardingStore.currentStepIndex === 0" @click="onboardingStore.goPrevious()">
-                <ion-icon slot="start" :icon="arrowBackOutline" />
-                {{ translate("Back") }}
-              </ion-button>
-              <ion-button :disabled="isPrimaryActionDisabled" @click="handlePrimaryAction()">
-                {{ primaryActionLabel }}
-                <ion-spinner v-if="isPrimaryActionLoading" slot="end" name="crescent" />
-                <ion-icon v-else slot="end" :icon="arrowForwardOutline" />
+                    {{ translate("Approve imported orders") }}
+                  </ion-toggle>
+                </ion-item>
+                <ion-item>
+                  <ion-toggle
+                    :checked="onboarding.draft.saveBillingInformation === 'Y'"
+                    @ion-change="updateDraft('saveBillingInformation', $event.detail.checked ? 'Y' : 'N')"
+                  >
+                    {{ translate("Save billing information") }}
+                  </ion-toggle>
+                </ion-item>
+              </ion-list>
+              <step-feedback step-id="name" />
+              <ion-button :disabled="busy.name" @click="saveStore">
+                <ion-spinner v-if="busy.name" slot="start" name="crescent" />
+                <ion-icon v-else slot="start" :icon="saveOutline" />
+                {{ translate(selectedProductStoreId ? "Save store" : "Create product store") }}
               </ion-button>
             </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'shopify'" class="form-stack">
+              <ion-list v-if="linkedShopifyShop" lines="full">
+                <ion-item>
+                  <ion-icon slot="start" :icon="linkOutline" />
+                  <ion-label>
+                    {{ translate("Linked Shopify shop") }}
+                    <p>{{ shopLabel(linkedShopifyShop) }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" color="success">
+                    {{ translate("Complete") }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item>
+                  <ion-icon slot="start" :icon="connectionIsWritable ? lockOpenOutline : lockClosedOutline" />
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Connection access") }}
+                    <p>{{ connectionAccessDescription }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="connectionIsWritable ? 'success' : 'warning'">
+                    {{ connectionAccessLabel }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
+              <div v-if="linkedShopifyShop && !connectionIsWritable" class="step-actions">
+                <ion-button
+                  v-if="connectionRemoteResolved"
+                  :disabled="busy.connectionAccess"
+                  @click="grantConnectionWriteAccess"
+                >
+                  <ion-spinner v-if="busy.connectionAccess" slot="start" name="crescent" />
+                  <ion-icon v-else slot="start" :icon="lockOpenOutline" />
+                  {{ translate("Grant write access") }}
+                </ion-button>
+                <ion-button v-else fill="outline" @click="openShopifyConnections">
+                  <ion-icon slot="start" :icon="openOutline" />
+                  {{ translate("Open Shopify connections") }}
+                </ion-button>
+              </div>
+              <template v-if="!linkedShopifyShop">
+                <ion-select
+                  v-if="availableShopifyShops.length"
+                  fill="outline"
+                  label-placement="stacked"
+                  interface="popover"
+                  :label="translate('Existing Shopify shop')"
+                  :helper-text="translate('Only unassigned Shopify shops are available here.')"
+                  :value="onboarding.draft.selectedShopifyShopId"
+                  @ion-change="updateDraft('selectedShopifyShopId', $event.detail.value)"
+                >
+                  <ion-select-option v-for="shop in availableShopifyShops" :key="shop.shopId" :value="shop.shopId">
+                    {{ shopLabel(shop) }}
+                  </ion-select-option>
+                </ion-select>
+                <ion-note v-else color="warning">
+                  {{ translate("No unassigned Shopify shop is available. Add the connection first, then return here.") }}
+                </ion-note>
+                <div class="step-actions">
+                  <ion-button
+                    v-if="availableShopifyShops.length"
+                    :disabled="!selectedAvailableShopifyShop || busy.shopify"
+                    @click="linkShopifyShop"
+                  >
+                    <ion-spinner v-if="busy.shopify" slot="start" name="crescent" />
+                    <ion-icon v-else slot="start" :icon="linkOutline" />
+                    {{ translate("Link Shopify shop") }}
+                  </ion-button>
+                  <ion-button fill="outline" @click="openShopifyConnections">
+                    <ion-icon slot="start" :icon="openOutline" />
+                    {{ translate("Open Shopify connections") }}
+                  </ion-button>
+                </div>
+              </template>
+              <step-feedback step-id="shopify" />
+            </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'products'" class="form-stack">
+              <!-- 1. Set shopify primary identifier -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Shopify primary identifier") }}</ion-card-title>
+                  <ion-card-subtitle>{{ translate("The identifier controls how Shopify products match HotWax products.") }}</ion-card-subtitle>
+                </ion-card-header>
+                <ion-card-content>
+                  <ion-select
+                    fill="outline"
+                    label-placement="stacked"
+                    interface="popover"
+                    :label="translate('Shopify primary identifier')"
+                    :value="onboarding.draft.productIdentifierEnumId"
+                    @ion-change="updateDraft('productIdentifierEnumId', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identifier in shopifyPrimaryIdentifierOptions" :key="identifier.enumId" :value="identifier.enumId">
+                      {{ identifier.description || identifier.enumId }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-card-content>
+              </ion-card>
+
+              <!-- 2. List of jobs needed to make sure sync will work for given shop -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Product sync jobs") }}</ion-card-title>
+                  <ion-card-subtitle>{{ translate("Review the jobs that move product updates through the sync pipeline") }}</ion-card-subtitle>
+                </ion-card-header>
+                <ion-list lines="full">
+                  <ion-item button detail :disabled="!syncJobObj" @click="openSyncJobDetails(syncJobObj)">
+                    <ion-label>
+                      {{ translate("Queue update requests") }}
+                      <p>{{ queueUpdateRequestsLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isSyncJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                  <ion-item button detail :disabled="!sendUpdateRequestJobObj?.jobName" @click="openSyncJobDetails(sendUpdateRequestJobObj)">
+                    <ion-label>
+                      {{ translate("Send update request") }}
+                      <p>{{ sendUpdateRequestLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isBulkOperationSendJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                  <ion-item button detail :disabled="!importCompletedRequestsJobObj?.jobName" @click="openSyncJobDetails(importCompletedRequestsJobObj)">
+                    <ion-label>
+                      {{ translate("Import completed requests") }}
+                      <p>{{ importCompletedRequestsLastRunLabel }}</p>
+                    </ion-label>
+                    <ion-icon slot="end" :icon="isBulkOperationPollJobPaused ? pauseCircleOutline : checkmarkCircleOutline" />
+                  </ion-item>
+                </ion-list>
+              </ion-card>
+
+              <!-- 2.5 Show how many products are in shopify -->
+              <ion-card>
+                <ion-card-content>
+                  <h1 class="ion-text-center">
+                    <AnimatedNumber v-if="shopifyProductCount !== undefined && shopifyProductCount !== null" :value="Number(shopifyProductCount)" />
+                    <template v-else>
+                      {{ shopifyProductCountLabel }}
+                    </template>
+                  </h1>
+                </ion-card-content>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-center">
+                    {{ translate("Products in Shopify") }}
+                  </ion-label>
+                  <ion-spinner v-if="isShopifyProductCountLoading" slot="end" name="crescent" />
+                </ion-item>
+              </ion-card>
+
+              <!-- 3. Product store setting for selecting primary and secondary identifier -->
+              <ion-card>
+                <ion-card-header>
+                  <ion-card-title>{{ translate("Product Identifier") }}</ion-card-title>
+                </ion-card-header>
+                <ion-card-content>
+                  {{ translate("Choosing a product identifier allows you to view products with your preferred identifiers.") }}
+                </ion-card-content>
+                <ion-item>
+                  <ion-select
+                    :label="translate('Primary')"
+                    interface="popover"
+                    :placeholder="translate('primary identifier')"
+                    :value="onboarding.draft.primaryProductIdentification"
+                    @ion-change="updateDraft('primaryProductIdentification', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identification in productIdentificationOptions" :key="identification.goodIdentificationTypeId" :value="identification.goodIdentificationTypeId">
+                      {{ identification.description ? identification.description : identification.goodIdentificationTypeId }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-select
+                    :label="translate('Secondary')"
+                    interface="popover"
+                    :placeholder="translate('secondary identifier')"
+                    :value="onboarding.draft.secondaryProductIdentification"
+                    @ion-change="updateDraft('secondaryProductIdentification', $event.detail.value)"
+                  >
+                    <ion-select-option v-for="identification in productIdentificationOptions" :key="identification.goodIdentificationTypeId" :value="identification.goodIdentificationTypeId">
+                      {{ identification.description ? identification.description : identification.goodIdentificationTypeId }}
+                    </ion-select-option>
+                    <ion-select-option value="">
+                      {{ translate("None") }}
+                    </ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <template v-if="currentSampleProduct">
+                  <ion-item lines="full" color="light">
+                    <ion-label color="medium">
+                      {{ translate("Preview Product Identifier") }}
+                    </ion-label>
+                  </ion-item>
+                  <ion-item lines="none">
+                    <ion-thumbnail slot="start">
+                      <DxpShopifyImg size="small" :src="currentSampleProduct.mainImageUrl" />
+                    </ion-thumbnail>
+                    <ion-label>
+                      {{ commonUtil.getProductIdentificationValue(onboarding.draft.primaryProductIdentification, currentSampleProduct) ? commonUtil.getProductIdentificationValue(onboarding.draft.primaryProductIdentification, currentSampleProduct) : currentSampleProduct.productId }}
+                      <p>{{ commonUtil.getProductIdentificationValue(onboarding.draft.secondaryProductIdentification, currentSampleProduct) }}</p>
+                    </ion-label>
+                    <ion-button size="default" fill="clear" @click="shuffleProduct">
+                      <ion-icon slot="icon-only" :icon="shuffleOutline" />
+                    </ion-button>
+                  </ion-item>
+                </template>
+              </ion-card>
+
+              <div class="actions">
+                <ion-button :disabled="busy.products || !canConfigureProducts" @click="saveProductSetup">
+                  <ion-spinner v-if="busy.products" slot="start" name="crescent" />
+                  {{ translate("Save product setup") }}
+                </ion-button>
+              </div>
+              <step-feedback step-id="products" />
+            </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'facilities'" class="form-stack">
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-icon slot="start" :icon="storefrontOutline" />
+                  <ion-label>
+                    {{ translate("Product Store facilities") }}
+                    <p>{{ translate("{count} facilities associated", { count: facilityCount }) }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="facilityCount ? 'success' : 'medium'">
+                    {{ facilityCount }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
+              <ion-segment
+                :value="onboarding.draft.facilityMode"
+                @ion-change="updateDraft('facilityMode', $event.detail.value)"
+              >
+                <ion-segment-button value="import">
+                  <ion-label>{{ translate("Import from Shopify") }}</ion-label>
+                </ion-segment-button>
+                <ion-segment-button value="create">
+                  <ion-label>{{ translate("Create one facility") }}</ion-label>
+                </ion-segment-button>
+              </ion-segment>
+              <ion-note v-if="onboarding.draft.facilityMode === 'import'">
+                {{ translate("Import Shopify locations as facilities and associate every imported facility with this Product Store.") }}
+              </ion-note>
+              <ion-note v-else>
+                {{ translate("Create one retail facility using the Product Store name.") }}
+              </ion-note>
+              <ion-button
+                v-if="onboarding.draft.facilityMode === 'import'"
+                ref="facilityImportTriggerRef"
+                :disabled="!linkedShopId || busy.facilities"
+                @click="openFacilityImport"
+              >
+                <ion-spinner v-if="busy.facilities" slot="start" name="crescent" />
+                <ion-icon v-else slot="start" :icon="cloudDownloadOutline" />
+                {{ translate("Import Shopify locations") }}
+              </ion-button>
+              <ion-button v-else :disabled="!selectedProductStoreId || busy.facilities" @click="createStoreFacility">
+                <ion-spinner v-if="busy.facilities" slot="start" name="crescent" />
+                <ion-icon v-else slot="start" :icon="addOutline" />
+                {{ translate("Create store facility") }}
+              </ion-button>
+              <step-feedback step-id="facilities" />
+            </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'locations'" class="form-stack">
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Shopify location mappings") }}
+                    <p>{{ translate("{count} locations mapped to HotWax facilities", { count: mappedShopifyLocationCount }) }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="mappedShopifyLocationCount ? 'success' : 'warning'">
+                    {{ mappedShopifyLocationCount }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
+              <ion-note>
+                {{ translate("Map at least one Shopify inventory location before loading inventory.") }}
+              </ion-note>
+              <div class="step-actions">
+                <ion-button :disabled="!linkedShopId" @click="openLocationMapping">
+                  <ion-icon slot="start" :icon="openOutline" />
+                  {{ translate("Open location mapping") }}
+                </ion-button>
+                <ion-button fill="outline" :disabled="!linkedShopId || busy.locations" @click="refreshLocationMappings">
+                  <ion-spinner v-if="busy.locations" slot="start" name="crescent" />
+                  <ion-icon v-else slot="start" :icon="syncOutline" />
+                  {{ translate("Refresh") }}
+                </ion-button>
+              </div>
+              <step-feedback step-id="locations" />
+            </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'inventory'" class="form-stack">
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Inventory source") }}
+                    <p>{{ translate("Initial available inventory will load from the linked Shopify shop.") }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" color="primary">
+                    {{ translate("Shopify") }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item>
+                  <ion-toggle
+                    :checked="onboarding.draft.reserveInventory === 'Y'"
+                    @ion-change="updateDraft('reserveInventory', $event.detail.checked ? 'Y' : 'N')"
+                  >
+                    {{ translate("Reserve inventory for orders") }}
+                  </ion-toggle>
+                </ion-item>
+                <ion-item>
+                  <ion-toggle
+                    :checked="onboarding.draft.showSystemicInventory === 'true'"
+                    @ion-change="updateDraft('showSystemicInventory', $event.detail.checked ? 'true' : 'false')"
+                  >
+                    {{ translate("Show systemic inventory in counts") }}
+                  </ion-toggle>
+                </ion-item>
+              </ion-list>
+              <onboarding-sync-status
+                subtitle="Monitor each step as inventory gets imported from Shopify"
+                :configuration="inventorySyncConfiguration"
+                :initial-load="inventoryDisplayedInitialLoad"
+                :hydrated="inventoryInitialLoad.hydrated"
+                :load-error="initialLoadError"
+                save-action-label="Save inventory setup"
+                :show-run-action="true"
+                :run-action-label="initialLoadActionLabel('inventory', 'Load inventory')"
+                :show-refresh-action="!!linkedShopId"
+                :save-disabled="!canConfigureInventory || !inventorySetupDirty || initialLoadRunBlocked('inventory', inventoryInitialLoad.run.status)"
+                :run-disabled="!canLoadInventory || initialLoadRunBlocked('inventory', inventoryInitialLoad.run.status)"
+                :refresh-disabled="!linkedShopId"
+                :busy-action="inventorySyncBusyAction"
+                @save="saveInventorySetup"
+                @run="loadInventory"
+                @refresh="refreshInitialLoadStatus('inventory')"
+              />
+              <step-feedback step-id="inventory" />
+            </ion-card-content>
+
+            <ion-card-content v-else-if="currentStep.id === 'orders'" class="form-stack">
+              <ion-input
+                data-testid="order-history-start-input"
+                fill="outline"
+                type="date"
+                label-placement="stacked"
+                :label="translate('Order history start date')"
+                :helper-text="translate('The earliest Shopify order date to import.')"
+                :error-text="orderHistoryStartDateError"
+                :class="{ 'ion-invalid ion-touched': !!orderHistoryStartDateError }"
+                required
+                :max="onboarding.draft.orderLaunchDate || undefined"
+                :value="onboarding.draft.orderHistoryStartDate"
+                @ion-input="updateDraft('orderHistoryStartDate', $event.detail.value)"
+                @ion-blur="orderFieldTouched.historyStartDate = true"
+              />
+              <ion-input
+                data-testid="order-launch-date-input"
+                fill="outline"
+                type="date"
+                label-placement="stacked"
+                :label="translate('Order launch date')"
+                :helper-text="translate('Orders on or after this date enter live fulfillment. It does not limit what the first sync imports.')"
+                :error-text="orderLaunchDateError"
+                :class="{ 'ion-invalid ion-touched': !!orderLaunchDateError }"
+                required
+                :min="onboarding.draft.orderHistoryStartDate || undefined"
+                :value="onboarding.draft.orderLaunchDate"
+                @ion-input="updateDraft('orderLaunchDate', $event.detail.value)"
+                @ion-blur="orderFieldTouched.launchDate = true"
+              />
+              <ion-note class="ion-text-wrap">
+                {{ translate("The first order sync takes every open order that is still unfulfilled or part fulfilled, whatever its date. Later syncs pick up whatever changed since the one before.") }}
+              </ion-note>
+              <onboarding-sync-status
+                subtitle="Monitor each step as order history gets imported from Shopify"
+                :configuration="orderSyncConfiguration"
+                :initial-load="orderDisplayedInitialLoad"
+                :hydrated="orderInitialLoad.hydrated"
+                :load-error="initialLoadError"
+                save-action-label="Save order import"
+                :show-run-action="true"
+                :run-action-label="initialLoadActionLabel('orders', 'Load order history')"
+                :show-refresh-action="!!linkedShopId"
+                :show-details-action="!!orderInitialLoad.details.route"
+                :save-disabled="!canConfigureOrders || !orderSetupDirty || initialLoadRunBlocked('orders', orderInitialLoad.run.status)"
+                :run-disabled="!canLoadOrders || initialLoadRunBlocked('orders', orderInitialLoad.run.status)"
+                :refresh-disabled="!linkedShopId"
+                :busy-action="orderSyncBusyAction"
+                @save="saveOrderSetup"
+                @run="loadOrderHistory"
+                @refresh="refreshInitialLoadStatus('orders')"
+                @open-details="openInitialLoadDetails('orders', orderInitialLoad)"
+              />
+              <step-feedback step-id="orders" />
+            </ion-card-content>
+
+            <ion-card-content v-else class="form-stack">
+              <ion-list lines="full">
+                <ion-list-header>
+                  <ion-label>{{ translate("Setup outcomes") }}</ion-label>
+                </ion-list-header>
+                <ion-item
+                  v-for="step in setupSteps"
+                  :key="step.id"
+                  button
+                  :detail="true"
+                  @click="selectStep(step.id)"
+                >
+                  <ion-icon
+                    slot="start"
+                    :icon="reviewStatus(step.id).icon"
+                    :color="reviewStatus(step.id).color"
+                  />
+                  <ion-label>
+                    {{ translate(step.label) }}
+                    <p>{{ translate(step.summary) }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="reviewStatus(step.id).color">
+                    {{ translate(reviewStatus(step.id).label) }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
+              <ion-note :color="isReadyToFinish ? 'success' : 'warning'">
+                {{ translate(isReadyToFinish
+                  ? "Every required setup outcome has authoritative success evidence."
+                  : "Queued imports are still in progress. Verify each initial load completes successfully before finishing.") }}
+              </ion-note>
+              <step-feedback step-id="readiness" />
+            </ion-card-content>
+
+            <div class="wizard-footer">
+              <ion-button fill="clear" :disabled="onboarding.currentStepIndex === 0" @click="goPrevious">
+                {{ translate("Back") }}
+              </ion-button>
+              <ion-button v-if="currentStep.id !== 'readiness'" :disabled="!canContinue" @click="goNext">
+                {{ translate("Continue") }}
+              </ion-button>
+              <ion-button v-else :disabled="!isReadyToFinish" @click="finishSetup">
+                {{ translate("Finish setup") }}
+              </ion-button>
+            </div>
           </ion-card>
         </section>
       </main>
     </ion-content>
+    <ServiceJobDetailsModal
+      :is-open="showSyncJobDetailsModal"
+      :job-name="selectedSyncJobDetailsJob?.jobName || ''"
+      :title="selectedSyncJobDetailsJob?.jobName || ''"
+      @close="showSyncJobDetailsModal = false"
+    />
   </ion-page>
 </template>
 
 <script setup lang="ts">
+import { DxpShopifyImg, commonUtil, logger, translate, useSolrSearch } from "@common"
 import {
   IonBackButton,
   IonBadge,
@@ -1028,15 +679,12 @@ import {
   IonNote,
   IonPage,
   IonProgressBar,
-  IonRadio,
-  IonRadioGroup,
   IonSegment,
   IonSegmentButton,
   IonSelect,
   IonSelectOption,
   IonSpinner,
-  IonText,
-  IonTextarea,
+  IonThumbnail,
   IonTitle,
   IonToggle,
   IonToolbar,
@@ -1044,2216 +692,2148 @@ import {
   onIonViewDidLeave,
   onIonViewWillEnter
 } from "@ionic/vue"
-import { computed, ref } from "vue"
-import { arrowBackOutline, arrowForwardOutline, cloudDownloadOutline, copyOutline, gitNetworkOutline, keyOutline, openOutline, radioButtonOffOutline, storefrontOutline, syncOutline } from "ionicons/icons"
-import { commonUtil, emitter, logger, translate } from "@common"
-import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConnectionModal.vue"
+import {
+  addOutline,
+  alertCircleOutline,
+  checkmarkCircleOutline,
+  cloudDownloadOutline,
+  ellipseOutline,
+  linkOutline,
+  lockClosedOutline,
+  lockOpenOutline,
+  openOutline,
+  pauseCircleOutline,
+  saveOutline,
+  shuffleOutline,
+  storefrontOutline,
+  syncOutline,
+  timeOutline
+} from "ionicons/icons"
+import { computed, defineComponent, h, nextTick, reactive, ref, watch } from "vue"
+import { useRoute, useRouter } from "vue-router"
+import AnimatedNumber from "@/components/common/AnimatedNumber.vue"
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue"
 import ImportShopifyLocationsModal from "@/components/facility/ImportShopifyLocationsModal.vue"
 import OnboardingStepList from "@/components/product-store-onboarding/OnboardingStepList.vue"
-import { PRODUCT_STORE_ONBOARDING_GROUPS, PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
-import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { useProductStoreData } from "@/composables/useProductStores"
-import { useFacilities, useFacilityMutations, useFacilityGroups } from "@/composables/useFacilities"
+import type {
+  OnboardingSyncBusyAction,
+  OnboardingSyncConfiguration,
+  OnboardingSyncRun
+} from "@/components/product-store-onboarding/OnboardingSyncStatus.types"
+import OnboardingSyncStatus from "@/components/product-store-onboarding/OnboardingSyncStatus.vue"
+import { useFacilities, useFacilityMutations } from "@/composables/useFacilities"
 import {
-  fetchProductUpdateSyncRunState,
-  fetchShopifyCarrierShipments,
+  type OnboardingInitialLoadKind,
+  type OnboardingInitialLoadSnapshot,
+  useProductStoreOnboardingInitialLoad
+} from "@/composables/useProductStoreOnboardingInitialLoad"
+import { type ProductStoreOnboardingDraft, useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
+import { useProductStoreCreation, useProductStoreData, useProductStoreMutations } from "@/composables/useProductStores"
+import { useCurrencies, useGoodIdentificationTypes, useOrganization, useTimeZones, useTypedEnums } from "@/composables/useSeed"
+import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs"
+import {
+  fetchLiveCatalogCounts,
   fetchShopifyShopLocations,
-  fetchShopifyTypeMappings,
-  useShopifyProductSyncRun,
+  useOrderSyncLandmarkDates,
+  useShopifyAccessScopes,
+  useShopifyProductSyncRunState,
   useShopifyShopMutations,
   useShopifyShops,
-} from "@/composables/useShopify";
-import { normalizeProductSyncStatus } from "@/utils/shopifyProductSyncWizard"
-import { generateInternalId } from "@/utils"
-import router from "@/router"
-import { useProductStoreCreation, useProductStoreMutations, useProductStoreShippingMethodsLive } from "@/composables/useProductStores";
-import { useCurrencies, useOrganization, usePaymentMethodTypes, useProductTypes, useShipmentMethodTypes, useTypedEnums } from "@/composables/useSeed";
+  useShopifySyncContext
+} from "@/composables/useShopify"
+import {
+  PRODUCT_STORE_ONBOARDING_GROUPS,
+  PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS,
+  PRODUCT_STORE_ONBOARDING_STEPS,
+  type ProductStoreOnboardingStepId,
+  type ProductStoreOnboardingStepStatus,
+  isProductStoreOnboardingStepId
+} from "@/config/productStoreOnboarding"
+import { generateInternalId, getResponseErrorMessage } from "@/utils"
+import { isPaused } from "@/utils/serviceJob"
+import { SHOPIFY_RW_ACCESS_SCOPE, isWritableAccessScope } from "@/utils/systemMessage"
 
-const onboardingStore = useProductStoreOnboardingWizard()
-const productStoreStore = useProductStoreData()
-const { createStore, updateCompany } = useProductStoreCreation();
-// Shops come from the CACHE (class-B snapshot) — reactive, no fetch, and write-throughs from the
-// connection/link mutations keep it current, which is what let the explicit fetches below go.
-const { shops: cachedShopifyShops } = useShopifyShops()
-// Reference data (currencies, types, groups, facilities) comes off the login cache; the wizard's
-// per-visit refetches went with the util store. Organization identity keeps its live memo.
-const { organizationPartyId, loadOrganizationPartyId, bootstrapOrganization } = useOrganization()
-const { currencies } = useCurrencies()
-const { productTypes } = useProductTypes()
-const { shipmentMethodTypes } = useShipmentMethodTypes()
-const { facilityGroups } = useFacilityGroups()
-const { records: allFacilities } = useFacilities()
-const { createFacility } = useFacilityMutations()
-const { fetchSyncRun: fetchProductImportSyncRun } = useShopifyProductSyncRun()
 const props = defineProps<{ productStoreId?: string }>()
-const isSavingProductStore = ref(false)
-const isLinkingShopifyShop = ref(false)
-const isGeneratingShopifyToken = ref(false)
-const isImportingShopifyFacilities = ref(false)
-const isCreatingStarterFacility = ref(false)
-const isSavingProductIdentity = ref(false)
-const isSettingUpProductImportJob = ref(false)
-const isQueueingProductImport = ref(false)
-const isSavingOrderDefaults = ref(false)
-const isSavingInventorySettings = ref(false)
-const isSettingUpInventoryResetJob = ref(false)
-const isQueueingInventoryImport = ref(false)
-const isSettingUpOrderJobs = ref(false)
-const isQueueingOrderHistoryImport = ref(false)
-const isSettingUpRealtimeOrderJobs = ref(false)
-const isSavingRoutingDefaults = ref(false)
-const isSavingPickupSettings = ref(false)
-const isSavingShopifyStarterMappings = ref(false)
-const isLoadingSetupData = ref(false)
-const isLoadingProductImportProgress = ref(false)
-const isLoadingShopifyJobStatus = ref(false)
-const isLoadingShopifyMappingStatus = ref(false)
-const shopifyHandoffToken = ref("")
-const shopifyHandoffTokenExpirationTime = ref(0)
-const productImportProgressState = ref<any>({})
-const productImportRun = ref<any>(null)
+const route = useRoute()
+const router = useRouter()
+const onboarding = useProductStoreOnboardingWizard()
+const productStoreData = useProductStoreData()
+const { createStore } = useProductStoreCreation()
+const { shops: cachedShopifyShops, hydrated: shopifyShopsHydrated } = useShopifyShops()
+const { currencies } = useCurrencies()
+const { values: productIdentifierOptions } = useTypedEnums("SHOP_PROD_IDENTITY")
+const { facilities: allFacilities } = useFacilities()
+const { createFacility } = useFacilityMutations()
+const { organizationPartyId, loadOrganizationPartyId, bootstrapOrganization } = useOrganization()
+const { loadTimeZones } = useTimeZones()
+
+type FeedbackTone = "success" | "warning" | "danger" | "medium"
+type FeedbackState = { text: string; tone: FeedbackTone } | null
+
+const feedback = reactive<Record<ProductStoreOnboardingStepId, FeedbackState>>({
+  name: null,
+  shopify: null,
+  products: null,
+  facilities: null,
+  locations: null,
+  inventory: null,
+  orders: null,
+  readiness: null
+})
+const busy = reactive({
+  name: false,
+  shopify: false,
+  products: false,
+  productImport: false,
+  facilities: false,
+  locations: false,
+  inventory: false,
+  inventoryImport: false,
+  orders: false,
+  orderImport: false,
+  connectionAccess: false
+})
+const initialLoadRefreshBusy = reactive<Record<OnboardingInitialLoadKind, boolean>>({
+  products: false,
+  inventory: false,
+  orders: false
+})
+const contentRef = ref<any>(null)
+const stepHeadingRef = ref<any>(null)
+const companyNameInputRef = ref<any>(null)
+const storeNameInputRef = ref<any>(null)
+const productStoreIdInputRef = ref<any>(null)
+const currencyInputRef = ref<any>(null)
+const localeInputRef = ref<any>(null)
+const timezoneInputRef = ref<any>(null)
+const orderNumberPrefixInputRef = ref<any>(null)
+const facilityImportTriggerRef = ref<any>(null)
 const shopifyLocationMappings = ref<any[]>([])
-const shopifyMappingCounts = ref<Record<string, number>>({
-  productTypes: 0,
-  orderSources: 0,
-  paymentMethods: 0,
-  shippingMethods: 0,
-  locations: 0
+const locationMappingFetchStatus = ref<"idle" | "pending" | "success" | "error">("idle")
+const timeZoneOptions = ref<any[]>([])
+const storeValidationAttempted = ref(false)
+const storeFieldTouched = reactive({ productStoreId: false, locale: false })
+const orderValidationAttempted = ref(false)
+const orderFieldTouched = reactive({ historyStartDate: false, launchDate: false })
+
+const LOCALE_PATTERN = /^[a-z]{2,3}_[A-Z]{2}$/
+
+const StepFeedback = defineComponent({
+  props: { stepId: { type: String, required: true } },
+  setup(componentProps) {
+    return () => {
+      const state = feedback[componentProps.stepId as ProductStoreOnboardingStepId]
+
+      return state
+        ? h(IonNote, { class: "step-feedback", color: state.tone, role: state.tone === "danger" ? "alert" : "status" }, () => state.text)
+        : null
+    }
+  }
 })
 
-const currentStep = computed(() => onboardingStore.currentStep)
-const isLastStep = computed(() => onboardingStore.currentStepIndex === PRODUCT_STORE_ONBOARDING_STEPS.length - 1)
-const routeProductStoreId = computed(() => props.productStoreId || "")
-const selectedProductStoreId = computed(() => onboardingStore.createdProductStoreId || routeProductStoreId.value)
-const shouldCollectCompanyName = computed(() => productStoreStore.productStores.length === 0 || !organizationPartyId.value)
-const isPrimaryActionLoading = computed(() => {
-  return isSavingProductStore.value
-    || isLinkingShopifyShop.value
-    || isGeneratingShopifyToken.value
-    || isImportingShopifyFacilities.value
-    || isCreatingStarterFacility.value
-    || isSavingProductIdentity.value
-    || isSettingUpProductImportJob.value
-    || isQueueingProductImport.value
-    || isSavingOrderDefaults.value
-    || isSavingInventorySettings.value
-    || isSettingUpInventoryResetJob.value
-    || isQueueingInventoryImport.value
-    || isSettingUpOrderJobs.value
-    || isQueueingOrderHistoryImport.value
-    || isSettingUpRealtimeOrderJobs.value
-    || isSavingRoutingDefaults.value
-    || isSavingPickupSettings.value
-    || isSavingShopifyStarterMappings.value
-})
-const isExistingShopifyMode = computed(() => onboardingStore.draft.shopifyConnectionMode === "Use existing Shopify shop")
-const availableShopifyShops = computed(() => {
-  return cachedShopifyShops.value.filter((shop: any) => {
-    return !shop.productStoreId
-      || shop.productStoreId === selectedProductStoreId.value
-      || shop.shopId === onboardingStore.draft.linkedShopifyShopId
-  })
-})
+const currentStep = computed(() => onboarding.currentStep)
+const selectedProductStoreId = computed(() =>
+  onboarding.createdProductStoreId || props.productStoreId || "")
+const shouldCollectCompanyName = computed(() =>
+  productStoreData.productStores.length === 0 || !organizationPartyId.value)
+const currencyOptions = computed(() => currencies.value.map((currency: any) => ({
+  ...currency,
+  label: currency.description ? `${currency.description} (${currency.uomId})` : currency.uomId
+})))
+function assignedShopifyShops(statusOverride?: any) {
+  const productStoreId = String(selectedProductStoreId.value || "")
+  if(!productStoreId) {return []}
+
+  const status = statusOverride === undefined
+    ? productStoreData.currentShopifyJobStatus
+    : statusOverride
+  const statusIsForSelectedStore = String(status?.productStoreId || "") === productStoreId
+  const source = statusIsForSelectedStore && Array.isArray(status.linkedShops)
+    ? status.linkedShops
+    : cachedShopifyShops.value
+
+  return source.filter((shop: any) =>
+    String(shop?.productStoreId || "") === productStoreId && !!shop?.shopId)
+}
+
 const linkedShopifyShop = computed(() => {
-  const linkedShopId = onboardingStore.draft.linkedShopifyShopId
-  if (linkedShopId) return cachedShopifyShops.value.find((shop: any) => shop.shopId === linkedShopId) || { shopId: linkedShopId }
+  const assignedShops = assignedShopifyShops()
+  const persistedShopId = String(onboarding.draft.linkedShopifyShopId || "")
 
-  return cachedShopifyShops.value.find((shop: any) => shop.productStoreId === selectedProductStoreId.value) || null
+  return assignedShops.find((shop: any) => String(shop.shopId) === persistedShopId) || assignedShops[0] || null
 })
-const linkedShopifyShopId = computed(() => linkedShopifyShop.value?.shopId || "")
-const shopifyJobStatus = computed(() => productStoreStore.currentShopifyJobStatus)
-const hasShopifyJobStatus = computed(() => !!shopifyJobStatus.value?.requirements)
-let productImportProgressPoll: number | undefined
-const shopifyJobRequirements = computed(() => {
-  return Array.isArray(shopifyJobStatus.value?.requirements) ? shopifyJobStatus.value.requirements : []
+// Never fall back to the persisted id here. Every downstream job/import action must use a shop
+// that the current cache or live setup response confirms is still assigned to this Product Store.
+const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
+// A ShopifyShop row carries no systemMessageRemoteId; the remote is joined by internalId/remoteId.
+// useShopifySyncContext owns that join with the same rule the sync worker uses.
+const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)
+// Store creation time, epoch ms. The durable bound for attributing shop runs when the wizard's
+// browser-side run record is gone: a run that began before the store existed cannot be its own.
+const selectedProductStoreCreatedAt = computed(() => {
+  const value = productStoreData.current?.createdStamp
+  const parsed = typeof value === "number" ? value : Date.parse(String(value ?? ""))
+
+  return Number.isFinite(parsed) ? Number(parsed) : 0
 })
-const shopifyConnectionRequirements = computed(() => {
-  return shopifyJobRequirements.value.filter((requirement: any) => {
-    return ["shopifyShop", "shopifyRemote"].includes(requirement.id)
-  })
+const initialLoadStatus = useProductStoreOnboardingInitialLoad(
+  () => linkedShopId.value,
+  () => onboarding.runRequests,
+  () => selectedProductStoreCreatedAt.value
+)
+const productInitialLoad = initialLoadStatus.products
+const inventoryInitialLoad = initialLoadStatus.inventory
+const orderInitialLoad = initialLoadStatus.orders
+const initialLoadError = computed(() => String(initialLoadStatus.refreshError?.value || ""))
+const INITIAL_LOAD_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
+const initialLoadClock = ref(Date.now())
+let initialLoadClockTimer: ReturnType<typeof setInterval> | null = null
+const inventoryDisplayedInitialLoad = computed(() => displayedInitialLoad("inventory", inventoryInitialLoad.value))
+const orderDisplayedInitialLoad = computed(() => displayedInitialLoad("orders", orderInitialLoad.value))
+const {
+  landmarkDates: orderLandmarkDates,
+  load: loadOrderLandmarkDates,
+  record: recordOrderLandmarkDates
+} = useOrderSyncLandmarkDates(() => linkedShopId.value)
+const orderLandmarkDatesKnown = computed(() => orderLandmarkDates.value.status === "ready")
+const orderLandmarkDatesFailed = computed(() => orderLandmarkDates.value.status === "error")
+const savedSetupSnapshots = reactive<Record<"products" | "inventory" | "orders", string | null>>({
+  products: null,
+  inventory: null,
+  orders: null
 })
-const orderJobRequirements = computed(() => {
-  return shopifyJobRequirements.value.filter((requirement: any) => {
-    return ["job.orderImport", "job.orderHistory", "job.realtimeOrderImport", "dataManager.orderConfigs"].includes(requirement.id)
-  })
+
+const { runState: spineRunState } = useShopifyProductSyncRunState(() => linkedShopId.value)
+const finishedMdmLogs = computed(() => {
+  return (spineRunState.value?.systemMessages || []).filter((msg: any) =>
+    Boolean(msg.logId) && (msg.logStatusId === "DmlsFinished" || Boolean(msg.finishDateTime) || msg.statusId === "SmsgConsumed"))
 })
-const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
-function formatDateInputValue(date: Date) {
+const hasFinishedMdmLog = computed(() => {
+  if(finishedMdmLogs.value.length > 0) {return true}
+  const initialLoadCompleted = productInitialLoad.value?.run?.stages?.some((stage: any) => stage.id === "hotwax-import" && stage.status === "completed")
+
+  return Boolean(initialLoadCompleted)
+})
+
+const { jobs } = useServiceJobs()
+
+const shopifyPrimaryIdentifierOptions = computed(() => {
+  if(productIdentifierOptions.value?.length) {
+    return productIdentifierOptions.value
+  }
+
+  return [
+    { enumId: "SHOPIFY_PRODUCT_SKU", description: translate("SKU") },
+    { enumId: "SHOPIFY_BARCODE", description: translate("UPCA / Barcode") },
+    { enumId: "SHOPIFY_PRODUCT_ID", description: translate("Shopify internal id") }
+  ]
+})
+
+const syncJobObj = computed(() => {
+  const shopId = linkedShopId.value
+  if(!shopId) {return jobs.value.find((j: any) => j.serviceName === "sync_ShopifyProductUpdates") || null}
+  const specificName = `sync_ShopifyProductUpdates_${shopId}`
+
+  return jobs.value.find((j: any) => j.jobName === specificName) ||
+    jobs.value.find((j: any) => (j.serviceName === "sync_ShopifyProductUpdates" || j.jobName?.includes("sync_ShopifyProductUpdates")) && j.jobName?.includes(shopId)) ||
+    jobs.value.find((j: any) => j.serviceName === "sync_ShopifyProductUpdates") ||
+    null
+})
+const sendUpdateRequestJobObj = computed(() => {
+  return jobs.value.find((j: any) => j.jobName === "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery" || j.serviceName === "send_ProducedBulkOperationSystemMessage_ShopifyBulkQuery") || null
+})
+const importCompletedRequestsJobObj = computed(() => {
+  return jobs.value.find((j: any) => j.jobName === "poll_ShopifyBulkOperationResult" || j.serviceName === "poll_ShopifyBulkOperationResult") || null
+})
+
+const watchedProductJobNames = computed(() => [
+  syncJobObj.value?.jobName,
+  sendUpdateRequestJobObj.value?.jobName,
+  importCompletedRequestsJobObj.value?.jobName
+].filter(Boolean) as string[])
+const serviceJobRuns = useServiceJobRunsByJob(() => watchedProductJobNames.value, 10)
+
+const isSyncJobPaused = computed(() => isPaused(syncJobObj.value))
+const isBulkOperationSendJobPaused = computed(() => isPaused(sendUpdateRequestJobObj.value))
+const isBulkOperationPollJobPaused = computed(() => isPaused(importCompletedRequestsJobObj.value))
+
+function formatJobLastRun(job: any, isPausedState: boolean) {
+  if(!job?.jobName) {return translate("Not configured")}
+  if(isPausedState) {return translate("Paused")}
+  const runs = serviceJobRuns.runsFor(job.jobName)
+  if(runs?.length) {
+    const latest = runs[0]
+    const startedAt = latest.runTime || latest.startDate || latest.startTime || latest.createdDate || ""
+    const status = latest.statusDesc || latest.statusId || (latest.hasError === "Y" ? translate("Error") : translate("Finished"))
+    const dateLabel = startedAt ? commonUtil.formatDateTime(startedAt) : ""
+
+    return dateLabel ? `${translate("Last run")}: ${dateLabel} · ${status}` : String(status)
+  }
+
+  return job.cronString || translate("No recent runs")
+}
+
+const queueUpdateRequestsLastRunLabel = computed(() => formatJobLastRun(syncJobObj.value, isSyncJobPaused.value))
+const sendUpdateRequestLastRunLabel = computed(() => formatJobLastRun(sendUpdateRequestJobObj.value, isBulkOperationSendJobPaused.value))
+const importCompletedRequestsLastRunLabel = computed(() => formatJobLastRun(importCompletedRequestsJobObj.value, isBulkOperationPollJobPaused.value))
+
+const showSyncJobDetailsModal = ref(false)
+const selectedSyncJobDetailsJob = ref<any>(null)
+function openSyncJobDetails(job: any) {
+  if(!job?.jobName) {return}
+  selectedSyncJobDetailsJob.value = job
+  showSyncJobDetailsModal.value = true
+}
+
+// 2.5 Live Shopify products count
+const shopifyProductCount = ref<number | undefined>(undefined)
+const isShopifyProductCountLoading = ref(false)
+const shopifyProductCountLabel = computed(() => {
+  if(isShopifyProductCountLoading.value) {return "..."}
+  if(shopifyProductCount.value !== undefined && shopifyProductCount.value !== null) {
+    return String(shopifyProductCount.value)
+  }
+
+  return translate("Unavailable")
+})
+async function loadShopifyProductCount() {
+  if(!linkedShopId.value) {return}
+  isShopifyProductCountLoading.value = true
+  try {
+    const remoteId = shopifySyncContext.remoteId.value
+    if(!remoteId) {return}
+    const stats = await fetchLiveCatalogCounts({
+      systemMessageRemoteId: remoteId,
+      shop: linkedShopifyShop.value
+    })
+    if(stats?.shopifyProductCount !== undefined) {
+      shopifyProductCount.value = stats.shopifyProductCount
+    }
+  } catch (err) {
+    logger.error("Failed to fetch Shopify catalog counts", err)
+  } finally {
+    isShopifyProductCountLoading.value = false
+  }
+}
+
+// 3. Product Store setting for selecting primary and secondary identifier with sample product shown
+const STATIC_PRODUCT_IDENTIFIER_OPTIONS = [
+  { goodIdentificationTypeId: "productId", description: translate("Product ID") },
+  { goodIdentificationTypeId: "groupId", description: translate("Group ID") },
+  { goodIdentificationTypeId: "groupName", description: translate("Group Name") },
+  { goodIdentificationTypeId: "internalName", description: translate("Internal Name") },
+  { goodIdentificationTypeId: "parentProductName", description: translate("Parent Product Name") },
+  { goodIdentificationTypeId: "primaryProductCategoryName", description: translate("Primary Product Category Name") },
+  { goodIdentificationTypeId: "title", description: translate("Title") }
+]
+const fetchedGoodIdentificationOptions = ref<any[]>([])
+const productIdentificationOptions = computed(() => {
+  return [...STATIC_PRODUCT_IDENTIFIER_OPTIONS, ...fetchedGoodIdentificationOptions.value]
+})
+const { fetchGoodIdentificationTypes } = useGoodIdentificationTypes()
+async function loadGoodIdentificationTypes() {
+  try {
+    const data = await fetchGoodIdentificationTypes("HC_GOOD_ID_TYPE", 50)
+    if(Array.isArray(data)) {
+      fetchedGoodIdentificationOptions.value = data
+    }
+  } catch (error) {
+    logger.error("Failed to fetch good identification types", error)
+  }
+}
+
+const sampleProducts = ref<any[]>([])
+const currentSampleProduct = ref<any>(null)
+function shuffleProduct() {
+  if(sampleProducts.value.length) {
+    const randomIndex = Math.floor(Math.random() * sampleProducts.value.length)
+    currentSampleProduct.value = sampleProducts.value[randomIndex]
+  }
+}
+async function fetchSampleProducts() {
+  // Only show after product is imported from shopify!
+  if(!hasFinishedMdmLog.value) {
+    sampleProducts.value = []
+    currentSampleProduct.value = null
+
+    return
+  }
+  try {
+    const resp = await useSolrSearch().searchProducts({ viewSize: 10 })
+    if(resp?.products?.length) {
+      sampleProducts.value = resp.products
+      shuffleProduct()
+    }
+  } catch (error) {
+    logger.error("Failed to fetch sample products for preview", error)
+  }
+}
+const availableShopifyShops = computed(() => cachedShopifyShops.value.filter((shop: any) =>
+  !shop.productStoreId))
+const selectedAvailableShopifyShop = computed(() => availableShopifyShops.value.find((shop: any) =>
+  String(shop.shopId) === String(onboarding.draft.selectedShopifyShopId || "")))
+const facilityCount = computed(() => productStoreData.currentFacilities.length)
+const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
+const hasSelectedProductStore = computed(() => !!selectedProductStoreId.value)
+const hasLinkedShopifyShop = computed(() => !!linkedShopId.value)
+const setupSteps = computed(() => PRODUCT_STORE_ONBOARDING_STEPS.filter((step) => step.id !== "readiness"))
+const setupProgressLabel = computed(() => translate("{complete} of {total} setup steps complete", {
+  complete: onboarding.completedCount,
+  total: onboarding.totalStepCount
+}))
+const userProgressValue = computed(() => {
+  const index = onboarding.currentStepIndex
+  const total = PRODUCT_STORE_ONBOARDING_STEPS.length
+  if(!total || index < 0) {return 0}
+
+  return (index + 1) / total
+})
+const isReadyToFinish = computed(() => PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS.every((stepId) =>
+  onboarding.stepStatuses[stepId] === "complete") &&
+  productSyncConfiguration.value.status === "configured" &&
+  inventorySyncConfiguration.value.status === "configured" &&
+  orderSyncConfiguration.value.status === "configured")
+const productStoreIdError = computed(() => {
+  if(!storeValidationAttempted.value && !storeFieldTouched.productStoreId) {return ""}
+  const value = onboarding.draft.productStoreId.trim()
+  if(!value) {return translate("Product Store ID is required.")}
+  if(value.length > 20) {return translate("Product store ID cannot be more than 20 characters.")}
+
+  return ""
+})
+const localeError = computed(() => {
+  if(!storeValidationAttempted.value && !storeFieldTouched.locale) {return ""}
+  const value = onboarding.draft.locale.trim()
+  if(!value) {return translate("Default locale is required.")}
+  if(!LOCALE_PATTERN.test(value)) {return translate("Enter a locale in the format en_US.")}
+
+  return ""
+})
+const orderDateRangeValid = computed(() => {
+  const historyStartDate = onboarding.draft.orderHistoryStartDate
+  const launchDate = onboarding.draft.orderLaunchDate
+
+  return !historyStartDate || !launchDate || historyStartDate <= launchDate
+})
+const orderHistoryStartDateError = computed(() => {
+  if(!orderValidationAttempted.value && !orderFieldTouched.historyStartDate) {return ""}
+  if(!onboarding.draft.orderHistoryStartDate) {return translate("Order history start date is required.")}
+
+  return ""
+})
+const orderLaunchDateError = computed(() => {
+  const validationVisible = orderValidationAttempted.value ||
+    orderFieldTouched.historyStartDate || orderFieldTouched.launchDate
+  if(!validationVisible) {return ""}
+  if(!onboarding.draft.orderLaunchDate) {return translate("Order launch date is required.")}
+  if(!orderDateRangeValid.value) {
+    return translate("Order history start date must be on or before the order launch date.")
+  }
+
+  return ""
+})
+const canSaveStore = computed(() => {
+  const baseValid = !!onboarding.draft.storeName.trim() &&
+    !!onboarding.draft.productStoreId.trim() &&
+    onboarding.draft.productStoreId.trim().length <= 20 &&
+    !!onboarding.draft.defaultCurrencyUomId &&
+    !!onboarding.draft.locale.trim() &&
+    LOCALE_PATTERN.test(onboarding.draft.locale.trim()) &&
+    !!onboarding.draft.timezone &&
+    !!onboarding.draft.orderNumberPrefix.trim()
+
+  return baseValid && (!shouldCollectCompanyName.value || !!onboarding.draft.companyName.trim())
+})
+const canConfigureProducts = computed(() =>
+  !!selectedProductStoreId.value && !!linkedShopId.value && !!onboarding.draft.productIdentifierEnumId)
+const productSetupDirty = computed(() =>
+  savedSetupSnapshots.products === null || savedSetupSnapshots.products !== captureProductSetup().snapshot)
+const inventoryResetJobStatus = computed(() =>
+  productStoreData.currentShopifyJobStatus?.jobs?.find((job: any) => job.key === "inventoryReset") || null)
+const inventoryResetSetupAvailability = computed<"available" | "missing" | "unknown">(() => {
+  if(productStoreData.fetchStatus?.shopifyJobStatus !== "success") {return "unknown"}
+
+  const job = inventoryResetJobStatus.value
+  if(!job) {return "unknown"}
+  // `templateJob` / `expectedJob` are the projection's own fields. An earlier pair of booleans
+  // (`templateExists` / `expectedJobExists`) is long gone, so those clauses were dead and only the
+  // status string still decided this.
+  if(job.ready === true || !!job.templateJob || !!job.expectedJob ||
+    job.status === "template-ready") {return "available"}
+
+  return job.status === "missing-template" ? "missing" : "unknown"
+})
+// Every initial load is a Shopify bulk query, and bulkOperationRunQuery is a GraphQL mutation the
+// connector refuses on a read-only connection, inside a cron job where nothing reaches the operator.
+const connectionAccessCheckDetail = computed(() => {
+  if(connectionIsWritable.value) {return ""}
+  if(!connectionRemoteResolved.value) {
+    return "This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it."
+  }
+
+  return "Shopify bulk imports are sent as GraphQL mutations, which a read-only connection refuses. Grant write access on the Shopify step."
+})
+
+const inventoryResetSetupDetail = computed(() => {
+  if(inventoryResetSetupAvailability.value === "missing") {
+    // Named from the status rather than written in, because this text tells an operator which seed
+    // data to ask for. It used to name `sync_ShopifyInventoryReset` while setup cloned a different
+    // template, which would have sent them after the wrong one.
+    return translate(
+      "The backend service-job template {templateJobName} is missing. Ask the backend owner to load the Shopify inventory seed data, then select Refresh.",
+      { templateJobName: String(inventoryResetJobStatus.value?.templateJobName || "") }
+    )
+  }
+  if(inventoryResetSetupAvailability.value === "unknown") {
+    return "The backend inventory job template has not been verified. Select Refresh before saving inventory preferences."
+  }
+
+  return ""
+})
+const canConfigureInventory = computed(() =>
+  !!selectedProductStoreId.value && !!linkedShopId.value && mappedShopifyLocationCount.value > 0 &&
+  inventoryResetSetupAvailability.value === "available")
+const inventorySetupDirty = computed(() =>
+  savedSetupSnapshots.inventory === null || savedSetupSnapshots.inventory !== captureInventorySetup().snapshot)
+// Saving preferences stays available on a read-only connection — those writes are local and valid.
+// Only the LOAD is gated, because it is the half that needs a Shopify mutation the connector refuses.
+const canLoadInventory = computed(() =>
+  canConfigureInventory.value && !inventorySetupDirty.value && connectionIsWritable.value)
+const canConfigureOrders = computed(() =>
+  !!selectedProductStoreId.value && !!linkedShopId.value &&
+  !!onboarding.draft.orderHistoryStartDate && !!onboarding.draft.orderLaunchDate &&
+  orderDateRangeValid.value)
+const orderSetupDirty = computed(() =>
+  savedSetupSnapshots.orders === null || savedSetupSnapshots.orders !== captureOrderSetup().snapshot)
+const canLoadOrders = computed(() =>
+  canConfigureOrders.value && !orderSetupDirty.value && connectionIsWritable.value)
+const shopifyConfigurationKnown = computed(() =>
+  productStoreData.fetchStatus?.shopifyJobStatus === "success")
+const shopifyConfigurationFailed = computed(() =>
+  productStoreData.fetchStatus?.shopifyJobStatus === "error")
+const productStoreDetailsKnown = computed(() =>
+  productStoreData.fetchStatus?.productStoreDetails === "success")
+const productStoreSettingsKnown = computed(() =>
+  productStoreData.fetchStatus?.currentStoreSettings === "success")
+const productStoreConfigurationKnown = computed(() =>
+  productStoreDetailsKnown.value && productStoreSettingsKnown.value)
+const productStoreConfigurationFailed = computed(() =>
+  productStoreData.fetchStatus?.productStoreDetails === "error" ||
+  productStoreData.fetchStatus?.currentStoreSettings === "error")
+const selectedProductStoreLoaded = computed(() =>
+  String(productStoreData.current?.productStoreId || "") === String(selectedProductStoreId.value || ""))
+function persistedProductPreferences() {
+  const text = String(productStoreData.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue || "")
+  if(!text) {return null}
+  try {
+    const parsed = JSON.parse(text)
+    if(!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {return null}
+
+    return {
+      primaryId: typeof parsed.primaryId === "string" ? parsed.primaryId : "",
+      secondaryId: typeof parsed.secondaryId === "string" ? parsed.secondaryId : ""
+    }
+  } catch {
+    return null
+  }
+}
+const productPreferencesPersisted = computed(() => {
+  const storeMatches = String(productStoreData.current?.productStoreId || "") === String(selectedProductStoreId.value || "")
+  const identifier = String(productStoreData.current?.productIdentifierEnumId || "")
+  const preference = persistedProductPreferences()
+
+  return storeMatches && !!identifier && identifier === onboarding.draft.productIdentifierEnumId && !!preference &&
+    preference.primaryId === onboarding.draft.primaryProductIdentification &&
+    preference.secondaryId === onboarding.draft.secondaryProductIdentification
+})
+const inventoryPreferencesPersisted = computed(() => {
+  const storeMatches = String(productStoreData.current?.productStoreId || "") === String(selectedProductStoreId.value || "")
+  const reserveInventory = String(productStoreData.current?.reserveInventory || "")
+  const inventoryView = String(productStoreData.currentStoreSettings?.INV_CNT_VIEW_QOH?.settingValue || "")
+
+  return storeMatches && reserveInventory === onboarding.draft.reserveInventory &&
+    inventoryView === onboarding.draft.showSystemicInventory
+})
+const orderDatesPersisted = computed(() =>
+  dateTimeValue(onboarding.draft.orderHistoryStartDate) === orderLandmarkDates.value.historyLastSyncDate &&
+  dateTimeValue(onboarding.draft.orderLaunchDate) === orderLandmarkDates.value.launchDate)
+const productSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
+  !productSetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
+    productPreferencesPersisted.value && connectionIsWritable.value &&
+    ["productSync", "productBulkSend", "productBulkPoll"].every(jobReady),
+  [
+    syncCheck("product-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
+    syncCheck("product-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "product-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      connectionRemoteResolved.value,
+      connectionAccessCheckDetail.value
+    ),
+    syncCheck("product-identifier", "Global identifier", productPreferencesPersisted.value, productStoreConfigurationKnown.value),
+    syncCheck("product-queue", "Queue update requests", jobReady("productSync"), shopifyConfigurationKnown.value),
+    syncCheck("product-send", "Send update request", jobReady("productBulkSend"), shopifyConfigurationKnown.value),
+    syncCheck("product-import", "Import completed requests", jobReady("productBulkPoll"), shopifyConfigurationKnown.value)
+  ],
+  shopifyConfigurationFailed.value || productStoreConfigurationFailed.value
+))
+const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
+  !inventorySetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
+    mappedShopifyLocationCount.value > 0 && inventoryPreferencesPersisted.value &&
+    connectionIsWritable.value && jobReady("inventoryReset"),
+  [
+    syncCheck("inventory-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
+    syncCheck("inventory-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "inventory-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      connectionRemoteResolved.value,
+      connectionAccessCheckDetail.value
+    ),
+    syncCheck(
+      "inventory-mappings",
+      "Shopify location mappings",
+      mappedShopifyLocationCount.value > 0,
+      locationMappingFetchStatus.value === "success"
+    ),
+    syncCheck("inventory-preferences", "Inventory preferences", inventoryPreferencesPersisted.value, productStoreConfigurationKnown.value),
+    syncCheck(
+      "inventory-job",
+      // Reads job readiness, so it must not be named after the import. Labelled "Initial inventory
+      // import", it showed Complete the moment setup was saved and nothing had been imported —
+      // directly contradicting the run panel below it, which correctly said Not started.
+      "Inventory feed to Shopify",
+      jobReady("inventoryReset"),
+      inventoryResetSetupAvailability.value !== "unknown",
+      inventoryResetSetupDetail.value
+    )
+  ],
+  shopifyConfigurationFailed.value || productStoreConfigurationFailed.value ||
+    locationMappingFetchStatus.value === "error"
+))
+const orderSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
+  !orderSetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
+    orderDatesPersisted.value && orderDateRangeValid.value && connectionIsWritable.value &&
+    jobReady("orderImport") && jobReady("orderHistory"),
+  [
+    syncCheck("order-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
+    syncCheck("order-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "order-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      connectionRemoteResolved.value,
+      connectionAccessCheckDetail.value
+    ),
+    syncCheck(
+      "order-dates",
+      "Order import dates",
+      orderDatesPersisted.value && orderDateRangeValid.value,
+      orderLandmarkDatesKnown.value
+    ),
+    syncCheck("order-live-job", "Order import", jobReady("orderImport"), shopifyConfigurationKnown.value),
+    syncCheck("order-history-job", "Historic order import", jobReady("orderHistory"), shopifyConfigurationKnown.value)
+  ],
+  shopifyConfigurationFailed.value || productStoreConfigurationFailed.value || orderLandmarkDatesFailed.value
+))
+const inventorySyncBusyAction = computed<OnboardingSyncBusyAction>(() => syncBusyAction(
+  "inventory",
+  busy.inventory,
+  busy.inventoryImport
+))
+const orderSyncBusyAction = computed<OnboardingSyncBusyAction>(() => syncBusyAction(
+  "orders",
+  busy.orders,
+  busy.orderImport
+))
+const canContinue = computed(() => currentStep.value.id !== "name" || !!selectedProductStoreId.value)
+const stepStatusPresentation = computed(() => reviewStatus(currentStep.value.id))
+
+function syncCheck(id: string, label: string, complete: boolean, known: boolean, detail = "") {
+  return {
+    id,
+    label,
+    status: known ? (complete ? "complete" as const : "missing" as const) : "unknown" as const,
+    detail
+  }
+}
+
+function syncConfiguration(
+  ready: boolean,
+  checks: OnboardingSyncConfiguration["checks"],
+  evidenceFailed = false
+): OnboardingSyncConfiguration {
+  const known = checks?.every((check) => check.status !== "unknown") ?? true
+
+  if(!known && evidenceFailed) {
+    return {
+      status: "unknown",
+      summary: "Configuration status could not be loaded. Refresh to try again.",
+      checks
+    }
+  }
+
+  return {
+    status: known ? (ready ? "configured" : "not-configured") : "unknown",
+    summary: known
+      ? (ready
+        ? "Configuration is ready. Run the initial load or refresh its status."
+        : "Complete the missing checks, save, then run the initial load.")
+      : "Configuration status is still loading.",
+    checks
+  }
+}
+
+function syncBusyAction(
+  kind: OnboardingInitialLoadKind,
+  saving: boolean,
+  running: boolean
+): OnboardingSyncBusyAction {
+  if(saving) {return "save"}
+  if(running) {return "run"}
+  if(initialLoadRefreshBusy[kind]) {return "refresh"}
+
+  return null
+}
+
+function initialLoadActive(status: string) {
+  return ["pending", "queued", "sent", "running", "importing"].includes(status)
+}
+
+function initialLoadHasRequestEvidence(
+  kind: OnboardingInitialLoadKind,
+  snapshot: OnboardingInitialLoadSnapshot
+) {
+  const request = onboarding.runRequests[kind]
+  if(!request || request.shopId !== linkedShopId.value) {return false}
+  if(request.systemMessageId) {return snapshot.details.systemMessageId === request.systemMessageId}
+
+  return !!request.jobRunId && snapshot.details.jobRunId === request.jobRunId
+}
+
+function initialLoadRunBlocked(kind: OnboardingInitialLoadKind, status: string) {
+  const request = onboarding.runRequests[kind]
+  if(request) {
+    const hasEvidence = initialLoadHasRequestEvidence(kind, initialLoadSnapshot(kind))
+    if(hasEvidence) {return initialLoadActive(status)}
+
+    return initialLoadClock.value - request.requestedAt < INITIAL_LOAD_REQUEST_TIMEOUT_MS
+  }
+
+  return initialLoadActive(status)
+}
+
+function initialLoadActionLabel(kind: OnboardingInitialLoadKind, defaultLabel: string) {
+  const snapshot = kind === "products"
+    ? productInitialLoad.value
+    : kind === "inventory"
+      ? inventoryInitialLoad.value
+      : orderInitialLoad.value
+
+  const request = onboarding.runRequests[kind]
+  const hasEvidence = !!request && initialLoadHasRequestEvidence(kind, snapshot)
+  const requestStalled = request && !hasEvidence &&
+    initialLoadClock.value - request.requestedAt >= INITIAL_LOAD_REQUEST_TIMEOUT_MS
+  const correlatedTerminalFailure = hasEvidence && snapshot.hydrated &&
+    ["error", "cancelled", "unavailable", "unknown"].includes(snapshot.run.status)
+
+  return correlatedTerminalFailure || ["error", "cancelled"].includes(snapshot.run.status) || requestStalled
+    ? "Retry"
+    : defaultLabel
+}
+
+function displayedInitialLoad(
+  kind: OnboardingInitialLoadKind,
+  snapshot: OnboardingInitialLoadSnapshot
+): OnboardingSyncRun {
+  const request = onboarding.runRequests[kind]
+  if(!request || initialLoadHasRequestEvidence(kind, snapshot)) {return snapshot.run}
+  const stalled = initialLoadClock.value - request.requestedAt >= INITIAL_LOAD_REQUEST_TIMEOUT_MS
+
+  return {
+    status: stalled ? "error" : "queued",
+    summary: stalled
+      ? "No sync evidence appeared for the accepted request. Refresh, then retry if needed."
+      : "Request accepted. Waiting for its sync run to appear.",
+    lastRunLabel: request.jobRunId || request.systemMessageId || undefined,
+    stages: []
+  }
+}
+
+function statusLabel(status: ProductStoreOnboardingStepStatus) {
+  return {
+    "not-started": "Not started",
+    "in-progress": "In progress",
+    complete: "Complete",
+    attention: "Needs attention"
+  }[status]
+}
+
+function reviewStatus(stepId: ProductStoreOnboardingStepId) {
+  const status = onboarding.stepStatuses[stepId]
+
+  return {
+    "not-started": { label: "Not started", color: "medium", icon: ellipseOutline },
+    "in-progress": { label: "In progress", color: "primary", icon: timeOutline },
+    complete: { label: "Complete", color: "success", icon: checkmarkCircleOutline },
+    attention: { label: "Needs attention", color: "warning", icon: alertCircleOutline }
+  }[status]
+}
+
+function setFeedback(stepId: ProductStoreOnboardingStepId, text: string, tone: FeedbackTone) {
+  feedback[stepId] = { text, tone }
+}
+
+function updateDraft(field: keyof ProductStoreOnboardingDraft, value: unknown) {
+  onboarding.updateDraftField(field, String(value ?? ""))
+  const status = onboarding.stepStatuses[onboarding.currentStepId]
+  if(status === "not-started" || (status === "complete" && field !== "facilityMode")) {
+    onboarding.markStepInProgress()
+  }
+}
+
+async function resetStepViewport() {
+  await nextTick()
+  const content = contentRef.value?.$el || contentRef.value
+  await content?.scrollToTop?.(0)
+  const heading = stepHeadingRef.value?.$el || stepHeadingRef.value
+  heading?.focus?.()
+}
+
+async function selectStep(stepId: string) {
+  if(!isProductStoreOnboardingStepId(stepId)) {return}
+  onboarding.selectStep(stepId)
+  await resetStepViewport()
+}
+
+async function goNext() {
+  onboarding.goNext()
+  await resetStepViewport()
+}
+
+async function goPrevious() {
+  onboarding.goPrevious()
+  await resetStepViewport()
+}
+
+function shopLabel(shop: any) {
+  return shop?.name || shop?.myshopifyDomain || shop?.shopName || shop?.shopId || ""
+}
+
+function responseFailed(response: any) {
+  if(!response) {return true}
+  if(commonUtil.hasError(response)) {return true}
+
+  const payload = response?.data ?? response
+
+  return payload?.hasError === true || payload?.hasError === "Y" || !!payload?._ERROR_MESSAGE_ ||
+    (Array.isArray(payload?._ERROR_MESSAGE_LIST_) && payload._ERROR_MESSAGE_LIST_.length > 0) ||
+    (Array.isArray(payload?.errorMessages) && payload.errorMessages.length > 0) ||
+    (typeof payload?.errorMessages === "string" && !!payload.errorMessages.trim())
+}
+
+function feedbackForError(error: any, fallback: string) {
+  const payload = error?.data ?? error
+  if(Array.isArray(payload?.errorMessages) && payload.errorMessages.length) {
+    return payload.errorMessages.join(", ")
+  }
+  if(typeof payload?.errorMessages === "string" && payload.errorMessages.trim()) {
+    return payload.errorMessages
+  }
+
+  return getResponseErrorMessage(error, translate(fallback))
+}
+
+function dateInputValue(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
+
   return `${year}-${month}-${day}`
 }
-const defaultOrderHistoryStartDate = computed(() => {
-  const date = new Date()
-  date.setDate(date.getDate() - 7)
-  return formatDateInputValue(date)
-})
-const defaultOrderLaunchDate = computed(() => formatDateInputValue(new Date()))
-const preferredOrderHistoryStartDate = computed(() => onboardingStore.draft.orderHistoryStartDate || defaultOrderHistoryStartDate.value)
-const preferredOrderLaunchDate = computed(() => onboardingStore.draft.orderLaunchDate || defaultOrderLaunchDate.value)
-const orderHistoryStartDateTime = computed(() => preferredOrderHistoryStartDate.value ? `${preferredOrderHistoryStartDate.value} 00:00:00` : "")
-const orderLaunchDateTime = computed(() => preferredOrderLaunchDate.value ? `${preferredOrderLaunchDate.value} 00:00:00` : "")
-const facilityCount = computed(() => productStoreStore.currentFacilities.length)
-const shouldCreateStarterFacility = computed(() =>
-  currentStep.value.id === "facilities"
-    && onboardingStore.draft.facilityMode === "One store"
-    && selectedProductStoreId.value
-    && facilityCount.value === 0
-)
-const starterFacilityDescription = computed(() => {
-  const storeName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
-  return `${translate("Create one Retail Store facility for")} ${storeName}.`
-})
-const { values: salesChannels } = useTypedEnums('ORDER_SALES_CHANNEL')
-const { paymentMethodTypes: paymentMethods } = usePaymentMethodTypes()
-// Live, not cached: onboarding reads the methods of a store that may not have existed at login.
-const productStoreShipmentMethods = ref<any[]>([])
-const { fetchShippingMethodsFor } = useProductStoreShippingMethodsLive()
-async function loadProductStoreShipmentMethods() {
-  productStoreShipmentMethods.value = await fetchShippingMethodsFor(selectedProductStoreId.value)
+
+function dateTimeValue(date: string) {
+  return date ? `${date} 00:00:00` : ""
 }
-const activeProductStoreShipmentMethods = computed(() => {
-  const now = Date.now()
-  return productStoreShipmentMethods.value.filter((method: any) => {
-    return (!method.fromDate || method.fromDate <= now) && (!method.thruDate || method.thruDate > now)
-  })
-})
-const mappedShopifyLocationCount = computed(() => shopifyLocationMappings.value.length)
-const { values: productIdentifierOptions } = useTypedEnums("SHOP_PROD_IDENTITY")
-const shopifyMappingAreas = computed(() => [
-  {
-    id: "productTypes",
-    label: translate("Product type mappings"),
-    description: translate("Maps Shopify product types into OMS product types for product import."),
-    path: "product-types",
-    count: shopifyMappingCounts.value.productTypes
-  },
-  {
-    id: "orderSources",
-    label: translate("Sales channel mappings"),
-    description: translate("Maps Shopify order sources into OMS sales channels for imported orders."),
-    path: "sales-channels",
-    count: shopifyMappingCounts.value.orderSources
-  },
-  {
-    id: "paymentMethods",
-    label: translate("Payment method mappings"),
-    description: translate("Maps Shopify payment names into OMS payment method types."),
-    path: "payment-methods",
-    count: shopifyMappingCounts.value.paymentMethods
-  },
-  {
-    id: "shippingMethods",
-    label: translate("Shipping method mappings"),
-    description: translate("Maps Shopify shipping names into OMS shipment methods and carriers."),
-    path: "shipment-methods",
-    count: shopifyMappingCounts.value.shippingMethods
-  },
-  {
-    id: "locations",
-    label: translate("Inventory location mappings"),
-    description: translate("Maps Shopify inventory locations to HotWax facilities."),
-    path: "locations",
-    count: shopifyMappingCounts.value.locations
+
+function captureStoreSetup() {
+  return {
+    productStoreId: onboarding.draft.productStoreId.trim(),
+    storeName: onboarding.draft.storeName.trim(),
+    defaultCurrencyUomId: onboarding.draft.defaultCurrencyUomId.trim(),
+    locale: onboarding.draft.locale.trim(),
+    timezone: onboarding.draft.timezone.trim(),
+    autoApproveOrder: onboarding.draft.autoApproveOrder === "Y" ? "Y" : "N",
+    orderNumberPrefix: onboarding.draft.orderNumberPrefix.trim(),
+    saveBillingInformation: onboarding.draft.saveBillingInformation === "Y" ? "Y" : "N"
   }
-])
-const readyShopifyMappingAreaCount = computed(() => {
-  return shopifyMappingAreas.value.filter((mapping) => mapping.count > 0).length
-})
-const hasShopifyMappingGaps = computed(() => {
-  return !!linkedShopifyShopId.value && readyShopifyMappingAreaCount.value < shopifyMappingAreas.value.length
-})
-const shopifyMappingReadinessDescription = computed(() => {
-  if (isLoadingShopifyMappingStatus.value) return translate("Checking Shopify mapping readiness.")
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before configuring mappings.")
-  return `${readyShopifyMappingAreaCount.value} ${translate("of")} ${shopifyMappingAreas.value.length} ${translate("mapping areas have at least one mapping.")}`
-})
-const shopifyMappingStatusLabel = computed(() => {
-  return readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length ? translate("Ready") : translate("Gap")
-})
-const shopifyMappingBadgeColor = computed(() => {
-  return readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length ? "success" : "warning"
-})
-const starterProductTypeId = computed(() => {
-  return productTypes.value.find((productType: any) => productType.productTypeId === "FINISHED_GOOD")?.productTypeId
-    || productTypes.value.find((productType: any) => productType.parentTypeId === "GOOD")?.productTypeId
-    || productTypes.value[0]?.productTypeId
-    || "FINISHED_GOOD"
-})
-const starterSalesChannelEnumId = computed(() => {
-  return salesChannels.value.find((salesChannel: any) => salesChannel.enumId === "WEB_SALES_CHANNEL")?.enumId
-    || salesChannels.value[0]?.enumId
-    || "WEB_SALES_CHANNEL"
-})
-const starterPaymentMethodTypeId = computed(() => {
-  return paymentMethods.value.find((paymentMethod: any) => paymentMethod.paymentMethodTypeId === "EXT_SHOP_OTHR_GTWAY")?.paymentMethodTypeId
-    || paymentMethods.value.find((paymentMethod: any) => paymentMethod.paymentMethodTypeId?.startsWith("EXT_SHOP_"))?.paymentMethodTypeId
-    || paymentMethods.value[0]?.paymentMethodTypeId
-    || "EXT_SHOP_OTHR_GTWAY"
-})
-const starterShipmentMethodTypeId = computed(() => {
-  return shipmentMethodTypes.value.find((shipmentMethod: any) => shipmentMethod.shipmentMethodTypeId === "STANDARD")?.shipmentMethodTypeId
-    || shipmentMethodTypes.value[0]?.shipmentMethodTypeId
-    || "STANDARD"
-})
-const starterShippingMethod = computed(() => {
-  return activeProductStoreShipmentMethods.value[0]
-    || {
-      shipmentMethodTypeId: starterShipmentMethodTypeId.value,
-      partyId: "_NA_"
-    }
-})
-const starterShopifyMappingDescription = computed(() => {
-  return translate("Creates first-pass product type, web sales channel, payment, shipping, and location-ready mappings for this Shopify shop.")
-})
-const canOpenShopifyProductSync = computed(() => {
-  return !!selectedProductStoreId.value && !!linkedShopifyShopId.value && !!onboardingStore.draft.productIdentifierEnumId
-})
-const canRunProductImport = computed(() => canOpenShopifyProductSync.value)
-const productImportJobDetails = computed(() => {
-  return [
-    {
-      key: "productSync",
-      fallbackLabel: translate("Queue product import"),
-      fallbackDetail: translate("Creates the product import system message for this Shopify shop.")
-    },
-    {
-      key: "productBulkSend",
-      fallbackLabel: translate("Send bulk operation"),
-      fallbackDetail: translate("Sends produced Shopify bulk query messages.")
-    },
-    {
-      key: "productBulkPoll",
-      fallbackLabel: translate("Poll bulk operation"),
-      fallbackDetail: translate("Polls Shopify until the bulk catalog result is ready.")
-    }
-  ].map((definition) => {
-    const job = getShopifyJobStatus(definition.key)
-    return {
-      key: definition.key,
-      label: job?.label ? translate(job.label) : definition.fallbackLabel,
-      detail: getShopifyJobDetail(job, definition.fallbackDetail),
-      status: getShopifyJobStatusLabel(definition.key),
-      color: getShopifyJobBadgeColor(definition.key)
-    }
-  })
-})
-const productImportProgressStatus = computed(() => {
-  if (!productImportProgressState.value?.systemMessageId && !productImportRun.value?.systemMessageId) return ""
+}
 
-  return normalizeProductSyncStatus({
-    status: productImportProgressState.value?.status,
-    systemMessageState: productImportProgressState.value?.systemMessageState || productImportRun.value?.systemMessage?.statusId,
-    logStatusId: productImportProgressState.value?.logStatusId || productImportRun.value?.mdmLog?.statusId,
-    logId: productImportProgressState.value?.logId || productImportRun.value?.mdmLog?.id
-  })
-})
-const productImportProgressVisible = computed(() => {
-  return !!linkedShopifyShopId.value && (!!productImportProgressState.value?.systemMessageId || !!productImportRun.value?.systemMessageId || isLoadingProductImportProgress.value)
-})
-const productImportProgressLabel = computed(() => {
-  if (isLoadingProductImportProgress.value && !productImportProgressStatus.value) return translate("Checking")
+async function focusIonicControl(controlRef: any) {
+  await nextTick()
+  const control = controlRef?.value?.$el || controlRef?.value
+  await control?.setFocus?.()
+  if(!control?.setFocus) {control?.focus?.()}
+}
 
-  switch (productImportProgressStatus.value) {
-    case "completed": return translate("Complete")
-    case "error": return translate("Error")
-    case "cancelled": return translate("Canceled")
-    case "importing": return translate("Importing")
-    case "running": return translate("Running")
-    case "sent": return translate("Sent")
-    case "queued": return translate("Queued")
-    default: return translate("Pending")
-  }
-})
-const productImportProgressBadgeColor = computed(() => {
-  switch (productImportProgressStatus.value) {
-    case "completed": return "success"
-    case "error":
-    case "cancelled": return "danger"
-    case "queued": return "warning"
-    case "running":
-    case "importing":
-    case "sent": return "primary"
-    default: return isLoadingProductImportProgress.value ? "primary" : "medium"
-  }
-})
-const productImportProgressDescription = computed(() => {
-  const run = productImportRun.value || {}
-  const systemMessageId = productImportProgressState.value?.systemMessageId || run.systemMessageId
-  if (!systemMessageId) return translate("No catalog import has been queued yet.")
+async function focusFirstInvalidStoreField() {
+  const invalidControl = [
+    [shouldCollectCompanyName.value && !onboarding.draft.companyName.trim(), companyNameInputRef],
+    [!onboarding.draft.storeName.trim(), storeNameInputRef],
+    [!onboarding.draft.productStoreId.trim() || onboarding.draft.productStoreId.trim().length > 20, productStoreIdInputRef],
+    [!onboarding.draft.defaultCurrencyUomId, currencyInputRef],
+    [!LOCALE_PATTERN.test(onboarding.draft.locale.trim()), localeInputRef],
+    [!onboarding.draft.timezone, timezoneInputRef],
+    [!onboarding.draft.orderNumberPrefix.trim(), orderNumberPrefixInputRef]
+  ].find(([invalid]) => invalid)?.[1]
 
-  const details = [`${translate("System message")} ${systemMessageId}`]
-  const bulkOperationId = run.bulkOperation?.id || productImportProgressState.value?.bulkOperationId
-  if (bulkOperationId) details.push(`${translate("Bulk operation")} ${bulkOperationId}`)
-  if (run.bulkOperation?.objectCount) details.push(`${run.bulkOperation.objectCount} ${translate("objects")}`)
-  if (run.mdmLog?.id) details.push(`${translate("DataManager log")} ${run.mdmLog.id}`)
-  if (run.mdmLog?.totalRecordCount) details.push(`${run.mdmLog.totalRecordCount} ${translate("records")}`)
-  return details.join(" | ")
-})
-const isProductImportInProgress = computed(() => {
-  return ["queued", "sent", "running", "importing", "waiting"].includes(productImportProgressStatus.value)
-})
-const productSyncHandoffDescription = computed(() => {
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
-  if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
-  const productSyncRequirement = findShopifyRequirement("job.productSync")
-  if (productSyncRequirement?.message) return productSyncRequirement.message
-  return translate("Configure recurring Shopify product import and queue the first catalog sync.")
-})
-const initialProductImportDescription = computed(() => {
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before importing products.")
-  if (!onboardingStore.draft.productIdentifierEnumId) return translate("Choose the product identifier before importing products.")
-  return translate("Configure the product sync job, then queue a Shopify import for the full catalog.")
-})
-const shopifySetupStatusDescription = computed(() => {
-  if (!selectedProductStoreId.value) return translate("Create the Product Store before checking Shopify setup.")
-  if (isLoadingShopifyJobStatus.value) return translate("Checking Shopify setup status.")
-  if (!hasShopifyJobStatus.value) return translate("The setup flow could not read Shopify readiness from the existing remote, ServiceJob, and DataManager records.")
+  if(invalidControl) {await focusIonicControl(invalidControl)}
+}
 
-  const missingCount = shopifyJobRequirements.value.filter((requirement: any) => !requirement.complete).length
-  if (!missingCount) return translate("Shopify remotes and onboarding jobs are ready.")
-  return `${missingCount} ${translate("Shopify setup items need attention.")}`
-})
-const shopifyConnectionStatusLabel = computed(() => {
-  if (!hasShopifyJobStatus.value) return translate("Gap")
-  return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? translate("Ready") : translate("Gap")
-})
-const shopifyConnectionBadgeColor = computed(() => {
-  if (!hasShopifyJobStatus.value) return "warning"
-  return shopifyConnectionRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
-})
-const shopifyHandoffOmsUrl = computed(() => commonUtil.getMaargURL())
-const canGenerateShopifyToken = computed(() => {
-  return !!onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim()
-    && !!onboardingStore.draft.shopifyTokenPurpose.trim()
-    && !!Number(onboardingStore.draft.shopifyTokenExpireIn || 0)
-})
-const shopifyTokenHandoffDescription = computed(() => {
-  if (shopifyHandoffToken.value) return translate("Copy the OMS URL and JWT token into the Shopify app connection form.")
-  return translate("Generate a one-time integration token for the Shopify app connection form.")
-})
-const shopifyHandoffTokenExpirationLabel = computed(() => {
-  if (!shopifyHandoffTokenExpirationTime.value) return ""
-  return new Date(shopifyHandoffTokenExpirationTime.value).toLocaleString()
-})
-const shouldSetupShopifyInventoryReset = computed(() => onboardingStore.draft.inventorySource === "Shopify")
-const inventoryResetDescription = computed(() => {
-  if (!shouldSetupShopifyInventoryReset.value) return translate("This inventory source does not need a Shopify inventory reset job.")
-  if (!selectedProductStoreId.value) return translate("Create the Product Store before configuring inventory reset.")
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before configuring inventory reset.")
+async function saveStore() {
+  storeValidationAttempted.value = true
+  if(!canSaveStore.value) {
+    setFeedback("name", translate("Complete every required store field before saving."), "danger")
+    await focusFirstInvalidStoreField()
 
-  const inventoryRequirement = findShopifyRequirement("job.inventoryReset")
-  if (inventoryRequirement?.message) return inventoryRequirement.message
-  return translate("Configure the Shopify inventory reset job and queue the initial on-hand inventory import after products and locations are mapped.")
-})
-const initialInventoryImportDescription = computed(() => {
-  if (!shouldSetupShopifyInventoryReset.value) return translate("Skipped for this inventory source.")
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading inventory.")
-  if (!mappedShopifyLocationCount.value) return translate("Map Shopify inventory locations before loading inventory.")
-  if (isProductImportInProgress.value) return translate("Finish the Shopify product import before loading inventory.")
-  return translate("Queue a Shopify bulk import that resets OMS facility inventory from current on-hand quantities.")
-})
-const canQueueInventoryImport = computed(() => {
-  return !!linkedShopifyShopId.value && !!mappedShopifyLocationCount.value && !isProductImportInProgress.value
-})
-const inventoryResetStatusLabel = computed(() => {
-  return shouldSetupShopifyInventoryReset.value ? getShopifyJobStatusLabel("inventoryReset") : translate("Skipped")
-})
-const inventoryResetBadgeColor = computed(() => {
-  return shouldSetupShopifyInventoryReset.value ? getShopifyJobBadgeColor("inventoryReset") : "medium"
-})
-const orderImportStatusDescription = computed(() => {
-  if (!selectedProductStoreId.value) return translate("Create the Product Store before checking order import jobs.")
-  if (!hasShopifyJobStatus.value) return translate("The setup flow could not read order import readiness from the existing ServiceJob and DataManager records.")
-
-  const missingOrderItems = orderJobRequirements.value.filter((requirement: any) => !requirement.complete)
-  if (!missingOrderItems.length) return translate("Order import jobs and DataManager configs are ready.")
-  return `${missingOrderItems.length} ${translate("order import setup items need attention.")}`
-})
-const orderImportStatusLabel = computed(() => {
-  if (!hasShopifyJobStatus.value) return translate("Gap")
-  return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? translate("Ready") : translate("Gap")
-})
-const orderImportBadgeColor = computed(() => {
-  if (!hasShopifyJobStatus.value) return "warning"
-  return orderJobRequirements.value.every((requirement: any) => requirement.complete) ? "success" : "warning"
-})
-const initialOrderHistoryImportDescription = computed(() => {
-  if (!linkedShopifyShopId.value) return translate("Link a Shopify shop before loading orders.")
-  if (!preferredOrderHistoryStartDate.value) return translate("Choose how far back to load Shopify order history.")
-  if (!preferredOrderLaunchDate.value) return translate("Choose the HotWax go-live date for order import.")
-  return `${translate("Queue Shopify order history updated since")} ${preferredOrderHistoryStartDate.value}. ${translate("Orders created before")} ${preferredOrderLaunchDate.value} ${translate("stay historical.")}`
-})
-const requiredReadinessItems = computed(() => [
-  buildReadinessItem({
-    id: "productStore",
-    label: translate("Product Store"),
-    ready: !!selectedProductStoreId.value,
-    readyDetail: selectedProductStoreId.value || translate("Created ProductStore is available."),
-    gapDetail: translate("Create the Product Store identity before setup can continue.")
-  }),
-  buildReadinessItem({
-    id: "shopifyShop",
-    label: translate("Shopify connection"),
-    ready: !!linkedShopifyShopId.value,
-    readyDetail: linkedShopifyShop.value?.myshopifyDomain || linkedShopifyShop.value?.name || linkedShopifyShopId.value,
-    gapDetail: translate("Link an existing Shopify shop or prepare the Shopify app handoff.")
-  }),
-  buildReadinessItem({
-    id: "shopifyMappings",
-    label: translate("Shopify mappings"),
-    ready: readyShopifyMappingAreaCount.value === shopifyMappingAreas.value.length,
-    readyDetail: shopifyMappingReadinessDescription.value,
-    gapDetail: shopifyMappingReadinessDescription.value
-  }),
-  buildReadinessItem({
-    id: "productIdentity",
-    label: translate("Product identity"),
-    ready: !!onboardingStore.draft.productIdentifierEnumId,
-    readyDetail: onboardingStore.draft.productIdentifierEnumId,
-    gapDetail: translate("Choose the product identifier before product import starts.")
-  }),
-  buildReadinessItem({
-    id: "facilities",
-    label: translate("Facilities"),
-    ready: facilityCount.value > 0,
-    readyDetail: `${facilityCount.value} ${translate("facilities available for setup")}`,
-    gapDetail: translate("Import Shopify locations or create facilities for this Product Store.")
-  }),
-  buildReadinessItem({
-    id: "locationMappings",
-    label: translate("Inventory location mappings"),
-    ready: mappedShopifyLocationCount.value > 0,
-    readyDetail: `${mappedShopifyLocationCount.value} ${translate("Shopify location mappings")}`,
-    gapDetail: translate("Map Shopify inventory locations to HotWax facilities.")
-  }),
-  buildReadinessItem({
-    id: "inventory",
-    label: translate("Initial inventory load"),
-    ready: !shouldSetupShopifyInventoryReset.value || inventoryResetStatusLabel.value === translate("Ready"),
-    readyDetail: inventoryResetDescription.value,
-    gapDetail: inventoryResetDescription.value,
-    status: shouldSetupShopifyInventoryReset.value ? undefined : translate("Skipped"),
-    color: shouldSetupShopifyInventoryReset.value ? undefined : "medium"
-  }),
-  buildReadinessItem({
-    id: "orders",
-    label: translate("Order import"),
-    ready: orderImportStatusLabel.value === translate("Ready"),
-    readyDetail: orderImportStatusDescription.value,
-    gapDetail: orderImportStatusDescription.value
-  })
-])
-const workflowReadinessItems = computed(() => [
-  buildReadinessItem({
-    id: "routing",
-    label: translate("Order routing and fulfillment"),
-    ready: !!selectedProductStoreId.value,
-    readyDetail: translate("Routing defaults can be saved through existing ProductStore settings."),
-    gapDetail: translate("Create the Product Store before saving routing defaults.")
-  }),
-  buildReadinessItem({
-    id: "pickup",
-    label: translate("In store pickup"),
-    ready: !!selectedProductStoreId.value,
-    readyDetail: translate("Pickup permissions can be saved through ProductStoreSetting values."),
-    gapDetail: translate("Create the Product Store before saving pickup settings.")
-  }),
-  {
-    id: "storeInventory",
-    label: translate("Store inventory management"),
-    detail: translate("Inventory count and receiving app setup are represented as workflow tasks until app-specific package choices are confirmed."),
-    status: translate("Preview"),
-    color: "medium"
-  },
-  {
-    id: "preorders",
-    label: translate("Pre-orders"),
-    detail: onboardingStore.draft.preorderFacilityGroupId
-      ? translate("Preorder inventory group selected.")
-      : translate("Preorder release and routing setup still needs a dedicated task."),
-    status: onboardingStore.draft.preorderFacilityGroupId ? translate("Ready") : translate("Preview"),
-    color: onboardingStore.draft.preorderFacilityGroupId ? "success" : "medium"
-  }
-])
-const nextReadinessActions = computed(() => {
-  const actions = []
-
-  if (hasShopifyMappingGaps.value) {
-    actions.push({
-      id: "shopifyMappings",
-      label: translate("Create starter Shopify mappings"),
-      detail: starterShopifyMappingDescription.value,
-      status: translate("Action"),
-      color: "primary"
-    })
+    return
   }
 
-  if (canOpenShopifyProductSync.value) {
-    actions.push({
-      id: "productSync",
-      label: translate("Run product sync"),
-      detail: productSyncHandoffDescription.value,
-      status: translate("Action"),
-      color: "primary"
-    })
-  }
-
-  if (shouldSetupShopifyInventoryReset.value) {
-    actions.push({
-      id: "inventoryReset",
-      label: translate("Load initial inventory"),
-      detail: inventoryResetDescription.value,
-      status: inventoryResetStatusLabel.value,
-      color: inventoryResetBadgeColor.value
-    })
-  }
-
-  actions.push({
-    id: "orderJobs",
-    label: translate("Enable order import"),
-    detail: orderImportStatusDescription.value,
-    status: orderImportStatusLabel.value,
-    color: orderImportBadgeColor.value
-  })
-
-  return actions
-})
-const requiredReadinessGapCount = computed(() => requiredReadinessItems.value.filter((item) => item.color === "warning").length)
-const requiredReadinessReadyCount = computed(() => requiredReadinessItems.value.length - requiredReadinessGapCount.value)
-const readinessStatusLabel = computed(() => requiredReadinessGapCount.value ? translate("Needs attention") : translate("Ready"))
-const readinessBadgeColor = computed(() => requiredReadinessGapCount.value ? "warning" : "success")
-const readinessSummaryDescription = computed(() => {
-  if (!requiredReadinessItems.value.length) return translate("No readiness checks available.")
-  return `${requiredReadinessReadyCount.value} ${translate("of")} ${requiredReadinessItems.value.length} ${translate("required setup areas are ready.")}`
-})
-const productIdentityPreferences = computed(() => {
-  const settingValue = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF?.settingValue
-  if (!settingValue) return {} as any
+  busy.name = true
+  feedback.name = null
+  const wasExisting = !!selectedProductStoreId.value
+  const expectedSetup = captureStoreSetup()
+  const requestedId = expectedSetup.productStoreId
 
   try {
-    return JSON.parse(settingValue)
+    if(!organizationPartyId.value) {
+      const organization = await bootstrapOrganization({ groupName: onboarding.draft.companyName.trim() })
+      if(!organization?.partyId) {throw new Error(translate("Unable to create the company organization."))}
+    }
+
+    const storePayload = {
+      storeName: expectedSetup.storeName,
+      defaultCurrencyUomId: expectedSetup.defaultCurrencyUomId,
+      defaultLocaleString: expectedSetup.locale,
+      defaultTimeZoneString: expectedSetup.timezone,
+      autoApproveOrder: expectedSetup.autoApproveOrder,
+      orderNumberPrefix: expectedSetup.orderNumberPrefix,
+      payToPartyId: organizationPartyId.value
+    }
+
+    let response: any
+    if(wasExisting) {
+      response = await useProductStoreMutations(selectedProductStoreId.value).updateStore(storePayload)
+    } else {
+      response = await createStore({ ...storePayload, productStoreId: requestedId })
+    }
+    if(responseFailed(response)) {throw response?.data || response}
+
+    const savedId = String(response?.data?.productStoreId || selectedProductStoreId.value || requestedId)
+    onboarding.setCreatedProductStoreId(savedId)
+    await router.replace(`/product-store-onboarding/${encodeURIComponent(savedId)}`)
+
+    const billingResponse = await useProductStoreMutations(savedId).saveSettings({
+      settingTypeEnumId: "SAVE_BILL_TO_INF",
+      settingValue: expectedSetup.saveBillingInformation
+    })
+    if(responseFailed(billingResponse)) {throw billingResponse?.data || billingResponse}
+
+    const loaded = await loadSelectedProductStore(savedId)
+    if(!loaded || !persistedStoreMatches(expectedSetup)) {
+      throw new Error(translate("Failed to save the Product Store."))
+    }
+    setFeedback("name", translate(wasExisting ? "Store settings saved." : "Product Store created."), "success")
   } catch (error: any) {
     logger.error(error)
-    return {} as any
+    onboarding.markStepAttention("name")
+    setFeedback("name", feedbackForError(error, "Failed to save the Product Store."), "danger")
+  } finally {
+    busy.name = false
   }
+}
+
+async function linkShopifyShop() {
+  const shopId = String(selectedAvailableShopifyShop.value?.shopId || "")
+  if(!selectedProductStoreId.value || !shopId) {return}
+
+  busy.shopify = true
+  feedback.shopify = null
+  try {
+    const response = await useShopifyShopMutations(shopId).updateShop({
+      productStoreId: selectedProductStoreId.value
+    })
+    if(responseFailed(response)) {throw response?.data || response}
+
+    await refreshShopifyStatus(shopId)
+    setFeedback("shopify", translate("Shopify shop linked to this Product Store."), "success")
+    await refreshLocationMappings()
+  } catch (error: any) {
+    logger.error(error)
+    onboarding.markStepAttention("shopify")
+    setFeedback("shopify", feedbackForError(error, "Failed to link the Shopify shop."), "danger")
+  } finally {
+    busy.shopify = false
+  }
+}
+
+function openShopifyConnections() {
+  router.push("/shopify")
+}
+
+// The OMS-side read/write shutoff on the shop's remote. Read access is enough to browse and to
+// finish this wizard, but nothing the store publishes back gets through, and the connector logs the
+// refusal where no operator sees it.
+// "Resolved" is decided by the remote, not the scope string: an empty accessScopeEnumId on a remote
+// that exists is read-only (see getShopifyAccessStateFromCandidate), not "still loading".
+const connectionRemoteResolved = computed(() =>
+  !!String(shopifySyncContext.remote.value?.systemMessageRemoteId ?? "").trim())
+const connectionAccessScopeId = computed(() => String(shopifySyncContext.remote.value?.accessScopeEnumId || ""))
+const connectionIsWritable = computed(() =>
+  connectionRemoteResolved.value && isWritableAccessScope(connectionAccessScopeId.value))
+const connectionAccessLabel = computed(() => {
+  if(connectionIsWritable.value) {return translate("Read and write")}
+
+  return connectionRemoteResolved.value ? translate("Read only") : translate("Unknown")
 })
-const preferredPrimaryProductIdentification = computed(() => onboardingStore.draft.primaryProductIdentification || productIdentityPreferences.value.primaryId || "")
-const preferredSecondaryProductIdentification = computed(() => onboardingStore.draft.secondaryProductIdentification || productIdentityPreferences.value.secondaryId || "")
-const currencyOptions = computed(() => {
-  if (currencies.value.length) {
-    return currencies.value.map((currency: any) => ({
-      uomId: currency.uomId,
-      label: `${currency.description} (${currency.abbreviation})`
-    }))
+const connectionAccessDescription = computed(() => {
+  if(connectionIsWritable.value) {
+    return translate("This Product Store can publish inventory and fulfillments back to Shopify.")
+  }
+  if(!connectionRemoteResolved.value) {
+    return translate("This shop's Shopify connection could not be read, so its access level is unknown. Open Shopify connections to check it.")
   }
 
-  return [
-    { uomId: "USD", label: translate("USD") },
-    { uomId: "CAD", label: translate("CAD") },
-    { uomId: "GBP", label: translate("GBP") }
-  ]
+  return translate("Imports work, but nothing this store records will reach Shopify until write access is granted.")
 })
-const nextLabel = computed(() => {
-  const nextStep = PRODUCT_STORE_ONBOARDING_STEPS[onboardingStore.currentStepIndex + 1]
-  return nextStep ? translate(nextStep.label) : translate("Review")
-})
-const primaryActionLabel = computed(() => {
-  if (currentStep.value.id === "name" && !selectedProductStoreId.value) return translate("Create product store")
-  if (currentStep.value.id === "general") return translate("Save order defaults")
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) return translate("Create Shopify connection")
-  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) return translate("Link Shopify")
-  if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) return translate("Create store facility")
-  if (currentStep.value.id === "products" && linkedShopifyShopId.value) return translate("Save and import products")
-  if (currentStep.value.id === "products") return translate("Save product identity")
-  if (currentStep.value.id === "inventory" && shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) return translate("Save and load inventory")
-  if (currentStep.value.id === "inventory") return translate("Save inventory settings")
-  if (currentStep.value.id === "orders") return translate("Configure and load orders")
-  if (currentStep.value.id === "routing") return translate("Save routing defaults")
-  if (currentStep.value.id === "pickup") return translate("Save pickup settings")
-  if (currentStep.value.id === "readiness") return requiredReadinessGapCount.value ? translate("Resolve gaps") : translate("Finish setup")
-  return nextLabel.value
-})
-const isPrimaryActionDisabled = computed(() => {
-  if (isLoadingSetupData.value || isPrimaryActionLoading.value) return true
-  if (isLastStep.value && currentStep.value.id !== "readiness") return true
 
-  if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
-    return !onboardingStore.draft.storeName.trim()
-      || !onboardingStore.draft.defaultCurrencyUomId
-      || (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim())
+async function grantConnectionWriteAccess() {
+  const remoteId = shopifySyncContext.remoteId.value
+  if(!remoteId || connectionIsWritable.value || busy.connectionAccess) {return}
+
+  busy.connectionAccess = true
+  feedback.shopify = null
+  try {
+    await useShopifyAccessScopes().setConnectionAccessScope(remoteId, SHOPIFY_RW_ACCESS_SCOPE)
+    setFeedback("shopify", translate("This connection can now write to Shopify."), "success")
+  } catch (error: any) {
+    logger.error(error)
+    setFeedback("shopify", feedbackForError(error, "Failed to grant write access to this connection."), "danger")
+  } finally {
+    busy.connectionAccess = false
+  }
+}
+
+function captureProductSetup() {
+  const setup = {
+    productStoreId: selectedProductStoreId.value,
+    shopId: linkedShopId.value,
+    productIdentifierEnumId: onboarding.draft.productIdentifierEnumId,
+    primaryProductIdentification: onboarding.draft.primaryProductIdentification,
+    secondaryProductIdentification: onboarding.draft.secondaryProductIdentification
   }
 
-  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
-    return !selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId
+  return {
+    ...setup,
+    snapshot: JSON.stringify(Object.values(setup))
+  }
+}
+
+function captureInventorySetup() {
+  const setup = {
+    productStoreId: selectedProductStoreId.value,
+    shopId: linkedShopId.value,
+    reserveInventory: onboarding.draft.reserveInventory === "Y" ? "Y" : "N",
+    showSystemicInventory: onboarding.draft.showSystemicInventory === "true" ? "true" : "false"
   }
 
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
-    return !selectedProductStoreId.value
+  return {
+    ...setup,
+    snapshot: JSON.stringify(Object.values(setup))
+  }
+}
+
+function captureOrderSetup() {
+  const setup = {
+    productStoreId: selectedProductStoreId.value,
+    shopId: linkedShopId.value,
+    historyStartDate: dateTimeValue(onboarding.draft.orderHistoryStartDate),
+    launchDate: dateTimeValue(onboarding.draft.orderLaunchDate)
   }
 
-  if (currentStep.value.id === "general") {
-    return !selectedProductStoreId.value
+  return {
+    ...setup,
+    snapshot: JSON.stringify(Object.values(setup))
   }
+}
 
-  if (currentStep.value.id === "products") {
-    return !selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId
+function initialLoadSnapshot(kind: OnboardingInitialLoadKind) {
+  return kind === "products"
+    ? productInitialLoad.value
+    : kind === "inventory"
+      ? inventoryInitialLoad.value
+      : orderInitialLoad.value
+}
+
+function beginInitialLoadRequest(kind: OnboardingInitialLoadKind, shopId: string, setupSnapshot: string) {
+  const existing = onboarding.runRequests[kind]
+  if(existing && Date.now() - existing.requestedAt >= INITIAL_LOAD_REQUEST_TIMEOUT_MS) {
+    onboarding.setRunRequest(kind, null)
   }
+  onboarding.setRunRequest(kind, {
+    shopId,
+    setupSnapshot,
+    baselineSystemMessageId: initialLoadSnapshot(kind).details.systemMessageId,
+    systemMessageId: "",
+    jobRunId: "",
+    requestedAt: Date.now()
+  })
+}
 
-  if (currentStep.value.id === "facilities") {
-    return !selectedProductStoreId.value
+function acceptInitialLoadRequest(kind: OnboardingInitialLoadKind, response: any) {
+  const request = onboarding.runRequests[kind]
+  if(!request) {return}
+  const payload = response?.data ?? response ?? {}
+  // Which id comes back is a property of the transport, not the step: bulk-query resources answer
+  // with a SystemMessage id, a service job with a ServiceJobRun id. Read whichever arrived.
+  const systemMessageId = String(payload.systemMessageId || "").trim()
+  const jobRunId = String(payload.jobRunId || "").trim()
+  if(!systemMessageId && !jobRunId) {
+    throw new Error(translate("The sync request could not be tracked because the backend returned no tracking ID."))
   }
+  onboarding.setRunRequest(kind, { ...request, systemMessageId, jobRunId })
+}
 
-  if (currentStep.value.id === "inventory") {
-    return !selectedProductStoreId.value
-  }
-
-  if (currentStep.value.id === "orders") {
-    return !selectedProductStoreId.value
-      || (!!linkedShopifyShopId.value && (
-        !preferredOrderHistoryStartDate.value
-        || (shouldConfigureRealtimeOrderImport.value && !onboardingStore.draft.orderSqsQueueName.trim())
-      ))
-  }
-
-  if (currentStep.value.id === "routing") {
-    return !selectedProductStoreId.value
-  }
-
-  if (currentStep.value.id === "pickup") {
-    return !selectedProductStoreId.value
+function initialLoadMatchesRequest(kind: OnboardingInitialLoadKind, snapshot: OnboardingInitialLoadSnapshot) {
+  const request = onboarding.runRequests[kind]
+  if(!request || request.shopId !== linkedShopId.value) {return false}
+  const setupSnapshot = kind === "products"
+    ? captureProductSetup().snapshot
+    : kind === "inventory"
+      ? captureInventorySetup().snapshot
+      : captureOrderSetup().snapshot
+  if(request.setupSnapshot !== setupSnapshot) {return false}
+  if(request.systemMessageId) {return snapshot.details.systemMessageId === request.systemMessageId}
+  if(request.jobRunId) {
+    return snapshot.details.jobRunId === request.jobRunId
   }
 
   return false
-})
-const capabilityLabel = computed(() => {
-  if (currentStep.value.capability === "backend-gap") return "Gap"
-  if (currentStep.value.capability === "existing-api") return "Existing API"
-  return "Preview"
-})
-const capabilityColor = computed(() => {
-  if (currentStep.value.capability === "backend-gap") return "warning"
-  if (currentStep.value.capability === "existing-api") return "success"
-  return "medium"
-})
+}
 
-function buildReadinessItem(payload: {
-  id: string
-  label: string
-  ready: boolean
-  readyDetail: string
-  gapDetail: string
-  status?: string
-  color?: string
-}) {
-  return {
-    id: payload.id,
-    label: payload.label,
-    detail: payload.ready ? payload.readyDetail : payload.gapDetail,
-    status: payload.status || (payload.ready ? translate("Ready") : translate("Gap")),
-    color: payload.color || (payload.ready ? "success" : "warning")
+function productPreferenceValue(primaryId: string, secondaryId: string) {
+  const value: Record<string, string> = {}
+  if(primaryId) {
+    value.primaryId = primaryId
   }
-}
-
-function findShopifyRequirement(requirementId: string) {
-  return shopifyJobRequirements.value.find((requirement: any) => requirement.id === requirementId)
-}
-
-function getRequirementBadgeColor(requirement: any) {
-  return requirement?.complete ? "success" : "warning"
-}
-
-function getRequirementStatusLabel(requirement: any) {
-  return requirement?.complete ? translate("Ready") : translate("Gap")
-}
-
-function getShopifyJobStatus(jobKey: string) {
-  const jobs = Array.isArray(shopifyJobStatus.value?.jobs) ? shopifyJobStatus.value.jobs : []
-  return jobs.find((job: any) => job.key === jobKey)
-}
-
-function getShopifyJobDetail(job: any, fallbackDetail: string) {
-  if (!job) return fallbackDetail
-  if (job.selectedJobName) return job.selectedJobName
-  if (job.expectedJobName) return job.expectedJobName
-  if (job.templateJobName) return job.templateJobName
-  return fallbackDetail
-}
-
-function getShopifyJobBadgeColor(jobKey: string) {
-  const job = getShopifyJobStatus(jobKey)
-  if (job?.ready || job?.enabled) return "success"
-  if (job?.configured) return "warning"
-  if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return "success"
-  return "warning"
-}
-
-function getShopifyJobStatusLabel(jobKey: string) {
-  const job = getShopifyJobStatus(jobKey)
-  if (job?.ready || job?.enabled) return translate("Ready")
-  if (job?.configured) return translate("Paused")
-  if (job?.status === "template-ready") return translate("Template")
-  if (!hasShopifyJobStatus.value && jobKey === "productSync" && canOpenShopifyProductSync.value) return translate("Ready")
-  return translate("Gap")
-}
-
-function updateShopifyTokenDraftField(field: "shopifyTokenSubjectUserLoginId" | "shopifyTokenPurpose" | "shopifyTokenExpireIn", value: string) {
-  onboardingStore.updateDraftField(field, value)
-  shopifyHandoffToken.value = ""
-  shopifyHandoffTokenExpirationTime.value = 0
-}
-
-async function generateShopifyHandoffToken() {
-  if (!canGenerateShopifyToken.value) {
-    commonUtil.showToast(translate("Enter an integration user, token purpose, and expiry."))
-    return
+  if(secondaryId) {
+    value.secondaryId = secondaryId
   }
 
-  isGeneratingShopifyToken.value = true
-  emitter.emit("presentLoader")
+  return JSON.stringify(value)
+}
 
+async function saveProductSetup() {
+  if(!canConfigureProducts.value ||
+    busy.products || busy.productImport || initialLoadRefreshBusy.products) {return}
+
+  const setup = captureProductSetup()
+  busy.products = true
+  feedback.products = null
   try {
-    const resp = await productStoreStore.createJwtToken({
-      subjectUserLoginId: onboardingStore.draft.shopifyTokenSubjectUserLoginId.trim(),
-      category: "INTEGRATION",
-      purpose: onboardingStore.draft.shopifyTokenPurpose.trim(),
-      expireIn: Number(onboardingStore.draft.shopifyTokenExpireIn)
+    const storeResponse = await useProductStoreMutations(setup.productStoreId).updateStore({
+      productIdentifierEnumId: setup.productIdentifierEnumId
     })
+    if(responseFailed(storeResponse)) {throw storeResponse?.data || storeResponse}
 
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    shopifyHandoffToken.value = resp.data?.token || ""
-    shopifyHandoffTokenExpirationTime.value = Number(resp.data?.expirationTime || 0)
-    commonUtil.showToast(translate("JWT token generated."))
-  } catch (error: any) {
-    logger.error(error)
-    shopifyHandoffToken.value = ""
-    shopifyHandoffTokenExpirationTime.value = 0
-    commonUtil.showToast(translate("Failed to generate JWT token."))
-  } finally {
-    emitter.emit("dismissLoader")
-    isGeneratingShopifyToken.value = false
-  }
-}
-
-async function copyShopifyHandoffValue(value: string, message: string) {
-  if (!value) return
-
-  try {
-    await navigator.clipboard.writeText(value)
-    commonUtil.showToast(translate(message))
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to copy value."))
-  }
-}
-
-async function refreshShopifyJobStatus() {
-  if (!selectedProductStoreId.value) {
-    productStoreStore.currentShopifyJobStatus = null
-    return
-  }
-
-  isLoadingShopifyJobStatus.value = true
-  try {
-    await productStoreStore.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value)
-  } catch (error: any) {
-    logger.warn("Failed to refresh Shopify job status", error)
-  } finally {
-    isLoadingShopifyJobStatus.value = false
-  }
-}
-
-async function refreshProductImportProgress() {
-  if (!linkedShopifyShopId.value) {
-    productImportProgressState.value = {}
-    productImportRun.value = null
-    stopProductImportProgressPolling()
-    return false
-  }
-
-  if (isLoadingProductImportProgress.value) return false
-
-  isLoadingProductImportProgress.value = true
-  try {
-    const trackedSystemMessageId = productImportProgressState.value?.systemMessageId || ""
-    const syncRunState = await fetchProductUpdateSyncRunState({
-      shopId: linkedShopifyShopId.value,
-      systemMessageId: trackedSystemMessageId
+    const settingResponse = await useProductStoreMutations(setup.productStoreId).saveSettings({
+      settingTypeEnumId: "PRDT_IDEN_PREF",
+      settingValue: productPreferenceValue(setup.primaryProductIdentification, setup.secondaryProductIdentification)
     })
-    const latestMessage = trackedSystemMessageId
-      ? syncRunState.systemMessages?.find((message: any) => message.systemMessageId === trackedSystemMessageId) || syncRunState.latestSystemMessage
-      : syncRunState.latestSystemMessage
-
-    if (!latestMessage?.systemMessageId) {
-      productImportRun.value = null
-      return false
-    }
-
-    const status = normalizeProductSyncStatus({
-      systemMessageState: latestMessage.statusId,
-      logStatusId: latestMessage.logStatusId,
-      logId: latestMessage.logId
-    })
-    productImportProgressState.value = {
-      ...productImportProgressState.value,
-      ...latestMessage,
-      systemMessageId: latestMessage.systemMessageId,
-      systemMessageState: latestMessage.statusId,
-      logStatusId: latestMessage.logStatusId,
-      logId: latestMessage.logId,
-      status,
-      completed: ["completed", "error", "cancelled"].includes(status)
-    }
-    productImportRun.value = await fetchProductImportSyncRun(latestMessage.systemMessageId, latestMessage)
-
-    if (productImportProgressState.value.completed) stopProductImportProgressPolling()
-    return true
-  } catch (error: any) {
-    logger.warn("Failed to refresh product import progress", error)
-    return false
-  } finally {
-    isLoadingProductImportProgress.value = false
-  }
-}
-
-function startProductImportProgressPolling() {
-  stopProductImportProgressPolling()
-  productImportProgressPoll = window.setInterval(refreshProductImportProgress, 5000)
-}
-
-function stopProductImportProgressPolling() {
-  if (!productImportProgressPoll) return
-  window.clearInterval(productImportProgressPoll)
-  productImportProgressPoll = undefined
-}
-
-async function refreshShopifyMappingStatus() {
-  shopifyMappingCounts.value = {
-    productTypes: 0,
-    orderSources: 0,
-    paymentMethods: 0,
-    shippingMethods: 0,
-    locations: 0
-  }
-
-  if (!linkedShopifyShopId.value) return
-
-  isLoadingShopifyMappingStatus.value = true
-
-  try {
-    const shopId = linkedShopifyShopId.value
-    await refreshShopifyLocationMappings()
-
-    const [
-      productTypeMappings,
-      orderSourceMappings,
-      paymentMethodMappings,
-      shippingMethodMappings
-    ] = await Promise.all([
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_TYPE"),
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_ORDER_SOURCE"),
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_PAYMENT_TYPE"),
-      fetchShopifyCarrierShipments(shopId)
-    ])
-
-    shopifyMappingCounts.value = {
-      productTypes: productTypeMappings.length,
-      orderSources: orderSourceMappings.length,
-      paymentMethods: paymentMethodMappings.length,
-      shippingMethods: shippingMethodMappings.length,
-      locations: shopifyLocationMappings.value.length
-    }
-  } catch (error: any) {
-    logger.warn("Failed to refresh Shopify mapping status", error)
-  } finally {
-    isLoadingShopifyMappingStatus.value = false
-  }
-}
-
-onIonViewWillEnter(async () => {
-  if (routeProductStoreId.value) {
-    onboardingStore.setCreatedProductStoreId(routeProductStoreId.value)
-  } else {
-    onboardingStore.resetDraft()
-    productStoreStore.current = {}
-    productStoreStore.currentStoreSettings = {}
-    productStoreStore.currentFacilities = []
-    productStoreStore.currentShopifyJobStatus = null
-  }
-
-  await loadSetupData()
-})
-
-onIonViewDidLeave(() => {
-  stopProductImportProgressPolling()
-})
-
-async function loadSetupData() {
-  isLoadingSetupData.value = true
-
-  try {
-    // Currencies, types, identifiers, facilities and groups all read from the login cache now —
-    // the per-visit refetch fan-out went with the util store. Only live session data remains.
-    if (!organizationPartyId.value) await loadOrganizationPartyId()
-
-    await productStoreStore.fetchProductStores()
-
-    if (organizationPartyId.value) await productStoreStore.fetchCompany()
-    await loadSelectedProductStoreSetup()
-    await refreshShopifyMappingStatus()
-    const loadedProductImportProgress = await refreshProductImportProgress()
-    if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
-  } catch (error: any) {
-    logger.error(error)
-  }
-
-  isLoadingSetupData.value = false
-}
-
-async function createProductStoreFromDraft() {
-  const storeName = onboardingStore.draft.storeName.trim()
-  const productStoreId = onboardingStore.draft.productStoreId.trim() || generateInternalId(storeName)
-
-  if (!storeName || !onboardingStore.draft.defaultCurrencyUomId) {
-    commonUtil.showToast(translate("Please fill all the required fields"))
-    return ""
-  }
-
-  if (shouldCollectCompanyName.value && !onboardingStore.draft.companyName.trim()) {
-    commonUtil.showToast(translate("Please fill all the required fields"))
-    return ""
-  }
-
-  if (productStoreId.length > 20) {
-    commonUtil.showToast(translate("Product store ID cannot be more than 20 characters."))
-    return ""
-  }
-
-  isSavingProductStore.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    if (!organizationPartyId.value) {
-      const bootstrapCompanyName = onboardingStore.draft.companyName.trim() || productStoreStore.company.companyName || storeName
-      await bootstrapOrganization({ groupName: bootstrapCompanyName })
-      if (organizationPartyId.value) await productStoreStore.fetchCompany()
-    }
-
-    if (!organizationPartyId.value) {
-      commonUtil.showToast(translate("Unable to find company organization."))
-      return ""
-    }
-
-    const payload = {
-      storeName,
-      productStoreId,
-      companyName: productStoreStore.company.companyName || onboardingStore.draft.companyName.trim() || storeName,
-      payToPartyId: organizationPartyId.value,
-      defaultCurrencyUomId: onboardingStore.draft.defaultCurrencyUomId
-    } as any
-
-    if (shouldCollectCompanyName.value) payload.companyName = onboardingStore.draft.companyName.trim()
-
-    const resp = await createStore(payload)
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    const createdProductStoreId = resp.data.productStoreId
-    onboardingStore.setCreatedProductStoreId(createdProductStoreId)
-    onboardingStore.updateDraftField("productStoreId", createdProductStoreId)
-
-    if (shouldCollectCompanyName.value && onboardingStore.draft.companyName.trim()) {
-      await updateCompany({
-        ...productStoreStore.company,
-        groupName: onboardingStore.draft.companyName.trim()
-      })
-    }
-
-    await productStoreStore.fetchProductStores()
-    await refreshShopifyJobStatus()
-    commonUtil.showToast(translate("Product store created successfully."))
-    return createdProductStoreId
-  } catch (error: any) {
-    commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
-    logger.error(error)
-    return ""
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingProductStore.value = false
-  }
-}
-
-async function loadSelectedProductStoreSetup() {
-  if (!selectedProductStoreId.value) return
-
-  await Promise.allSettled([
-    productStoreStore.fetchProductStoreDetails(selectedProductStoreId.value),
-    productStoreStore.fetchCurrentStoreSettings(selectedProductStoreId.value),
-    productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value),
-    loadProductStoreShipmentMethods(),
-    refreshShopifyJobStatus()
-  ])
-
-  if (productStoreStore.current?.productIdentifierEnumId) {
-    onboardingStore.updateDraftField("productIdentifierEnumId", productStoreStore.current.productIdentifierEnumId)
-  }
-
-  if (productStoreStore.current?.autoApproveOrder) {
-    onboardingStore.updateDraftField("autoApproveOrder", productStoreStore.current.autoApproveOrder)
-  }
-
-  if (productStoreStore.current?.reserveInventory) {
-    onboardingStore.updateDraftField("reserveInventory", productStoreStore.current.reserveInventory)
-  }
-
-  if (productStoreStore.current?.enableBrokering) {
-    onboardingStore.updateDraftField("enableBrokering", productStoreStore.current.enableBrokering)
-  }
-
-  if (productStoreStore.current?.allowSplit) {
-    onboardingStore.updateDraftField("allowSplit", productStoreStore.current.allowSplit)
-  }
-
-  if (Number(productStoreStore.current?.daysToCancelNonPay || 0) > 0) {
-    onboardingStore.updateDraftField("autoCancelOrders", "Y")
-    onboardingStore.updateDraftField("daysToCancelNonPay", String(productStoreStore.current.daysToCancelNonPay))
-  } else {
-    onboardingStore.updateDraftField("autoCancelOrders", "N")
-    onboardingStore.updateDraftField("daysToCancelNonPay", "")
-  }
-
-  if (typeof productStoreStore.current?.orderNumberPrefix === "string") {
-    onboardingStore.updateDraftField("orderNumberPrefix", productStoreStore.current.orderNumberPrefix)
-  }
-
-  if (productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue) {
-    onboardingStore.updateDraftField("saveBillingInformation", productStoreStore.currentStoreSettings.SAVE_BILL_TO_INF.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.INV_CNT_VIEW_QOH?.settingValue) {
-    onboardingStore.updateDraftField("showSystemicInventory", productStoreStore.currentStoreSettings.INV_CNT_VIEW_QOH.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.HOLD_PRORD_PHYCL_INV?.settingValue) {
-    onboardingStore.updateDraftField("holdPreorderPhysicalInventory", productStoreStore.currentStoreSettings.HOLD_PRORD_PHYCL_INV.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.PRE_ORDER_GROUP_ID?.settingValue) {
-    onboardingStore.updateDraftField("preorderFacilityGroupId", productStoreStore.currentStoreSettings.PRE_ORDER_GROUP_ID.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.FULFILL_NOTIF?.settingValue) {
-    onboardingStore.updateDraftField("sendFulfillmentNotification", productStoreStore.currentStoreSettings.FULFILL_NOTIF.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.BOPIS_PART_ODR_REJ?.settingValue) {
-    onboardingStore.updateDraftField("bopisPartialRejection", productStoreStore.currentStoreSettings.BOPIS_PART_ODR_REJ.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.CUST_DLVRMTHD_UPDATE?.settingValue) {
-    onboardingStore.updateDraftField("customerDeliveryMethodUpdate", productStoreStore.currentStoreSettings.CUST_DLVRMTHD_UPDATE.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.RF_SHIPPING_METHOD?.settingValue) {
-    onboardingStore.updateDraftField("rerouteShippingMethodId", productStoreStore.currentStoreSettings.RF_SHIPPING_METHOD.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.CUST_DLVRADR_UPDATE?.settingValue) {
-    onboardingStore.updateDraftField("customerDeliveryAddressUpdate", productStoreStore.currentStoreSettings.CUST_DLVRADR_UPDATE.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.CUST_PCKUP_UPDATE?.settingValue) {
-    onboardingStore.updateDraftField("customerPickupUpdate", productStoreStore.currentStoreSettings.CUST_PCKUP_UPDATE.settingValue)
-  }
-
-  if (productStoreStore.currentStoreSettings?.CUST_ALLOW_CNCL?.settingValue) {
-    onboardingStore.updateDraftField("customerCancelBeforeFulfillment", productStoreStore.currentStoreSettings.CUST_ALLOW_CNCL.settingValue)
-  }
-
-  if (!onboardingStore.draft.primaryProductIdentification && productIdentityPreferences.value.primaryId) {
-    onboardingStore.updateDraftField("primaryProductIdentification", productIdentityPreferences.value.primaryId)
-  }
-
-  if (!onboardingStore.draft.secondaryProductIdentification && productIdentityPreferences.value.secondaryId) {
-    onboardingStore.updateDraftField("secondaryProductIdentification", productIdentityPreferences.value.secondaryId)
-  }
-}
-
-async function handlePrimaryAction() {
-  let productStoreId = selectedProductStoreId.value
-
-  if (currentStep.value.id === "name" && !selectedProductStoreId.value) {
-    productStoreId = await createProductStoreFromDraft()
-    if (!productStoreId) return
-  }
-
-  if (currentStep.value.id === "shopify" && isExistingShopifyMode.value && !linkedShopifyShop.value) {
-    const shopLinked = await linkExistingShopifyShop()
-    if (!shopLinked) return
-  }
-
-  if (currentStep.value.id === "shopify" && onboardingStore.draft.shopifyConnectionMode === "Connect now" && !linkedShopifyShop.value) {
-    const shopCreated = await createShopifyConnectionForProductStore()
-    if (!shopCreated) return
-  }
-
-  if (currentStep.value.id === "general") {
-    const orderDefaultsSaved = await saveOrderDefaults()
-    if (!orderDefaultsSaved) return
-  }
-
-  if (currentStep.value.id === "products") {
-    const productIdentitySaved = await saveProductIdentity()
-    if (!productIdentitySaved) return
-
-    if (linkedShopifyShopId.value) {
-      const productImportStarted = await setupAndQueueInitialProductImport(false)
-      if (!productImportStarted) return
-    }
-  }
-
-  if (currentStep.value.id === "facilities" && shouldCreateStarterFacility.value) {
-    const starterFacilityCreated = await createStarterFacility()
-    if (!starterFacilityCreated) return
-  }
-
-  if (currentStep.value.id === "inventory") {
-    const inventorySettingsSaved = await saveInventorySettings()
-    if (!inventorySettingsSaved) return
-
-    if (shouldSetupShopifyInventoryReset.value && linkedShopifyShopId.value && !isProductImportInProgress.value) {
-      const inventoryResetConfigured = await setupInventoryResetJob()
-      if (!inventoryResetConfigured) return
-
-      const initialInventoryImportQueued = await queueInitialInventoryImport()
-      if (!initialInventoryImportQueued) return
-    } else if (shouldSetupShopifyInventoryReset.value && isProductImportInProgress.value) {
-      commonUtil.showToast(translate("Inventory import will be available after products finish importing."))
-    } else if (shouldSetupShopifyInventoryReset.value && !linkedShopifyShopId.value) {
-      commonUtil.showToast(translate("Inventory import will be available after Shopify is linked."))
-    }
-  }
-
-  if (currentStep.value.id === "orders" && linkedShopifyShopId.value) {
-    const orderJobsConfigured = await setupOrderImportJobs()
-    if (!orderJobsConfigured) return
-
-    const realtimeOrderJobsConfigured = await setupRealtimeOrderImportJobs()
-    if (!realtimeOrderJobsConfigured) return
-
-    const initialOrderHistoryQueued = await queueInitialOrderHistoryImport()
-    if (!initialOrderHistoryQueued) return
-  } else if (currentStep.value.id === "orders") {
-    commonUtil.showToast(translate("Order import will be available after Shopify is linked."))
-  }
-
-  if (currentStep.value.id === "routing") {
-    const routingDefaultsSaved = await saveRoutingDefaults()
-    if (!routingDefaultsSaved) return
-  }
-
-  if (currentStep.value.id === "pickup") {
-    const pickupSettingsSaved = await savePickupSettings()
-    if (!pickupSettingsSaved) return
-  }
-
-  if (currentStep.value.id === "readiness") {
-    if (requiredReadinessGapCount.value) {
-      const gapsResolved = await resolveReadinessGaps()
-      if (!gapsResolved) return
-    }
-
-    onboardingStore.markCurrentStepComplete()
-    commonUtil.showToast(translate("Product Store setup is ready."))
-    return
-  }
-
-  onboardingStore.goNext()
-  window.setTimeout(() => emitter.emit("dismissLoader"), 0)
-
-  if (productStoreId) {
-    replaceRouteForProductStore(productStoreId)
-  }
-}
-
-async function resolveReadinessGaps() {
-  if (hasShopifyMappingGaps.value) {
-    const mappingsCreated = await setupStarterShopifyMappings()
-    if (!mappingsCreated) return false
-  }
-
-  await loadSelectedProductStoreSetup()
-  await refreshShopifyMappingStatus()
-
-  if (requiredReadinessGapCount.value) {
-    const firstGap = requiredReadinessItems.value.find((item) => item.color === "warning")
-    const stepIdByGap: Record<string, string> = {
-      productStore: "name",
-      shopifyShop: "shopify",
-      shopifyMappings: "shopify",
-      productIdentity: "products",
-      facilities: "facilities",
-      locationMappings: "locations",
-      inventory: "inventory",
-      orders: "orders"
-    }
-    const nextStepId = firstGap ? stepIdByGap[firstGap.id] : ""
-    if (nextStepId) onboardingStore.selectStep(nextStepId)
-    commonUtil.showToast(translate("Some setup gaps still need attention."))
-    return false
-  }
-
-  return true
-}
-
-async function setupStarterShopifyMappings() {
-  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Create the Product Store and link Shopify first."))
-    return false
-  }
-
-  isSavingShopifyStarterMappings.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    // Product and shipment method types come from the login cache; only the store's own methods
-    // are live (the store may not have existed at login).
-    await loadProductStoreShipmentMethods()
-
-    if (!activeProductStoreShipmentMethods.value.length) {
-      const shipmentMethodResp = await useProductStoreMutations(selectedProductStoreId.value).addShipmentMethod({
-        productStoreShipMethId: buildStarterShipmentMethodId(selectedProductStoreId.value, starterShipmentMethodTypeId.value),
-        shipmentMethodTypeId: starterShipmentMethodTypeId.value,
-        partyId: "_NA_",
-        roleTypeId: "CARRIER",
-        sequenceNumber: 10
-      })
-      if (commonUtil.hasError(shipmentMethodResp)) throw shipmentMethodResp.data
-      await loadProductStoreShipmentMethods()
-    }
-
-    const shopId = linkedShopifyShopId.value
-    const [
-      productTypeMappings,
-      orderSourceMappings,
-      paymentMethodMappings,
-      shippingMethodMappings
-    ] = await Promise.all([
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_TYPE"),
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_ORDER_SOURCE"),
-      fetchShopifyTypeMappings(shopId, "SHOPIFY_PAYMENT_TYPE"),
-      fetchShopifyCarrierShipments(shopId)
-    ])
-
-    if (!productTypeMappings.length) {
-      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PRODUCT_TYPE",
-        mappedKey: "Default",
-        mappedValue: starterProductTypeId.value
-      })
-      if (commonUtil.hasError(resp)) throw resp.data
-    }
-
-    if (!orderSourceMappings.length) {
-      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
-        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-        mappedKey: "web",
-        mappedValue: starterSalesChannelEnumId.value
-      })
-      if (commonUtil.hasError(resp)) throw resp.data
-    }
-
-    if (!paymentMethodMappings.length) {
-      const resp = await useShopifyShopMutations(shopId).saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-        mappedKey: "manual",
-        mappedValue: starterPaymentMethodTypeId.value
-      })
-      if (commonUtil.hasError(resp)) throw resp.data
-    }
-
-    if (!shippingMethodMappings.length) {
-      const shippingMethod = starterShippingMethod.value
-      const resp = await useShopifyShopMutations(shopId).saveCarrierShipment({
-        shipmentMethodTypeId: shippingMethod.shipmentMethodTypeId,
-        shopifyShippingMethod: "Standard",
-        carrierPartyId: shippingMethod.partyId || "_NA_"
-      })
-      if (commonUtil.hasError(resp)) throw resp.data
-    }
-
-    await refreshShopifyMappingStatus()
-    commonUtil.showToast(translate("Starter Shopify mappings created."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to create starter Shopify mappings."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingShopifyStarterMappings.value = false
-  }
-}
-
-function buildStarterShipmentMethodId(productStoreId: string, shipmentMethodTypeId: string) {
-  return `${productStoreId}_${shipmentMethodTypeId}`.slice(0, 40)
-}
-
-async function saveOrderDefaults() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before saving order defaults."))
-    return false
-  }
-
-  isSavingOrderDefaults.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
-      ? productStoreStore.current
-      : { productStoreId: selectedProductStoreId.value }
-    const productStorePayload = {
-      ...currentStore,
-      productStoreId: selectedProductStoreId.value,
-      autoApproveOrder: onboardingStore.draft.autoApproveOrder === "Y" ? "Y" : "N",
-      orderNumberPrefix: onboardingStore.draft.orderNumberPrefix.trim()
-    }
-    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
-
-    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
-
-    productStoreStore.updateCurrent(productStorePayload)
-
-    const billingSettingPayload = buildSaveBillingInformationPayload()
-    const billingSettingResp = await useProductStoreMutations(billingSettingPayload.productStoreId).saveSettings(billingSettingPayload)
-
-    if (commonUtil.hasError(billingSettingResp)) throw billingSettingResp.data
-
-    productStoreStore.updateCurrentStoreSettings({
-      ...productStoreStore.currentStoreSettings,
-      SAVE_BILL_TO_INF: billingSettingPayload
-    })
-
-    commonUtil.showToast(translate("Order defaults saved successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to save order defaults."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingOrderDefaults.value = false
-  }
-}
-
-function buildSaveBillingInformationPayload() {
-  const existingSetting = productStoreStore.currentStoreSettings?.SAVE_BILL_TO_INF
-  return {
-    ...(existingSetting || {}),
-    fromDate: existingSetting?.fromDate || Date.now(),
-    productStoreId: selectedProductStoreId.value,
-    settingTypeEnumId: "SAVE_BILL_TO_INF",
-    settingValue: onboardingStore.draft.saveBillingInformation === "Y" ? "Y" : "N"
-  }
-}
-
-async function saveInventorySettings() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before saving inventory settings."))
-    return false
-  }
-
-  isSavingInventorySettings.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
-      ? productStoreStore.current
-      : { productStoreId: selectedProductStoreId.value }
-    const productStorePayload = {
-      ...currentStore,
-      productStoreId: selectedProductStoreId.value,
-      reserveInventory: onboardingStore.draft.reserveInventory === "Y" ? "Y" : "N"
-    }
-    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
-
-    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
-
-    productStoreStore.updateCurrent(productStorePayload)
-
-    const settingPayloads = [
-      buildInventorySettingPayload("INV_CNT_VIEW_QOH", onboardingStore.draft.showSystemicInventory === "true" ? "true" : "false"),
-      buildInventorySettingPayload("HOLD_PRORD_PHYCL_INV", onboardingStore.draft.holdPreorderPhysicalInventory === "true" ? "true" : "false")
-    ]
-
-    if (onboardingStore.draft.preorderFacilityGroupId || productStoreStore.currentStoreSettings?.PRE_ORDER_GROUP_ID) {
-      settingPayloads.push(buildInventorySettingPayload("PRE_ORDER_GROUP_ID", onboardingStore.draft.preorderFacilityGroupId))
-    }
-
-    const updatedSettings = { ...productStoreStore.currentStoreSettings }
-    for (const payload of settingPayloads) {
-      const settingResp = await useProductStoreMutations(payload.productStoreId).saveSettings(payload)
-      if (commonUtil.hasError(settingResp)) throw settingResp.data
-      updatedSettings[payload.settingTypeEnumId] = payload
-    }
-
-    productStoreStore.updateCurrentStoreSettings(updatedSettings)
-    commonUtil.showToast(translate("Inventory settings saved successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to save inventory settings."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingInventorySettings.value = false
-  }
-}
-
-function buildInventorySettingPayload(settingTypeEnumId: string, settingValue: string) {
-  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
-  return {
-    ...(existingSetting || {}),
-    fromDate: existingSetting?.fromDate || Date.now(),
-    productStoreId: selectedProductStoreId.value,
-    settingTypeEnumId,
-    settingValue
-  }
-}
-
-async function setupInventoryResetJob() {
-  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before configuring inventory reset."))
-    return false
-  }
-
-  isSettingUpInventoryResetJob.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.setupProductStoreShopifyInventoryReset({
-      productStoreId: selectedProductStoreId.value,
-      shopId: linkedShopifyShopId.value,
-      activateJobs: false,
-      inventoryResetAdditionalParameters: {}
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    if (resp.data?.shopifyJobsStatus) {
-      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
-    } else {
-      await refreshShopifyJobStatus()
-    }
-
-    commonUtil.showToast(translate("Inventory reset configured successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to configure inventory reset."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSettingUpInventoryResetJob.value = false
-  }
-}
-
-async function queueInitialInventoryImport() {
-  if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before loading inventory."))
-    return false
-  }
-
-  if (isProductImportInProgress.value) {
-    commonUtil.showToast(translate("Finish the Shopify product import before loading inventory."))
-    return false
-  }
-
-  if (!mappedShopifyLocationCount.value) {
-    commonUtil.showToast(translate("Map Shopify inventory locations before loading inventory."))
-    return false
-  }
-
-  isQueueingInventoryImport.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.runProductStoreShopifyInventoryReset({
-      shopId: linkedShopifyShopId.value
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    commonUtil.showToast(translate("Initial inventory import queued."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to queue initial inventory import."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isQueueingInventoryImport.value = false
-  }
-}
-
-async function setupOrderImportJobs() {
-  if (!selectedProductStoreId.value || !linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before configuring order jobs."))
-    return false
-  }
-
-  isSettingUpOrderJobs.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.setupProductStoreShopifyOrderImport({
-      productStoreId: selectedProductStoreId.value,
-      shopId: linkedShopifyShopId.value,
-      activateJobs: false
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    if (resp.data?.shopifyJobsStatus) {
-      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
-    } else {
-      await refreshShopifyJobStatus()
-    }
-
-    commonUtil.showToast(translate("Order jobs configured successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to configure order jobs."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSettingUpOrderJobs.value = false
-  }
-}
-
-async function setupRealtimeOrderImportJobs() {
-  if (!shouldConfigureRealtimeOrderImport.value) return true
-
-  if (!selectedProductStoreId.value || !onboardingStore.draft.orderSqsQueueName.trim()) {
-    commonUtil.showToast(translate("Enter the SQS queue before configuring realtime order import."))
-    return false
-  }
-
-  isSettingUpRealtimeOrderJobs.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.setupProductStoreShopifyRealtimeOrderImport({
-      productStoreId: selectedProductStoreId.value,
-      queueName: onboardingStore.draft.orderSqsQueueName.trim(),
-      awsRemoteId: onboardingStore.draft.orderSqsAwsRemoteId.trim() || "AWS_CONFIG",
-      expireLockTime: Number(onboardingStore.draft.orderSqsExpireLockTime || 10),
-      activateJobs: false
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    if (resp.data?.shopifyJobsStatus) {
-      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
-    } else {
-      await refreshShopifyJobStatus()
-    }
-
-    commonUtil.showToast(translate("Realtime order import configured successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to configure realtime order import."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSettingUpRealtimeOrderJobs.value = false
-  }
-}
-
-async function queueInitialOrderHistoryImport() {
-  if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before loading orders."))
-    return false
-  }
-
-  if (!orderHistoryStartDateTime.value) {
-    commonUtil.showToast(translate("Choose how far back to load Shopify order history."))
-    return false
-  }
-
-  if (!orderLaunchDateTime.value) {
-    commonUtil.showToast(translate("Choose the HotWax go-live date for order import."))
-    return false
-  }
-
-  isQueueingOrderHistoryImport.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.runProductStoreShopifyOrderHistoryImport({
-      shopId: linkedShopifyShopId.value,
-      fromDate: orderHistoryStartDateTime.value,
-      launchDate: orderLaunchDateTime.value,
-      windowDays: 7
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    commonUtil.showToast(translate("Initial order history import queued."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to queue initial order history import."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isQueueingOrderHistoryImport.value = false
-  }
-}
-
-async function saveRoutingDefaults() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before saving routing defaults."))
-    return false
-  }
-
-  isSavingRoutingDefaults.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
-      ? productStoreStore.current
-      : { productStoreId: selectedProductStoreId.value }
-    const brokeringEnabled = onboardingStore.draft.enableBrokering === "Y"
-    const daysToCancelNonPay = onboardingStore.draft.autoCancelOrders === "Y"
-      ? Number(onboardingStore.draft.daysToCancelNonPay || 0)
-      : 0
-    const productStorePayload = {
-      ...currentStore,
-      productStoreId: selectedProductStoreId.value,
-      enableBrokering: brokeringEnabled ? "Y" : "N",
-      allowSplit: brokeringEnabled && onboardingStore.draft.allowSplit === "Y" ? "Y" : "N",
-      daysToCancelNonPay
-    }
-    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
-
-    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
-
-    productStoreStore.updateCurrent(productStorePayload)
-
-    const notificationPayload = buildRoutingSettingPayload(
-      "FULFILL_NOTIF",
-      onboardingStore.draft.sendFulfillmentNotification === "Y" ? "Y" : "N"
-    )
-    const notificationResp = await useProductStoreMutations(notificationPayload.productStoreId).saveSettings(notificationPayload)
-
-    if (commonUtil.hasError(notificationResp)) throw notificationResp.data
-
-    productStoreStore.updateCurrentStoreSettings({
-      ...productStoreStore.currentStoreSettings,
-      FULFILL_NOTIF: notificationPayload
-    })
-
-    commonUtil.showToast(translate("Routing defaults saved successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to save routing defaults."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingRoutingDefaults.value = false
-  }
-}
-
-function buildRoutingSettingPayload(settingTypeEnumId: string, settingValue: string) {
-  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
-  return {
-    ...(existingSetting || {}),
-    fromDate: existingSetting?.fromDate || Date.now(),
-    productStoreId: selectedProductStoreId.value,
-    settingTypeEnumId,
-    settingValue
-  }
-}
-
-async function savePickupSettings() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before saving pickup settings."))
-    return false
-  }
-
-  isSavingPickupSettings.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const settingPayloads = [
-      buildPickupSettingPayload("BOPIS_PART_ODR_REJ", onboardingStore.draft.bopisPartialRejection === "true" ? "true" : "false"),
-      buildPickupSettingPayload("CUST_DLVRMTHD_UPDATE", onboardingStore.draft.customerDeliveryMethodUpdate === "true" ? "true" : "false"),
-      buildPickupSettingPayload("CUST_DLVRADR_UPDATE", onboardingStore.draft.customerDeliveryAddressUpdate === "true" ? "true" : "false"),
-      buildPickupSettingPayload("CUST_PCKUP_UPDATE", onboardingStore.draft.customerPickupUpdate === "true" ? "true" : "false"),
-      buildPickupSettingPayload("CUST_ALLOW_CNCL", onboardingStore.draft.customerCancelBeforeFulfillment === "true" ? "true" : "false")
-    ]
-
-    if (onboardingStore.draft.rerouteShippingMethodId || productStoreStore.currentStoreSettings?.RF_SHIPPING_METHOD) {
-      settingPayloads.push(buildPickupSettingPayload("RF_SHIPPING_METHOD", onboardingStore.draft.rerouteShippingMethodId))
-    }
-
-    const updatedSettings = { ...productStoreStore.currentStoreSettings }
-    for (const payload of settingPayloads) {
-      const settingResp = await useProductStoreMutations(payload.productStoreId).saveSettings(payload)
-      if (commonUtil.hasError(settingResp)) throw settingResp.data
-      updatedSettings[payload.settingTypeEnumId] = payload
-    }
-
-    productStoreStore.updateCurrentStoreSettings(updatedSettings)
-    commonUtil.showToast(translate("Pickup settings saved successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to save pickup settings."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingPickupSettings.value = false
-  }
-}
-
-function buildPickupSettingPayload(settingTypeEnumId: string, settingValue: string) {
-  const existingSetting = productStoreStore.currentStoreSettings?.[settingTypeEnumId]
-  return {
-    ...(existingSetting || {}),
-    fromDate: existingSetting?.fromDate || Date.now(),
-    productStoreId: selectedProductStoreId.value,
-    settingTypeEnumId,
-    settingValue
-  }
-}
-
-async function saveProductIdentity() {
-  if (!selectedProductStoreId.value || !onboardingStore.draft.productIdentifierEnumId) {
-    commonUtil.showToast(translate("Please select a product identifier."))
-    return false
-  }
-
-  isSavingProductIdentity.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const currentStore = productStoreStore.current?.productStoreId === selectedProductStoreId.value
-      ? productStoreStore.current
-      : { productStoreId: selectedProductStoreId.value }
-    const productStorePayload = {
-      ...currentStore,
-      productStoreId: selectedProductStoreId.value,
-      productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId
-    }
-    const productStoreResp = await useProductStoreMutations(productStorePayload.productStoreId).updateStore(productStorePayload)
-
-    if (commonUtil.hasError(productStoreResp)) throw productStoreResp.data
-
-    productStoreStore.updateCurrent(productStorePayload)
-
-    const preferencePayload = buildProductIdentificationPreferencePayload()
-    if (preferencePayload) {
-      const preferenceResp = await useProductStoreMutations(preferencePayload.productStoreId).saveSettings(preferencePayload)
-      if (commonUtil.hasError(preferenceResp)) throw preferenceResp.data
-
-      productStoreStore.updateCurrentStoreSettings({
-        ...productStoreStore.currentStoreSettings,
-        PRDT_IDEN_PREF: preferencePayload
-      })
-    }
-
-    commonUtil.showToast(translate("Product identity saved successfully."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to save product identity."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isSavingProductIdentity.value = false
-  }
-}
-
-async function setupAndQueueInitialProductImport(shouldSaveIdentity = true) {
-  if (shouldSaveIdentity) {
-    const productIdentitySaved = await saveProductIdentity()
-    if (!productIdentitySaved) return false
-  }
-
-  const productImportJobConfigured = await setupProductImportJob()
-  if (!productImportJobConfigured) return false
-
-  return queueInitialProductImport()
-}
-
-async function setupProductImportJob() {
-  if (!selectedProductStoreId.value || !linkedShopifyShopId.value || !onboardingStore.draft.productIdentifierEnumId) {
-    commonUtil.showToast(translate("Link a Shopify shop and choose a product identifier before configuring product import."))
-    return false
-  }
-
-  isSettingUpProductImportJob.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.setupProductStoreShopifyProductImport({
-      productStoreId: selectedProductStoreId.value,
-      shopId: linkedShopifyShopId.value,
-      productIdentifierEnumId: onboardingStore.draft.productIdentifierEnumId,
+    if(responseFailed(settingResponse)) {throw settingResponse?.data || settingResponse}
+
+    const jobResponse = await productStoreData.setupProductStoreShopifyProductImport({
+      productStoreId: setup.productStoreId,
+      shopId: setup.shopId,
+      productIdentifierEnumId: setup.productIdentifierEnumId,
       activateJobs: true
     })
+    if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    if (resp.data?.shopifyJobsStatus) {
-      productStoreStore.currentShopifyJobStatus = resp.data.shopifyJobsStatus
+    await loadSelectedProductStore(setup.productStoreId)
+    savedSetupSnapshots.products = setup.snapshot
+    onboarding.setRunRequest("products", null)
+    if(hasFinishedMdmLog.value) {
+      onboarding.markStepComplete("products")
+      setFeedback("products", translate("Product setup saved."), "success")
+      void fetchSampleProducts()
     } else {
-      await refreshShopifyJobStatus()
+      onboarding.markStepInProgress("products")
+      setFeedback("products", translate("Product setup saved. You can now load the catalog."), "success")
     }
-
-    commonUtil.showToast(translate("Product import job configured successfully."))
-    return true
   } catch (error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to configure product import."))
-    return false
+    onboarding.markStepAttention("products")
+    setFeedback("products", feedbackForError(error, "Failed to save product setup."), "danger")
   } finally {
-    emitter.emit("dismissLoader")
-    isSettingUpProductImportJob.value = false
+    busy.products = false
   }
 }
 
-async function queueInitialProductImport() {
-  if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before importing products."))
-    return false
-  }
+async function openFacilityImport() {
+  if(!linkedShopId.value || !selectedProductStoreId.value) {return}
 
-  isQueueingProductImport.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const resp = await productStoreStore.runProductStoreShopifyProductImport({
-      shopId: linkedShopifyShopId.value,
-      includeAll: true
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    const systemMessageId = resp.data?.systemMessageId || resp.data?.progress?.systemMessageId || resp.data?.syncJobId || ""
-    if (systemMessageId) {
-      productImportProgressState.value = {
-        systemMessageId,
-        systemMessageState: "SmsgProduced",
-        status: "queued",
-        completed: false
-      }
-      productImportRun.value = null
-      await refreshProductImportProgress()
-      startProductImportProgressPolling()
-    } else {
-      const loadedProductImportProgress = await refreshProductImportProgress()
-      if (loadedProductImportProgress && isProductImportInProgress.value) startProductImportProgressPolling()
-    }
-
-    await refreshShopifyJobStatus()
-    commonUtil.showToast(translate("Initial product import queued."))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to queue initial product import."))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isQueueingProductImport.value = false
-  }
-}
-
-function buildProductIdentificationPreferencePayload() {
-  const preferences = { ...productIdentityPreferences.value }
-  const primaryId = onboardingStore.draft.primaryProductIdentification
-  const secondaryId = onboardingStore.draft.secondaryProductIdentification
-
-  if (primaryId) preferences.primaryId = primaryId
-  if (secondaryId) preferences.secondaryId = secondaryId
-
-  if (!Object.keys(preferences).length) return null
-
-  const existingSetting = productStoreStore.currentStoreSettings?.PRDT_IDEN_PREF
-  return {
-    ...(existingSetting || {}),
-    fromDate: existingSetting?.fromDate || Date.now(),
-    productStoreId: selectedProductStoreId.value,
-    settingTypeEnumId: "PRDT_IDEN_PREF",
-    settingValue: JSON.stringify(preferences)
-  }
-}
-
-async function linkExistingShopifyShop() {
-  if (!selectedProductStoreId.value || !onboardingStore.draft.selectedShopifyShopId) {
-    commonUtil.showToast(translate("Please select a Shopify shop."))
-    return false
-  }
-
-  isLinkingShopifyShop.value = true
-  emitter.emit("presentLoader")
-
-  try {
-    const selectedShop = cachedShopifyShops.value.find((shop: any) => shop.shopId === onboardingStore.draft.selectedShopifyShopId)
-    const resp = await useShopifyShopMutations(onboardingStore.draft.selectedShopifyShopId).updateShop({
-      productStoreId: selectedProductStoreId.value
-    })
-
-    if (commonUtil.hasError(resp)) throw resp.data
-
-    onboardingStore.updateDraftField("linkedShopifyShopId", onboardingStore.draft.selectedShopifyShopId)
-    onboardingStore.updateDraftField("shopifyDomain", selectedShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
-    // No shop re-fetch: `updateShop` write-through refreshed the cached row already.
-    await refreshShopifyJobStatus()
-    await refreshShopifyMappingStatus()
-    commonUtil.showToast(translate("Product store linked successfully"))
-    return true
-  } catch (error: any) {
-    logger.error(error)
-    commonUtil.showToast(translate("Failed to link product store"))
-    return false
-  } finally {
-    emitter.emit("dismissLoader")
-    isLinkingShopifyShop.value = false
-  }
-}
-
-async function createShopifyConnectionForProductStore() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before connecting Shopify."))
-    return false
-  }
-
-  const modal = await modalController.create({
-    component: CreateShopifyConnectionModal,
-    componentProps: {
-      productStoreId: selectedProductStoreId.value,
-      initialDomain: onboardingStore.draft.shopifyDomain
-    }
-  })
-  await modal.present()
-  const { data } = await modal.onWillDismiss()
-  if (!data?.shopId) return false
-
-  // `createShopifyConnection` (called inside the modal) write-through refreshed the cached shop list.
-  const createdShop = cachedShopifyShops.value.find((shop: any) => shop.shopId === data.shopId)
-  onboardingStore.updateDraftField("linkedShopifyShopId", data.shopId)
-  onboardingStore.updateDraftField("selectedShopifyShopId", data.shopId)
-  onboardingStore.updateDraftField("shopifyDomain", createdShop?.myshopifyDomain || onboardingStore.draft.shopifyDomain)
-  await refreshShopifyJobStatus()
-  await refreshShopifyMappingStatus()
-  return true
-}
-
-async function refreshShopifyLocationMappings() {
-  shopifyLocationMappings.value = []
-
-  if (!linkedShopifyShopId.value) return
-
-  try {
-    // Returns the unwrapped mapping rows — the store version returned a raw axios envelope.
-    shopifyLocationMappings.value = await fetchShopifyShopLocations(linkedShopifyShopId.value, 200)
-  } catch (error: any) {
-    logger.error(error)
-  }
-}
-
-async function openShopifyLocationImport() {
-  if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before importing facilities."))
-    return
-  }
-
-  isImportingShopifyFacilities.value = true
-
+  const trigger = facilityImportTriggerRef.value?.$el || facilityImportTriggerRef.value
+  busy.facilities = true
+  feedback.facilities = null
   try {
     const modal = await modalController.create({
       component: ImportShopifyLocationsModal,
       componentProps: {
-        shopId: linkedShopifyShopId.value,
+        shopId: linkedShopId.value,
         productStoreId: selectedProductStoreId.value
       }
     })
-
     await modal.present()
     const { data } = await modal.onDidDismiss()
+    if(!data) {return}
 
-    if (data?.imported) {
-      // The modal refreshes the facility cache for the rows it created; only the store-scoped
-      // association list is live-read here.
-      await productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
-      await refreshShopifyMappingStatus()
-      onboardingStore.markCurrentStepComplete()
+    await productStoreData.fetchProductStoreFacilities(selectedProductStoreId.value)
+    await refreshLocationMappings()
+    const associationFacilityIds = Array.isArray(data.associationFacilityIds)
+      ? data.associationFacilityIds
+      : []
+    const fullyAssociated = associationFacilityIds.length > 0 &&
+      data.associationFailed !== true &&
+      data.associated === associationFacilityIds.length &&
+      Array.isArray(data.associatedFacilityIds) &&
+      data.associatedFacilityIds.length === associationFacilityIds.length
+
+    if(!fullyAssociated) {
+      onboarding.markStepAttention("facilities")
+      setFeedback("facilities", translate("Facilities were only partly imported or associated. Review the failed locations before continuing."), "danger")
+
+      return
     }
+
+    onboarding.markStepComplete("facilities")
+    setFeedback("facilities", translate("Every selected facility was associated with this Product Store."), "success")
   } catch (error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to open facility import"))
+    onboarding.markStepAttention("facilities")
+    setFeedback("facilities", feedbackForError(error, "Failed to import Shopify locations."), "danger")
   } finally {
-    isImportingShopifyFacilities.value = false
+    busy.facilities = false
+    await nextTick()
+    if(trigger) {
+      if(trigger.setFocus) {
+        await trigger.setFocus()
+      } else {
+        trigger.focus?.()
+      }
+    }
   }
 }
 
-async function createStarterFacility() {
-  if (!selectedProductStoreId.value) {
-    commonUtil.showToast(translate("Create the Product Store before creating a facility."))
-    return false
-  }
+async function createStoreFacility() {
+  if(!selectedProductStoreId.value) {return}
 
-  isCreatingStarterFacility.value = true
-  emitter.emit("presentLoader")
-
+  busy.facilities = true
+  feedback.facilities = null
   try {
     const facilityId = generateInternalId(`${selectedProductStoreId.value}_STORE`).slice(0, 20)
-    const facilityName = onboardingStore.draft.storeName || productStoreStore.current?.storeName || selectedProductStoreId.value
-    const existingFacility = allFacilities.value.find((facility: any) => facility.facilityId === facilityId)
-
-    if (!existingFacility) {
-      // `useFacilityMutations` writes through to the facility cache, which is what the existence
-      // check above reads — the util store's separate facility list (and its refetch) went away.
-      const facilityResp = await createFacility({
+    const exists = allFacilities.value.some((facility: any) => facility.facilityId === facilityId)
+    if(!exists) {
+      const facilityResponse = await createFacility({
         facilityId,
-        facilityName,
+        facilityName: onboarding.draft.storeName || selectedProductStoreId.value,
         externalId: facilityId,
         facilityTypeId: "RETAIL_STORE",
         defaultInventoryItemTypeId: "NON_SERIAL_INV_ITEM",
         ownerPartyId: organizationPartyId.value
       })
-      if (commonUtil.hasError(facilityResp)) throw facilityResp.data
+      if(responseFailed(facilityResponse)) {throw facilityResponse?.data || facilityResponse}
     }
 
-    const associationResp = await useProductStoreMutations(selectedProductStoreId.value).addFacility({ facilityId })
-    if (commonUtil.hasError(associationResp)) throw associationResp.data
+    const associationResponse = await useProductStoreMutations(selectedProductStoreId.value).addFacility({ facilityId })
+    if(responseFailed(associationResponse)) {throw associationResponse?.data || associationResponse}
 
-    // The create wrote through to the facility cache; the store association list is live-read.
-    await productStoreStore.fetchProductStoreFacilities(selectedProductStoreId.value)
-    onboardingStore.markCurrentStepComplete()
-    commonUtil.showToast(translate("Store facility created successfully."))
-    return true
+    await productStoreData.fetchProductStoreFacilities(selectedProductStoreId.value)
+    onboarding.markStepComplete("facilities")
+    setFeedback("facilities", translate("The retail facility was created and associated."), "success")
   } catch (error: any) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to create store facility."))
-    return false
+    onboarding.markStepAttention("facilities")
+    setFeedback("facilities", feedbackForError(error, "Failed to create the store facility."), "danger")
   } finally {
-    emitter.emit("dismissLoader")
-    isCreatingStarterFacility.value = false
+    busy.facilities = false
   }
 }
 
-function openShopifyLocationMapping() {
-  openShopifyMappingPath("locations")
-}
+async function refreshLocationMappings() {
+  if(!linkedShopId.value) {
+    shopifyLocationMappings.value = []
+    locationMappingFetchStatus.value = "idle"
 
-function openShopifyMappingPath(pathSegment: string) {
-  if (!linkedShopifyShopId.value) {
-    commonUtil.showToast(translate("Link a Shopify shop before configuring mappings."))
     return
   }
 
-  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/${pathSegment}`
-  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-  const fallbackUrl = `${path}?returnTo=${encodeURIComponent(returnTo)}`
-
-  window.location.href = fallbackUrl
+  busy.locations = true
+  locationMappingFetchStatus.value = "pending"
+  try {
+    shopifyLocationMappings.value = await fetchShopifyShopLocations(linkedShopId.value, 200)
+    locationMappingFetchStatus.value = "success"
+    if(shopifyLocationMappings.value.length) {
+      onboarding.markStepComplete("locations")
+      setFeedback("locations", translate("Shopify location mappings are ready."), "success")
+    } else {
+      if(onboarding.stepStatuses.locations === "complete") {onboarding.markStepAttention("locations")}
+      setFeedback("locations", translate("No Shopify locations are mapped yet."), "warning")
+    }
+  } catch (error: any) {
+    locationMappingFetchStatus.value = "error"
+    logger.error(error)
+    if(onboarding.stepStatuses.locations !== "complete") {
+      onboarding.markStepAttention("locations")
+    }
+    setFeedback("locations", feedbackForError(error, "Failed to refresh Shopify location mappings."), "danger")
+  } finally {
+    busy.locations = false
+  }
 }
 
-async function openShopifyProductSync() {
-  if (!canOpenShopifyProductSync.value) {
-    commonUtil.showToast(translate("Link Shopify and choose a product identifier before importing products."))
+function openLocationMapping() {
+  if(!linkedShopId.value) {return}
+  router.push({
+    path: `/shopify-connection-details/${encodeURIComponent(linkedShopId.value)}/locations`,
+    query: { returnTo: route.fullPath }
+  })
+}
+
+async function saveInventorySetup() {
+  if(!canConfigureInventory.value || !inventorySetupDirty.value ||
+    initialLoadRunBlocked("inventory", inventoryInitialLoad.value.run.status) ||
+    busy.inventory || busy.inventoryImport || initialLoadRefreshBusy.inventory) {return}
+
+  const setup = captureInventorySetup()
+  busy.inventory = true
+  feedback.inventory = null
+  try {
+    // Provisioning is the preflight for the preference writes below. A missing backend template or
+    // clone target must fail before ProductStore/ProductStoreSetting can be partially updated.
+    const jobResponse = await productStoreData.setupProductStoreShopifyInventoryReset({
+      productStoreId: setup.productStoreId,
+      shopId: setup.shopId,
+      activateJobs: false,
+      inventoryResetAdditionalParameters: {}
+    })
+    if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
+
+    const storeResponse = await useProductStoreMutations(setup.productStoreId).updateStore({
+      reserveInventory: setup.reserveInventory
+    })
+    if(responseFailed(storeResponse)) {throw storeResponse?.data || storeResponse}
+
+    const settingResponse = await useProductStoreMutations(setup.productStoreId).saveSettings({
+      settingTypeEnumId: "INV_CNT_VIEW_QOH",
+      settingValue: setup.showSystemicInventory
+    })
+    if(responseFailed(settingResponse)) {throw settingResponse?.data || settingResponse}
+
+    savedSetupSnapshots.inventory = setup.snapshot
+    onboarding.setRunRequest("inventory", null)
+    onboarding.markStepInProgress("inventory")
+    setFeedback("inventory", translate("Inventory setup saved. You can now load inventory."), "success")
+  } catch (error: any) {
+    logger.error(error)
+    onboarding.markStepAttention("inventory")
+    setFeedback("inventory", feedbackForError(error, "Failed to save inventory setup."), "danger")
+  } finally {
+    busy.inventory = false
+  }
+}
+
+async function loadInventory() {
+  if(!canLoadInventory.value || initialLoadRunBlocked("inventory", inventoryInitialLoad.value.run.status) ||
+    busy.inventory || busy.inventoryImport || initialLoadRefreshBusy.inventory) {return}
+
+  const setup = captureInventorySetup()
+  const savedSnapshot = savedSetupSnapshots.inventory
+  busy.inventoryImport = true
+  feedback.inventory = null
+  beginInitialLoadRequest("inventory", setup.shopId, setup.snapshot)
+  try {
+    const response = await productStoreData.runProductStoreShopifyInventoryReset({ shopId: setup.shopId })
+    if(responseFailed(response)) {throw response?.data || response}
+    acceptInitialLoadRequest("inventory", response)
+    if(savedSetupSnapshots.inventory !== savedSnapshot || captureInventorySetup().snapshot !== savedSnapshot) {return}
+
+    onboarding.markStepInProgress("inventory")
+    setFeedback("inventory", translate("The initial inventory load was queued. This step stays in progress until the load finishes successfully."), "medium")
+  } catch (error: any) {
+    onboarding.setRunRequest("inventory", null)
+    logger.error(error)
+    onboarding.markStepAttention("inventory")
+    setFeedback("inventory", feedbackForError(error, "The initial inventory load could not be queued."), "danger")
+  } finally {
+    busy.inventoryImport = false
+  }
+}
+
+async function saveOrderSetup() {
+  if(!orderSetupDirty.value || initialLoadRunBlocked("orders", orderInitialLoad.value.run.status) ||
+    busy.orders || busy.orderImport || initialLoadRefreshBusy.orders) {return}
+
+  orderValidationAttempted.value = true
+  if(!canConfigureOrders.value) {
+    if(!orderDateRangeValid.value) {
+      setFeedback("orders", translate("Correct the order import date range before saving."), "danger")
+    }
+
     return
   }
 
-  const saved = await saveProductIdentity()
-  if (!saved) return
+  const setup = captureOrderSetup()
+  busy.orders = true
+  feedback.orders = null
+  try {
+    await productStoreData.saveProductStoreShopifyOrderDates({
+      shopId: setup.shopId,
+      historyStartDate: setup.historyStartDate,
+      launchDate: setup.launchDate
+    })
+    recordOrderLandmarkDates({
+      historyLastSyncDate: setup.historyStartDate,
+      launchDate: setup.launchDate
+    })
 
-  onboardingStore.markCurrentStepComplete()
+    const jobResponse = await productStoreData.setupProductStoreShopifyOrderImport({
+      productStoreId: setup.productStoreId,
+      shopId: setup.shopId,
+      // Activates the live order feed only (the history job stays on demand). The launch date, not
+      // this flag, is what gates live fulfilment.
+      activateJobs: true,
+      windowDays: 7
+    })
+    if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
-  const path = `/shopify-connection-details/${encodeURIComponent(linkedShopifyShopId.value)}/product-sync`
-  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-  const query = {
-    mode: "first-time",
-    step: "review",
-    productStoreId: selectedProductStoreId.value,
-    identifierEnumId: onboardingStore.draft.productIdentifierEnumId,
-    returnTo
+    savedSetupSnapshots.orders = setup.snapshot
+    onboarding.setRunRequest("orders", null)
+    onboarding.markStepInProgress("orders")
+    setFeedback("orders", translate("Order import dates and batch jobs were saved."), "success")
+  } catch (error: any) {
+    logger.error(error)
+    onboarding.markStepAttention("orders")
+    const fallback = Array.isArray(error?.savedSystemPropertyIds) && error.savedSystemPropertyIds.length
+      ? "The order dates were only partly saved. Review them before retrying."
+      : "Failed to save order import setup."
+    setFeedback("orders", feedbackForError(error, fallback), "danger")
+  } finally {
+    busy.orders = false
   }
-  const fallbackQuery = new URLSearchParams(query).toString()
-
-  window.location.href = `${path}?${fallbackQuery}`
 }
 
-function getShopifyShopLabel(shop: any) {
-  const name = shop.name || shop.myshopifyDomain || shop.shopId
-  return shop.productStoreId ? `${name} (${shop.productStoreId})` : name
+async function loadOrderHistory() {
+  if(!canLoadOrders.value || initialLoadRunBlocked("orders", orderInitialLoad.value.run.status) ||
+    busy.orders || busy.orderImport || initialLoadRefreshBusy.orders) {return}
+
+  const setup = captureOrderSetup()
+  const savedSnapshot = savedSetupSnapshots.orders
+  busy.orderImport = true
+  feedback.orders = null
+  beginInitialLoadRequest("orders", setup.shopId, setup.snapshot)
+  try {
+    const response = await productStoreData.runProductStoreShopifyOrderHistoryImport({
+      shopId: setup.shopId,
+      fromDate: setup.historyStartDate,
+      launchDate: setup.launchDate,
+      windowDays: 7
+    })
+    if(responseFailed(response)) {throw response?.data || response}
+    acceptInitialLoadRequest("orders", response)
+    if(savedSetupSnapshots.orders !== savedSnapshot || captureOrderSetup().snapshot !== savedSnapshot) {return}
+
+    onboarding.markStepInProgress("orders")
+    setFeedback("orders", translate("The initial order history load was queued. This step stays in progress until the import finishes successfully."), "medium")
+  } catch (error: any) {
+    onboarding.setRunRequest("orders", null)
+    logger.error(error)
+    onboarding.markStepAttention("orders")
+    setFeedback("orders", feedbackForError(error, "The initial order history load could not be queued."), "danger")
+  } finally {
+    busy.orderImport = false
+  }
 }
 
-function getJwtTokenSubjectLabel(subject: any) {
-  return subject.userFullName ? `${subject.userFullName} (${subject.userLoginId})` : subject.userLoginId
+function initialLoadConfiguration(kind: OnboardingInitialLoadKind) {
+  if(kind === "products") {return productSyncConfiguration.value}
+  if(kind === "inventory") {return inventorySyncConfiguration.value}
+
+  return orderSyncConfiguration.value
 }
 
-function replaceRouteForProductStore(productStoreId: string) {
-  const path = `/product-store-onboarding/${encodeURIComponent(productStoreId)}`
+function reconcileInitialLoadStep(kind: OnboardingInitialLoadKind, snapshot: OnboardingInitialLoadSnapshot) {
+  const status = snapshot.run.status
+  const configured = initialLoadConfiguration(kind).status === "configured"
+  const matchesRequest = initialLoadMatchesRequest(kind, snapshot)
 
-  if (window.location.pathname !== path) {
-    window.history.replaceState(window.history.state, "", path)
+  if(kind === "products" && hasFinishedMdmLog.value) {
+    if(configured || (productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId)) {
+      onboarding.markStepComplete("products")
+    } else {
+      onboarding.markStepAttention("products")
+    }
+
+    return
   }
 
-  if ((router as any)?.replace) {
-    router.replace(path).catch((error: any) => logger.error(error))
+  if(status === "completed" && configured && matchesRequest) {
+    onboarding.markStepComplete(kind)
+
+    return
+  }
+  if(status === "error" || status === "cancelled" ||
+    (snapshot.hydrated && !!(snapshot.details.systemMessageId || snapshot.details.jobRunId) &&
+      (status === "unknown" || status === "unavailable"))) {
+    onboarding.markStepAttention(kind)
+
+    return
+  }
+  if(["pending", "queued", "sent", "running", "importing"].includes(status)) {
+    if(kind === "products" && hasFinishedMdmLog.value) {
+      if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+        onboarding.markStepComplete("products")
+      } else {
+        onboarding.markStepAttention("products")
+      }
+
+      return
+    }
+    onboarding.markStepInProgress(kind)
+
+    return
+  }
+  if(status === "completed" && (!configured || !matchesRequest)) {
+    if(!configured) {
+      onboarding.markStepAttention(kind)
+    } else if(onboarding.stepStatuses[kind] === "complete") {
+      onboarding.markStepInProgress(kind)
+    }
+    if(configured && !matchesRequest && !onboarding.runRequests[kind]) {
+      setFeedback(
+        kind,
+        translate("The completed run could not be tied to this saved setup. Run the initial load again to validate it."),
+        "warning"
+      )
+    }
+
+    return
+  }
+  if(snapshot.hydrated && status === "not-started" && onboarding.stepStatuses[kind] === "complete") {
+    onboarding.markStepAttention(kind)
   }
 }
+
+async function refreshInitialLoadStatus(kind: OnboardingInitialLoadKind) {
+  const savingOrRunning = kind === "products"
+    ? busy.products || busy.productImport
+    : kind === "inventory"
+      ? busy.inventory || busy.inventoryImport
+      : busy.orders || busy.orderImport
+  if(initialLoadRefreshBusy[kind] || savingOrRunning) {return}
+
+  initialLoadRefreshBusy[kind] = true
+  feedback[kind] = null
+  try {
+    const configurationRefreshes: Promise<unknown>[] = []
+    if(selectedProductStoreId.value) {
+      configurationRefreshes.push(
+        productStoreData.fetchProductStoreDetails(selectedProductStoreId.value),
+        productStoreData.fetchCurrentStoreSettings(selectedProductStoreId.value)
+      )
+    }
+    if(kind === "inventory") {configurationRefreshes.push(refreshLocationMappings())}
+    if(kind === "orders") {configurationRefreshes.push(loadOrderLandmarkDates())}
+
+    await Promise.all([
+      initialLoadStatus.refresh(),
+      selectedProductStoreId.value
+        ? productStoreData.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value)
+        : Promise.resolve(null),
+      ...configurationRefreshes
+    ])
+    if((productStoreData.fetchStatus?.productStoreDetails === "error") ||
+      (productStoreData.fetchStatus?.currentStoreSettings === "error") ||
+      (kind === "inventory" && locationMappingFetchStatus.value === "error") ||
+      (kind === "orders" && orderLandmarkDates.value.status === "error")) {
+      throw new Error(translate("Configuration status could not be loaded. Refresh to try again."))
+    }
+    reconcileShopifyLink()
+    reconcileSavedSetupSnapshots()
+    reconcileSetupFacts()
+    const snapshot = kind === "products"
+      ? productInitialLoad.value
+      : kind === "inventory"
+        ? inventoryInitialLoad.value
+        : orderInitialLoad.value
+    reconcileInitialLoadStep(kind, snapshot)
+    setFeedback(kind, translate("Sync status refreshed."), "medium")
+  } catch (error: any) {
+    logger.error(error)
+    setFeedback(kind, feedbackForError(error, "Failed to refresh sync status."), "danger")
+  } finally {
+    initialLoadRefreshBusy[kind] = false
+  }
+}
+
+function openInitialLoadDetails(
+  kind: OnboardingInitialLoadKind,
+  snapshot: OnboardingInitialLoadSnapshot
+) {
+  if(!snapshot.details.route) {return}
+  const request = onboarding.runRequests[kind]
+  const matchesRequest = !!request && initialLoadMatchesRequest(kind, snapshot)
+  const systemMessageId = request
+    ? request.systemMessageId || (matchesRequest ? snapshot.details.systemMessageId : "")
+    : snapshot.details.systemMessageId
+  const jobRunId = request
+    ? request.jobRunId || (matchesRequest ? snapshot.details.jobRunId : "")
+    : snapshot.details.jobRunId
+  const query: Record<string, string> = { returnTo: route.fullPath }
+  if(systemMessageId) {query.systemMessageId = systemMessageId}
+  if(jobRunId) {query.jobRunId = jobRunId}
+
+  router.push({
+    path: snapshot.details.route,
+    query
+  })
+}
+
+// Named so reconcileShopifyLink can recognise and withdraw its own warning: the assigned-shop list
+// can read empty for a tick while the cache fills, then verify on the next pass.
+function staleShopifyLinkMessage() {
+  return translate("The previously linked Shopify shop is no longer assigned to this Product Store. Select an unassigned shop to continue.")
+}
+
+function hasCurrentShopifyEvidence(statusOverride?: any) {
+  const status = statusOverride === undefined
+    ? productStoreData.currentShopifyJobStatus
+    : statusOverride
+  const statusIsForSelectedStore = String(status?.productStoreId || "") === String(selectedProductStoreId.value || "")
+
+  return Boolean(statusIsForSelectedStore && Array.isArray(status.linkedShops)) || Boolean(shopifyShopsHydrated.value)
+}
+
+function reconcileShopifyLink(statusOverride?: any, expectedShopId = "") {
+  if(!selectedProductStoreId.value) {return null}
+
+  const assignedShops = assignedShopifyShops(statusOverride)
+  const persistedShopId = String(onboarding.draft.linkedShopifyShopId || "")
+  const preferredShopId = expectedShopId || persistedShopId
+  const linkedShop = assignedShops.find((shop: any) => String(shop.shopId) === preferredShopId) ||
+    (expectedShopId ? null : assignedShops[0])
+
+  if(linkedShop?.shopId) {
+    const verifiedShopId = String(linkedShop.shopId)
+    if(persistedShopId && persistedShopId !== verifiedShopId) {
+      onboarding.setRunRequest("products", null)
+      onboarding.setRunRequest("inventory", null)
+      onboarding.setRunRequest("orders", null)
+    }
+    if(persistedShopId !== verifiedShopId) {
+      onboarding.updateDraftField("linkedShopifyShopId", verifiedShopId)
+    }
+    if(String(onboarding.draft.selectedShopifyShopId || "") !== verifiedShopId) {
+      onboarding.updateDraftField("selectedShopifyShopId", verifiedShopId)
+    }
+    onboarding.markStepComplete("shopify")
+    // A verified link makes any earlier stale-link warning obsolete. Only that message is cleared:
+    // the caller sets its own success text after this returns, and other steps' feedback is theirs.
+    if(feedback.shopify?.text === staleShopifyLinkMessage()) {feedback.shopify = null}
+
+    return linkedShop
+  }
+
+  if(!hasCurrentShopifyEvidence(statusOverride)) {return null}
+
+  if(onboarding.stepStatuses.locations === "complete") {
+    onboarding.markStepAttention("locations")
+  }
+
+  const staleShopId = expectedShopId || persistedShopId
+  if(staleShopId) {
+    onboarding.setRunRequest("products", null)
+    onboarding.setRunRequest("inventory", null)
+    onboarding.setRunRequest("orders", null)
+  }
+  if(persistedShopId) {onboarding.updateDraftField("linkedShopifyShopId", "")}
+  if(staleShopId && String(onboarding.draft.selectedShopifyShopId || "") === staleShopId) {
+    onboarding.updateDraftField("selectedShopifyShopId", "")
+  }
+  if(staleShopId || onboarding.stepStatuses.shopify === "complete") {
+    onboarding.markStepAttention("shopify")
+    setFeedback("shopify", staleShopifyLinkMessage(), "warning")
+  }
+
+  return null
+}
+
+async function refreshShopifyStatus(expectedShopId = "") {
+  if(!selectedProductStoreId.value) {return null}
+  const status = await productStoreData.fetchProductStoreShopifyJobStatus(selectedProductStoreId.value)
+  const linkedShop = reconcileShopifyLink(status, expectedShopId)
+  if(expectedShopId && !linkedShop) {
+    throw new Error("The Shopify shop association could not be verified. Refresh the available shops and try again.")
+  }
+
+  return status
+}
+
+const STORE_DRAFT_FIELDS: Array<keyof ProductStoreOnboardingDraft> = [
+  "storeName",
+  "productStoreId",
+  "defaultCurrencyUomId",
+  "locale",
+  "timezone",
+  "autoApproveOrder",
+  "orderNumberPrefix",
+  "saveBillingInformation"
+]
+
+function hydrateDraftFromStore(expectedProductStoreId: string) {
+  const store = productStoreData.current
+  if(String(store?.productStoreId || "") !== expectedProductStoreId) {return false}
+
+  const values: Partial<ProductStoreOnboardingDraft> = {
+    storeName: store.storeName,
+    productStoreId: store.productStoreId,
+    defaultCurrencyUomId: store.defaultCurrencyUomId,
+    locale: store.defaultLocaleString,
+    timezone: store.defaultTimeZoneString,
+    autoApproveOrder: store.autoApproveOrder,
+    orderNumberPrefix: store.orderNumberPrefix,
+    reserveInventory: store.reserveInventory,
+    productIdentifierEnumId: store.productIdentifierEnumId,
+    saveBillingInformation: productStoreData.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue,
+    showSystemicInventory: productStoreData.currentStoreSettings?.INV_CNT_VIEW_QOH?.settingValue
+  }
+  // These fields are rendered with useful defaults for a brand-new store. Existing-store
+  // hydration must overwrite those defaults even when the backend value is absent; otherwise an
+  // incomplete persisted record appears complete without ever having saved the displayed value.
+  for(const field of STORE_DRAFT_FIELDS) {
+    const value = values[field]
+    if(field === "timezone" && (value === undefined || value === null || value === "")) {
+      if(!onboarding.draft.timezone) {
+        onboarding.updateDraftField("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York")
+      }
+    } else {
+      onboarding.updateDraftField(field, value === undefined || value === null ? "" : String(value))
+    }
+  }
+  for(const field of ["reserveInventory", "productIdentifierEnumId", "showSystemicInventory"] as const) {
+    const value = values[field]
+    if(value !== undefined && value !== null && value !== "") {
+      onboarding.updateDraftField(field, String(value))
+    }
+  }
+
+  onboarding.updateDraftField("primaryProductIdentification", "")
+  onboarding.updateDraftField("secondaryProductIdentification", "")
+  const preferences = persistedProductPreferences()
+  if(preferences) {
+    onboarding.updateDraftField("primaryProductIdentification", preferences.primaryId)
+    onboarding.updateDraftField("secondaryProductIdentification", preferences.secondaryId)
+  }
+
+  return true
+}
+
+function persistedStoreMatches(expected?: ReturnType<typeof captureStoreSetup>) {
+  const store = productStoreData.current
+  const billingValue = String(productStoreData.currentStoreSettings?.SAVE_BILL_TO_INF?.settingValue || "")
+  const persisted = {
+    productStoreId: String(store?.productStoreId || "").trim(),
+    storeName: String(store?.storeName || "").trim(),
+    defaultCurrencyUomId: String(store?.defaultCurrencyUomId || "").trim(),
+    locale: String(store?.defaultLocaleString || "").trim(),
+    timezone: String(store?.defaultTimeZoneString || "").trim(),
+    autoApproveOrder: String(store?.autoApproveOrder || "").trim(),
+    orderNumberPrefix: String(store?.orderNumberPrefix || "").trim(),
+    saveBillingInformation: billingValue
+  }
+  const hasRequiredPersistedValues = persisted.productStoreId === String(selectedProductStoreId.value || "") &&
+    !!persisted.storeName &&
+    !!persisted.defaultCurrencyUomId &&
+    LOCALE_PATTERN.test(persisted.locale) &&
+    !!persisted.timezone &&
+    (persisted.autoApproveOrder === "Y" || persisted.autoApproveOrder === "N") &&
+    !!persisted.orderNumberPrefix &&
+    (persisted.saveBillingInformation === "Y" || persisted.saveBillingInformation === "N")
+
+  if(!hasRequiredPersistedValues) {return false}
+
+  const displayed = expected || captureStoreSetup()
+
+  return Object.entries(persisted).every(([field, value]) =>
+    value === displayed[field as keyof typeof displayed])
+}
+
+function jobReady(key: string) {
+  return productStoreData.currentShopifyJobStatus?.jobs?.find((job: any) => job.key === key)?.ready === true
+}
+
+function reconcileRequiredJobs(
+  stepId: "products" | "inventory" | "orders",
+  requiredJobKeys: string[]
+) {
+  // Job definitions prove that a setup is runnable, not that an initial import succeeded.
+  const configured = requiredJobKeys.every(jobReady)
+  const status = onboarding.stepStatuses[stepId]
+  if(configured) {
+    if(stepId === "products" && hasFinishedMdmLog.value) {
+      if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+        onboarding.markStepComplete("products")
+      }
+
+      return
+    }
+    if(status === "not-started") {
+      onboarding.markStepInProgress(stepId)
+    }
+
+    return
+  }
+
+  if(status !== "not-started") {
+    onboarding.markStepAttention(stepId)
+  }
+}
+
+function resetSavedSetupSnapshots() {
+  savedSetupSnapshots.products = null
+  savedSetupSnapshots.inventory = null
+  savedSetupSnapshots.orders = null
+}
+
+function reconcileSavedSetupSnapshots() {
+  const currentStoreMatches = String(productStoreData.current?.productStoreId || "") ===
+    String(selectedProductStoreId.value || "")
+  const jobStatusMatches = String(productStoreData.currentShopifyJobStatus?.productStoreId || "") ===
+    String(selectedProductStoreId.value || "")
+
+  savedSetupSnapshots.products = currentStoreMatches && jobStatusMatches &&
+    productPreferencesPersisted.value && jobReady("productSync") &&
+    jobReady("productBulkSend") && jobReady("productBulkPoll")
+    ? captureProductSetup().snapshot
+    : null
+  savedSetupSnapshots.inventory = currentStoreMatches && jobStatusMatches &&
+    inventoryPreferencesPersisted.value && jobReady("inventoryReset")
+    ? captureInventorySetup().snapshot
+    : null
+  savedSetupSnapshots.orders = currentStoreMatches && jobStatusMatches &&
+    !!orderLandmarkDates.value.historyLastSyncDate && !!orderLandmarkDates.value.launchDate &&
+    jobReady("orderImport") && jobReady("orderHistory")
+    ? captureOrderSetup().snapshot
+    : null
+}
+
+function reconcileSetupFacts() {
+  if(persistedStoreMatches()) {
+    onboarding.markStepComplete("name")
+  } else if(selectedProductStoreId.value) {
+    onboarding.markStepAttention("name")
+  }
+  reconcileShopifyLink()
+  if(productStoreData.fetchStatus?.facilities === "success") {
+    if(facilityCount.value) {
+      onboarding.markStepComplete("facilities")
+    } else if(onboarding.stepStatuses.facilities !== "not-started") {
+      onboarding.markStepAttention("facilities")
+    }
+  }
+  if(locationMappingFetchStatus.value === "success") {
+    if(mappedShopifyLocationCount.value) {
+      onboarding.markStepComplete("locations")
+    } else if(onboarding.stepStatuses.locations === "complete") {
+      onboarding.markStepAttention("locations")
+    }
+  }
+
+  if(productStoreData.fetchStatus?.shopifyJobStatus === "success") {
+    reconcileRequiredJobs("products", ["productSync", "productBulkSend", "productBulkPoll"])
+    reconcileRequiredJobs("inventory", ["inventoryReset"])
+    reconcileRequiredJobs("orders", ["orderImport", "orderHistory"])
+  }
+
+  if(hasFinishedMdmLog.value) {
+    if(productPreferencesPersisted.value && onboarding.draft.productIdentifierEnumId) {
+      onboarding.markStepComplete("products")
+    } else if(onboarding.stepStatuses.products === "in-progress") {
+      onboarding.markStepAttention("products")
+    }
+  }
+}
+
+let setupLoadGeneration = 0
+let selectedStoreLoadQueue: Promise<unknown> = Promise.resolve()
+
+function currentSetupLoadMatches(generation: number, productStoreId: string) {
+  return generation === setupLoadGeneration &&
+    String(selectedProductStoreId.value || "") === productStoreId
+}
+
+function loadSelectedProductStore(productStoreId: string, loadGeneration?: number) {
+  const requestedProductStoreId = String(productStoreId || "").trim()
+  const generation = loadGeneration ?? ++setupLoadGeneration
+  if(!requestedProductStoreId) {return Promise.resolve(false)}
+
+  // The composable owns one shared `current*` bucket. Serialize route loads so an older request
+  // cannot finish after a newer one and overwrite that bucket; the generation check skips queued
+  // work that is already obsolete before it starts.
+  const load = selectedStoreLoadQueue.catch(() => undefined).then(async () => {
+    if(!currentSetupLoadMatches(generation, requestedProductStoreId)) {return false}
+
+    resetSavedSetupSnapshots()
+    await Promise.allSettled([
+      productStoreData.fetchProductStoreDetails(requestedProductStoreId),
+      productStoreData.fetchCurrentStoreSettings(requestedProductStoreId),
+      productStoreData.fetchProductStoreFacilities(requestedProductStoreId),
+      productStoreData.fetchProductStoreShopifyJobStatus(requestedProductStoreId)
+    ])
+    if(!currentSetupLoadMatches(generation, requestedProductStoreId) ||
+      !hydrateDraftFromStore(requestedProductStoreId)) {return false}
+
+    await loadOrderLandmarkDates()
+    if(!currentSetupLoadMatches(generation, requestedProductStoreId) ||
+      String(productStoreData.current?.productStoreId || "") !== requestedProductStoreId) {return false}
+
+    if(orderLandmarkDates.value.historyLastSyncDate) {
+      onboarding.updateDraftField("orderHistoryStartDate", orderLandmarkDates.value.historyLastSyncDate.slice(0, 10))
+    }
+    if(orderLandmarkDates.value.launchDate) {
+      onboarding.updateDraftField("orderLaunchDate", orderLandmarkDates.value.launchDate.slice(0, 10))
+    }
+    reconcileSavedSetupSnapshots()
+    await refreshLocationMappings()
+    if(!currentSetupLoadMatches(generation, requestedProductStoreId) ||
+      String(productStoreData.current?.productStoreId || "") !== requestedProductStoreId) {return false}
+
+    reconcileSetupFacts()
+    void loadShopifyProductCount()
+    void loadGoodIdentificationTypes()
+    void fetchSampleProducts()
+
+    return true
+  })
+  selectedStoreLoadQueue = load.then(() => undefined, () => undefined)
+
+  return load
+}
+
+async function initialiseSetup() {
+  const requestedProductStoreId = String(props.productStoreId || "").trim()
+  const generation = ++setupLoadGeneration
+  if(requestedProductStoreId) {onboarding.initializeForProductStore(requestedProductStoreId)}
+
+  if(!onboarding.draft.timezone) {
+    onboarding.updateDraftField("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone)
+  }
+  if(!onboarding.draft.orderHistoryStartDate) {
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - 7)
+    onboarding.updateDraftField("orderHistoryStartDate", dateInputValue(startDate))
+  }
+  if(!onboarding.draft.orderLaunchDate) {
+    onboarding.updateDraftField("orderLaunchDate", dateInputValue(new Date()))
+  }
+
+  try {
+    const [loadedTimeZones] = await Promise.all([
+      loadTimeZones(),
+      loadOrganizationPartyId(),
+      productStoreData.fetchProductStores()
+    ])
+    if(generation !== setupLoadGeneration ||
+      String(props.productStoreId || "").trim() !== requestedProductStoreId) {return}
+
+    timeZoneOptions.value = loadedTimeZones || []
+    if(!timeZoneOptions.value.some((timeZone: any) => timeZone.id === onboarding.draft.timezone)) {
+      timeZoneOptions.value = [{ id: onboarding.draft.timezone, label: onboarding.draft.timezone }, ...timeZoneOptions.value]
+    }
+    if(organizationPartyId.value) {await productStoreData.fetchCompany()}
+
+    if(requestedProductStoreId || selectedProductStoreId.value) {
+      await loadSelectedProductStore(requestedProductStoreId || selectedProductStoreId.value, generation)
+    }
+  } catch (error: any) {
+    if(generation !== setupLoadGeneration ||
+      String(props.productStoreId || "").trim() !== requestedProductStoreId) {return}
+    logger.error(error)
+    setFeedback(onboarding.currentStepId, feedbackForError(error, "Some setup data could not be loaded."), "danger")
+  }
+}
+
+async function finishSetup() {
+  if(!isReadyToFinish.value || !selectedProductStoreId.value) {return}
+  onboarding.markStepComplete("readiness")
+  const productStoreId = selectedProductStoreId.value
+  await router.replace(`/product-store-details/${encodeURIComponent(productStoreId)}`)
+  onboarding.startNewSetup()
+}
+
+watch(
+  [selectedProductStoreId, cachedShopifyShops, shopifyShopsHydrated, () => productStoreData.currentShopifyJobStatus],
+  () => reconcileShopifyLink(),
+  { deep: true }
+)
+
+watch(() => props.productStoreId, (productStoreId, previousProductStoreId) => {
+  if(productStoreId === previousProductStoreId) {return}
+  void initialiseSetup()
+})
+
+watch(
+  [
+    productInitialLoad,
+    inventoryInitialLoad,
+    orderInitialLoad,
+    productSyncConfiguration,
+    inventorySyncConfiguration,
+    orderSyncConfiguration
+  ],
+  ([products, inventory, orders]) => {
+    reconcileInitialLoadStep("products", products)
+    reconcileInitialLoadStep("inventory", inventory)
+    reconcileInitialLoadStep("orders", orders)
+  },
+  { deep: true, immediate: true }
+)
+
+// The remote is a cache join that resolves after the step is on screen; retry the count when it lands.
+watch(() => shopifySyncContext.remoteId.value, (remoteId) => {
+  if(remoteId && currentStep.value?.id === "products" && shopifyProductCount.value === undefined) {
+    void loadShopifyProductCount()
+  }
+})
+
+watch(currentStep, (step) => {
+  if(step?.id === "products") {
+    if(shopifyProductCount.value === undefined) {
+      void loadShopifyProductCount()
+    }
+    if(productIdentificationOptions.value.length <= STATIC_PRODUCT_IDENTIFIER_OPTIONS.length) {
+      void loadGoodIdentificationTypes()
+    }
+    if(hasFinishedMdmLog.value && !sampleProducts.value.length) {
+      void fetchSampleProducts()
+    }
+  }
+})
+
+watch(hasFinishedMdmLog, (finished) => {
+  if(finished && !sampleProducts.value.length) {
+    void fetchSampleProducts()
+  }
+})
+
+onIonViewWillEnter(() => {
+  initialLoadClock.value = Date.now()
+  initialLoadClockTimer ||= setInterval(() => { initialLoadClock.value = Date.now() }, 30_000)
+  void initialLoadStatus.activate().catch((error) => logger.error("Import [Onboarding] - Failed to monitor imports", error))
+
+  return initialiseSetup()
+})
+onIonViewDidLeave(() => {
+  initialLoadStatus.deactivate()
+  if(initialLoadClockTimer) {
+    clearInterval(initialLoadClockTimer)
+    initialLoadClockTimer = null
+  }
+})
 </script>
 
 <style scoped>
-.product-store-onboarding {
+.onboarding-layout {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 44rem);
+  align-items: start;
+  justify-content: center;
+  gap: var(--spacer-lg);
+  padding: var(--spacer-lg);
+}
+
+.desktop-steps,
+.onboarding-task {
+  min-width: 0;
+}
+
+.onboarding-task ion-card {
+  margin: 0;
+}
+
+.mobile-step-picker {
+  display: none;
+}
+
+.mobile-progress-count {
+  flex: 0 0 auto;
+  margin-inline-start: var(--spacer-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.step-heading-row {
   display: flex;
   align-items: flex-start;
-  gap: 56px;
-  padding: 24px 16px 48px;
+  justify-content: space-between;
+  gap: var(--spacer-sm);
 }
 
-.onboarding-steps {
-  flex: 0 0 375px;
-  max-width: 375px;
-  width: 100%;
+.step-heading-row ion-card-title {
+  margin: 0;
 }
 
-.onboarding-task {
-  flex: 1 1 420px;
-  max-width: 420px;
-  margin: 20px auto 0;
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-sm);
+}
+
+.step-actions,
+.wizard-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-xs);
+}
+
+.step-feedback {
+  display: block;
+}
+
+.wizard-footer {
+  justify-content: space-between;
+  border-top: var(--border-medium);
+  padding: var(--spacer-sm);
 }
 
 @media (max-width: 900px) {
-  .product-store-onboarding {
-    flex-direction: column;
-    gap: 16px;
+  .onboarding-layout {
+    display: block;
+    padding: var(--spacer-sm);
   }
 
-  .onboarding-steps,
-  .onboarding-task {
-    max-width: none;
-    width: 100%;
-    margin: 0;
+  .desktop-steps {
+    display: none;
   }
 
-  .onboarding-task {
-    order: 1;
+  .mobile-step-picker {
+    display: block;
+    margin-bottom: var(--spacer-sm);
   }
 
-  .onboarding-steps {
-    order: 2;
+  .step-heading-row {
+    align-items: center;
   }
 }
 </style>

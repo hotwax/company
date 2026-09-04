@@ -14,6 +14,7 @@ import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";
 
 import { useOrganization } from "./useSeed";
+import { useServiceJob } from "./useServiceJobs";
 import { onSessionCleared } from "./sessionScope";
 
 /**
@@ -362,6 +363,11 @@ export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });
 
+  // refreshAfterMutation refreshes only the cached row; the live state.current / currentStoreSettings
+  // that screens compare against must be refetched here too, guarded so a mutation against another
+  // store cannot swap out what the screen has open.
+  const isLoadedStore = () => String(state.current?.productStoreId ?? "") === String(productStoreId);
+
   return {
     async updateStore(payload: Record<string, any>) {
       const resp: any = await api({
@@ -369,16 +375,38 @@ export function useProductStoreMutations(productStoreId: string) {
         method: "put",
         data: { ...payload, productStoreId },
       });
-      if (!commonUtil.hasError(resp)) await refreshStore();
+      if(!commonUtil.hasError(resp)) {
+        await refreshStore();
+        if(isLoadedStore()) {await fetchProductStoreDetails(productStoreId);}
+      }
       return resp;
     },
 
-    /** LIVE data — settings are re-read per visit, so the caller re-runs its own loader. */
-    saveSettings: (payload: Record<string, any>) => api({
-      url: `admin/productStores/${storeId()}/settings`,
-      method: "post",
-      data: { ...payload, productStoreId },
-    }) as Promise<any>,
+    /**
+     * LIVE data — settings are not cached, so the live copy is re-read here on success.
+     *
+     * ProductStoreSetting has exactly three fields. Keeping the payload bounded here prevents
+     * callers from leaking the date-effective fields used by other setting tables into this
+     * entity's REST store operation.
+     */
+    async saveSettings(payload: {
+      settingTypeEnumId: string;
+      settingValue: string;
+      [key: string]: unknown;
+    }) {
+      const resp: any = await api({
+        url: `admin/productStores/${storeId()}/settings`,
+        method: "post",
+        data: {
+          productStoreId,
+          settingTypeEnumId: payload.settingTypeEnumId,
+          settingValue: payload.settingValue,
+        },
+      });
+      if(!commonUtil.hasError(resp) && isLoadedStore()) {await fetchCurrentStoreSettings(productStoreId);}
+
+      return resp;
+    },
 
     async addFacility(payload: { facilityId: string; fromDate?: number }) {
       const resp: any = await api({
@@ -577,6 +605,13 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
   let created = false
 
   if (!serviceJob?.jobName) {
+    // Moqui answers 200 for an absent template, so verify the template before and the target after,
+    // or the caller writes parameters against a job that was never created.
+    const template = await fetchServiceJob(templateJobName)
+    if(!template?.jobName) {
+      throw new Error(`Setup cannot be completed because the backend service-job template ${templateJobName} is missing. Ask the backend owner to load it, then refresh setup.`)
+    }
+
     await requireApiResponse({
       url: `admin/serviceJobs/${templateJobName}/clone`,
       method: "post",
@@ -585,7 +620,11 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
         copyParameters: true
       }
     })
+
     serviceJob = await fetchServiceJob(newJobName)
+    if(!serviceJob?.jobName) {
+      throw new Error(`Setup cannot be completed because clone target ${newJobName} was not created from ${templateJobName}. Ask the backend owner to verify the template, then refresh setup.`)
+    }
     created = true
   }
 
@@ -899,6 +938,12 @@ function initialState() {
     company: {} as any,
     fetchStatus: {
       productStores: 'none',
+      // Per-resource statuses the product store onboarding wizard gates its loading and error UI on.
+      // The cached reads elsewhere use `hydrated`, but these three are live fetches with no cache
+      // domain behind them, so the wizard has nothing else to distinguish "loading" from "failed".
+      productStoreDetails: 'none',
+      currentStoreSettings: 'none',
+      facilities: 'none',
       shopifyJobStatus: 'none',
       lastFetched: 0
     }
@@ -967,6 +1012,7 @@ async function fetchProductStores(payload: any = { fetchCounts: false }) {
 
 async function fetchProductStoreDetails(productStoreId: string) {
   let current = {} as any
+  state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}`,
@@ -977,7 +1023,9 @@ async function fetchProductStoreDetails(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'error' }
     logger.error(error)
   }
   state.current = current
@@ -1004,6 +1052,7 @@ async function fetchProductStoresShipmentMethodCount(): Promise<Record<string, n
 
 async function fetchCurrentStoreSettings(productStoreId: string) {
   const storeSettings: any = {}
+  state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}/settings`,
@@ -1018,14 +1067,53 @@ async function fetchCurrentStoreSettings(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'error' }
     logger.error(error)
   }
   state.currentStoreSettings = storeSettings
 }
 
+/**
+ * The two system properties that date a shop's order sync: how far back history is imported, and when
+ * live order sync starts. Written one at a time because the endpoint takes one property per call; the
+ * ids already saved ride on the thrown error so a partial failure can be reported precisely.
+ *
+ * Lives here rather than in the onboarding view because it is a product-store-scoped write, and it is
+ * the wizard's only remaining caller after the composable merge.
+ */
+async function saveProductStoreShopifyOrderDates(payload: {
+  shopId: string
+  historyStartDate: string
+  launchDate: string
+}) {
+  const savedSystemPropertyIds: string[] = []
+  const properties = [
+    { systemPropertyId: "orderSyncHistory.lastSyncDate", systemPropertyValue: payload.historyStartDate },
+    { systemPropertyId: "newOrderSync.launchDate", systemPropertyValue: payload.launchDate }
+  ]
+
+  try {
+    for(const property of properties) {
+      await requireApiResponse({
+        url: "admin/systemProperties",
+        method: "put",
+        data: { systemResourceId: payload.shopId, ...property }
+      })
+      savedSystemPropertyIds.push(property.systemPropertyId)
+    }
+  } catch (error: any) {
+    error.savedSystemPropertyIds = savedSystemPropertyIds
+    throw error
+  }
+
+  return buildSuccessResponse({ savedSystemPropertyIds })
+}
+
 async function fetchProductStoreFacilities(productStoreId: string) {
   let facilities: any[] = []
+  state.fetchStatus = { ...state.fetchStatus, facilities: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}/facilities`,
@@ -1037,7 +1125,9 @@ async function fetchProductStoreFacilities(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, facilities: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, facilities: 'error' }
     logger.error(error)
   }
   state.currentFacilities = facilities
@@ -1081,7 +1171,7 @@ async function fetchProductStoreShopifyJobStatus(productStoreId: string) {
     })
     state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: 'success', lastFetched: Date.now() }
   } catch (error: any) {
-    logger.warn('Failed to fetch product store Shopify job status', error)
+    logger.warn('Product Store [Shopify] - Failed to fetch job status', error)
     state.fetchStatus = { ...state.fetchStatus, shopifyJobStatus: 'error' }
   }
 
@@ -1216,6 +1306,11 @@ async function runProductStoreShopifyInventoryReset(payload: {
   })
 }
 
+/**
+ * Fire the historic-order import by running the shop's cloned job. There is no `sob/shopify/orderHistory`
+ * resource (that URL 404s). The dates are not passed: setup stores them as a job parameter and as
+ * shop-scoped SystemProperty rows, and the job reads them.
+ */
 async function runProductStoreShopifyOrderHistoryImport(payload: {
   shopId: string
   fromDate: string
@@ -1223,11 +1318,10 @@ async function runProductStoreShopifyOrderHistoryImport(payload: {
   thruDate?: string
   windowDays?: number
 }) {
-  return api({
-    url: "sob/shopify/orderHistory",
-    method: "post",
-    data: payload
-  })
+  const shopId = valueText(payload.shopId)
+  if(!shopId) {throw new Error("shopId is required.")}
+
+  return useServiceJob().runNow(`sync_ShopifyOrderHistory_${shopId}`)
 }
 
 async function setupProductStoreShopifyOrderImport(payload: {
@@ -1252,13 +1346,18 @@ async function setupProductStoreShopifyOrderImport(payload: {
   const windowDays = payload.windowDays || 7
   const configuredJobs = [
     await ensureServiceJobFromTemplate("queue_ShopifyOrderSync", orderImportJobName, payload.activateJobs),
-    await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", orderHistoryJobName, payload.activateJobs)
+    // The history job is ONLY ever run on demand, from the step's own action, so it is never
+    // activated: `runNow` works on a paused job, and leaving it on its five-minute cron would queue a
+    // fresh backfill query every cycle for as long as the store exists.
+    await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", orderHistoryJobName, false)
   ]
 
   await storeServiceJobParameter(orderImportJobName, "systemMessageTypeId", "ShopifyOrderSync")
   await storeServiceJobParameter(orderImportJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
   await storeServiceJobParameter(orderImportJobName, "runAsBatch", "true")
   await storeServiceJobParameter(orderImportJobName, "additionalParameters", additionalParameters)
+  // No fromDate, deliberately: its absence is what makes send#ShopifyOrderSync treat the shop's first
+  // run as an unbounded sweep of outstanding orders rather than a date window.
 
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageTypeId", "BulkOrderHistoryQuery")
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
@@ -1394,6 +1493,7 @@ export function useProductStoreData() {
     runProductStoreShopifyProductImport,
     runProductStoreShopifyInventoryReset,
     runProductStoreShopifyOrderHistoryImport,
+    saveProductStoreShopifyOrderDates,
     setupProductStoreShopifyOrderImport,
     setupProductStoreShopifyRealtimeOrderImport,
     fetchCompany,

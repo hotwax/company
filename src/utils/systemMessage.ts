@@ -134,6 +134,12 @@ export const SHOPIFY_RW_ACCESS_SCOPE = "SHOP_RW_ACCESS";
 export const SHOPIFY_LEGACY_RW_ACCESS_SCOPE = "SHOP_READ_WRITE_ACCESS";
 export const SHOPIFY_NO_ACCESS_SCOPE = "SHOP_NO_ACCESS";
 
+/** May this OMS write to the shop? Only the canonical scope counts; the publishing services compare
+ *  against SHOP_RW_ACCESS exactly, so the deprecated long form is read-only here too. */
+export function isWritableAccessScope(accessScopeEnumId: string | null | undefined): boolean {
+  return String(accessScopeEnumId ?? "").trim() === SHOPIFY_RW_ACCESS_SCOPE;
+}
+
 /** The shop fields the remote match needs — a subset of `ShopifyShop`. */
 export interface ShopRemoteMatchTarget {
   shopId?: string;
