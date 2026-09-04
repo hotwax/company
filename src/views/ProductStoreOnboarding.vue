@@ -1174,7 +1174,11 @@ const shopifyConnectionRequirements = computed(() => {
 })
 const orderJobRequirements = computed(() => {
   return shopifyJobRequirements.value.filter((requirement: any) => {
-    return ["job.orderImport", "job.orderHistory", "job.realtimeOrderImport", "dataManager.orderConfigs"].includes(requirement.id)
+    const requiredIds = ["job.orderImport", "job.orderHistory", "dataManager.orderConfigs"]
+    if (shouldConfigureRealtimeOrderImport.value) {
+      requiredIds.push("job.realtimeOrderImport")
+    }
+    return requiredIds.includes(requirement.id)
   })
 })
 const shouldConfigureRealtimeOrderImport = computed(() => onboardingStore.draft.orderImportMode === "Realtime and fallback batch")
