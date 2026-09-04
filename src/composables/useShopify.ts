@@ -4031,17 +4031,56 @@ export function useShopifyOrderSync() {
    * projection with no generic equivalent, so it stays live.
    */
   async function loadHistory(shopId: string) {
+    if (!shopId) return;
     try {
       const resp: any = await api({
-        url: `shopify/order-sync/${encodeURIComponent(shopId)}/history`,
-        method: "get",
-        params: { pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT },
+        url: "oms/dataDocumentView",
+        method: "post",
+        data: {
+          dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
+          customParametersMap: {
+            systemMessageTypeId: SHOPIFY_ORDER_SYNC_MESSAGE_TYPE,
+            remoteInternalId: shopId,
+            remoteInternalIdType: "HOTWAX_SHOP_ID",
+            orderByField: "-lastUpdatedStamp"
+          },
+          pageSize: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+          pageIndex: 0
+        }
       });
-      const rows = resp?.data?.orderSyncHistory ?? resp?.orderSyncHistory ?? [];
-      state.recentOrders = normalizeRecentProcessedOrders(rows) as any[];
+      const rows = resp?.data?.documentList ?? resp?.documentList ?? resp?.data?.entityValueList ?? resp?.entityValueList ?? [];
+      
+      // Fallback: Map the system message batches into dummy RecentProcessedOrder rows 
+      // so the Recent order sync history UI component can still render them.
+      // Filter out runs that are still pending or failed without any successful imports.
+      state.recentOrders = rows
+        .filter((msg: any) => {
+          const hasLog = Boolean(msg.dataManagerLogId || msg.logId);
+          if (!hasLog) return false;
+          const explicit = Number(msg.successRecordCount || 0);
+          const total = Number(msg.totalRecordCount || 0);
+          const failed = Number(msg.failedRecordCount || 0);
+          return explicit > 0 || (total > 0 && total > failed);
+        })
+        .map((msg: any) => ({
+        id: msg.systemMessageId,
+        shopId: shopId,
+        shopifyOrderId: msg.systemMessageId,
+        orderName: `Batch ${msg.systemMessageId}`,
+        orderId: msg.systemMessageId,
+        outcome: "Updated",
+        processedAt: msg.lastUpdatedStamp || msg.initDate,
+        processedAtMillis: new Date(msg.lastUpdatedStamp || msg.initDate || 0).getTime(),
+        systemMessageId: msg.systemMessageId,
+        configId: "SYNC_SHOPIFY_ORDER",
+        logId: msg.dataManagerLogId || msg.logId || "",
+        shopifyFetchVerified: false,
+        changeDetailsComplete: false,
+        updatedObjects: []
+      }));
       state.recentAudits = state.recentOrders;
     } catch (error) {
-      logger.error("Failed to load Order Sync history", error);
+      logger.error("Order Sync [System Messages] - Failed to load history", error);
       state.recentOrders = [];
       state.recentAudits = [];
     }
