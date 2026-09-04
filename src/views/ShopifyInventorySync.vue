@@ -3097,7 +3097,13 @@ const {
   bottomSpacer: eventBottomSpacer,
   onScroll: onEventScroll,
   scrollToTop: scrollEventsToTop,
-} = useVirtualRows(visibleSettledEvents, { estimatedRowHeight: 76 });
+  // 122px is what a rendered row actually measures at desktop width -- the `.event-type` clamp below
+  // exists to make every row land on it. The estimate matters more than it looks: `useVirtualRows`
+  // only measures once its container exists, and this scroller is behind a `v-if` on an async cache,
+  // so on a cold open there may be nothing to measure and the estimate is what sizes the spacers for
+  // the whole list. At 76 the spacers under-sized a 500-row history by roughly a third and the
+  // scrollbar drifted against the content.
+} = useVirtualRows(visibleSettledEvents, { estimatedRowHeight: 122 });
 
 /**
  * Source artifacts for the rows actually on screen.
