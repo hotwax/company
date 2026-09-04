@@ -1235,18 +1235,45 @@ describe("ProductStoreOnboarding", () => {
     expect(buttonNamed(wrapper, "Retry")).toBeUndefined()
   })
 
+  /**
+   * The defect this guards: the inventory load posts to the connector's `inventoryReset` resource,
+   * which produces a SystemMessage and answers with its id. The step recorded tracking ids by step
+   * rather than by what arrived, looked for a `jobRunId`, found none, and told the operator the run
+   * could not be tracked — while the backend had already accepted it and started the import.
+   */
+  it("tracks an inventory load by the SystemMessage id the connector returns", async () => {
+    configureExistingShopifySetup("inventory")
+    harness.productStoreData.runProductStoreShopifyInventoryReset
+      .mockResolvedValueOnce({ data: { systemMessageId: "M102603" } })
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    await buttonNamed(wrapper, "Load inventory").trigger("click")
+    await flushPromises()
+    await flushPromises()
+
+    expect(harness.wizard.runRequests.inventory).toMatchObject({ systemMessageId: "M102603", jobRunId: "" })
+    expect(harness.wizard.stepStatuses.inventory).not.toBe("attention")
+    expect(wrapper.text()).not.toContain("The sync request could not be tracked because the backend returned no tracking ID.")
+  })
+
+  /**
+   * Untrackable means the backend named NEITHER identifier. Which one it names is a property of the
+   * transport: the connector's inventory resource answers with a SystemMessage id, the order-history
+   * job with a ServiceJobRun id. Asserting a per-step identifier here is what hid a real defect —
+   * inventory's accepted run was reported to the operator as untrackable.
+   */
   it.each([
     {
       stepId: "inventory" as const,
       loadLabel: "Load inventory",
       importSpy: () => harness.productStoreData.runProductStoreShopifyInventoryReset,
-      response: { data: { systemMessageId: "WRONG-ID-TYPE" } }
+      response: { data: { queued: true } }
     },
     {
       stepId: "orders" as const,
       loadLabel: "Load order history",
       importSpy: () => harness.productStoreData.runProductStoreShopifyOrderHistoryImport,
-      response: { data: { systemMessageId: "WRONG-ID-TYPE" } }
+      response: { data: { queued: true } }
     }
   ])("rejects an untrackable $stepId trigger response", async ({
     stepId,

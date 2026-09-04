@@ -340,13 +340,21 @@ export function selectOnboardingInitialLoadRun(input: {
       return { run: null, jobRun: null, systemMessageId: "" }
     }
 
-    if(input.kind === "products") {
-      const systemMessageId = String(request.systemMessageId ?? "")
-      const run = systemMessageId
-        ? input.runs.find((candidate) => String(candidate?.systemMessageId ?? "") === systemMessageId) ?? null
-        : null
+    // Branch on the identifier the request actually carries, not on the step. A load that came back
+    // with a SystemMessage id was produced directly by a connector resource and has no ServiceJobRun
+    // to correlate through; one that came back with a job run id has to be resolved through the run's
+    // results first. Inventory has been both.
+    const requestedSystemMessageId = String(request.systemMessageId ?? "")
+    if(requestedSystemMessageId) {
+      const run = input.runs.find((candidate) => {
+        return String(candidate?.systemMessageId ?? "") === requestedSystemMessageId
+      }) ?? null
 
-      return { run, jobRun: null, systemMessageId }
+      return { run, jobRun: null, systemMessageId: requestedSystemMessageId }
+    }
+
+    if(input.kind === "products") {
+      return { run: null, jobRun: null, systemMessageId: "" }
     }
 
     const jobRunId = String(request.jobRunId ?? "")

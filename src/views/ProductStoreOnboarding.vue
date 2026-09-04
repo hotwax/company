@@ -1675,17 +1675,18 @@ function acceptInitialLoadRequest(kind: OnboardingInitialLoadKind, response: any
   const request = onboarding.runRequests[kind]
   if(!request) {return}
   const payload = response?.data ?? response ?? {}
-  const trackingId = (kind === "products"
-    ? String(payload.systemMessageId || "")
-    : String(payload.jobRunId || "")).trim()
-  if(!trackingId) {
+  // Which identifier comes back is a property of the transport, not of the step. Products and
+  // inventory are produced as SystemMessages by the connector's bulk-query resources; historic
+  // orders run a service job and return a ServiceJobRun. Assuming one per step is what broke
+  // inventory tracking when its load moved onto the connector resource: the run was accepted by the
+  // backend and the step still reported that it could not be tracked. Read whichever arrived, and
+  // let `initialLoadMatchesRequest` match on the one that is set.
+  const systemMessageId = String(payload.systemMessageId || "").trim()
+  const jobRunId = String(payload.jobRunId || "").trim()
+  if(!systemMessageId && !jobRunId) {
     throw new Error(translate("The sync request could not be tracked because the backend returned no tracking ID."))
   }
-  onboarding.setRunRequest(kind, {
-    ...request,
-    systemMessageId: kind === "products" ? trackingId : "",
-    jobRunId: kind === "products" ? "" : trackingId
-  })
+  onboarding.setRunRequest(kind, { ...request, systemMessageId, jobRunId })
 }
 
 function initialLoadMatchesRequest(kind: OnboardingInitialLoadKind, snapshot: OnboardingInitialLoadSnapshot) {
