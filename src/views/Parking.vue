@@ -159,7 +159,7 @@ import {
 import { computed, ref, watch } from 'vue';
 import { addOutline, archiveOutline, closeOutline, ellipsisVerticalOutline, gitPullRequestOutline, saveOutline } from 'ionicons/icons';
 import { commonUtil, logger, translate } from '@common';
-import { useArchivedFacilities, useFacilityPartitions, useFacilityArchive, useFacilityCreation, useFacilityMutations, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useArchivedFacilities, useFacilityPartitions, useFacilityArchive, useFacilityMutations, useFacilityOrderCounts } from '@/composables/useFacilities';
 import { useOrganization } from '@/composables/useSeed';
 import { generateInternalId } from '@/utils';
 import VirtualFacilityActionsPopover from '@/components/facility/VirtualFacilityActionsPopover.vue';
@@ -170,7 +170,7 @@ import VirtualFacilityActionsPopover from '@/components/facility/VirtualFacility
 
 const { virtualFacilities: cachedVirtualFacilities } = useFacilityPartitions();
 const { archivedFacilities } = useArchivedFacilities();
-const { createVirtualFacility: createVirtualFacilityRecord } = useFacilityCreation();
+const { createVirtualFacility: createVirtualFacilityRecord } = useFacilityMutations();
 const { unarchive, archive } = useFacilityArchive();
 const { fetchOrderCounts } = useFacilityOrderCounts();
 const { organizationPartyId, loadOrganizationPartyId } = useOrganization();
