@@ -564,7 +564,7 @@
                 type="date"
                 label-placement="stacked"
                 :label="translate('Order launch date')"
-                :helper-text="translate('Orders on or after this date enter live fulfillment.')"
+                :helper-text="translate('Orders on or after this date enter live fulfillment. It does not limit what the first sync imports.')"
                 :error-text="orderLaunchDateError"
                 :class="{ 'ion-invalid ion-touched': !!orderLaunchDateError }"
                 required
@@ -573,8 +573,11 @@
                 @ion-input="updateDraft('orderLaunchDate', $event.detail.value)"
                 @ion-blur="orderFieldTouched.launchDate = true"
               />
-              <ion-note>
-                {{ translate("Save the two dates and batch jobs before loading Shopify order history.") }}
+              <ion-note class="ion-text-wrap">
+                {{ translate("The first order sync takes every open order that is still unfulfilled or part fulfilled, whatever its date. Later syncs pick up whatever changed since the one before.") }}
+              </ion-note>
+              <ion-note class="ion-text-wrap">
+                {{ translate("Only open and unfulfilled orders will be downloaded") }}
               </ion-note>
               <onboarding-sync-status
                 subtitle="Monitor each step as order history gets imported from Shopify"
@@ -2156,11 +2159,7 @@ async function saveOrderSetup() {
       // fulfillment is the launch date the operator set, not this flag — the same reason the Products
       // step activates its own sync here.
       activateJobs: true,
-      windowDays: 7,
-      // The launch date is the live sync's first window start. It has nowhere else to get one: the
-      // queue service reads its cursor from the newest already-sent message of the same type, and a
-      // store being set up has none.
-      launchDate: setup.launchDate
+      windowDays: 7
     })
     if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
