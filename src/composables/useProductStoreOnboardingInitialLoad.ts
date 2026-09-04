@@ -312,8 +312,19 @@ export function onboardingInitialLoadJobName(
 }
 
 /**
- * Correlate a persisted run request to cache evidence without falling through to a newer, unrelated
- * run. The latest-run fallback remains only for screens with no request in flight.
+ * Correlate a persisted run request to cache evidence.
+ *
+ * There is NO fallback to the shop's most recent run, and that is the whole point. Every run visible
+ * here is scoped to the SHOP (a SystemMessage against the shop's remote), never to the Product Store,
+ * so a shop that was previously connected to another store carries that store's runs. Picking the
+ * latest one attributed a three-day-old failed import to a Product Store created minutes earlier, and
+ * an operator setting up a fresh store saw "294 failed of 2,131 records processed" for a load nobody
+ * had started.
+ *
+ * Nothing in the data can tell us which Product Store an older shop run belonged to, so the only
+ * honest evidence that THIS setup ran an initial load is the request this wizard persisted when it
+ * started one. Without that request the answer is "no run", which the step renders as a missing
+ * initial import — true, and recoverable by running it.
  */
 // eslint-disable-next-line no-restricted-syntax -- pure selection helper, not a Vue composable
 export function selectOnboardingInitialLoadRun(input: {
@@ -350,21 +361,8 @@ export function selectOnboardingInitialLoadRun(input: {
     return { run, jobRun, systemMessageId }
   }
 
-  const completedRun = input.runs.find((candidate) => {
-    const log = candidate.mdmLog ?? null
-    const logStatus = String(candidate.logStatusId ?? log?.statusId ?? "")
-    const hasLog = Boolean(candidate.logId || log?.logId)
-    const isFinished = logStatus === "DmlsFinished" || Boolean(candidate.finishDateTime) || Boolean(log?.finishDateTime) || Boolean(candidate.completed)
-
-    return hasLog && isFinished
-  })
-  const run = completedRun ?? input.runs[0] ?? null
-
-  return {
-    run,
-    jobRun: null,
-    systemMessageId: String(run?.systemMessageId ?? "")
-  }
+  // No request: this setup has not started an initial load, whatever the shop's own history holds.
+  return { run: null, jobRun: null, systemMessageId: "" }
 }
 
 function requestJobRunStatus(input: OnboardingInitialLoadInput): OnboardingSyncRunStatus {

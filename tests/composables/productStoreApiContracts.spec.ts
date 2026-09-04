@@ -44,7 +44,7 @@ vi.mock("@/composables/sessionScope", () => ({
   onSessionCleared: vi.fn(),
 }));
 
-import { useProductStoreData } from "@/composables/useProductStoreData";
+import { useProductStoreData } from "@/composables/useProductStores";
 import { useProductStoreMutations } from "@/composables/useProductStores";
 
 describe("Product Store API contracts", () => {
@@ -167,11 +167,12 @@ describe("Product Store API contracts", () => {
     materializeInventoryClone?: boolean;
   } = {}) {
     const jobs = new Map<string, any>([
-      ["sync_ShopifyInventoryReset", {
-        jobName: "sync_ShopifyInventoryReset",
+      ["resetShopifyInventoryQoh", {
+        jobName: "resetShopifyInventoryQoh",
         paused: "Y",
         serviceJobParameters: [
-          { jobName: "sync_ShopifyInventoryReset", parameterName: "shopId", parameterValue: "" },
+          { jobName: "resetShopifyInventoryQoh", parameterName: "systemMessageTypeId", parameterValue: "ResetInventoryQoh" },
+          { jobName: "resetShopifyInventoryQoh", parameterName: "systemMessageRemoteId", parameterValue: "" },
         ],
       }],
       ["queue_ShopifyOrderSync", {
@@ -190,7 +191,7 @@ describe("Product Store API contracts", () => {
       }],
     ]);
     if(options.includeInventoryTemplate === false) {
-      jobs.delete("sync_ShopifyInventoryReset");
+      jobs.delete("resetShopifyInventoryQoh");
     }
 
     mocks.api.mockImplementation((request: any) => {
@@ -216,7 +217,7 @@ describe("Product Store API contracts", () => {
         const templateJobName = url.slice("admin/serviceJobs/".length, -"/clone".length);
         const template = jobs.get(templateJobName);
         const newJobName = request.data.newJobName;
-        if(templateJobName !== "sync_ShopifyInventoryReset" || options.materializeInventoryClone !== false) {
+        if(templateJobName !== "resetShopifyInventoryQoh" || options.materializeInventoryClone !== false) {
           jobs.set(newJobName, {
             ...template,
             jobName: newJobName,
@@ -246,38 +247,49 @@ describe("Product Store API contracts", () => {
     return jobs;
   }
 
-  it("clones the inbound Shopify inventory-reset template and sets only its source-backed shopId parameter", async () => {
+  /**
+   * Inventory setup provisions the OUTBOUND quantity feed (`resetShopifyInventoryQoh`, whose
+   * `ResetInventoryQoh` message type sends through `reset#InventoryQoh`). It is deliberately NOT the
+   * inbound importer: the one-time "load inventory from Shopify" call goes straight to the
+   * `sob/shopify/inventoryReset` resource, which maps to `sync#ShopifyInventoryReset` and needs no
+   * cloned job. The two used to share this key and the wrong one was cloned for the import.
+   */
+  it("clones the outbound Shopify quantity-feed template with its message type, remote and batch parameters", async () => {
     const jobs = mockShopifySetupApis();
 
     const response = await useProductStoreData().setupProductStoreShopifyInventoryReset({
       productStoreId: "STORE_1",
       shopId: "SHOP_100",
       activateJobs: false,
-      // Legacy callers may still supply these values; the inbound seed does not accept them.
       systemMessageRemoteId: "REMOTE_100",
       inventoryResetAdditionalParameters: { facilityId: "FACILITY_1" },
     });
 
     expect(mocks.api).toHaveBeenCalledWith({
-      url: "admin/serviceJobs/sync_ShopifyInventoryReset/clone",
+      url: "admin/serviceJobs/resetShopifyInventoryQoh/clone",
       method: "post",
       data: {
-        newJobName: "sync_ShopifyInventoryReset_SHOP_100",
+        newJobName: "resetShopifyInventoryQoh_SHOP_100",
         copyParameters: true,
       },
     });
-    const configuredJob = jobs.get("sync_ShopifyInventoryReset_SHOP_100");
+    const configuredJob = jobs.get("resetShopifyInventoryQoh_SHOP_100");
     expect(Object.fromEntries(configuredJob.serviceJobParameters.map((parameter: any) => [
       parameter.parameterName,
       parameter.parameterValue,
-    ]))).toEqual({ shopId: "SHOP_100" });
+    ]))).toEqual({
+      systemMessageTypeId: "ResetInventoryQoh",
+      systemMessageRemoteId: "REMOTE_100",
+      runAsBatch: "true",
+      additionalParameters: JSON.stringify({ facilityId: "FACILITY_1" }),
+    });
     expect(mocks.refreshAfterMutation).toHaveBeenCalledWith("serviceJob", {
-      jobName: "sync_ShopifyInventoryReset_SHOP_100",
+      jobName: "resetShopifyInventoryQoh_SHOP_100",
     });
     expect(mocks.loggerWarn).not.toHaveBeenCalled();
     expect(response.data.shopifyJobsStatus.jobs.find((job: any) => job.key === "inventoryReset")).toMatchObject({
       configured: true,
-      selectedJobName: "sync_ShopifyInventoryReset_SHOP_100",
+      selectedJobName: "resetShopifyInventoryQoh_SHOP_100",
     });
   });
 
@@ -288,10 +300,10 @@ describe("Product Store API contracts", () => {
       productStoreId: "STORE_1",
       shopId: "SHOP_100",
       activateJobs: false,
-    })).rejects.toThrow("Initial inventory import cannot be configured because the backend service-job template sync_ShopifyInventoryReset is missing.");
+    })).rejects.toThrow("the backend service-job template resetShopifyInventoryQoh is missing");
 
     expect(mocks.api).not.toHaveBeenCalledWith(expect.objectContaining({
-      url: "admin/serviceJobs/sync_ShopifyInventoryReset/clone",
+      url: "admin/serviceJobs/resetShopifyInventoryQoh/clone",
     }));
   });
 
@@ -304,20 +316,21 @@ describe("Product Store API contracts", () => {
         expect.objectContaining({
           key: "inventoryReset",
           status: "template-ready",
-          templateExists: true,
-          expectedJobExists: false,
+          templateJob: expect.objectContaining({ jobName: "resetShopifyInventoryQoh" }),
+          expectedJobName: "resetShopifyInventoryQoh_SHOP_100",
+          expectedJob: null,
         }),
       ]),
     }));
 
-    jobs.delete("sync_ShopifyInventoryReset");
+    jobs.delete("resetShopifyInventoryQoh");
     await expect(productStoreData.fetchProductStoreShopifyJobStatus("STORE_1")).resolves.toEqual(expect.objectContaining({
       jobs: expect.arrayContaining([
         expect.objectContaining({
           key: "inventoryReset",
           status: "missing-template",
-          templateExists: false,
-          expectedJobExists: false,
+          templateJob: null,
+          expectedJob: null,
         }),
       ]),
     }));
@@ -330,13 +343,13 @@ describe("Product Store API contracts", () => {
       productStoreId: "STORE_1",
       shopId: "SHOP_100",
       activateJobs: false,
-    })).rejects.toThrow("Initial inventory import cannot be configured because clone target sync_ShopifyInventoryReset_SHOP_100 was not created.");
+    })).rejects.toThrow("clone target resetShopifyInventoryQoh_SHOP_100 was not created");
 
     expect(mocks.api).toHaveBeenCalledWith({
-      url: "admin/serviceJobs/sync_ShopifyInventoryReset/clone",
+      url: "admin/serviceJobs/resetShopifyInventoryQoh/clone",
       method: "post",
       data: {
-        newJobName: "sync_ShopifyInventoryReset_SHOP_100",
+        newJobName: "resetShopifyInventoryQoh_SHOP_100",
         copyParameters: true,
       },
     });
@@ -372,21 +385,41 @@ describe("Product Store API contracts", () => {
     });
   });
 
-  it.each([
-    ["inventory", "sync_ShopifyInventoryReset_SHOP_100", () => useProductStoreData().runProductStoreShopifyInventoryReset({ shopId: "SHOP_100" })],
-    ["order history", "sync_ShopifyOrderHistory_SHOP_100", () => useProductStoreData().runProductStoreShopifyOrderHistoryImport({
+  /**
+   * The one-time inventory import has its own connector resource, which the shopify-connector maps to
+   * `sync#ShopifyInventoryReset` — the bulk query whose result file is consumed back into OMS. It does
+   * not run the shop's quantity-feed job, and it does not depend on any clone existing.
+   */
+  it("loads inventory through the connector's inventoryReset resource rather than a cloned job", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { jobRunId: "JOB_RUN_1" } });
+
+    await expect(useProductStoreData().runProductStoreShopifyInventoryReset({ shopId: "SHOP_100" }))
+      .resolves.toEqual({ data: { jobRunId: "JOB_RUN_1" } });
+    expect(mocks.api).toHaveBeenCalledOnce();
+    expect(mocks.api).toHaveBeenCalledWith({
+      url: "sob/shopify/inventoryReset",
+      method: "post",
+      data: { shopId: "SHOP_100" },
+    });
+  });
+
+  /**
+   * Historic orders have NO such resource — the connector exposes `inventoryReset` but no
+   * `orderHistory` — so this one runs the shop's cloned job. Posting to `sob/shopify/orderHistory`
+   * returns a 404 and the Orders step reports a queued import that never started.
+   */
+  it("runs the shop's cloned order-history job, which is the only path the backend exposes", async () => {
+    mocks.api.mockResolvedValueOnce({ data: { jobRunId: "JOB_RUN_1" } });
+
+    await expect(useProductStoreData().runProductStoreShopifyOrderHistoryImport({
       shopId: "SHOP_100",
       fromDate: "2026-01-01 00:00:00",
       launchDate: "2026-08-12 00:00:00",
       windowDays: 7,
-    })],
-  ])("runs the configured %s job through the generic runNow endpoint", async (_label, jobName, run) => {
-    mocks.api.mockResolvedValueOnce({ data: { jobRunId: "JOB_RUN_1" } });
-
-    await expect(run()).resolves.toEqual({ data: { jobRunId: "JOB_RUN_1" } });
+    })).resolves.toEqual({ data: { jobRunId: "JOB_RUN_1" } });
     expect(mocks.api).toHaveBeenCalledOnce();
     expect(mocks.api).toHaveBeenCalledWith({
-      url: `admin/serviceJobs/${jobName}/runNow`,
+      url: "admin/serviceJobs/sync_ShopifyOrderHistory_SHOP_100/runNow",
       method: "POST",
     });
   });

@@ -101,7 +101,23 @@ vi.mock("@/composables/useShopify", () => ({
     runState: harness.productSyncRunState
   }),
   useShopifyShopMutations: () => ({ updateShop: harness.updateShop }),
-  useShopifyShops: () => ({ shops: harness.shops, hydrated: harness.shopsHydrated })
+  useShopifyShops: () => ({ shops: harness.shops, hydrated: harness.shopsHydrated }),
+  // The shop -> SystemMessageRemote join. A ShopifyShop row carries no systemMessageRemoteId, so the
+  // view reads it from here; the stub resolves one whenever a shop is linked.
+  useShopifySyncContext: (shopIdSource: any) => {
+    const shopId = computed(() => String(typeof shopIdSource === "function" ? shopIdSource() : shopIdSource ?? ""));
+    const remoteId = computed(() => (shopId.value ? `REMOTE_${shopId.value}` : ""));
+
+    return {
+      shop: computed(() => null),
+      productStore: computed(() => null),
+      remote: computed(() => (remoteId.value ? { systemMessageRemoteId: remoteId.value } : null)),
+      remoteId,
+      remoteIds: computed(() => (remoteId.value ? [remoteId.value] : [])),
+      shopId,
+      hydrated: computed(() => true)
+    };
+  }
 }))
 
 vi.mock("@/composables/useServiceJobs", () => ({

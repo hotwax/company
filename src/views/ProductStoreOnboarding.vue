@@ -711,7 +711,8 @@ import {
   useOrderSyncLandmarkDates,
   useShopifyProductSyncRunState,
   useShopifyShopMutations,
-  useShopifyShops
+  useShopifyShops,
+  useShopifySyncContext
 } from "@/composables/useShopify"
 import {
   PRODUCT_STORE_ONBOARDING_GROUPS,
@@ -835,6 +836,18 @@ const linkedShopifyShop = computed(() => {
 // Never fall back to the persisted id here. Every downstream job/import action must use a shop
 // that the current cache or live setup response confirms is still assigned to this Product Store.
 const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
+/**
+ * The linked shop's SystemMessageRemote.
+ *
+ * A `ShopifyShop` row does NOT carry `systemMessageRemoteId` — the remote is joined to the shop by
+ * `remote.internalId === shop.shopId` (and `remote.remoteId === shop.shopifyShopId`). Reading it off
+ * the shop therefore always yielded undefined, and the shop id was sent to `shopify/graphql` in its
+ * place, which the backend rejects with "Could not find SystemMessageRemote with ID <shopId>".
+ *
+ * `useShopifySyncContext` owns that join and applies the same rule the sync worker uses, so the
+ * screen and the poller cannot disagree about which remote a shop owns.
+ */
+const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)
 const initialLoadStatus = useProductStoreOnboardingInitialLoad(
   () => linkedShopId.value,
   () => onboarding.runRequests
@@ -958,7 +971,8 @@ async function loadShopifyProductCount() {
   if(!linkedShopId.value) {return}
   isShopifyProductCountLoading.value = true
   try {
-    const remoteId = linkedShopifyShop.value?.systemMessageRemoteId || linkedShopId.value
+    const remoteId = shopifySyncContext.remoteId.value
+    if(!remoteId) {return}
     const stats = await fetchLiveCatalogCounts({
       systemMessageRemoteId: remoteId,
       shop: linkedShopifyShop.value
@@ -2571,6 +2585,17 @@ watch(
   },
   { deep: true, immediate: true }
 )
+
+/**
+ * The remote is a cache join, so it resolves after the step is already on screen. Without this the
+ * count stayed "Unavailable" for the rest of the visit: the one load attempt ran while `remoteId`
+ * was still empty and nothing asked again.
+ */
+watch(() => shopifySyncContext.remoteId.value, (remoteId) => {
+  if(remoteId && currentStep.value?.id === "products" && shopifyProductCount.value === undefined) {
+    void loadShopifyProductCount()
+  }
+})
 
 watch(currentStep, (step) => {
   if(step?.id === "products") {

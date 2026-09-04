@@ -454,7 +454,12 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
     expect(selected.systemMessageId).toBe("REQUESTED")
   })
 
-  it("prioritizes a completed run with finished MDM log when no request is active", () => {
+  /**
+   * Runs are scoped to the SHOP, never to the Product Store, so a shop reconnected to a new store
+   * still carries the previous store's runs. Attributing one to this setup showed a brand-new store
+   * a three-day-old failed import as its "current or last run".
+   */
+  it("claims no run at all when this setup never requested one, whatever the shop's history holds", () => {
     const selected = selectOnboardingInitialLoadRun({
       kind: "products",
       shopId: "SHOP",
@@ -469,8 +474,7 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
       ]
     })
 
-    expect(selected.run?.systemMessageId).toBe("HISTORICAL-IMPORT")
-    expect(selected.systemMessageId).toBe("HISTORICAL-IMPORT")
+    expect(selected).toEqual({ run: null, jobRun: null, systemMessageId: "" })
   })
 
   it("correlates inventory through the exact requested ServiceJobRun and its result message", () => {

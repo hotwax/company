@@ -14,6 +14,7 @@ import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";
 
 import { useOrganization } from "./useSeed";
+import { useServiceJob } from "./useServiceJobs";
 import { onSessionCleared } from "./sessionScope";
 
 /**
@@ -362,6 +363,20 @@ export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });
 
+  /**
+   * `refreshAfterMutation` refreshes the CACHED productStore row. It does not touch `state.current` /
+   * `state.currentStoreSettings`, which `useProductStoreData` fetches live and which the product
+   * store onboarding wizard compares its draft against to decide whether a step is saved.
+   *
+   * Leaving that to the caller is what broke the wizard: after a successful save it still read the
+   * pre-save copy and reported "Inventory preferences: Missing" on values it had just written. The
+   * refresh belongs with the write, so no caller can forget it.
+   *
+   * Guarded on the loaded store, because these fetchers replace `state.current` wholesale and a
+   * mutation against some other store must not swap out what the screen has open.
+   */
+  const isLoadedStore = () => String(state.current?.productStoreId ?? "") === String(productStoreId);
+
   return {
     async updateStore(payload: Record<string, any>) {
       const resp: any = await api({
@@ -369,30 +384,38 @@ export function useProductStoreMutations(productStoreId: string) {
         method: "put",
         data: { ...payload, productStoreId },
       });
-      if (!commonUtil.hasError(resp)) await refreshStore();
+      if (!commonUtil.hasError(resp)) {
+        await refreshStore();
+        if (isLoadedStore()) await fetchProductStoreDetails(productStoreId);
+      }
       return resp;
     },
 
     /**
-     * LIVE data — settings are re-read per visit, so the caller re-runs its own loader.
+     * LIVE data — settings are not cached, so the live copy is re-read here on success.
      *
      * ProductStoreSetting has exactly three fields. Keeping the payload bounded here prevents
      * callers from leaking the date-effective fields used by other setting tables into this
      * entity's REST store operation.
      */
-    saveSettings: (payload: {
+    async saveSettings(payload: {
       settingTypeEnumId: string;
       settingValue: string;
       [key: string]: unknown;
-    }) => api({
-      url: `admin/productStores/${storeId()}/settings`,
-      method: "post",
-      data: {
-        productStoreId,
-        settingTypeEnumId: payload.settingTypeEnumId,
-        settingValue: payload.settingValue,
-      },
-    }) as Promise<any>,
+    }) {
+      const resp: any = await api({
+        url: `admin/productStores/${storeId()}/settings`,
+        method: "post",
+        data: {
+          productStoreId,
+          settingTypeEnumId: payload.settingTypeEnumId,
+          settingValue: payload.settingValue,
+        },
+      });
+      if (!commonUtil.hasError(resp) && isLoadedStore()) await fetchCurrentStoreSettings(productStoreId);
+
+      return resp;
+    },
 
     async addFacility(payload: { facilityId: string; fromDate?: number }) {
       const resp: any = await api({
@@ -591,6 +614,15 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
   let created = false
 
   if (!serviceJob?.jobName) {
+    // Both checks exist because a clone can fail without an error response: Moqui answers 200 when
+    // the named template is absent, and the caller's next step writes ServiceJobParameter rows
+    // against the target. Without them a missing template surfaces as orphaned parameters and a
+    // setup step that reports success while nothing was provisioned.
+    const template = await fetchServiceJob(templateJobName)
+    if (!template?.jobName) {
+      throw new Error(`Setup cannot be completed because the backend service-job template ${templateJobName} is missing. Ask the backend owner to load it, then refresh setup.`)
+    }
+
     await requireApiResponse({
       url: `admin/serviceJobs/${templateJobName}/clone`,
       method: "post",
@@ -599,7 +631,11 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
         copyParameters: true
       }
     })
+
     serviceJob = await fetchServiceJob(newJobName)
+    if (!serviceJob?.jobName) {
+      throw new Error(`Setup cannot be completed because clone target ${newJobName} was not created from ${templateJobName}. Ask the backend owner to verify the template, then refresh setup.`)
+    }
     created = true
   }
 
@@ -1281,6 +1317,15 @@ async function runProductStoreShopifyInventoryReset(payload: {
   })
 }
 
+/**
+ * Fire the historic-order import for a shop.
+ *
+ * This runs the shop's cloned `sync_ShopifyOrderHistory_<shopId>` job rather than posting to a
+ * `sob/shopify/orderHistory` endpoint: the shopify-connector's REST resources carry `inventoryReset`
+ * but no `orderHistory`, so that URL 404s. The dates are not passed here by design — setup writes the
+ * window as job parameters and the cursor as shop-scoped ProductStoreSetting rows, and the job reads
+ * them. They stay in the signature because the caller validates the range before it may run.
+ */
 async function runProductStoreShopifyOrderHistoryImport(payload: {
   shopId: string
   fromDate: string
@@ -1288,11 +1333,10 @@ async function runProductStoreShopifyOrderHistoryImport(payload: {
   thruDate?: string
   windowDays?: number
 }) {
-  return api({
-    url: "sob/shopify/orderHistory",
-    method: "post",
-    data: payload
-  })
+  const shopId = valueText(payload.shopId)
+  if (!shopId) throw new Error("shopId is required.")
+
+  return useServiceJob().runNow(`sync_ShopifyOrderHistory_${shopId}`)
 }
 
 async function setupProductStoreShopifyOrderImport(payload: {
