@@ -1,11 +1,8 @@
-import { reactive, toRefs } from "vue";
-import { api, logger } from '@common'
+import { computed } from "vue";
+import { logger } from "@common";
 import { translate } from "@/i18n";
-
-const state = reactive({
-  productUpdateHistories: [] as any[],
-  loading: false
-});
+import { productUpdateHistoryCache } from "@/utils/cacheEntities";
+import { useCachedList } from "./useCachedList";
 
 function parseJson(value: any, defaultValue: any) {
   if (!value) return defaultValue;
@@ -134,37 +131,35 @@ function getProductUpdateHistoryPayload(data: any): any[] {
   return [];
 }
 
-export function useProductUpdateHistory() {
-  const setProductUpdateHistory = (histories: any) => {
-    state.productUpdateHistories = processHistories(getProductUpdateHistoryPayload(histories));
-    return state.productUpdateHistories;
-  };
+/**
+ * Cached product update history for one shop, newest first.
+ *
+ * Index-backed via `[shopId+lastUpdatedStamp]`, so this is a range read already in date order.
+ *
+ * REBUILT on the local-first architecture. The previous version fetched
+ * `oms/products/productUpdateHistories` from the main thread and had to be re-invoked on every
+ * dashboard tick, flashing a loading state on a timer. The `productUpdateHistory` worker domain now
+ * owns the cadence (bounded newest-N per shop — the endpoint carries ~1.9k heavy rows per shop) and
+ * this is a purely reactive read: a new product change appears when the worker writes it, with no
+ * request from the view and no loading state.
+ *
+ * Everything above this line — the diff decoding in `processHistories` — is unchanged. It was the
+ * valuable part of the old composable; only its data source moved.
+ */
+export function useProductUpdateHistories(shopId?: string, limit = 10) {
+  const { records, hydrated } = useCachedList<any>(productUpdateHistoryCache, {
+    dateField: "lastUpdatedStamp",
+    ...(shopId ? { scope: { field: "shopId", value: shopId } } : {}),
+    limit,
+  });
 
-  const fetchProductUpdateHistory = async (params: any) => {
-    state.loading = true;
-    try {
-      const response = await api({
-        url: "oms/products/productUpdateHistories",
-        method: "GET",
-        params: {
-          ...params,
-          orderByField: "-lastUpdatedStamp"
-        }
-      }) as any;
+  /** Rows with their diffs decoded — what the history view iterates. */
+  const productUpdateHistories = computed(() => processHistories(records.value));
 
-      return setProductUpdateHistory(response?.data);
-    } catch (err) {
-      logger.error("Failed to fetch product update history", err);
-      state.productUpdateHistories = [];
-      throw err;
-    } finally {
-      state.loading = false;
-    }
-  };
+  /** The changes attributable to ONE sync run, for the run detail view. */
+  const forSystemMessage = (systemMessageId: string) =>
+    productUpdateHistories.value.filter((history: any) =>
+      String(history.systemMessageId ?? "") === String(systemMessageId));
 
-  return {
-    ...toRefs(state),
-    setProductUpdateHistory,
-    fetchProductUpdateHistory
-  };
+  return { productUpdateHistories, forSystemMessage, records, hydrated };
 }

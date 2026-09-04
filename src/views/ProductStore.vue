@@ -9,6 +9,11 @@
 
     <ion-content>
       <main>
+        <template v-if="!hydrated">
+          <div class="list-item" v-for="n in 3" :key="`sk-${n}`">
+            <ion-item lines="none"><ion-label><ion-skeleton-text animated style="width: 55%" /></ion-label></ion-item>
+          </div>
+        </template>
         <div class="list-item" v-for="store in productStores" :key="store.productStoreId" @click="viewProductStoreDetails(store.productStoreId)">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="storefrontOutline" />
@@ -48,23 +53,18 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonSkeletonText, IonTitle, IonToolbar } from "@ionic/vue";
 import { addOutline, copyOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate, commonUtil } from '@common';
 import router from "@/router";
-import { computed } from "vue";
-import { useProductStore } from '@/store/productStore';
 import { useAuth } from '@common/composables/useAuth'
+import { useProductStores } from "@/composables/useProductStores";
 
-const productStoreStore = useProductStore();
 const { isAuthenticated } = useAuth();
 
-const productStores = computed(() => productStoreStore.productStores)
+// No store: the list (with its shipment-method counts folded in) comes from the cache.
+const { productStores, hydrated } = useProductStores();
 
-
-onIonViewWillEnter(async () => {
-  await productStoreStore.fetchProductStores({ fetchCounts: true });
-})
 
 async function viewProductStoreDetails(productStoreId: string) {
   router.push({ path: `/product-store-details/${productStoreId}` })
@@ -79,13 +79,7 @@ function cloneStoreSettings() {
 }
 
 function viewFacilities(productStoreId: string) {
-  // Pass OMS + auth context so the external Facilities app lands in the right
-  // authenticated instance (parity with the pre-migration deep link).
-  const oms = commonUtil.getMaargURL()
-  const token = commonUtil.getToken()
-  const expirationTime = commonUtil.getTokenExpiration()
-  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${oms}&token=${token}&expirationTime=${expirationTime}&productStoreId=${productStoreId}`
-  window.open(facilitiesListUrl, "_blank")
+  router.push(`/facilities/find?productStoreId=${productStoreId}`)
 }
 </script>
 

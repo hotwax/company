@@ -28,7 +28,6 @@ import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { useUserStore } from './store/user'
 import localeMessages from './locales'
-import { DateTime } from 'luxon'
 
 const pinia = createPinia().use(piniaPluginPersistedstate)
 const i18n = createDxpI18n(localeMessages)
@@ -50,29 +49,12 @@ initialiseConfig({
   postLogout: useUserStore().postLogout,
   get oms() { return useUserStore().oms },
   set oms(val: string) { useUserStore().oms = val },
+  get appVersion() { return useUserStore().appVersion },
+  set appVersion(val: string | undefined) { useUserStore().appVersion = val },
   get current() { return useUserStore().current },
   set current(val: any) { useUserStore().current = val },
   router: router
 })
-
-// Legacy date filter used by views via $filters.formatDate
-app.config.globalProperties.$filters = {
-  formatDate(value: any, inFormat?: string, outFormat?: string) {
-    if (inFormat) {
-      return DateTime.fromFormat(value, inFormat).toFormat(outFormat ?? 'MM-dd-yyyy')
-    }
-    return DateTime.fromISO(value).toFormat(outFormat ?? 'MM-dd-yyyy')
-  },
-  getFeature(featureHierarchy: any, featureKey: string) {
-    let featureValue = ''
-    if (featureHierarchy) {
-      const feature = featureHierarchy.find((item: any) => item.startsWith(featureKey))
-      const parts = feature ? feature.split('/') : []
-      featureValue = parts[2] ?? ''
-    }
-    return featureValue
-  }
-}
 
 router.isReady().then(() => {
   app.mount('#app')

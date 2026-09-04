@@ -2,11 +2,13 @@ import legacy from '@vitejs/plugin-legacy'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { createRequire } from 'module'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { versionInfoUtil } from '../../common/utils/versionInfoUtil'
 import { localApiServerDiscoveryPlugin } from '../../common/vite/localApiServerDiscoveryPlugin'
 import { ideTraceVue } from 'chrome-ide-trace/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 import pkg from './package.json'
+import manifest from './manifest.json'
 
 const require = createRequire(import.meta.url)
 const projectRoot = path.resolve(new URL('.', import.meta.url).pathname)
@@ -29,7 +31,7 @@ const STUB_FILE = path.resolve(projectRoot, 'src/stubs/external.js')
 function resolveCommonDeps() {
   return {
     name: 'resolve-common-deps',
-    resolveId(id, importer) {
+    resolveId(id: string, importer: string | undefined) {
       // Stub unused packages with a real stub file in dev; build uses rollupOptions.external
       if (COMMON_EXTERNALS.some(e => id === e || id.startsWith(e + '/'))) {
         return STUB_FILE
@@ -53,7 +55,20 @@ function resolveCommonDeps() {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  // Guarded because this file is loaded by vitest too, where the app's .env is not always present.
+  // An absent variable arrives as the string "undefined", which JSON.parse rejects, and the throw
+  // happens before any test runs — that is the "Order Sync unit tests" failure on every PR.
+  let appBuild = ''
+  try {
+    appBuild = env.VITE_APP_VERSION_CONFIG && env.VITE_APP_VERSION_CONFIG !== "undefined" ? JSON.parse(env.VITE_APP_VERSION_CONFIG).buildVersion : ''
+  } catch (err) {
+    console.warn("Failed to parse VITE_APP_VERSION_CONFIG:", err)
+  }
+  return {
+  // A version build (buildVersion vX.Y.Z in VITE_APP_VERSION_CONFIG) is self-contained under /vX.Y.Z/; an empty buildVersion is the root bootstrap.
+  base: appBuild ? `/${appBuild}/` : '/',
   server: {
     port: 8100
   },
@@ -62,26 +77,41 @@ export default defineConfig({
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
     vue(),
-    legacy()
+    legacy(),
+    VitePWA({
+      registerType: "autoUpdate",
+      selfDestroying: true,
+      manifest: manifest as any,
+      devOptions: {
+        enabled: true
+      }
+    })
   ],
   define: {
     'import.meta.env.VITE_APP_VERSION_INFO': JSON.stringify(JSON.stringify(versionInfoUtil.getVersionInfo(pkg.version)))
   },
   resolve: {
-    dedupe: ['vue', 'pinia', 'luxon', 'vue-i18n', 'mitt', 'vue-logger-plugin'],
+    dedupe: ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router', 'pinia', 'luxon', 'vue-i18n', 'mitt', 'vue-logger-plugin'],
     alias: {
       '@': path.resolve(projectRoot, 'src'),
       '@common': commonRoot
     }
   },
   optimizeDeps: {
-    include: ['luxon', 'mitt', 'pinia', 'vue-i18n', 'vue-logger-plugin', 'cron-parser', 'axios', 'axios-cache-adapter'],
+    // `vue-router` is imported directly by several lazily-loaded views (useRouter,
+    // onBeforeRouteLeave) while the router module itself uses @ionic/vue-router. Because the plain
+    // package was only discovered during a dynamic import, the dev server answered its dep request
+    // with 504 "Outdated Optimize Dep" and those routes failed to mount. Prebundling it up front
+    // removes that whole class of failure.
+    include: ['luxon', 'mitt', 'pinia', 'vue-router', 'vue-i18n', 'vue-logger-plugin', 'cron-parser', 'axios', 'axios-cache-adapter'],
     // Force CommonJS → ESM interop for packages with CJS-only default exports
     esbuildOptions: {
       target: 'esnext'
     }
   },
   build: {
+    outDir: appBuild ? `dist/${appBuild}` : 'dist',
     rollupOptions: {}
+  }
   }
 })

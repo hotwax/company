@@ -21,6 +21,14 @@
         </ion-item>
       </div>
 
+      <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
+           than an empty list that reads as "there is nothing here". -->
+      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
+        <ion-item lines="none">
+          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+        </ion-item>
+      </div></template>
+
       <div class="list-item ion-padding-end" v-for="paymentMethod in paymentMethods" :key="paymentMethod.paymentMethodTypeId">
         <ion-item lines="none">
           <ion-label>
@@ -30,7 +38,7 @@
         </ion-item>
 
         <ion-label>
-          {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) ? getShopifyMappingId(paymentMethod.paymentMethodTypeId) : '-' }}
+          {{ getShopifyMappingId(paymentMethod.paymentMethodTypeId) || '-' }}
           <p>{{ translate("Shopify") }}</p>
         </ion-label>
 
@@ -66,19 +74,18 @@
 import { IonButton, IonBackButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, closeCircleOutline, openOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { translate } from '@common'
-import { useNetSuiteStore } from '@/store/netSuite';
-import { useShopifyStore } from '@/store/shopify';
 import { computed } from "vue";
-import { useNetSuiteComposables } from "@/composables/useNetSuiteComposables";
+import { useNetSuite } from "@/composables/useNetSuite";
+import { usePaymentMethodTypes } from "@/composables/useSeed";
+import { useIntegrationTypeMappings } from "@/composables/useNetSuite";
+import { useShopifyTypeMappings } from "@/composables/useShopify";
 
-const netSuiteStore = useNetSuiteStore();
-const shopifyStore = useShopifyStore();
 const paymentMethodTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.PAYMENT_METHOD_TYPE_ID
-const { editNetSuiteId, removeNetSuiteId } = useNetSuiteComposables(paymentMethodTypeId);
+const { editNetSuiteId, removeNetSuiteId } = useNetSuite(paymentMethodTypeId);
 
-const paymentMethods = computed(() => netSuiteStore.paymentMethods)
-const integrationTypeMappings = computed(() => netSuiteStore.getIntegrationTypeMappings(paymentMethodTypeId))
-const shopifyTypeMappings = computed(() => shopifyStore.getShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE"))
+const { paymentMethodTypes: paymentMethods, hydrated } = usePaymentMethodTypes();
+const { mappings: integrationTypeMappings } = useIntegrationTypeMappings(paymentMethodTypeId);
+const { mappings: shopifyTypeMappings } = useShopifyTypeMappings(undefined, "SHOPIFY_PAYMENT_TYPE");
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_PMT_MTHD)
@@ -92,15 +99,11 @@ const updatedNetSuiteIds = computed(() => {
   }, {} as any);
 });
 
-onIonViewWillEnter(async () => {
-  await netSuiteStore.fetchPaymentMethods()
-  await shopifyStore.fetchShopifyTypeMappings("SHOPIFY_PAYMENT_TYPE")
-})
 
-function getShopifyMappingId(paymentMethodTypeId: any) {
+const getShopifyMappingId = computed(() => (paymentMethodTypeId: any) => {
   const shopifyMappingId = shopifyTypeMappings.value.find((mapping: any) => mapping.mappedValue === paymentMethodTypeId);
   return shopifyMappingId ? shopifyMappingId.mappedKey : "";
-}
+});
 
 function openPaymentMethodDoc() {
   window.open('https://docs.hotwax.co/documents/v/learn-netsuite/synchronization-flows/integration-mappings/payment-methods', '_blank', 'noopener, noreferrer');

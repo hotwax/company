@@ -1,10 +1,18 @@
-import { reactive, toRefs } from 'vue';
-import { api, logger } from '@common'
+import { computed, reactive, toRefs, type Ref } from 'vue';
+import { api, commonUtil, logger } from '@common'
+import {
+  shopifyBulkOperationCache,
+  systemMessageCache,
+  systemMessageErrorCache,
+  systemMessageRemoteCache,
+} from '@/utils/cacheEntities';
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
   getSystemMessageCandidateIds
 } from "@/utils/shopifyBulkOperation";
+import { onSessionCleared } from "./sessionScope";
+import { useCachedList, useCachedRecord } from "./useCachedList";
 
 const BULK_OPERATION_QUERY = `
   query BulkOperation($id: ID!) {
@@ -24,6 +32,61 @@ const BULK_OPERATION_QUERY = `
     }
   }
 `;
+
+/**
+ * Messages confirmed this session to have ZERO errors.
+ *
+ * `systemMessageErrorCache` can only remember errors that exist — an empty result writes no row, so
+ * a cache-first read of a clean message misses every time and re-requests forever. That is what made
+ * the product sync history page cost one `/errors` request PER ROW on every entry. Errors are
+ * append-only against a terminal message, so "none" stays true for the session.
+ */
+const messagesKnownToHaveNoErrors = new Set<string>();
+let noErrorMemoGeneration = 0;
+
+onSessionCleared(() => {
+  noErrorMemoGeneration += 1;
+  messagesKnownToHaveNoErrors.clear();
+});
+
+/**
+ * Whether a message could carry errors at all.
+ *
+ * `SystemMessageError` rows are written on failure, so a message that reached a successful terminal
+ * status has none — and the UI shows no error text for a successful row regardless, which makes the
+ * request pure waste. Anything unrecognised is treated as "might", so a new status never silently
+ * hides a real error.
+ */
+export function systemMessageMayHaveErrors(systemMessage: any): boolean {
+  const status = String(systemMessage?.statusId ?? "").toLowerCase();
+  if (!status) return true;
+  return !(status.includes("consumed") || status.includes("confirmed") || status.includes("sent"));
+}
+
+/**
+ * A Shopify bulk operation, as this app reads it.
+ *
+ * Fields mirror `shopifyBulkOperationProjection` in `cacheEntities`; every one is optional because
+ * the value legitimately starts as `{}` before a run has one, and `isStatusUnavailable` is the
+ * synthetic marker set when Shopify cannot be reached (rendered as "status unavailable", not as a
+ * failure).
+ */
+export interface ShopifyBulkOperationLike {
+  id?: string;
+  status?: string;
+  errorCode?: string;
+  systemMessageRemoteId?: string;
+  objectCount?: number | string;
+  rootObjectCount?: number | string;
+  fileSize?: number | string;
+  url?: string;
+  query?: string;
+  createdAt?: string | number;
+  completedAt?: string | number;
+  /** Set when the operation exists but Shopify could not be asked for its current state. */
+  isStatusUnavailable?: boolean;
+  [key: string]: unknown;
+}
 
 export function useSystemMessage() {
   const state = reactive({
@@ -59,6 +122,13 @@ export function useSystemMessage() {
     return null;
   };
 
+  /**
+   * Errors for one message, WRITE-THROUGH to the cache (class C: on demand, never polled).
+   *
+   * Errors only exist for messages that failed, and only a run being inspected needs them, so
+   * polling every message's errors would be almost entirely wasted requests. Fetch once, cache, and
+   * let `useSystemMessageErrors` serve every later render reactively.
+   */
   const fetchSystemMessageErrors = async (systemMessageId: string) => {
     if (!systemMessageId) return [];
 
@@ -72,13 +142,73 @@ export function useSystemMessage() {
         }
       }) as any;
 
-      return response?.data || [];
+      // Bare array response (verified live: `[ ]` for a message with no errors).
+      const errors: any[] = Array.isArray(response?.data) ? response.data : [];
+      if (errors.length) {
+        // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
+        // otherwise the synthetic key cannot be built and the join has nothing to match on.
+        void systemMessageErrorCache.upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
+      }
+      return errors;
     } catch (err) {
       logger.error(`Failed to fetch system message errors for ${systemMessageId}`, err);
       throw err;
     } finally {
       state.loading = false;
     }
+  };
+
+  /** Fetch only if this message's errors are not cached yet — the on-demand entry point. */
+  const ensureSystemMessageErrors = async (systemMessageId: string) => {
+    if (!systemMessageId) return [];
+    const requestGeneration = noErrorMemoGeneration;
+
+    // A confirmed-empty result is an answer, and re-asking for it is the whole N+1.
+    if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
+
+    try {
+      const cached = (await systemMessageErrorCache.all())
+        .filter((row: any) => row.systemMessageId === systemMessageId);
+      if (cached.length) return cached.map((row: any) => row.raw);
+    } catch {
+      // cache unavailable — fall through to the network
+    }
+
+    try {
+      const errors = await fetchSystemMessageErrors(systemMessageId);
+      if(!errors.length && requestGeneration === noErrorMemoGeneration) {
+        messagesKnownToHaveNoErrors.add(systemMessageId);
+      }
+
+      return errors;
+    } catch {
+      // A failed request is not proof that the message has no errors. Keep the public fallback
+      // shape, but leave the id eligible for a later retry.
+      return [];
+    }
+  };
+
+  /**
+   * One message by id, CACHE-FIRST and WRITE-THROUGH.
+   *
+   * `fetchSystemMessageById` only populates local state, so a caller that needed the row in IndexedDB
+   * got nothing durable. This is the read path the sync screens use: try the cache, and on a miss fetch
+   * exactly one record, persist it, and return it. Terminal messages are immutable, so a hit is
+   * permanent and this decays to zero requests.
+   */
+  const ensureSystemMessageById = async (systemMessageId: string) => {
+    if (!systemMessageId) return null;
+    try {
+      const cached = (await systemMessageCache.all())
+        .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
+      if (cached) return cached.raw ?? cached;
+    } catch {
+      // cache unavailable — fall through to the network
+    }
+
+    const fetched = await fetchSystemMessageById(systemMessageId).catch(() => null);
+    if (fetched) await systemMessageCache.upsertMany([fetched]);
+    return fetched;
   };
 
   const fetchSystemMessages = async (params: any) => {
@@ -152,7 +282,26 @@ export function useSystemMessage() {
       responseData;
   };
 
+  /**
+   * Terminal bulk-operation statuses. Once an operation reaches one of these it is immutable, so a
+   * cached copy is valid forever and Shopify never needs to be asked again.
+   */
+  const isTerminalBulkOperation = (status: string | undefined) =>
+    ["COMPLETED", "FAILED", "CANCELED", "EXPIRED"].includes(String(status || "").toUpperCase());
+
   const fetchShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
+    // Cache-first: a finished operation is immutable, so serve it locally and skip the remote call.
+    try {
+      const cached = (await shopifyBulkOperationCache.all())
+        .find((row: any) => row.id === bulkOperationId);
+      if (cached && isTerminalBulkOperation(cached.status as string)) {
+        state.currentShopifyBulkOperation = cached.raw;
+        return cached.raw;
+      }
+    } catch {
+      // cache miss or read failure — fall through to the live call
+    }
+
     state.loading = true;
     state.currentShopifyBulkOperation = {};
     try {
@@ -172,6 +321,8 @@ export function useSystemMessage() {
       const payload = graphQlPayload?.node;
       if (payload) {
         state.currentShopifyBulkOperation = payload;
+        // Cache it so a later visit needs no Shopify round-trip once it has finished.
+        void shopifyBulkOperationCache.upsertMany([{ ...payload, systemMessageRemoteId }]);
         return payload;
       }
     } catch (err) {
@@ -236,13 +387,28 @@ export function useSystemMessage() {
     };
   };
 
+  /**
+   * A Shopify bulk operation as this app handles it.
+   *
+   * Mirrors `shopifyBulkOperationProjection` in `cacheEntities`, plus `isStatusUnavailable` — the
+   * synthetic marker set when Shopify cannot be reached for a run, which callers render as "status
+   * unavailable" rather than as a failure.
+   *
+   * Typed rather than left as the inferred `{}`: every consumer reads `.status`/`.objectCount` off
+   * this, and `{}` made all eleven of those reads type errors in `ShopifyProductSyncHistory.vue`
+   * while still compiling everywhere the value was passed through untyped.
+   */
   const fetchShopifyBulkOperationBySystemMessageId = async (systemMessageId: string, systemMessageData?: any) => {
     const systemMessage = systemMessageData || await fetchSystemMessageById(systemMessageId);
-    const systemMessageErrors = await fetchSystemMessageErrors(systemMessageId).catch(() => []);
+    // Cache-first, and skipped entirely for a message whose status rules errors out — see
+    // `systemMessageMayHaveErrors`. This was an unconditional request per row.
+    const systemMessageErrors = systemMessageMayHaveErrors(systemMessage)
+      ? await ensureSystemMessageErrors(systemMessageId)
+      : [];
     
     if (systemMessageData) state.currentSystemMessage = systemMessageData;
 
-    let shopifyBulkOperation = {};
+    let shopifyBulkOperation: ShopifyBulkOperationLike = {};
     const bulkOperationSource = await getBulkOperationSource(systemMessage);
     const systemMessageRemoteId = bulkOperationSource.systemMessage?.systemMessageRemoteId || systemMessage?.systemMessageRemoteId;
     if (systemMessage && bulkOperationSource.bulkOperationId && systemMessageRemoteId) {
@@ -265,10 +431,33 @@ export function useSystemMessage() {
     };
   };
 
+  /**
+   * Re-attempt delivery of a message that has already been produced.
+   *
+   * Re-sends the SAME stored message: the payload and its frozen Shopify idempotency key are never
+   * rebuilt, so a batch that did reach Shopify before failing cannot double-apply.
+   */
+  const resendSystemMessage = async (systemMessageId: string) => {
+    if (!systemMessageId) throw new Error("A system message is required to resend.");
+    const response = await api({
+      url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/send`,
+      method: "POST",
+      data: { systemMessageId }
+    }) as any;
+    if (commonUtil.hasError(response)) {
+      logger.error("Resend rejected for system message", systemMessageId, response);
+      throw new Error("The OMS rejected the resend request.");
+    }
+    return response?.data ?? {};
+  };
+
   return {
     ...toRefs(state),
     fetchSystemMessageById,
+    ensureSystemMessageById,
     fetchSystemMessageErrors,
+    ensureSystemMessageErrors,
+    resendSystemMessage,
     fetchShopifyBulkOperation,
     fetchShopifyBulkOperationBySystemMessageId,
     fetchSystemMessageLogDetailsPage,
@@ -276,3 +465,121 @@ export function useSystemMessage() {
     fetchSystemMessagesPage
   };
 }
+
+
+// ---------------------------------------------------------------------------------------------
+// Cached reads — the local-first half of the system-message function.
+//
+// `useSystemMessage()` above wraps the live api() operations (fetch one, errors, Shopify bulk
+// operation). The composables below read what the sync worker has already cached, so a view can
+// render system-message state with no request at all. Both halves live in this file because they
+// serve the same function.
+// ---------------------------------------------------------------------------------------------
+
+export interface SystemMessageQuery {
+  /** Narrow to one message type, e.g. `BulkQueryShopifyProductUpdates`. Index-backed. */
+  systemMessageTypeId?: string;
+  /** Keep only these statuses. Not index-backed (a set, not an equality) — applied as a filter. */
+  statusIds?: string[];
+  /** Newest N only. */
+  limit?: number;
+}
+
+/**
+ * Cached system messages, newest first.
+ *
+ * Scoping by remote + type + `initDate` resolves through the
+ * `[systemMessageRemoteId+systemMessageTypeId+initDate]` compound index, so this is an index range
+ * read already in date order — no table scan and no sort, which is what makes the sync screens cheap
+ * enough to re-render on every worker write.
+ */
+export function useSystemMessages(systemMessageRemoteId?: string, query: SystemMessageQuery = {}) {
+  const statusSet = query.statusIds?.length ? new Set(query.statusIds) : undefined;
+
+  const { records, hydrated } = useCachedList<any>(systemMessageCache, {
+    dateField: 'initDate',
+    ...(systemMessageRemoteId
+      ? { scope: { field: 'systemMessageRemoteId', value: systemMessageRemoteId } }
+      : {}),
+    ...(query.systemMessageTypeId
+      ? { equals: { systemMessageTypeId: query.systemMessageTypeId } }
+      : {}),
+    ...(statusSet ? { filter: (row: any) => statusSet.has(row.statusId) } : {}),
+    ...(query.limit ? { limit: query.limit } : {}),
+  });
+
+  /** Messages that have not reported a processed date yet — still in flight. */
+  const inFlight = computed(() => records.value.filter((msg: any) => !msg.processedDate));
+
+  return { messages: records, inFlight, records, hydrated };
+}
+
+/**
+ * The newest message for a remote + type — the anchor a sync card reads as "the current run".
+ *
+ * `limit: 1` over the compound index, so this costs one index seek regardless of how many messages
+ * are cached.
+ */
+export function useLatestSystemMessage(systemMessageRemoteId?: string, systemMessageTypeId?: string) {
+  const { records, hydrated } = useSystemMessages(systemMessageRemoteId, { systemMessageTypeId, limit: 1 });
+  return { message: computed<any>(() => records.value[0]), hydrated };
+}
+
+export const useSystemMessageRecord = (systemMessageId: string | undefined) =>
+  useCachedRecord(systemMessageCache, 'systemMessageId', systemMessageId);
+
+/** Cached errors for one message. Populated on demand — see `ensureSystemMessageErrors`. */
+export function useSystemMessageErrors(systemMessageId?: string) {
+  const { records, hydrated } = useCachedList<any>(systemMessageErrorCache, {
+    dateField: 'errorDate',
+    ...(systemMessageId ? { scope: { field: 'systemMessageId', value: systemMessageId } } : {}),
+  });
+
+  /** The first non-empty error text — what the run header shows. */
+  const errorText = computed<string>(() => {
+    for (const error of records.value) {
+      const text = String(error?.errorText ?? '').trim();
+      if (text) return text;
+    }
+    return '';
+  });
+
+  return { errors: records, errorText, hydrated };
+}
+
+/** A cached Shopify bulk operation by its gid. */
+export const useShopifyBulkOperationRecord = (bulkOperationId: string | undefined) =>
+  useCachedRecord(shopifyBulkOperationCache, 'id', bulkOperationId);
+
+/**
+ * The bulk operation for a message, resolved through the id chain the message carries
+ * (`remoteMessageId` → `bulkOperationId` → `parentMessageId`) — reusing the tested resolver rather
+ * than re-deriving it.
+ */
+export function useBulkOperationForMessage(message: Ref<any> | (() => any)) {
+  const source = computed<any>(() => (typeof message === 'function' ? message() : message.value));
+  const bulkOperationId = computed<string>(() => getSystemMessageBulkOperationId(source.value) || '');
+  const { records, hydrated } = useCachedList<any>(shopifyBulkOperationCache);
+
+  const bulkOperation = computed<any>(() =>
+    bulkOperationId.value
+      ? records.value.find((row: any) => row.id === bulkOperationId.value)
+      : undefined);
+
+  return { bulkOperation, bulkOperationId, hydrated };
+}
+
+/**
+ * The remote endpoints the OMS exchanges messages with.
+ *
+ * These sit with the system-message function rather than under a connector: a remote is the
+ * addressable endpoint a message is produced for or consumed from, and several connectors
+ * (Shopify, Klaviyo, NetSuite) merely reference it.
+ */
+export function useSystemMessageRemotes() {
+  const { records, hydrated } = useCachedList<any>(systemMessageRemoteCache);
+  return { remotes: records, records, hydrated };
+}
+
+export const useSystemMessageRemoteRecord = (systemMessageRemoteId: string | undefined) =>
+  useCachedRecord(systemMessageRemoteCache, 'systemMessageRemoteId', systemMessageRemoteId);

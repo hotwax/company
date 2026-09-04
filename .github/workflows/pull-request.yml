@@ -16,3 +16,43 @@ jobs:
       appDir: company
     secrets:
       envPAT: ${{ secrets.envPAT }}
+
+  unit-tests:
+    name: Order Sync unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout AccxUI workspace
+        uses: actions/checkout@v4
+        with:
+          repository: hotwax/accxui
+          path: .
+          persist-credentials: false
+
+      - name: Checkout Company revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: apps/company
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Company unit tests
+        run: pnpm --filter company test:unit

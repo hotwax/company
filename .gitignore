@@ -25,6 +25,7 @@ npm-debug.log*
 /.vscode
 /coverage
 /dist
+/dev-dist
 /node_modules
 /platforms
 /plugins
@@ -42,3 +43,6 @@ auth-*.json
 
 .history
 .firebase
+
+# Routing stress-test output
+tests/e2e/.results/

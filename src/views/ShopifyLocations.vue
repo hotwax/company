@@ -116,24 +116,27 @@
 <script setup lang="ts">
 import { alertController, IonButton, IonButtons, IonCard, IonCardContent, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonPage, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, modalController, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, arrowBackOutline, checkmarkCircleOutline, cloudDownloadOutline, refreshOutline, saveOutline, shieldCheckmarkOutline, storefrontOutline } from 'ionicons/icons'
-import ImportShopifyLocationsModal from '@/components/ImportShopifyLocationsModal.vue'
-import { commonUtil, emitter, hasError, logger, translate } from '@common'
-import { useUtilStore } from '@/store/util';
-import { useShopifyStore } from '@/store/shopify';
+import ImportShopifyLocationsModal from '@/components/facility/ImportShopifyLocationsModal.vue'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
+import { shouldPopHistoryOnBack } from "@/utils/navigation";
+import { useFacilities } from '@/composables/useFacilities';
+import { fetchLocationsFromShopify, useShopifyLocations, useShopifyShopMutations } from "@/composables/useShopify";
+import { refreshAfterMutation, resyncDomain } from '@/services/appCacheBootstrap';
 
 const props = defineProps(['id']);
-const utilStore = useUtilStore();
-const shopifyStore = useShopifyStore();
-const isLoading = ref(true);
+const shopMutations = useShopifyShopMutations(props.id);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
 const health = ref<any>(null)
 const isAuditing = ref(false)
 
-const facilities = computed(() => utilStore.facilities)
-const shopifyShopLocations = computed(() => shopifyStore.shopifyShopsLocations)
+// Facilities and this shop's location mappings both come from the cache — no fetch on entry.
+const { facilities } = useFacilities();
+const { locations: shopifyShopLocations, locationByFacility, hydrated } = useShopifyLocations(props.id);
+// Skeleton shows only until the cache emits; on a warm cache that is immediate.
+const isLoading = computed(() => !hydrated.value);
 const backHref = computed(() => {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo")
   return returnTo || `/shopify-connection-details/${props.id}`
@@ -147,19 +150,14 @@ const isDirty = computed(() => {
   });
 });
 
-onIonViewWillEnter(async () => {
-  isLoading.value = true;
-  await Promise.all([
-    utilStore.fetchFacilities(),
-    shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
-  ]);
-  initializeLocalMappings();
-  isLoading.value = false;
-})
 
-watch(shopifyShopLocations, () => {
+// `initializeLocalMappings` reads BOTH cached sources, which emit from IndexedDB independently.
+// Watching only one meant that if the other had not arrived yet the local map was built empty and
+// never rebuilt — every row then compared `undefined` against its real mapping, looked "dirty",
+// and rendered the edit input instead of the mapped value. `immediate` also seeds a warm cache.
+watch([shopifyShopLocations, facilities], () => {
   initializeLocalMappings();
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 function initializeLocalMappings() {
   const mappings: any = {};
@@ -170,7 +168,9 @@ function initializeLocalMappings() {
 }
 
 function getShopifyLocationId(facilityId: string) {
-  return shopifyShopLocations.value[facilityId];
+  // A MAP keyed by facilityId. This used to index the records ARRAY by facilityId, which is always
+  // undefined — so every facility rendered as unmapped even with mappings cached.
+  return locationByFacility.value[facilityId];
 }
 
 function isItemDirty(id: string) {
@@ -200,15 +200,14 @@ async function saveMapping(facilityId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await shopifyStore.createShopifyShopLocation({
-      shopId: props.id,
+    const resp = await shopMutations.saveLocation({
       facilityId,
       shopifyLocationId
-    });
+    }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
+      await shopMutations.refreshLocations();
       editingItemId.value = "";
     } else {
       throw resp.data;
@@ -226,13 +225,12 @@ async function saveAllDirtyMappings() {
 
   try {
     for (const id of dirtyIds) {
-      await shopifyStore.createShopifyShopLocation({
-        shopId: props.id,
+      await shopMutations.saveLocation({
         facilityId: id,
         shopifyLocationId: localMappings.value[id]
-      });
+      }, { refresh: false });
     }
-    await shopifyStore.fetchShopifyShopLocations({ shopId: props.id });
+    await shopMutations.refreshLocations();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {
     logger.error(error);
@@ -249,13 +247,12 @@ async function openImportModal() {
   await modal.present()
   const { data } = await modal.onDidDismiss()
   if (data?.imported) {
-    isLoading.value = true
+    // Imported rows arrive via the cache; facilities are already cached.
     await Promise.all([
-      utilStore.fetchFacilities(),
-      shopifyStore.fetchShopifyShopLocations({ shopId: props.id })
+      shopMutations.refreshLocations(),
+      resyncDomain("facility"),
     ])
     initializeLocalMappings()
-    isLoading.value = false
     // Re-run the audit so the health panel reflects the newly imported facilities
     await runAudit()
   }
@@ -264,18 +261,16 @@ async function openImportModal() {
 async function runAudit() {
   isAuditing.value = true
   try {
-    const [shopifyResp, omsResp] = await Promise.all([
-      shopifyStore.fetchLocationsFromShopify({ shopId: props.id }),
-      shopifyStore.fetchShopifyShopLocationsRaw({ shopId: props.id })
-    ])
-    const nodes = (shopifyResp.data?.locations?.edges || []).map((e: any) => e.node)
-    const omsMappings = omsResp.data || []
+    // Shopify is remote truth so it is fetched; the OMS side is the cached `shopifyLocation`
+    // domain this page already subscribes to, so the audit costs ONE request instead of two.
+    const nodes = await fetchLocationsFromShopify(props.id)
+    const omsMappings = shopifyShopLocations.value || []
     const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)))
     const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]))
 
     health.value = {
       totalShopifyLocations: nodes.length,
-      unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop())).length,
+      unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop() ?? '')).length,
       stale: omsMappings.filter((m: any) => {
         const node = nodeById.get(String(m.shopifyLocationId))
         return node && !node.isActive
@@ -329,7 +324,14 @@ const router = useRouter();
 onBeforeRouteLeave(() => confirmLeaveWithDirtyMappings());
 
 function navigateBack() {
-  router.push(backHref.value);
+  // POP the entry we came from; do not push. Pushing left this page sitting ahead of the connection
+  // detail page in history, so its ion-back-button walked forward into here instead of reaching
+  // /shopify — an inescapable loop. See `shouldPopHistoryOnBack`.
+  if (shouldPopHistoryOnBack(window.location.search, router.options.history.state?.back)) {
+    router.back();
+    return;
+  }
+  router.replace(backHref.value);
 }
 </script>
 

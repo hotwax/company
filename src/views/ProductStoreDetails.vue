@@ -113,10 +113,10 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonPage, IonTextarea, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { commonUtil, emitter, logger, translate } from '@common'
-import { useProductStore } from '@/store/productStore';
 import { computed, defineProps } from "vue";
 import { DateTime } from "luxon";
 import router from "@/router";
+import { useProductStoreDetail, useProductStoreMutations } from "@/composables/useProductStores";
 
 type ProductStoreFieldType = "id" | "id-ne" | "id-long" | "name" | "description" | "numeric" | "indicator" | "very-short" | "long-varchar" | "url";
 
@@ -136,10 +136,10 @@ type ProductStoreSettingConfig = {
 };
 
 const props = defineProps(["productStoreId"]);
-const productStoreStore = useProductStore();
-
-const productStore = computed(() => productStoreStore.getCurrent)
-const settings = computed(() => productStoreStore.currentStoreSettings)
+// Reads: one façade over the cached row + the live detail record and settings.
+const {
+  current: productStore, settings, load, reloadDetail, reloadSettings,
+} = useProductStoreDetail(props.productStoreId);
 
 const idMaxLength = 20;
 const idLongMaxLength = 60;
@@ -359,10 +359,7 @@ const productStoreSettingSections: Array<{ title: string; settings: ProductStore
 
 onIonViewWillEnter(async() => {
   emitter.emit("presentLoader");
-  await Promise.allSettled([
-    productStoreStore.fetchProductStoreDetails(props.productStoreId),
-    productStoreStore.fetchCurrentStoreSettings(props.productStoreId)
-  ])
+  await load()
   emitter.emit("dismissLoader");
 })
 
@@ -439,10 +436,11 @@ async function saveProductStoreField(field: ProductStoreField, value: any) {
   emitter.emit("presentLoader")
   try {
     const payload = { ...productStore.value, [field.name]: value }
-    const resp = await productStoreStore.updateProductStore(payload);
+    const resp = await useProductStoreMutations(payload.productStoreId).updateStore(payload);
     if(!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Product store setting updated successfully."))
-      productStoreStore.updateCurrent(payload)
+      // Moqui returns nothing useful from an update; re-read rather than trusting the local patch.
+      await reloadDetail()
     } else {
       throw resp.data;
     }
@@ -481,10 +479,9 @@ async function saveProductStoreSetting(setting: ProductStoreSettingConfig, setti
 
   emitter.emit("presentLoader")
   try {
-    const resp = await productStoreStore.saveCurrentStoreSettings(payload);
+    const resp = await useProductStoreMutations(payload.productStoreId).saveSettings(payload);
     if(!commonUtil.hasError(resp)) {
-      settingEnums[setting.name] = payload;
-      productStoreStore.updateCurrentStoreSettings(settingEnums)
+      await reloadSettings()
       commonUtil.showToast(translate("Product store setting updated successfully."))
     } else {
       throw resp.data;
