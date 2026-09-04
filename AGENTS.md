@@ -249,7 +249,7 @@ concept is the smell this rule prevents.
 
 | Composable | Owns |
 | --- | --- |
-| [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, and worker activation. Sectioned 1–7 by a header comment — keep that structure |
+| [`useShopify.ts`](src/composables/useShopify.ts) (~3.1k lines) | The whole Shopify integration: shops, locations, type mappings, carrier shipments, the shared sync core, **product sync** (message ⋈ bulk op ⋈ MDM log), **order sync** (entities, derivations, view model, mutations), cron schedule validation/preview, worker activation, and **inventory event source resolution** (§1.5: the order, count, reset or receipt behind a `ShopifyInventoryAdjustmentDetail` row, one resolver per event family). Sectioned 1–8 by a header comment — keep that structure |
 | [`useCarriers.ts`](src/composables/useCarriers.ts) | Carrier catalog/detail aggregates, carrier-method joins and counts, facility/store association views, observable Unigate readiness, and carrier/carrier-method mutations. Method removal closes dependent store associations before the hard delete |
 | [`useFacilities.ts`](src/composables/useFacilities.ts) | Facilities, facility types, and facility **groups** with their memberships (a group is part of the facility aggregate), plus date-effective carrier-facility association writes |
 | [`useOrganizations.ts`](src/composables/useOrganizations.ts) | Internal organizations (`PARTY_GROUP` + `INTERNAL_ORGANIZATIO`), hierarchy derivation/anomalies, primary-org read, owned-facility read, and create/rename/reparent mutations |
@@ -266,6 +266,7 @@ concept is the smell this rule prevents.
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
+| `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
 | [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |
 
 ## 6. Pinia stores — what survives
