@@ -26,7 +26,7 @@ import {
   type ComputedRef, type MaybeRefOrGetter,
 } from "vue";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
-import { api, commonUtil, logger, translate, useProducts } from "@common";
+import { api, commonUtil, logger, translate } from "@common";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
 import {
@@ -942,13 +942,11 @@ const eventSourcesRequested = new Set<string>();
 /** Names per userLoginId, resolved once. Several counts share an operator. */
 const eventSourceActors = new Map<string, string>();
 
-// Module state survives an SPA logout: without this, user B reads user A's resolved artifacts. The shared
-// product master (`useProducts` in @common) has no session hook of its own, so this page's owner resets it.
+// Module state survives an SPA logout: without this, user B reads user A's resolved artifacts.
 onSessionCleared(() => {
   eventSources.value = new Map();
   eventSourcesRequested.clear();
   eventSourceActors.clear();
-  useProducts().reset();
 });
 
 async function readEventSource(url: string, params?: Record<string, unknown>): Promise<any> {
