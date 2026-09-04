@@ -69,13 +69,15 @@ export const SYSTEM_MESSAGE_STATUS_IDS = Object.keys(MESSAGE_STATES);
  * rather than relying on that default.
  */
 export function messageState(statusId: string | null | undefined): SystemMessageState {
-  if (!statusId) return "pending";
+  if(!statusId) {return "pending";}
+
   return MESSAGE_STATES[statusId] ?? "pending";
 }
 
 /** True once the message has reached a terminal state (success or failure). */
 export function isTerminal(statusId: string | null | undefined): boolean {
   const state = messageState(statusId);
+
   return state === "completed" || state === "failed";
 }
 
@@ -94,7 +96,8 @@ export function belongsToRemote(
   message: SystemMessage | null | undefined,
   remoteId: string | null | undefined,
 ): boolean {
-  if (!message || !remoteId) return false;
+  if(!message || !remoteId) {return false;}
+
   return message.systemMessageRemoteId === remoteId;
 }
 
@@ -120,8 +123,9 @@ export interface SystemMessageRemote {
 
 /** Resolve the SystemMessageRemote id from a remote record or a raw id string. */
 export function resolveRemoteId(remote: SystemMessageRemote | string | null | undefined): string {
-  if (remote == null) return "";
-  if (typeof remote === "string") return remote;
+  if(remote == null) {return "";}
+  if(typeof remote === "string") {return remote;}
+
   return remote.systemMessageRemoteId ?? "";
 }
 
@@ -133,6 +137,19 @@ export function resolveRemoteId(remote: SystemMessageRemote | string | null | un
 export const SHOPIFY_RW_ACCESS_SCOPE = "SHOP_RW_ACCESS";
 export const SHOPIFY_LEGACY_RW_ACCESS_SCOPE = "SHOP_READ_WRITE_ACCESS";
 export const SHOPIFY_NO_ACCESS_SCOPE = "SHOP_NO_ACCESS";
+export const SHOPIFY_READ_ACCESS_SCOPE = "SHOP_READ_ACCESS";
+
+/**
+ * May this OMS write to the shop?
+ *
+ * Only the canonical scope counts. The deprecated long form is honoured for DISPLAY by
+ * `sortRemotesByAccessScope` so a shop on it reads as "update required" rather than broken, but the
+ * publishing services compare against `SHOP_RW_ACCESS` exactly — so anything else is read-only here
+ * too, or the app would promise a write the backend refuses.
+ */
+export function isWritableAccessScope(accessScopeEnumId: string | null | undefined): boolean {
+  return String(accessScopeEnumId ?? "").trim() === SHOPIFY_RW_ACCESS_SCOPE;
+}
 
 /** The shop fields the remote match needs — a subset of `ShopifyShop`. */
 export interface ShopRemoteMatchTarget {
@@ -161,7 +178,7 @@ export function shopRemoteCandidates(
 ): SystemMessageRemote[] {
   const shopifyShopId = String(shop?.shopifyShopId ?? "");
   const shopId = String(shop?.shopId ?? "");
-  if (!shopifyShopId && !shopId) return [];
+  if(!shopifyShopId && !shopId) {return [];}
 
   return (remotes ?? []).filter((remote) => {
     const remoteId = String(remote?.remoteId ?? "");
@@ -187,7 +204,7 @@ export function shopRemoteCandidates(
       String(remote?.internalIdType ?? "") === HOTWAX_SHOP_ID_TYPE;
     const matchesShopifySide = Boolean(shopifyShopId) && remoteId === shopifyShopId;
 
-    if (!matchesOmsSide && !matchesShopifySide) return false;
+    if(!matchesOmsSide && !matchesShopifySide) {return false;}
 
     /**
      * When BOTH ids are known they must agree — this is what stops one shop claiming another's remote.
@@ -196,7 +213,8 @@ export function shopRemoteCandidates(
      * `internalId` names a different shop must be rejected whether or not it declares a type. Gating it
      * would let a mistyped remote through on the Shopify-side match alone.
      */
-    if (shopId && internalId) return internalId === shopId;
+    if(shopId && internalId) {return internalId === shopId;}
+
     return true;
   });
 }
@@ -205,11 +223,13 @@ export function shopRemoteCandidates(
 export function sortRemotesByAccess(candidates: SystemMessageRemote[]): SystemMessageRemote[] {
   const rank = (scope: string | undefined) => {
     const normalized = String(scope ?? "").trim().toUpperCase();
-    if (normalized === SHOPIFY_RW_ACCESS_SCOPE) return 3;
-    if (normalized === SHOPIFY_LEGACY_RW_ACCESS_SCOPE) return 2;
-    if (normalized === SHOPIFY_NO_ACCESS_SCOPE) return 0;
+    if(normalized === SHOPIFY_RW_ACCESS_SCOPE) {return 3;}
+    if(normalized === SHOPIFY_LEGACY_RW_ACCESS_SCOPE) {return 2;}
+    if(normalized === SHOPIFY_NO_ACCESS_SCOPE) {return 0;}
+
     return 1;
   };
+
   return [...candidates].sort((first, second) => rank(second.accessScopeEnumId) - rank(first.accessScopeEnumId));
 }
 
@@ -228,5 +248,6 @@ export function resolveShopRemoteIds(
     sortRemotesByAccess(shopRemoteCandidates(remotes, shop))
       .map((remote) => String(remote.systemMessageRemoteId ?? "").trim())
       .filter(Boolean));
+
   return [...new Set(ids)];
 }

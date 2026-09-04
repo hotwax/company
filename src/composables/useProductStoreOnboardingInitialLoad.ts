@@ -513,8 +513,11 @@ export function deriveOnboardingInitialLoadSnapshot(input: OnboardingInitialLoad
     }
   }
 
-  if(request && input.kind !== "products") {
-    const requestedJobRunId = String(request.jobRunId ?? "")
+  // Only a load that actually runs a service job gets this stage. The inventory load is produced
+  // directly by a connector resource, so an unconditional stage sat at "Waiting for job run id" for
+  // the life of the run and read as a stuck import while the message was moving normally.
+  const requestedJobRunId = String(request?.jobRunId ?? "")
+  if(request && input.kind !== "products" && (requestedJobRunId || jobRunId)) {
     stages.push({
       id: "service-job",
       label: "Service job",

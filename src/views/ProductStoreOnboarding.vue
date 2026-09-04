@@ -214,8 +214,28 @@
                     {{ translate("Complete") }}
                   </ion-badge>
                 </ion-item>
+                <ion-item>
+                  <ion-icon slot="start" :icon="connectionIsWritable ? lockOpenOutline : lockClosedOutline" />
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Connection access") }}
+                    <p>{{ connectionAccessDescription }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="connectionIsWritable ? 'success' : 'warning'">
+                    {{ connectionAccessLabel }}
+                  </ion-badge>
+                </ion-item>
               </ion-list>
-              <template v-else>
+              <div v-if="linkedShopifyShop && !connectionIsWritable && connectionAccessScopeId" class="step-actions">
+                <ion-button
+                  :disabled="busy.connectionAccess || !shopifySyncContext.remoteId.value"
+                  @click="grantConnectionWriteAccess"
+                >
+                  <ion-spinner v-if="busy.connectionAccess" slot="start" name="crescent" />
+                  <ion-icon v-else slot="start" :icon="lockOpenOutline" />
+                  {{ translate("Grant write access") }}
+                </ion-button>
+              </div>
+              <template v-if="!linkedShopifyShop">
                 <ion-select
                   v-if="availableShopifyShops.length"
                   fill="outline"
@@ -674,6 +694,8 @@ import {
   cloudDownloadOutline,
   ellipseOutline,
   linkOutline,
+  lockClosedOutline,
+  lockOpenOutline,
   openOutline,
   pauseCircleOutline,
   saveOutline,
@@ -695,20 +717,20 @@ import type {
 } from "@/components/product-store-onboarding/OnboardingSyncStatus.types"
 import OnboardingSyncStatus from "@/components/product-store-onboarding/OnboardingSyncStatus.vue"
 import { useFacilities, useFacilityMutations } from "@/composables/useFacilities"
-import { useProductStoreData } from "@/composables/useProductStores"
 import {
   type OnboardingInitialLoadKind,
   type OnboardingInitialLoadSnapshot,
   useProductStoreOnboardingInitialLoad
 } from "@/composables/useProductStoreOnboardingInitialLoad"
 import { type ProductStoreOnboardingDraft, useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
-import { useProductStoreCreation, useProductStoreMutations } from "@/composables/useProductStores"
+import { useProductStoreCreation, useProductStoreData, useProductStoreMutations } from "@/composables/useProductStores"
 import { useCurrencies, useGoodIdentificationTypes, useOrganization, useTimeZones, useTypedEnums } from "@/composables/useSeed"
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs"
 import {
   fetchLiveCatalogCounts,
   fetchShopifyShopLocations,
   useOrderSyncLandmarkDates,
+  useShopifyAccessScopes,
   useShopifyProductSyncRunState,
   useShopifyShopMutations,
   useShopifyShops,
@@ -724,6 +746,7 @@ import {
 } from "@/config/productStoreOnboarding"
 import { generateInternalId, getResponseErrorMessage } from "@/utils"
 import { isPaused } from "@/utils/serviceJob"
+import { SHOPIFY_RW_ACCESS_SCOPE, isWritableAccessScope } from "@/utils/systemMessage"
 
 const props = defineProps<{ productStoreId?: string }>()
 const route = useRoute()
@@ -762,7 +785,8 @@ const busy = reactive({
   inventory: false,
   inventoryImport: false,
   orders: false,
-  orderImport: false
+  orderImport: false,
+  connectionAccess: false
 })
 const initialLoadRefreshBusy = reactive<Record<OnboardingInitialLoadKind, boolean>>({
   products: false,
@@ -1605,6 +1629,51 @@ function openShopifyConnections() {
   router.push("/shopify")
 }
 
+/**
+ * The OMS-side read/write shutoff on the shop's SystemMessageRemote.
+ *
+ * Importing from Shopify only needs read access, so the wizard's own steps run fine on a read-only
+ * connection — but everything the store publishes back does not. Associating facilities already
+ * records inventory-channel events, and the connector refuses them with "No write-capable Shopify
+ * remote for shop ..., needs SHOP_RW_ACCESS" in the backend log and nothing at all on screen. The
+ * operator finished setup believing the store was live. So the level is shown here beside the shop
+ * it belongs to, and can be raised without leaving the wizard.
+ */
+const connectionAccessScopeId = computed(() => String(shopifySyncContext.remote.value?.accessScopeEnumId || ""))
+const connectionIsWritable = computed(() => isWritableAccessScope(connectionAccessScopeId.value))
+const connectionAccessLabel = computed(() => {
+  if(connectionIsWritable.value) {return translate("Read and write")}
+
+  return connectionAccessScopeId.value ? translate("Read only") : translate("Unknown")
+})
+const connectionAccessDescription = computed(() => {
+  if(connectionIsWritable.value) {
+    return translate("This Product Store can publish inventory and fulfillments back to Shopify.")
+  }
+  if(!connectionAccessScopeId.value) {
+    return translate("The connection's access level has not loaded yet.")
+  }
+
+  return translate("Imports work, but nothing this store records will reach Shopify until write access is granted.")
+})
+
+async function grantConnectionWriteAccess() {
+  const remoteId = shopifySyncContext.remoteId.value
+  if(!remoteId || connectionIsWritable.value || busy.connectionAccess) {return}
+
+  busy.connectionAccess = true
+  feedback.shopify = null
+  try {
+    await useShopifyAccessScopes().setConnectionAccessScope(remoteId, SHOPIFY_RW_ACCESS_SCOPE)
+    setFeedback("shopify", translate("This connection can now write to Shopify."), "success")
+  } catch (error: any) {
+    logger.error(error)
+    setFeedback("shopify", feedbackForError(error, "Failed to grant write access to this connection."), "danger")
+  } finally {
+    busy.connectionAccess = false
+  }
+}
+
 function captureProductSetup() {
   const setup = {
     productStoreId: selectedProductStoreId.value,
@@ -2192,6 +2261,19 @@ function openInitialLoadDetails(
   })
 }
 
+/**
+ * The warning shown when a shop this wizard had linked is no longer assigned to the store.
+ *
+ * Named because `reconcileShopifyLink` has to recognise its OWN warning to withdraw it. The check
+ * runs on every status refresh and can see an empty assigned-shop list for a tick while the shop
+ * cache is still filling, so it would post the warning and then verify the link on the next pass —
+ * leaving "the previously linked shop is no longer assigned" sitting under a row that said the shop
+ * was linked and complete.
+ */
+function staleShopifyLinkMessage() {
+  return translate("The previously linked Shopify shop is no longer assigned to this Product Store. Select an unassigned shop to continue.")
+}
+
 function hasCurrentShopifyEvidence(statusOverride?: any) {
   const status = statusOverride === undefined
     ? productStoreData.currentShopifyJobStatus
@@ -2224,6 +2306,9 @@ function reconcileShopifyLink(statusOverride?: any, expectedShopId = "") {
       onboarding.updateDraftField("selectedShopifyShopId", verifiedShopId)
     }
     onboarding.markStepComplete("shopify")
+    // A verified link makes any earlier stale-link warning obsolete. Only that message is cleared:
+    // the caller sets its own success text after this returns, and other steps' feedback is theirs.
+    if(feedback.shopify?.text === staleShopifyLinkMessage()) {feedback.shopify = null}
 
     return linkedShop
   }
@@ -2246,11 +2331,7 @@ function reconcileShopifyLink(statusOverride?: any, expectedShopId = "") {
   }
   if(staleShopId || onboarding.stepStatuses.shopify === "complete") {
     onboarding.markStepAttention("shopify")
-    setFeedback(
-      "shopify",
-      translate("The previously linked Shopify shop is no longer assigned to this Product Store. Select an unassigned shop to continue."),
-      "warning"
-    )
+    setFeedback("shopify", staleShopifyLinkMessage(), "warning")
   }
 
   return null
