@@ -968,11 +968,11 @@ function eventSourceOrderLabel(row: any): string {
   const name = String(row?.orderName ?? "").trim();
   const orderId = String(row?.orderId ?? "").trim();
   if(!name && !orderId) {return "";}
-  const noun = row?.orderTypeId === "TRANSFER_ORDER" ? "Transfer order"
-    : row?.orderTypeId === "PURCHASE_ORDER" ? "Purchase order"
-      : "Sales order";
+  const order = name || orderId;
+  if(row?.orderTypeId === "TRANSFER_ORDER") {return translate("Transfer order {order}", { order });}
+  if(row?.orderTypeId === "PURCHASE_ORDER") {return translate("Purchase order {order}", { order });}
 
-  return `${noun} ${name || orderId}`;
+  return translate("Sales order {order}", { order });
 }
 
 async function eventSourceActorName(userLoginId: string): Promise<string> {
@@ -1002,7 +1002,7 @@ async function eventSourceActorName(userLoginId: string): Promise<string> {
 async function resolveReservationSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
   const [inventoryItemId, detailSeqId] = lookup.eventReferenceId.split(":");
   if(!inventoryItemId || !detailSeqId) {
-    return { label: "", unresolved: "The reference is not an inventory item plus a detail sequence." };
+    return { label: "", unresolved: translate("The reference is not an inventory item plus a detail sequence.") };
   }
   const row = asEventSourceRows(await readEventSource(
     `oms/inventoryItem/${encodeURIComponent(inventoryItemId)}/detail`,
@@ -1010,10 +1010,10 @@ async function resolveReservationSource(lookup: InventoryEventSourceLookup): Pro
   ))[0];
   const label = eventSourceOrderLabel(row);
   if(!label) {
-    return { label: "", unresolved: "This reservation movement carries no order." };
+    return { label: "", unresolved: translate("This reservation movement carries no order.") };
   }
 
-  return { label, note: row?.orderStatusId ? `Order status ${row.orderStatusId}` : undefined };
+  return { label, note: row?.orderStatusId ? translate("Order status {status}", { status: row.orderStatusId }) : undefined };
 }
 
 /**
@@ -1037,8 +1037,7 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
   if(!decision) {
     return {
       label: "",
-      unresolved: "No cycle count decision recorded, so this is a manual variance. Naming its operator " +
-        "needs the inventory item, which only a count decision carries.",
+      unresolved: translate("No cycle count decision recorded, so this is a manual variance. Naming its operator needs the inventory item, which only a count decision carries."),
     };
   }
 
@@ -1047,11 +1046,11 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
   const counted = decision.countedQuantity;
   const system = decision.systemQuantity;
   const note = counted !== undefined && counted !== null && system !== undefined && system !== null
-    ? `Counted ${counted} against a system quantity of ${system}`
+    ? translate("Counted {counted} against a system quantity of {system}", { counted, system })
     : String(decision.reasonEnumName ?? decision.outcomeEnumName ?? "").trim() || undefined;
 
   return {
-    label: countName ? `Cycle count ${countName}` : `Cycle count ${decision.workEffortId ?? ""}`.trim(),
+    label: translate("Cycle count {name}", { name: countName || decision.workEffortId || "" }).trim(),
     actor: actor || undefined,
     note,
   };
@@ -1061,14 +1060,14 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
 async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
   const reset = await readEventSource(`poorti/externalInventoryResets/${encodeURIComponent(lookup.eventReferenceId)}`);
   if(!reset?.resetItemId) {
-    return { label: "", unresolved: "The OMS has no external reset with this id." };
+    return { label: "", unresolved: translate("The OMS has no external reset with this id.") };
   }
   const source = String(reset.sourceSystemMessageRemoteId ?? "").trim();
   const external = String(reset.externalFacilityId ?? "").trim();
 
   return {
-    label: `External reset ${reset.resetItemId}`,
-    note: [source && `from ${source}`, external && `external facility ${external}`]
+    label: translate("External reset {id}", { id: reset.resetItemId }),
+    note: [source && translate("from {source}", { source }), external && translate("external facility {facility}", { facility: external })]
       .filter(Boolean).join(", ") || undefined,
   };
 }
@@ -1088,10 +1087,10 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
  */
 async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterField: string): Promise<InventoryEventSource> {
   if(!lookup.productId) {
-    return { label: "", unresolved: "No product on the calculation comment, so the scoped inventory-history mount cannot be called." };
+    return { label: "", unresolved: translate("No product on the calculation comment, so the scoped inventory-history mount cannot be called.") };
   }
   if(!lookup.facilityIds.length) {
-    return { label: "", unresolved: "The channel's facility group has no cached member facilities to search." };
+    return { label: "", unresolved: translate("The channel's facility group has no cached member facilities to search.") };
   }
 
   for(const facilityId of lookup.facilityIds) {
@@ -1104,13 +1103,13 @@ async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterF
       const order = eventSourceOrderLabel(row);
       const returnId = String(row?.returnId ?? "").trim();
       const shipmentId = String(row?.shipmentId ?? "").trim();
-      const label = order || (returnId && `Customer return ${returnId}`) ||
-        (shipmentId && `Shipment ${shipmentId}`) || "";
+      const label = order || (returnId && translate("Customer return {id}", { id: returnId })) ||
+        (shipmentId && translate("Shipment {id}", { id: shipmentId })) || "";
       if(!label) {
-        return { label: "", unresolved: "The movement row names no order, return or shipment." };
+        return { label: "", unresolved: translate("The movement row names no order, return or shipment.") };
       }
       // Whichever of the three did not become the label, when it adds something.
-      const note = [order && returnId && `return ${returnId}`, order && shipmentId && `shipment ${shipmentId}`]
+      const note = [order && returnId && translate("return {id}", { id: returnId }), order && shipmentId && translate("shipment {id}", { id: shipmentId })]
         .filter(Boolean).join(", ");
 
       return { label, note: note || undefined };
@@ -1120,7 +1119,7 @@ async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterF
     }
   }
 
-  return { label: "", unresolved: "No movement row for this reference at any of the channel's facilities." };
+  return { label: "", unresolved: translate("No movement row for this reference at any of the channel's facilities.") };
 }
 
 function eventSourceResolverFor(eventTypeId: string, fanOut: boolean) {

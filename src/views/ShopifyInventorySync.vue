@@ -81,8 +81,8 @@
                desktop width to hold four rows. `auto-fit` still stacks them on narrow screens. -->
           <ion-card>
             <ion-card-header>
-              <ion-card-title>Shared sync jobs</ion-card-title>
-              <ion-card-subtitle>One schedule each, serving every channel on this connection</ion-card-subtitle>
+              <ion-card-title>{{ translate("Shared sync jobs") }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("One schedule each, serving every channel on this connection") }}</ion-card-subtitle>
               <!-- The rollup badge that used to head its own card. Every job's status is listed
                    below it, so this is the summary of the rows it sits on rather than a second
                    place to read the same schedules. -->
@@ -164,15 +164,15 @@
               <!-- What feeds this channel, and how much of it has actually landed at Shopify lately. -->
               <div class="channel-stats">
                 <div class="channel-stat">
-                  <ion-note>Feeding this channel</ion-note>
+                  <ion-note>{{ translate("Feeding this channel") }}</ion-note>
                   <!-- The composition carries its own counts, so a separate total would just repeat one
                        of them on a single-type group. -->
                   <span>{{ channelStats(channel).composition }}</span>
                 </div>
                 <div class="channel-stat">
-                  <ion-note>Delivered in 24h</ion-note>
+                  <ion-note>{{ translate("Delivered in 24h") }}</ion-note>
                   <span>{{ channelStats(channel).delivered }}</span>
-                  <p>From cached events</p>
+                  <p>{{ translate("From cached events") }}</p>
                 </div>
               </div>
 
@@ -469,17 +469,17 @@
                 </ion-item>
                 <ion-item>
                   <ion-label class="ion-text-wrap">
-                    Publishes under
+                    {{ translate("Publishes under") }}
                     <p>{{ batch.reason }}</p>
                   </ion-label>
                   <ion-badge v-if="!batch.reasonMapped" slot="end" color="warning">
-                    {{ batch.mixedEventTypes ? "Mixed types" : "Unmapped" }}
+                    {{ batch.mixedEventTypes ? translate("Mixed types") : translate("Unmapped") }}
                   </ion-badge>
                 </ion-item>
                 <ion-item button detail @click="selectedBatch = batch">
                   <ion-label>
-                    Change entries
-                    <p>Summed from {{ batch.eventCount }} ledger events</p>
+                    {{ translate("Change entries") }}
+                    <p>{{ translate("Summed from {count} ledger events", { count: batch.eventCount }) }}</p>
                   </ion-label>
                   <ion-badge slot="end" color="medium">
                     {{ batch.entries.length }}
@@ -488,7 +488,7 @@
                 <ion-item lines="none">
                   <ion-button fill="clear" @click="openMessage(batch)">
                     <ion-icon slot="start" :icon="documentTextOutline" />
-                    Message text
+                    {{ translate("Message text") }}
                   </ion-button>
                   <ion-button slot="end" fill="clear" @click="selectedBatch = batch">
                     View events
@@ -528,7 +528,7 @@
                 v-model="historyQuery"
                 class="history-search"
                 :debounce="250"
-                placeholder="Search event type, source record, inventory item, location, reason, or batch"
+                :placeholder="translate('Search event type, source record, inventory item, location, reason, or batch')"
               />
 
               <div class="filter-grid">
@@ -622,11 +622,8 @@
           <div class="history-results-header">
             <ion-item lines="none">
               <ion-label class="ion-text-wrap">
-                <h2>Inventory event pipeline</h2>
-                <p>
-                  Aggregate inventory events in the order the publisher acts on them. Settled events are
-                  purged after five days, so this is a rolling window rather than a full history.
-                </p>
+                <h2>{{ translate("Inventory event pipeline") }}</h2>
+                <p>{{ translate("Aggregate inventory events in the order the publisher acts on them. Settled events are purged after five days, so this is a rolling window rather than a full history.") }}</p>
               </ion-label>
             </ion-item>
             <ion-badge color="medium">
@@ -640,12 +637,8 @@
             <ion-item lines="none">
               <ion-icon slot="start" :icon="warningOutline" color="warning" />
               <ion-label class="ion-text-wrap">
-                Batches can mix event types
-                <p>
-                  The publisher groups by {{ publisherGroupBy.join(", ") }}, which leaves out event type.
-                  Any batch holding more than one kind of event must publish under correction, because no
-                  other reason is true about it.
-                </p>
+                {{ translate("Batches can mix event types") }}
+                <p>{{ translate("The publisher groups by {fields}, which leaves out event type. Any batch holding more than one kind of event must publish under correction, because no other reason is true about it.", { fields: publisherGroupBy.join(", ") }) }}</p>
               </ion-label>
             </ion-item>
           </ion-card>
@@ -655,8 +648,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="timeOutline" color="warning" />
                 <ion-label class="ion-text-wrap">
-                  <h2>Waiting to batch</h2>
-                  <p>Grouped the way the publisher will group it. The oldest group drains first.</p>
+                  <h2>{{ translate("Waiting to batch") }}</h2>
+                  <p>{{ translate("Grouped the way the publisher will group it. The oldest group drains first.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-badge color="warning">
@@ -669,10 +662,10 @@
                 <ion-label class="ion-text-wrap">
                   {{ group.type }}
                   <p>{{ group.channel }}</p>
-                  <p>{{ group.eventCount }} events, oldest recorded {{ group.oldestAge }}</p>
+                  <p>{{ translate("{count} events, oldest recorded {age}", { count: group.eventCount, age: group.oldestAge }) }}</p>
                 </ion-label>
                 <div slot="end" class="reason-cell">
-                  <ion-note>Publishes under</ion-note>
+                  <ion-note>{{ translate("Publishes under") }}</ion-note>
                   <ion-badge :color="group.reasonMapped ? 'primary' : 'warning'">
                     {{ group.reason }}
                   </ion-badge>
@@ -682,27 +675,21 @@
               <ion-item v-if="!group.reasonMapped" lines="full">
                 <ion-icon slot="start" :icon="warningOutline" color="warning" />
                 <ion-label class="ion-text-wrap">
-                  <p v-if="group.mixedEventTypes">
-                    This group holds more than one event type, so no single Shopify reason is true about
-                    it and the batch falls back to correction.
-                  </p>
-                  <p v-else>
-                    This event type has no Shopify reason mapped, so the batch falls back to correction.
-                    Map it by editing the event type row in the OMS, and the next batch picks it up.
-                  </p>
+                  <p v-if="group.mixedEventTypes">{{ translate("This group holds more than one event type, so no single Shopify reason is true about it and the batch falls back to correction.") }}</p>
+                  <p v-else>{{ translate("This event type has no Shopify reason mapped, so the batch falls back to correction. Map it by editing the event type row in the OMS, and the next batch picks it up.") }}</p>
                 </ion-label>
               </ion-item>
 
               <ion-list lines="full">
                 <ion-list-header>
-                  <ion-label>Change entries Shopify will receive</ion-label>
+                  <ion-label>{{ translate("Change entries Shopify will receive") }}</ion-label>
                 </ion-list-header>
                 <ion-item v-for="entry in group.entries" :key="entry.key">
                   <ion-label class="ion-text-wrap">
                     {{ entry.productLabel }}
                     <p>{{ entry.productSku }}</p>
-                    <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
-                    <p>{{ entry.eventCount }} events summed</p>
+                    <p>{{ translate("{location}, item {item}", { location: entry.locationLabel, item: entry.shopifyInventoryItem }) }}</p>
+                    <p>{{ translate("{count} events summed", { count: entry.eventCount }) }}</p>
                   </ion-label>
                   <div slot="end" class="entry-outcome">
                     <ion-note>{{ entry.change }}</ion-note>
@@ -710,7 +697,7 @@
                       {{ entry.outcomeLabel }}
                     </ion-badge>
                     <ion-badge v-if="entry.retarget" color="danger">
-                      Drains the location the channel left
+                      {{ translate("Drains the location the channel left") }}
                     </ion-badge>
                   </div>
                 </ion-item>
@@ -719,7 +706,7 @@
               <ion-accordion-group>
                 <ion-accordion value="events">
                   <ion-item slot="header" lines="full">
-                    <ion-label>Contributing events</ion-label>
+                    <ion-label>{{ translate("Contributing events") }}</ion-label>
                   </ion-item>
                   <ion-list slot="content" lines="full">
                     <ion-item
@@ -732,7 +719,7 @@
                       <ion-label class="ion-text-wrap">
                         {{ event.type }}
                         <p>{{ sourceLine(event) }}</p>
-                        <p>{{ event.calculation || "No calculation comment recorded" }}</p>
+                        <p>{{ event.calculation || translate("No calculation comment recorded") }}</p>
                       </ion-label>
                       <div slot="end" class="entry-outcome">
                         <ion-note>{{ event.change }}</ion-note>
@@ -756,8 +743,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
-                  Nothing waiting
-                  <p>Every recorded event has been claimed into a batch or settled.</p>
+                  {{ translate("Nothing waiting") }}
+                  <p>{{ translate("Every recorded event has been claimed into a batch or settled.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -768,11 +755,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="cloudUploadOutline" color="primary" />
                 <ion-label class="ion-text-wrap">
-                  <h2>In flight and failed</h2>
-                  <p>
-                    Batches the OMS has produced that Shopify has not confirmed. A rejection freezes into
-                    the message and replays identically on every retry.
-                  </p>
+                  <h2>{{ translate("In flight and failed") }}</h2>
+                  <p>{{ translate("Batches the OMS has produced that Shopify has not confirmed. A rejection freezes into the message and replays identically on every retry.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-badge color="primary">
@@ -785,7 +769,7 @@
                 <ion-label class="ion-text-wrap">
                   {{ batch.id }}
                   <p>{{ batch.channel }}</p>
-                  <p>Produced {{ batch.created }}, {{ batch.age }}</p>
+                  <p>{{ translate("Produced {at}, {age}", { at: batch.created, age: batch.age }) }}</p>
                 </ion-label>
                 <div slot="end" class="reason-cell">
                   <ion-badge :color="batch.badgeColor">
@@ -801,18 +785,18 @@
                   <ion-label class="ion-text-wrap">
                     {{ entry.productLabel }}
                     <p>{{ entry.productSku }}</p>
-                    <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
+                    <p>{{ translate("{location}, item {item}", { location: entry.locationLabel, item: entry.shopifyInventoryItem }) }}</p>
                   </ion-label>
                   <ion-note slot="end">{{ entry.change }}</ion-note>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-button fill="clear" @click="selectedBatch = batch">
                     <ion-icon slot="start" :icon="listOutline" />
-                    Events
+                    {{ translate("Events") }}
                   </ion-button>
                   <ion-button fill="clear" @click="openMessage(batch)">
                     <ion-icon slot="start" :icon="documentTextOutline" />
-                    Message text
+                    {{ translate("Message text") }}
                   </ion-button>
                 </ion-item>
               </ion-list>
@@ -822,8 +806,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
-                  Nothing in flight
-                  <p>Every batch produced for this connection has reached Shopify.</p>
+                  {{ translate("Nothing in flight") }}
+                  <p>{{ translate("Every batch produced for this connection has reached Shopify.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -834,11 +818,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="warningOutline" :color="visibleQuarantinedEvents.length ? 'danger' : 'medium'" />
                 <ion-label class="ion-text-wrap">
-                  <h2>Quarantined</h2>
-                  <p>
-                    Terminal. These are never batched again and are excluded from the absolute reset gate,
-                    so nothing retries them: fix the source rows and record a new event.
-                  </p>
+                  <h2>{{ translate("Quarantined") }}</h2>
+                  <p>{{ translate("Terminal. These are never batched again and are excluded from the absolute reset gate, so nothing retries them: fix the source rows and record a new event.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-badge :color="visibleQuarantinedEvents.length ? 'danger' : 'medium'">
@@ -857,9 +838,9 @@
                 >
                   <ion-label class="ion-text-wrap">
                     {{ event.type }}
-                    <p>{{ event.productName || `Item ${event.shopifyInventoryItem}` }}<template v-if="event.productSku"> ({{ event.productSku }})</template></p>
-                    <p>{{ sourceLine(event) }}, at {{ event.locationLabel }}</p>
-                    <p>{{ event.calculation || "No calculation comment recorded" }}</p>
+                    <p>{{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}<template v-if="event.productSku"> ({{ event.productSku }})</template></p>
+                    <p>{{ translate("{source}, at {location}", { source: sourceLine(event), location: event.locationLabel }) }}</p>
+                    <p>{{ event.calculation || translate("No calculation comment recorded") }}</p>
                   </ion-label>
                   <ion-note slot="end">{{ event.change }}</ion-note>
                 </ion-item>
@@ -870,8 +851,8 @@
               <ion-item lines="none">
                 <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                 <ion-label class="ion-text-wrap">
-                  Nothing quarantined
-                  <p>No event has produced a summed delta the publisher had to refuse.</p>
+                  {{ translate("Nothing quarantined") }}
+                  <p>{{ translate("No event has produced a summed delta the publisher had to refuse.") }}</p>
                 </ion-label>
               </ion-item>
             </ion-card>
@@ -884,8 +865,8 @@
                   <ion-item lines="none">
                     <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
                     <ion-label class="ion-text-wrap">
-                      <h2>Settled in the last five days</h2>
-                      <p>Delivered to Shopify or closed as no change. Purged on the retention schedule.</p>
+                      <h2>{{ translate("Settled in the last five days") }}</h2>
+                      <p>{{ translate("Delivered to Shopify or closed as no change. Purged on the retention schedule.") }}</p>
                     </ion-label>
                   </ion-item>
                   <ion-badge color="medium">
@@ -895,46 +876,46 @@
 
                 <ion-card slot="content">
                   <div class="event-table event-table-header" role="row">
-                    <ion-label>Event</ion-label>
-                    <ion-label>Product</ion-label>
-                    <ion-label>Location</ion-label>
-                    <ion-label>Adjustment</ion-label>
-                    <ion-label>Batch</ion-label>
+                    <ion-label>{{ translate("Event") }}</ion-label>
+                    <ion-label>{{ translate("Product") }}</ion-label>
+                    <ion-label>{{ translate("Location") }}</ion-label>
+                    <ion-label>{{ translate("Adjustment") }}</ion-label>
+                    <ion-label>{{ translate("Batch") }}</ion-label>
                     <span />
                   </div>
                   <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
                     <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
                     <div v-for="event in virtualEvents" :key="event.rowKey" data-virtual-row class="event-table event-table-row" role="row">
                       <ion-label class="ion-text-wrap">
-                        <span class="overline mobile-only">Event</span>
+                        <span class="overline mobile-only">{{ translate("Event") }}</span>
                         <span class="event-type">{{ event.type }}</span>
                         <p>{{ sourceLine(event) }}</p>
                       </ion-label>
                       <ion-label class="ion-text-wrap">
-                        <span class="overline mobile-only">Product</span>
-                        <span class="event-type">{{ event.productName || `Item ${event.shopifyInventoryItem}` }}</span>
+                        <span class="overline mobile-only">{{ translate("Product") }}</span>
+                        <span class="event-type">{{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}</span>
                         <p>{{ event.productSku || event.productId || event.shopifyInventoryItem }}</p>
                       </ion-label>
                       <ion-label class="ion-text-wrap">
-                        <span class="overline mobile-only">Location</span>
+                        <span class="overline mobile-only">{{ translate("Location") }}</span>
                         <span class="event-type">{{ event.locationLabel }}</span>
-                        <p v-if="event.retargetLocationId">Channel has left this location</p>
+                        <p v-if="event.retargetLocationId">{{ translate("Channel has left this location") }}</p>
                       </ion-label>
                       <ion-label>
-                        <span class="overline mobile-only">Adjustment</span>
+                        <span class="overline mobile-only">{{ translate("Adjustment") }}</span>
                         <span>{{ event.change }}</span>
                       </ion-label>
                       <div class="event-status">
-                        <span class="overline mobile-only">Batch</span>
-                        <span>{{ event.batchId || "No batch" }}</span>
+                        <span class="overline mobile-only">{{ translate("Batch") }}</span>
+                        <span>{{ event.batchId || translate("No batch") }}</span>
                         <ion-badge :color="event.deliveryColor || event.detailStateColor">
                           {{ event.delivery || event.detailState }}
                         </ion-badge>
                       </div>
-                      <ion-button fill="clear" aria-label="View event details" @click="selectedEvent = event">
+                      <ion-button fill="clear" :aria-label="translate('View event details')" @click="selectedEvent = event">
                         <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
                       </ion-button>
-                      <p class="row-calculation">{{ event.calculation || "No calculation comment recorded" }}</p>
+                      <p class="row-calculation">{{ event.calculation || translate("No calculation comment recorded") }}</p>
                     </div>
                     <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
                   </div>
@@ -970,41 +951,39 @@
       <ion-content>
         <ion-list lines="full">
           <ion-item>
-            <ion-label class="ion-text-wrap">Event type<p>{{ selectedEvent?.type }}</p></ion-label>
+            <ion-label class="ion-text-wrap">{{ translate("Event type") }}<p>{{ selectedEvent?.type }}</p></ion-label>
             <ion-badge slot="end" :color="selectedEvent?.detailStateColor">{{ selectedEvent?.detailState }}</ion-badge>
           </ion-item>
           <!-- The reference is its own field, not half of a composed key: it is the source row's
                natural key, and for the effective-date families it carries the lifecycle phase too. -->
           <ion-item>
             <ion-label class="ion-text-wrap">
-              Source record
+              {{ translate("Source record") }}
               <p>{{ selectedEvent?.sourceLabel }}</p>
-              <p v-if="selectedEvent?.sourcePhase">
-                Effective-date boundary this row crossed: {{ selectedEvent?.sourcePhase }}
-              </p>
+              <p v-if="selectedEvent?.sourcePhase">{{ translate("Effective-date boundary this row crossed: {phase}", { phase: selectedEvent?.sourcePhase }) }}</p>
             </ion-label>
           </ion-item>
           <ion-item v-if="selectedEvent && selectedArtifact">
             <ion-label class="ion-text-wrap">
-              Came from
+              {{ translate("Came from") }}
               <p v-if="selectedArtifact.label">{{ selectedArtifact.label }}</p>
-              <p v-if="selectedArtifact.actor">Recorded by {{ selectedArtifact.actor }}</p>
+              <p v-if="selectedArtifact.actor">{{ translate("Recorded by {actor}", { actor: selectedArtifact.actor }) }}</p>
               <p v-if="selectedArtifact.note">{{ selectedArtifact.note }}</p>
               <p v-if="selectedArtifact.unresolved">{{ selectedArtifact.unresolved }}</p>
             </ion-label>
           </ion-item>
           <ion-item v-if="selectedEvent?.showRawReference">
             <ion-label class="ion-text-wrap">
-              Ledger event reference
+              {{ translate("Ledger event reference") }}
               <p>{{ selectedEvent?.eventReferenceId }}</p>
             </ion-label>
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">
-              Product
-              <p>{{ selectedEvent?.productName || 'Not resolved' }}</p>
+              {{ translate("Product") }}
+              <p>{{ selectedEvent?.productName || translate("Not resolved") }}</p>
               <p v-if="selectedEvent?.productSku">{{ selectedEvent?.productSku }}</p>
-              <p v-if="selectedEvent?.productId">HotWax product {{ selectedEvent?.productId }}</p>
+              <p v-if="selectedEvent?.productId">{{ translate("HotWax product {id}", { id: selectedEvent?.productId }) }}</p>
             </ion-label>
             <ion-note slot="end">{{ selectedEvent?.change }}</ion-note>
           </ion-item>
@@ -1012,26 +991,23 @@
             <ion-label>Shopify inventory item<p>{{ selectedEvent?.shopifyInventoryItem || 'Unknown item' }}</p></ion-label>
           </ion-item>
           <ion-item>
-            <ion-label class="ion-text-wrap">Inventory channel<p>{{ selectedEvent?.channelLabel }}</p></ion-label>
+            <ion-label class="ion-text-wrap">{{ translate("Inventory channel") }}<p>{{ selectedEvent?.channelLabel }}</p></ion-label>
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">
-              Shopify location
+              {{ translate("Shopify location") }}
               <p>{{ selectedEvent?.locationLabel }}</p>
-              <p v-if="selectedEvent?.locationId">Shopify location {{ selectedEvent?.locationId }}</p>
-              <p v-if="selectedEvent?.retargetLocationId">
-                This delta was calculated against the location the channel has since stopped pointing at,
-                and publishes there rather than to the channel's current one.
-              </p>
+              <p v-if="selectedEvent?.locationId">{{ translate("Shopify location {id}", { id: selectedEvent?.locationId }) }}</p>
+              <p v-if="selectedEvent?.retargetLocationId">{{ translate("This delta was calculated against the location the channel has since stopped pointing at, and publishes there rather than to the channel's current one.") }}</p>
             </ion-label>
             <ion-badge v-if="selectedEvent?.retargetLocationId" slot="end" color="danger">
-              Retarget drain
+              {{ translate("Retarget drain") }}
             </ion-badge>
           </ion-item>
           <ion-item>
-            <ion-label class="ion-text-wrap">Publishes under<p>{{ selectedEvent?.reason }}</p></ion-label>
+            <ion-label class="ion-text-wrap">{{ translate("Publishes under") }}<p>{{ selectedEvent?.reason }}</p></ion-label>
             <ion-badge v-if="selectedEvent && !selectedEvent.reasonMapped" slot="end" color="warning">
-              Unmapped
+              {{ translate("Unmapped") }}
             </ion-badge>
           </ion-item>
           <ion-item>
@@ -1042,8 +1018,8 @@
           </ion-item>
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
-              How this delta was calculated
-              <p>{{ selectedEvent?.calculation || 'No calculation comment recorded' }}</p>
+              {{ translate("How this delta was calculated") }}
+              <p>{{ selectedEvent?.calculation || translate("No calculation comment recorded") }}</p>
             </ion-label>
           </ion-item>
         </ion-list>
@@ -1065,7 +1041,7 @@
         <ion-list lines="full">
           <ion-item>
             <ion-label class="ion-text-wrap">
-              Inventory channel
+              {{ translate("Inventory channel") }}
               <p>{{ selectedBatch?.channel }}</p>
             </ion-label>
             <ion-badge slot="end" :color="selectedBatch?.badgeColor">
@@ -1074,17 +1050,17 @@
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">
-              Publishes under
+              {{ translate("Publishes under") }}
               <p>{{ selectedBatch?.reason }}</p>
             </ion-label>
             <ion-badge v-if="selectedBatch && !selectedBatch.reasonMapped" slot="end" color="warning">
-              {{ selectedBatch.mixedEventTypes ? "Mixed types" : "Unmapped" }}
+              {{ selectedBatch.mixedEventTypes ? translate("Mixed types") : translate("Unmapped") }}
             </ion-badge>
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">
               Included events
-              <p>Each keeps its own event type and reference</p>
+              <p>{{ translate("Each keeps its own event type and reference") }}</p>
             </ion-label>
             <ion-label slot="end">
               {{ selectedBatch?.eventCount }}
@@ -1093,14 +1069,14 @@
 
           <!-- What the mutation carried: the deltas above, summed per (inventory item, location). -->
           <ion-list-header>
-            <ion-label>Change entries</ion-label>
+            <ion-label>{{ translate("Change entries") }}</ion-label>
           </ion-list-header>
           <ion-item v-for="entry in selectedBatch?.entries ?? []" :key="entry.key">
             <ion-label class="ion-text-wrap">
               {{ entry.productLabel }}
               <p>{{ entry.productSku }}</p>
-              <p>{{ entry.locationLabel }}, item {{ entry.shopifyInventoryItem }}</p>
-              <p>{{ entry.eventCount }} events summed</p>
+              <p>{{ translate("{location}, item {item}", { location: entry.locationLabel, item: entry.shopifyInventoryItem }) }}</p>
+              <p>{{ translate("{count} events summed", { count: entry.eventCount }) }}</p>
             </ion-label>
             <ion-note slot="end">{{ entry.change }}</ion-note>
           </ion-item>
@@ -1114,7 +1090,7 @@
               <ion-icon :icon="warningOutline" slot="start" color="danger" />
               <ion-label class="ion-text-wrap">
                 {{ err.errorText }}
-                <p>Attempted {{ statusLabel(err.attemptedStatusId) }} at {{ formatDateTime(toMillis(err.errorDate)) }}</p>
+                <p>{{ translate("Attempted {status} at {at}", { status: statusLabel(err.attemptedStatusId), at: formatDateTime(toMillis(err.errorDate)) }) }}</p>
               </ion-label>
             </ion-item>
           </template>
@@ -1143,7 +1119,7 @@
             <ion-label class="ion-text-wrap">
               {{ event.type }}
               <p>{{ sourceLine(event) }}</p>
-              <p>Item {{ event.shopifyInventoryItem }} at {{ event.locationLabel }}</p>
+              <p>{{ translate("Item {id} at {location}", { id: event.shopifyInventoryItem, location: event.locationLabel }) }}</p>
               <p>{{ event.calculation }}</p>
             </ion-label>
             <ion-note slot="end">
@@ -1351,6 +1327,8 @@ interface InventoryEvent {
    */
   detailState: string;
   detailStateColor: string;
+  /** The raw DETAIL_* id behind `detailState`. Sections branch on this, never on the translated label. */
+  detailStatusId: string;
   /** SystemMessage delivery, present only once the row has been assigned to a batch. */
   delivery?: string;
   deliveryColor?: string;
@@ -1459,7 +1437,7 @@ async function loadShopifyLocationNames() {
     }
     shopifyLocationNames.value = names;
   } catch (error) {
-    logger.warn("Could not read Shopify location names; falling back to location ids", error);
+    logger.warn("Location [Shopify] - Could not read location names; falling back to location ids", error);
   }
 }
 
@@ -1798,7 +1776,7 @@ type JobDefinition = {
  *   past, no later run -> genuinely overdue
  */
 function nextRunLine(nextJob: any, latestRun: any): string {
-  if(!nextJob) {return "No active schedule";}
+  if(!nextJob) {return translate("No active schedule");}
 
   const nextMs = toMillis(nextJob.nextExecutionDateTime);
   const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
@@ -1806,18 +1784,18 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   if(nextMs && lastMs && lastMs > nextMs) {
     if(nextJob.cronExpression) {
       try {
-        return `Runs ${cronstrue.toString(nextJob.cronExpression).toLowerCase()}`;
+        return translate("Runs {cron}", { cron: cronstrue.toString(nextJob.cronExpression).toLowerCase() });
       } catch {
         // An expression cronstrue cannot phrase is still a real schedule; say that much.
       }
     }
 
-    return "Next run not yet recalculated";
+    return translate("Next run not yet recalculated");
   }
 
-  if(!nextMs) {return "No active schedule";}
+  if(!nextMs) {return translate("No active schedule");}
 
-  return `Next run ${formatUntil(nextMs)}, ${formatDateTime(nextJob.nextExecutionDateTime)}`;
+  return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
 function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition) {
@@ -1829,9 +1807,9 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
   return {
     name,
     job: nextJob ?? jobs[0] ?? null,
-    lastRun: latestRun?.startTime ? `Last run ${formatDateTime(latestRun.startTime)}` : "No cached runs",
+    lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
     nextRun: nextRunLine(nextJob, latestRun),
-    status: missing ? "Not configured" : paused ? "Paused" : "Active",
+    status: missing ? translate("Not configured") : paused ? translate("Paused") : translate("Active"),
     badgeColor: missing ? "medium" : paused ? "warning" : "success",
     icon,
     setup,
@@ -1956,9 +1934,9 @@ const FACILITY_TYPE_LABELS: Record<string, [string, string]> = {
 
 function facilityTypeLabel(facilityTypeId: string, count: number): string {
   const known = FACILITY_TYPE_LABELS[facilityTypeId];
-  if(known) {return `${count} ${count === 1 ? known[0] : known[1]}`;}
+  const type = known ? translate(count === 1 ? known[0] : known[1]) : facilityTypeId.toLowerCase().replaceAll("_", " ");
 
-  return `${count} ${facilityTypeId.toLowerCase().replaceAll("_", " ")}`;
+  return translate("{count} {type}", { count, type });
 }
 
 /** Events delivered to Shopify are counted over this window. */
@@ -2005,7 +1983,7 @@ const channelStatsById = computed(() => {
       .sort((a, b) => b[1] - a[1])
       .map(([typeId, count]) => facilityTypeLabel(typeId, count));
     stats.set(channelId, {
-      composition: composition.length ? composition.join(", ") : "No facilities in this group",
+      composition: composition.length ? composition.join(", ") : translate("No facilities in this group"),
       delivered: deliveredByChannel.get(channelId) ?? 0,
     });
   }
@@ -2013,7 +1991,7 @@ const channelStatsById = computed(() => {
   return stats;
 });
 
-const EMPTY_CHANNEL_STATS = { composition: "No facilities in this group", delivered: 0 };
+const EMPTY_CHANNEL_STATS = { composition: translate("No facilities in this group"), delivered: 0 };
 
 function channelStats(channel: any) {
   return channelStatsById.value.get(String(channel.inventoryChannelId ?? "")) ?? EMPTY_CHANNEL_STATS;
@@ -2124,7 +2102,7 @@ function channelFor(detail: any): any {
 /** The channel that owns the row, by name. This is the row's SCOPE, not its Shopify target. */
 function channelLabel(detail: any): string {
   return detail.inventoryChannelDescription || channelFor(detail)?.description ||
-    detail.facilityGroupId || detail.inventoryChannelId || "Inventory channel";
+    detail.facilityGroupId || detail.inventoryChannelId || translate("Inventory channel");
 }
 
 /**
@@ -2152,8 +2130,8 @@ function locationIdOf(detail: any): string {
  */
 function locationLabel(detail: any): string {
   const locationId = locationIdOf(detail);
-  if (!locationId) return "Shopify aggregate location";
-  return shopifyLocationNames.value.get(locationId) || `Location ${locationId}`;
+  if (!locationId) return translate("Shopify aggregate location");
+  return shopifyLocationNames.value.get(locationId) || translate("Location {id}", { id: locationId });
 }
 
 /**
@@ -2188,6 +2166,12 @@ const SOURCE_RECORD_LABELS: Record<string, string> = {
   RESERVATION_RELEASE: "",
 };
 
+/** The table holds catalog keys; an unrecognised type stays empty rather than becoming a wrong label. */
+function sourceRecordLabel(eventTypeId: string): string {
+  const key = SOURCE_RECORD_LABELS[eventTypeId] ?? "";
+  return key ? translate(key) : "";
+}
+
 interface EventSource {
   /** What kind of OMS record the reference points at, empty when the type is not recognised. */
   recordLabel: string;
@@ -2209,13 +2193,13 @@ function sourceOf(detail: any): EventSource {
   if (eventTypeId.startsWith("RESERVATION_") && body.includes(":")) {
     const [inventoryItemId, detailSeqId] = body.split(":");
     return {
-      recordLabel: SOURCE_RECORD_LABELS[eventTypeId] ?? "",
-      reference: `Inventory item ${inventoryItemId}, detail ${detailSeqId}`,
+      recordLabel: sourceRecordLabel(eventTypeId),
+      reference: translate("Inventory item {id}, detail {seq}", { id: inventoryItemId, seq: detailSeqId }),
       phase,
     };
   }
 
-  return { recordLabel: SOURCE_RECORD_LABELS[eventTypeId] ?? "", reference: body, phase };
+  return { recordLabel: sourceRecordLabel(eventTypeId), reference: body, phase };
 }
 
 const batches = computed<Batch[]>(() => {
@@ -2269,11 +2253,11 @@ const batches = computed<Batch[]>(() => {
  */
 function detailState(detail: any): { label: string; color: string } {
   switch (detail.detailStatusId) {
-    case "DETAIL_PENDING": return { label: "Waiting", color: "warning" };
-    case "DETAIL_ASSIGNED": return { label: "Batched", color: "primary" };
-    case "DETAIL_NOOP": return { label: "No change", color: "medium" };
-    case "DETAIL_ERROR": return { label: "Quarantined", color: "danger" };
-    default: return { label: String(detail.detailStatusId || "Unknown"), color: "medium" };
+    case "DETAIL_PENDING": return { label: translate("Waiting"), color: "warning" };
+    case "DETAIL_ASSIGNED": return { label: translate("Batched"), color: "primary" };
+    case "DETAIL_NOOP": return { label: translate("No change"), color: "medium" };
+    case "DETAIL_ERROR": return { label: translate("Quarantined"), color: "danger" };
+    default: return { label: String(detail.detailStatusId || translate("Unknown")), color: "medium" };
   }
 }
 
@@ -2375,7 +2359,7 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
       key,
       shopifyInventoryItem: String(rows[0].shopifyInventoryItemId ?? ""),
       productLabel: product?.parentProductName || product?.internalName || product?.productName ||
-        `Item ${rows[0].shopifyInventoryItemId ?? ""}`,
+        translate("Item {id}", { id: rows[0].shopifyInventoryItemId ?? "" }),
       productSku: product?.sku || productId || "",
       locationId: locationIdOf(rows[0]),
       locationLabel: locationLabel(rows[0]),
@@ -2384,9 +2368,9 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
       change: `${delta > 0 ? "+" : ""}${delta}`,
       eventCount: rows.length,
       outcome,
-      outcomeLabel: outcome === "publish" ? "Will publish"
-        : outcome === "noChange" ? "Nets to zero, will settle as no change"
-        : "Not a whole number, will be quarantined",
+      outcomeLabel: outcome === "publish" ? translate("Will publish")
+        : outcome === "noChange" ? translate("Nets to zero, will settle as no change")
+        : translate("Not a whole number, will be quarantined"),
       outcomeColor: outcome === "publish" ? "primary" : outcome === "noChange" ? "medium" : "danger",
     } as ChangeEntry;
   }).sort((a, b) => a.shopifyInventoryItem.localeCompare(b.shopifyInventoryItem));
@@ -2451,14 +2435,14 @@ const waitingBatches = computed(() => {
       id: key,
       channel: channelLabel(rows[0]),
       inventoryChannelId: String(rows[0].inventoryChannelId ?? ""),
-      type: eventTypeIds.size === 1 ? eventTypeLabel(rows[0]) : `${eventTypeIds.size} event types mixed`,
+      type: eventTypeIds.size === 1 ? eventTypeLabel(rows[0]) : translate("{count} event types mixed", { count: eventTypeIds.size }),
       mixedEventTypes: eventTypeIds.size > 1,
       reason,
       reasonMapped: mapped,
       entries: changeEntriesOf(rows),
       eventCount: rows.length,
       oldestAt,
-      oldestAge: oldestAt ? formatAge(oldestAt) : "Unknown",
+      oldestAge: oldestAt ? formatAge(oldestAt) : translate("Unknown"),
       events: eventsFor(rows),
     };
   }).sort((a, b) => a.oldestAt - b.oldestAt);
@@ -2475,14 +2459,14 @@ const inFlightBatches = computed(() => batches.value
  * be fixed and a NEW event recorded.
  */
 const quarantinedEvents = computed(() => inventoryEvents.value
-  .filter((event) => event.detailState === "Quarantined"));
+  .filter((event) => event.detailStatusId === "DETAIL_ERROR"));
 
 /**
  * SECTION 4 -- the settled tail. Retention-bound, not an archive: the scheduled purge removes terminal
  * rows after five days by default, so this can only ever be a rolling window.
  */
 const settledEvents = computed(() => inventoryEvents.value.filter((event) =>
-  event.detailState === "No change" || event.deliveryStatusId === "SmsgSent"));
+  event.detailStatusId === "DETAIL_NOOP" || event.deliveryStatusId === "SmsgSent"));
 
 /**
  * The server owns this label. `eventTypeDescription` is joined from ShopifyInventoryEventType --
@@ -2538,6 +2522,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     batchId: detail.systemMessageId || undefined,
     detailState: state.label,
     detailStateColor: state.color,
+    detailStatusId: String(detail.detailStatusId ?? ""),
     delivery: delivery?.label,
     deliveryColor: delivery?.color,
     deliveryStatusId: delivery?.statusId,
@@ -2565,7 +2550,7 @@ const pendingEventCount = computed(() => inventoryDetails.value.filter((detail: 
 const pendingBatchCount = computed(() => batches.value.filter((batch) =>
   ["SmsgProduced", "SmsgSending", "SmsgError"].includes(String(batch.statusId))).length);
 const oldestUnbatchedEvent = computed(() => {
-  const oldest = inventoryEvents.value.filter((event) => event.detailState === "Waiting")
+  const oldest = inventoryEvents.value.filter((event) => event.detailStatusId === "DETAIL_PENDING")
     .sort((a, b) => a.createdAt - b.createdAt)[0];
   return oldest ? formatDateTime(oldest.createdAt) : "None waiting";
 });
@@ -3095,7 +3080,7 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
       const jobLabel = kind === "publisher"
         ? translate("Publish and send event batches")
         : translate("Reset aggregate ATP");
-      commonUtil.showToast(`${openable} created, paused. Set its schedule and activate it below.`);
+      commonUtil.showToast(translate("{job} created, paused. Set its schedule and activate it below.", { job: openable }));
       selectedServiceJob.value = serviceJobSelection(openable, `${jobLabel} - ${channelName}`);
 
       return;
@@ -3135,17 +3120,23 @@ function formatUntil(timestamp: number): string {
   const minutes = Math.round((timestamp - Date.now()) / 60_000);
   if(minutes < -1) {
     const overdue = Math.abs(minutes);
-    if(overdue < 60) {return `overdue by ${overdue} min`;}
+    if(overdue < 60) {return translate("overdue by {minutes} min", { minutes: overdue });}
     const hours = Math.floor(overdue / 60);
 
-    return hours < 24 ? `overdue by ${hours}h` : `overdue by ${Math.floor(hours / 24)}d`;
+    return hours < 24
+      ? translate("overdue by {hours}h", { hours })
+      : translate("overdue by {days}d", { days: Math.floor(hours / 24) });
   }
-  if(minutes <= 1) {return "due now";}
-  if(minutes < 60) {return `in ${minutes} min`;}
+  if(minutes <= 1) {return translate("due now");}
+  if(minutes < 60) {return translate("in {minutes} min", { minutes });}
   const hours = Math.floor(minutes / 60);
-  if(hours < 24) {return minutes % 60 ? `in ${hours}h ${minutes % 60}m` : `in ${hours}h`;}
+  if(hours < 24) {
+    return minutes % 60
+      ? translate("in {hours}h {minutes}m", { hours, minutes: minutes % 60 })
+      : translate("in {hours}h", { hours });
+  }
 
-  return `in ${Math.floor(hours / 24)}d`;
+  return translate("in {days}d", { days: Math.floor(hours / 24) });
 }
 
 function formatAge(timestamp: number): string {
