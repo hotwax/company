@@ -354,6 +354,63 @@ describe("Product Store API contracts", () => {
     });
   });
 
+  /**
+   * `queue#FeedSystemMessage` with `runAsBatch` derives its window start from the newest ALREADY-SENT
+   * message of the same type and remote. A store being set up has none, so the queued message carried
+   * a thruDate and no fromDate and Shopify rejected the query outright: "Invalid timestamp for query
+   * filter `updated_at`". The first run of every new store failed, and it failed inside a job.
+   */
+  it("seeds the live order feed's first window with the launch date", async () => {
+    const jobs = mockShopifySetupApis();
+
+    await useProductStoreData().setupProductStoreShopifyOrderImport({
+      productStoreId: "STORE_1",
+      shopId: "SHOP_100",
+      activateJobs: true,
+      windowDays: 7,
+      launchDate: "2026-09-03 00:00:00"
+    });
+
+    const configured = jobs.get("queue_ShopifyOrderSync_SHOP_100");
+    const parameters = Object.fromEntries(configured.serviceJobParameters.map((parameter: any) => [
+      parameter.parameterName,
+      parameter.parameterValue
+    ]));
+    expect(parameters.fromDate).toBe("2026-09-03 00:00:00");
+    expect(parameters.systemMessageTypeId).toBe("ShopifyOrderSync");
+  });
+
+  it("leaves the live feed's window to its own cursor when no launch date is given", async () => {
+    const jobs = mockShopifySetupApis();
+
+    await useProductStoreData().setupProductStoreShopifyOrderImport({
+      productStoreId: "STORE_1",
+      shopId: "SHOP_100",
+      activateJobs: true
+    });
+
+    const parameters = (jobs.get("queue_ShopifyOrderSync_SHOP_100").serviceJobParameters || [])
+      .map((parameter: any) => parameter.parameterName);
+    expect(parameters).not.toContain("fromDate");
+  });
+
+  /**
+   * The history job is run from the step's own action and nothing else. `runNow` works on a paused
+   * job, so activating it would only add a backfill query to the queue every five minutes forever.
+   */
+  it("activates the live order feed but never the on-demand history job", async () => {
+    const jobs = mockShopifySetupApis();
+
+    await useProductStoreData().setupProductStoreShopifyOrderImport({
+      productStoreId: "STORE_1",
+      shopId: "SHOP_100",
+      activateJobs: true
+    });
+
+    expect(jobs.get("queue_ShopifyOrderSync_SHOP_100").paused).toBe("N");
+    expect(jobs.get("sync_ShopifyOrderHistory_SHOP_100").paused).toBe("Y");
+  });
+
   it("keeps the historic-order clone on sync_ShopifyOrderHistory with its remote and window parameters", async () => {
     const jobs = mockShopifySetupApis();
 

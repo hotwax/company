@@ -1347,6 +1347,8 @@ async function setupProductStoreShopifyOrderImport(payload: {
   activateJobs?: boolean
   orderImportAdditionalParameters?: Record<string, any> | string
   windowDays?: number
+  /** The store's launch date, as the live sync's FIRST window start. See `fromDate` below. */
+  launchDate?: string
 }) {
   const context = await fetchShopifySetupContext({
     productStoreId: payload.productStoreId,
@@ -1362,13 +1364,25 @@ async function setupProductStoreShopifyOrderImport(payload: {
   const windowDays = payload.windowDays || 7
   const configuredJobs = [
     await ensureServiceJobFromTemplate("queue_ShopifyOrderSync", orderImportJobName, payload.activateJobs),
-    await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", orderHistoryJobName, payload.activateJobs)
+    // The history job is ONLY ever run on demand, from the step's own action, so it is never
+    // activated: `runNow` works on a paused job, and leaving it on its five-minute cron would queue a
+    // fresh backfill query every cycle for as long as the store exists.
+    await ensureServiceJobFromTemplate("sync_ShopifyOrderHistory", orderHistoryJobName, false)
   ]
 
   await storeServiceJobParameter(orderImportJobName, "systemMessageTypeId", "ShopifyOrderSync")
   await storeServiceJobParameter(orderImportJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
   await storeServiceJobParameter(orderImportJobName, "runAsBatch", "true")
   await storeServiceJobParameter(orderImportJobName, "additionalParameters", additionalParameters)
+  // The live sync's window start. With `runAsBatch`, `queue#FeedSystemMessage` derives `fromDate`
+  // from the newest ALREADY-SENT message of the same type and remote — a cursor that does not exist
+  // on a store being set up for the first time. Without it the queued message carries a thruDate and
+  // no fromDate, and Shopify rejects the query outright with "Invalid timestamp for query filter
+  // `updated_at`", so the very first run of a new store could never import an order. Seeding it with
+  // the launch date the operator chose gives the first window a start; every later run picks up the
+  // cursor from its own predecessor and this value is ignored.
+  const launchDate = valueText(payload.launchDate)
+  if(launchDate) {await storeServiceJobParameter(orderImportJobName, "fromDate", launchDate)}
 
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageTypeId", "BulkOrderHistoryQuery")
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)

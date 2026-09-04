@@ -2151,8 +2151,16 @@ async function saveOrderSetup() {
     const jobResponse = await productStoreData.setupProductStoreShopifyOrderImport({
       productStoreId: setup.productStoreId,
       shopId: setup.shopId,
-      activateJobs: false,
-      windowDays: 7
+      // Activates the LIVE order feed only; the history job stays on demand. Left paused, the feed
+      // never ran and a finished setup imported no orders at all. What holds orders back from live
+      // fulfillment is the launch date the operator set, not this flag — the same reason the Products
+      // step activates its own sync here.
+      activateJobs: true,
+      windowDays: 7,
+      // The launch date is the live sync's first window start. It has nowhere else to get one: the
+      // queue service reads its cursor from the newest already-sent message of the same type, and a
+      // store being set up has none.
+      launchDate: setup.launchDate
     })
     if(responseFailed(jobResponse)) {throw jobResponse?.data || jobResponse}
 
