@@ -865,26 +865,11 @@ const linkedShopifyShop = computed(() => {
 // Never fall back to the persisted id here. Every downstream job/import action must use a shop
 // that the current cache or live setup response confirms is still assigned to this Product Store.
 const linkedShopId = computed(() => String(linkedShopifyShop.value?.shopId || ""))
-/**
- * The linked shop's SystemMessageRemote.
- *
- * A `ShopifyShop` row does NOT carry `systemMessageRemoteId` — the remote is joined to the shop by
- * `remote.internalId === shop.shopId` (and `remote.remoteId === shop.shopifyShopId`). Reading it off
- * the shop therefore always yielded undefined, and the shop id was sent to `shopify/graphql` in its
- * place, which the backend rejects with "Could not find SystemMessageRemote with ID <shopId>".
- *
- * `useShopifySyncContext` owns that join and applies the same rule the sync worker uses, so the
- * screen and the poller cannot disagree about which remote a shop owns.
- */
+// A ShopifyShop row carries no systemMessageRemoteId; the remote is joined by internalId/remoteId.
+// useShopifySyncContext owns that join with the same rule the sync worker uses.
 const shopifySyncContext = useShopifySyncContext(() => linkedShopId.value)
-/**
- * When the Product Store was created, as epoch milliseconds.
- *
- * The wizard's own record of having started a load lives in browser storage and is gone whenever the
- * operator starts another setup or opens the store elsewhere. This is the durable half: a shop run
- * that began before this store existed cannot belong to it, which is what lets the step report a run
- * it did not personally start without resurrecting another store's history.
- */
+// Store creation time, epoch ms. The durable bound for attributing shop runs when the wizard's
+// browser-side run record is gone: a run that began before the store existed cannot be its own.
 const selectedProductStoreCreatedAt = computed(() => {
   const value = productStoreData.current?.createdStamp
   const parsed = typeof value === "number" ? value : Date.parse(String(value ?? ""))
@@ -1178,14 +1163,8 @@ const inventoryResetSetupAvailability = computed<"available" | "missing" | "unkn
 
   return job.status === "missing-template" ? "missing" : "unknown"
 })
-/**
- * Every initial load in this wizard is a Shopify BULK QUERY, and `bulkOperationRunQuery` is a GraphQL
- * mutation. The connector refuses it outright on a read-only connection — "Cannot post graphQL
- * mutation, only read access is enabled for Shopify with systemMessageRemoteId" — inside a job that
- * runs on a fifteen-minute cron, so the wizard would accept the request, show it queued, and let the
- * operator wait for an import that could never leave the building. The steps that import list write
- * access as a prerequisite instead.
- */
+// Every initial load is a Shopify bulk query, and bulkOperationRunQuery is a GraphQL mutation the
+// connector refuses on a read-only connection, inside a cron job where nothing reaches the operator.
 const connectionAccessCheckDetail = computed(() => {
   if(connectionIsWritable.value) {return ""}
   if(!connectionRemoteResolved.value) {
@@ -1704,25 +1683,11 @@ function openShopifyConnections() {
   router.push("/shopify")
 }
 
-/**
- * The OMS-side read/write shutoff on the shop's SystemMessageRemote.
- *
- * Importing from Shopify only needs read access, so the wizard's own steps run fine on a read-only
- * connection — but everything the store publishes back does not. Associating facilities already
- * records inventory-channel events, and the connector refuses them with "No write-capable Shopify
- * remote for shop ..., needs SHOP_RW_ACCESS" in the backend log and nothing at all on screen. The
- * operator finished setup believing the store was live. So the level is shown here beside the shop
- * it belongs to, and can be raised without leaving the wizard.
- */
-/**
- * Whether the shop's remote has RESOLVED, which is a separate question from what scope it carries.
- *
- * The remote is what decides both, and an empty `accessScopeEnumId` on a remote that exists is a real
- * state the connector treats as read-only (see `getShopifyAccessStateFromCandidate`). Reading the
- * scope string alone conflated it with "still loading", which hid the Grant button behind a message
- * promising a value that was never going to arrive, while the load actions stayed disabled — a store
- * that could not be imported into and offered no control to fix it.
- */
+// The OMS-side read/write shutoff on the shop's remote. Read access is enough to browse and to
+// finish this wizard, but nothing the store publishes back gets through, and the connector logs the
+// refusal where no operator sees it.
+// "Resolved" is decided by the remote, not the scope string: an empty accessScopeEnumId on a remote
+// that exists is read-only (see getShopifyAccessStateFromCandidate), not "still loading".
 const connectionRemoteResolved = computed(() =>
   !!String(shopifySyncContext.remote.value?.systemMessageRemoteId ?? "").trim())
 const connectionAccessScopeId = computed(() => String(shopifySyncContext.remote.value?.accessScopeEnumId || ""))
@@ -1831,12 +1796,8 @@ function acceptInitialLoadRequest(kind: OnboardingInitialLoadKind, response: any
   const request = onboarding.runRequests[kind]
   if(!request) {return}
   const payload = response?.data ?? response ?? {}
-  // Which identifier comes back is a property of the transport, not of the step. Products and
-  // inventory are produced as SystemMessages by the connector's bulk-query resources; historic
-  // orders run a service job and return a ServiceJobRun. Assuming one per step is what broke
-  // inventory tracking when its load moved onto the connector resource: the run was accepted by the
-  // backend and the step still reported that it could not be tracked. Read whichever arrived, and
-  // let `initialLoadMatchesRequest` match on the one that is set.
+  // Which id comes back is a property of the transport, not the step: bulk-query resources answer
+  // with a SystemMessage id, a service job with a ServiceJobRun id. Read whichever arrived.
   const systemMessageId = String(payload.systemMessageId || "").trim()
   const jobRunId = String(payload.jobRunId || "").trim()
   if(!systemMessageId && !jobRunId) {
@@ -2151,10 +2112,8 @@ async function saveOrderSetup() {
     const jobResponse = await productStoreData.setupProductStoreShopifyOrderImport({
       productStoreId: setup.productStoreId,
       shopId: setup.shopId,
-      // Activates the LIVE order feed only; the history job stays on demand. Left paused, the feed
-      // never ran and a finished setup imported no orders at all. What holds orders back from live
-      // fulfillment is the launch date the operator set, not this flag — the same reason the Products
-      // step activates its own sync here.
+      // Activates the live order feed only (the history job stays on demand). The launch date, not
+      // this flag, is what gates live fulfilment.
       activateJobs: true,
       windowDays: 7
     })
@@ -2352,15 +2311,8 @@ function openInitialLoadDetails(
   })
 }
 
-/**
- * The warning shown when a shop this wizard had linked is no longer assigned to the store.
- *
- * Named because `reconcileShopifyLink` has to recognise its OWN warning to withdraw it. The check
- * runs on every status refresh and can see an empty assigned-shop list for a tick while the shop
- * cache is still filling, so it would post the warning and then verify the link on the next pass —
- * leaving "the previously linked shop is no longer assigned" sitting under a row that said the shop
- * was linked and complete.
- */
+// Named so reconcileShopifyLink can recognise and withdraw its own warning: the assigned-shop list
+// can read empty for a tick while the cache fills, then verify on the next pass.
 function staleShopifyLinkMessage() {
   return translate("The previously linked Shopify shop is no longer assigned to this Product Store. Select an unassigned shop to continue.")
 }
@@ -2759,11 +2711,7 @@ watch(
   { deep: true, immediate: true }
 )
 
-/**
- * The remote is a cache join, so it resolves after the step is already on screen. Without this the
- * count stayed "Unavailable" for the rest of the visit: the one load attempt ran while `remoteId`
- * was still empty and nothing asked again.
- */
+// The remote is a cache join that resolves after the step is on screen; retry the count when it lands.
 watch(() => shopifySyncContext.remoteId.value, (remoteId) => {
   if(remoteId && currentStep.value?.id === "products" && shopifyProductCount.value === undefined) {
     void loadShopifyProductCount()

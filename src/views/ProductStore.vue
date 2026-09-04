@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { translate } from "@common";
 import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar } from "@ionic/vue";
 import { addOutline, copyOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard";

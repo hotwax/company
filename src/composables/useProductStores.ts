@@ -363,18 +363,9 @@ export function useProductStoreMutations(productStoreId: string) {
   const storeId = () => encodeURIComponent(productStoreId);
   const refreshStore = () => refreshAfterMutation("productStore", { productStoreId });
 
-  /**
-   * `refreshAfterMutation` refreshes the CACHED productStore row. It does not touch `state.current` /
-   * `state.currentStoreSettings`, which `useProductStoreData` fetches live and which the product
-   * store onboarding wizard compares its draft against to decide whether a step is saved.
-   *
-   * Leaving that to the caller is what broke the wizard: after a successful save it still read the
-   * pre-save copy and reported "Inventory preferences: Missing" on values it had just written. The
-   * refresh belongs with the write, so no caller can forget it.
-   *
-   * Guarded on the loaded store, because these fetchers replace `state.current` wholesale and a
-   * mutation against some other store must not swap out what the screen has open.
-   */
+  // refreshAfterMutation refreshes only the cached row; the live state.current / currentStoreSettings
+  // that screens compare against must be refetched here too, guarded so a mutation against another
+  // store cannot swap out what the screen has open.
   const isLoadedStore = () => String(state.current?.productStoreId ?? "") === String(productStoreId);
 
   return {
@@ -614,10 +605,8 @@ async function ensureServiceJobFromTemplate(templateJobName: string, newJobName:
   let created = false
 
   if (!serviceJob?.jobName) {
-    // Both checks exist because a clone can fail without an error response: Moqui answers 200 when
-    // the named template is absent, and the caller's next step writes ServiceJobParameter rows
-    // against the target. Without them a missing template surfaces as orphaned parameters and a
-    // setup step that reports success while nothing was provisioned.
+    // Moqui answers 200 for an absent template, so verify the template before and the target after,
+    // or the caller writes parameters against a job that was never created.
     const template = await fetchServiceJob(templateJobName)
     if(!template?.jobName) {
       throw new Error(`Setup cannot be completed because the backend service-job template ${templateJobName} is missing. Ask the backend owner to load it, then refresh setup.`)
@@ -1318,14 +1307,9 @@ async function runProductStoreShopifyInventoryReset(payload: {
 }
 
 /**
- * Fire the historic-order import for a shop.
- *
- * This runs the shop's cloned `sync_ShopifyOrderHistory_<shopId>` job rather than posting to a
- * `sob/shopify/orderHistory` endpoint: the shopify-connector's REST resources carry `inventoryReset`
- * but no `orderHistory`, so that URL 404s. The dates are not passed here by design — setup writes the
- * window as a job parameter and the cursor as shop-scoped SystemProperty rows
- * (`orderSyncHistory.lastSyncDate`, `newOrderSync.launchDate`), and the job reads them. They stay in
- * the signature because the caller validates the range before it may run.
+ * Fire the historic-order import by running the shop's cloned job. There is no `sob/shopify/orderHistory`
+ * resource (that URL 404s). The dates are not passed: setup stores them as a job parameter and as
+ * shop-scoped SystemProperty rows, and the job reads them.
  */
 async function runProductStoreShopifyOrderHistoryImport(payload: {
   shopId: string
@@ -1372,10 +1356,8 @@ async function setupProductStoreShopifyOrderImport(payload: {
   await storeServiceJobParameter(orderImportJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)
   await storeServiceJobParameter(orderImportJobName, "runAsBatch", "true")
   await storeServiceJobParameter(orderImportJobName, "additionalParameters", additionalParameters)
-  // No `fromDate` is stored, deliberately. Its ABSENCE is what tells `send#ShopifyOrderSync` this is
-  // the shop's first run, which it answers with every open order that still has work outstanding and
-  // no lower bound at all. Seeding one here would send that run down the windowed branch instead and
-  // silently reduce the first import to whatever changed after the date given.
+  // No fromDate, deliberately: its absence is what makes send#ShopifyOrderSync treat the shop's first
+  // run as an unbounded sweep of outstanding orders rather than a date window.
 
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageTypeId", "BulkOrderHistoryQuery")
   await storeServiceJobParameter(orderHistoryJobName, "systemMessageRemoteId", context.remote.systemMessageRemoteId)

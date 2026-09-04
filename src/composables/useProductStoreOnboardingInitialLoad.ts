@@ -326,17 +326,9 @@ export function onboardingInitialLoadJobName(
 /**
  * Correlate a persisted run request to cache evidence.
  *
- * There is NO fallback to the shop's most recent run, and that is the whole point. Every run visible
- * here is scoped to the SHOP (a SystemMessage against the shop's remote), never to the Product Store,
- * so a shop that was previously connected to another store carries that store's runs. Picking the
- * latest one attributed a three-day-old failed import to a Product Store created minutes earlier, and
- * an operator setting up a fresh store saw "294 failed of 2,131 records processed" for a load nobody
- * had started.
- *
- * Nothing in the data can tell us which Product Store an older shop run belonged to, so the only
- * honest evidence that THIS setup ran an initial load is the request this wizard persisted when it
- * started one. Without that request the answer is "no run", which the step renders as a missing
- * initial import — true, and recoverable by running it.
+ * Runs are scoped to the SHOP, never to the Product Store, so a reconnected shop carries its previous
+ * store's history. The wizard's persisted request is the only evidence this setup started a run; the
+ * store's creation time is the only durable bound when that record is gone.
  */
 // eslint-disable-next-line no-restricted-syntax -- pure selection helper, not a Vue composable
 export function selectOnboardingInitialLoadRun(input: {
@@ -354,10 +346,8 @@ export function selectOnboardingInitialLoadRun(input: {
       return { run: null, jobRun: null, systemMessageId: "" }
     }
 
-    // Branch on the identifier the request actually carries, not on the step. A load that came back
-    // with a SystemMessage id was produced directly by a connector resource and has no ServiceJobRun
-    // to correlate through; one that came back with a job run id has to be resolved through the run's
-    // results first. Inventory has been both.
+    // Branch on the identifier the request carries, not on the step: a SystemMessage id has no job
+    // run to correlate through; a job run id must be resolved through the run's results first.
     const requestedSystemMessageId = String(request.systemMessageId ?? "")
     if(requestedSystemMessageId) {
       const run = input.runs.find((candidate) => {
@@ -383,16 +373,8 @@ export function selectOnboardingInitialLoadRun(input: {
     return { run, jobRun, systemMessageId }
   }
 
-  // No request from THIS setup — the wizard's own record of starting a load lives in browser storage,
-  // and it is gone whenever the operator starts another setup, uses another browser, or clears data.
-  // Falling back to the shop's latest run is what this selector was rewritten to stop: runs are scoped
-  // to the SHOP, so a reconnected shop carries the previous store's history, and a brand-new store was
-  // shown a three-day-old failed import as its current run.
-  //
-  // The bound that separates the two is the Product Store's own creation time, which is durable
-  // backend data rather than browser state: a run that began before this store existed cannot be its
-  // own. Runs at or after it are surfaced and marked `unattributed`, so the step reports what actually
-  // happened without claiming it started it. Nothing older is shown at all.
+  // No request from this setup. Never fall back to the shop's latest run (it may be another store's);
+  // bound by the store's creation time instead, and mark anything surfaced as `unattributed`.
   const since = Number(input.storeCreatedAt ?? 0)
   const candidate = since
     ? input.runs.find((run) => runStartedAt(run) >= since) ?? null
@@ -406,14 +388,8 @@ export function selectOnboardingInitialLoadRun(input: {
   }
 }
 
-/**
- * A run the connector still owns: produced, sending, or sent and awaiting Shopify.
- *
- * Reads the SAME status the snapshot treats as authoritative. A run is assembled by joining the
- * sync-run spine to a separately cached SystemMessage, and the two fetches land on different polls,
- * so the spine can still say produced while the message already says consumed. Reading only the spine
- * called a finished run unfinished and reported it as still in progress.
- */
+/** A run the connector still owns. Reads the enriched message status first: the spine row and the
+ *  cached SystemMessage land on different polls and can disagree for a tick. */
 function isUnfinishedRunStatus(run: Record<string, any> | null | undefined): boolean {
   const statusId = run?.systemMessage?.statusId ?? run?.statusId
 

@@ -134,14 +134,8 @@ export const SHOPIFY_RW_ACCESS_SCOPE = "SHOP_RW_ACCESS";
 export const SHOPIFY_LEGACY_RW_ACCESS_SCOPE = "SHOP_READ_WRITE_ACCESS";
 export const SHOPIFY_NO_ACCESS_SCOPE = "SHOP_NO_ACCESS";
 
-/**
- * May this OMS write to the shop?
- *
- * Only the canonical scope counts. The deprecated long form is honoured for DISPLAY by
- * `sortRemotesByAccess` so a shop on it ranks above a read-only one, but the publishing services
- * compare against `SHOP_RW_ACCESS` exactly — so anything else is read-only here too, or the app
- * would promise a write the backend refuses.
- */
+/** May this OMS write to the shop? Only the canonical scope counts; the publishing services compare
+ *  against SHOP_RW_ACCESS exactly, so the deprecated long form is read-only here too. */
 export function isWritableAccessScope(accessScopeEnumId: string | null | undefined): boolean {
   return String(accessScopeEnumId ?? "").trim() === SHOPIFY_RW_ACCESS_SCOPE;
 }
