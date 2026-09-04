@@ -1158,6 +1158,21 @@ const inventoryResetSetupAvailability = computed<"available" | "missing" | "unkn
 
   return job.status === "missing-template" ? "missing" : "unknown"
 })
+/**
+ * Every initial load in this wizard is a Shopify BULK QUERY, and `bulkOperationRunQuery` is a GraphQL
+ * mutation. The connector refuses it outright on a read-only connection — "Cannot post graphQL
+ * mutation, only read access is enabled for Shopify with systemMessageRemoteId" — inside a job that
+ * runs on a fifteen-minute cron, so the wizard would accept the request, show it queued, and let the
+ * operator wait for an import that could never leave the building. The steps that import list write
+ * access as a prerequisite instead.
+ */
+const connectionAccessCheckDetail = computed(() => {
+  if(connectionIsWritable.value) {return ""}
+  if(!connectionAccessScopeId.value) {return "The connection's access level has not loaded yet."}
+
+  return "Shopify bulk imports are sent as GraphQL mutations, which a read-only connection refuses. Grant write access on the Shopify step."
+})
+
 const inventoryResetSetupDetail = computed(() => {
   if(inventoryResetSetupAvailability.value === "missing") {
     // Named from the status rather than written in, because this text tells an operator which seed
@@ -1179,8 +1194,10 @@ const canConfigureInventory = computed(() =>
   inventoryResetSetupAvailability.value === "available")
 const inventorySetupDirty = computed(() =>
   savedSetupSnapshots.inventory === null || savedSetupSnapshots.inventory !== captureInventorySetup().snapshot)
+// Saving preferences stays available on a read-only connection — those writes are local and valid.
+// Only the LOAD is gated, because it is the half that needs a Shopify mutation the connector refuses.
 const canLoadInventory = computed(() =>
-  canConfigureInventory.value && !inventorySetupDirty.value)
+  canConfigureInventory.value && !inventorySetupDirty.value && connectionIsWritable.value)
 const canConfigureOrders = computed(() =>
   !!selectedProductStoreId.value && !!linkedShopId.value &&
   !!onboarding.draft.orderHistoryStartDate && !!onboarding.draft.orderLaunchDate &&
@@ -1188,7 +1205,7 @@ const canConfigureOrders = computed(() =>
 const orderSetupDirty = computed(() =>
   savedSetupSnapshots.orders === null || savedSetupSnapshots.orders !== captureOrderSetup().snapshot)
 const canLoadOrders = computed(() =>
-  canConfigureOrders.value && !orderSetupDirty.value)
+  canConfigureOrders.value && !orderSetupDirty.value && connectionIsWritable.value)
 const shopifyConfigurationKnown = computed(() =>
   productStoreData.fetchStatus?.shopifyJobStatus === "success")
 const shopifyConfigurationFailed = computed(() =>
@@ -1241,10 +1258,18 @@ const orderDatesPersisted = computed(() =>
   dateTimeValue(onboarding.draft.orderLaunchDate) === orderLandmarkDates.value.launchDate)
 const productSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
   !productSetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
-    productPreferencesPersisted.value && ["productSync", "productBulkSend", "productBulkPoll"].every(jobReady),
+    productPreferencesPersisted.value && connectionIsWritable.value &&
+    ["productSync", "productBulkSend", "productBulkPoll"].every(jobReady),
   [
     syncCheck("product-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
     syncCheck("product-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "product-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      !!connectionAccessScopeId.value,
+      connectionAccessCheckDetail.value
+    ),
     syncCheck("product-identifier", "Global identifier", productPreferencesPersisted.value, productStoreConfigurationKnown.value),
     syncCheck("product-queue", "Queue update requests", jobReady("productSync"), shopifyConfigurationKnown.value),
     syncCheck("product-send", "Send update request", jobReady("productBulkSend"), shopifyConfigurationKnown.value),
@@ -1254,10 +1279,18 @@ const productSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syn
 ))
 const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
   !inventorySetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
-    mappedShopifyLocationCount.value > 0 && inventoryPreferencesPersisted.value && jobReady("inventoryReset"),
+    mappedShopifyLocationCount.value > 0 && inventoryPreferencesPersisted.value &&
+    connectionIsWritable.value && jobReady("inventoryReset"),
   [
     syncCheck("inventory-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
     syncCheck("inventory-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "inventory-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      !!connectionAccessScopeId.value,
+      connectionAccessCheckDetail.value
+    ),
     syncCheck(
       "inventory-mappings",
       "Shopify location mappings",
@@ -1281,10 +1314,18 @@ const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => s
 ))
 const orderSyncConfiguration = computed<OnboardingSyncConfiguration>(() => syncConfiguration(
   !orderSetupDirty.value && hasSelectedProductStore.value && hasLinkedShopifyShop.value &&
-    orderDatesPersisted.value && orderDateRangeValid.value && jobReady("orderImport") && jobReady("orderHistory"),
+    orderDatesPersisted.value && orderDateRangeValid.value && connectionIsWritable.value &&
+    jobReady("orderImport") && jobReady("orderHistory"),
   [
     syncCheck("order-store", "Product Store", selectedProductStoreLoaded.value, productStoreDetailsKnown.value),
     syncCheck("order-shop", "Shopify shop", hasLinkedShopifyShop.value, true),
+    syncCheck(
+      "order-access",
+      "Shopify write access",
+      connectionIsWritable.value,
+      !!connectionAccessScopeId.value,
+      connectionAccessCheckDetail.value
+    ),
     syncCheck(
       "order-dates",
       "Order import dates",

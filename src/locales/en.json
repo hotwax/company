@@ -40,6 +40,8 @@
   "Imports work, but nothing this store records will reach Shopify until write access is granted.": "Imports work, but nothing this store records will reach Shopify until write access is granted.",
   "Inventory feed to Shopify": "Inventory feed to Shopify",
   "Read and write": "Read and write",
+  "Shopify bulk imports are sent as GraphQL mutations, which a read-only connection refuses. Grant write access on the Shopify step.": "Shopify bulk imports are sent as GraphQL mutations, which a read-only connection refuses. Grant write access on the Shopify step.",
+  "Shopify write access": "Shopify write access",
   "The backend inventory job template has not been verified. Select Refresh before saving inventory preferences.": "The backend inventory job template has not been verified. Select Refresh before saving inventory preferences.",
   "The backend service-job template {templateJobName} is missing. Ask the backend owner to load the Shopify inventory seed data, then select Refresh.": "The backend service-job template {templateJobName} is missing. Ask the backend owner to load the Shopify inventory seed data, then select Refresh.",
   "The connection's access level has not loaded yet.": "The connection's access level has not loaded yet.",

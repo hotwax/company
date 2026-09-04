@@ -7,6 +7,8 @@ import { PRODUCT_STORE_ONBOARDING_STEPS } from "@/config/productStoreOnboarding"
 const harness = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
+  /** The linked connection's OMS-side access scope; read-write is the ordinary case. */
+  accessScope: "SHOP_RW_ACCESS",
   wizard: null as any,
   productStoreData: null as any,
   shops: null as any,
@@ -111,7 +113,11 @@ vi.mock("@/composables/useShopify", () => ({
     return {
       shop: computed(() => null),
       productStore: computed(() => null),
-      remote: computed(() => (remoteId.value ? { systemMessageRemoteId: remoteId.value } : null)),
+      // Read-write by default: that is an ordinary connected shop, and every initial load needs it
+      // because Shopify bulk queries are GraphQL mutations. Tests that care set harness.accessScope.
+      remote: computed(() => (remoteId.value
+        ? { systemMessageRemoteId: remoteId.value, accessScopeEnumId: harness.accessScope }
+        : null)),
       remoteId,
       remoteIds: computed(() => (remoteId.value ? [remoteId.value] : [])),
       shopId,
@@ -408,6 +414,7 @@ function trackedInitialLoadRequest(
 describe("ProductStoreOnboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    harness.accessScope = "SHOP_RW_ACCESS"
     harness.wizard = buildWizard()
     harness.productStoreData = buildProductStoreData()
     harness.shops = ref([])
@@ -1243,6 +1250,28 @@ describe("ProductStoreOnboarding", () => {
     expect((buttonNamed(wrapper, "Load inventory").element as any).disabled).toBe(false)
     expect(buttonNamed(wrapper, "Retry")).toBeUndefined()
   })
+
+  /**
+   * A read-only connection completes every form in this wizard and fails only later, inside a job on
+   * a fifteen-minute cron: `bulkOperationRunQuery` is a GraphQL mutation, and the connector answers
+   * "Cannot post graphQL mutation, only read access is enabled for Shopify". Nothing reached the
+   * operator, so the step is gated on write access up front instead.
+   */
+  it.each([
+    { stepId: "inventory" as const, loadLabel: "Load inventory" },
+    { stepId: "orders" as const, loadLabel: "Load order history" }
+  ])("blocks the $stepId load on a read-only connection and says why", async ({ stepId, loadLabel }) => {
+    harness.accessScope = "SHOP_READ_ACCESS"
+    configureExistingShopifySetup(stepId)
+    const wrapper = await mountView({ productStoreId: "STORE" })
+
+    expect(wrapper.text()).toContain("Shopify write access")
+    expect(wrapper.text()).toContain("Shopify bulk imports are sent as GraphQL mutations")
+    expect((buttonNamed(wrapper, loadLabel).element as any).disabled).toBe(true)
+    // Saving preferences is a local write and stays available; only the load needs the mutation.
+    expect(wrapper.text()).not.toContain("The sync request could not be tracked")
+  })
+
 
   /**
    * The defect this guards: the inventory load posts to the connector's `inventoryReset` resource,
