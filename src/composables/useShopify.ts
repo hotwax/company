@@ -4256,7 +4256,7 @@ export function useShopifyOrderSync() {
       parameter.parameterName === "fromDate"
         ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
         : parameter);
-    await updateJob({ jobName, serviceJobParameters: swapped });
+    await updateJob({ jobName, serviceJobParameters: swapped }, { skipRefresh: true });
     try {
       const resp: any = await runJobNow(jobName);
       const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
@@ -4264,7 +4264,7 @@ export function useShopifyOrderSync() {
 
       return result;
     } finally {
-      await updateJob({ jobName, serviceJobParameters: baseline });
+      await updateJob({ jobName, serviceJobParameters: baseline }, { skipRefresh: true });
       await refreshAfterMutation("serviceJob", { jobName });
     }
   }
