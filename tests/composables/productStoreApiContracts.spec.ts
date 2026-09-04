@@ -44,8 +44,7 @@ vi.mock("@/composables/sessionScope", () => ({
   onSessionCleared: vi.fn(),
 }));
 
-import { useProductStoreData } from "@/composables/useProductStores";
-import { useProductStoreMutations } from "@/composables/useProductStores";
+import { useProductStoreData, useProductStoreMutations } from "@/composables/useProductStores";
 
 describe("Product Store API contracts", () => {
   beforeEach(() => {
