@@ -69,9 +69,6 @@ vi.mock("@/composables/useProductStoreOnboardingWizard", () => ({
   useProductStoreOnboardingWizard: () => harness.wizard
 }))
 
-vi.mock("@/composables/useProductStoreData", () => ({
-  useProductStoreData: () => harness.productStoreData
-}))
 
 vi.mock("@/composables/useProductStoreOnboardingInitialLoad", () => ({
   useProductStoreOnboardingInitialLoad: (_shopIdSource: unknown, requestSource: unknown) => {
@@ -82,6 +79,8 @@ vi.mock("@/composables/useProductStoreOnboardingInitialLoad", () => ({
 }))
 
 vi.mock("@/composables/useProductStores", () => ({
+  // `useProductStoreData` was merged into this module; the standalone one it used to live in is gone.
+  useProductStoreData: () => harness.productStoreData,
   useProductStoreCreation: () => ({ createStore: vi.fn() }),
   useProductStoreMutations: () => ({
     updateStore: harness.updateStore,
@@ -118,7 +117,8 @@ vi.mock("@/composables/useServiceJobs", () => ({
 
 vi.mock("@/composables/useFacilities", () => ({
   useFacilities: () => ({ facilities: ref([]) }),
-  useFacilityCreation: () => ({ createFacility: vi.fn() })
+  // #390 merged useFacilityCreation into useFacilityMutations; the old export no longer exists.
+  useFacilityMutations: () => ({ createFacility: vi.fn() })
 }))
 
 vi.mock("@/composables/useSeed", () => ({

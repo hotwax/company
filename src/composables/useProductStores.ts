@@ -913,6 +913,12 @@ function initialState() {
     company: {} as any,
     fetchStatus: {
       productStores: 'none',
+      // Per-resource statuses the product store onboarding wizard gates its loading and error UI on.
+      // The cached reads elsewhere use `hydrated`, but these three are live fetches with no cache
+      // domain behind them, so the wizard has nothing else to distinguish "loading" from "failed".
+      productStoreDetails: 'none',
+      currentStoreSettings: 'none',
+      facilities: 'none',
       shopifyJobStatus: 'none',
       lastFetched: 0
     }
@@ -981,6 +987,7 @@ async function fetchProductStores(payload: any = { fetchCounts: false }) {
 
 async function fetchProductStoreDetails(productStoreId: string) {
   let current = {} as any
+  state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}`,
@@ -991,7 +998,9 @@ async function fetchProductStoreDetails(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, productStoreDetails: 'error' }
     logger.error(error)
   }
   state.current = current
@@ -1018,6 +1027,7 @@ async function fetchProductStoresShipmentMethodCount(): Promise<Record<string, n
 
 async function fetchCurrentStoreSettings(productStoreId: string) {
   const storeSettings: any = {}
+  state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}/settings`,
@@ -1032,14 +1042,53 @@ async function fetchCurrentStoreSettings(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, currentStoreSettings: 'error' }
     logger.error(error)
   }
   state.currentStoreSettings = storeSettings
 }
 
+/**
+ * The two system properties that date a shop's order sync: how far back history is imported, and when
+ * live order sync starts. Written one at a time because the endpoint takes one property per call; the
+ * ids already saved ride on the thrown error so a partial failure can be reported precisely.
+ *
+ * Lives here rather than in the onboarding view because it is a product-store-scoped write, and it is
+ * the wizard's only remaining caller after the composable merge.
+ */
+async function saveProductStoreShopifyOrderDates(payload: {
+  shopId: string
+  historyStartDate: string
+  launchDate: string
+}) {
+  const savedSystemPropertyIds: string[] = []
+  const properties = [
+    { systemPropertyId: "orderSyncHistory.lastSyncDate", systemPropertyValue: payload.historyStartDate },
+    { systemPropertyId: "newOrderSync.launchDate", systemPropertyValue: payload.launchDate }
+  ]
+
+  try {
+    for(const property of properties) {
+      await requireApiResponse({
+        url: "admin/systemProperties",
+        method: "put",
+        data: { systemResourceId: payload.shopId, ...property }
+      })
+      savedSystemPropertyIds.push(property.systemPropertyId)
+    }
+  } catch (error: any) {
+    error.savedSystemPropertyIds = savedSystemPropertyIds
+    throw error
+  }
+
+  return buildSuccessResponse({ savedSystemPropertyIds })
+}
+
 async function fetchProductStoreFacilities(productStoreId: string) {
   let facilities: any[] = []
+  state.fetchStatus = { ...state.fetchStatus, facilities: 'pending' }
   try {
     const resp = await api({
       url: `admin/productStores/${productStoreId}/facilities`,
@@ -1051,7 +1100,9 @@ async function fetchProductStoreFacilities(productStoreId: string) {
     } else {
       throw resp.data
     }
+    state.fetchStatus = { ...state.fetchStatus, facilities: 'success', lastFetched: Date.now() }
   } catch (error: any) {
+    state.fetchStatus = { ...state.fetchStatus, facilities: 'error' }
     logger.error(error)
   }
   state.currentFacilities = facilities
@@ -1408,6 +1459,7 @@ export function useProductStoreData() {
     runProductStoreShopifyProductImport,
     runProductStoreShopifyInventoryReset,
     runProductStoreShopifyOrderHistoryImport,
+    saveProductStoreShopifyOrderDates,
     setupProductStoreShopifyOrderImport,
     setupProductStoreShopifyRealtimeOrderImport,
     fetchCompany,

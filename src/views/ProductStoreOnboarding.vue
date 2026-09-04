@@ -694,8 +694,8 @@ import type {
   OnboardingSyncRun
 } from "@/components/product-store-onboarding/OnboardingSyncStatus.types"
 import OnboardingSyncStatus from "@/components/product-store-onboarding/OnboardingSyncStatus.vue"
-import { useFacilities, useFacilityCreation } from "@/composables/useFacilities"
-import { useProductStoreData } from "@/composables/useProductStoreData"
+import { useFacilities, useFacilityMutations } from "@/composables/useFacilities"
+import { useProductStoreData } from "@/composables/useProductStores"
 import {
   type OnboardingInitialLoadKind,
   type OnboardingInitialLoadSnapshot,
@@ -734,7 +734,7 @@ const { shops: cachedShopifyShops, hydrated: shopifyShopsHydrated } = useShopify
 const { currencies } = useCurrencies()
 const { values: productIdentifierOptions } = useTypedEnums("SHOP_PROD_IDENTITY")
 const { facilities: allFacilities } = useFacilities()
-const { createFacility } = useFacilityCreation()
+const { createFacility } = useFacilityMutations()
 const { organizationPartyId, loadOrganizationPartyId, bootstrapOrganization } = useOrganization()
 const { loadTimeZones } = useTimeZones()
 
