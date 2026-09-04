@@ -501,18 +501,27 @@ describe("ProductStoreOnboarding", () => {
   it.each([
     {
       evidence: "missing",
-      detail: "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh."
+      // Names the template from the job status, so the operator is sent after the seed data setup
+      // actually clones rather than a hardcoded name that drifted away from it.
+      detail: "The backend service-job template resetShopifyInventoryQoh is missing. Ask the backend owner to load the Shopify inventory seed data, then select Refresh."
     },
     {
       evidence: "unknown",
-      detail: "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences."
+      detail: "The backend inventory job template has not been verified. Select Refresh before saving inventory preferences."
     }
   ])("disables inventory Save and explains $evidence template evidence", async ({ evidence, detail }) => {
     configureExistingShopifySetup("inventory")
     if(evidence === "missing") {
       harness.productStoreData.currentShopifyJobStatus.jobs = harness.productStoreData.currentShopifyJobStatus.jobs.map((job: any) => {
         if(job.key === "inventoryReset") {
-          return { ...job, ready: false, status: "missing-template", templateExists: false, expectedJobExists: false }
+          return {
+            ...job,
+            ready: false,
+            status: "missing-template",
+            templateJobName: "resetShopifyInventoryQoh",
+            templateJob: null,
+            expectedJob: null
+          }
         }
 
         return job

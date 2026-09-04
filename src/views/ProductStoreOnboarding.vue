@@ -1150,17 +1150,26 @@ const inventoryResetSetupAvailability = computed<"available" | "missing" | "unkn
 
   const job = inventoryResetJobStatus.value
   if(!job) {return "unknown"}
-  if(job.ready === true || job.templateExists === true || job.expectedJobExists === true ||
+  // `templateJob` / `expectedJob` are the projection's own fields. An earlier pair of booleans
+  // (`templateExists` / `expectedJobExists`) is long gone, so those clauses were dead and only the
+  // status string still decided this.
+  if(job.ready === true || !!job.templateJob || !!job.expectedJob ||
     job.status === "template-ready") {return "available"}
 
   return job.status === "missing-template" ? "missing" : "unknown"
 })
 const inventoryResetSetupDetail = computed(() => {
   if(inventoryResetSetupAvailability.value === "missing") {
-    return "The backend template sync_ShopifyInventoryReset is missing. Ask the backend owner to load the Shopify inventory reset seed data, then select Refresh."
+    // Named from the status rather than written in, because this text tells an operator which seed
+    // data to ask for. It used to name `sync_ShopifyInventoryReset` while setup cloned a different
+    // template, which would have sent them after the wrong one.
+    return translate(
+      "The backend service-job template {templateJobName} is missing. Ask the backend owner to load the Shopify inventory seed data, then select Refresh.",
+      { templateJobName: String(inventoryResetJobStatus.value?.templateJobName || "") }
+    )
   }
   if(inventoryResetSetupAvailability.value === "unknown") {
-    return "The backend inventory reset template has not been verified. Select Refresh before saving inventory preferences."
+    return "The backend inventory job template has not been verified. Select Refresh before saving inventory preferences."
   }
 
   return ""
@@ -1258,7 +1267,10 @@ const inventorySyncConfiguration = computed<OnboardingSyncConfiguration>(() => s
     syncCheck("inventory-preferences", "Inventory preferences", inventoryPreferencesPersisted.value, productStoreConfigurationKnown.value),
     syncCheck(
       "inventory-job",
-      "Initial inventory import",
+      // Reads job readiness, so it must not be named after the import. Labelled "Initial inventory
+      // import", it showed Complete the moment setup was saved and nothing had been imported —
+      // directly contradicting the run panel below it, which correctly said Not started.
+      "Inventory feed to Shopify",
       jobReady("inventoryReset"),
       inventoryResetSetupAvailability.value !== "unknown",
       inventoryResetSetupDetail.value
