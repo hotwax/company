@@ -31,6 +31,7 @@ vi.mock("vue-router", () => ({
 }));
 
 vi.mock("@common", () => ({
+  useProducts: () => ({ products: ref(new Map()), resolve: vi.fn(), reset: vi.fn() }),
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
   },
@@ -125,6 +126,11 @@ vi.mock("@/composables/useVirtualRows", () => ({
 }));
 
 vi.mock("@/composables/useShopify", () => ({
+  useInventoryEventSources: () => ({
+    sources: ref(new Map()),
+    resolve: vi.fn(),
+    sourceKeyOf: (eventTypeId: string, eventReferenceId: string) => `${eventTypeId}|${eventReferenceId}`,
+  }),
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH: "push",

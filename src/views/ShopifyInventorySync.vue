@@ -1240,7 +1240,7 @@ import {
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import cronstrue from "cronstrue";
-import { commonUtil, logger, translate } from "@common";
+import { commonUtil, logger, translate, useProducts } from "@common";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { useCachedList } from "@/composables/useCachedList";
@@ -1267,6 +1267,8 @@ import {
   useShopifyShopMutations,
   useShopifySyncContext,
   type InventoryEventDocument,
+  useInventoryEventSources,
+  type InventoryEventSourceLookup,
 } from "@/composables/useShopify";
 import {
   dataFeedCache,
@@ -1277,8 +1279,6 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
-import { useEventSourceNames, type SourceLookup } from "@/composables/useEventSourceNames";
-import { useProductNames } from "@/composables/useProductNames";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -1469,8 +1469,8 @@ watch(() => syncContext.shopId?.value, (shopId) => {
   if (shopId) void loadShopifyLocationNames();
 }, { immediate: true });
 
-const { products: resolvedProducts, resolve: resolveProductNames } = useProductNames();
-const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = useEventSourceNames();
+const { products: resolvedProducts, resolve: resolveProductNames } = useProducts();
+const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = useInventoryEventSources();
 
 /** Effective member facilities of a channel's group, which is what a scoped lookup can search. */
 const facilityIdsByGroup = computed(() => {
@@ -1486,7 +1486,7 @@ const facilityIdsByGroup = computed(() => {
   return byGroup;
 });
 
-function lookupFor(event: InventoryEvent): SourceLookup {
+function lookupFor(event: InventoryEvent): InventoryEventSourceLookup {
   const channel = allInventoryChannels.value.find((candidate: any) =>
     String(candidate.inventoryChannelId) === event.inventoryChannelId);
   return {
