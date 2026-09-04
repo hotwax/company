@@ -2598,6 +2598,7 @@
   "This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.": "This is the name of the OMS you are connected to right now. Make sure that you are connected to the right instance before proceeding.",
   "This is the OMS-side connection that proxies every Klaviyo call.": "This is the OMS-side connection that proxies every Klaviyo call.",
   "This job is paused. Resume it to keep scheduled product sync running.": "This job is paused. Resume it to keep scheduled product sync running.",
+  "This lookup failed repeatedly and is no longer being retried.": "This lookup failed repeatedly and is no longer being retried.",
   "This might take a moment...": "This might take a moment...",
   "This organization has multiple active parents. Resolve the data conflict before moving it.": "This organization has multiple active parents. Resolve the data conflict before moving it.",
   "This organization participates in invalid hierarchy data. Moving is disabled until the conflict is resolved.": "This organization participates in invalid hierarchy data. Moving is disabled until the conflict is resolved.",
