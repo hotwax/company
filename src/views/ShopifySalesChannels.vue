@@ -140,11 +140,11 @@ async function editItem(id: string) {
 }
 
 async function saveMapping(salesChannelEnumId: string) {
-  const newMappedKey = localMappings.value[salesChannelEnumId];
+  const newMappedKey = (localMappings.value[salesChannelEnumId] || "").trim();
   const oldMappedKey = getShopifyMappingId(salesChannelEnumId);
 
-  if (!newMappedKey) {
-    commonUtil.showToast(translate("Please provide a Shopify order source name"));
+  if (!newMappedKey && !oldMappedKey) {
+    editingItemId.value = "";
     return;
   }
 
@@ -157,19 +157,21 @@ async function saveMapping(salesChannelEnumId: string) {
       }, { refresh: false });
     }
 
-    const resp = await shopMutations.saveTypeMapping({
-      mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-      mappedKey: newMappedKey,
-      mappedValue: salesChannelEnumId
-    }, { refresh: false });
+    if (newMappedKey) {
+      const resp = await shopMutations.saveTypeMapping({
+        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
+        mappedKey: newMappedKey,
+        mappedValue: salesChannelEnumId
+      }, { refresh: false });
 
-    if (!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopMutations.refreshTypeMappings();
-      editingItemId.value = "";
-    } else {
-      throw resp.data;
+      if (commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
+
+    commonUtil.showToast(translate("Mapping updated successfully"));
+    await shopMutations.refreshTypeMappings();
+    editingItemId.value = "";
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update mapping"));
@@ -194,11 +196,13 @@ async function saveAllDirtyMappings() {
 
     await Promise.all(dirtyIds.map(async (id) => {
       const newMappedKey = localMappings.value[id];
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_ORDER_SOURCE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }));
 
     await shopMutations.refreshTypeMappings();
