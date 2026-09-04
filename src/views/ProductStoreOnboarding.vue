@@ -576,9 +576,6 @@
               <ion-note class="ion-text-wrap">
                 {{ translate("The first order sync takes every open order that is still unfulfilled or part fulfilled, whatever its date. Later syncs pick up whatever changed since the one before.") }}
               </ion-note>
-              <ion-note class="ion-text-wrap">
-                {{ translate("Only open and unfulfilled orders will be downloaded") }}
-              </ion-note>
               <onboarding-sync-status
                 subtitle="Monitor each step as order history gets imported from Shopify"
                 :configuration="orderSyncConfiguration"
