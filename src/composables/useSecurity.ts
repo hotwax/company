@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, client, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
@@ -228,4 +228,29 @@ export async function updateUserGroup(payload: { userGroupId: string; descriptio
   });
   if (!commonUtil.hasError(resp)) await resyncDomain("userGroup");
   return resp;
+}
+
+export function usePasswordReset() {
+  async function resetPassword(userId: string, maarg: string, payload: Record<string, any>): Promise<any> {
+    const getBaseURL = () => {
+      if (maarg.startsWith("http")) {
+        const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+        return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+      }
+      return `https://${maarg}.hotwax.io/rest/s1/`;
+    };
+
+    // The emailed link only carries an API host reference (maarg), never a session -
+    // requests here must not depend on cookies/auth state, so we build an explicit
+    // baseURL and use the unauthenticated `client` instead of the app-wide `api()` helper.
+
+    return client({
+      baseURL: getBaseURL(),
+      url: `admin/users/${userId}/changePassword`,
+      method: "post",
+      data: payload
+    });
+  }
+
+  return { resetPassword };
 }
