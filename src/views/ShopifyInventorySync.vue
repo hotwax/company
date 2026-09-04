@@ -652,7 +652,7 @@
               <ion-icon slot="start" :icon="warningOutline" color="warning" />
               <ion-label class="ion-text-wrap">
                 {{ translate("Batches can mix event types") }}
-                <p>{{ translate("The publisher groups by {fields}, which leaves out event type. Any batch holding more than one kind of event must publish under correction, because no other reason is true about it.", { fields: publisherGroupBy.join(", ") }) }}</p>
+                <p>{{ translate("The publisher groups by {fields}, which leaves out event type. Any batch holding more than one kind of event must publish under correction, because no other reason is true about it.", { fields: mixingGroupByFields.join(", ") }) }}</p>
               </ion-label>
             </ion-item>
           </ion-card>
@@ -1396,6 +1396,8 @@ interface Batch {
   mixedEventTypes: boolean;
   reason: string;
   reasonMapped: boolean;
+  /** The raw ledger rows behind the batch, so a filtered view can restate its summed entries. */
+  details: any[];
   /** Rejected or cancelled: nothing will retry this batch on its own. */
   terminalFailure: boolean;
   messageText?: string;
@@ -2395,6 +2397,8 @@ const batches = computed<Batch[]>(() => {
       id,
       statusId,
       ...state,
+      // Kept so a filtered view can restate the entries from the rows that actually matched.
+      details,
       // Nothing retries a rejected or cancelled batch; a person has to act on it.
       terminalFailure: isDeliveryTerminalFailure(statusId),
       created: createdAt ? formatDateTime(createdAt) : "Unknown",
@@ -2589,14 +2593,24 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
  */
 const PUBLISHER_DEFAULT_GROUP_BY = ["inventoryChannelId", "shopifyInventoryItemId", "eventTypeId"];
 
-const publisherGroupBy = computed<string[]>(() => {
-  for(const job of pendingPublisherJobs.value) {
-    const configured = String(parameterMap(job).groupByFields ?? "").trim();
-    if(configured) {return configured.split(",").map((field) => field.trim()).filter(Boolean);}
-  }
+/**
+ * The batch boundary FOR ONE CHANNEL. `groupByFields` is a parameter on that channel's own drain job,
+ * so two channels on the same connection can be configured differently. Taking the first configured
+ * job's grouping and applying it to every channel previewed one of them the way its own publisher
+ * will not batch it.
+ */
+function publisherGroupByFor(channelId: unknown): string[] {
+  const job = findChannelPublisherJob(String(channelId ?? ""));
+  const configured = job ? String(parameterMap(job).groupByFields ?? "").trim() : "";
 
-  return PUBLISHER_DEFAULT_GROUP_BY;
-});
+  return configured
+    ? configured.split(",").map((field) => field.trim()).filter(Boolean)
+    : PUBLISHER_DEFAULT_GROUP_BY;
+}
+
+/** Each channel's grouping, so the copy below describes them without re-reading the jobs per row. */
+const publisherGroupingByChannel = computed(() => new Map<string, string[]>(inventoryChannels.value
+  .map((channel: any) => [String(channel.inventoryChannelId), publisherGroupByFor(channel.inventoryChannelId)])));
 
 /**
  * With eventTypeId out of the grouping, one message can hold a receipt and a POS sale, and the batcher
@@ -2604,7 +2618,12 @@ const publisherGroupBy = computed<string[]>(() => {
  * configuration choice with a visible cost, so the page says so rather than letting the reason quietly
  * degrade.
  */
-const batchesWillMixEventTypes = computed(() => !publisherGroupBy.value.includes("eventTypeId"));
+const batchesWillMixEventTypes = computed(() => [...publisherGroupingByChannel.value.values()]
+  .some((fields) => !fields.includes("eventTypeId")));
+
+/** The fields named in the warning: the union across only the channels that actually drop event type. */
+const mixingGroupByFields = computed(() => [...new Set([...publisherGroupingByChannel.value.values()]
+  .filter((fields) => !fields.includes("eventTypeId")).flat())]);
 
 const eventByRowKey = computed(() => new Map(inventoryEvents.value.map((event) => [event.rowKey, event])));
 
@@ -2622,36 +2641,55 @@ function eventsFor(details: any[]): InventoryEvent[] {
  * Oldest group first: that is the order the publisher drains, because it picks the oldest pending group
  * on each run.
  */
+/**
+ * Everything about a group that depends on WHICH rows it holds.
+ *
+ * Split out because a search or status filter matching only part of a group changes what that group
+ * would publish: the summed change entries, the count, the age and the reason are facts about the
+ * matching rows, not about the whole group. Left whole, the card showed a summed delta and an event
+ * count for rows the filter had already hidden.
+ */
+function summariseGroupRows(rows: any[]) {
+  const { reason, mapped, mixed } = reasonForGroup(rows);
+  const eventTypeIds = new Set(rows.map((row: any) => String(row.eventTypeId ?? "")));
+  const timestamps = rows.map((row: any) => toMillis(row.createdDate)).filter(Boolean);
+  const oldestAt = timestamps.length ? Math.min(...timestamps) : 0;
+
+  return {
+    type: mixed ? translate("{count} event types mixed", { count: eventTypeIds.size }) : eventTypeLabel(rows[0]),
+    mixedEventTypes: mixed,
+    reason,
+    reasonMapped: mapped,
+    entries: changeEntriesOf(rows),
+    eventCount: rows.length,
+    oldestAt,
+    oldestAge: oldestAt ? formatAge(oldestAt) : translate("Unknown"),
+    events: eventsFor(rows),
+  };
+}
+
 const waitingBatches = computed(() => {
   const pending = inventoryDetails.value.filter(isWaitingDetail);
   const grouped = new Map<string, any[]>();
   for(const detail of pending) {
-    const key = publisherGroupBy.value.map((field) => `${field}=${detail[field] ?? ""}`).join(", ");
+    // Scoped by channel first: a channel has its own drain job, so a group never spans two, whatever
+    // that job's `groupByFields` happens to list.
+    const channelId = String(detail.inventoryChannelId ?? "");
+    const fields = publisherGroupByFor(channelId).filter((field) => field !== "inventoryChannelId");
+    const key = [`inventoryChannelId=${channelId}`,
+      ...fields.map((field) => `${field}=${detail[field] ?? ""}`)].join(", ");
     const bucket = grouped.get(key);
     if(bucket) {bucket.push(detail);} else {grouped.set(key, [detail]);}
   }
 
-  return [...grouped.entries()].map(([key, rows]) => {
-    const { reason, mapped, mixed } = reasonForGroup(rows);
-    const eventTypeIds = new Set(rows.map((row: any) => String(row.eventTypeId ?? "")));
-    const timestamps = rows.map((row: any) => toMillis(row.createdDate)).filter(Boolean);
-    const oldestAt = timestamps.length ? Math.min(...timestamps) : 0;
-
-    return {
-      id: key,
-      channel: channelLabel(rows[0]),
-      inventoryChannelId: String(rows[0].inventoryChannelId ?? ""),
-      type: mixed ? translate("{count} event types mixed", { count: eventTypeIds.size }) : eventTypeLabel(rows[0]),
-      mixedEventTypes: mixed,
-      reason,
-      reasonMapped: mapped,
-      entries: changeEntriesOf(rows),
-      eventCount: rows.length,
-      oldestAt,
-      oldestAge: oldestAt ? formatAge(oldestAt) : translate("Unknown"),
-      events: eventsFor(rows),
-    };
-  }).sort((a, b) => a.oldestAt - b.oldestAt);
+  return [...grouped.entries()].map(([key, rows]) => ({
+    id: key,
+    channel: channelLabel(rows[0]),
+    inventoryChannelId: String(rows[0].inventoryChannelId ?? ""),
+    // Kept so a filtered view can restate the summary from the rows that actually matched.
+    rows,
+    ...summariseGroupRows(rows),
+  })).sort((a, b) => a.oldestAt - b.oldestAt);
 });
 
 /** SECTION 2 -- batches the OMS has produced but Shopify has not confirmed, including outright failures. */
@@ -3074,11 +3112,24 @@ function sortEvents(events: InventoryEvent[]): InventoryEvent[] {
 const visibleRowKeys = computed(() => new Set(filteredEvents.value.map((event) => event.rowKey)));
 
 const visibleWaitingBatches = computed(() => waitingBatches.value
-  .map((group) => ({ ...group, events: group.events.filter((event) => visibleRowKeys.value.has(event.rowKey)) }))
-  .filter((group) => group.events.length));
+  .flatMap((group) => {
+    const rows = group.rows.filter((row: any) => visibleRowKeys.value.has(rowKeyOf(row)));
+    if(!rows.length) {return [];}
+
+    // An unfiltered group keeps its summary; a partially matched one restates it from those rows.
+    return [rows.length === group.rows.length ? group : { ...group, rows, ...summariseGroupRows(rows) }];
+  })
+  .sort((a, b) => a.oldestAt - b.oldestAt));
 
 const visibleInFlightBatches = computed(() => inFlightBatches.value
-  .filter((batch: any) => filteredEvents.value.some((event) => event.batchId === batch.id)));
+  .flatMap((batch: any) => {
+    const details = batch.details.filter((detail: any) => visibleRowKeys.value.has(rowKeyOf(detail)));
+    if(!details.length) {return [];}
+    if(details.length === batch.details.length) {return [batch];}
+
+    // Same rule as the waiting groups: a filtered batch shows the matching rows' entries.
+    return [{ ...batch, details, entries: changeEntriesOf(details), eventCount: details.length }];
+  }));
 
 const visibleQuarantinedEvents = computed(() => sortEvents(quarantinedEvents.value
   .filter((event) => visibleRowKeys.value.has(event.rowKey))));

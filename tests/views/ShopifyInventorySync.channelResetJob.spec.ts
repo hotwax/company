@@ -450,3 +450,111 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     expect(wrapper.text()).not.toContain("Every batch produced for this connection has reached Shopify.");
   });
 });
+
+describe("ShopifyInventorySync - a group summarises the rows it actually holds", () => {
+  const PUBLISH_SERVICE = "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments";
+
+  const publisherJob = (channelId: string, groupByFields?: string) => ({
+    jobName: `publish_PendingShopifyInventoryAdjustments_${channelId}`,
+    serviceName: PUBLISH_SERVICE,
+    paused: "N",
+    serviceJobParameters: [
+      { parameterName: "inventoryChannelId", parameterValue: channelId },
+      ...(groupByFields ? [{ parameterName: "groupByFields", parameterValue: groupByFields }] : []),
+    ],
+  });
+
+  const pendingRow = (over: Record<string, any>) => ({
+    detailStatusId: "DETAIL_PENDING",
+    systemMessageId: "",
+    inventoryChannelId: "IC_1001",
+    shopifyInventoryItemId: "ITEM_1",
+    eventTypeId: "RECEIPT",
+    computedInventoryChange: 1,
+    createdDate: 1000,
+    ...over,
+  });
+
+  const mountHistory = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "history" as const },
+      global: {
+        stubs: {
+          IonModal: { template: "<div><slot /></div>" },
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  beforeEach(() => {
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedMessages.value = [];
+    cachedJobs.value = [publisherJob("IC_1001")];
+    cachedChannels.value = [{
+      inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
+      facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
+    }];
+  });
+
+  /**
+   * A filter that matches part of a group changes what that group would publish, so its summed entries
+   * and count have to be restated. Left whole, the card showed a delta for rows the filter had hidden.
+   */
+  it("restates a partially matched group's count and summed delta from the matching rows", async () => {
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_KEEP" }),
+      pendingRow({ eventReferenceId: "R_HIDE" }),
+    ];
+    const wrapper = await mountHistory();
+
+    // Both rows group together, so the card speaks for two events and a summed +2.
+    expect(wrapper.text()).toContain("2 events");
+    expect(wrapper.text()).toContain("+2");
+
+    wrapper.findComponent({ name: "IonSearchbar" }).vm.$emit("update:modelValue", "R_KEEP");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("1 events");
+    expect(wrapper.text()).toContain("+1");
+    expect(wrapper.text()).not.toContain("+2");
+  });
+
+  /**
+   * `groupByFields` is a parameter on each channel's OWN drain job. Applying the first configured job's
+   * grouping to every channel previewed one of them the way its own publisher will not batch it.
+   */
+  it("groups each channel by its own publisher job's groupByFields", async () => {
+    cachedChannels.value = [
+      { inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Splits By Type", shopifyLocationId: "LOC_1", fromDate: 1000 },
+      { inventoryChannelId: "IC_1002", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Mixes Types", shopifyLocationId: "LOC_2", fromDate: 1000 },
+    ];
+    cachedJobs.value = [
+      // Keeps event type in the boundary: two event types stay in two groups.
+      publisherJob("IC_1001", "inventoryChannelId,shopifyInventoryItemId,eventTypeId"),
+      // Drops it: the same two event types land in ONE group and must publish under correction.
+      publisherJob("IC_1002", "inventoryChannelId,shopifyInventoryItemId"),
+    ];
+    cachedAdjustmentDetails.value = [
+      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A1", eventTypeId: "RECEIPT" }),
+      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A2", eventTypeId: "POS_ISSUANCE" }),
+      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B1", eventTypeId: "RECEIPT" }),
+      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B2", eventTypeId: "POS_ISSUANCE" }),
+    ];
+    const wrapper = await mountHistory();
+
+    // Only the channel that dropped event type reports a mixed group.
+    expect(wrapper.text()).toContain("2 event types mixed");
+    expect(wrapper.text().match(/2 event types mixed/g)?.length).toBe(1);
+    // And the warning names only the fields of the channel that actually drops it.
+    expect(wrapper.text()).toContain("Batches can mix event types");
+  });
+});
