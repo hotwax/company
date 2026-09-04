@@ -88,7 +88,9 @@
               <!-- The rollup badge that used to head its own card. Every job's status is listed
                    below it, so this is the summary of the rows it sits on rather than a second
                    place to read the same schedules. -->
-              <ion-badge :color="scheduleHealthColor">{{ scheduleHealth }}</ion-badge>
+              <ion-badge :color="scheduleHealthColor">
+                {{ scheduleHealth }}
+              </ion-badge>
             </ion-card-header>
             <ion-list lines="full">
               <ion-item
@@ -116,7 +118,9 @@
                   @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                 >
                   <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
-                  <template v-else>{{ translate("Set up") }}</template>
+                  <template v-else>
+                    {{ translate("Set up") }}
+                  </template>
                 </ion-button>
                 <ion-badge slot="end" :color="job.badgeColor">
                   {{ job.status }}
@@ -141,8 +145,10 @@
           <ion-card v-if="!inventoryChannels.length">
             <ion-item lines="none">
               <ion-label class="ion-text-wrap">
-                <p>No inventory channels are mapped for this connection. Aggregate inventory
-                   cannot be published until a facility group is mapped to a Shopify location.</p>
+                <p>
+                  No inventory channels are mapped for this connection. Aggregate inventory
+                  cannot be published until a facility group is mapped to a Shopify location.
+                </p>
               </ion-label>
             </ion-item>
           </ion-card>
@@ -201,7 +207,9 @@
                     @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                   >
                     <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
-                    <template v-else>{{ translate("Set up") }}</template>
+                    <template v-else>
+                      {{ translate("Set up") }}
+                    </template>
                   </ion-button>
                   <ion-badge slot="end" :color="job.badgeColor">
                     {{ job.status }}
@@ -290,7 +298,9 @@
                   Event sources unavailable
                   <p>{{ documentsError }}</p>
                 </ion-label>
-                <ion-button slot="end" fill="outline" @click="resyncEventDocuments()">Retry</ion-button>
+                <ion-button slot="end" fill="outline" @click="resyncEventDocuments()">
+                  Retry
+                </ion-button>
               </ion-item>
 
               <ion-item v-for="doc in inventoryEventDocuments" :key="doc.dataDocumentId">
@@ -299,7 +309,9 @@
                   <p>{{ doc.primaryEntityName || doc.dataDocumentId }}</p>
                   <!-- A document the OMS has never heard of cannot be attached, and calling it
                        "off" would send someone hunting for a toggle that will not help. -->
-                  <p v-if="doc.missing">Not loaded on this OMS &mdash; run the connector's seed data</p>
+                  <p v-if="doc.missing">
+                    Not loaded on this OMS &mdash; run the connector's seed data
+                  </p>
                 </ion-label>
                 <ion-toggle
                   slot="end"
@@ -677,8 +689,12 @@
               <ion-item v-if="!group.reasonMapped" lines="full">
                 <ion-icon slot="start" :icon="warningOutline" color="warning" />
                 <ion-label class="ion-text-wrap">
-                  <p v-if="group.mixedEventTypes">{{ translate("This group holds more than one event type, so no single Shopify reason is true about it and the batch falls back to correction.") }}</p>
-                  <p v-else>{{ translate("This event type has no Shopify reason mapped, so the batch falls back to correction. Map it by editing the event type row in the OMS, and the next batch picks it up.") }}</p>
+                  <p v-if="group.mixedEventTypes">
+                    {{ translate("This group holds more than one event type, so no single Shopify reason is true about it and the batch falls back to correction.") }}
+                  </p>
+                  <p v-else>
+                    {{ translate("This event type has no Shopify reason mapped, so the batch falls back to correction. Map it by editing the event type row in the OMS, and the next batch picks it up.") }}
+                  </p>
                 </ion-label>
               </ion-item>
 
@@ -725,7 +741,9 @@
                       </ion-label>
                       <div slot="end" class="entry-outcome">
                         <ion-note>{{ event.change }}</ion-note>
-                        <ion-badge v-if="event.sourcePhase" color="medium">{{ event.sourcePhase }}</ion-badge>
+                        <ion-badge v-if="event.sourcePhase" color="medium">
+                          {{ event.sourcePhase }}
+                        </ion-badge>
                       </div>
                     </ion-item>
                     <ion-item v-if="group.events.length > shownInGroup(group.id)" lines="none">
@@ -809,7 +827,9 @@
                     <p>{{ entry.productSku }}</p>
                     <p>{{ translate("{location}, item {item}", { location: entry.locationLabel, item: entry.shopifyInventoryItem }) }}</p>
                   </ion-label>
-                  <ion-note slot="end">{{ entry.change }}</ion-note>
+                  <ion-note slot="end">
+                    {{ entry.change }}
+                  </ion-note>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-button fill="clear" @click="selectedBatch = batch">
@@ -872,11 +892,17 @@
                 >
                   <ion-label class="ion-text-wrap">
                     {{ event.type }}
-                    <p>{{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}<template v-if="event.productSku"> ({{ event.productSku }})</template></p>
+                    <p>
+                      {{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}<template v-if="event.productSku">
+                        ({{ event.productSku }})
+                      </template>
+                    </p>
                     <p>{{ translate("{source}, at {location}", { source: sourceLine(event), location: event.locationLabel }) }}</p>
                     <p>{{ event.calculation || translate("No calculation comment recorded") }}</p>
                   </ion-label>
-                  <ion-note slot="end">{{ event.change }}</ion-note>
+                  <ion-note slot="end">
+                    {{ event.change }}
+                  </ion-note>
                 </ion-item>
               </ion-list>
             </ion-card>
@@ -944,7 +970,9 @@
                       <ion-label class="ion-text-wrap">
                         <span class="overline mobile-only">{{ translate("Location") }}</span>
                         <span class="event-type">{{ event.locationLabel }}</span>
-                        <p v-if="event.retargetLocationId">{{ translate("Channel has left this location") }}</p>
+                        <p v-if="event.retargetLocationId">
+                          {{ translate("Channel has left this location") }}
+                        </p>
                       </ion-label>
                       <ion-label>
                         <span class="overline mobile-only">{{ translate("Adjustment") }}</span>
@@ -960,7 +988,9 @@
                       <ion-button fill="clear" :aria-label="translate('View event details')" @click="selectedEvent = event">
                         <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
                       </ion-button>
-                      <p class="row-calculation">{{ event.calculation || translate("No calculation comment recorded") }}</p>
+                      <p class="row-calculation">
+                        {{ event.calculation || translate("No calculation comment recorded") }}
+                      </p>
                     </div>
                     <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
                   </div>
@@ -996,8 +1026,12 @@
       <ion-content>
         <ion-list lines="full">
           <ion-item>
-            <ion-label class="ion-text-wrap">{{ translate("Event type") }}<p>{{ selectedEvent?.type }}</p></ion-label>
-            <ion-badge slot="end" :color="selectedEvent?.detailStateColor">{{ selectedEvent?.detailState }}</ion-badge>
+            <ion-label class="ion-text-wrap">
+              {{ translate("Event type") }}<p>{{ selectedEvent?.type }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="selectedEvent?.detailStateColor">
+              {{ selectedEvent?.detailState }}
+            </ion-badge>
           </ion-item>
           <!-- The reference is its own field, not half of a composed key: it is the source row's
                natural key, and for the effective-date families it carries the lifecycle phase too. -->
@@ -1005,16 +1039,26 @@
             <ion-label class="ion-text-wrap">
               {{ translate("Source record") }}
               <p>{{ selectedEvent?.sourceLabel }}</p>
-              <p v-if="selectedEvent?.sourcePhase">{{ translate("Effective-date boundary this row crossed: {phase}", { phase: selectedEvent?.sourcePhase }) }}</p>
+              <p v-if="selectedEvent?.sourcePhase">
+                {{ translate("Effective-date boundary this row crossed: {phase}", { phase: selectedEvent?.sourcePhase }) }}
+              </p>
             </ion-label>
           </ion-item>
           <ion-item v-if="selectedEvent && selectedArtifact">
             <ion-label class="ion-text-wrap">
               {{ translate("Came from") }}
-              <p v-if="selectedArtifact.label">{{ selectedArtifact.label }}</p>
-              <p v-if="selectedArtifact.actor">{{ translate("Recorded by {actor}", { actor: selectedArtifact.actor }) }}</p>
-              <p v-if="selectedArtifact.note">{{ selectedArtifact.note }}</p>
-              <p v-if="selectedArtifact.unresolved">{{ selectedArtifact.unresolved }}</p>
+              <p v-if="selectedArtifact.label">
+                {{ selectedArtifact.label }}
+              </p>
+              <p v-if="selectedArtifact.actor">
+                {{ translate("Recorded by {actor}", { actor: selectedArtifact.actor }) }}
+              </p>
+              <p v-if="selectedArtifact.note">
+                {{ selectedArtifact.note }}
+              </p>
+              <p v-if="selectedArtifact.unresolved">
+                {{ selectedArtifact.unresolved }}
+              </p>
             </ion-label>
           </ion-item>
           <ion-item v-if="selectedEvent?.showRawReference">
@@ -1027,30 +1071,44 @@
             <ion-label class="ion-text-wrap">
               {{ translate("Product") }}
               <p>{{ selectedEvent?.productName || translate("Not resolved") }}</p>
-              <p v-if="selectedEvent?.productSku">{{ selectedEvent?.productSku }}</p>
-              <p v-if="selectedEvent?.productId">{{ translate("HotWax product {id}", { id: selectedEvent?.productId }) }}</p>
+              <p v-if="selectedEvent?.productSku">
+                {{ selectedEvent?.productSku }}
+              </p>
+              <p v-if="selectedEvent?.productId">
+                {{ translate("HotWax product {id}", { id: selectedEvent?.productId }) }}
+              </p>
             </ion-label>
-            <ion-note slot="end">{{ selectedEvent?.change }}</ion-note>
+            <ion-note slot="end">
+              {{ selectedEvent?.change }}
+            </ion-note>
           </ion-item>
           <ion-item>
             <ion-label>Shopify inventory item<p>{{ selectedEvent?.shopifyInventoryItem || 'Unknown item' }}</p></ion-label>
           </ion-item>
           <ion-item>
-            <ion-label class="ion-text-wrap">{{ translate("Inventory channel") }}<p>{{ selectedEvent?.channelLabel }}</p></ion-label>
+            <ion-label class="ion-text-wrap">
+              {{ translate("Inventory channel") }}<p>{{ selectedEvent?.channelLabel }}</p>
+            </ion-label>
           </ion-item>
           <ion-item>
             <ion-label class="ion-text-wrap">
               {{ translate("Shopify location") }}
               <p>{{ selectedEvent?.locationLabel }}</p>
-              <p v-if="selectedEvent?.locationId">{{ translate("Shopify location {id}", { id: selectedEvent?.locationId }) }}</p>
-              <p v-if="selectedEvent?.retargetLocationId">{{ translate("This delta was calculated against the location the channel has since stopped pointing at, and publishes there rather than to the channel's current one.") }}</p>
+              <p v-if="selectedEvent?.locationId">
+                {{ translate("Shopify location {id}", { id: selectedEvent?.locationId }) }}
+              </p>
+              <p v-if="selectedEvent?.retargetLocationId">
+                {{ translate("This delta was calculated against the location the channel has since stopped pointing at, and publishes there rather than to the channel's current one.") }}
+              </p>
             </ion-label>
             <ion-badge v-if="selectedEvent?.retargetLocationId" slot="end" color="danger">
               {{ translate("Retarget drain") }}
             </ion-badge>
           </ion-item>
           <ion-item>
-            <ion-label class="ion-text-wrap">{{ translate("Publishes under") }}<p>{{ selectedEvent?.reason }}</p></ion-label>
+            <ion-label class="ion-text-wrap">
+              {{ translate("Publishes under") }}<p>{{ selectedEvent?.reason }}</p>
+            </ion-label>
             <ion-badge v-if="selectedEvent && !selectedEvent.reasonMapped" slot="end" color="warning">
               {{ translate("Unmapped") }}
             </ion-badge>
@@ -1123,7 +1181,9 @@
               <p>{{ translate("{location}, item {item}", { location: entry.locationLabel, item: entry.shopifyInventoryItem }) }}</p>
               <p>{{ translate("{count} events summed", { count: entry.eventCount }) }}</p>
             </ion-label>
-            <ion-note slot="end">{{ entry.change }}</ion-note>
+            <ion-note slot="end">
+              {{ entry.change }}
+            </ion-note>
           </ion-item>
 
           <!-- Why it has not landed. Without this a failed batch reads as merely "not sent yet". -->
@@ -1132,7 +1192,7 @@
               <ion-label>Delivery errors</ion-label>
             </ion-list-header>
             <ion-item v-for="(err, i) in batchErrors" :key="err.errorDate ?? i">
-              <ion-icon :icon="warningOutline" slot="start" color="danger" />
+              <ion-icon slot="start" :icon="warningOutline" color="danger" />
               <ion-label class="ion-text-wrap">
                 {{ err.errorText }}
                 <p>{{ translate("Attempted {status} at {at}", { status: statusLabel(err.attemptedStatusId), at: formatDateTime(toMillis(err.errorDate)) }) }}</p>
@@ -1140,7 +1200,7 @@
             </ion-item>
           </template>
           <ion-item v-else-if="loadingBatchErrors" lines="none">
-            <ion-spinner name="crescent" slot="start" />
+            <ion-spinner slot="start" name="crescent" />
             <ion-label>Checking delivery errors</ion-label>
           </ion-item>
 
@@ -1243,6 +1303,7 @@
 </template>
 
 <script setup lang="ts">
+import { commonUtil, logger, translate, useProducts } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
@@ -1260,22 +1321,23 @@ import {
 } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import cronstrue from "cronstrue";
-import { commonUtil, logger, translate, useProducts } from "@common";
-import { useCacheSync } from "@/composables/useCacheSync";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
+import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import { useCachedList } from "@/composables/useCachedList";
-import { useVirtualRows } from "@/composables/useVirtualRows";
-import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
+import { useCacheSync } from "@/composables/useCacheSync";
+import { useFacilityTypes } from "@/composables/useFacilities";
 import { useStatuses } from "@/composables/useSeed";
-import { useSystemMessage } from "@/composables/useSystemMessage";
+import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import {
+  DISCARD_PENDING_EVENTS_SERVICE,
+  INVENTORY_ADJUSTMENT_MESSAGE_TYPE,
+  type InventoryEventDocument,
+  type InventoryEventSourceLookup,
+  PRODUCED_SENDER_SERVICE,
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
-  DISCARD_PENDING_EVENTS_SERVICE,
-  INVENTORY_ADJUSTMENT_MESSAGE_TYPE,
-  PRODUCED_SENDER_SERVICE,
   ensureChannelEventDiscardJob,
   ensureChannelEventPublisherJob,
   ensureChannelResetJob,
@@ -1283,14 +1345,16 @@ import {
   ensureShopPhysicalInventoryResetJob,
   fetchLocationsFromShopify,
   setInventoryEventDocumentAttached,
-  useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
+  useInventoryEventDocuments,
+  useInventoryEventSources,
   useShopifyShopMutations,
   useShopifySyncContext,
-  type InventoryEventDocument,
-  useInventoryEventSources,
-  type InventoryEventSourceLookup,
 } from "@/composables/useShopify";
+import { useSystemMessage } from "@/composables/useSystemMessage";
+import { useVirtualRows } from "@/composables/useVirtualRows";
+import { resyncDomain } from "@/services/appCacheBootstrap";
+import { formatDateTime } from "@/utils";
 import {
   dataFeedCache,
   groupFacilityCache,
@@ -1300,10 +1364,11 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import { parameterMap } from "@/utils/serviceJob";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {
-  deltaOutcome,
   deliveryStatusOf,
+  deltaOutcome,
   isDeliveryTerminalFailure,
   isWaitingDetail,
   roundDelta,
@@ -1311,11 +1376,6 @@ import {
   sectionOfEvent,
   sumDelta,
 } from "@/utils/shopifyInventoryPipeline";
-import { formatDateTime } from "@/utils";
-import { parameterMap } from "@/utils/serviceJob";
-import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
-import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
-import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 
 type ViewName = "monitor" | "history";
 type HistoryMode = "events" | "batches";
@@ -1490,15 +1550,15 @@ const shopifyLocationNames = ref(new Map<string, string>());
 
 async function loadShopifyLocationNames() {
   const shopId = String(syncContext.shopId?.value ?? "");
-  if (!shopId) return;
+  if(!shopId) {return;}
   try {
     const nodes = await fetchLocationsFromShopify(shopId);
     const names = new Map<string, string>();
-    for (const node of nodes) {
+    for(const node of nodes) {
       // The node id is a GID; the ledger and the channel both carry the bare numeric id.
       const locationId = String(node?.id ?? "").split("/").pop() ?? "";
       const name = String(node?.name ?? "").trim();
-      if (locationId && name) names.set(locationId, name);
+      if(locationId && name) {names.set(locationId, name);}
     }
     shopifyLocationNames.value = names;
   } catch (error) {
@@ -1509,7 +1569,7 @@ async function loadShopifyLocationNames() {
 // Optional chaining on purpose: this getter runs at setup, before anything guarantees the context has
 // settled, and a caller that stubs the context without a shopId should not take the whole view down.
 watch(() => syncContext.shopId?.value, (shopId) => {
-  if (shopId) void loadShopifyLocationNames();
+  if(shopId) {void loadShopifyLocationNames();}
 }, { immediate: true });
 
 const { products: resolvedProducts, resolve: resolveProductNames } = useProducts();
@@ -1519,19 +1579,22 @@ const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = u
 const facilityIdsByGroup = computed(() => {
   const byGroup = new Map<string, string[]>();
   const now = Date.now();
-  for (const member of cachedGroupFacilities.value) {
+  for(const member of cachedGroupFacilities.value) {
     if(!isEffectiveNow(member, now)) {continue;}
     const group = String(member.facilityGroupId ?? "");
     const facilityId = String(member.facilityId ?? "");
     if(!group || !facilityId) {continue;}
-    byGroup.set(group, [...(byGroup.get(group) ?? []), facilityId]);
+    const bucket = byGroup.get(group);
+    if(bucket) {bucket.push(facilityId);} else {byGroup.set(group, [facilityId]);}
   }
+
   return byGroup;
 });
 
 function lookupFor(event: InventoryEvent): InventoryEventSourceLookup {
   const channel = allInventoryChannels.value.find((candidate: any) =>
     String(candidate.inventoryChannelId) === event.inventoryChannelId);
+
   return {
     eventTypeId: event.eventTypeId,
     eventReferenceId: event.eventReferenceId,
@@ -1569,7 +1632,7 @@ const resendingBatch = ref(false);
 // Errors are class C - only failed messages have any - so they are fetched when a batch is opened.
 watch(() => selectedBatch.value?.id, async (systemMessageId) => {
   batchErrors.value = [];
-  if (!systemMessageId) return;
+  if(!systemMessageId) {return;}
   loadingBatchErrors.value = true;
   try {
     batchErrors.value = await ensureSystemMessageErrors(String(systemMessageId));
@@ -1582,7 +1645,7 @@ watch(() => selectedBatch.value?.id, async (systemMessageId) => {
 
 async function resendBatch() {
   const systemMessageId = selectedBatch.value?.id;
-  if (!systemMessageId) return;
+  if(!systemMessageId) {return;}
   resendingBatch.value = true;
   try {
     await resendSystemMessage(String(systemMessageId));
@@ -1622,11 +1685,13 @@ const { records: allShopifyShops, hydrated: shopsHydrated } = useCachedList<any>
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;
+
     return map;
   }, {}));
 
 const inventoryDetails = computed(() => {
   const scope = new Set(shopChannelIds.value);
+
   return allInventoryDetails.value.filter((detail: any) =>
     scope.has(String(detail.inventoryChannelId)));
 });
@@ -1643,15 +1708,17 @@ const inventoryEventFeedToggleDisabled = computed(() =>
   inventoryEventFeedSaving.value || !dataFeedsHydrated.value || !inventoryEventFeed.value ||
   !inventoryEventFeedTypeSupported.value);
 const inventoryEventFeedStatus = computed(() => {
-  if (!dataFeedsHydrated.value) return "Loading";
-  if (!inventoryEventFeed.value) return "Not configured";
-  if (inventoryEventFeedPush.value) return "Real-time push";
-  if (inventoryEventFeed.value.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_MANUAL) return "Manual";
+  if(!dataFeedsHydrated.value) {return "Loading";}
+  if(!inventoryEventFeed.value) {return "Not configured";}
+  if(inventoryEventFeedPush.value) {return "Real-time push";}
+  if(inventoryEventFeed.value.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_MANUAL) {return "Manual";}
+
   return "Unsupported mode";
 });
 const inventoryEventFeedBadgeColor = computed(() => {
-  if (!dataFeedsHydrated.value || !inventoryEventFeed.value) return "medium";
-  if (!inventoryEventFeedTypeSupported.value) return "danger";
+  if(!dataFeedsHydrated.value || !inventoryEventFeed.value) {return "medium";}
+  if(!inventoryEventFeedTypeSupported.value) {return "danger";}
+
   return inventoryEventFeedPush.value ? "success" : "warning";
 });
 
@@ -1672,23 +1739,24 @@ const shopInventoryPush = computed(() => String(currentShop.value?.realTimeInven
 const shopInventoryPushToggleDisabled = computed(() =>
   shopInventoryPushSaving.value || !shopsHydrated.value || !currentShop.value);
 const shopInventoryPushStatus = computed(() => {
-  if (!shopsHydrated.value) return "Loading";
+  if(!shopsHydrated.value) {return "Loading";}
   // Not "Off": an uncached shop row is a state nobody can read a setting out of, and rendering it as
   // off would invite someone to "fix" a shop that is already pushing.
-  if (!currentShop.value) return "Unavailable";
+  if(!currentShop.value) {return "Unavailable";}
+
   return shopInventoryPush.value ? "Real-time push" : "Disabled";
 });
 const shopInventoryPushBadgeColor = computed(() => {
-  if (!shopsHydrated.value || !currentShop.value) return "medium";
+  if(!shopsHydrated.value || !currentShop.value) {return "medium";}
+
   return shopInventoryPush.value ? "success" : "warning";
 });
 
-const messageById = computed<Map<string, any>>(() => new Map(
-  cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),
-));
+const messageById = computed<Map<string, any>>(() => new Map(cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),));
 
 const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) => {
   const parameters = parameterMap(job);
+
   return parameters.systemMessageRemoteId === syncContext.remoteId.value &&
     parameters.systemMessageTypeId === PHYSICAL_RESET_MESSAGE_TYPE &&
     parameters.runAsBatch === "true";
@@ -1701,6 +1769,7 @@ const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) =>
 // clones — reporting only the first would hide that the second channel never publishes.
 const pendingPublisherJobs = computed<any[]>(() => {
   const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
+
   return cachedJobs.value.filter((job: any) =>
     PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
     channelIds.has(String(parameterMap(job).inventoryChannelId ?? "")));
@@ -1726,9 +1795,10 @@ const discardEventsJob = computed<any>(() =>
  */
 const inventoryAdjustmentSenderJobs = computed<any[]>(() =>
   cachedJobs.value.filter((job: any) => {
-    if (job.serviceName !== PRODUCED_SENDER_SERVICE) return false;
+    if(job.serviceName !== PRODUCED_SENDER_SERVICE) {return false;}
     const scope = String(parameterMap(job).systemMessageTypeIds ?? "").trim();
-    if (!scope) return true;
+    if(!scope) {return true;}
+
     return scope.split(",").map((type: string) => type.trim()).includes(INVENTORY_ADJUSTMENT_MESSAGE_TYPE);
   }));
 
@@ -1739,6 +1809,7 @@ const dedicatedSenderJob = computed<any>(() =>
 
 const aggregateResetJobs = computed<any[]>(() => {
   const channelIds = new Set(inventoryChannels.value.map((channel: any) => String(channel.inventoryChannelId)));
+
   return cachedJobs.value.filter((job: any) =>
     job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
     channelIds.has(String(parameterMap(job).inventoryChannelId ?? "")));
@@ -1778,6 +1849,7 @@ type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "discard"
  */
 function channelIdsWithoutJob(jobs: any[]): string[] {
   const covered = new Set(jobs.map((job: any) => String(parameterMap(job).inventoryChannelId ?? "")));
+
   return inventoryChannels.value
     .map((channel: any) => String(channel.inventoryChannelId))
     .filter((channelId: string) => !covered.has(channelId));
@@ -1792,26 +1864,28 @@ function channelIdsWithoutJob(jobs: any[]): string[] {
  */
 function findChannelPublisherJob(channelId: string) {
   const targetId = String(channelId);
+
   return cachedJobs.value.find((job: any) =>
     PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
-    String(parameterMap(job).inventoryChannelId ?? "") === targetId)
-    || cachedJobs.value.find((job: any) =>
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId) ||
+    cachedJobs.value.find((job: any) =>
       PUBLISH_PENDING_SERVICES.includes(job.serviceName) &&
-      job.jobName === `publish_PendingShopifyInventoryAdjustments_${targetId}`)
-    || null;
+      job.jobName === `publish_PendingShopifyInventoryAdjustments_${targetId}`) ||
+    null;
 }
 
 function findChannelResetJob(channelId: string) {
   const targetId = String(channelId);
+
   return cachedJobs.value.find((job: any) =>
     job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
-    String(parameterMap(job).inventoryChannelId ?? "") === targetId)
-    || cachedJobs.value.find((job: any) =>
+    String(parameterMap(job).inventoryChannelId ?? "") === targetId) ||
+    cachedJobs.value.find((job: any) =>
       job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
-      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
-    || cachedJobs.value.find((job: any) =>
-      job.jobName === `reset_InventoryChannelInventory_${targetId}`)
-    || null;
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
+    cachedJobs.value.find((job: any) =>
+      job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
+    null;
 }
 
 /**
@@ -1847,12 +1921,10 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
 
   if(nextMs && lastMs && lastMs > nextMs) {
-    if(nextJob.cronExpression) {
-      try {
-        return translate("Runs {cron}", { cron: cronstrue.toString(nextJob.cronExpression).toLowerCase() });
-      } catch {
-        // An expression cronstrue cannot phrase is still a real schedule; say that much.
-      }
+    // `useServiceJobs` already normalises this, preferring the OMS's own `cronDescription` over a
+    // cronstrue rendering. Re-deriving it here made this row disagree with the job's detail modal.
+    if(nextJob.cronString) {
+      return translate("Runs {cron}", { cron: String(nextJob.cronString).toLowerCase() });
     }
 
     return translate("Next run not yet recalculated");
@@ -1926,7 +1998,7 @@ function jobsForChannel(channel: any) {
 const sharedJobs = computed(() => {
   const definitions: JobDefinition[] = [];
 
-  if (!inventoryChannels.value.length) {
+  if(!inventoryChannels.value.length) {
     definitions.push({
       name: "Publish and send aggregate event batches",
       jobs: pendingPublisherJobs.value,
@@ -1989,17 +2061,25 @@ const sharedJobs = computed(() => {
  * this OMS also groups NA, BACKORDER and PRE_ORDER facilities, and a hardcoded pair would report a
  * group of them as empty. An unmapped type falls back to its own id, lowercased.
  */
-const FACILITY_TYPE_LABELS: Record<string, [string, string]> = {
-  RETAIL_STORE: ["retail store", "retail stores"],
-  WAREHOUSE: ["warehouse", "warehouses"],
-  DISTRIBUTION_CENTER: ["distribution centre", "distribution centres"],
-  BACKORDER: ["backorder location", "backorder locations"],
-  PRE_ORDER: ["pre-order location", "pre-order locations"],
+/**
+ * Plural forms for the facility-type nouns. The NOUN itself comes from the type cache (the server's
+ * own `description`), so a tenant that renames a type or seeds a custom one reads the same word here
+ * as on every other HotWax screen; only English pluralisation, which the server does not supply,
+ * stays local. A hardcoded id-to-noun map was drifting from the seeded vocabulary silently.
+ */
+const FACILITY_TYPE_PLURALS: Record<string, string> = {
+  "retail store": "retail stores",
+  "warehouse": "warehouses",
+  "distribution center": "distribution centers",
+  "distribution centre": "distribution centres",
+  "backorder location": "backorder locations",
+  "pre-order location": "pre-order locations",
 };
 
 function facilityTypeLabel(facilityTypeId: string, count: number): string {
-  const known = FACILITY_TYPE_LABELS[facilityTypeId];
-  const type = known ? translate(count === 1 ? known[0] : known[1]) : facilityTypeId.toLowerCase().replaceAll("_", " ");
+  const described = String(facilityTypeById.value.get(facilityTypeId)?.description ?? "").trim().toLowerCase();
+  const singular = described || facilityTypeId.toLowerCase().replaceAll("_", " ");
+  const type = count === 1 ? singular : (FACILITY_TYPE_PLURALS[singular] ?? `${singular}s`);
 
   return translate("{count} {type}", { count, type });
 }
@@ -2085,7 +2165,7 @@ function truncateResultText(text: string): string {
  */
 function summarizeResult(raw: unknown): string {
   const text = raw === undefined || raw === null ? "" : String(raw).trim();
-  if (!text || text === "{}" || text === "[]") return "";
+  if(!text || text === "{}" || text === "[]") {return "";}
 
   let parsed: any;
   try {
@@ -2093,13 +2173,14 @@ function summarizeResult(raw: unknown): string {
   } catch {
     return truncateResultText(text);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return truncateResultText(text);
+  if(!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {return truncateResultText(text);}
 
   // Scalars keep their value; a collection reports its SIZE, which is the part that was flooding the
   // card. Anything unrecognised falls back to the capped raw text rather than being dropped silently.
   const parts = Object.entries(parsed).map(([key, value]) => {
-    if (Array.isArray(value)) return `${key}: ${value.length}`;
-    if (value === null || typeof value === "object") return "";
+    if(Array.isArray(value)) {return `${key}: ${value.length}`;}
+    if(value === null || typeof value === "object") {return "";}
+
     return `${key}: ${value}`;
   }).filter(Boolean);
 
@@ -2112,6 +2193,7 @@ function projectRun(job: any, run: any, scope: string) {
   const configuredParameters = Object.entries(parameterMap(job))
     .map(([name, value]) => `${name}: ${value}`)
     .join(", ");
+
   return {
     id: run.jobRunId,
     parameters: run.parameters || configuredParameters || "No parameters recorded",
@@ -2130,6 +2212,7 @@ function projectRun(job: any, run: any, scope: string) {
 
 const physicalResetRuns = computed(() => {
   const job = physicalResetJob.value;
+
   return job?.jobName
     ? runsFor(job.jobName).map((run: any) => projectRun(job, run, "Full physical location QOH reset"))
     : [];
@@ -2148,20 +2231,33 @@ const aggregateResetRuns = computed(() => aggregateResetJobs.value
 function batchState(statusId?: string): { status: string; badgeColor: string } {
   const badgeColor = statusId === "SmsgSent" ? "success"
     : statusId === "SmsgError" ? "danger"
-    : statusId === "SmsgProduced" || statusId === "SmsgSending" ? "primary"
-    : "medium";
+      : statusId === "SmsgProduced" || statusId === "SmsgSending" ? "primary"
+        : "medium";
+
   return { status: statusLabel(statusId), badgeColor };
 }
 
 /** StatusItem description, falling back to the raw id rather than inventing a label. */
 function statusLabel(statusId?: string): string {
-  if (!statusId) return "Assigned";
+  if(!statusId) {return "Assigned";}
+
   return statusDescriptionFor(statusId) || statusId;
 }
 
+/**
+ * The server's own facility-type vocabulary, indexed by id. Read through the owning composable rather
+ * than copied into this file, so a renamed or custom type reads the same here as everywhere else.
+ */
+const { facilityTypes: cachedFacilityTypes } = useFacilityTypes();
+const facilityTypeById = computed(() => new Map(cachedFacilityTypes.value
+  .map((type: any) => [String(type.facilityTypeId), type])));
+
+/** Indexed once per channel-cache change: `channelFor` runs several times per ledger row. */
+const channelsById = computed(() => new Map(allInventoryChannels.value
+  .map((channel: any) => [String(channel.inventoryChannelId), channel])));
+
 function channelFor(detail: any): any {
-  return allInventoryChannels.value.find((candidate: any) =>
-    String(candidate.inventoryChannelId) === String(detail.inventoryChannelId));
+  return channelsById.value.get(String(detail.inventoryChannelId));
 }
 
 /** The channel that owns the row, by name. This is the row's SCOPE, not its Shopify target. */
@@ -2180,7 +2276,12 @@ function channelLabel(detail: any): string {
  * labelling it with the channel's NEW location tells the operator the opposite of what will happen.
  */
 function locationIdOf(detail: any): string {
-  return String(detail.publishShopifyLocationId || channelFor(detail)?.shopifyLocationId || "");
+  // The row's OWN fields first -- that is what `shopifyLocationId` was added to the projection for.
+  // Resolving through the channel made every row render "Shopify aggregate location" until the channel
+  // cache hydrated, and collapsed distinct locations into one change-entry group keyed `item@`.
+  // The channel is kept only as a fallback for rows cached before that projection field existed.
+  return String(detail.publishShopifyLocationId || detail.shopifyLocationId ||
+    channelFor(detail)?.shopifyLocationId || "");
 }
 
 /**
@@ -2195,7 +2296,8 @@ function locationIdOf(detail: any): string {
  */
 function locationLabel(detail: any): string {
   const locationId = locationIdOf(detail);
-  if (!locationId) return translate("Shopify aggregate location");
+  if(!locationId) {return translate("Shopify aggregate location");}
+
   return shopifyLocationNames.value.get(locationId) || translate("Location {id}", { id: locationId });
 }
 
@@ -2234,6 +2336,7 @@ const SOURCE_RECORD_LABELS: Record<string, string> = {
 /** The table holds catalog keys; an unrecognised type stays empty rather than becoming a wrong label. */
 function sourceRecordLabel(eventTypeId: string): string {
   const key = SOURCE_RECORD_LABELS[eventTypeId] ?? "";
+
   return key ? translate(key) : "";
 }
 
@@ -2255,8 +2358,9 @@ function sourceOf(detail: any): EventSource {
 
   // The reservation families are one inventory item plus one detail sequence, which reads as two
   // things rather than one opaque colon-joined token.
-  if (eventTypeId.startsWith("RESERVATION_") && body.includes(":")) {
+  if(eventTypeId.startsWith("RESERVATION_") && body.includes(":")) {
     const [inventoryItemId, detailSeqId] = body.split(":");
+
     return {
       recordLabel: sourceRecordLabel(eventTypeId),
       reference: translate("Inventory item {id}, detail {seq}", { id: inventoryItemId, seq: detailSeqId }),
@@ -2269,10 +2373,11 @@ function sourceOf(detail: any): EventSource {
 
 const batches = computed<Batch[]>(() => {
   const grouped = new Map<string, any[]>();
-  for (const detail of inventoryDetails.value) {
+  for(const detail of inventoryDetails.value) {
     const id = String(detail.systemMessageId ?? "");
-    if (!id) continue;
-    grouped.set(id, [...(grouped.get(id) ?? []), detail]);
+    if(!id) {continue;}
+    const bucket = grouped.get(id);
+    if(bucket) {bucket.push(detail);} else {grouped.set(id, [detail]);}
   }
 
   return [...grouped.entries()].map(([id, details]) => {
@@ -2284,10 +2389,8 @@ const batches = computed<Batch[]>(() => {
     // Reason is a property of the WHOLE mutation, so it can only be stated when the batch holds one
     // event type. A mixed batch is the case the batcher publishes under `correction` because no single
     // reason is true about it -- worth showing as such rather than picking the first row's reason.
-    const eventTypeIds = new Set(details.map((detail: any) => String(detail.eventTypeId ?? "")));
-    const { reason, mapped } = eventTypeIds.size === 1
-      ? reasonOf(details[0])
-      : { reason: "correction", mapped: false };
+    const { reason, mapped, mixed } = reasonForGroup(details);
+
     return {
       id,
       statusId,
@@ -2302,7 +2405,7 @@ const batches = computed<Batch[]>(() => {
       // What Shopify receives: one change entry per (inventory item, location) with the deltas SUMMED.
       // A net figure across the whole message corresponds to nothing in the mutation.
       entries,
-      mixedEventTypes: eventTypeIds.size > 1,
+      mixedEventTypes: mixed,
       reason,
       reasonMapped: mapped,
       messageText: message?.messageText,
@@ -2331,7 +2434,7 @@ function detailState(detail: any): { label: string; color: string } {
 /** Delivery of the batch this row was assigned to. Absent while the row is still unbatched. */
 function deliveryState(detail: any): { label: string; color: string; statusId: string; terminalFailure: boolean } | null {
   const systemMessageId = String(detail.systemMessageId ?? "");
-  if (!systemMessageId) return null;
+  if(!systemMessageId) {return null;}
   const statusId = deliveryStatusOf(detail, messageById.value.get(systemMessageId)?.statusId);
   const state = batchState(statusId);
 
@@ -2353,6 +2456,7 @@ function deliveryState(detail: any): { label: string; color: string; statusId: s
  */
 function reasonOf(detail: any): { reason: string; mapped: boolean } {
   const mapped = String(detail.shopifyReason ?? "").trim();
+
   return mapped ? { reason: mapped, mapped: true } : { reason: "correction", mapped: false };
 }
 
@@ -2371,10 +2475,43 @@ function calculationOf(detail: any): { productId: string; calculation: string } 
   // "product 140876 publishable ATP 40.0 -> 41.0." -- the productId is the ONLY place this screen can
   // get an OMS product from, and the phrase after it is the calculation itself.
   const parts = body.match(/^product (\S+) (publishable ATP .*)$/);
+
   return parts ? { productId: parts[1], calculation: parts[2] } : { productId: "", calculation: body };
 }
 
 /** The ledger's four-column primary key, used as the identity of a row everywhere on this page. */
+/**
+ * The merchandiser-facing name for a row's product, with the ledger's item id as the last resort.
+ * Written once: the settled table and the change-entry list were showing different labels for the
+ * same event because only one of the two copies had been updated.
+ */
+function productLabelOf(productId: string, fallbackItemId?: unknown): { label: string; name: string; sku: string } {
+  const product = productId ? resolvedProducts.value.get(productId) : undefined;
+  const name = product?.parentProductName || product?.internalName || product?.productName || "";
+
+  return {
+    // `label` always says something; `name` is empty when unresolved, for callers whose template
+    // supplies its own fallback and must not print the item id twice.
+    label: name || translate("Item {id}", { id: fallbackItemId ?? "" }),
+    name,
+    sku: product?.sku || "",
+  };
+}
+
+/**
+ * The Shopify reason a GROUP publishes under. A reason is a property of the whole mutation, so it can
+ * only be stated when the group holds one event type; a mixed group falls back to `correction`, which
+ * is what the batcher itself does. Shared by the produced batches and the waiting preview so the
+ * preview cannot promise a reason the produced batch will not use.
+ */
+function reasonForGroup(rows: any[]): { reason: string; mapped: boolean; mixed: boolean } {
+  const eventTypeIds = new Set(rows.map((row: any) => String(row.eventTypeId ?? "")));
+  const mixed = eventTypeIds.size > 1;
+  const { reason, mapped } = mixed ? { reason: "correction", mapped: false } : reasonOf(rows[0]);
+
+  return { reason, mapped, mixed };
+}
+
 function rowKeyOf(detail: any): string {
   return JSON.stringify([detail.eventTypeId, detail.eventReferenceId,
     detail.inventoryChannelId, detail.shopifyInventoryItemId].map(String));
@@ -2413,21 +2550,23 @@ interface ChangeEntry {
 
 function changeEntriesOf(details: any[]): ChangeEntry[] {
   const grouped = new Map<string, any[]>();
-  for (const detail of details) {
+  for(const detail of details) {
     const key = `${String(detail.shopifyInventoryItemId ?? "")}@${locationIdOf(detail)}`;
-    grouped.set(key, [...(grouped.get(key) ?? []), detail]);
+    const bucket = grouped.get(key);
+    if(bucket) {bucket.push(detail);} else {grouped.set(key, [detail]);}
   }
+
   return [...grouped.entries()].map(([key, rows]) => {
     const delta = sumDelta(rows.map((row: any) => row.computedInventoryChange));
     const outcome = deltaOutcome(delta);
     const { productId } = calculationOf(rows[0]);
-    const product = productId ? resolvedProducts.value.get(productId) : undefined;
+    const product = productLabelOf(productId, rows[0].shopifyInventoryItemId);
+
     return {
       key,
       shopifyInventoryItem: String(rows[0].shopifyInventoryItemId ?? ""),
-      productLabel: product?.parentProductName || product?.internalName || product?.productName ||
-        translate("Item {id}", { id: rows[0].shopifyInventoryItemId ?? "" }),
-      productSku: product?.sku || productId || "",
+      productLabel: product.label,
+      productSku: product.sku || productId || "",
       locationId: locationIdOf(rows[0]),
       locationLabel: locationLabel(rows[0]),
       retarget: !!rows[0].publishShopifyLocationId,
@@ -2437,7 +2576,7 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
       outcome,
       outcomeLabel: outcome === "publish" ? translate("Will publish")
         : outcome === "noChange" ? translate("Nets to zero, will settle as no change")
-        : translate("Not a whole number, will be quarantined"),
+          : translate("Not a whole number, will be quarantined"),
       outcomeColor: outcome === "publish" ? "primary" : outcome === "noChange" ? "medium" : "danger",
     } as ChangeEntry;
   }).sort((a, b) => a.shopifyInventoryItem.localeCompare(b.shopifyInventoryItem));
@@ -2451,10 +2590,11 @@ function changeEntriesOf(details: any[]): ChangeEntry[] {
 const PUBLISHER_DEFAULT_GROUP_BY = ["inventoryChannelId", "shopifyInventoryItemId", "eventTypeId"];
 
 const publisherGroupBy = computed<string[]>(() => {
-  for (const job of pendingPublisherJobs.value) {
+  for(const job of pendingPublisherJobs.value) {
     const configured = String(parameterMap(job).groupByFields ?? "").trim();
-    if (configured) return configured.split(",").map((field) => field.trim()).filter(Boolean);
+    if(configured) {return configured.split(",").map((field) => field.trim()).filter(Boolean);}
   }
+
   return PUBLISHER_DEFAULT_GROUP_BY;
 });
 
@@ -2485,24 +2625,24 @@ function eventsFor(details: any[]): InventoryEvent[] {
 const waitingBatches = computed(() => {
   const pending = inventoryDetails.value.filter(isWaitingDetail);
   const grouped = new Map<string, any[]>();
-  for (const detail of pending) {
+  for(const detail of pending) {
     const key = publisherGroupBy.value.map((field) => `${field}=${detail[field] ?? ""}`).join(", ");
-    grouped.set(key, [...(grouped.get(key) ?? []), detail]);
+    const bucket = grouped.get(key);
+    if(bucket) {bucket.push(detail);} else {grouped.set(key, [detail]);}
   }
 
   return [...grouped.entries()].map(([key, rows]) => {
+    const { reason, mapped, mixed } = reasonForGroup(rows);
     const eventTypeIds = new Set(rows.map((row: any) => String(row.eventTypeId ?? "")));
-    const { reason, mapped } = eventTypeIds.size === 1
-      ? reasonOf(rows[0])
-      : { reason: "correction", mapped: false };
     const timestamps = rows.map((row: any) => toMillis(row.createdDate)).filter(Boolean);
     const oldestAt = timestamps.length ? Math.min(...timestamps) : 0;
+
     return {
       id: key,
       channel: channelLabel(rows[0]),
       inventoryChannelId: String(rows[0].inventoryChannelId ?? ""),
-      type: eventTypeIds.size === 1 ? eventTypeLabel(rows[0]) : translate("{count} event types mixed", { count: eventTypeIds.size }),
-      mixedEventTypes: eventTypeIds.size > 1,
+      type: mixed ? translate("{count} event types mixed", { count: eventTypeIds.size }) : eventTypeLabel(rows[0]),
+      mixedEventTypes: mixed,
       reason,
       reasonMapped: mapped,
       entries: changeEntriesOf(rows),
@@ -2542,7 +2682,8 @@ const settledEvents = computed(() => inventoryEvents.value
  */
 function eventTypeLabel(detail: any): string {
   const description = String(detail?.eventTypeDescription ?? "").trim();
-  if (description) return description;
+  if(description) {return description;}
+
   return String(detail?.eventTypeId ?? "")
     .toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
 }
@@ -2553,17 +2694,14 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
   const { reason, mapped } = reasonOf(detail);
   const source = sourceOf(detail);
   const { productId, calculation } = calculationOf(detail);
-  const product = productId ? resolvedProducts.value.get(productId) : undefined;
+  const product = productLabelOf(productId);
   const delta = roundDelta(detail.computedInventoryChange);
+
   // Same identity as the server PK and the cache key: event type + reference + channel + item.
-  const identity = [
-    detail.eventTypeId,
-    detail.eventReferenceId,
-    detail.inventoryChannelId,
-    detail.shopifyInventoryItemId,
-  ];
   return {
-    rowKey: JSON.stringify(identity.map(String)),
+    // `eventsFor` joins a batch's raw rows to rendered events on this exact string, so it has to be
+    // built in ONE place -- two spellings of the same identity make that join silently return nothing.
+    rowKey: rowKeyOf(detail),
     eventTypeId: String(detail.eventTypeId ?? ""),
     eventReferenceId: String(detail.eventReferenceId ?? ""),
     type: eventTypeLabel(detail),
@@ -2597,8 +2735,9 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     createdAt: toMillis(detail.createdDate),
     decisionComment: detail.decisionComment,
     productId,
-    productName: product?.parentProductName || product?.internalName || product?.productName || "",
-    productSku: product?.sku || "",
+    // The bare name: this template supplies its own item-id fallback, so it must not print one here.
+    productName: product.name,
+    productSku: product.sku,
     calculation,
   };
 }).sort((a, b) => b.createdAt - a.createdAt));
@@ -2629,6 +2768,7 @@ const pendingBatchCount = computed(() => inFlightBatches.value.length);
 const oldestUnbatchedEvent = computed(() => {
   const oldest = inventoryEvents.value.filter((event) => event.section === "waiting")
     .sort((a, b) => a.createdAt - b.createdAt)[0];
+
   return oldest ? formatDateTime(oldest.createdAt) : "None waiting";
 });
 
@@ -2636,6 +2776,7 @@ const oldestUnbatchedEvent = computed(() => {
 // nextExecutionDateTime is a time at which nothing will happen.
 const nextBatchRun = computed(() => {
   const nextRun = nextExecutionFor(pendingPublisherJobs.value)?.nextExecutionDateTime;
+
   return nextRun ? formatDateTime(nextRun) : "Not scheduled";
 });
 const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.status !== "Active")
@@ -2678,8 +2819,9 @@ const redrawToggles = () => { toggleNonce.value += 1; };
  * the change is not instant - Moqui reads this through a cached query.
  */
 async function requestDocumentAttachChange(doc: InventoryEventDocument) {
-  if (doc.missing || savingDocumentId.value) {
+  if(doc.missing || savingDocumentId.value) {
     redrawToggles();
+
     return;
   }
   const attaching = !doc.attached;
@@ -2695,8 +2837,9 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
     ],
   });
   await alert.present();
-  if ((await alert.onDidDismiss()).role !== "confirm") {
+  if((await alert.onDidDismiss()).role !== "confirm") {
     redrawToggles();
+
     return;
   }
 
@@ -2719,8 +2862,9 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
 
 async function requestInventoryEventFeedChange(event: Event) {
   event.stopImmediatePropagation();
-  if (inventoryEventFeedToggleDisabled.value) {
+  if(inventoryEventFeedToggleDisabled.value) {
     redrawToggles();
+
     return;
   }
 
@@ -2737,16 +2881,15 @@ async function requestInventoryEventFeedChange(event: Event) {
   });
   await alert.present();
   const result = await alert.onDidDismiss();
-  if (result.role !== "confirm") {
+  if(result.role !== "confirm") {
     redrawToggles();
+
     return;
   }
 
   inventoryEventFeedSaving.value = true;
   try {
-    await updateShopifyInventoryEventFeedType(
-      enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
-    );
+    await updateShopifyInventoryEventFeedType(enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,);
     // The feed domain only syncs once per login, so without this re-read the toggle keeps
     // rendering the pre-save mode for the rest of the session.
     await afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
@@ -2768,8 +2911,9 @@ async function requestInventoryEventFeedChange(event: Event) {
  */
 async function requestShopInventoryPushChange(event: Event) {
   event.stopImmediatePropagation();
-  if (shopInventoryPushToggleDisabled.value) {
+  if(shopInventoryPushToggleDisabled.value) {
     redrawToggles();
+
     return;
   }
 
@@ -2788,8 +2932,9 @@ async function requestShopInventoryPushChange(event: Event) {
     ],
   });
   await alert.present();
-  if ((await alert.onDidDismiss()).role !== "confirm") {
+  if((await alert.onDidDismiss()).role !== "confirm") {
     redrawToggles();
+
     return;
   }
 
@@ -2801,7 +2946,7 @@ async function requestShopInventoryPushChange(event: Event) {
     const resp: any = await useShopifyShopMutations(shopId).updateShop({
       realTimeInventoryPush: enablePush ? "Y" : "N",
     });
-    if (commonUtil.hasError(resp)) throw new Error("The OMS rejected the real-time inventory push update.");
+    if(commonUtil.hasError(resp)) {throw new Error("The OMS rejected the real-time inventory push update.");}
     commonUtil.showToast(enablePush
       ? "Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off."
       : "Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected.");
@@ -2835,7 +2980,7 @@ function activeSyncDomains() {
 // Channels are cached asynchronously, so the detail domain is usually skipped on first pass and
 // starts here once they land.
 watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelIds.value.join(",")}`, () => {
-  if (isViewActive.value) void startSyncDomains(activeSyncDomains());
+  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
 });
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
 watch(() => props.initialHistoryMode, (mode) => { historyMode.value = mode ?? "events"; });
@@ -2849,7 +2994,7 @@ onIonViewWillEnter(() => {
   // Same gate on the shop domain, and the same reason: this page renders the connection's push flag,
   // which the Moqui admin screen can also change. Skipped without an id - the by-PK read would go to
   // `oms/shopifyShops/shops/` and re-list every shop.
-  if (props.id) void afterMutation("shopifyShop", { shopId: String(props.id) });
+  if(props.id) {void afterMutation("shopifyShop", { shopId: String(props.id) });}
 });
 
 onIonViewDidLeave(() => {
@@ -2879,11 +3024,13 @@ const channelFilterOptions = computed<ParameterOption[]>(() => {
   const labelCounts = inventoryChannels.value.reduce((counts: Record<string, number>, channel: any) => {
     const label = labelFor(channel);
     counts[label] = (counts[label] ?? 0) + 1;
+
     return counts;
   }, {});
 
   return inventoryChannels.value.map((channel: any) => {
     const label = labelFor(channel);
+
     return {
       value: String(channel.inventoryChannelId),
       label: labelCounts[label] > 1 ? `${label} (${channel.inventoryChannelId})` : label,
@@ -2899,12 +3046,14 @@ const filteredEvents = computed(() => {
       event.reason, event.batchId, event.detailState, event.delivery, event.decisionComment,
       event.productId, event.productName, event.productSku]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
+
     return matchesQuery &&
       (!selectedHistoryStatus.value || event.detailState === selectedHistoryStatus.value ||
         event.delivery === selectedHistoryStatus.value) &&
       (!selectedEventType.value || event.type === selectedEventType.value) &&
       (!selectedChannel.value || event.inventoryChannelId === selectedChannel.value);
   });
+
   return events;
 });
 
@@ -3012,9 +3161,10 @@ const eventsForSelectedBatch = computed(() => selectedBatch.value
 
 const messageText = computed(() => {
   const raw = messageBatch.value?.messageText;
-  if (raw) {
+  if(raw) {
     try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
   }
+
   return JSON.stringify({
     systemMessageId: messageBatch.value?.id,
     systemMessageTypeId: "ShopifyInventoryAdjustment",
@@ -3043,7 +3193,7 @@ async function openChannelSetup() {
   const { data } = await modal.onDidDismiss();
   // The channel drives which reset jobs belong to this connection, so pull both domains again
   // rather than waiting for the next scheduled sync pass.
-  if (data?.created) await startSyncDomains(activeSyncDomains());
+  if(data?.created) {await startSyncDomains(activeSyncDomains());}
 }
 
 /**
@@ -3059,6 +3209,7 @@ function channelSubtitle(channel: any): string {
   const groupLabel = channel?.facilityGroupName || channel?.facilityGroupId || "";
   const shop = shopsById.value[String(channel?.shopId ?? "")];
   const shopLabel = shop?.name || shop?.myshopifyDomain || channel?.shopId || "";
+
   return [groupLabel, shopLabel].filter(Boolean).join(", ");
 }
 
@@ -3091,6 +3242,7 @@ async function onChannelUpdated() {
  */
 function serviceJobSelection(jobName: string, title: string, serviceName?: string): ServiceJobSelection {
   const isDiscardJob = serviceName === DISCARD_PENDING_EVENTS_SERVICE;
+
   return {
     jobName: String(jobName),
     title,
@@ -3102,13 +3254,13 @@ function serviceJobSelection(jobName: string, title: string, serviceName?: strin
 }
 
 function openServiceJob(job: any, title: string) {
-  if (!job?.jobName) return;
+  if(!job?.jobName) {return;}
   selectedServiceJob.value = serviceJobSelection(job.jobName, title, job.serviceName);
 }
 
 /** "View all runs" goes to the full history page, which is what it says. */
 function openJobRuns(job: any, title: string) {
-  if (!job?.jobName) return;
+  if(!job?.jobName) {return;}
   router.push({
     name: "ShopifyInventoryJobRuns",
     params: { id: props.id, jobName: String(job.jobName) },
@@ -3117,7 +3269,7 @@ function openJobRuns(job: any, title: string) {
 }
 
 function refreshServiceJobData() {
-  if (isViewActive.value) void startSyncDomains(activeSyncDomains());
+  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");
@@ -3131,18 +3283,18 @@ const provisioningJobKind = ref<JobSetupKind | "">("");
  * the row flips from "Not configured" to "Paused" without a re-login.
  */
 async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
-  if (!kind || provisioningJobKind.value) return;
+  if(!kind || provisioningJobKind.value) {return;}
   const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
   provisioningJobKind.value = provisioningKey as JobSetupKind;
   try {
     const created: string[] = [];
-    if (kind === "physicalReset") {
+    if(kind === "physicalReset") {
       const remoteId = String(syncContext.remoteId.value ?? "");
-      if (!remoteId) throw new Error("No Shopify remote is configured for this connection.");
+      if(!remoteId) {throw new Error("No Shopify remote is configured for this connection.");}
       created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
-    } else if (kind === "sender") {
+    } else if(kind === "sender") {
       created.push(await ensureInventoryAdjustmentSenderJob());
-    } else if (kind === "discard") {
+    } else if(kind === "discard") {
       // Seed it pointed at a channel so the parameter is never an empty id, but the operator still
       // picks the channel deliberately in the modal before running it.
       created.push(await ensureChannelEventDiscardJob({
@@ -3154,7 +3306,7 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
       const targetIds = targetChannelId
         ? [targetChannelId]
         : channelIdsWithoutJob(kind === "publisher" ? pendingPublisherJobs.value : aggregateResetJobs.value);
-      for (const channelId of targetIds) {
+      for(const channelId of targetIds) {
         const channel = inventoryChannels.value.find((c: any) => String(c.inventoryChannelId) === String(channelId));
         const desc = channel ? `Full aggregate ATP reset for ${channel.facilityGroupName || channel.description || channelId}` : undefined;
         created.push(kind === "publisher"
@@ -3194,10 +3346,11 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
 }
 
 function toMillis(value: unknown): number {
-  if (value === undefined || value === null || value === "") return 0;
+  if(value === undefined || value === null || value === "") {return 0;}
   const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric;
+  if(Number.isFinite(numeric)) {return numeric;}
   const parsed = Date.parse(String(value));
+
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
@@ -3234,12 +3387,13 @@ function formatUntil(timestamp: number): string {
 }
 
 function formatAge(timestamp: number): string {
-  if (!timestamp) return "Unknown age";
+  if(!timestamp) {return "Unknown age";}
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if(minutes < 1) {return "Just now";}
+  if(minutes < 60) {return `${minutes}m ago`;}
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if(hours < 24) {return `${hours}h ago`;}
+
   return `${Math.floor(hours / 24)}d ago`;
 }
 </script>
