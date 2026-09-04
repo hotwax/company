@@ -18,6 +18,7 @@
   "A permanent identifier with 20 characters or fewer.": "A permanent identifier with 20 characters or fewer.",
   "A required order mapping is unavailable.": "A required order mapping is unavailable.",
   "A Shopify store cannot be linked to more than one product store at a time.": "A Shopify store cannot be linked to more than one product store at a time.",
+  "A sync request for this shop is already in progress. It was not started from this setup.": "A sync request for this shop is already in progress. It was not started from this setup.",
   "Access scopes": "Access scopes",
   "Access token": "Access token",
   "Access token and secrets": "Access token and secrets",

@@ -68,6 +68,8 @@ export interface OnboardingInitialLoadInput {
   jobRun?: Record<string, any> | null
   jobRunHydrated?: boolean
   correlatedSystemMessageId?: string
+  /** The surfaced run is the shop's, still unfinished, and not started by this setup. */
+  unattributed?: boolean
 }
 
 export type OnboardingInitialLoadRequestSource = MaybeRefOrGetter<
@@ -78,6 +80,8 @@ export interface OnboardingInitialLoadRunSelection {
   run: Record<string, any> | null
   jobRun: Record<string, any> | null
   systemMessageId: string
+  /** The run belongs to the shop and is still unfinished, but THIS setup did not start it. */
+  unattributed?: boolean
 }
 
 const FAILURE_TOKENS = ["fail", "error", "reject", "crash"]
@@ -241,8 +245,11 @@ function importStatus(log: Record<string, any> | null): OnboardingSyncRunStatus 
   return "unknown"
 }
 
-function summaryFor(status: OnboardingSyncRunStatus, kind: OnboardingInitialLoadKind) {
+function summaryFor(status: OnboardingSyncRunStatus, kind: OnboardingInitialLoadKind, unattributed = false) {
   if(status === "not-started") {return "No sync request has been produced yet."}
+  // Said plainly, because the operator is about to wonder why the load button is disabled and the
+  // honest answer is that someone else's request is holding the shop's queue, not theirs.
+  if(unattributed) {return "A sync request for this shop is already in progress. It was not started from this setup."}
   if(status === "completed" && kind === "products") {return "Product sync request completed."}
   if(status === "cancelled" && kind === "products") {return "Product sync run cancelled."}
   if(status === "unknown" || status === "unavailable") {return "Status unavailable"}
@@ -369,8 +376,28 @@ export function selectOnboardingInitialLoadRun(input: {
     return { run, jobRun, systemMessageId }
   }
 
-  // No request: this setup has not started an initial load, whatever the shop's own history holds.
-  return { run: null, jobRun: null, systemMessageId: "" }
+  // No request from THIS setup. Finished history stays hidden — attributing a completed run from the
+  // shop's past to a store created minutes ago is the whole reason this selector exists.
+  //
+  // An UNFINISHED run is a different fact. `send#ProducedBulkOperationSystemMessage` serialises bulk
+  // queries across the entire instance: while any message under the parent type sits in SmsgSent it
+  // returns "Operation already in progress" and sends nothing. So a run in flight blocks this store's
+  // import whether or not this setup started it, and hiding it left the step offering a load the
+  // backend would silently refuse, stacking up messages nobody would send. It is surfaced, and the
+  // caller marks it as not started here rather than claiming it.
+  const unfinishedRun = input.runs.find((candidate) => isUnfinishedRunStatus(candidate?.statusId)) ?? null
+
+  return {
+    run: unfinishedRun,
+    jobRun: null,
+    systemMessageId: String(unfinishedRun?.systemMessageId ?? ""),
+    unattributed: Boolean(unfinishedRun)
+  }
+}
+
+/** A run the connector still owns: produced, sending, or sent and awaiting Shopify. */
+function isUnfinishedRunStatus(value: unknown): boolean {
+  return ["queued", "sent", "running", "importing"].includes(messageStatus(value))
 }
 
 function requestJobRunStatus(input: OnboardingInitialLoadInput): OnboardingSyncRunStatus {
@@ -496,7 +523,7 @@ export function deriveOnboardingInitialLoadSnapshot(input: OnboardingInitialLoad
       hydrated: input.hydrated,
       run: {
         status: overallStatus,
-        summary: summaryFor(overallStatus, input.kind),
+        summary: summaryFor(overallStatus, input.kind, Boolean(input.unattributed)),
         lastRunLabel,
         totalRecordCount: recordCount(importLog?.totalRecordCount),
         failedRecordCount: recordCount(importLog?.failedRecordCount),
@@ -691,7 +718,8 @@ export function useProductStoreOnboardingInitialLoad(
     request: requestFor("inventory"),
     jobRun: inventorySelection.value.jobRun,
     jobRunHydrated: serviceJobRuns.hydrated.value,
-    correlatedSystemMessageId: inventorySelection.value.systemMessageId
+    correlatedSystemMessageId: inventorySelection.value.systemMessageId,
+    unattributed: inventorySelection.value.unattributed
   }))
   const orders = computed(() => deriveOnboardingInitialLoadSnapshot({
     kind: "orders",
@@ -702,7 +730,8 @@ export function useProductStoreOnboardingInitialLoad(
     request: requestFor("orders"),
     jobRun: orderSelection.value.jobRun,
     jobRunHydrated: serviceJobRuns.hydrated.value,
-    correlatedSystemMessageId: orderSelection.value.systemMessageId
+    correlatedSystemMessageId: orderSelection.value.systemMessageId,
+    unattributed: orderSelection.value.unattributed
   }))
 
   const domains = computed<ActiveDomain[]>(() => {

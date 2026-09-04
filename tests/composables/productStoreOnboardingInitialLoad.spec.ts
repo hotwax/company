@@ -459,7 +459,7 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
    * still carries the previous store's runs. Attributing one to this setup showed a brand-new store
    * a three-day-old failed import as its "current or last run".
    */
-  it("claims no run at all when this setup never requested one, whatever the shop's history holds", () => {
+  it("surfaces an unfinished shop run without claiming it, and still hides finished history", () => {
     const selected = selectOnboardingInitialLoadRun({
       kind: "products",
       shopId: "SHOP",
@@ -474,7 +474,28 @@ describe("deriveOnboardingInitialLoadSnapshot", () => {
       ]
     })
 
-    expect(selected).toEqual({ run: null, jobRun: null, systemMessageId: "" })
+    // The finished import stays hidden — claiming it would put another store's history on this step.
+    // The unfinished one is surfaced but explicitly not claimed: it holds the shop's bulk-query queue,
+    // so the step must say why a load cannot start rather than offer one the backend will refuse.
+    expect(selected).toEqual({
+      run: { systemMessageId: "NEWER-PENDING-POLL", statusId: "SmsgProduced" },
+      jobRun: null,
+      systemMessageId: "NEWER-PENDING-POLL",
+      unattributed: true
+    })
+  })
+
+  it("claims no run when the shop's only history is finished", () => {
+    const selected = selectOnboardingInitialLoadRun({
+      kind: "products",
+      shopId: "SHOP",
+      runs: [
+        { systemMessageId: "HISTORICAL-IMPORT", logId: "L100", logStatusId: "DmlsFinished", statusId: "SmsgConsumed" },
+        { systemMessageId: "OLD-FAILURE", statusId: "SmsgError" }
+      ]
+    })
+
+    expect(selected).toEqual({ run: null, jobRun: null, systemMessageId: "", unattributed: false })
   })
 
   it("correlates inventory through the exact requested ServiceJobRun and its result message", () => {
