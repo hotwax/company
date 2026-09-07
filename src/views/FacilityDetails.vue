@@ -842,8 +842,8 @@ import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdMod
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
 import { api } from '@common';
-import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -863,6 +863,10 @@ const { descriptionById: locationTypes } = useTypedEnums('FACLOC_TYPE');
 const { countries, statesOf } = useGeos();
 // Identification-type labels for the mapping cards (FACILITY_IDENTITY enums).
 const { byId: externalMappingTypes } = useFacilityIdentificationTypes();
+
+const { fetchPartyRoleDetails } = usePartyQueries();
+const { fetchFacilityOrderCountsHistory } = useFacilityOrderCounts();
+const { geocode, latLongForPostalCode } = useGeocode();
 
 const isLoading = computed(() => !hydrated.value);
 const selectedCountryGeoId = ref('');
@@ -945,7 +949,7 @@ function getParentFacilityTypeId(typeId: string): string {
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
 async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
   const { roleTypeId, ...params } = payload;
-  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  return fetchPartyRoleDetails(roleTypeId, params);
 }
 
 function getFacilityTypesByParentTypeId() {
@@ -1218,7 +1222,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
+    const resp = await geocode(payload);
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1399,7 +1403,7 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId: props.facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
+    const resp = await fetchFacilityOrderCountsHistory(props.facilityId, { orderByField: 'entryDate DESC', pageSize: 10 });
     if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
       facilityOrderCounts.value = resp.data.map((item: any) => ({
         ...item,
@@ -2009,17 +2013,14 @@ async function generateLatLong() {
   }
   isGeneratingLatLong.value = true;
   const postalCode = geoPoint.value.postalCode;
-  const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
-
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { query: `postcode: ${query}` } } }) as any).data;
+    const result = await latLongForPostalCode(postalCode);
 
-    if (resp.docs.length > 0) {
-      const result = resp.docs[0];
+    if (result) {
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {
-      throw resp;
+      throw new Error("Unable to find lat long for postal code");
     }
   } catch (err) {
     commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
