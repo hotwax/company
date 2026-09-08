@@ -1,5 +1,6 @@
 import { companyDb } from "@/db/companyDb";
-import { registerCompanySeedDomains } from "./registerSeedDomains";
+import { SEED_SOURCES } from "@common/db/domains/seedSources";
+import { registerCompanySeedDomains, type SeedPick } from "./registerSeedDomains";
 
 /**
  * Side-effect module: registers Company's picked seed domains at import time.
@@ -14,4 +15,15 @@ import { registerCompanySeedDomains } from "./registerSeedDomains";
  * — the child registered first. Making the registration its own `import` fixes it, because now
  * it participates in import order like every other domain module.
  */
-registerCompanySeedDomains(companyDb.seed);
+const picks: SeedPick[] = Array.from(companyDb.seedTables).map((table) => {
+  const entity = companyDb.entities[table];
+  const source = SEED_SOURCES[table as keyof typeof SEED_SOURCES];
+  return {
+    name: source.name,
+    table,
+    projection: entity,
+    source,
+  };
+});
+
+registerCompanySeedDomains(picks);

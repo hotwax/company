@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defineEntity } from "@common/db/defineEntity";
 
 /**
  * An automatic snapshot must never empty a populated table on the strength of a zero-row fetch.
@@ -46,7 +47,7 @@ vi.mock("@/utils/db/appCacheDb", () => ({
 const CONFIG = {
   name: "productStoreTest",
   table: "productStores" as const,
-  projection: { keyField: "productStoreId", fields: { productStoreId: "text" as const } },
+  projection: defineEntity({ primaryKey: "productStoreId", fields: { productStoreId: "text" } }),
   listUrl: "admin/productStores",
   collectionKey: null,
 };
@@ -58,60 +59,64 @@ async function register() {
   const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
   registerSnapshotDomain(CONFIG as any);
   const { getSyncDomain } = await import("@/workers/syncRegistry");
-  return getSyncDomain("productStoreTest")!;
+  return getSyncDomain(CONFIG.name)!;
 }
 
-describe("snapshot domain zero-row wipe guard", () => {
-  beforeEach(() => {
-    state.fetched = [];
-    state.cachedCount = 0;
-    state.snapshotCalls = [];
-    state.marked = [];
-    state.syncedAlready = false;
-  });
+beforeEach(() => {
+  state.fetched = [];
+  state.cachedCount = 0;
+  state.snapshotCalls = [];
+  state.marked = [];
+  state.syncedAlready = false;
+});
 
+describe("snapshot domain zero-row wipe guard", () => {
   it("refuses to snapshot when the fetch is empty but the cache holds rows", async () => {
     state.fetched = [];
-    state.cachedCount = 17;
-
+    state.cachedCount = 5;
     const domain = await register();
-    const written = await domain.sync(ctx, undefined, {});
+
+    const written = await domain.sync(ctx as any, undefined, { force: false });
 
     expect(written).toBe(0);
-    expect(state.snapshotCalls).toHaveLength(0); // nothing pruned
-    expect(state.marked).toEqual([]); // and NOT marked synced, so the next pass retries
+    expect(state.snapshotCalls).toHaveLength(0);
+    // Crucial: not marked synced, so the next tick retries.
+    expect(state.marked).toHaveLength(0);
   });
 
   it("allows an empty snapshot when the cache is also empty (a genuinely empty set)", async () => {
     state.fetched = [];
     state.cachedCount = 0;
-
     const domain = await register();
-    await domain.sync(ctx, undefined, {});
 
+    const written = await domain.sync(ctx as any, undefined, { force: false });
+
+    expect(written).toBe(0);
     expect(state.snapshotCalls).toHaveLength(1);
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 
   it("lets a manual resync (force) clear a table deliberately", async () => {
     state.fetched = [];
-    state.cachedCount = 17;
-
+    state.cachedCount = 5;
     const domain = await register();
-    await domain.sync(ctx, undefined, { force: true });
 
+    const written = await domain.sync(ctx as any, undefined, { force: true });
+
+    expect(written).toBe(0);
     expect(state.snapshotCalls).toHaveLength(1);
-    expect(state.snapshotCalls[0]).toEqual([]);
+    expect(state.marked).toEqual(["productStoreTest"]);
   });
 
   it("snapshots normally when the fetch returns rows", async () => {
-    state.fetched = [{ productStoreId: "STORE" }, { productStoreId: "STORE2" }];
-    state.cachedCount = 17;
-
+    state.fetched = [{ productStoreId: "STORE_1" }];
+    state.cachedCount = 5;
     const domain = await register();
-    const written = await domain.sync(ctx, undefined, {});
 
-    expect(written).toBe(2);
+    const written = await domain.sync(ctx as any, undefined, { force: false });
+
+    expect(written).toBe(1);
+    expect(state.snapshotCalls).toHaveLength(1);
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 });

@@ -1,8 +1,16 @@
-import type { SeedEntity } from "@common/db/domains/seedEntities";
+import type { Entity } from "@common/db/defineEntity";
+import type { SeedSource } from "@common/db/domains/seedSources";
 import { registerSnapshotDomain } from "./snapshotDomain";
 
+export interface SeedPick {
+  name: string;
+  table: string;
+  projection: Entity;
+  source: SeedSource;
+}
+
 /**
- * Registers Company's picked seed entities (Task 3/5) as Company's own sync domains.
+ * Registers Company's picked seed entities as Company's own sync domains.
  *
  * Deliberately NOT the framework's `registerSeedDomains` (`@common/db/sync/registerSeedDomains`):
  * that helper feeds `common/db/sync/snapshotDomain.ts`, which registers into the framework's OWN
@@ -22,13 +30,13 @@ import { registerSnapshotDomain } from "./snapshotDomain";
  * through unchanged — the adopted domains behave exactly like Company's hand-written ones: same
  * registry, same harness tick, same force-resync, same row count.
  */
-export function registerCompanySeedDomains(entities: readonly SeedEntity[]): void {
-  for (const entity of entities) {
+export function registerCompanySeedDomains(picks: readonly SeedPick[]): void {
+  for (const pick of picks) {
     registerSnapshotDomain({
-      name: entity.name,
-      table: entity.table,
-      projection: entity.projection,
-      ...entity.source,
+      name: pick.name,
+      table: pick.table as any,
+      projection: pick.projection,
+      ...pick.source,
     } as Parameters<typeof registerSnapshotDomain>[0]);
   }
 }

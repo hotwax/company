@@ -1,6 +1,8 @@
 import { type CacheTableName, defineCachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
-import { isUnkeyableFetch, type EntityProjection } from "@/utils/db/cacheProjection";
+import { isUnkeyableFetch } from "@/utils/db/cacheProjection";
+import type { Entity } from "@common/db/defineEntity";
+import { canonicalKey, entityKeyOf } from "@common/db/projection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageAll, unwrapCollection, workerGet } from "./workerFetch";
 
@@ -21,7 +23,7 @@ export interface SnapshotDomainConfig {
   /** Registry name used to activate the domain (e.g. "productStore"). */
   name: string;
   table: CacheTableName;
-  projection: EntityProjection;
+  projection: Entity;
   /** List endpoint returning the full set. */
   listUrl: string;
   /**
@@ -84,10 +86,8 @@ export interface SnapshotDomainConfig {
 
 /** The record's cache key, used for the paging no-progress guard and for delete handling. */
 function keyOfRecord(record: any, config: SnapshotDomainConfig): string | undefined {
-  const key = config.projection.buildKey
-    ? config.projection.buildKey(record)
-    : record?.[config.projection.keyField];
-  return key === undefined || key === null || key === "" ? undefined : String(key);
+  const key = entityKeyOf(record, config.projection);
+  return key !== undefined ? canonicalKey(key) : undefined;
 }
 
 
@@ -289,15 +289,11 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
         : (envelope && typeof envelope === "object" && !Array.isArray(envelope) ? envelope : null);
       if (!record) {
         // The record is gone (deleted server-side) — drop it so the cache doesn't keep a ghost.
-        const key = config.projection.buildKey
-          ? config.projection.buildKey(pk)
-          : pk[config.projection.keyField];
-        if (key) await cache.remove(String(key));
+        const key = entityKeyOf(pk, config.projection);
+        if (key !== undefined) await cache.remove(key);
         return 0;
       }
       return cache.upsertMany([record]);
     },
   });
-
-  return cache;
 }

@@ -1,9 +1,11 @@
 import Dexie, { type Table, liveQuery, type Observable } from "dexie";
 import { ensureDbReady } from "@common/db/baseDb";
 import { companyDb } from "@/db/companyDb";
+import type { Entity } from "@common/db/defineEntity";
+import type { DbKey } from "@common/db/types";
+import { entityKeyOf } from "@common/db/projection";
 import {
   type CachedRow,
-  type EntityProjection,
   diffStaleKeys,
   newestValue,
   projectRows,
@@ -131,7 +133,7 @@ export interface CachedEntity {
    */
   count(scope?: { field: string; value: unknown }, equals?: Record<string, unknown>): Promise<number>;
   /** Remove one row by primary key (used after a delete mutation). */
-  remove(key: string): Promise<void>;
+  remove(key: DbKey): Promise<void>;
   /** Live, reactive view of the table, newest `dateField` first when given. */
   live(options?: LiveQueryOptions): Observable<CachedRow[]>;
   /** All rows, one shot. */
@@ -171,31 +173,35 @@ function normalizeIndexName(name: string): string {
  * Bind a projection to a cache table, yielding the operations every sync domain needs. This is
  * the seam that keeps domain code free of Dexie: a domain declares its fields and gets storage.
  */
-export function defineCachedEntity(table: CacheTableName, projection: EntityProjection): CachedEntity {
-  const dexieTable = () => (companyDb.raw() as any)[table] as Table<CachedRow, string>;
+export function defineCachedEntity(table: CacheTableName, entity: Entity): CachedEntity {
+  const dexieTable = () => (companyDb.raw() as any)[table] as Table<CachedRow, DbKey>;
 
   return {
     table,
 
     async upsertMany(rawRows) {
-      const rows = projectRows(rawRows, projection, Date.now());
+      const rows = projectRows(rawRows, entity, Date.now());
       if (rows.length) await dexieTable().bulkPut(rows);
       return rows.length;
     },
 
     async snapshotReplace(rawRows, scope) {
-      const rows = projectRows(rawRows, projection, Date.now());
+      const rows = projectRows(rawRows, entity, Date.now());
       let pruned = 0;
       await companyDb.raw().transaction("rw", dexieTable(), async () => {
-        const existing = scope
+        const existingKeys = (scope
           ? await dexieTable().where(scope.field).equals(scope.value as any).primaryKeys()
-          : await dexieTable().toCollection().primaryKeys();
-        const stale = diffStaleKeys(
-          existing as string[],
-          rows.map((row) => String(row[projection.keyField])),
-        );
+          : await dexieTable().toCollection().primaryKeys()) as DbKey[];
+
+        const freshKeys: DbKey[] = [];
+        for (const row of rows) {
+          const key = entityKeyOf(row, entity);
+          if (key !== undefined) freshKeys.push(key);
+        }
+
+        const stale = diffStaleKeys(existingKeys, freshKeys);
         if (stale.length) {
-          await dexieTable().bulkDelete(stale);
+          await dexieTable().bulkDelete(stale as any[]);
           pruned = stale.length;
         }
         if (rows.length) await dexieTable().bulkPut(rows);

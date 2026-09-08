@@ -1,37 +1,10 @@
-import {
-  carrierFacilityProjection,
-  carrierProjection,
-  carrierShipmentMethodProjection,
-  productTypeProjection,
-  shopifyLocationProjection,
-  shopifyShopProjection,
-  shopifyTypeMappingProjection,
-  productStoreShipmentCountProjection,
-  productStoreShippingMethodProjection,
-  shopifyCarrierShipmentProjection,
-  facilityGroupProductStoreProjection,
-  enumGroupMemberProjection,
-  facilityIdentificationProjection,
-  systemMessageTypeProjection,
-  appProjection,
-  appVersionProjection,
-  statusProjection,
-  userGroupProjection,
-  facilityGroupProjection,
-  integrationTypeMappingProjection,
-  organizationRelationshipProjection,
-  permissionProjection,
-  currencyProjection,
-  inventoryEventDocumentProjection,
-  serviceJobProjection,
-  systemMessageRemoteProjection,
-} from "@/utils/db/cacheEntities";
+import { companyDb } from "@/db/companyDb";
 import { registerSnapshotDomain } from "./snapshotDomain";
 
 registerSnapshotDomain({
   name: "organizationRelationship",
   table: "organizationRelationships",
-  projection: organizationRelationshipProjection,
+  projection: companyDb.entities.organizationRelationships,
   listUrl: "oms/partyRelationships",
   collectionKey: null,
   listParams: {
@@ -60,7 +33,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "serviceJob",
   table: "serviceJobs",
-  projection: serviceJobProjection,
+  projection: companyDb.entities.serviceJobs,
   listUrl: "admin/serviceJobs",
   collectionKey: "serviceJobList",
   byPk: (pk) => ({ url: `admin/serviceJobs/${encodeURIComponent(String(pk.jobName))}` }),
@@ -77,7 +50,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "inventoryEventDocument",
   table: "inventoryEventDocuments",
-  projection: inventoryEventDocumentProjection,
+  projection: companyDb.entities.inventoryEventDocuments,
   listUrl: "admin/dataDocuments",
   collectionKey: "dataDocuments",
   /**
@@ -93,7 +66,7 @@ registerSnapshotDomain({
    * upsert would leave it behind.
    */
   refetchScope: (pk) => ({
-    params: { queryString: pk.dataDocumentId },
+    params: { dataDocumentId: pk.dataDocumentId },
     scope: { field: "dataDocumentId", value: pk.dataDocumentId },
   }),
 });
@@ -101,7 +74,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "systemMessageRemote",
   table: "systemMessageRemotes",
-  projection: systemMessageRemoteProjection,
+  projection: companyDb.entities.systemMessageRemotes,
   listUrl: "oms/systemMessageRemotes",
   collectionKey: "systemMessageRemoteList",
   /**
@@ -131,7 +104,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "carrier",
   table: "carriers",
-  projection: carrierProjection,
+  projection: companyDb.entities.carriers,
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
   strictCollection: true,
@@ -145,7 +118,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "carrierShipmentMethod",
   table: "carrierShipmentMethods",
-  projection: carrierShipmentMethodProjection,
+  projection: companyDb.entities.carrierShipmentMethods,
   listUrl: "oms/shippingGateways/carrierShipmentMethods",
   collectionKey: null,
   strictCollection: true,
@@ -163,7 +136,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "carrierFacility",
   table: "carrierFacilities",
-  projection: carrierFacilityProjection,
+  projection: companyDb.entities.carrierFacilities,
   listUrl: "oms/shippingGateways/carrierParties",
   collectionKey: null,
   strictCollection: true,
@@ -178,7 +151,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "shopifyShop",
   table: "shopifyShops",
-  projection: shopifyShopProjection,
+  projection: companyDb.entities.shopifyShops,
   listUrl: "oms/shopifyShops/shops",
   collectionKey: null, // bare array
   /**
@@ -196,7 +169,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "facilityGroup",
   table: "facilityGroups",
-  projection: facilityGroupProjection,
+  projection: companyDb.entities.facilityGroups,
   listUrl: "oms/facilityGroups",
   collectionKey: null, // bare array
   // No id-level GET in use — re-list and snapshot the whole (small) set.
@@ -206,7 +179,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "permission",
   table: "permissions",
-  projection: permissionProjection,
+  projection: companyDb.entities.permissions,
   listUrl: "admin/userPermissions",
   collectionKey: null, // bare array
   listParams: { orderByField: "userPermissionId" },
@@ -215,7 +188,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "integrationTypeMapping",
   table: "integrationTypeMappings",
-  projection: integrationTypeMappingProjection,
+  projection: companyDb.entities.integrationTypeMappings,
   listUrl: "admin/integrationTypeMappings",
   collectionKey: null, // bare array
   byPk: (pk) => ({
@@ -225,20 +198,20 @@ registerSnapshotDomain({
 
 // --- Tier 2: lookup / type reference domains. Small, bounded, bare-array endpoints. ---
 
-const LOOKUPS: Array<{ name: string; table: any; projection: any; listUrl: string; listParams?: Record<string, unknown> }> = [
-  { name: "status", table: "statuses", projection: statusProjection, listUrl: "oms/statuses" },
-  { name: "userGroup", table: "userGroups", projection: userGroupProjection, listUrl: "admin/userGroups" },
-  { name: "productType", table: "productTypes", projection: productTypeProjection, listUrl: "oms/products/productTypes" },
+const LOOKUPS: Array<{ name: string; table: keyof typeof companyDb.entities; listUrl: string; listParams?: Record<string, unknown> }> = [
+  { name: "status", table: "statuses", listUrl: "oms/statuses" },
+  { name: "userGroup", table: "userGroups", listUrl: "admin/userGroups" },
+  { name: "productType", table: "productTypes", listUrl: "oms/products/productTypes" },
   // `admin/uoms` covers every unit of measure; only the currency ones are wanted here.
-  { name: "currency", table: "currencies", projection: currencyProjection, listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
-  { name: "systemMessageType", table: "systemMessageTypes", projection: systemMessageTypeProjection, listUrl: "admin/systemMessages/types" },
+  { name: "currency", table: "currencies", listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
+  { name: "systemMessageType", table: "systemMessageTypes", listUrl: "admin/systemMessages/types" },
 ];
 
 for (const lookup of LOOKUPS) {
   registerSnapshotDomain({
     name: lookup.name,
     table: lookup.table,
-    projection: lookup.projection,
+    projection: companyDb.entities[lookup.table],
     listUrl: lookup.listUrl,
     listParams: lookup.listParams,
     collectionKey: null, // bare array
@@ -252,7 +225,7 @@ for (const lookup of LOOKUPS) {
 registerSnapshotDomain({
   name: "shopifyLocation",
   table: "shopifyLocations",
-  projection: shopifyLocationProjection,
+  projection: companyDb.entities.shopifyLocations,
   listUrl: "oms/shopifyShops/locations",
   collectionKey: null,
   // A mutation affects one shop, so re-list just that shop and prune within it.
@@ -265,7 +238,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "shopifyTypeMapping",
   table: "shopifyTypeMappings",
-  projection: shopifyTypeMappingProjection,
+  projection: companyDb.entities.shopifyTypeMappings,
   listUrl: "oms/shopifyShops/typeMappings",
   collectionKey: null,
   /**
@@ -290,7 +263,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "productStoreShipmentCount",
   table: "productStoreShipmentCounts",
-  projection: productStoreShipmentCountProjection,
+  projection: companyDb.entities.productStoreShipmentCounts,
   listUrl: "oms/productStores/shipmentMethods/counts",
   collectionKey: null, // bare array
 });
@@ -298,7 +271,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "shopifyCarrierShipment",
   table: "shopifyCarrierShipments",
-  projection: shopifyCarrierShipmentProjection,
+  projection: companyDb.entities.shopifyCarrierShipments,
   listUrl: "oms/shopifyShops/carrierShipments",
   collectionKey: null, // bare array
   refetchScope: (pk) => ({
@@ -313,7 +286,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "enumGroupMember",
   table: "enumGroupMembers",
-  projection: enumGroupMemberProjection,
+  projection: companyDb.entities.enumGroupMembers,
   listUrl: "admin/enumGroups/NETSUITE_IIV_REASON/members",
   collectionKey: null,
   listParams: { enumerationGroupId: "NETSUITE_IIV_REASON" },
@@ -329,7 +302,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "facilityIdentification",
   table: "facilityIdentifications",
-  projection: facilityIdentificationProjection,
+  projection: companyDb.entities.facilityIdentifications,
   listUrl: "oms/facilities/identifications",
   collectionKey: null,
 });
@@ -339,7 +312,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "productStoreShippingMethod",
   table: "productStoreShippingMethods",
-  projection: productStoreShippingMethodProjection,
+  projection: companyDb.entities.productStoreShippingMethods,
   listUrl: "admin/productStores",
   collectionKey: null, // bare array
   strictCollection: true,
@@ -356,7 +329,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "facilityGroupProductStore",
   table: "facilityGroupProductStores",
-  projection: facilityGroupProductStoreProjection,
+  projection: companyDb.entities.facilityGroupProductStores,
   listUrl: "oms/groupProductStores",
   collectionKey: null, // bare array
   refetchScope: (pk) => ({
@@ -370,7 +343,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "app",
   table: "apps",
-  projection: appProjection,
+  projection: companyDb.entities.apps,
   listUrl: "admin/apps",
   collectionKey: null, // bare array
 });
@@ -378,7 +351,7 @@ registerSnapshotDomain({
 registerSnapshotDomain({
   name: "appVersion",
   table: "appVersions",
-  projection: appVersionProjection,
+  projection: companyDb.entities.appVersions,
   // `CommerceAppAndDeployment` list — INNER-joined, so it returns only apps that HAVE a deployment.
   listUrl: "admin/apps/appVersions",
   collectionKey: null, // bare array

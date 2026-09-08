@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defineEntity } from "@common/db/defineEntity";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -11,12 +12,11 @@ import {
   toMillis,
   toText,
 } from "@/utils/db/cacheProjection";
-import { dataFeedProjection } from "@/utils/db/cacheEntities";
 
 const NOW = 1_700_000_000_000;
 
-const logProjection = {
-  keyField: "logId",
+const logEntity = defineEntity({
+  primaryKey: "logId",
   fields: {
     logId: "text",
     configId: "text",
@@ -24,7 +24,16 @@ const logProjection = {
     createdDate: "date",
     finishDateTime: "date",
   },
-} as const;
+});
+
+const dataFeedEntity = defineEntity({
+  primaryKey: "dataFeedId",
+  fields: {
+    dataFeedId: "text",
+    dataFeedTypeEnumId: "text",
+    feedName: "text",
+  },
+});
 
 describe("toMillis", () => {
   it("passes through finite numbers", () => {
@@ -71,7 +80,7 @@ describe("projectRow", () => {
       createdDate: "1784757294252",
       extraServerField: "kept only in raw",
     };
-    const row = projectRow(raw, logProjection, NOW)!;
+    const row = projectRow(raw, logEntity, NOW)!;
 
     expect(row.logId).toBe("M101327");
     expect(row.configId).toBe("SYNC_SHOPIFY_ORDER");
@@ -79,33 +88,16 @@ describe("projectRow", () => {
     expect(row.createdDate).toBe(1_784_757_294_252);
     expect(row.cachedAt).toBe(NOW);
     expect(row.raw).toBe(raw);
-    // A field the server omitted is absent, not null — Dexie indexes stay sparse.
     expect("finishDateTime" in row).toBe(false);
   });
 
   it("returns null when the primary key is missing, so unaddressable rows are skipped", () => {
-    expect(projectRow({ configId: "X" }, logProjection, NOW)).toBeNull();
-    expect(projectRow({ logId: "  " }, logProjection, NOW)).toBeNull();
-  });
-
-  it("supports a synthetic composite key (date-effective association)", () => {
-    const memberProjection = {
-      keyField: "memberKey",
-      fields: { facilityGroupId: "text", facilityId: "text", fromDate: "date" },
-      buildKey: (raw: Record<string, unknown>) =>
-        `${raw.facilityGroupId}|${raw.facilityId}|${raw.fromDate}`,
-    } as const;
-
-    const row = projectRow(
-      { facilityGroupId: "ARCHIVE", facilityId: "STORE_1", fromDate: 1_700_000_000_000 },
-      memberProjection,
-      NOW,
-    )!;
-    expect(row.memberKey).toBe("ARCHIVE|STORE_1|1700000000000");
+    expect(projectRow({ configId: "X" }, logEntity, NOW)).toBeNull();
+    expect(projectRow({ logId: "  " }, logEntity, NOW)).toBeNull();
   });
 
   it("projectRows drops keyless records rather than throwing", () => {
-    const rows = projectRows([{ logId: "A" }, { configId: "no key" }, { logId: "B" }], logProjection, NOW);
+    const rows = projectRows([{ logId: "A" }, { configId: "no key" }, { logId: "B" }], logEntity, NOW);
     expect(rows.map((row) => row.logId)).toEqual(["A", "B"]);
   });
 
@@ -114,11 +106,63 @@ describe("projectRow", () => {
       dataFeedId: "ShopifyInventoryChannelEventFeed",
       dataFeedTypeEnumId: "DTFDTP_RT_PUSH",
       feedName: "Shopify Inventory Channel Event Feed",
-    }, dataFeedProjection, NOW)!;
+    }, dataFeedEntity, NOW)!;
 
     expect(row.dataFeedId).toBe("ShopifyInventoryChannelEventFeed");
     expect(row.dataFeedTypeEnumId).toBe("DTFDTP_RT_PUSH");
     expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
+  });
+});
+
+describe("projectRow with a compound key", () => {
+  const groupFacility = defineEntity({
+    primaryKey: "facilityGroupId,facilityId,fromDate",
+    fields: {
+      facilityGroupId: "text",
+      facilityId: "text",
+      facilityName: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["facilityGroupId", "facilityId", "fromDate", "thruDate"],
+  });
+
+  it("stores the key members as real fields, with no synthetic column", () => {
+    const raw = { facilityGroupId: "GRP1", facilityId: "FAC1", fromDate: 1700000000000 };
+    const row = projectRow(raw, groupFacility, 500)!;
+
+    expect(row.facilityGroupId).toBe("GRP1");
+    expect(row.fromDate).toBe(1700000000000);
+    expect(row.memberKey).toBeUndefined();
+  });
+
+  it("keeps the untouched server payload and cachedAt", () => {
+    const raw = { facilityGroupId: "GRP1", facilityId: "FAC1", fromDate: 1, extra: "kept" };
+    const row = projectRow(raw, groupFacility, 500)!;
+
+    expect(row.raw).toEqual(raw);
+    expect(row.cachedAt).toBe(500);
+  });
+
+  it("returns null when any key member is missing", () => {
+    expect(projectRow({ facilityGroupId: "GRP1", facilityId: "FAC1" }, groupFacility, 1)).toBeNull();
+  });
+
+  it("flags a fetch it can key none of", () => {
+    expect(isUnkeyableFetch([{ wrong: "shape" }], groupFacility)).toBe(true);
+  });
+});
+
+describe("diffStaleKeys with compound keys", () => {
+  it("diffs array keys by value and returns the original array form", () => {
+    const stale = diffStaleKeys([["A", "1"], ["B", "2"]], [["B", "2"]]);
+
+    expect(stale).toEqual([["A", "1"]]);
+    expect(Array.isArray(stale[0])).toBe(true);
+  });
+
+  it("still diffs scalar keys", () => {
+    expect(diffStaleKeys(["A", "B"], ["B"])).toEqual(["A"]);
   });
 });
 
@@ -175,31 +219,23 @@ describe("keepNewerThan (inclusive-boundary dedup)", () => {
 });
 
 describe("isUnkeyableFetch", () => {
-  // Mirrors the real productStoreFacility projection: the key needs BOTH ids.
-  const projection = {
-    keyField: "storeFacilityKey",
+  const storeFacilityEntity = defineEntity({
+    primaryKey: "productStoreId,facilityId",
     fields: { productStoreId: "text", facilityId: "text" },
-    buildKey: (raw: Record<string, unknown>) =>
-      raw?.productStoreId && raw?.facilityId
-        ? `${raw.productStoreId}::${raw.facilityId}`
-        : undefined,
-  } as const;
+  });
 
   it("is false for an empty fetch, which is a legitimate empty scope", () => {
-    expect(isUnkeyableFetch([], projection as any)).toBe(false);
+    expect(isUnkeyableFetch([], storeFacilityEntity)).toBe(false);
   });
 
   it("is false when the rows are keyable", () => {
     const rows = [{ productStoreId: "STORE", facilityId: "BROADWAY" }];
-    expect(isUnkeyableFetch(rows, projection as any)).toBe(false);
+    expect(isUnkeyableFetch(rows, storeFacilityEntity)).toBe(false);
   });
 
   it("is true when a fetch returns the WRONG entity, so its rows cannot be keyed", () => {
-    // What the fan-out refetch bug actually returned: product stores, not store<->facility links.
-    // Every row lacks facilityId, so the projection keys none of them. Snapshotting this would
-    // diff cached keys against zero fresh keys and prune the entire scope.
     const wrongEntity = [{ productStoreId: "STORE", storeName: "Demo Store" }];
-    expect(isUnkeyableFetch(wrongEntity, projection as any)).toBe(true);
+    expect(isUnkeyableFetch(wrongEntity, storeFacilityEntity)).toBe(true);
   });
 
   it("is false if even one row keys, so a partial response still snapshots", () => {
@@ -207,7 +243,7 @@ describe("isUnkeyableFetch", () => {
       { productStoreId: "STORE", storeName: "Demo Store" },
       { productStoreId: "STORE", facilityId: "BROADWAY" },
     ];
-    expect(isUnkeyableFetch(mixed, projection as any)).toBe(false);
+    expect(isUnkeyableFetch(mixed, storeFacilityEntity)).toBe(false);
   });
 });
 
@@ -227,7 +263,6 @@ describe("isEffectiveNow", () => {
   });
 
   it("drops a row closed at exactly now, so a just-removed record disappears immediately", () => {
-    // The remove mutations stamp thruDate = Date.now(); an inclusive check would keep it visible.
     expect(isEffectiveNow({ fromDate: NOW - 100, thruDate: NOW }, NOW)).toBe(false);
   });
 
@@ -241,38 +276,34 @@ describe("isEffectiveNow", () => {
 });
 
 describe("projectRow — rename", () => {
-  const projection = {
-    keyField: "systemMessageId",
+  const systemMessageEntity = defineEntity({
+    primaryKey: "systemMessageId",
     fields: { systemMessageId: "text", shopId: "text", logId: "text" },
-    // Keyed by the CACHED name → the source field. Getting this backwards silently drops the field,
-    // which is how `shopId` came back undefined on every cached sync run while `raw.remoteInternalId`
-    // sat right there — and a table indexed by `shopId` then scopes to nothing.
     rename: { shopId: "remoteInternalId" },
-  } as const;
+  });
 
   it("reads a renamed field from its source name", () => {
-    const row = projectRow({ systemMessageId: "M1", remoteInternalId: "10000" }, projection as any, 1);
+    const row = projectRow({ systemMessageId: "M1", remoteInternalId: "10000" }, systemMessageEntity, 1);
 
     expect(row?.shopId).toBe("10000");
   });
 
   it("prefers the cached name when the feed already uses it", () => {
     const row = projectRow(
-      { systemMessageId: "M1", shopId: "10010", remoteInternalId: "10000" }, projection as any, 1);
+      { systemMessageId: "M1", shopId: "10010", remoteInternalId: "10000" }, systemMessageEntity, 1);
 
     expect(row?.shopId).toBe("10010");
   });
 
   it("leaves a renamed field absent when neither name is present", () => {
-    const row = projectRow({ systemMessageId: "M1" }, projection as any, 1);
+    const row = projectRow({ systemMessageId: "M1" }, systemMessageEntity, 1);
 
     expect(row).not.toBeNull();
     expect("shopId" in (row as any)).toBe(false);
   });
 
   it("still drops fields the sparse feed omitted", () => {
-    // The DataDocument omits the log side entirely for a message that never imported.
-    const row = projectRow({ systemMessageId: "M1", remoteInternalId: "10000" }, projection as any, 1);
+    const row = projectRow({ systemMessageId: "M1", remoteInternalId: "10000" }, systemMessageEntity, 1);
 
     expect("logId" in (row as any)).toBe(false);
   });

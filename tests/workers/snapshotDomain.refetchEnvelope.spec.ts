@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defineEntity } from "@common/db/defineEntity";
 
 /**
  * A write-through that stores NOTHING is the worst kind of cache bug: the mutation succeeds, the
@@ -70,7 +71,7 @@ async function register(config: any) {
 const JOB_CONFIG = {
   name: "serviceJobTest",
   table: "serviceJobs" as const,
-  projection: { keyField: "jobName", fields: { jobName: "text" as const } },
+  projection: defineEntity({ primaryKey: "jobName", fields: { jobName: "text" } }),
   listUrl: "admin/serviceJobs",
   collectionKey: "serviceJobList",
   byPk: (pk: any) => ({ url: `admin/serviceJobs/${pk.jobName}` }),
@@ -80,7 +81,7 @@ const JOB_CONFIG = {
 const REMOTE_CONFIG = {
   name: "systemMessageRemoteTest",
   table: "systemMessageRemotes" as const,
-  projection: { keyField: "systemMessageRemoteId", fields: { systemMessageRemoteId: "text" as const } },
+  projection: defineEntity({ primaryKey: "systemMessageRemoteId", fields: { systemMessageRemoteId: "text" } }),
   listUrl: "oms/systemMessageRemotes",
   collectionKey: "systemMessageRemoteList",
   refetchScope: (pk: any) => ({

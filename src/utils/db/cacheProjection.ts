@@ -6,35 +6,18 @@
  * written and *which* rows are stale.
  */
 
+import type { Entity } from "@common/db/defineEntity";
+import type { DbKey, FieldKind } from "@common/db/types";
+import { canonicalKey, toCount, toMillis, toText } from "@common/db/projection";
+
+export type { FieldKind };
+export { toCount, toMillis, toText };
+
 /** A cached row: the indexed/normalized fields, plus the untouched server object. */
 export interface CachedRow {
   [field: string]: unknown;
   raw: Record<string, unknown>;
   cachedAt: number;
-}
-
-/** Coerce a server date field (epoch-millis number, numeric string, or ISO string) to millis. */
-export function toMillis(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
-
-/** Coerce a server count field to a number, or undefined when absent/unparseable. */
-export function toCount(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-/** Coerce to a trimmed string, or undefined when absent. */
-export function toText(value: unknown): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  const text = String(value).trim();
-  return text === "" ? undefined : text;
 }
 
 /**
@@ -46,30 +29,6 @@ export function toText(value: unknown): string | undefined {
  * silently destroying it. Only ever use `structured` for a field that is NOT indexed; Dexie stores it
  * fine via structured clone, but it cannot be a key path.
  */
-export type FieldKind = "text" | "count" | "date" | "structured";
-
-export interface EntityProjection {
-  /** Primary-key field name on the cached row (must project to a non-empty string). */
-  keyField: string;
-  /** field name → how to coerce it. Every listed field is hoisted to the row's top level. */
-  fields: Record<string, FieldKind>;
-  /**
-   * Optional synthetic key builder, for entities whose natural key is composite (e.g. a
-   * date-effective association). Returns the value stored in `keyField`.
-   */
-  buildKey?: (raw: Record<string, unknown>) => string | undefined;
-  /**
-   * Cached-field name → the source field to read it from.
-   *
-   * For feeds that name a field differently from the entity the cache is modelling. The
-   * `SYSTEM_MESSAGE_DATA_MANAGER_LOG` document calls the shop `remoteInternalId`; storing it as
-   * `shopId` keeps the index name and every read site honest about what it is. The rename is applied
-   * only when the cached name is absent from the raw row, so a feed that already uses the cached name
-   * keeps working.
-   */
-  rename?: Record<string, string>;
-}
-
 const COERCE: Record<FieldKind, (value: unknown) => unknown> = {
   text: toText,
   count: toCount,
@@ -79,24 +38,27 @@ const COERCE: Record<FieldKind, (value: unknown) => unknown> = {
 };
 
 /**
- * Project one raw server record into a cached row. Returns null when the record has no usable
- * primary key — callers skip those rather than writing an unaddressable row.
+ * Project one raw server record into a cached row. Returns null when the record cannot be keyed —
+ * for a compound key that means ANY member failed to project.
+ *
+ * Unlike the framework's `projectRow`, this keeps `raw` (the untouched server object) and stamps
+ * `cachedAt`. 56 read sites across the app reach into `row.raw`, so that field is load-bearing.
  */
 export function projectRow(
   raw: Record<string, unknown>,
-  projection: EntityProjection,
+  entity: Entity,
   now: number,
 ): CachedRow | null {
   const row: Record<string, unknown> = {};
-  for (const [field, kind] of Object.entries(projection.fields)) {
-    const source = raw?.[field] !== undefined ? field : projection.rename?.[field] ?? field;
+  for (const [field, kind] of Object.entries(entity.fields)) {
+    const source = raw?.[field] !== undefined ? field : entity.rename?.[field] ?? field;
     const value = COERCE[kind](raw?.[source]);
     if (value !== undefined) row[field] = value;
   }
 
-  const key = projection.buildKey ? projection.buildKey(raw) : toText(raw?.[projection.keyField]);
-  if (!key) return null;
-  row[projection.keyField] = key;
+  for (const field of entity.primaryKeyFields) {
+    if (row[field] === undefined) return null;
+  }
 
   return { ...row, raw, cachedAt: now } as CachedRow;
 }
@@ -104,12 +66,12 @@ export function projectRow(
 /** Project many records, dropping any without a usable key. */
 export function projectRows(
   rawRows: Array<Record<string, unknown>>,
-  projection: EntityProjection,
+  entity: Entity,
   now: number,
 ): CachedRow[] {
   const rows: CachedRow[] = [];
   for (const raw of rawRows) {
-    const row = projectRow(raw, projection, now);
+    const row = projectRow(raw, entity, now);
     if (row) rows.push(row);
   }
   return rows;
@@ -148,18 +110,18 @@ export function isEffectiveNow(row: Record<string, unknown> | undefined, now: nu
  */
 export function isUnkeyableFetch(
   rawRows: Array<Record<string, unknown>>,
-  projection: EntityProjection,
+  entity: Entity,
 ): boolean {
-  return rawRows.length > 0 && projectRows(rawRows, projection, 0).length === 0;
+  return rawRows.length > 0 && projectRows(rawRows, entity, 0).length === 0;
 }
 
 /**
  * Keys to delete after a class-B snapshot sync: everything cached that the fresh full set no
  * longer contains. Without this, server-side deletions linger in the cache forever.
  */
-export function diffStaleKeys(existingKeys: readonly string[], freshKeys: readonly string[]): string[] {
-  const fresh = new Set(freshKeys);
-  return existingKeys.filter((key) => !fresh.has(key));
+export function diffStaleKeys(existingKeys: readonly DbKey[], freshKeys: readonly DbKey[]): DbKey[] {
+  const fresh = new Set(freshKeys.map(canonicalKey));
+  return existingKeys.filter((key) => !fresh.has(canonicalKey(key)));
 }
 
 /**
