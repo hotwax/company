@@ -31,9 +31,22 @@ describe("companySchema", () => {
     expect(companySchema.stores.systemMessages).toContain("[systemMessageRemoteId+systemMessageTypeId+initDate]");
   });
 
-  it("has no synthetic key column left anywhere", () => {
+  // An explicit list, not a `/Key$/` suffix pattern: a suffix match flags correct code.
+  // `mappedKey` (shopifyTypeMappings) is a legitimate compound-PK member and `mappingKey`
+  // (integrationTypeMappings) is an ordinary business field — neither is a retired synthetic
+  // key, so a blanket pattern would false-positive on both. Naming exactly what must be gone
+  // is what stops that mistake from silently passing again.
+  const RETIRED_SYNTHETIC_KEYS = [
+    "errorKey", "updateKey", "adjustmentKey", "carrierShipmentMethodKey",
+    "carrierFacilityKey", "documentFeedKey", "relationshipKey", "locationKey",
+    "typeMappingKey", "carrierShipmentKey", "facilityGroupProductStoreKey",
+    "enumGroupMemberKey", "facilityIdentificationKey", "appVersionKey",
+  ];
+
+  it("retires every synthetic key column", () => {
     for (const [table, entity] of Object.entries(companySchema.entities)) {
-      expect(entity.fieldNames.filter((f) => /Key$/.test(f)), `${table}`).toEqual([]);
+      const leftovers = entity.fieldNames.filter((f) => RETIRED_SYNTHETIC_KEYS.includes(f));
+      expect(leftovers, `${table} still declares a retired synthetic key`).toEqual([]);
     }
   });
 });
