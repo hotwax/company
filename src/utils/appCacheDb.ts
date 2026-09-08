@@ -390,13 +390,14 @@ export async function clearAllCaches(): Promise<void> {
   await Promise.all(companyDb.raw().tables.map((table) => table.clear()));
 }
 
-/** Drop the superseded single-purpose DataManagerLog cache database, if present. */
+/** Drop the superseded fixed-name cache databases, if present. */
 export async function deleteLegacyCaches(): Promise<void> {
-  try {
-    await Dexie.delete("DataManagerLogCacheDB");
-  } catch {
-    // best-effort cleanup; a failure here must never block app start
-  }
+  // Best-effort cleanup; a failure here must never block app start, and one database's
+  // failure must never prevent the other from being attempted.
+  await Promise.allSettled([
+    Dexie.delete("DataManagerLogCacheDB"),
+    Dexie.delete("CompanyCacheDB"),
+  ]);
 }
 
 
