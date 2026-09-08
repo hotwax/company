@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import { resyncDomain } from "@/services/appCacheBootstrap";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   currencyCache,
   enumCache,
@@ -15,7 +15,7 @@ import {
   shipmentMethodTypeCache,
   statusCache,
   systemMessageTypeCache,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { byDescription, useCachedList } from "./useCachedList";
 import { usePrimaryOrganization } from "./useOrganizations";
 

@@ -7,8 +7,8 @@ import {
   carrierShipmentMethodCache,
   carrierShipmentMethodProjection,
   productStoreShippingMethodProjection,
-} from "@/utils/cacheEntities";
-import { projectRow } from "@/utils/cacheProjection";
+} from "@/utils/db/cacheEntities";
+import { projectRow } from "@/utils/db/cacheProjection";
 
 const CACHED_AT = 1_800_000_000_000;
 

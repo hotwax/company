@@ -79,7 +79,7 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   clearSyncMarkers: vi.fn(async () => undefined),
   ensureCacheIdentity: vi.fn(async () => false),
 }));

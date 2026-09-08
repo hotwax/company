@@ -4,8 +4,8 @@ import {
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryAdjustmentDetailProjection,
   systemMessageCache,
-} from "@/utils/cacheEntities";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
+} from "@/utils/db/cacheEntities";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
 

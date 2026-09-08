@@ -1,7 +1,7 @@
 import { computed } from "vue";
 import { logger } from "@common";
 import { translate } from "@/i18n";
-import { productUpdateHistoryCache } from "@/utils/cacheEntities";
+import { productUpdateHistoryCache } from "@/utils/db/cacheEntities";
 import { useCachedList } from "./useCachedList";
 
 function parseJson(value: any, defaultValue: any) {

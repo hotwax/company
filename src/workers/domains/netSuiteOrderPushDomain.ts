@@ -3,8 +3,8 @@ import {
   netSuiteOrderPushBacklogCache,
   netSuiteRuleGroupCache,
   netSuiteRuleGroupRunCache,
-} from "@/utils/cacheEntities";
-import { keepNewerThan } from "@/utils/cacheProjection";
+} from "@/utils/db/cacheEntities";
+import { keepNewerThan } from "@/utils/db/cacheProjection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";
 

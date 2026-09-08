@@ -38,7 +38,7 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   defineCachedEntity: (table: string) => ({
     table,
     snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
@@ -315,7 +315,7 @@ describe.each([
 });
 
 it("orders dependent fan-out domains after their cached parents", async () => {
-  const { REFERENCE_DOMAIN_NAMES } = await import("@/utils/cacheDomainCatalog");
+  const { REFERENCE_DOMAIN_NAMES } = await import("@/utils/db/cacheDomainCatalog");
 
   expect(REFERENCE_DOMAIN_NAMES.indexOf("carrierFacility"))
     .toBeGreaterThan(REFERENCE_DOMAIN_NAMES.indexOf("carrier"));

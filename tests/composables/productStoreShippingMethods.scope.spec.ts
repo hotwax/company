@@ -26,7 +26,7 @@ vi.mock("@/services/appCacheBootstrap", () => ({
   resyncDomain: vi.fn(),
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   productStoreCache: { __kind: "stores" },
   productStoreFacilityCache: { __kind: "facilities" },
   productStoreShipmentCountCache: { __kind: "counts" },

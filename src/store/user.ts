@@ -410,7 +410,7 @@ export const useUserStore = defineStore("user", {
          * rather than the retired util store. The old code also fetched roles here and never read
          * them — dropped with the store.
          */
-        const { productStoreCache } = await import("@/utils/cacheEntities")
+        const { productStoreCache } = await import("@/utils/db/cacheEntities")
         const cachedStores = await productStoreCache.all().catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
@@ -952,7 +952,7 @@ export const useUserStore = defineStore("user", {
       // sessions yet, so one user's cached data can never surface in another's session.
       const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
       stopReferenceSync()
-      const { clearAllCaches } = await import("@/utils/appCacheDb")
+      const { clearAllCaches } = await import("@/utils/db/appCacheDb")
       await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
       const { useMaargConfig } = await import("@/composables/useSeed")

@@ -1,7 +1,7 @@
 import { computed, onUnmounted, ref, type Ref } from "vue";
 import type { Subscription } from "dexie";
-import type { CachedEntity, LiveQueryOptions } from "@/utils/appCacheDb";
-import type { CachedRow } from "@/utils/cacheProjection";
+import type { CachedEntity, LiveQueryOptions } from "@/utils/db/appCacheDb";
+import type { CachedRow } from "@/utils/db/cacheProjection";
 import { bootstrapState } from "@/services/appCacheBootstrap";
 
 /**

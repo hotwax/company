@@ -161,7 +161,7 @@ import {
   fetchShopifyShopLocations,
   updateInventoryChannel,
 } from "@/composables/useShopify";
-import { serviceJobCache } from "@/utils/cacheEntities";
+import { serviceJobCache } from "@/utils/db/cacheEntities";
 import { formatDateTime } from "@/utils";
 import { parameterMap } from "@/utils/serviceJob";
 

@@ -1,12 +1,12 @@
 import {
   hasSyncedThisLogin,
   markSyncedThisLogin,
-} from "@/utils/appCacheDb";
+} from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
 import {
   organizationCache,
   organizationProjection,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet } from "./workerFetch";
 

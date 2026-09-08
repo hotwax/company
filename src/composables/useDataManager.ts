@@ -1,6 +1,6 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
 import { api, logger } from '@common'
-import { dataManagerLogCache } from '@/utils/cacheEntities';
+import { dataManagerLogCache } from '@/utils/db/cacheEntities';
 import { useCachedList, useCachedRecord } from './useCachedList';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';

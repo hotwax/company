@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { alertController } from "@ionic/vue";
 import { api, commonUtil, emitter, logger } from "@common";
 import { translate } from "@/i18n";
@@ -7,7 +7,7 @@ import {
   enumGroupMemberCache,
   facilityIdentificationCache,
   integrationTypeMappingCache,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { useCachedList } from "./useCachedList";
 

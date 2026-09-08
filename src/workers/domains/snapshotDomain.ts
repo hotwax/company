@@ -1,6 +1,6 @@
-import { type CacheTableName, defineCachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
+import { type CacheTableName, defineCachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
-import { isUnkeyableFetch, type EntityProjection } from "@/utils/cacheProjection";
+import { isUnkeyableFetch, type EntityProjection } from "@/utils/db/cacheProjection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageAll, unwrapCollection, workerGet } from "./workerFetch";
 

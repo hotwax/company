@@ -52,7 +52,7 @@ const COMPANY_SEED_ENTITIES = [
 
 /**
  * Company's own 43 tables — everything the seed picks above do not provide. Moved verbatim
- * from `CACHE_SCHEMA` in `src/utils/appCacheDb.ts`, comments included: several document
+ * from `CACHE_SCHEMA` in `src/utils/db/appCacheDb.ts`, comments included: several document
  * measured findings and index-ordering rationale that still apply here unchanged.
  *
  * `facilityGroups`, `carriers`, `carrierShipmentMethods`, `shopifyShops` are here — not seed

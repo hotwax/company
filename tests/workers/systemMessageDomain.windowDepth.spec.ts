@@ -32,7 +32,7 @@ vi.mock("@/workers/domains/workerFetch", () => ({
 /** How many rows the cache claims to hold for the scope under test. */
 const cacheState = vi.hoisted(() => ({ count: 0 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   systemMessageCache: {
     all: vi.fn(async () => []),
     count: vi.fn(async () => cacheState.count),
@@ -54,7 +54,7 @@ vi.mock("@/utils/systemMessage", () => ({
   resolveShopRemoteIds: () => ["RemoteA"],
 }));
 
-vi.mock("@/utils/cacheProjection", () => ({
+vi.mock("@/utils/db/cacheProjection", () => ({
   keepNewerThan: (page: any[]) => page,
 }));
 

@@ -5,11 +5,11 @@ import {
   productStoreFacilityCache,
   productStoreShipmentCountCache,
   productStoreShippingMethodCache,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";
 

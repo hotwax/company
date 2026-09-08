@@ -10,7 +10,7 @@
  * removable feature (it dies when every shop is on the new sync), and burying 1,100 lines of legacy
  * teardown logic in the everyday Shopify composable would outlive its usefulness.
  */
-import { serviceJobCache, systemMessageTypeCache } from "@/utils/cacheEntities";
+import { serviceJobCache, systemMessageTypeCache } from "@/utils/db/cacheEntities";
 import { useMaargConfig } from "@/composables/useSeed";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";

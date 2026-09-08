@@ -13,7 +13,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   shopifyBulkOperationCache: { all: vi.fn(), upsertMany: vi.fn() },
   systemMessageCache: { all: vi.fn(), upsertMany: vi.fn() },
   systemMessageErrorCache: {

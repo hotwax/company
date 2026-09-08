@@ -40,7 +40,7 @@ vi.mock("@/utils", () => ({
   getResponseErrorMessage: (_error: any, fallback: string) => fallback,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   carrierCache: { __kind: "carriers" },
   carrierShipmentMethodCache: { __kind: "carrierMethods" },
   carrierFacilityCache: { __kind: "carrierFacilities" },

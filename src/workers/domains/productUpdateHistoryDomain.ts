@@ -1,4 +1,4 @@
-import { productUpdateHistoryCache } from "@/utils/cacheEntities";
+import { productUpdateHistoryCache } from "@/utils/db/cacheEntities";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst } from "./workerFetch";
 

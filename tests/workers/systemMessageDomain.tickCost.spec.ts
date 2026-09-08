@@ -29,7 +29,7 @@ vi.mock("@/workers/domains/workerFetch", () => ({
 /** Rows the cache would hold. `rowsMissing` is what drives the per-row refresh pass. */
 const cacheState = vi.hoisted(() => ({ unprocessed: [] as any[] }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   systemMessageCache: {
     all: vi.fn(async () => []),
     newestCursor: vi.fn(async () => undefined),
@@ -144,7 +144,7 @@ describe("systemMessage domain per-tick request budget", () => {
   });
 
   it("seeks the per-(remote,type) cursor through the index instead of reading the whole table", async () => {
-    const { systemMessageCache } = await import("@/utils/cacheEntities");
+    const { systemMessageCache } = await import("@/utils/db/cacheEntities");
     await runTick();
 
     // The old implementation called `.all()` once per (remote x type) — 12 full table reads a tick.

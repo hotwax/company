@@ -101,7 +101,7 @@ re-introduces exactly the load waterfalls this layer exists to remove.
 
 ### 4.2 Three sync classes
 
-Declared per domain in [`src/utils/cacheDomainCatalog.ts`](src/utils/cacheDomainCatalog.ts) — one
+Declared per domain in [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) — one
 list shared by the bootstrap and the Settings "Data Fetch Status" card so they cannot disagree.
 
 | Class | Character | When it syncs | Examples |
@@ -119,10 +119,10 @@ to "fix" incidentally.
 
 | File | Role |
 | --- | --- |
-| [`src/utils/appCacheDb.ts`](src/utils/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |
-| [`src/utils/cacheProjection.ts`](src/utils/cacheProjection.ts) | Row projection/normalization (`text`/`date`/`count` field kinds), staleness diffing. Every cached row also carries the untouched server object in `raw` |
-| [`src/utils/cacheEntities.ts`](src/utils/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
-| [`src/utils/cacheDomainCatalog.ts`](src/utils/cacheDomainCatalog.ts) | Domain → table → label → sync class |
+| [`src/utils/db/appCacheDb.ts`](src/utils/db/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |
+| [`src/utils/db/cacheProjection.ts`](src/utils/db/cacheProjection.ts) | Row projection/normalization (`text`/`date`/`count` field kinds), staleness diffing. Every cached row also carries the untouched server object in `raw` |
+| [`src/utils/db/cacheEntities.ts`](src/utils/db/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
+| [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) | Domain → table → label → sync class |
 | [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows, and which seed domains to exclude |
 | [`src/services/appCacheBootstrap.ts`](src/services/appCacheBootstrap.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
 | [`src/services/pollingService.ts`](src/services/pollingService.ts) | Main-thread half: spawns/terminates the worker, pushes the bearer token over `BroadcastChannel`, routes `auth-error` |

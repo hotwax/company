@@ -1,5 +1,5 @@
-import { dataManagerLogCache } from "@/utils/cacheEntities";
-import { keepNewerThan } from "@/utils/cacheProjection";
+import { dataManagerLogCache } from "@/utils/db/cacheEntities";
+import { keepNewerThan } from "@/utils/db/cacheProjection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";
 

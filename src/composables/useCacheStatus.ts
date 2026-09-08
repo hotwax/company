@@ -1,7 +1,7 @@
 import { computed, onUnmounted, ref } from "vue";
 import { liveQuery, type Subscription } from "dexie";
 import { companyDb } from "@/db/companyDb";
-import { CACHE_DOMAIN_CATALOG, type CacheDomainEntry } from "@/utils/cacheDomainCatalog";
+import { CACHE_DOMAIN_CATALOG, type CacheDomainEntry } from "@/utils/db/cacheDomainCatalog";
 import { resyncDomain, resyncReferenceData } from "@/services/appCacheBootstrap";
 
 /**

@@ -1,8 +1,8 @@
 import { expose } from "comlink";
 import { ensureDbReady } from "@common/db/baseDb";
 import { companyDb } from "@/db/companyDb";
-import { hasSyncedThisLogin } from "@/utils/appCacheDb";
-import { cacheScopeKey } from "@/utils/cacheScopeKey";
+import { hasSyncedThisLogin } from "@/utils/db/appCacheDb";
+import { cacheScopeKey } from "@/utils/db/cacheScopeKey";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
   type ActiveDomain,

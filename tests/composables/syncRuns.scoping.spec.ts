@@ -37,7 +37,7 @@ vi.mock("@/composables/useCachedList", () => ({
   byDescription: () => 0,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   syncRunCache: { __kind: "syncRuns" },
   systemMessageCache: { __kind: "messages" },
   dataManagerLogCache: { __kind: "logs" },

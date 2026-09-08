@@ -17,7 +17,7 @@ vi.mock("comlink", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   hasSyncedThisLogin: vi.fn(async () => true),
 }));
 

@@ -11,7 +11,7 @@ vi.mock("comlink", () => ({
   expose: (api: any) => { state.exposed = api; },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   hasSyncedThisLogin: vi.fn(async (domain: string) => state.completedDomains.has(domain)),
 }));
 

@@ -1363,8 +1363,8 @@ import {
   shopifyInventoryAdjustmentDetailCache,
   shopifyShopCache,
   systemMessageCache,
-} from "@/utils/cacheEntities";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+} from "@/utils/db/cacheEntities";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {

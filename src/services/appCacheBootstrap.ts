@@ -1,10 +1,10 @@
 import { reactive } from "vue";
 import { commonUtil } from "@common";
-import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/appCacheDb";
+import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
-import { REFERENCE_DOMAIN_NAMES } from "@/utils/cacheDomainCatalog";
-import { cacheScopeKey } from "@/utils/cacheScopeKey";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
+import { REFERENCE_DOMAIN_NAMES } from "@/utils/db/cacheDomainCatalog";
+import { cacheScopeKey } from "@/utils/db/cacheScopeKey";
 import { type SyncService, createSyncService } from "./pollingService";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 

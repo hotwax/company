@@ -3,7 +3,7 @@ import {
   shopifyShopCache,
   syncRunCache,
   systemMessageCache,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
 

@@ -1,7 +1,7 @@
 import { api, commonUtil } from "@common";
 import { computed } from "vue";
 import { resyncDomain } from "@/services/appCacheBootstrap";
-import { appCache, appVersionCache } from "@/utils/cacheEntities";
+import { appCache, appVersionCache } from "@/utils/db/cacheEntities";
 import { useCachedList } from "./useCachedList";
 import { useTypedEnums } from "./useSeed";
 

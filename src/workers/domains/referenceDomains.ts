@@ -25,7 +25,7 @@ import {
   inventoryEventDocumentProjection,
   serviceJobProjection,
   systemMessageRemoteProjection,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { registerSnapshotDomain } from "./snapshotDomain";
 
 registerSnapshotDomain({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { projectRow, projectRows } from "@/utils/cacheProjection";
-import { syncRunProjection } from "@/utils/cacheEntities";
+import { projectRow, projectRows } from "@/utils/db/cacheProjection";
+import { syncRunProjection } from "@/utils/db/cacheEntities";
 
 /**
  * L1 unit — the shop-scoped sync CURSOR (spine).

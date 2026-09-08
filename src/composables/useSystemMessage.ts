@@ -5,7 +5,7 @@ import {
   systemMessageCache,
   systemMessageErrorCache,
   systemMessageRemoteCache,
-} from '@/utils/cacheEntities';
+} from '@/utils/db/cacheEntities';
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,

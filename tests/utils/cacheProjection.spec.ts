@@ -10,8 +10,8 @@ import {
   toCount,
   toMillis,
   toText,
-} from "@/utils/cacheProjection";
-import { dataFeedProjection } from "@/utils/cacheEntities";
+} from "@/utils/db/cacheProjection";
+import { dataFeedProjection } from "@/utils/db/cacheEntities";
 
 const NOW = 1_700_000_000_000;
 

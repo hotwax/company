@@ -7,8 +7,8 @@ import {
   facilityCache,
   organizationCache,
   organizationRelationshipCache,
-} from "@/utils/cacheEntities";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+} from "@/utils/db/cacheEntities";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { onSessionCleared } from "./sessionScope";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 

@@ -26,7 +26,7 @@ vi.mock("@/services/appCacheBootstrap", () => ({
   resyncDomain: mocks.resyncDomain,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   facilityCache: {},
   organizationCache: {},
   organizationRelationshipCache: {},

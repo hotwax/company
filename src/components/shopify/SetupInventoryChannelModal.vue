@@ -172,8 +172,8 @@ import {
   fetchShopifyShopLocations,
   useShopifySyncContext,
 } from "@/composables/useShopify";
-import { inventoryChannelCache } from "@/utils/cacheEntities";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { inventoryChannelCache } from "@/utils/db/cacheEntities";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 
 const props = defineProps<{ shopId: string }>();
 

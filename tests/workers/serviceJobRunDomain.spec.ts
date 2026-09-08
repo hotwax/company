@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   upserts: [] as any[][],
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   serviceJobRunCache: {
     newestCursor: vi.fn(async () => state.cursor),
     upsertMany: vi.fn(async (rows: any[]) => {

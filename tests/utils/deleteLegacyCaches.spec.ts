@@ -1,6 +1,6 @@
 import Dexie from "dexie";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteLegacyCaches } from "@/utils/appCacheDb";
+import { deleteLegacyCaches } from "@/utils/db/appCacheDb";
 
 /**
  * Per-instance database naming ({omsInstance}-CompanyDB) orphans the old fixed-name

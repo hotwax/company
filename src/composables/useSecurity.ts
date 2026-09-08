@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { api, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
-import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
+import { permissionCache, userGroupCache } from "@/utils/db/cacheEntities";
 import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
 
 /**

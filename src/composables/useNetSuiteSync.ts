@@ -5,7 +5,7 @@ import {
   netSuiteOrderPushBacklogCache,
   netSuiteRuleGroupCache,
   netSuiteRuleGroupRunCache,
-} from "@/utils/cacheEntities";
+} from "@/utils/db/cacheEntities";
 import { useCachedList } from "./useCachedList";
 
 /**

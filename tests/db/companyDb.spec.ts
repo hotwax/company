@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { companyDb, COMPANY_SCHEMA, COMPANY_SEED_ENTITIES } from "@/db/companyDb";
-import { CACHE_TABLES } from "@/utils/appCacheDb";
+import { CACHE_TABLES } from "@/utils/db/appCacheDb";
 
 describe("company database declaration", () => {
   it("composes exactly the 55 data stores Company has today", () => {

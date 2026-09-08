@@ -43,7 +43,7 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   defineCachedEntity: () => ({
     table: "serviceJobs",
     snapshotReplace: vi.fn(async (rows: any[], scope: any) => {

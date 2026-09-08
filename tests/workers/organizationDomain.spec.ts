@@ -27,12 +27,12 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
+vi.mock("@/utils/db/appCacheDb", () => ({
   hasSyncedThisLogin: vi.fn(async () => false),
   markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   organizationProjection: { keyField: "partyId", fields: { partyId: "text" } },
   organizationCache: {
     snapshotReplace: vi.fn(async (rows: any[]) => {

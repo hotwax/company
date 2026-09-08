@@ -1,6 +1,6 @@
-import { shopifyShopCache, systemMessageCache, systemMessageRemoteCache } from "@/utils/cacheEntities";
+import { shopifyShopCache, systemMessageCache, systemMessageRemoteCache } from "@/utils/db/cacheEntities";
 import { liveScopeFor } from "@/config/appSyncConfig";
-import { keepNewerThan } from "@/utils/cacheProjection";
+import { keepNewerThan } from "@/utils/db/cacheProjection";
 import { resolveShopRemoteIds } from "@/utils/systemMessage";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";

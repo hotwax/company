@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { CACHE_DOMAIN_CATALOG } from "@/utils/cacheDomainCatalog";
+import { CACHE_DOMAIN_CATALOG } from "@/utils/db/cacheDomainCatalog";
 
 /**
  * Every `registerSyncDomain` CALL, in order — not just the final registry contents.

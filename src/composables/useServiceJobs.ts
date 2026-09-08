@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs } from "vue";
 import { api, logger } from "@common";
 import cronstrue from "cronstrue";
-import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
+import { serviceJobCache, serviceJobRunCache } from "@/utils/db/cacheEntities";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 

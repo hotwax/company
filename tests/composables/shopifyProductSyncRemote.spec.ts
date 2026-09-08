@@ -22,7 +22,7 @@ vi.mock("@/composables/useCachedList", () => ({
   byDescription: () => 0,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
+vi.mock("@/utils/db/cacheEntities", () => ({
   dataManagerLogCache: { __kind: "logs" },
   productStoreCache: { __kind: "stores" },
   serviceJobCache: { __kind: "jobs" },

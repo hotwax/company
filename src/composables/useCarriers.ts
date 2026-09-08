@@ -8,7 +8,7 @@ import {
   startReferenceSync,
 } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   carrierCache,
   carrierFacilityCache,
@@ -18,8 +18,8 @@ import {
   productStoreShippingMethodCache,
   shipmentMethodTypeCache,
   systemMessageRemoteCache,
-} from "@/utils/cacheEntities";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+} from "@/utils/db/cacheEntities";
+import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { expireProductStoreShipmentMethod } from "./useProductStores";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";

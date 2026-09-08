@@ -2,7 +2,7 @@ import type { Remote } from "comlink";
 import { commonUtil } from "@common";
 import { WorkerFactory } from "@common/core/workerFactory";
 import { createTokenPublisher } from "@/utils/pollingTokenChannel";
-import { deleteLegacyCaches } from "@/utils/appCacheDb";
+import { deleteLegacyCaches } from "@/utils/db/appCacheDb";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 import type { SyncHarness } from "@/workers/pollingWorkerHarness";
 import appSyncUrl from '../workers/appSync.worker.ts?worker&url';
