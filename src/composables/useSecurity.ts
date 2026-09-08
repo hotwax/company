@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, client, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
@@ -35,6 +35,19 @@ export const useUserGroupRecord = (userGroupId: string | undefined) =>
   useCachedRecord(userGroupCache, "userGroupId", userGroupId);
 
 /** The master permission catalog (moqui.security.UserPermission). */
+export function usePasswordReset() {
+  const resetPassword = async (baseURL: string, userId: string, payload: any) => {
+    return client({
+      baseURL,
+      url: `admin/users/${userId}/changePassword`,
+      method: "post",
+      data: payload
+    });
+  };
+
+  return { resetPassword };
+}
+
 export function usePermissions() {
   const { records, hydrated } = useCachedList<any>(permissionCache);
   return { permissions: computed(() => [...records.value].sort(byDescription)), records, hydrated };
