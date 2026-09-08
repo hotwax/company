@@ -5,21 +5,23 @@
  * and runs whichever activated domains are due. Add a domain by importing it here — one worker
  * thread serves them all.
  *
- * `registerCompanySeedDomains` runs FIRST, before any domain module import. Registration order
- * sets tick order, and three Company domains fan out over rows a parent domain caches —
- * `carrierFacility` over `carrier`, and `productStoreShippingMethod` / `facilityGroupProductStore`
- * over `productStore` — where the parent is now seed-registered here while the child stays
- * Company's own registration below. Import the domain modules before the seed registration and a
- * fan-out child ticks against an empty parent table on first login and silently caches nothing.
+ * `./domains/seedRegistrations` is imported FIRST, before any other domain module. Registration
+ * order sets tick order, and `productStoreShippingMethod` / `facilityGroupProductStore` (both
+ * registered below, in `referenceDomains`) fan out over rows cached by `productStore`, which is
+ * now seed-registered. Import a fan-out child before its parent and it ticks against an empty
+ * parent table on first login and silently caches nothing.
  *
- * This calls Company's own adapter (`./domains/registerSeedDomains`), NOT the framework's
+ * This MUST be a side-effect `import`, not a bare statement placed above the other imports: ESM
+ * hoists every `import` declaration and evaluates all of them, in source order, before any of
+ * THIS module's own statements run — so a statement here, even textually first, would still run
+ * after every domain module below had already registered itself. Making the seed registration its
+ * own module and importing it is what lets it participate in that same import-order sequencing.
+ *
+ * Registers via Company's own adapter (`./domains/registerSeedDomains`), NOT the framework's
  * `@common/db/sync/registerSeedDomains` — see that file for why: the framework helper registers
  * into a registry Company's harness never reads.
  */
-import { registerCompanySeedDomains } from "./domains/registerSeedDomains";
-import { companyDb } from "@/db/companyDb";
-
-registerCompanySeedDomains(companyDb.seed);
+import "./domains/seedRegistrations";
 
 import "./domains/dataManagerLogDomain";
 import "./domains/systemMessageDomain";

@@ -1,7 +1,10 @@
 import {
   carrierFacilityProjection,
+  carrierProjection,
+  carrierShipmentMethodProjection,
   productTypeProjection,
   shopifyLocationProjection,
+  shopifyShopProjection,
   shopifyTypeMappingProjection,
   productStoreShipmentCountProjection,
   productStoreShippingMethodProjection,
@@ -14,6 +17,7 @@ import {
   appVersionProjection,
   statusProjection,
   userGroupProjection,
+  facilityGroupProjection,
   integrationTypeMappingProjection,
   organizationRelationshipProjection,
   permissionProjection,
@@ -119,6 +123,40 @@ registerSnapshotDomain({
 });
 
 /**
+ * `carrier` / `carrierShipmentMethod` / `shopifyShop` stay Company's own registration rather than
+ * adopting the same-named seed entities: the seed omits `listParams: { roleTypeId: "CARRIER" }`,
+ * `refetchScope`, and `strictCollection` for the first two, and `byPk` for the third — see
+ * `COMPANY_SEED_ENTITIES`'s comment in `src/db/companyDb.ts` for the full comparison.
+ */
+registerSnapshotDomain({
+  name: "carrier",
+  table: "carriers",
+  projection: carrierProjection,
+  listUrl: "oms/shippingGateways/carrierParties",
+  collectionKey: null,
+  strictCollection: true,
+  listParams: { roleTypeId: "CARRIER" },
+  refetchScope: (pk) => ({
+    params: { partyId: pk.partyId },
+    scope: { field: "partyId", value: pk.partyId },
+  }),
+});
+
+registerSnapshotDomain({
+  name: "carrierShipmentMethod",
+  table: "carrierShipmentMethods",
+  projection: carrierShipmentMethodProjection,
+  listUrl: "oms/shippingGateways/carrierShipmentMethods",
+  collectionKey: null,
+  strictCollection: true,
+  listParams: { roleTypeId: "CARRIER" },
+  refetchScope: (pk) => ({
+    params: { partyId: pk.partyId },
+    scope: { field: "partyId", value: pk.partyId },
+  }),
+});
+
+/**
  * Carrier ↔ facility associations have no global list. Build the snapshot by walking the cached
  * carrier ids, and use the same parent scope for post-mutation refetch/prune.
  */
@@ -135,6 +173,34 @@ registerSnapshotDomain({
     urlFor: (partyId) =>
       `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/facilities`,
   },
+});
+
+registerSnapshotDomain({
+  name: "shopifyShop",
+  table: "shopifyShops",
+  projection: shopifyShopProjection,
+  listUrl: "oms/shopifyShops/shops",
+  collectionKey: null, // bare array
+  /**
+   * By-PK re-read on `shopId`. `oms/shopifyShops/shops/{shopId}` is a real route (GET → ShopifyShop
+   * `one`), so a single shop refresh costs one request.
+   *
+   * This replaced a `refetchScope` keyed on `productStoreId`: every caller refreshes after changing
+   * ONE shop and so passes `{ shopId }`, which made `pk.productStoreId` undefined — the request
+   * dropped the param and re-listed every shop, then snapshot-replaced under the scope
+   * `productStoreId: undefined`. Keying on what callers actually pass removes that mismatch.
+   */
+  byPk: (pk) => ({ url: `oms/shopifyShops/shops/${encodeURIComponent(String(pk.shopId))}` }),
+});
+
+registerSnapshotDomain({
+  name: "facilityGroup",
+  table: "facilityGroups",
+  projection: facilityGroupProjection,
+  listUrl: "oms/facilityGroups",
+  collectionKey: null, // bare array
+  // No id-level GET in use — re-list and snapshot the whole (small) set.
+  refetchScope: () => ({ params: {} }),
 });
 
 registerSnapshotDomain({

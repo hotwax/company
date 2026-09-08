@@ -4,7 +4,7 @@ import { CACHE_TABLES } from "@/utils/appCacheDb";
 
 describe("company database declaration", () => {
   it("composes exactly the 55 data stores Company has today", () => {
-    // 16 seed picks + 39 own. Blindly spreading the full seed schema would give 67.
+    // 12 seed picks + 43 own. Blindly spreading the full seed schema would give a different count.
     expect(companyDb.tableNames.length).toBe(55);
   });
 
@@ -37,16 +37,24 @@ describe("company database declaration", () => {
     expect(companyDb.tableNames).toContain("facilityGroupProductStores");
   });
 
-  it("widens the three shared tables without redefining their primary keys", () => {
+  /**
+   * `carrier`, `carrierShipmentMethod`, `shopifyShop`, and `facilityGroup` are NOT seed picks
+   * (see `COMPANY_SEED_ENTITIES`'s comment: the same-named seed entities are missing
+   * `listParams`/`refetchScope`/`strictCollection`/`byPk` Company's own registration relies on).
+   * Their tables are therefore declared directly in `COMPANY_SCHEMA`, full index set included —
+   * there is nothing left to "widen".
+   */
+  it("declares the four rejected-seed tables as its own, full index set included", () => {
     expect(companyDb.schema.carriers).toBe("partyId, groupName, roleTypeId");
     expect(companyDb.schema.carrierShipmentMethods)
-      .toBe("carrierShipmentMethodKey, partyId, shipmentMethodTypeId, roleTypeId, sequenceNumber");
+      .toBe("carrierShipmentMethodKey, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber");
     expect(companyDb.schema.shopifyShops)
-      .toBe("shopId, productStoreId, shopifyShopId, systemMessageRemoteId");
+      .toBe("shopId, productStoreId, systemMessageRemoteId, shopifyShopId");
+    expect(companyDb.schema.facilityGroups).toBe("facilityGroupId, facilityGroupTypeId");
   });
 
-  it("picks 16 seed entities", () => {
-    expect(companyDb.seed.length).toBe(16);
+  it("picks 12 seed entities", () => {
+    expect(companyDb.seed.length).toBe(12);
   });
 
   // --- Additional coverage beyond the brief's floor ---
@@ -56,12 +64,12 @@ describe("company database declaration", () => {
     expect(Object.keys(COMPANY_SCHEMA)).not.toContain("syncMeta");
   });
 
-  it("declares exactly the 39 own tables, matching COMPANY_SCHEMA's key count", () => {
-    expect(Object.keys(COMPANY_SCHEMA).length).toBe(39);
-    expect(companyDb.tableNames.length - COMPANY_SEED_ENTITIES.length).toBe(39);
+  it("declares exactly the 43 own tables, matching COMPANY_SCHEMA's key count", () => {
+    expect(Object.keys(COMPANY_SCHEMA).length).toBe(43);
+    expect(companyDb.tableNames.length - COMPANY_SEED_ENTITIES.length).toBe(43);
   });
 
-  it("composes tableNames as the union of the 16 seed tables and the 39 own tables, with no overlap", () => {
+  it("composes tableNames as the union of the 12 seed tables and the 43 own tables, with no overlap", () => {
     const seedTables = new Set(companyDb.seed.map((e) => e.table));
     const ownTables = new Set(Object.keys(COMPANY_SCHEMA));
 
@@ -78,19 +86,24 @@ describe("company database declaration", () => {
     expect(new Set(companyDb.tableNames)).toEqual(legacyTables);
   });
 
-  it("preserves every seed pick's own schema string unless it is one of the three widened tables", () => {
+  it("preserves every seed pick's own schema string verbatim — no seed pick is widened", () => {
     for (const entity of companyDb.seed) {
-      if (["carriers", "carrierShipmentMethods", "shopifyShops"].includes(entity.table)) continue;
       expect(companyDb.schema[entity.table]).toBe(entity.schema);
     }
   });
 
   it("names the seed entities Company opted into, verbatim", () => {
     expect([...COMPANY_SEED_ENTITIES]).toEqual([
-      "productStore", "enum", "enumType", "facility", "facilityType", "facilityGroup",
-      "groupFacility", "geo", "geoAssoc", "carrier", "shipmentMethodType",
-      "carrierShipmentMethod", "paymentMethodType", "roleType", "productStoreFacility",
-      "shopifyShop",
+      "productStore", "enum", "enumType", "facility", "facilityType", "groupFacility",
+      "geo", "geoAssoc", "shipmentMethodType", "paymentMethodType", "roleType",
+      "productStoreFacility",
     ]);
+  });
+
+  it("does not pick the 4 same-named seed entities whose config is not a drop-in equivalent", () => {
+    const seedNames = companyDb.seed.map((e) => e.name);
+    for (const rejected of ["facilityGroup", "carrier", "carrierShipmentMethod", "shopifyShop"]) {
+      expect(seedNames, `${rejected} should not be a seed pick`).not.toContain(rejected);
+    }
   });
 });

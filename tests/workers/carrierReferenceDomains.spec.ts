@@ -71,6 +71,18 @@ beforeEach(() => {
 describe("carrier reference snapshots", () => {
   it.each([
     {
+      name: "carrier",
+      responseUrl: "oms/shippingGateways/carrierParties",
+      parentTable: undefined,
+      parent: undefined,
+    },
+    {
+      name: "carrierShipmentMethod",
+      responseUrl: "oms/shippingGateways/carrierShipmentMethods",
+      parentTable: undefined,
+      parent: undefined,
+    },
+    {
       name: "carrierFacility",
       responseUrl: "oms/shippingGateways/carrierParties/FEDEX/facilities",
       parentTable: "carriers",
@@ -97,6 +109,82 @@ describe("carrier reference snapshots", () => {
     await expect(domain!.sync(ctx as any, undefined, { force: true }))
       .rejects.toThrow(/bare array/i);
     expect(state.snapshots).toEqual([]);
+  });
+
+  it("lists carrier parties with CARRIER role", async () => {
+    state.responses["oms/shippingGateways/carrierParties"] = [{
+      partyId: "FEDEX",
+      partyTypeId: "PARTY_GROUP",
+      roleTypeId: "CARRIER",
+    }];
+    const domain = await registeredDomain("carrier");
+
+    expect(domain).toBeDefined();
+    await domain!.sync(ctx as any, undefined, { force: true });
+
+    expect(state.pageCalls).toHaveLength(1);
+    expect(state.pageCalls[0]).toMatchObject({
+      url: "oms/shippingGateways/carrierParties",
+      params: { roleTypeId: "CARRIER" },
+    });
+
+    state.pageCalls = [];
+    state.snapshots = [];
+    await domain!.refetchOne!(ctx as any, { partyId: "FEDEX" });
+
+    expect(state.pageCalls[0]).toMatchObject({
+      url: "oms/shippingGateways/carrierParties",
+      params: { roleTypeId: "CARRIER", partyId: "FEDEX" },
+    });
+    expect(state.snapshots[0]).toMatchObject({
+      table: "carriers",
+      scope: { field: "partyId", value: "FEDEX" },
+    });
+  });
+
+  it("lists carrier shipment methods and refetches one carrier partition", async () => {
+    state.responses["oms/shippingGateways/carrierShipmentMethods"] = [{
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+      shipmentMethodTypeId: "GROUND",
+    }];
+    const domain = await registeredDomain("carrierShipmentMethod");
+
+    expect(domain).toBeDefined();
+    await domain!.sync(ctx as any, undefined, { force: true });
+
+    expect(state.pageCalls[0]).toMatchObject({
+      url: "oms/shippingGateways/carrierShipmentMethods",
+      params: { roleTypeId: "CARRIER" },
+    });
+
+    state.pageCalls = [];
+    state.snapshots = [];
+    await domain!.refetchOne!(ctx as any, { partyId: "FEDEX" });
+
+    expect(state.pageCalls[0]).toMatchObject({
+      url: "oms/shippingGateways/carrierShipmentMethods",
+      params: { roleTypeId: "CARRIER", partyId: "FEDEX" },
+    });
+    expect(state.snapshots).toEqual([{
+      table: "carrierShipmentMethods",
+      rows: [{
+        partyId: "FEDEX",
+        roleTypeId: "CARRIER",
+        shipmentMethodTypeId: "GROUND",
+      }],
+      scope: { field: "partyId", value: "FEDEX" },
+    }]);
+
+    state.pageCalls = [];
+    state.snapshots = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const written = await domain!.refetchOne!(ctx as any, {});
+
+    expect(written).toBe(0);
+    expect(state.pageCalls).toEqual([]);
+    expect(state.snapshots).toEqual([]);
+    warn.mockRestore();
   });
 
   it("fans facilities out over cached carriers and stamps the carrier scope", async () => {

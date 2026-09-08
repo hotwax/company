@@ -1,7 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { CACHE_DOMAIN_CATALOG } from "@/utils/cacheDomainCatalog";
-import { registerCompanySeedDomains } from "@/workers/domains/registerSeedDomains";
-import { companyDb } from "@/db/companyDb";
 
 /**
  * Every `registerSyncDomain` CALL, in order — not just the final registry contents.
@@ -28,6 +26,12 @@ vi.mock("@/workers/syncRegistry", async (importOriginal) => {
   };
 });
 
+// `pollingWorkerHarness.ts` (imported last by `appSync.worker.ts`) calls Comlink's `expose()`,
+// which needs a real worker global scope (`self.addEventListener`) that this test environment
+// does not have. Every domain registers via a module-scope side effect BEFORE that import runs,
+// so stubbing `expose` out does not touch anything this test is checking.
+vi.mock("comlink", () => ({ expose: () => {} }));
+
 describe("company domain registration", () => {
   let names: string[];
 
@@ -35,19 +39,19 @@ describe("company domain registration", () => {
     const { clearSyncRegistry, getAllSyncDomains } = await import("@/workers/syncRegistry");
     clearSyncRegistry();
     registrationCalls.length = 0;
-    // Same order as appSync.worker.ts: seed first, then every one of Company's own domain
-    // modules (everything appSync.worker.ts imports except the Comlink harness itself, which
-    // exposes an API rather than registering anything).
-    registerCompanySeedDomains(companyDb.seed);
-    await import("@/workers/domains/dataManagerLogDomain");
-    await import("@/workers/domains/systemMessageDomain");
-    await import("@/workers/domains/serviceJobRunDomain");
-    await import("@/workers/domains/syncRunDomain");
-    await import("@/workers/domains/productUpdateHistoryDomain");
-    await import("@/workers/domains/organizationDomain");
-    await import("@/workers/domains/shopifyInventoryMonitoringDomain");
-    await import("@/workers/domains/netSuiteOrderPushDomain");
-    await import("@/workers/domains/referenceDomains");
+    // Import the REAL worker entry, statically — exactly how production loads it, with whatever
+    // import order `appSync.worker.ts` actually declares.
+    //
+    // An earlier version of this test reconstructed the expected order by hand with a sequence of
+    // `await import("@/workers/domains/...")` calls instead of importing the entry file. That
+    // reconstruction imposes the order the TEST wrote, not the order the SOURCE declares, so it
+    // could not catch a wrong static order in `appSync.worker.ts` itself. Concretely: with the
+    // seed registration written as a bare statement placed textually above the domain imports (a
+    // real bug this repo shipped), the hand-reconstructed test still passed, because it just
+    // re-did the (correct) order itself — while the real registry, built from the actual file,
+    // had fan-out children registering before their parents (`carrierFacility` at index 14,
+    // `carrier` at index 41). Importing the real entry file closes that gap.
+    await import("@/workers/appSync.worker");
     names = getAllSyncDomains().map((d) => d.name);
   });
 

@@ -12,10 +12,27 @@
 import { defineAppDb } from "@common/db/defineAppDb";
 
 /**
- * The 16 seed entities Company takes wholesale from the framework. Each was verified to use
- * the same endpoint and projection as Company's own registration before being adopted.
+ * The 12 seed entities Company takes wholesale from the framework. Each was verified field-by-field
+ * against Company's pre-adoption config (`listUrl`, `collectionKey`, `listParams`, `fanOut`,
+ * `byPk`, `refetchScope`) to be a genuine drop-in equivalent, not just a same-named domain.
  *
- * `status` is deliberately absent: the framework fetches `admin/status` while Company fetches
+ * `productStoreFacility`'s seed source omits `collectionKey` where Company's own registration set
+ * it to `null` explicitly; both are equivalent in `unwrapCollection` (`if (collectionKey)` treats
+ * `null` and `undefined` identically), so it was adopted rather than kept as an exception.
+ *
+ * Four same-named domains were evaluated and REJECTED as not equivalent, so Company keeps its own
+ * registration for them (in `src/workers/domains/referenceDomains.ts`):
+ *   - `facilityGroup` — the seed omits Company's `refetchScope`.
+ *   - `carrier` / `carrierShipmentMethod` — the seed omits Company's `listParams: { roleTypeId:
+ *     "CARRIER" }`, `refetchScope`, and `strictCollection`. The framework's own `carrier` seed
+ *     entity intentionally keeps `listParams` for Order Manager's benefit, so this gap is not
+ *     something repo A should close — Company staying on its own registration is correct here,
+ *     not a stopgap.
+ *   - `shopifyShop` — the seed omits Company's `byPk`, whose comment documents a real
+ *     previously-fixed bug (a `refetchScope` keyed on `productStoreId` silently re-listing every
+ *     shop instead of the one that changed). Losing `byPk` would resurrect that bug.
+ *
+ * `status` is deliberately absent too: the framework fetches `admin/status` while Company fetches
  * `oms/statuses`. Until that is resolved, `statuses` stays a Company-declared table below.
  */
 const COMPANY_SEED_ENTITIES = [
@@ -24,23 +41,24 @@ const COMPANY_SEED_ENTITIES = [
   "enumType",
   "facility",
   "facilityType",
-  "facilityGroup",
   "groupFacility",
   "geo",
   "geoAssoc",
-  "carrier",
   "shipmentMethodType",
-  "carrierShipmentMethod",
   "paymentMethodType",
   "roleType",
   "productStoreFacility",
-  "shopifyShop",
 ] as const;
 
 /**
- * Company's own 39 tables — everything the seed picks above do not provide. Moved verbatim
+ * Company's own 43 tables — everything the seed picks above do not provide. Moved verbatim
  * from `CACHE_SCHEMA` in `src/utils/appCacheDb.ts`, comments included: several document
  * measured findings and index-ordering rationale that still apply here unchanged.
+ *
+ * `facilityGroups`, `carriers`, `carrierShipmentMethods`, `shopifyShops` are here — not seed
+ * picks — because the same-named seed entities are not drop-in equivalents (see
+ * `COMPANY_SEED_ENTITIES`'s comment). Each carries its FULL original schema string verbatim,
+ * indexes included, rather than a seed pick's schema plus `extendIndexes`.
  */
 const COMPANY_SCHEMA: Record<string, string> = {
   // --- class A: live, append-mostly (incremental cursor sync) ---
@@ -117,8 +135,12 @@ const COMPANY_SCHEMA: Record<string, string> = {
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
   systemMessageRemotes: "systemMessageRemoteId",
+  carriers: "partyId, groupName, roleTypeId",
+  carrierShipmentMethods:
+    "carrierShipmentMethodKey, partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber",
   carrierFacilities:
     "carrierFacilityKey, partyId, facilityId, roleTypeId, fromDate, thruDate",
+  shopifyShops: "shopId, productStoreId, systemMessageRemoteId, shopifyShopId",
   inventoryChannels:
     "inventoryChannelId, shopId, facilityGroupId, shopifyLocationId, fromDate, thruDate, [shopId+fromDate]",
   // Keyed by (document, feed) because one document can sit on several feeds, or on none.
@@ -131,6 +153,7 @@ const COMPANY_SCHEMA: Record<string, string> = {
   integrationTypeMappings: "integrationMappingId, integrationTypeId",
   // --- lookup / type reference (all bare-array endpoints) ---
   statuses: "statusId, statusTypeId",
+  facilityGroups: "facilityGroupId, facilityGroupTypeId",
   // PK UNVERIFIED: oms/facilityGroups/types returns an empty 200 on this instance, so the field
   // name could not be confirmed. Named for consistency with facilityTypes/roleTypes.
   facilityGroupTypes: "facilityGroupTypeId",
@@ -175,15 +198,9 @@ export const companyDb = defineAppDb({
   suffix: "CompanyDB",
   seed: COMPANY_SEED_ENTITIES,
   schema: COMPANY_SCHEMA,
-  /**
-   * Company indexes more fields on three shared tables than the seed entity declares.
-   * Appended after the seed primary key and indexes, so nothing is redefined.
-   */
-  extendIndexes: {
-    carriers: "groupName, roleTypeId",
-    carrierShipmentMethods: "roleTypeId, sequenceNumber",
-    shopifyShops: "systemMessageRemoteId",
-  },
+  // No extendIndexes: carriers/carrierShipmentMethods/shopifyShops are Company's own tables now
+  // (see COMPANY_SCHEMA above), each with its full original index set already in its own schema
+  // string, so there is no seed pick left to widen.
 });
 
 export { COMPANY_SCHEMA, COMPANY_SEED_ENTITIES };
