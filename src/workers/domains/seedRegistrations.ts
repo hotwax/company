@@ -15,15 +15,29 @@ import { registerCompanySeedDomains, type SeedPick } from "./registerSeedDomains
  * — the child registered first. Making the registration its own `import` fixes it, because now
  * it participates in import order like every other domain module.
  */
-const picks: SeedPick[] = Array.from(companyDb.seedTables).map((table) => {
-  const entity = companyDb.entities[table];
-  const source = SEED_SOURCES[table as keyof typeof SEED_SOURCES];
-  return {
-    name: source.name,
-    table,
-    projection: entity,
-    source,
-  };
-});
+/**
+ * Seed domains that Company registers with custom configuration (byPk, listParams, strictCollection, etc.)
+ * in `referenceDomains.ts` or `statusDomain.ts` — excluded here to prevent duplicate domain registration.
+ */
+const OVERRIDDEN_SEED_DOMAINS = new Set([
+  "carriers",
+  "carrierShipmentMethods",
+  "shopifyShops",
+  "facilityGroups",
+  "statuses",
+]);
+
+const picks: SeedPick[] = Array.from(companyDb.seedTables)
+  .filter((table) => !OVERRIDDEN_SEED_DOMAINS.has(table))
+  .map((table) => {
+    const entity = companyDb.entities[table];
+    const source = SEED_SOURCES[table as keyof typeof SEED_SOURCES];
+    return {
+      name: source.name,
+      table,
+      projection: entity,
+      source,
+    };
+  });
 
 registerCompanySeedDomains(picks);

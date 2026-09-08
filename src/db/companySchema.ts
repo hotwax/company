@@ -262,56 +262,6 @@ export const companySchema = defineSchema({
     },
   }),
 
-  /** Carriers are PARTY_GROUP parties holding the CARRIER role. */
-  carriers: defineEntity({
-    primaryKey: "partyId",
-    fields: {
-      partyId: "text",
-      groupName: "text",
-      partyTypeId: "text",
-      roleTypeId: "text",
-      statusId: "text",
-    },
-    indexes: ["groupName", "roleTypeId"],
-  }),
-
-  /**
-   * DISAGREEMENT between the two sources of truth, found while converting this table:
-   * `COMPANY_SCHEMA` in `companyDb.ts` indexed `systemMessageRemoteId`, but
-   * `shopifyShopProjection` in `cacheEntities.ts` — the same projection the worker domain
-   * (`referenceDomains.ts`'s `shopifyShop`) actually writes through — never projects that field.
-   * That index has therefore always been empty in production; this is exactly the class of bug
-   * `defineEntity` exists to catch at module-evaluation time (see the header comment on
-   * `defineEntity.ts`) rather than let sit unnoticed. Per the brief's rule to add no field to the
-   * `fields` map, the dead index is dropped here rather than the field invented to justify it.
-   */
-  shopifyShops: defineEntity({
-    primaryKey: "shopId",
-    fields: {
-      shopId: "text",
-      shopifyShopId: "text",
-      productStoreId: "text",
-      name: "text",
-      myshopifyDomain: "text",
-      domain: "text",
-      currency: "text",
-      primaryLocationId: "text",
-      /**
-       * The shop's real-time inventory push gate (`Y`/`N`, absent when it was never set). The
-       * inventory sync screen renders and writes it, and the connector filters on it in
-       * find#EligibleRealtimeInventoryPushShops — so leaving it unprojected would make a shop that IS
-       * pushing render as off, the same failure the `productIdentifierEnumId` note (on
-       * `productStoreProjection`) describes.
-       * `oms/shopifyShops/shops` does return it: ShopifyShop's `default` master carries every field of
-       * the entity.
-       */
-      realTimeInventoryPush: "text",
-      lastUpdatedStamp: "date",
-    },
-    // `systemMessageRemoteId` intentionally NOT indexed here — see the disagreement note above.
-    indexes: ["productStoreId", "shopifyShopId"],
-  }),
-
   /**
    * InventoryChannel — one facility-group ATP pool mapped to one Shopify aggregate location.
    * This is the missing ownership link between an aggregate reset ServiceJob parameter and a shop.
@@ -383,23 +333,6 @@ export const companySchema = defineSchema({
   }),
 
   // --- lookup / type reference (all bare-array endpoints; PKs verified live 2026-07-26) ---
-
-  statuses: defineEntity({
-    primaryKey: "statusId",
-    fields: { statusId: "text", description: "text", statusTypeId: "text" },
-    indexes: ["statusTypeId"],
-  }),
-
-  facilityGroups: defineEntity({
-    primaryKey: "facilityGroupId",
-    fields: {
-      facilityGroupId: "text",
-      facilityGroupName: "text",
-      facilityGroupTypeId: "text",
-      lastUpdatedStamp: "date",
-    },
-    indexes: ["facilityGroupTypeId"],
-  }),
 
   // PK UNVERIFIED: oms/facilityGroups/types returns an empty 200 on this instance, so the field
   // name could not be confirmed. Named for consistency with facilityTypes/roleTypes.
@@ -724,24 +657,6 @@ export const companySchema = defineSchema({
       "[inventoryChannelId+detailStatusId]",
       "[systemMessageId+createdDate]",
     ],
-  }),
-
-  /**
-   * CarrierShipmentMethod — composite natural key (carrier + role + method type), matching
-   * `carrierShipmentMethodProjection`'s doc comment and its `buildKey` exactly, with no tolerated
-   * members.
-   */
-  carrierShipmentMethods: defineEntity({
-    primaryKey: "partyId,roleTypeId,shipmentMethodTypeId",
-    fields: {
-      partyId: "text",
-      roleTypeId: "text",
-      shipmentMethodTypeId: "text",
-      sequenceNumber: "count",
-      carrierServiceCode: "text",
-      deliveryDays: "count",
-    },
-    indexes: ["partyId", "roleTypeId", "shipmentMethodTypeId", "sequenceNumber"],
   }),
 
   /**

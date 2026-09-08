@@ -15,21 +15,26 @@ import { commonSchema } from "@common/db/domains/commonSchema";
 import { companySchema } from "./companySchema";
 
 /**
- * The 12 seed tables Company takes wholesale from the framework. Each was verified field-by-field
+ * The 17 seed tables Company takes wholesale from the framework. Each was verified field-by-field
  * against Company's pre-adoption config to be a genuine drop-in equivalent.
  */
 const COMPANY_SEED_TABLES = [
   "productStores",
+  "statuses",
   "enums",
   "enumTypes",
   "facilities",
   "facilityTypes",
-  "groupFacilities",
+  "facilityGroups",
   "geos",
   "geoAssocs",
+  "carriers",
   "shipmentMethodTypes",
   "paymentMethodTypes",
   "roleTypes",
+  "shopifyShops",
+  "groupFacilities",
+  "carrierShipmentMethods",
   "productStoreFacilities",
 ] as const;
 

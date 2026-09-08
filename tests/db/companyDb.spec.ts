@@ -13,9 +13,9 @@ describe("company database declaration", () => {
     expect(() => companyDb.name("")).toThrow(/no OMS instance/i);
   });
 
-  it("keeps statuses as its own table, because the endpoints disagree", () => {
+  it("picks statuses as a seed table from commonSchema", () => {
     expect(companyDb.tableNames).toContain("statuses");
-    expect(companyDb.seedTables.has("statuses")).toBe(false);
+    expect(companyDb.seedTables.has("statuses")).toBe(true);
   });
 
   it("creates none of the seed tables Company does not read", () => {
@@ -48,7 +48,7 @@ describe("company database declaration", () => {
     expect(new Set(companyDb.tableNames)).toEqual(legacyTables);
   });
 
-  it("picks all 12 seed tables", () => {
-    expect(companyDb.seedTables.size).toBe(12);
+  it("picks all 17 seed tables", () => {
+    expect(companyDb.seedTables.size).toBe(17);
   });
 });
