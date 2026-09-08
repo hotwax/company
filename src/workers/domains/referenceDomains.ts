@@ -1,22 +1,11 @@
 import {
   carrierFacilityProjection,
-  carrierProjection,
-  carrierShipmentMethodProjection,
-  enumProjection,
-  facilityTypeProjection,
-  paymentMethodTypeProjection,
   productTypeProjection,
-  roleTypeProjection,
-  shipmentMethodTypeProjection,
   shopifyLocationProjection,
   shopifyTypeMappingProjection,
   productStoreShipmentCountProjection,
   productStoreShippingMethodProjection,
   shopifyCarrierShipmentProjection,
-  enumTypeProjection,
-  geoProjection,
-  geoAssocProjection,
-  productStoreFacilityProjection,
   facilityGroupProductStoreProjection,
   enumGroupMemberProjection,
   facilityIdentificationProjection,
@@ -25,17 +14,12 @@ import {
   appVersionProjection,
   statusProjection,
   userGroupProjection,
-  facilityGroupProjection,
-  facilityProjection,
-  groupFacilityProjection,
   integrationTypeMappingProjection,
   organizationRelationshipProjection,
   permissionProjection,
-  productStoreProjection,
   currencyProjection,
   inventoryEventDocumentProjection,
   serviceJobProjection,
-  shopifyShopProjection,
   systemMessageRemoteProjection,
 } from "@/utils/cacheEntities";
 import { registerSnapshotDomain } from "./snapshotDomain";
@@ -134,43 +118,6 @@ registerSnapshotDomain({
   }),
 });
 
-registerSnapshotDomain({
-  name: "productStore",
-  table: "productStores",
-  projection: productStoreProjection,
-  listUrl: "admin/productStores",
-  collectionKey: null, // bare array
-  byPk: (pk) => ({ url: `admin/productStores/${encodeURIComponent(String(pk.productStoreId))}` }),
-});
-
-registerSnapshotDomain({
-  name: "carrier",
-  table: "carriers",
-  projection: carrierProjection,
-  listUrl: "oms/shippingGateways/carrierParties",
-  collectionKey: null,
-  strictCollection: true,
-  listParams: { roleTypeId: "CARRIER" },
-  refetchScope: (pk) => ({
-    params: { partyId: pk.partyId },
-    scope: { field: "partyId", value: pk.partyId },
-  }),
-});
-
-registerSnapshotDomain({
-  name: "carrierShipmentMethod",
-  table: "carrierShipmentMethods",
-  projection: carrierShipmentMethodProjection,
-  listUrl: "oms/shippingGateways/carrierShipmentMethods",
-  collectionKey: null,
-  strictCollection: true,
-  listParams: { roleTypeId: "CARRIER" },
-  refetchScope: (pk) => ({
-    params: { partyId: pk.partyId },
-    scope: { field: "partyId", value: pk.partyId },
-  }),
-});
-
 /**
  * Carrier ↔ facility associations have no global list. Build the snapshot by walking the cached
  * carrier ids, and use the same parent scope for post-mutation refetch/prune.
@@ -188,57 +135,6 @@ registerSnapshotDomain({
     urlFor: (partyId) =>
       `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/facilities`,
   },
-});
-
-registerSnapshotDomain({
-  name: "shopifyShop",
-  table: "shopifyShops",
-  projection: shopifyShopProjection,
-  listUrl: "oms/shopifyShops/shops",
-  collectionKey: null, // bare array
-  /**
-   * By-PK re-read on `shopId`. `oms/shopifyShops/shops/{shopId}` is a real route (GET → ShopifyShop
-   * `one`), so a single shop refresh costs one request.
-   *
-   * This replaced a `refetchScope` keyed on `productStoreId`: every caller refreshes after changing
-   * ONE shop and so passes `{ shopId }`, which made `pk.productStoreId` undefined — the request
-   * dropped the param and re-listed every shop, then snapshot-replaced under the scope
-   * `productStoreId: undefined`. Keying on what callers actually pass removes that mismatch.
-   */
-  byPk: (pk) => ({ url: `oms/shopifyShops/shops/${encodeURIComponent(String(pk.shopId))}` }),
-});
-
-registerSnapshotDomain({
-  name: "facility",
-  table: "facilities",
-  projection: facilityProjection,
-  listUrl: "oms/facilities",
-  collectionKey: null, // bare array (view entity FacilityAndType)
-  byPk: (pk) => ({ url: `oms/facilities/${encodeURIComponent(String(pk.facilityId))}` }),
-});
-
-registerSnapshotDomain({
-  name: "facilityGroup",
-  table: "facilityGroups",
-  projection: facilityGroupProjection,
-  listUrl: "oms/facilityGroups",
-  collectionKey: null, // bare array
-  // No id-level GET in use — re-list and snapshot the whole (small) set.
-  refetchScope: () => ({ params: {} }),
-});
-
-registerSnapshotDomain({
-  name: "facilityGroupMember",
-  table: "groupFacilities",
-  projection: groupFacilityProjection,
-  listUrl: "oms/groupFacilities",
-  collectionKey: null, // bare array (view entity FacilityGroupAndMember)
-  // Composite key + no by-PK route: re-list one group and snapshot just that scope, so a
-  // member removed from the group is pruned rather than left behind.
-  refetchScope: (pk) => ({
-    params: { facilityGroupId: pk.facilityGroupId },
-    scope: { field: "facilityGroupId", value: pk.facilityGroupId },
-  }),
 });
 
 registerSnapshotDomain({
@@ -265,15 +161,10 @@ registerSnapshotDomain({
 
 const LOOKUPS: Array<{ name: string; table: any; projection: any; listUrl: string; listParams?: Record<string, unknown> }> = [
   { name: "status", table: "statuses", projection: statusProjection, listUrl: "oms/statuses" },
-  { name: "enum", table: "enums", projection: enumProjection, listUrl: "admin/enums" },
-  { name: "facilityType", table: "facilityTypes", projection: facilityTypeProjection, listUrl: "oms/facilityTypes" },
   { name: "userGroup", table: "userGroups", projection: userGroupProjection, listUrl: "admin/userGroups" },
   { name: "productType", table: "productTypes", projection: productTypeProjection, listUrl: "oms/products/productTypes" },
-  { name: "shipmentMethodType", table: "shipmentMethodTypes", projection: shipmentMethodTypeProjection, listUrl: "oms/shippingGateways/shipmentMethodTypes" },
   // `admin/uoms` covers every unit of measure; only the currency ones are wanted here.
   { name: "currency", table: "currencies", projection: currencyProjection, listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
-  { name: "paymentMethodType", table: "paymentMethodTypes", projection: paymentMethodTypeProjection, listUrl: "oms/paymentMethodTypes" },
-  { name: "roleType", table: "roleTypes", projection: roleTypeProjection, listUrl: "oms/roleTypes" },
   { name: "systemMessageType", table: "systemMessageTypes", projection: systemMessageTypeProjection, listUrl: "admin/systemMessages/types" },
 ];
 
@@ -394,51 +285,7 @@ registerSnapshotDomain({
   },
 });
 
-// --- Enumeration types, geo reference, and the facility <-> product-store association. ---
-
-registerSnapshotDomain({
-  name: "enumType",
-  table: "enumTypes",
-  projection: enumTypeProjection,
-  listUrl: "admin/enumTypes",
-  collectionKey: null,
-});
-
-registerSnapshotDomain({
-  name: "geo",
-  table: "geos",
-  projection: geoProjection,
-  listUrl: "admin/geos",
-  collectionKey: null,
-});
-
-registerSnapshotDomain({
-  name: "geoAssoc",
-  table: "geoAssocs",
-  projection: geoAssocProjection,
-  listUrl: "admin/geos/assocs",
-  collectionKey: null,
-});
-
-/**
- * Facility <-> product store. Only `oms/productStores/{id}/facilities` exists (no global list), so
- * fan out over the cached product stores — few in number and already synced before this runs.
- */
-registerSnapshotDomain({
-  name: "productStoreFacility",
-  table: "productStoreFacilities",
-  projection: productStoreFacilityProjection,
-  // No global association list exists, so this is never fetched — both the initial snapshot and the
-  // post-mutation refetch go through `fanOut.urlFor`. It previously doubled as the refetch URL,
-  // which fetched product stores instead of associations and pruned the whole table.
-  listUrl: "oms/productStores",
-  collectionKey: null,
-  fanOut: {
-    parentTable: "productStores",
-    parentKeyField: "productStoreId",
-    urlFor: (productStoreId) => `oms/productStores/${encodeURIComponent(productStoreId)}/facilities`,
-  },
-});
+// --- Facility group <-> product store association. ---
 
 registerSnapshotDomain({
   name: "facilityGroupProductStore",

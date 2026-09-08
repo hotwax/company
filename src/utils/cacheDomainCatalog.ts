@@ -44,7 +44,7 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   },
   { name: "facility", table: "facilities", label: "Facilities", syncClass: "B" },
   { name: "facilityGroup", table: "facilityGroups", label: "Facility groups", syncClass: "B" },
-  { name: "facilityGroupMember", table: "groupFacilities", label: "Facility group members", syncClass: "B" },
+  { name: "groupFacility", table: "groupFacilities", label: "Facility group members", syncClass: "B" },
   { name: "permission", table: "permissions", label: "Permissions", syncClass: "B" },
   { name: "integrationTypeMapping", table: "integrationTypeMappings", label: "Integration type mappings", syncClass: "B" },
   { name: "status", table: "statuses", label: "Statuses", syncClass: "B" },

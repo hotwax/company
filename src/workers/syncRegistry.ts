@@ -83,6 +83,20 @@ export function registeredDomainNames(): string[] {
   return [...registry.keys()];
 }
 
+/**
+ * Every registered domain, in registration order (`Map` preserves insertion order). Used by tests
+ * asserting completeness, uniqueness, and that fan-out children register after the parent table
+ * they read.
+ */
+export function getAllSyncDomains(): SyncDomain[] {
+  return [...registry.values()];
+}
+
+/** Reset the registry to empty. Test-only: lets a spec re-run module registration from scratch. */
+export function clearSyncRegistry(): void {
+  registry.clear();
+}
+
 /** The effective cadence for an activation: explicit override, else the domain default. */
 export function effectiveInterval(active: ActiveDomain, domain: SyncDomain | undefined): number | undefined {
   return active.intervalMs ?? domain?.intervalMs;

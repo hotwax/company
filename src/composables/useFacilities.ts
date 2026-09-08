@@ -988,7 +988,7 @@ export function useFacilityMutations(facilityId?: string) {
     // ------------------------------------------------- groups (CACHED: groupFacilities)
     async addToGroup(payload: Record<string, any>) {
       const resp = await post(`oms/facilities/${requireFacilityId()}/groups`, { ...payload, facilityId });
-      await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
+      await refreshAfterMutation("groupFacility", { facilityGroupId: payload.facilityGroupId });
       return resp;
     },
     async updateGroupAssociation(payload: Record<string, any>) {
@@ -996,7 +996,7 @@ export function useFacilityMutations(facilityId?: string) {
         `oms/facilities/${requireFacilityId()}/groups/${encodeURIComponent(payload.facilityGroupId)}`,
         { ...payload, facilityId },
       );
-      await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
+      await refreshAfterMutation("groupFacility", { facilityGroupId: payload.facilityGroupId });
       return resp;
     },
     async createGroup(payload: Record<string, any>) {
@@ -1124,7 +1124,7 @@ export function useFacilityMutations(facilityId?: string) {
  * Each lands in a DIFFERENT cached domain, and getting that wrong is silent — the write succeeds,
  * the toast says so, and the screen keeps showing the old value:
  *   - group name/description/type → `facilityGroup`
- *   - members added/removed/resequenced → `facilityGroupMember` (scoped re-list, so removals prune)
+ *   - members added/removed/resequenced → `groupFacility` (scoped re-list, so removals prune)
  *   - product stores linked/unlinked → `facilityGroupProductStore`
  */
 export function useFacilityGroupMutations(facilityGroupId?: string) {
@@ -1244,7 +1244,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
 
       // Refresh even on partial failure: some writes may have landed, and the cache must reflect
       // what the server actually holds rather than what was attempted.
-      if (rows.length) await refreshAfterMutation("facilityGroupMember", { facilityGroupId });
+      if (rows.length) await refreshAfterMutation("groupFacility", { facilityGroupId });
       return { failed, results };
     },
 
@@ -1286,7 +1286,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
  *
  * That distinction is the whole reason this is separate: refreshing the `facility` domain here
  * would fetch a row that did not change and leave the archived list stale. The cache consequence
- * belongs to `facilityGroupMember`, re-listed for the one group so a removed member is pruned.
+ * belongs to `groupFacility`, re-listed for the one group so a removed member is pruned.
  */
 export function useFacilityArchive() {
   /** Resolve the archive group, creating it once if this OMS has never had one. */
@@ -1324,7 +1324,7 @@ export function useFacilityArchive() {
   }
 
   const refreshArchive = () =>
-    refreshAfterMutation("facilityGroupMember", { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID });
+    refreshAfterMutation("groupFacility", { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID });
 
   return {
     async archive(facilityId: string) {
