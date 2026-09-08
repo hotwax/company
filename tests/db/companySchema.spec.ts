@@ -30,4 +30,10 @@ describe("companySchema", () => {
     expect(companySchema.stores.syncRuns).toContain("[shopId+configId+initDate]");
     expect(companySchema.stores.systemMessages).toContain("[systemMessageRemoteId+systemMessageTypeId+initDate]");
   });
+
+  it("has no synthetic key column left anywhere", () => {
+    for (const [table, entity] of Object.entries(companySchema.entities)) {
+      expect(entity.fieldNames.filter((f) => /Key$/.test(f)), `${table}`).toEqual([]);
+    }
+  });
 });

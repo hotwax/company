@@ -621,4 +621,324 @@ export const companySchema = defineSchema({
     },
     indexes: ["checkedAt"],
   }),
+
+  // =============================================================================================
+  // Composite-key tables (formerly a synthetic `*Key` field joining the fields below with `|`).
+  // Each `primaryKey` here was derived from the corresponding `buildKey` in `cacheEntities.ts`,
+  // in that function's join order, cross-checked against its doc comment.
+  // =============================================================================================
+
+  /**
+   * SystemMessageError — on-demand (class C), fetched when a run is inspected. Composite entity PK
+   * (systemMessageId + errorDate) — matches `systemMessageErrorProjection.buildKey` exactly.
+   *
+   * `errorDate` was a tolerated-missing trailing member (`raw?.errorDate ?? ""`) in the old
+   * `buildKey`; treated here as a required key member, since an OFBiz-style error record is always
+   * stamped with the date it occurred.
+   */
+  systemMessageErrors: defineEntity({
+    primaryKey: "systemMessageId,errorDate",
+    fields: {
+      systemMessageId: "text",
+      errorDate: "date",
+      attemptedStatusId: "text",
+      errorText: "text",
+    },
+    indexes: ["systemMessageId", "errorDate", "attemptedStatusId"],
+  }),
+
+  /**
+   * ProductUpdateHistory — what a sync actually changed, per product. Composite entity PK.
+   *
+   * ⚠️ DISAGREEMENT (order only, not field set) found while converting this table:
+   * `productUpdateHistoryProjection`'s doc comment states "PK is composite (productId + shopId)",
+   * but its `buildKey` actually joins `${shop}|${product}` — shopId FIRST. The old `COMPANY_SCHEMA`
+   * string agrees with the code (`shopId, productId, ...`), so two of three sources put shopId
+   * first and only the prose comment orders it the other way. `primaryKey` below follows the code
+   * and the old index order; the prose reads as an informal description, not a literal spec.
+   */
+  productUpdateHistories: defineEntity({
+    primaryKey: "shopId,productId",
+    fields: {
+      productId: "text",
+      shopId: "text",
+      systemMessageId: "text",
+      parentProductId: "text",
+      price: "count",
+      features: "text",
+      identifications: "text",
+      tags: "text",
+      assocs: "text",
+      differenceMap: "text",
+      lastUpdatedStamp: "date",
+      createdStamp: "date",
+    },
+    indexes: ["shopId", "productId", "systemMessageId", "lastUpdatedStamp", "[shopId+lastUpdatedStamp]"],
+  }),
+
+  /**
+   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
+   * inventory item at one channel. The real primary key is (eventTypeId, eventReferenceId,
+   * inventoryChannelId, shopifyInventoryItemId) — `shopifyInventoryAdjustmentDetailProjection`'s
+   * doc comment states this explicitly and its `buildKey` requires all four with no tolerance,
+   * so there is no missing-member judgment call here.
+   */
+  shopifyInventoryAdjustmentDetails: defineEntity({
+    primaryKey: "eventTypeId,eventReferenceId,inventoryChannelId,shopifyInventoryItemId",
+    fields: {
+      eventTypeId: "text",
+      eventReferenceId: "text",
+      eventTypeDescription: "text",
+      shopifyReason: "text",
+      inventoryChannelId: "text",
+      shopifyInventoryItemId: "text",
+      computedInventoryChange: "count",
+      decisionComment: "text",
+      systemMessageId: "text",
+      detailStatusId: "text",
+      createdDate: "date",
+      lastUpdatedStamp: "date",
+      facilityGroupId: "text",
+      inventoryChannelDescription: "text",
+      shopifyLocationId: "text",
+      // Normally null. Set only on a delta written to drain a location the channel has stopped
+      // pointing at, so a retarget stays visible even though the publisher still targets the OLD
+      // location.
+      publishShopifyLocationId: "text",
+      systemMessageStatusId: "text",
+      systemMessageInitDate: "date",
+      systemMessageProcessedDate: "date",
+      systemMessageLastAttemptDate: "date",
+    },
+    indexes: [
+      "eventTypeId",
+      "eventReferenceId",
+      "inventoryChannelId",
+      "shopifyInventoryItemId",
+      "systemMessageId",
+      "detailStatusId",
+      "createdDate",
+      "lastUpdatedStamp",
+      "[inventoryChannelId+createdDate]",
+      "[inventoryChannelId+lastUpdatedStamp]",
+      "[inventoryChannelId+detailStatusId]",
+      "[systemMessageId+createdDate]",
+    ],
+  }),
+
+  /**
+   * CarrierShipmentMethod — composite natural key (carrier + role + method type), matching
+   * `carrierShipmentMethodProjection`'s doc comment and its `buildKey` exactly, with no tolerated
+   * members.
+   */
+  carrierShipmentMethods: defineEntity({
+    primaryKey: "partyId,roleTypeId,shipmentMethodTypeId",
+    fields: {
+      partyId: "text",
+      roleTypeId: "text",
+      shipmentMethodTypeId: "text",
+      sequenceNumber: "count",
+      carrierServiceCode: "text",
+      deliveryDays: "count",
+    },
+    indexes: ["partyId", "roleTypeId", "shipmentMethodTypeId", "sequenceNumber"],
+  }),
+
+  /**
+   * CarrierFacility — a date-effective carrier role at one facility. `carrierFacilityProjection`'s
+   * `buildKey` joins partyId + facilityId + roleTypeId + fromDate, tolerating a missing `fromDate`
+   * (`?? ""`); treated here as a required key member (OFBiz date-effective PKs are non-null
+   * server-side).
+   */
+  carrierFacilities: defineEntity({
+    primaryKey: "partyId,facilityId,roleTypeId,fromDate",
+    fields: {
+      partyId: "text",
+      facilityId: "text",
+      facilityName: "text",
+      facilityTypeId: "text",
+      roleTypeId: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["partyId", "facilityId", "roleTypeId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * DataDocument ⋈ its feed — which OMS changes an inventory event feed listens to. One row per
+   * (document, feed): `DataDocumentAndFeed` left-joins, so a document attached to nothing arrives
+   * with no `dataFeedId` at all, and a document on two feeds arrives twice. Both are real rows, not
+   * errors, so `dataFeedId` stays a required key member (with an empty-string value standing for
+   * "attached to nothing") rather than being dropped from the key — dropping it would collapse the
+   * two-feed case onto one row, exactly what `inventoryEventDocumentProjection`'s `buildKey` was
+   * written to avoid.
+   */
+  inventoryEventDocuments: defineEntity({
+    primaryKey: "dataDocumentId,dataFeedId",
+    fields: {
+      dataDocumentId: "text",
+      dataFeedId: "text",
+      documentName: "text",
+      primaryEntityName: "text",
+    },
+    indexes: ["dataDocumentId", "dataFeedId"],
+  }),
+
+  /**
+   * Parent → child internal-organization edge (PartyRelationship). Date-effective composite key;
+   * `organizationRelationshipProjection.buildKey` joins partyIdFrom + partyIdTo + roleTypeIdFrom +
+   * roleTypeIdTo + partyRelationshipTypeId + fromDate, tolerating a missing `fromDate` (`?? ""`);
+   * treated here as a required key member for the same OFBiz date-effective reason as above.
+   */
+  organizationRelationships: defineEntity({
+    primaryKey: "partyIdFrom,partyIdTo,roleTypeIdFrom,roleTypeIdTo,partyRelationshipTypeId,fromDate",
+    fields: {
+      partyIdFrom: "text",
+      partyIdTo: "text",
+      roleTypeIdFrom: "text",
+      roleTypeIdTo: "text",
+      partyRelationshipTypeId: "text",
+      fromDate: "date",
+      thruDate: "date",
+      statusId: "text",
+    },
+    indexes: ["partyIdFrom", "partyIdTo", "partyRelationshipTypeId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * ShopifyLocation — a shop's Shopify location mapped to an internal facility. Tier-3 shop-scoped
+   * reference, fetched unscoped as one snapshot. `shopifyLocationProjection.buildKey` joins only
+   * shopId + shopifyLocationId (not `facilityId`, which is a mapped attribute, not part of
+   * identity) with no tolerated members.
+   */
+  shopifyLocations: defineEntity({
+    primaryKey: "shopId,shopifyLocationId",
+    fields: {
+      shopId: "text",
+      facilityId: "text",
+      shopifyLocationId: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "facilityId", "shopifyLocationId"],
+  }),
+
+  /**
+   * ShopifyTypeMapping — tier-3 shop-scoped reference. `shopifyTypeMappingProjection.buildKey`
+   * joins shopId + mappedTypeId + mappedKey, tolerating a missing `mappedKey` (`?? ""`); treated
+   * here as a required key member — there is no comment or live evidence suggesting it can be
+   * genuinely absent from a real mapping row.
+   */
+  shopifyTypeMappings: defineEntity({
+    primaryKey: "shopId,mappedTypeId,mappedKey",
+    fields: {
+      shopId: "text",
+      mappedTypeId: "text",
+      mappedKey: "text",
+      mappedValue: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "mappedTypeId", "mappedKey"],
+  }),
+
+  /**
+   * Shopify carrier → shipment-method mapping. Composite key (shop + carrier + method), matching
+   * `shopifyCarrierShipmentProjection`'s doc comment. `buildKey` requires `shopId` but tolerates a
+   * missing `carrierPartyId`/`shipmentMethodTypeId` (`?? ""`); both are treated here as required
+   * key members per the default rule, consistent with the comment's stated 3-part key. Judgment
+   * call: could not confirm live whether an unscoped "applies to all carriers/methods" row exists;
+   * if one does, it would need a real (non-synthetic) sentinel value rather than an absent field.
+   */
+  shopifyCarrierShipments: defineEntity({
+    primaryKey: "shopId,carrierPartyId,shipmentMethodTypeId",
+    fields: {
+      shopId: "text",
+      carrierPartyId: "text",
+      shipmentMethodTypeId: "text",
+      shopifyShippingMethod: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "carrierPartyId", "shipmentMethodTypeId"],
+  }),
+
+  /**
+   * ProductStoreFacilityGroup (co.hotwax.facility.ProductStoreFacilityGroup) — facility group ↔
+   * product store, date-effective.
+   *
+   * ⚠️ DISAGREEMENT (order only, not field set) found while converting this table:
+   * `facilityGroupProductStoreProjection`'s doc comment states the natural key as "(productStoreId
+   * + facilityGroupId + fromDate)", but its `buildKey` actually joins
+   * `${facilityGroupId}|${productStoreId}|${fromDate}` — facilityGroupId FIRST. The old
+   * `COMPANY_SCHEMA` string agrees with the code (`facilityGroupId, productStoreId, ...`), so
+   * `primaryKey` below follows the code and the old index order, same reasoning as
+   * `productUpdateHistories` above.
+   *
+   * `fromDate` was a tolerated-missing trailing member (`?? ""`); treated here as a required key
+   * member for the same OFBiz date-effective reason as `carrierFacilities`.
+   */
+  facilityGroupProductStores: defineEntity({
+    primaryKey: "facilityGroupId,productStoreId,fromDate",
+    fields: {
+      facilityGroupId: "text",
+      productStoreId: "text",
+      sequenceNumber: "count",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["facilityGroupId", "productStoreId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * PK UNVERIFIED: `enumGroupMemberProjection`'s doc comment records that its endpoint returns an
+   * empty 200 on the available instance, so the natural key could not be confirmed live. Converted
+   * to its implied compound key (enumerationGroupId + enumId), the fields `buildKey` joins in
+   * order — that function defaults a missing `enumerationGroupId` to the literal constant
+   * `"NETSUITE_IIV_REASON"` rather than reading it from another field, so this is not a `rename`
+   * case.
+   */
+  enumGroupMembers: defineEntity({
+    primaryKey: "enumerationGroupId,enumId",
+    fields: {
+      enumerationGroupId: "text",
+      enumId: "text",
+      description: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["enumerationGroupId", "enumId"],
+  }),
+
+  /**
+   * PK UNVERIFIED: `facilityIdentificationProjection`'s doc comment records that its endpoint also
+   * returns an empty 200 on the available instance, so the natural key could not be confirmed
+   * live. Converted to its implied compound key (facilityId + facilityIdenTypeId) — `buildKey`
+   * requires both with no tolerance, per its own comment explaining that defaulting a missing type
+   * would make two different identifications on one facility collide.
+   */
+  facilityIdentifications: defineEntity({
+    primaryKey: "facilityId,facilityIdenTypeId",
+    fields: {
+      facilityId: "text",
+      facilityIdenTypeId: "text",
+      idValue: "text",
+      description: "text",
+    },
+    indexes: ["facilityId", "facilityIdenTypeId"],
+  }),
+
+  /**
+   * App version pin (admin/appVersion) — which build of each app is served per environment.
+   * Composite natural key (appId + environmentTypeId), matching `appVersionProjection`'s doc
+   * comment and its `buildKey` exactly, with no tolerated members.
+   */
+  appVersions: defineEntity({
+    primaryKey: "appId,environmentTypeId",
+    fields: {
+      appId: "text",
+      appName: "text",
+      environmentTypeId: "text",
+      currentVersion: "text",
+      enumDesc: "text",
+    },
+    indexes: ["appId", "environmentTypeId"],
+  }),
 });

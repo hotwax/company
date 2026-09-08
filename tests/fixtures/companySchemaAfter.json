@@ -28,6 +28,20 @@
     "netSuiteRuleGroups": "ruleGroupId, productStoreId, groupTypeEnumId, statusId, jobName",
     "netSuiteDecisionRules": "ruleId, ruleGroupId, statusId, sequenceNum, [ruleGroupId+sequenceNum]",
     "netSuiteRuleGroupRuns": "ruleGroupRunId, ruleGroupId, productStoreId, hasError, startDate, [ruleGroupId+startDate]",
-    "netSuiteOrderPushBacklog": "productStoreId, checkedAt"
+    "netSuiteOrderPushBacklog": "productStoreId, checkedAt",
+    "systemMessageErrors": "[systemMessageId+errorDate], systemMessageId, errorDate, attemptedStatusId",
+    "productUpdateHistories": "[shopId+productId], shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+    "shopifyInventoryAdjustmentDetails": "[eventTypeId+eventReferenceId+inventoryChannelId+shopifyInventoryItemId], eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+    "carrierShipmentMethods": "[partyId+roleTypeId+shipmentMethodTypeId], partyId, roleTypeId, shipmentMethodTypeId, sequenceNumber",
+    "carrierFacilities": "[partyId+facilityId+roleTypeId+fromDate], partyId, facilityId, roleTypeId, fromDate, thruDate",
+    "inventoryEventDocuments": "[dataDocumentId+dataFeedId], dataDocumentId, dataFeedId",
+    "organizationRelationships": "[partyIdFrom+partyIdTo+roleTypeIdFrom+roleTypeIdTo+partyRelationshipTypeId+fromDate], partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",
+    "shopifyLocations": "[shopId+shopifyLocationId], shopId, facilityId, shopifyLocationId",
+    "shopifyTypeMappings": "[shopId+mappedTypeId+mappedKey], shopId, mappedTypeId, mappedKey",
+    "shopifyCarrierShipments": "[shopId+carrierPartyId+shipmentMethodTypeId], shopId, carrierPartyId, shipmentMethodTypeId",
+    "facilityGroupProductStores": "[facilityGroupId+productStoreId+fromDate], facilityGroupId, productStoreId, fromDate, thruDate",
+    "enumGroupMembers": "[enumerationGroupId+enumId], enumerationGroupId, enumId",
+    "facilityIdentifications": "[facilityId+facilityIdenTypeId], facilityId, facilityIdenTypeId",
+    "appVersions": "[appId+environmentTypeId], appId, environmentTypeId"
   }
 }
