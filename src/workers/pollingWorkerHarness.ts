@@ -1,5 +1,7 @@
 import { expose } from "comlink";
-import { ensureCacheReady, hasSyncedThisLogin } from "@/utils/appCacheDb";
+import { ensureDbReady } from "@common/db/baseDb";
+import { companyDb } from "@/db/companyDb";
+import { hasSyncedThisLogin } from "@/utils/appCacheDb";
 import { cacheScopeKey } from "@/utils/cacheScopeKey";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
@@ -28,6 +30,8 @@ import {
 export interface HarnessStartPayload {
   maargUrl: string;
   token: string;
+  /** Required — the worker has no cookies, so the main thread must name the OMS to sync into. */
+  omsInstance: string;
   /** How often the harness re-evaluates which domains are due. */
   baseTickMs?: number;
   domains: ActiveDomain[];
@@ -50,7 +54,7 @@ export interface SyncHarness {
 
 const DEFAULT_BASE_TICK_MS = 5_000;
 
-let ctx: SyncContext = { maargUrl: "", token: "" };
+let ctx: SyncContext = { maargUrl: "", token: "", omsInstance: "" };
 let active: ActiveDomain[] = [];
 let baseTickMs = DEFAULT_BASE_TICK_MS;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -209,12 +213,15 @@ function stop(): void {
 
 async function start(payload: HarnessStartPayload): Promise<void> {
   stop(); // restart cleanly if called again
-  ctx = { maargUrl: payload.maargUrl, token: payload.token };
+  // Every realm — the app-wide class-B worker and each per-view class-A worker — enters here,
+  // so this one registration covers all of them. Must run before any database access below.
+  companyDb.setOmsInstanceResolver(() => payload.omsInstance);
+  ctx = { maargUrl: payload.maargUrl, token: payload.token, omsInstance: payload.omsInstance };
   active = payload.domains ?? [];
   baseTickMs = payload.baseTickMs ?? DEFAULT_BASE_TICK_MS;
   // Recreate the cache if its stored schema is stale — otherwise every write below no-ops.
   try {
-    await ensureCacheReady();
+    await ensureDbReady(companyDb.get(payload.omsInstance));
   } catch (err) {
     const error = new Error(`cache open failed: ${(err as any)?.message ?? err}`, { cause: err });
     post({ type: "sync-error", domain: "__start", message: error.message });

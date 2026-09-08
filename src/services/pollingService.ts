@@ -89,6 +89,7 @@ export function createSyncService(opts: SyncServiceOptions): SyncService {
     await api.start({
       maargUrl: commonUtil.getMaargURL(),
       token: lastToken,
+      omsInstance: commonUtil.getOMSInstanceName(),
       baseTickMs: opts.baseTickMs,
       domains: opts.domains,
     });

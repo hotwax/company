@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   exposed: undefined as any,
-  ensureCacheReady: vi.fn(),
+  ensureDbReady: vi.fn(),
+  setOmsInstanceResolver: vi.fn(),
+  getDb: vi.fn(() => ({})),
   postMessage: vi.fn(),
   productStoreRefetchOne: vi.fn(),
   refetchOne: vi.fn(),
@@ -16,7 +18,19 @@ vi.mock("comlink", () => ({
 }));
 
 vi.mock("@/utils/appCacheDb", () => ({
-  ensureCacheReady: (...args: any[]) => harness.ensureCacheReady(...args),
+  hasSyncedThisLogin: vi.fn(async () => true),
+}));
+
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    setOmsInstanceResolver: (...args: any[]) => harness.setOmsInstanceResolver(...args),
+    get: (...args: any[]) => harness.getDb(...args),
+    raw: vi.fn(() => ({})),
+  },
+}));
+
+vi.mock("@common/db/baseDb", () => ({
+  ensureDbReady: (...args: any[]) => harness.ensureDbReady(...args),
 }));
 
 vi.mock("@/utils/pollingTokenChannel", () => ({
@@ -50,8 +64,10 @@ describe("polling worker targeted refetch failures", () => {
   beforeEach(async () => {
     vi.resetModules();
     harness.exposed = undefined;
-    harness.ensureCacheReady.mockReset();
-    harness.ensureCacheReady.mockResolvedValue(undefined);
+    harness.ensureDbReady.mockReset();
+    harness.ensureDbReady.mockResolvedValue(undefined);
+    harness.setOmsInstanceResolver.mockReset();
+    harness.getDb.mockReset().mockReturnValue({});
     harness.postMessage.mockReset();
     harness.productStoreRefetchOne.mockReset().mockResolvedValue(1);
     harness.refetchOne.mockReset();
@@ -181,11 +197,12 @@ describe("polling worker targeted refetch failures", () => {
   });
 
   it("marks cache-open failure as a global startup error and rejects start", async () => {
-    harness.ensureCacheReady.mockRejectedValueOnce(new Error("IndexedDB unavailable"));
+    harness.ensureDbReady.mockRejectedValueOnce(new Error("IndexedDB unavailable"));
 
     await expect(harness.exposed.start({
       maargUrl: "https://example.test/rest/s1/",
       token: "token",
+      omsInstance: "test-oms",
       domains: [],
     })).rejects.toThrow("cache open failed: IndexedDB unavailable");
 
@@ -194,6 +211,32 @@ describe("polling worker targeted refetch failures", () => {
       domain: "__start",
       message: "cache open failed: IndexedDB unavailable",
     });
+  });
+
+  it("registers the OMS instance resolver before opening the database, resolving to the payload's instance", async () => {
+    await harness.exposed.start({
+      maargUrl: "https://example.test/rest/s1/",
+      token: "token",
+      omsInstance: "acme-oms",
+      domains: [],
+    });
+
+    expect(harness.setOmsInstanceResolver).toHaveBeenCalledTimes(1);
+    expect(harness.getDb).toHaveBeenCalledWith("acme-oms");
+    expect(harness.ensureDbReady).toHaveBeenCalledTimes(1);
+
+    // Registration must precede every database access — a worker realm that opens the db
+    // before the resolver is registered throws "no OMS instance resolver registered" the first
+    // time anything downstream falls back to `companyDb.raw()`.
+    const resolverCallOrder = harness.setOmsInstanceResolver.mock.invocationCallOrder[0];
+    const getDbCallOrder = harness.getDb.mock.invocationCallOrder[0];
+    const ensureDbReadyCallOrder = harness.ensureDbReady.mock.invocationCallOrder[0];
+    expect(resolverCallOrder).toBeLessThan(getDbCallOrder);
+    expect(resolverCallOrder).toBeLessThan(ensureDbReadyCallOrder);
+
+    // The captured resolver must resolve to THIS payload's instance, not a stale/default one.
+    const registeredResolver = harness.setOmsInstanceResolver.mock.calls[0][0];
+    expect(registeredResolver()).toBe("acme-oms");
   });
 
   it("rejects a missing targeted-refetch implementation", async () => {

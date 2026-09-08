@@ -12,9 +12,18 @@ vi.mock("comlink", () => ({
 }));
 
 vi.mock("@/utils/appCacheDb", () => ({
-  ensureCacheReady: vi.fn(async () => undefined),
   hasSyncedThisLogin: vi.fn(async (domain: string) => state.completedDomains.has(domain)),
 }));
+
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    setOmsInstanceResolver: vi.fn(),
+    get: vi.fn(() => ({})),
+    raw: vi.fn(() => ({})),
+  },
+}));
+
+vi.mock("@common/db/baseDb", () => ({ ensureDbReady: vi.fn(async () => undefined) }));
 
 vi.mock("@/utils/pollingTokenChannel", () => ({
   subscribeToken: vi.fn(),
@@ -58,6 +67,7 @@ describe("polling worker one-shot retries", () => {
     await state.exposed.start({
       maargUrl: "https://example.test",
       token: "token",
+      omsInstance: "test-oms",
       baseTickMs: 100,
       domains: [{ name: "retry-after-error" }],
     });
@@ -81,6 +91,7 @@ describe("polling worker one-shot retries", () => {
     await state.exposed.start({
       maargUrl: "https://example.test",
       token: "token",
+      omsInstance: "test-oms",
       baseTickMs: 100,
       domains: [{ name: "retry-after-refusal" }],
     });

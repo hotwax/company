@@ -12,6 +12,8 @@
 export interface SyncContext {
   maargUrl: string;
   token: string;
+  /** OMS instance being synced. Databases are per-OMS and a worker cannot read it from cookies. */
+  omsInstance: string;
 }
 
 export interface SyncDomain {
