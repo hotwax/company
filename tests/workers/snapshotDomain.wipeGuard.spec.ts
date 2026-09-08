@@ -23,8 +23,13 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
 
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    raw: () => ({ table: () => ({ count: async () => state.cachedCount }) }),
+  },
+}));
+
 vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: { table: () => ({ count: async () => state.cachedCount }) },
   defineCachedEntity: () => ({
     table: "productStores",
     snapshotReplace: vi.fn(async (rows: any[]) => {

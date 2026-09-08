@@ -20,17 +20,22 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   unwrapCollection: (response: any) => (Array.isArray(response) ? response : []),
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: {
-    table: (table: string) => ({
-      count: async () => 0,
-      toCollection: () => ({
-        toArray: async () => table === "productStores"
-          ? [{ productStoreId: AUTHORITATIVE_STORE }]
-          : [],
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    raw: () => ({
+      table: (table: string) => ({
+        count: async () => 0,
+        toCollection: () => ({
+          toArray: async () => table === "productStores"
+            ? [{ productStoreId: AUTHORITATIVE_STORE }]
+            : [],
+        }),
       }),
     }),
   },
+}));
+
+vi.mock("@/utils/appCacheDb", () => ({
   defineCachedEntity: () => ({
     table: "productStoreShippingMethods",
     snapshotReplace: vi.fn(async (rows: any[], scope: any) => {

@@ -1,8 +1,8 @@
 import {
-  appCacheDb,
   hasSyncedThisLogin,
   markSyncedThisLogin,
 } from "@/utils/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import {
   organizationCache,
   organizationProjection,
@@ -84,7 +84,7 @@ registerSyncDomain({
     const roles = await fetchRoleRows(ctx);
     const organizations = await fetchOrganizations(ctx, roles);
 
-    const existing = await appCacheDb.organizations.count();
+    const existing = await (companyDb.raw() as any).organizations.count();
     if(!options?.force && organizations.length === 0 && existing > 0) {
       console.warn("[sync] organization: server returned no usable internal organizations while the cache " +
         "is populated; refusing to prune. Use a manual resync to clear it deliberately.",);

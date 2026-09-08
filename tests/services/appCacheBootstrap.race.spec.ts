@@ -73,8 +73,13 @@ vi.mock("@common", () => ({
   commonUtil: { getMaargURL: () => "https://example.test/rest/s1/" },
 }));
 
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    raw: () => ({ syncMeta: { delete: vi.fn(async () => undefined) } }),
+  },
+}));
+
 vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: { syncMeta: { delete: vi.fn(async () => undefined) } },
   clearSyncMarkers: vi.fn(async () => undefined),
   ensureCacheIdentity: vi.fn(async () => false),
 }));

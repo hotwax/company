@@ -1,4 +1,5 @@
-import { appCacheDb, type CacheTableName, defineCachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
+import { type CacheTableName, defineCachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { isUnkeyableFetch, type EntityProjection } from "@/utils/cacheProjection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageAll, unwrapCollection, workerGet } from "./workerFetch";
@@ -159,7 +160,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
       // Fan-out: one request per cached parent, unioned into a single snapshot.
       if (config.fanOut) {
         const { parentTable, parentKeyField, urlFor } = config.fanOut;
-        const parents = await appCacheDb.table(parentTable).toCollection().toArray();
+        const parents = await companyDb.raw().table(parentTable).toCollection().toArray();
         const parentIds = [...new Set(parents.map((row: any) => row?.[parentKeyField]).filter(Boolean))];
         const all: any[] = [];
         for (const parentId of parentIds) {
@@ -177,7 +178,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           // The request scope is authoritative: child rows may omit or incorrectly echo the parent.
           all.push(...page.map((row: any) => ({ ...row, [parentKeyField]: parentId })));
         }
-        if (wouldWipePopulatedTable(all.length, await appCacheDb.table(config.table).count(), !!options?.force)) {
+        if (wouldWipePopulatedTable(all.length, await companyDb.raw().table(config.table).count(), !!options?.force)) {
           console.warn(
             `[sync] ${config.name}: fan-out returned 0 records while the cache holds rows — refusing ` +
             `to snapshot, because pruning against zero keys would empty the table. Not marking synced; ` +
@@ -201,7 +202,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
         keyOf: (record) => keyOfRecord(record, config),
         label: config.name,
       });
-      if (wouldWipePopulatedTable(rows.length, await appCacheDb.table(config.table).count(), !!options?.force)) {
+      if (wouldWipePopulatedTable(rows.length, await companyDb.raw().table(config.table).count(), !!options?.force)) {
         console.warn(
           `[sync] ${config.name}: ${config.listUrl} returned 0 records while the cache holds rows — ` +
           `refusing to snapshot, because pruning against zero keys would empty the table. Not marking ` +

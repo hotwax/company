@@ -21,8 +21,13 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   }),
 }));
 
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    raw: () => ({ organizations: { count: vi.fn(async () => state.cachedCount) } }),
+  },
+}));
+
 vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: { organizations: { count: vi.fn(async () => state.cachedCount) } },
   hasSyncedThisLogin: vi.fn(async () => false),
   markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
 }));

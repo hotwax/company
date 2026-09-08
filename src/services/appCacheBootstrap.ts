@@ -1,6 +1,7 @@
 import { reactive } from "vue";
 import { commonUtil } from "@common";
-import { appCacheDb, clearSyncMarkers, ensureCacheIdentity } from "@/utils/appCacheDb";
+import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
 import { REFERENCE_DOMAIN_NAMES } from "@/utils/cacheDomainCatalog";
 import { cacheScopeKey } from "@/utils/cacheScopeKey";
@@ -263,7 +264,7 @@ export async function resyncReferenceData(): Promise<void> {
 
 /** Force ONE domain to re-sync now — the per-row refresh in Settings. */
 export async function resyncDomain(domain: string): Promise<void> {
-  await appCacheDb.syncMeta.delete(`domain:${domain}`);
+  await companyDb.raw().syncMeta.delete(`domain:${domain}`);
   await whenReady();
   if(!service) {
     throw new Error(bootstrapState.errors.__start ?? "The reference-cache service is unavailable.");

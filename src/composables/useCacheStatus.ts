@@ -1,6 +1,6 @@
 import { computed, onUnmounted, ref } from "vue";
 import { liveQuery, type Subscription } from "dexie";
-import { appCacheDb } from "@/utils/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { CACHE_DOMAIN_CATALOG, type CacheDomainEntry } from "@/utils/cacheDomainCatalog";
 import { resyncDomain, resyncReferenceData } from "@/services/appCacheBootstrap";
 
@@ -26,7 +26,7 @@ export function useCacheStatus() {
   const refreshing = ref<string | null>(null);
 
   const subscription: Subscription = liveQuery(async () => {
-    const markers = await appCacheDb.syncMeta.toArray();
+    const markers = await companyDb.raw().syncMeta.toArray();
     const syncedAtByDomain = new Map<string, number>();
     for (const marker of markers) {
       const key = String(marker.key ?? "");
@@ -37,7 +37,7 @@ export function useCacheStatus() {
 
     const rows: CacheDomainStatus[] = [];
     for (const entry of CACHE_DOMAIN_CATALOG) {
-      const table = appCacheDb.table(entry.table);
+      const table = companyDb.raw().table(entry.table);
       const count = await table.count();
       const syncedAt = syncedAtByDomain.get(entry.name) ?? null;
       rows.push({

@@ -37,8 +37,13 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   },
 }));
 
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    raw: () => ({ table: () => ({ count: async () => 1 }) }),
+  },
+}));
+
 vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: { table: () => ({ count: async () => 1 }) },
   defineCachedEntity: () => ({
     table: "serviceJobs",
     snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
