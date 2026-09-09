@@ -3570,5 +3570,9 @@
   "On hand": "On hand",
   "Incoming": "Incoming",
   "Committed": "Committed",
-  "Next run recalculated after saving": "Next run recalculated after saving"
+  "Next run recalculated after saving": "Next run recalculated after saving",
+  "OMS product ID is required": "OMS product ID is required",
+  "Search index refresh was not confirmed": "Search index refresh was not confirmed",
+  "Refresh search index": "Refresh search index",
+  "Index refresh request completed. Check product search.": "Index refresh request completed. Check product search."
 }

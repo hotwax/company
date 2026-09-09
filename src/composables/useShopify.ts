@@ -6700,6 +6700,15 @@ export async function fetchCurrentShopifyInventory(payload: {systemMessageRemote
   return parseInventorySnapshot(response, itemId, locationId);
 }
 
+/** Rebuild one mapped OMS product's local search document; does not write Shopify. */
+export async function refreshMappedProductSearchIndex(productId: string) {
+  if (!productId?.trim()) throw new Error(translate('OMS product ID is required'));
+  const response: any = await api({url: 'oms/search/index/product', method: 'post', data: {productId, indexVariants: false}});
+  if (!response || response.data == null || commonUtil.hasError(response)) {
+    throw new Error(translate('Search index refresh was not confirmed'));
+  }
+}
+
 /** Read every variant and its existing OMS mapping without re-running an import. */
 export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
   const productId = getExactShopifyProductGid(payload.productId);

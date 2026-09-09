@@ -18,6 +18,13 @@
               <p>{{ translate('Shopify inventory item ID') }}: {{ row.inventoryItemId }}</p>
               <p>{{ row.tracked ? translate('Inventory tracked') : translate('Inventory not tracked') }}</p>
               <p v-for="mapping in row.mappings" :key="mapping.productId">{{ translate('OMS product ID') }}: {{ mapping.productId }} · {{ mapping.internalName }}</p>
+              <template v-if="row.mappings.length === 1">
+                <ion-button fill="clear" :disabled="!!indexingProductId" @click="refreshIndex(row.mappings[0].productId)">
+                  <ion-spinner v-if="indexingProductId === row.mappings[0].productId" name="crescent" />
+                  {{ translate('Refresh search index') }}
+                </ion-button>
+                <p v-if="indexMessages[row.mappings[0].productId]">{{ indexMessages[row.mappings[0].productId] }}</p>
+              </template>
             </ion-label>
             <ion-badge slot="end" :color="row.mappings.length === 1 ? 'success' : 'warning'">{{ row.mappings.length === 1 ? translate('Mapped') : row.mappings.length ? translate('Multiple mappings') : translate('Not mapped') }}</ion-badge>
           </ion-item>
@@ -31,17 +38,34 @@ import { ref, computed, watch } from 'vue';
 import { IonModal, IonHeader, IonToolbar, IonButtons, IonButton, IonIcon, IonTitle, IonContent, IonList, IonItem, IonLabel, IonNote, IonBadge, IonSpinner } from '@ionic/vue';
 import { closeOutline } from 'ionicons/icons';
 import { translate } from '@common';
-import { fetchProductMappings } from '@/composables/useShopify';
+import { fetchProductMappings, refreshMappedProductSearchIndex } from '@/composables/useShopify';
 const props = defineProps<{product: {id: string; title: string} | null; systemMessageRemoteId: string; productStoreId: string}>();
 defineEmits(['close']);
 const rows = ref<any[]>([]);
 const loading = ref(false);
 const error = ref('');
+const indexingProductId = ref('');
+const indexMessages = ref<Record<string, string>>({});
 let version = 0;
+async function refreshIndex(productId: string) {
+  if (indexingProductId.value) return;
+  const token = version;
+  indexingProductId.value = productId;
+  indexMessages.value[productId] = '';
+  try {
+    await refreshMappedProductSearchIndex(productId);
+    if (token === version) indexMessages.value[productId] = translate('Index refresh request completed. Check product search.');
+  } catch {
+    if (token === version) indexMessages.value[productId] = translate('Search index refresh was not confirmed');
+  } finally {
+    indexingProductId.value = '';
+  }
+}
 const mappedCount = computed(() => rows.value.filter(row => row.mappings.length === 1).length);
 async function load() {
   const token = ++version;
   rows.value = []; error.value = '';
+  indexMessages.value = {};
   if (!props.product) { loading.value = false; return; }
   loading.value = true;
   try {
