@@ -18,6 +18,7 @@ stands up and administers an OMS tenant. Functional areas, each a route family:
 | Shopify integration | `/shopify`, `/shopify-connection-details/:id/**` (locations, shipment/payment methods, sales channels, product types, product-sync, order-sync) | `Shopify*` |
 | Klaviyo integration | `/klaviyo`, `/klaviyo/:id` | `Klaviyo*` |
 | NetSuite integration | `/netsuite/*` (shipment methods, payment methods, inventory variances, sales channel, departments) | `NetSuite`, `ShipmentMethods`, `PaymentMethods`, `InventoryVariances`, `SalesChannel`, `Departments` |
+| AWS integration | `/aws` (the SQS queues the real-time Shopify consumers poll, with an editable delivery delay) | `Aws` |
 | AI agent surface | `/composer`, `/workforce` | `views/agent/*` |
 | App shell | `/login`, `/reset-password`, `/settings` | `Settings`, `ResetPassword`, `Login` (from `@common`) |
 
@@ -264,6 +265,7 @@ concept is the smell this rule prevents.
 | [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |
 | [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
+| [`useAws.ts`](src/composables/useAws.ts) | The AWS surface: SQS consumer jobs and their live queue attributes via `sob/shopify/sqsQueues`, plus the delivery-delay write. LIVE reads on purpose — queue state changes outside the OMS |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
 | `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
