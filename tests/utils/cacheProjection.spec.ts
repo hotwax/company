@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dataFeedProjection, shopifyTransferPendingProjection } from "@/utils/cacheEntities";
+import { dataFeedProjection, shopifyTransferPendingProjection, shopifyLocationInventoryAdjustmentDetailProjection } from "@/utils/cacheEntities";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -14,6 +14,20 @@ import {
 } from "@/utils/cacheProjection";
 
 const NOW = 1_700_000_000_000;
+
+describe("location inventory ledger identity", () => {
+  const source = { eventTypeId: "RECEIPT", eventReferenceId: "R1", shopId: "S1", shopifyLocationId: "L1" };
+  it("does not overwrite one inventory item with another from the same source event", () => {
+    const first = projectRow({ ...source, shopifyInventoryItemId: "I1", computedInventoryChange: 2 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;
+    const second = projectRow({ ...source, shopifyInventoryItemId: "I2", computedInventoryChange: 3 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;
+    expect(first.locationAdjustmentKey).not.toEqual(second.locationAdjustmentKey);
+    expect(first.computedInventoryChange).toBe(2);
+    expect(second.computedInventoryChange).toBe(3);
+  });
+  it("rejects a location event without an inventory item identity", () => {
+    expect(projectRow(source, shopifyLocationInventoryAdjustmentDetailProjection, NOW)).toBeNull();
+  });
+});
 
 const logProjection = {
   keyField: "logId",

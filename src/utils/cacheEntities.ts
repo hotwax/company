@@ -1,4 +1,5 @@
 import { defineCachedEntity } from "./appCacheDb";
+import { locationInventoryAdjustmentKey } from "./shopifyLocationInventory";
 
 /**
  * Cached entity definitions — the shared contract between the worker (which writes) and views /
@@ -529,7 +530,7 @@ export const shopifyInventoryAdjustmentDetailProjection = {
  * ledger): this row carries `shopId`/`shopifyLocationId` directly rather than resolving them
  * through a channel, because real-time location push targets one Shopify location per mapped
  * facility rather than a facility-group aggregate. PK is eventTypeId + eventReferenceId + shopId +
- * shopifyLocationId, so `locationAdjustmentKey` is the synthetic cache key for that.
+ * shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey` is the synthetic cache key for that.
  */
 export const shopifyLocationInventoryAdjustmentDetailProjection = {
   keyField: "locationAdjustmentKey",
@@ -547,12 +548,7 @@ export const shopifyLocationInventoryAdjustmentDetailProjection = {
     createdDate: "date",
     lastUpdatedStamp: "date",
   },
-  buildKey: (raw: Record<string, unknown>) => {
-    const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId];
-    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
-
-    return JSON.stringify(identity.map(String));
-  },
+  buildKey: locationInventoryAdjustmentKey,
 } as const;
 
 export const shopifyLocationInventoryAdjustmentDetailCache = defineCachedEntity(

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { locationInventoryAdjustmentKey } from "@/utils/shopifyLocationInventory";
 
 /**
  * A response body that fails to parse must NOT be reported as "no records".
@@ -85,6 +86,17 @@ describe("strict collection response handling", () => {
 
 
 describe("complete snapshot pagination", () => {
+  it("retains separate inventory items from the same location source event", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    const source = { eventTypeId: "SHIPMENT_RECEIPT", eventReferenceId: "receipt-1", shopId: "shop-1", shopifyLocationId: "location-1" };
+    const details = [
+      { ...source, shopifyInventoryItemId: "item-1", computedInventoryChange: 2 },
+      { ...source, shopifyInventoryItemId: "item-2", computedInventoryChange: 3 },
+    ];
+    transport.body = JSON.stringify({ details, detailCount: 2, hasMore: false });
+    await expect(pageAll({ ctx, url: "rows", collectionKey: "details", requireComplete: true,
+      strictCollection: true, keyOf: locationInventoryAdjustmentKey })).resolves.toEqual(details);
+  });
   it("rejects repeated pages rather than returning a partial snapshot", async () => {
     const { pageAll } = await import("@/workers/domains/workerFetch");
     transport.body = '[{"id":"A"}]';
