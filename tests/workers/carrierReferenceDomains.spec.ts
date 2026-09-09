@@ -72,7 +72,7 @@ async function registeredDomain(name: string) {
   const { setAppDb } = await import("@common/db/appDbRegistry");
   setAppDb(companyDb as any);
   await import("@/workers/domains/referenceDomains");
-  const { getSyncDomain } = await import("@/workers/syncRegistry");
+  const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
   return getSyncDomain(name);
 }
 

@@ -16,10 +16,6 @@
  * THIS module's own statements run — so a statement here, even textually first, would still run
  * after every domain module below had already registered itself. Making the seed registration its
  * own module and importing it is what lets it participate in that same import-order sequencing.
- *
- * Registers via Company's own adapter (`./domains/registerSeedDomains`), NOT the framework's
- * `@common/db/sync/registerSeedDomains` — see that file for why: the framework helper registers
- * into a registry Company's harness never reads.
  */
 import "./domains/seedRegistrations";
 
@@ -33,6 +29,14 @@ import "./domains/shopifyInventoryMonitoringDomain";
 import "./domains/netSuiteOrderPushDomain";
 import "./domains/referenceDomains";
 
-// The harness must be imported last: it calls `expose()`, and every domain has to be registered
-// by the time the main thread can invoke `domains()` or `start()`.
-import "./pollingWorkerHarness";
+// The harness must be imported last: it calls expose(), and every domain has to be registered
+// by the time the main thread can invoke domains() or start().
+import { exposeWorkerHarness } from "@common/db/sync/pollingWorkerHarness";
+import { companyDb } from "@/db/companyDb";
+
+// Each worker realm is a separate JS realm with its own module instances, so the resolver has to
+// be registered here as well as on the main thread. The harness hands us the instance on start().
+exposeWorkerHarness((omsInstance) => {
+  companyDb.setOmsInstanceResolver(() => omsInstance);
+  return companyDb.get(omsInstance);
+});

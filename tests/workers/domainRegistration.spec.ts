@@ -37,7 +37,7 @@ describe("company domain registration", () => {
   let names: string[];
 
   beforeAll(async () => {
-    const { clearSyncRegistry, getAllSyncDomains } = await import("@/workers/syncRegistry");
+    const { clearSyncRegistry, getAllSyncDomains } = await import("@common/db/sync/syncRegistry");
     clearSyncRegistry();
     registrationCalls.length = 0;
     // Import the REAL worker entry, statically — exactly how production loads it, with whatever

@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[] }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options);
     return [];
@@ -68,7 +68,7 @@ vi.mock("@/utils/db/cacheProjection", () => ({
 }));
 
 const domains = vi.hoisted(() => ({ registered: [] as any[] }));
-vi.mock("@/workers/syncRegistry", () => ({
+vi.mock("@common/db/sync/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { domains.registered.push(domain); },
 }));
 

@@ -1,6 +1,7 @@
 import { companyDb } from "@/db/companyDb";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst } from "@common/db/sync/workerFetch";
 
 /**
  * ProductUpdateHistory — class A (live), PER SHOP, bounded window.

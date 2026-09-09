@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[], workerGet: [] as any[] }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options.params);
     return [];
@@ -78,7 +78,7 @@ describe("systemMessage domain per-tick request budget", () => {
 
   async function runTick() {
     await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@/workers/syncRegistry");
+    const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
     const domain = getSyncDomain("systemMessage")!;
     await domain.sync({ maargUrl: "https://x.test/", token: "t" }, {});
     return calls.pageNewestFirst.length + calls.workerGet.length;
@@ -136,7 +136,7 @@ describe("systemMessage domain per-tick request budget", () => {
     ];
 
     await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@/workers/syncRegistry");
+    const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
     await getSyncDomain("systemMessage")!.sync(
       { maargUrl: "https://x.test/", token: "t" },
       { refreshMaxAgeMs: 60_000 },

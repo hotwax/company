@@ -23,13 +23,13 @@ vi.mock("@/utils/db/appCacheDb", () => ({
   },
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageNewestFirst: vi.fn(async (options: any) =>
     options.keep ? options.keep(state.serverPage) : state.serverPage),
   workerGet: vi.fn(),
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
+vi.mock("@common/db/sync/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { state.domains.push(domain); },
 }));
 

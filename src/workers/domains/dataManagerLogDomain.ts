@@ -3,8 +3,9 @@ import { keepNewerThan } from "@/utils/db/cacheProjection";
 
 const dataManagerLogCache = cachedEntity("dataManagerLogs");
 
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
 
 /**
  * DataManagerLog — class A (live, append-mostly).

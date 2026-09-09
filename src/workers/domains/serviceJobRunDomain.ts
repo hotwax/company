@@ -2,8 +2,9 @@ import { cachedEntity } from "@/utils/db/appCacheDb";
 
 const serviceJobRunCache = cachedEntity("serviceJobRuns");
 
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
 
 /**
  * ServiceJobRun — class A (live), fetched PER JOB.

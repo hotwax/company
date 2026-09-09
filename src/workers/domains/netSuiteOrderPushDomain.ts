@@ -6,8 +6,9 @@ const netSuiteRuleGroupCache = cachedEntity("netSuiteRuleGroups");
 const netSuiteRuleGroupRunCache = cachedEntity("netSuiteRuleGroupRuns");
 
 import { keepNewerThan } from "@/utils/db/cacheProjection";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
 
 /**
  * NetSuite order push — the live half of the sync monitor.

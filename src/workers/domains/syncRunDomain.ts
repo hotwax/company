@@ -1,6 +1,7 @@
 import { cachedEntity } from "@/utils/db/appCacheDb";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { unwrapCollection, workerGet, workerPost } from "@common/db/sync/workerFetch";
 
 const syncRunCache = cachedEntity("syncRuns");
 const shopifyShopCache = cachedEntity("shopifyShops");

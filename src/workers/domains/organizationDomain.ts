@@ -4,8 +4,9 @@ import {
   markSyncedThisLogin,
 } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { pageAll, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageAll, workerGet } from "@common/db/sync/workerFetch";
 
 const organizationCache = cachedEntity("organizations");
 

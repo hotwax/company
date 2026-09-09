@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   domains: [] as any[],
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageAll: vi.fn(async () => state.roles),
   workerGet: vi.fn(async (_ctx: any, url: string) => {
     const partyId = decodeURIComponent(url.split("/").at(-1) ?? "");
@@ -52,7 +52,7 @@ vi.mock("@/utils/db/appCacheDb", () => ({
   },
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
+vi.mock("@common/db/sync/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { state.domains.push(domain); },
 }));
 

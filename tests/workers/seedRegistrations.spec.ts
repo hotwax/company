@@ -13,8 +13,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
  */
 const configs = vi.hoisted(() => [] as any[]);
 
-vi.mock("@common/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@common/db")>();
+vi.mock("@common/db/sync/snapshotDomain", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db/sync/snapshotDomain")>();
   return {
     ...actual,
     registerSnapshotDomain: (config: any, getDb?: any) => {

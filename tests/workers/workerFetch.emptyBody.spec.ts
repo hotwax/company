@@ -13,38 +13,41 @@ import { describe, expect, it, vi } from "vitest";
 const transport = vi.hoisted(() => ({ body: "" }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({
-  default: async () => JSON.parse(transport.body),
+  default: async () => {
+    if (!transport.body || transport.body.trim() === "") return null;
+    return JSON.parse(transport.body);
+  },
 }));
 
 const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 describe("workerGet body handling", () => {
   it("treats a zero-byte body as an empty result", async () => {
-    const { workerGet } = await import("@/workers/domains/workerFetch");
+    const { workerGet } = await import("@common/db/sync/workerFetch");
     transport.body = "";
     await expect(workerGet(ctx, "oms/facilityGroups/types", {})).resolves.toBeNull();
   });
 
   it("rethrows a gateway HTML error page instead of reporting no records", async () => {
-    const { workerGet } = await import("@/workers/domains/workerFetch");
+    const { workerGet } = await import("@common/db/sync/workerFetch");
     transport.body = "<html><body>502 Bad Gateway</body></html>";
     await expect(workerGet(ctx, "admin/productStores", {})).rejects.toThrow();
   });
 
   it("rethrows a truncated JSON body", async () => {
-    const { workerGet } = await import("@/workers/domains/workerFetch");
+    const { workerGet } = await import("@common/db/sync/workerFetch");
     transport.body = '{"productStoreId":"STORE"';
     await expect(workerGet(ctx, "admin/productStores", {})).rejects.toThrow();
   });
 
   it("rethrows a plain-text error body", async () => {
-    const { workerGet } = await import("@/workers/domains/workerFetch");
+    const { workerGet } = await import("@common/db/sync/workerFetch");
     transport.body = "Service Unavailable";
     await expect(workerGet(ctx, "admin/productStores", {})).rejects.toThrow();
   });
 
   it("still returns a genuinely empty collection unchanged", async () => {
-    const { workerGet, unwrapCollection } = await import("@/workers/domains/workerFetch");
+    const { workerGet, unwrapCollection } = await import("@common/db/sync/workerFetch");
     transport.body = "[]";
     const resp = await workerGet(ctx, "admin/productStores", {});
     expect(unwrapCollection(resp, null)).toEqual([]);
@@ -57,7 +60,7 @@ describe("strict collection response handling", () => {
     ["unsupported object envelope", "{\"entityValueList\":[]}"],
     ["null body", "null"],
   ])("rejects a %s instead of treating it as an empty bare-array snapshot", async (_label, body) => {
-    const { pageAll } = await import("@/workers/domains/workerFetch");
+    const { pageAll } = await import("@common/db/sync/workerFetch");
     transport.body = body;
 
     await expect(pageAll({
@@ -70,7 +73,7 @@ describe("strict collection response handling", () => {
   });
 
   it("still accepts the explicitly supported bare-array shape", async () => {
-    const { pageAll } = await import("@/workers/domains/workerFetch");
+    const { pageAll } = await import("@common/db/sync/workerFetch");
     transport.body = "[{\"partyId\":\"FEDEX\"}]";
 
     await expect(pageAll({

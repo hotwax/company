@@ -1,46 +1,16 @@
 import { companyDb } from "@/db/companyDb";
-import { SEED_DOMAINS } from "@common/db/domains/seedDomains";
-import { registerCompanySeedDomains, type SeedPick } from "./registerSeedDomains";
+import { registerSeedDomains } from "@common/db/sync/registerSeedDomains";
 
-/**
- * Side-effect module: registers Company's picked seed domains at import time.
- *
- * This has to be its own module, imported FIRST among the domain modules in
- * `appSync.worker.ts`, rather than a bare statement placed above the other imports there. ESM
- * hoists every `import` declaration in a module and evaluates all of them, in source order,
- * before any of that module's own top-level statements run — so a statement written "above" the
- * imports in `appSync.worker.ts` still runs AFTER every imported domain module has already
- * registered itself. Proved this live: with the call as a bare statement, `carrierFacility`
- * (a fan-out child of `carrier`) landed at registry index 14 while `carrier` itself landed at 41
- * — the child registered first. Making the registration its own `import` fixes it, because now
- * it participates in import order like every other domain module.
- */
 /**
  * Seed domains that Company registers with custom configuration (byPk, listParams, strictCollection, etc.)
  * in `referenceDomains.ts` or `statusDomain.ts` — excluded here to prevent duplicate domain registration.
  */
-const OVERRIDDEN_SEED_DOMAINS = new Set([
+const OVERRIDDEN_SEED_DOMAINS = [
   "carriers",
   "carrierShipmentMethods",
   "shopifyShops",
   "facilityGroups",
   "statuses",
-]);
+];
 
-const picks: SeedPick[] = Array.from(companyDb.seedTables)
-  .filter((table) => !OVERRIDDEN_SEED_DOMAINS.has(table))
-  .map((table) => {
-    const entity = companyDb.entities[table];
-    const seed = SEED_DOMAINS[table as keyof typeof SEED_DOMAINS];
-    return {
-      name: seed.name,
-      table,
-      projection: entity,
-      // `seed` is the ENTRY (`{ name, label, source }`); only `seed.source` holds the fetch config.
-      // Passing the entry here spreads `label` and a nested `source` into the domain config and
-      // leaves `listUrl` undefined — the domain registers and then pages against `undefined`.
-      source: seed.source,
-    };
-  });
-
-registerCompanySeedDomains(picks);
+registerSeedDomains(companyDb, { exclude: OVERRIDDEN_SEED_DOMAINS });

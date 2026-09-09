@@ -1,8 +1,9 @@
 import { cachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
 import { canonicalKey, entityKeyOf } from "@common/db/projection";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "@common/db/sync/workerFetch";
 
 const dataFeedCache = cachedEntity("dataFeeds");
 const inventoryChannelCache = cachedEntity("inventoryChannels");

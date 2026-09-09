@@ -2,8 +2,9 @@ import { cachedEntity } from "@/utils/db/appCacheDb";
 import { liveScopeFor } from "@/config/appSyncConfig";
 import { keepNewerThan } from "@/utils/db/cacheProjection";
 import { resolveShopRemoteIds } from "@/utils/systemMessage";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst, workerGet } from "./workerFetch";
+import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
 
 const systemMessageCache = cachedEntity("systemMessages");
 const shopifyShopCache = cachedEntity("shopifyShops");
