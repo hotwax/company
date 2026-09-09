@@ -1504,6 +1504,10 @@
               <p>{{ selectedEvent?.calculation || translate("No calculation comment recorded") }}</p>
             </ion-label>
           </ion-item>
+          <ShopifyInventorySnapshot v-if="selectedEvent" :key="selectedEvent.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedEvent.shopifyInventoryItem || ''"
+            :location-id="selectedEvent.locationId || ''" />
         </ion-list>
       </ion-content>
     </ion-modal>
@@ -1692,6 +1696,10 @@
               </ion-text>
             </ion-label>
           </ion-item>
+          <ShopifyInventorySnapshot :key="selectedLocationDetail.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedLocationDetail.shopifyInventoryItemId || ''"
+            :location-id="selectedLocationDetail.shopifyLocationId || ''" />
         </ion-list>
       </ion-content>
     </ion-modal>
@@ -1805,6 +1813,7 @@ import {
   watch,
 } from "vue";
 import { useRouter } from "vue-router";
+import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";

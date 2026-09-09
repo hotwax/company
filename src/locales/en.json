@@ -3559,5 +3559,15 @@
   "{processed} objects processed / {total} products requested": "{processed} objects processed / {total} products requested",
   "{ready} of 3 ready · {warnings} warnings": "{ready} of 3 ready · {warnings} warnings",
   "{source}, at {location}": "{source}, at {location}",
-  "{summary} Details: {details}": "{summary} Details: {details}"
+  "{summary} Details: {details}": "{summary} Details: {details}",
+  "Current Shopify inventory": "Current Shopify inventory",
+  "Check now": "Check now",
+  "Checked at {time}": "Checked at {time}",
+  "Current quantities, not quantities when this event occurred.": "Current quantities, not quantities when this event occurred.",
+  "This inventory item is not stocked at this Shopify location.": "This inventory item is not stocked at this Shopify location.",
+  "Could not read current Shopify inventory. Check connection access and try again.": "Could not read current Shopify inventory. Check connection access and try again.",
+  "Available": "Available",
+  "On hand": "On hand",
+  "Incoming": "Incoming",
+  "Committed": "Committed"
 }
