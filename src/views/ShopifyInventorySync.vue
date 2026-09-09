@@ -524,7 +524,8 @@
                   </ion-chip>
                 </ion-item>
               </ion-list>
-              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" />
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId"
+                :remote-id="syncContext.remoteId.value || ''" :channels="inventoryChannels" />
             </ion-card>
             <ion-card v-if="jobsHydrated && inventoryChannelsHydrated && !aggregateResetRuns.length">
               <ion-item lines="none">

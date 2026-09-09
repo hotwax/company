@@ -3286,5 +3286,10 @@
   "Shopify inventory item": "Shopify inventory item",
   "The first physical inventory event activates a mapped product at its Shopify location before adjusting inventory. Scheduled reconciliation covers pairs without an event.": "The first physical inventory event activates a mapped product at its Shopify location before adjusting inventory. Scheduled reconciliation covers pairs without an event.",
   "This OMS records legacy product/location confirmations. It cannot verify that a confirmation belongs to the current Shopify inventory item. Deploy the inventory-item activation upgrade before relying on confirmations after a product remap.": "This OMS records legacy product/location confirmations. It cannot verify that a confirmation belongs to the current Shopify inventory item. Deploy the inventory-item activation upgrade before relying on confirmations after a product remap.",
-  "Try another status or clear the product and facility filters. Only current product/facility associations with a Shopify product mapping appear here.": "Try another status or clear the product and facility filters. Only current product/facility associations with a Shopify product mapping appear here."
+  "Try another status or clear the product and facility filters. Only current product/facility associations with a Shopify product mapping appear here.": "Try another status or clear the product and facility filters. Only current product/facility associations with a Shopify product mapping appear here.",
+  "Batch {number}": "Batch {number}",
+  "No error detail returned": "No error detail returned",
+  "Check an item at the current channel target": "Check an item at the current channel target",
+  "This checks current inventory only. It does not prove which items this reset published or resend the batch.": "This checks current inventory only. It does not prove which items this reset published or resend the batch.",
+  "The item or channel target could not be identified for this connection.": "The item or channel target could not be identified for this connection."
 }
