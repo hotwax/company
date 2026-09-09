@@ -6775,3 +6775,33 @@ export async function fetchProductMappings(payload: {productId: string; systemMe
   } while (after);
   return result;
 }
+
+
+/** Repair the retired reset importer only; never requeue an existing import. */
+export async function repairInventoryResetImportConfig(): Promise<void> {
+  const configId = "RESET_INV_CHANNEL";
+  const expected = "co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory";
+  const legacy = "co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory";
+  const read = async () => {
+    const response: any = await api({ url: `admin/dataManager/${configId}`, method: "GET" });
+    if (commonUtil.hasError(response) || response?.data?.configId !== configId) {
+      throw new Error(translate("Could not verify the reset import configuration."));
+    }
+    return response.data;
+  };
+  const current = await read();
+  if (current.importServiceName === expected) return;
+  if (current.importServiceName !== legacy) {
+    throw new Error(translate("The reset importer has an unexpected configuration. Review it before changing it."));
+  }
+  const response: any = await api({
+    url: `admin/dataManager/${configId}`, method: "PUT",
+    data: { configId, importServiceName: expected },
+  });
+  if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset importer update."));
+  try {
+    if ((await read()).importServiceName !== expected) throw new Error("not updated");
+  } catch {
+    throw new Error(translate("The update was submitted, but its saved value could not be verified. Check again before making another change."));
+  }
+}

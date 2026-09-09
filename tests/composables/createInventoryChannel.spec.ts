@@ -21,7 +21,7 @@ vi.mock("@/composables/useCachedList", () => ({
   byDescription: () => 0,
 }));
 
-import { createInventoryChannel, ensureChannelResetJob } from "@/composables/useShopify";
+import { createInventoryChannel, ensureChannelResetJob, repairInventoryResetImportConfig } from "@/composables/useShopify";
 
 describe("createInventoryChannel", () => {
   it("sends fromDate in the payload when creating an inventory channel", async () => {
@@ -116,5 +116,24 @@ describe("ensureChannelResetJob", () => {
     harness.api.mockResolvedValue({ data: { jobDetail: { jobName: "reset_InventoryChannelInventory_IC_OTHER", serviceName: "other.Service#run" } } });
     await expect(ensureChannelResetJob({ inventoryChannelId: "IC_OTHER" })).rejects.toThrow("unexpected service");
     expect(harness.api.mock.calls.every(([arg]) => arg.method === "get")).toBe(true);
+  });
+});
+
+
+describe("repairInventoryResetImportConfig", () => {
+  it("changes only the legacy importer and verifies the saved value", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce({ data: { configId: "RESET_INV_CHANNEL", importServiceName: "co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory" } })
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({ data: { configId: "RESET_INV_CHANNEL", importServiceName: "co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory" } });
+    await repairInventoryResetImportConfig();
+    expect(harness.api.mock.calls[1][0]).toEqual({ url: "admin/dataManager/RESET_INV_CHANNEL", method: "PUT", data: { configId: "RESET_INV_CHANNEL", importServiceName: "co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory" } });
+    expect(harness.api).toHaveBeenCalledTimes(3);
+  });
+  it("does not overwrite an unknown importer", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: { configId: "RESET_INV_CHANNEL", importServiceName: "custom.Service#run" } });
+    await expect(repairInventoryResetImportConfig()).rejects.toThrow("unexpected configuration");
+    expect(harness.api).toHaveBeenCalledTimes(1);
   });
 });

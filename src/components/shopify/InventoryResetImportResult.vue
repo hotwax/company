@@ -2,7 +2,7 @@
   <ion-list lines="full">
     <ion-item-divider>
       <ion-label>{{ translate('Shopify inventory publication') }}</ion-label>
-      <ion-button slot="end" fill="clear" :disabled="loading" @click="load">
+      <ion-button slot="end" fill="clear" :disabled="loading || repairing" @click="load">
         <ion-spinner v-if="loading" name="crescent" />
         <template v-else>{{ translate('Check now') }}</template>
       </ion-button>
@@ -16,7 +16,12 @@
     <ion-item v-if="error" role="alert"><ion-label class="ion-text-wrap">{{ error }}</ion-label></ion-item>
     <template v-if="result">
       <ion-item v-if="result.importServiceName && result.importServiceName !== 'co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory'" role="alert">
-        <ion-label class="ion-text-wrap">{{ translate('Reset import configuration needs updating') }}<p>{{ result.importServiceName }}</p></ion-label>
+        <ion-label class="ion-text-wrap">{{ translate('Reset import configuration needs updating') }}<p>{{ result.importServiceName }}</p>
+          <p>{{ translate('Repair updates the shared aggregate reset importer for every shop on this OMS. It does not retry imports or change schedules.') }}</p>
+        </ion-label>
+        <ion-button v-if="result.importServiceName === 'co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory'" slot="end" :disabled="repairing" @click="repair">
+          {{ translate('Repair configuration') }}
+        </ion-button>
       </ion-item>
       <ion-item><ion-label>{{ translate('Import status') }}</ion-label><ion-label slot="end">{{ statusLabel }}</ion-label></ion-item>
       <ion-item><ion-label>{{ translate('Batch records processed') }}</ion-label><ion-label slot="end">{{ result.totalRecordCount ?? translate('Not available') }}</ion-label></ion-item>
@@ -36,12 +41,14 @@ import { computed, ref, watch } from 'vue';
 import { IonAccordion, IonAccordionGroup, IonButton, IonItem, IonItemDivider, IonLabel, IonList, IonSpinner } from '@ionic/vue';
 import { translate } from '@common';
 import { useDataManager } from '@/composables/useDataManager';
+import { repairInventoryResetImportConfig } from '@/composables/useShopify';
 import { formatDateTime } from '@/utils';
 const props = defineProps<{ logId: string }>();
 const { errorLogs, fetchLogDetails } = useDataManager();
 const result = ref<any>(null);
 const loading = ref(false);
 const error = ref('');
+const repairing = ref(false);
 let generation = 0;
 watch(() => props.logId, () => { generation++; result.value = null; error.value = ''; loading.value = false; });
 const statusLabel = computed(() => {
@@ -62,6 +69,18 @@ async function load() {
     if (request === generation) error.value = translate('The reset import could not be verified. Check again before retrying the reset.');
   } finally {
     if (request === generation) loading.value = false;
+  }
+}
+async function repair() {
+  if (repairing.value) return;
+  repairing.value = true; error.value = '';
+  try {
+    await repairInventoryResetImportConfig();
+    await load();
+  } catch (failure: any) {
+    error.value = failure?.message || translate('Could not verify the reset import configuration.');
+  } finally {
+    repairing.value = false;
   }
 }
 </script>
