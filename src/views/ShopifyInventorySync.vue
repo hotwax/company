@@ -2457,11 +2457,8 @@ type JobDefinition = {
  * this connection every job reported a next run behind its own last one. Calling that overdue would be
  * a false alarm on a job running perfectly well every fifteen minutes.
  *
- * Three cases, and only one of them is an alarm:
- *   future             -> the delta, which is what an operator actually wants to read
- *   a run came after   -> the stored value is PROVABLY stale, so fall back to the cron's cadence, which
- *                         is the one schedule fact that cannot decay
- *   past, no later run -> genuinely overdue
+ * A future timestamp can be displayed. Missing or expired timestamps cannot establish that the
+ * schedule is absent or overdue; retain the configured cadence until refreshed scheduler data arrives.
  */
 function nextRunLine(nextJob: any, latestRun: any): string {
   if(!nextJob) {return translate("No active schedule");}
@@ -2469,7 +2466,7 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   const nextMs = toMillis(nextJob.nextExecutionDateTime);
   const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
 
-  if(nextMs && lastMs && lastMs > nextMs) {
+  if(!nextMs || nextMs <= Date.now() || (lastMs && lastMs > nextMs)) {
     // `useServiceJobs` already normalises this, preferring the OMS's own `cronDescription` over a
     // cronstrue rendering. Re-deriving it here made this row disagree with the job's detail modal.
     if(nextJob.cronString) {
@@ -2479,8 +2476,6 @@ function nextRunLine(nextJob: any, latestRun: any): string {
     return translate("Next run not yet recalculated");
   }
 
-  if(!nextMs) {return translate("No active schedule");}
-
   return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
@@ -2489,12 +2484,15 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
   const nextJob = nextExecutionFor(jobs);
   const missing = !jobs.length;
   const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
+  // nextExecutionFor intentionally selects only future runs for queue ETA calculations. A cached
+  // timestamp aging out must not erase the fact that an active job still has a cron schedule.
+  const scheduledJob = nextJob ?? jobs.find((job) => job.paused !== "Y" && job.cronExpression);
 
   return {
     name,
     job: nextJob ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
-    nextRun: nextRunLine(nextJob, latestRun),
+    nextRun: nextRunLine(scheduledJob, latestRun),
     status: missing ? translate("Not configured") : paused ? translate("Paused") : translate("Active"),
     badgeColor: missing ? "medium" : paused ? "warning" : "success",
     icon,
