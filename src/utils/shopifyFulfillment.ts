@@ -121,6 +121,7 @@ export function fulfillmentSyncDomains(options: {
   const intervalMs = options.intervalMs ? { intervalMs: options.intervalMs } : {};
 
   return [
+    { name: "shopifyPendingFulfillment", ...intervalMs, args: { shopId } },
     {
       name: "systemMessage",
       ...intervalMs,
@@ -167,6 +168,10 @@ export interface ShopifyFulfillmentOrderDetail {
 
 /** A Shopify fulfillment as the synced card's expansion renders it. Absent values arrive as "". */
 export interface ShopifyFulfillmentDetails {
+  createdAt?: string;
+  updatedAt?: string;
+  fetchedAt?: string;
+  rawFulfillment?: Record<string, unknown>;
   unavailable?: false;
   name: string;
   /** FulfillmentStatus — whether the fulfillment still counts (SUCCESS/CANCELLED/ERROR/FAILURE). */
@@ -180,7 +185,7 @@ export interface ShopifyFulfillmentDetails {
   deliveredAt: string;
   trackingInfo: Array<{ company: string; number: string }>;
   lineItems: Array<{ quantity: number; name: string; sku: string }>;
-  /** Newest first by `happenedAt`, capped at 5 (sorted client-side — no sortKey on the wire). */
+  /** Complete paginated event history, newest first. */
   events: ShopifyFulfillmentEventDetail[];
   fulfillmentOrders: ShopifyFulfillmentOrderDetail[];
 }
@@ -199,8 +204,7 @@ function edgeNodes(connection: any): any[] {
 /**
  * Map the GraphQL `fulfillment` node onto the screen's shape.
  *
- * Events are sorted newest-first HERE and capped at 5: no `sortKey` argument goes on the wire
- * (unverified against the pinned API version), so the wire order is never trusted.
+ * Events are kept in full and sorted newest-first for consistent display.
  */
 export function mapFulfillmentDetails(fulfillment: any): ShopifyFulfillmentDetails {
   const events = edgeNodes(fulfillment?.events)
@@ -209,8 +213,7 @@ export function mapFulfillmentDetails(fulfillment: any): ShopifyFulfillmentDetai
       status: String(node?.status ?? ""),
       message: String(node?.message ?? ""),
     }))
-    .sort((a, b) => (Date.parse(b.happenedAt) || 0) - (Date.parse(a.happenedAt) || 0))
-    .slice(0, 5);
+    .sort((a, b) => (Date.parse(b.happenedAt) || 0) - (Date.parse(a.happenedAt) || 0));
 
   const lineItems = edgeNodes(fulfillment?.fulfillmentLineItems).map((node: any) => ({
     quantity: Number(node?.quantity ?? 0) || 0,
@@ -239,6 +242,8 @@ export function mapFulfillmentDetails(fulfillment: any): ShopifyFulfillmentDetai
   }));
 
   return {
+    createdAt: String(fulfillment?.createdAt ?? ""),
+    updatedAt: String(fulfillment?.updatedAt ?? ""),
     name: String(fulfillment?.name ?? ""),
     status: String(fulfillment?.status ?? ""),
     displayStatus: String(fulfillment?.displayStatus ?? ""),

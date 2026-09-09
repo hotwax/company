@@ -93,6 +93,7 @@ describe("fulfillmentSyncDomains", () => {
     });
 
     expect(domains).toEqual([
+      { name: "shopifyPendingFulfillment", intervalMs: 10_000, args: { shopId: "10000" } },
       {
         name: "systemMessage",
         intervalMs: 10_000,
@@ -112,8 +113,8 @@ describe("fulfillmentSyncDomains", () => {
   it("falls back to the config scope when the screen has not resolved exact remotes", () => {
     const domains = fulfillmentSyncDomains({ shopId: "10000", historyTotal: 300 });
 
-    expect(domains[0].args).not.toHaveProperty("systemMessageRemoteIds");
-    expect(domains[1].args).toEqual({ shopId: "10000", total: 300 });
+    expect(domains[1].args).not.toHaveProperty("systemMessageRemoteIds");
+    expect(domains[2].args).toEqual({ shopId: "10000", total: 300 });
   });
 
   it("activates nothing for an unresolved shop — never an unscoped pull", () => {

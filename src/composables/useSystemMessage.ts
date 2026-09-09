@@ -138,6 +138,7 @@ export function useSystemMessage() {
         url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/errors`,
         method: "GET",
         params: {
+          orderByField: "-errorDate",
           pageSize: 50
         }
       }) as any;
