@@ -113,7 +113,7 @@ describe("carrier reference snapshots", () => {
     await domain!.refetchOne!(ctx as any, { partyId: "FEDEX" });
 
     expect(state.pageCalls[0].params).toEqual({ roleTypeId: "CARRIER" });
-    expect(state.pageCalls[1].params).toEqual({ partyId: "FEDEX" });
+    expect(state.pageCalls[1].params).toEqual({ roleTypeId: "CARRIER", partyId: "FEDEX" });
     expect(state.snapshots[1].scope).toEqual({ field: "partyId", value: "FEDEX" });
   });
 
