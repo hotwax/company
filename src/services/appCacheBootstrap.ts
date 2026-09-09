@@ -4,7 +4,6 @@ import { createSyncService, createSyncServiceV2, serviceState, type SyncServiceV
 import { companyDb } from "@/db/companyDb";
 import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/db/appCacheDb";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
-import { REFERENCE_DOMAIN_NAMES } from "@/utils/db/cacheDomainCatalog";
 import { cacheScopeKey } from "@/utils/db/cacheScopeKey";
 import appSyncUrl from "@/workers/appSync.worker.ts?worker&url";
 
@@ -232,4 +231,4 @@ export function stopReferenceSync(): void {
   scopedDomainErrors.clear();
 }
 
-export const referenceDomainNames = REFERENCE_DOMAIN_NAMES;
+export const referenceDomainNames: string[] = [];
