@@ -266,7 +266,7 @@ export async function resyncReferenceData(): Promise<void> {
 
 /** Force ONE domain to re-sync now — the per-row refresh in Settings. */
 export async function resyncDomain(domain: string): Promise<void> {
-  await companyDb.raw().syncMeta.delete(`domain:${domain}`);
+  await companyDb.raw().syncMeta.delete(`loginSync:${domain}`);
   await whenReady();
   if(!service) {
     throw new Error(bootstrapState.errors.__start ?? "The reference-cache service is unavailable.");
