@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
+  hasError: vi.fn((_response: any) => false),
   remotes: [] as any[],
 }));
 
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
-  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
 }));
@@ -76,6 +77,7 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 
 import {
   fetchProductMappings,
+  refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
@@ -95,7 +97,31 @@ function remote(systemMessageRemoteId: string) {
 
 beforeEach(() => {
   harness.api.mockReset();
+  harness.hasError.mockReset().mockReturnValue(false);
   harness.remotes = [remote("RemoteA"), remote("RemoteB")];
+});
+
+describe("refreshMappedProductSearchIndex", () => {
+  it("indexes only the selected OMS product without an import or Shopify call", async () => {
+    harness.api.mockResolvedValue({ data: {} });
+    await refreshMappedProductSearchIndex("M223281");
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api).toHaveBeenCalledWith({
+      url: "oms/search/index/product", method: "post", data: { productId: "M223281", indexVariants: false },
+    });
+  });
+  it("rejects a missing product without a write", async () => {
+    await expect(refreshMappedProductSearchIndex(" ")).rejects.toThrow("OMS product ID is required");
+    expect(harness.api).not.toHaveBeenCalled();
+  });
+  it("does not report a payload error or missing response as completed", async () => {
+    harness.api.mockResolvedValue({ data: {} });
+    harness.hasError.mockReturnValue(true);
+    await expect(refreshMappedProductSearchIndex("M223281")).rejects.toThrow("not confirmed");
+    harness.api.mockResolvedValue({ data: null });
+    harness.hasError.mockReturnValue(false);
+    await expect(refreshMappedProductSearchIndex("M223281")).rejects.toThrow("not confirmed");
+  });
 });
 
 describe("fetchShopSystemMessageRemoteId", () => {
