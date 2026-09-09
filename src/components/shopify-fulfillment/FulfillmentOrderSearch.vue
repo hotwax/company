@@ -65,11 +65,14 @@ import { formatDateTime, hasError } from '@/utils';
 export interface SearchOrder { orderId: string; orderName?: string; shopifyOrderId?: string; orderDate?: number; statusId?: string }
 
 /**
- * The operator picks ONE field to search. The OMS side is a plain entity resource over
- * ShopifyShopOrderSearchView, so the query is expressed entirely in Moqui's own search parameters
- * (`<field>_op=contains`, `<field>_ic=Y`, `orderDate_from/_thru`, an exact `statusId`) and there is
- * no search service to keep in step. One field at a time is also what makes this possible:
- * searchFormMap ANDs its conditions, so it cannot OR a term across three columns.
+ * The operator picks ONE field to search. There is no bespoke endpoint behind this: the OMS side is
+ * the SHOPIFY_SHOP_ORDER_SEARCH DataDocument read through the generic `oms/dataDocumentView`, whose
+ * `customParametersMap` reaches Moqui's `<search-form-inputs>`. So the whole query is expressed in
+ * Moqui's own search parameters (`<field>_op=contains`, `<field>_ic=Y`, `orderDate_from/_thru`, an
+ * exact `statusId`) and there is no search service to keep in step.
+ *
+ * One field at a time is what makes that possible: searchFormMap ANDs its conditions, so it cannot
+ * OR one term across three columns.
  */
 const FIELDS = [
   { value: 'orderName', label: 'Order name', placeholder: 'Order name', ignoreCase: true },
@@ -80,6 +83,7 @@ const FIELDS = [
 const props = defineProps<{ shopId: string; modelValue: SearchOrder[] }>();
 const emit = defineEmits<{ (e: 'update:modelValue', rows: SearchOrder[]): void }>();
 
+const DOCUMENT_ID = 'SHOPIFY_SHOP_ORDER_SEARCH';
 const PAGE = 20;
 const field = ref<string>(FIELDS[0].value);
 const statusId = ref('');
@@ -115,23 +119,30 @@ async function fetchPage(term: string) {
   loading.value = true;
   error.value = false;
   try {
-    const params: Record<string, any> = {
+    const search: Record<string, any> = {
       shopId: props.shopId,
       [`${activeField.value.value}_op`]: 'contains',
       [activeField.value.value]: term,
       orderByField: '-orderDate',
-      // One over the page so a full page tells us there is more, without a count call.
-      pageSize: PAGE + 1,
     };
-    if (activeField.value.ignoreCase) { params[`${activeField.value.value}_ic`] = 'Y'; }
-    if (statusId.value) { params.statusId = statusId.value; }
-    if (dateFrom.value) { params.orderDate_from = `${dateFrom.value} 00:00:00`; }
-    if (dateThru.value) { params.orderDate_thru = `${dateThru.value} 23:59:59`; }
+    if (activeField.value.ignoreCase) { search[`${activeField.value.value}_ic`] = 'Y'; }
+    if (statusId.value) { search.statusId = statusId.value; }
+    if (dateFrom.value) { search.orderDate_from = `${dateFrom.value} 00:00:00`; }
+    if (dateThru.value) { search.orderDate_thru = `${dateThru.value} 23:59:59`; }
 
-    const response: any = await api({ url: 'sob/shopify/fulfillmentOrderSearch', method: 'GET', params });
+    const response: any = await api({
+      url: 'oms/dataDocumentView',
+      method: 'POST',
+      data: {
+        dataDocumentId: DOCUMENT_ID,
+        pageIndex: 0,
+        // One over the page so a full page tells us there is more, without a count call.
+        pageSize: PAGE + 1,
+        customParametersMap: search,
+      },
+    });
     if (id !== request) return;
-    // The entity resource answers with a bare list.
-    const rows = Array.isArray(response?.data) ? response.data : undefined;
+    const rows = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : undefined;
     if (hasError(response) || !rows) throw new Error('Invalid order search');
     hasMore.value = rows.length > PAGE;
     results.value = rows.slice(0, PAGE);
