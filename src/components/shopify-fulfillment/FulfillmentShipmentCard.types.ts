@@ -7,6 +7,9 @@ export interface FulfillmentOrderItem {
   secondary: string;
   /** Empty when the product has no image; Image falls back to the bundled placeholder. */
   imageUrl: string;
+  features?: string;
+  quantity?: number;
+  orderedQuantity?: number;
 }
 
 /** One cell of the shipment-facts grid. */
@@ -28,7 +31,9 @@ export interface FulfillmentShipmentRow {
   shipmentId: string;
   orderName: string;
   facility?: string;
-  /** The facts grid, in render order. Only facts the record actually has belong here. */
+  orderDate?: number;
+  shippedDate?: number;
+  /** Segment-specific facts, displayed after the component-owned order and shipment dates. */
   facts: FulfillmentShipmentFact[];
   items?: FulfillmentOrderItem[];
 }

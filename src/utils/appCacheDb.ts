@@ -91,6 +91,10 @@ class CompanyCacheDB extends Dexie {
   /** Shopify inventory transfer sync — one row per (shopId, orderId). */
   shopifyTransferPending!: Table<CachedRow, string>;
   /** Fulfillments Shopify holds per shop, from `sob/shopify/fulfillmentHistories`. */
+  shopifyPendingFulfillments!: Table<CachedRow, string>;
+  shopifyOrderSyncHistory!: Table<CachedRow, string>;
+  shopifyFulfillmentHealth!: Table<CachedRow, string>;
+  shopifyPendingFulfillmentStatus!: Table<CachedRow, string>;
   shopifyFulfillmentHistories!: Table<CachedRow, string>;
   /** One row per shop: does the fulfillment-history endpoint exist on this instance? */
   shopifyFulfillmentHistorySupport!: Table<CachedRow, string>;
@@ -203,6 +207,10 @@ const CACHE_SCHEMA = {
    * newest-first read; `shipmentId`/`omsOrderId` are indexed because they are the joins back to the
    * OMS side (a queued message names a shipment, and the screen answers "did it land?").
    */
+  shopifyPendingFulfillments: "pendingKey, shopId, shipmentId, statusDate",
+  shopifyPendingFulfillmentStatus: "shopId",
+  shopifyOrderSyncHistory: "historyKey,shopId,orderId",
+  shopifyFulfillmentHealth: "shopId",
   shopifyFulfillmentHistories:
     "fulfillmentKey, shopId, shopifyOrderId, fulfillmentId, shipmentId, omsOrderId, processedDate, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
   // One row per shop, not an entity — see `shopifyFulfillmentHistorySupportProjection`.

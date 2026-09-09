@@ -2,6 +2,9 @@ import { api, logger } from "@common";
 import { computed, toValue } from "vue";
 import {
   FULFILLMENT_HISTORY_ENDPOINT_MISSING,
+  shopifyPendingFulfillmentCache,
+  shopifyFulfillmentHealthCache,
+  shopifyPendingFulfillmentStatusCache,
   shopifyFulfillmentHistoryCache,
   shopifyFulfillmentHistorySupportCache,
 } from "@/utils/cacheEntities";
@@ -173,17 +176,16 @@ export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Expand-time enrichment — Shopify's own record of a fulfillment.
+// Lazy enrichment — Shopify's own record of a fulfillment.
 // ---------------------------------------------------------------------------------------------
 
-/**
- * The fulfillment-by-id read. NO `sortKey` on any connection — unverified against this API
- * version — so events are sorted client-side instead (`mapFulfillmentDetails`). `first: 10` on
- * events feeds the client-side newest-5 cap.
- */
+/** Exact fulfillment lookup. Related orders/items are paginated, never silently truncated. */
 const FULFILLMENT_DETAILS_QUERY = `
-  query Fulfillment($id: ID!) {
+  query Fulfillment($id: ID!, $itemsAfter: String, $ordersAfter: String, $eventsAfter: String, $includeItems: Boolean!, $includeOrders: Boolean!, $includeEvents: Boolean!) {
     fulfillment(id: $id) {
+      id
+      createdAt
+      updatedAt
       name
       status
       displayStatus
@@ -193,15 +195,19 @@ const FULFILLMENT_DETAILS_QUERY = `
       estimatedDeliveryAt
       deliveredAt
       trackingInfo { company number }
-      fulfillmentLineItems(first: 10) {
-        edges { node { quantity lineItem { name sku } } }
+      fulfillmentLineItems(first: 50, after: $itemsAfter) @include(if: $includeItems) {
+        pageInfo { hasNextPage endCursor }
+        edges { node { id quantity lineItem { name sku } } }
       }
-      events(first: 10) {
-        edges { node { happenedAt status message } }
+      events(first: 50, after: $eventsAfter, sortKey: HAPPENED_AT, reverse: true) @include(if: $includeEvents) {
+        pageInfo { hasNextPage endCursor }
+        edges { node { id happenedAt status message } }
       }
-      fulfillmentOrders(first: 5) {
+      fulfillmentOrders(first: 50, after: $ordersAfter) @include(if: $includeOrders) {
+        pageInfo { hasNextPage endCursor }
         edges {
           node {
+            id
             status
             requestStatus
             fulfillmentHolds { reason }
@@ -216,6 +222,8 @@ const FULFILLMENT_DETAILS_QUERY = `
 `;
 
 export interface ShopifyFulfillmentDetailsRequest {
+  /** Download requests always re-read Shopify, bypassing the view cache. */
+  forceRefresh?: boolean;
   /** Either scope works; `shopId` wins when both are supplied. */
   shopId?: string;
   systemMessageRemoteId?: string;
@@ -244,27 +252,56 @@ export function useShopifyFulfillmentDetails() {
 
     const cacheKey = `${scopeId}:${fulfillmentId}`;
     const cached = fulfillmentDetailsSessionCache.get(cacheKey);
-    if(cached) {return cached;}
+    if(cached && !request.forceRefresh) {return cached;}
 
     try {
-      const response = await api({
-        url: "shopify/graphql",
-        method: "post",
-        data: {
-          ...(shopId ? { shopId } : { systemMessageRemoteId }),
-          queryText: FULFILLMENT_DETAILS_QUERY,
-          variables: { id: `gid://shopify/Fulfillment/${fulfillmentId}` },
-        },
-      }) as any;
-
-      // The passthrough nests Shopify's body under `response` next to its own `statusCode` — the
-      // envelope that has silently broken order-sync reads before, so both are checked explicitly.
-      const body = response?.data;
-      if(Number(body?.statusCode) !== 200) {return { unavailable: true };}
-      const graphql = body?.response;
-      if(graphql?.errors?.length || !graphql?.data?.fulfillment) {return { unavailable: true };}
-
-      const details = mapFulfillmentDetails(graphql.data.fulfillment);
+      const variables = {
+        id: fulfillmentId.startsWith("gid://shopify/Fulfillment/") ? fulfillmentId : `gid://shopify/Fulfillment/${fulfillmentId}`,
+        itemsAfter: null as string | null, ordersAfter: null as string | null, eventsAfter: null as string | null,
+        includeItems: true, includeOrders: true, includeEvents: true,
+      };
+      let fulfillment: any;
+      const itemEdges: any[] = [];
+      const orderEdges: any[] = [];
+      const eventEdges: any[] = [];
+      const seenItems = new Set<string>();
+      const seenOrders = new Set<string>();
+      const seenEvents = new Set<string>();
+      do {
+        const response = await api({
+          url: "shopify/graphql", method: "post",
+          data: {
+            ...(shopId ? { shopId } : { systemMessageRemoteId }),
+            queryText: FULFILLMENT_DETAILS_QUERY, variables: { ...variables },
+          },
+        }) as any;
+        // Moqui unwraps Shopify's data object into response next to statusCode.
+        const body = response?.data;
+        const page = body?.response?.fulfillment;
+        if(Number(body?.statusCode) !== 200 || body?.response?.errors?.length || !page) {return { unavailable: true };}
+        if(!fulfillment) {fulfillment = page;}
+        for(const [connectionName, includeKey, cursorKey, edges, seen] of [
+          ["fulfillmentLineItems", "includeItems", "itemsAfter", itemEdges, seenItems],
+          ["fulfillmentOrders", "includeOrders", "ordersAfter", orderEdges, seenOrders],
+          ["events", "includeEvents", "eventsAfter", eventEdges, seenEvents],
+        ] as const) {
+          if(!variables[includeKey]) {continue;}
+          const connection = page[connectionName];
+          if(!Array.isArray(connection?.edges) || typeof connection?.pageInfo?.hasNextPage !== "boolean") {return { unavailable: true };}
+          edges.push(...connection.edges);
+          variables[includeKey] = connection.pageInfo.hasNextPage;
+          if(variables[includeKey]) {
+            const cursor = connection.pageInfo.endCursor;
+            if(!cursor || seen.has(cursor)) {return { unavailable: true };}
+            seen.add(cursor);
+            variables[cursorKey] = cursor;
+          }
+        }
+      } while(variables.includeItems || variables.includeOrders || variables.includeEvents);
+      const rawFulfillment = { ...fulfillment,
+        fulfillmentLineItems: { edges: itemEdges }, fulfillmentOrders: { edges: orderEdges }, events: { edges: eventEdges },
+      };
+      const details = { ...mapFulfillmentDetails(rawFulfillment), rawFulfillment, fetchedAt: new Date().toISOString() };
       fulfillmentDetailsSessionCache.set(cacheKey, details);
 
       return details;
@@ -286,7 +323,18 @@ export function useShopifyFulfillmentDetails() {
  * date the fulfillment-history view deliberately could not alias without fanning rows out. The
  * card shows orderDate, shippedDate, and the facility name; tracking and carrier ride along.
  */
+export interface OmsShipmentItem {
+  productId: string;
+  orderItemSeqId?: string;
+  shipmentItemSeqId?: string;
+  productName?: string;
+  internalName?: string;
+  quantity?: number;
+  orderedQuantity?: number;
+}
+
 export interface OmsShipmentContext {
+  items?: OmsShipmentItem[];
   orderId: string;
   /** The human-facing name, when this runtime's OrderHeader carries one. */
   orderName: string;
@@ -333,6 +381,7 @@ export function useOmsShipmentContext() {
       if(!shipment) {return undefined;}
 
       const context: OmsShipmentContext = {
+        items: shipment.items ?? [],
         orderId: String(shipment.orderId ?? ""),
         orderName: String(shipment.orderName ?? ""),
         orderDate: toMillis(shipment.orderDate),
@@ -353,4 +402,20 @@ export function useOmsShipmentContext() {
   };
 
   return { getShipmentContext };
+}
+
+export function usePendingFulfillments(shopIdSource: ShopIdSource) {
+  const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
+  const { rows } = useCachedList<any>(shopifyPendingFulfillmentCache);
+  const { rows: statuses } = useCachedList<any>(shopifyPendingFulfillmentStatusCache);
+  return {
+    rows: computed(() => rows.value.filter((row: any) => row.shopId === shopId.value).sort((a: any, b: any) => Number(a.statusDate) - Number(b.statusDate))),
+    status: computed(() => statuses.value.find((row: any) => row.shopId === shopId.value)),
+  };
+}
+
+export function useFulfillmentSyncHealth(shopIdSource: ShopIdSource) {
+  const { records, hydrated } = useCachedList<any>(shopifyFulfillmentHealthCache);
+  const health = computed(() => records.value.find(row => row.shopId === String(toValue(shopIdSource) ?? "")));
+  return { health, hydrated };
 }

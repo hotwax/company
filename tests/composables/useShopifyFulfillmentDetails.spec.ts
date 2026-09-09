@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * L1 unit — the expand-time Shopify fulfillment read.
+ * L1 unit — the exact-ID Shopify fulfillment read.
  *
  * Three rules under test:
  *   - the envelope: `shopify/graphql` nests Shopify's body under `response` NEXT TO its own
  *     `statusCode` (the shape that has silently broken order-sync reads before), and anything
  *     other than a clean 200-with-data resolves to `{ unavailable: true }` — the screen renders
  *     "Shopify unreachable", it never renders fabricated detail values;
- *   - events are sorted newest-first CLIENT-side and capped at 5 — no sortKey goes on the wire
- *     because it is unverified against this API version;
+ *   - item/order connections are fully paginated under that exact fulfillment; events request
+ *     all delivery events from Shopify, with defensive client-side ordering;
  *   - a successful read is served from the session cache thereafter (one request per fulfillment
  *     per session), while an unavailable result is NOT remembered, so a blip heals on re-expand.
  */
@@ -38,7 +38,7 @@ function graphqlEnvelope(fulfillment: any, errors?: any[]) {
       statusCode: 200,
       response: {
         ...(errors ? { errors } : {}),
-        data: { fulfillment },
+        fulfillment,
       },
     },
   };
@@ -55,12 +55,14 @@ const FULFILLMENT = {
   deliveredAt: "2026-08-24T15:22:00Z",
   trackingInfo: [{ company: "UPS", number: "1Z999AA10123456784" }],
   fulfillmentLineItems: {
+    pageInfo: { hasNextPage: false, endCursor: null },
     edges: [
       { node: { quantity: 1, lineItem: { name: "Harbor Jacket", sku: "HBR-JK-NVY-L" } } },
       { node: { quantity: 1, lineItem: { name: "Harbor Scarf", sku: "HBR-SC-NVY-OS" } } },
     ],
   },
   events: {
+    pageInfo: { hasNextPage: false, endCursor: null },
     edges: [
       { node: { happenedAt: "2026-08-22T14:10:00Z", status: "IN_TRANSIT", message: "Departed facility" } },
       { node: { happenedAt: "2026-08-24T15:22:00Z", status: "DELIVERED", message: "Delivered" } },
@@ -71,6 +73,7 @@ const FULFILLMENT = {
     ],
   },
   fulfillmentOrders: {
+    pageInfo: { hasNextPage: false, endCursor: null },
     edges: [
       {
         node: {
@@ -91,7 +94,7 @@ describe("useShopifyFulfillmentDetails", () => {
     harness.api.mockReset();
   });
 
-  it("maps the fulfillment with events sorted newest-first and capped at 5", async () => {
+  it("maps the fulfillment with events sorted newest-first without truncation", async () => {
     harness.api.mockResolvedValue(graphqlEnvelope(FULFILLMENT));
 
     const { getFulfillmentDetails } = useShopifyFulfillmentDetails();
@@ -112,11 +115,11 @@ describe("useShopifyFulfillmentDetails", () => {
     });
     if(details.unavailable) {throw new Error("expected details");}
 
-    // Six events arrived shuffled; five leave, newest first — the wire order is never trusted.
+    // Six events arrived shuffled; all leave, newest first — the wire order is never trusted.
     expect(details.events.map((event) => event.status)).toEqual([
-      "DELIVERED", "OUT_FOR_DELIVERY", "IN_TRANSIT", "IN_TRANSIT", "IN_TRANSIT",
+      "DELIVERED", "OUT_FOR_DELIVERY", "IN_TRANSIT", "IN_TRANSIT", "IN_TRANSIT", "LABEL_PRINTED",
     ]);
-    expect(details.events).toHaveLength(5);
+    expect(details.events).toHaveLength(6);
 
     expect(details.fulfillmentOrders).toEqual([{
       status: "ON_HOLD",
@@ -133,9 +136,50 @@ describe("useShopifyFulfillmentDetails", () => {
       method: "post",
       data: expect.objectContaining({
         shopId: "10000",
-        variables: { id: "gid://shopify/Fulfillment/4471301884" },
+        variables: expect.objectContaining({ id: "gid://shopify/Fulfillment/4471301884" }),
       }),
     }));
+  });
+
+  it("continues only unfinished connections on the same exact fulfillment", async () => {
+    harness.api.mockResolvedValueOnce(graphqlEnvelope({ ...FULFILLMENT,
+      fulfillmentOrders: { ...FULFILLMENT.fulfillmentOrders, pageInfo: { hasNextPage: true, endCursor: "orders-1" } },
+    })).mockResolvedValueOnce(graphqlEnvelope({
+      fulfillmentOrders: { edges: [{ node: { status: "CLOSED" } }], pageInfo: { hasNextPage: false, endCursor: "orders-2" } },
+    }));
+    const result = await useShopifyFulfillmentDetails().getFulfillmentDetails({ shopId: "10000", fulfillmentId: "paged-1" });
+    if(result.unavailable) throw new Error("expected complete result");
+    expect(result.fulfillmentOrders).toHaveLength(2);
+    expect(result.lineItems).toHaveLength(2);
+    expect(harness.api.mock.calls[1][0].data.variables).toEqual({
+      id: "gid://shopify/Fulfillment/paged-1", itemsAfter: null, ordersAfter: "orders-1", eventsAfter: null,
+      includeItems: false, includeOrders: true, includeEvents: false,
+    });
+    expect(harness.api.mock.calls[0][0].data.queryText).toContain("sortKey: HAPPENED_AT, reverse: true");
+  });
+
+  it("paginates all Shopify timeline events", async () => {
+    harness.api.mockResolvedValueOnce(graphqlEnvelope({ ...FULFILLMENT,
+      events: { edges: Array.from({ length: 50 }, (_, i) => ({ node: { status: "IN_TRANSIT", happenedAt: `2026-09-07T10:00:${String(i).padStart(2, "0")}Z` } })), pageInfo: { hasNextPage: true, endCursor: "events-50" } },
+    })).mockResolvedValueOnce(graphqlEnvelope({
+      events: { edges: [{ node: { status: "LABEL_PRINTED", happenedAt: "2026-09-07T09:00:00Z" } }], pageInfo: { hasNextPage: false, endCursor: "events-51" } },
+    }));
+    const result = await useShopifyFulfillmentDetails().getFulfillmentDetails({ shopId: "10000", fulfillmentId: "events-paged" });
+    if(result.unavailable) throw new Error("expected complete timeline");
+    expect(result.events).toHaveLength(51);
+    expect(result.rawFulfillment?.events.edges).toHaveLength(51);
+    expect(harness.api.mock.calls[1][0].data.variables).toMatchObject({ eventsAfter: "events-50", includeEvents: true, includeItems: false, includeOrders: false });
+  });
+
+  it("does not cache an incomplete response when a cursor repeats", async () => {
+    harness.api.mockResolvedValue(graphqlEnvelope({ ...FULFILLMENT,
+      fulfillmentLineItems: { ...FULFILLMENT.fulfillmentLineItems, pageInfo: { hasNextPage: true, endCursor: "stuck" } },
+    }));
+    const read = useShopifyFulfillmentDetails().getFulfillmentDetails;
+    expect(await read({ shopId: "10000", fulfillmentId: "stuck-1" })).toEqual({ unavailable: true });
+    expect(harness.api).toHaveBeenCalledTimes(2);
+    harness.api.mockResolvedValue(graphqlEnvelope(FULFILLMENT));
+    expect(await read({ shopId: "10000", fulfillmentId: "stuck-1" })).toMatchObject({ name: FULFILLMENT.name });
   });
 
   it("serves a repeat expand from the session cache — one request per fulfillment", async () => {
@@ -147,6 +191,15 @@ describe("useShopifyFulfillmentDetails", () => {
 
     expect(second).toBe(first);
     expect(harness.api).toHaveBeenCalledTimes(1);
+  });
+
+  it("bypasses cached data for a fresh downloadable snapshot", async () => {
+    harness.api.mockResolvedValueOnce(graphqlEnvelope(FULFILLMENT)).mockResolvedValueOnce(graphqlEnvelope({ ...FULFILLMENT, status: "CANCELLED", updatedAt: "2026-09-08T01:00:00Z" }));
+    const read = useShopifyFulfillmentDetails().getFulfillmentDetails;
+    await read({ shopId: "10000", fulfillmentId: "fresh-snapshot" });
+    const result = await read({ shopId: "10000", fulfillmentId: "fresh-snapshot", forceRefresh: true });
+    expect(harness.api).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ rawFulfillment: { status: "CANCELLED", updatedAt: "2026-09-08T01:00:00Z" } });
   });
 
   it("keys the session cache per shop, so a shared numeric id cannot cross shops", async () => {

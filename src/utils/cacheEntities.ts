@@ -1231,3 +1231,23 @@ export const shopifyFulfillmentHistorySupportCache = defineCachedEntity(
   "shopifyFulfillmentHistorySupport",
   shopifyFulfillmentHistorySupportProjection,
 );
+
+export const shopifyPendingFulfillmentCache = defineCachedEntity("shopifyPendingFulfillments", {
+  keyField: "pendingKey",
+  fields: { pendingKey: "text", shopId: "text", shipmentId: "text", orderId: "text", orderName: "text", orderDate: "date", statusDate: "date", facilityName: "text", originFacilityId: "text" },
+  buildKey: (raw: Record<string, unknown>) => raw.shopId && raw.shipmentId ? `${raw.shopId}:${raw.shipmentId}` : undefined,
+});
+export const shopifyPendingFulfillmentStatusCache = defineCachedEntity("shopifyPendingFulfillmentStatus", {
+  keyField: "shopId",
+  fields: { shopId: "text", state: "text", error: "text", hasMore: "text", checkedAt: "date" },
+});
+
+export const shopifyFulfillmentHealthCache = defineCachedEntity("shopifyFulfillmentHealth", {
+  keyField: "shopId",
+  fields: { shopId: "text", state: "text", checkedAt: "date", shippedSince: "date", syncedSince: "date", shippedCount: "count", syncedCount: "count", unsyncedErrorCount: "count", pendingCount: "count", sendingCount: "count", syncedLastHourCount: "count" },
+});
+
+export const shopifyOrderSyncHistoryCache = defineCachedEntity("shopifyOrderSyncHistory", {
+  keyField: "historyKey",
+  fields: { historyKey: "text", shopId: "text", orderId: "text", state: "text", checkedAt: "date" },
+});

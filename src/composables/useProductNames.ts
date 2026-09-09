@@ -14,7 +14,7 @@ import { ref } from "vue";
  * and a Map keyed by productId is the whole requirement.
  */
 
-const PRODUCT_FIELDS = "productId productName parentProductName internalName goodIdentifications mainImageUrl";
+const PRODUCT_FIELDS = "productId productName parentProductName internalName goodIdentifications mainImageUrl productFeatures";
 /** Solr takes the whole id list in one filter clause, so this caps the clause rather than the fetch. */
 const BATCH_SIZE = 200;
 
@@ -31,6 +31,7 @@ export interface ResolvedProduct {
   sku: string;
   internalName: string;
   mainImageUrl: string;
+  productFeatures?: string[];
 }
 
 /** Solr treats these as syntax, so an id containing one has to arrive escaped or the query fails. */
@@ -99,6 +100,7 @@ async function resolve(productIds: Iterable<string>): Promise<void> {
           sku: skuFrom(doc.goodIdentifications),
           internalName: String(doc.internalName || ""),
           mainImageUrl: String(doc.mainImageUrl || ""),
+          productFeatures: Array.isArray(doc.productFeatures) ? doc.productFeatures : [],
         });
       }
       products.value = resolved;
