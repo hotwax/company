@@ -841,9 +841,9 @@ import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMa
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
-import { api } from '@common';
-import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
+
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -852,6 +852,10 @@ const {
   current, hydrated, loadingAssociations, loadingVolatile,
   calendarOptions, load, reloadAssociations, refreshVolatile,
 } = useFacilityDetail(props.facilityId);
+const { fetchPartyRoleDetails } = usePartyQueries();
+const { geocode, latLongForPostalCode } = useGeocode();
+const { fetchFacilityOrderCountsHistory } = useFacilityOrderCounts();
+
 const mutations = useFacilityMutations(props.facilityId);
 
 // Lookups, all from the login-time cache — no fetch on entry.
@@ -943,10 +947,6 @@ function getParentFacilityTypeId(typeId: string): string {
 }
 
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
-async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
-  const { roleTypeId, ...params } = payload;
-  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
-}
 
 function getFacilityTypesByParentTypeId() {
   facilityTypeIdOptions.value = parentFacilityTypeId.value ? Object.keys(facilityTypesById.value).reduce((acc: any, fId: string) => {
@@ -1218,7 +1218,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
+    const resp = await geocode(payload);
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1399,7 +1399,7 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId: props.facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
+    const resp = await fetchFacilityOrderCountsHistory(props.facilityId, { orderByField: 'entryDate DESC', pageSize: 10 });
     if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
       facilityOrderCounts.value = resp.data.map((item: any) => ({
         ...item,
@@ -2009,21 +2009,19 @@ async function generateLatLong() {
   }
   isGeneratingLatLong.value = true;
   const postalCode = geoPoint.value.postalCode;
-  const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { query: `postcode: ${query}` } } }) as any).data;
+    const latLong = await latLongForPostalCode(postalCode);
 
-    if (resp.docs.length > 0) {
-      const result = resp.docs[0];
-      geoPoint.value.latitude = result.latitude;
-      geoPoint.value.longitude = result.longitude;
+    if (latLong) {
+      geoPoint.value.latitude = latLong.latitude;
+      geoPoint.value.longitude = latLong.longitude;
     } else {
-      throw resp;
+      throw new Error('Not found');
     }
   } catch (err) {
     commonUtil.showToast(translate("Unable to find the latitude and longitude for the entered zip code."));
-    logger.error('Unable to find the latitude and longitude for the entered zip code.', err);
+    logger.error(err);
   }
   isGeneratingLatLong.value = false;
 }
@@ -2083,7 +2081,7 @@ async function findParties() {
   emitter.emit('presentLoader');
   parties.value = [];
   try {
-    const resp = await getPartyRoleAndPartyDetails({
+    const resp = await fetchPartyRoleDetails("APPLICATION_USER", {
       roleTypeId: 'APPLICATION_USER',
       keyword: staffQueryString.value || undefined,
       pageSize: import.meta.env.VITE_VIEW_SIZE || 20,
