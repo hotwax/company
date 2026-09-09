@@ -6,6 +6,23 @@ import {
 } from "@/utils/shopifyTransferSyncEnrichment";
 
 describe("enrichTransferSyncRows", () => {
+  it("reloads an initially absent Shopify shipment mapping after synchronization", async () => {
+    const rows = [{ shopId: '10000', orderId: 'M300308', segment: 'shipment', shipmentId: 'M100458' }];
+    const fetchShopifyShipmentIds = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ M100458: ['3326967972'] });
+    const client = {
+      fetchOrder: vi.fn(async () => ({})), fetchCreationTime: vi.fn(async () => undefined),
+      fetchReceipts: vi.fn(async () => []), fetchReceiverNames: vi.fn(async () => ({})),
+      fetchShopifyShipmentIds,
+    };
+    const pending = await enrichTransferSyncRows(rows, emptyTransferSyncEnrichment(), client);
+    expect(pending.shopifyShipmentIdsByOmsShipmentId.M100458).toEqual([]);
+    const synced = await enrichTransferSyncRows(rows, pending, client);
+    expect(synced.shopifyShipmentIdsByOmsShipmentId.M100458).toEqual(['3326967972']);
+    await enrichTransferSyncRows(rows, synced, client);
+    expect(fetchShopifyShipmentIds).toHaveBeenCalledTimes(2);
+  });
   it("deduplicates transfer detail reads and batches receipt receiver names", async () => {
     const fetchOrder = vi.fn(async (orderId: string) => ({ orderName: `Transfer ${orderId}`, items: [] }));
     const fetchCreationTime = vi.fn(async () => undefined);
@@ -59,14 +76,14 @@ describe("enrichTransferSyncRows", () => {
     expect((enrichment as any).creationOccurredAtByOrderId).toEqual({ M200103: "2026-08-31T10:00:00Z" });
   });
 
-  it("loads every Shopify shipment mapping for the visible OMS shipment rows", async () => {
+  it.each(["shipment", "receipt"])("loads Shopify shipment mappings for %s rows", async (segment) => {
     const fetchShopifyShipmentIds = vi.fn(async () => ({
       "OMS-SHIPMENT-100": ["SHOPIFY-SHIPMENT-201", "SHOPIFY-SHIPMENT-202"],
     }));
 
     const enrichment = await enrichTransferSyncRows([
-      { shopId: "10000", orderId: "M200103", segment: "shipment", shipmentId: "OMS-SHIPMENT-100" },
-      { shopId: "10000", orderId: "M200103", segment: "shipment", shipmentId: "OMS-SHIPMENT-100" },
+      { shopId: "10000", orderId: "M200103", segment, shipmentId: "OMS-SHIPMENT-100" },
+      { shopId: "10000", orderId: "M200103", segment, shipmentId: "OMS-SHIPMENT-100" },
     ], emptyTransferSyncEnrichment(), {
       fetchOrder: vi.fn(async () => ({ orderName: "Downtown replenishment" })),
       fetchCreationTime: vi.fn(async () => undefined),
