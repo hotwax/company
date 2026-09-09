@@ -1,13 +1,13 @@
-import {
-  dataFeedCache,
-  inventoryChannelCache,
-  shopifyInventoryAdjustmentDetailCache,
-  shopifyInventoryAdjustmentDetailProjection,
-  systemMessageCache,
-} from "@/utils/db/cacheEntities";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
+import { cachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
+import { canonicalKey, entityKeyOf } from "@common/db/projection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
+
+const dataFeedCache = cachedEntity("dataFeeds");
+const inventoryChannelCache = cachedEntity("inventoryChannels");
+const shopifyInventoryAdjustmentDetailCache = cachedEntity("shopifyInventoryAdjustmentDetails");
+const systemMessageCache = cachedEntity("systemMessages");
 
 /**
  * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
@@ -81,7 +81,8 @@ function channelFilter(inventoryChannelIds: string[]): Record<string, unknown> {
 }
 
 function detailKey(row: Record<string, unknown>): string | undefined {
-  return shopifyInventoryAdjustmentDetailProjection.buildKey(row);
+  const key = entityKeyOf(row, companyDb.entities.shopifyInventoryAdjustmentDetail);
+  return key ? canonicalKey(key) : undefined;
 }
 
 registerSyncDomain({

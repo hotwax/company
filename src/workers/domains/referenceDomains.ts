@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { registerSnapshotDomain } from "./snapshotDomain";
+import { registerSnapshotDomain } from "@common/db/sync/snapshotDomain";
 
 registerSnapshotDomain({
   name: "organizationRelationship",

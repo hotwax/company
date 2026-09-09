@@ -1,6 +1,5 @@
-/* eslint-disable no-restricted-syntax -- carrier orchestration owns ordered multi-write consistency */
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, useDb } from "@common";
 import {
   bootstrapState,
   refreshAfterMutation,
@@ -9,19 +8,8 @@ import {
 } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
-import {
-  carrierCache,
-  carrierFacilityCache,
-  carrierShipmentMethodCache,
-  facilityCache,
-  productStoreCache,
-  productStoreShippingMethodCache,
-  shipmentMethodTypeCache,
-  systemMessageRemoteCache,
-} from "@/utils/db/cacheEntities";
 import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { expireProductStoreShipmentMethod } from "./useProductStores";
-import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";
 
 export const CARRIER_ROLE_TYPE_ID = "CARRIER";
@@ -193,8 +181,8 @@ export function deriveCarrierReadiness(
 
 /** Carrier catalog with method counts derived from the carrier-method cache. */
 export function useCarriers() {
-  const carrierRead = useCachedList<CarrierRecord>(carrierCache);
-  const methodRead = useCachedList<CarrierShipmentMethod>(carrierShipmentMethodCache);
+  const carrierRead = useDb<CarrierRecord>("carriers");
+  const methodRead = useDb<CarrierShipmentMethod>("carrierShipmentMethods");
   const counts = computed<Record<string, number>>(() =>
     methodRead.records.value.reduce((byParty, method) => {
       if(method.partyId) {byParty[method.partyId] = (byParty[method.partyId] ?? 0) + 1;}
@@ -241,15 +229,17 @@ export function useCarriers() {
   };
 }
 
-export const useCarrierRecord = (partyId: string | undefined) =>
-  useCachedRecord<CarrierRecord>(carrierCache, "partyId", partyId);
+export const useCarrierRecord = (partyId: string | undefined) => {
+  const { first: record, hydrated } = useDb<CarrierRecord>("carriers", () => partyId ? { equals: { partyId } } : {});
+  return { record, hydrated };
+};
 
 /** All global types joined to the selected carrier's configured rows. */
 export function useCarrierShipmentMethods(partyId: string) {
-  const configuredRead = useCachedList<CarrierShipmentMethod>(carrierShipmentMethodCache, {
+  const configuredRead = useDb<CarrierShipmentMethod>("carrierShipmentMethods", {
     scope: { field: "partyId", value: partyId },
   });
-  const typeRead = useCachedList<CarrierShipmentMethod>(shipmentMethodTypeCache);
+  const typeRead = useDb<CarrierShipmentMethod>("shipmentMethodTypes");
   const shipmentMethods = computed(() =>
     orderedCarrierMethods(mergeCarrierShipmentMethods(typeRead.records.value, configuredRead.records.value),));
   // Derived from the merged rows, not the raw carrier rows: `CarrierShipmentMethod` carries no
@@ -268,10 +258,10 @@ export function useCarrierShipmentMethods(partyId: string) {
 
 /** Physical facilities plus the selected carrier's active FacilityParty association, when present. */
 export function useCarrierFacilities(partyId: string) {
-  const associationRead = useCachedList<any>(carrierFacilityCache, {
+  const associationRead = useDb<any>("carrierFacilities", {
     scope: { field: "partyId", value: partyId },
   });
-  const facilityRead = useCachedList<any>(facilityCache);
+  const facilityRead = useDb<any>("facilities");
   const effectiveNow = useEffectiveNow(associationRead.records);
   const associations = computed(() =>
     associationRead.records.value.filter((row) =>
@@ -306,9 +296,9 @@ export function useCarrierFacilities(partyId: string) {
 /** Read Unigate only from the cached remote domain and retain its hydration/error state. */
 export function useCarrierReadiness(
   partyId: string,
-  carrier?: ReturnType<typeof useCarrierRecord>["record"],
+  carrier?: Ref<CarrierRecord | undefined>,
 ) {
-  const remoteRead = useCachedList<any>(systemMessageRemoteCache);
+  const remoteRead = useDb<any>("systemMessageRemotes");
   const fallbackCarrier = carrier ?? useCarrierRecord(partyId).record;
   const remote = computed(() =>
     remoteRead.records.value.find((row) => row.systemMessageRemoteId === UNIGATE_REMOTE_ID) ?? null);
@@ -327,9 +317,9 @@ export function useCarrier(partyId: string) {
   const carrierRead = useCarrierRecord(partyId);
   const methodRead = useCarrierShipmentMethods(partyId);
   const facilityRead = useCarrierFacilities(partyId);
-  const productStoreRead = useCachedList<any>(productStoreCache);
-  const productStoreMethodRead = useCachedList<ProductStoreShipmentMethod>(
-    productStoreShippingMethodCache,
+  const productStoreRead = useDb<any>("productStores");
+  const productStoreMethodRead = useDb<ProductStoreShipmentMethod>(
+    "productStoreShippingMethods",
     { scope: { field: "partyId", value: partyId } },
   );
   const readinessRead = useCarrierReadiness(partyId, carrierRead.record);

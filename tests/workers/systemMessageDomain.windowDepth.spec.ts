@@ -32,17 +32,26 @@ vi.mock("@/workers/domains/workerFetch", () => ({
 /** How many rows the cache claims to hold for the scope under test. */
 const cacheState = vi.hoisted(() => ({ count: 0 }));
 
-vi.mock("@/utils/db/cacheEntities", () => ({
-  systemMessageCache: {
-    all: vi.fn(async () => []),
-    count: vi.fn(async () => cacheState.count),
-    newestCursor: vi.fn(async () => 1_700_000_000_000),
-    rowsMissing: vi.fn(async () => []),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-  },
-  shopifyShopCache: { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) },
-  systemMessageRemoteCache: {
-    all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
+vi.mock("@/utils/db/appCacheDb", () => ({
+  cachedEntity: (table: string) => {
+    if (table === "systemMessages") {
+      return {
+        all: vi.fn(async () => []),
+        count: vi.fn(async () => cacheState.count),
+        newestCursor: vi.fn(async () => 1_700_000_000_000),
+        rowsMissing: vi.fn(async () => []),
+        upsertMany: vi.fn(async (rows: any[]) => rows.length),
+      };
+    }
+    if (table === "shopifyShops") {
+      return { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) };
+    }
+    if (table === "systemMessageRemotes") {
+      return {
+        all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
+      };
+    }
+    return {};
   },
 }));
 

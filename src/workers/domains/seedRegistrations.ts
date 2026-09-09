@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { SEED_SOURCES } from "@common/db/domains/seedSources";
+import { SEED_DOMAINS } from "@common/db/domains/seedDomains";
 import { registerCompanySeedDomains, type SeedPick } from "./registerSeedDomains";
 
 /**
@@ -31,12 +31,15 @@ const picks: SeedPick[] = Array.from(companyDb.seedTables)
   .filter((table) => !OVERRIDDEN_SEED_DOMAINS.has(table))
   .map((table) => {
     const entity = companyDb.entities[table];
-    const source = SEED_SOURCES[table as keyof typeof SEED_SOURCES];
+    const seed = SEED_DOMAINS[table as keyof typeof SEED_DOMAINS];
     return {
-      name: source.name,
+      name: seed.name,
       table,
       projection: entity,
-      source,
+      // `seed` is the ENTRY (`{ name, label, source }`); only `seed.source` holds the fetch config.
+      // Passing the entry here spreads `label` and a nested `source` into the domain config and
+      // leaves `listUrl` undefined — the domain registers and then pages against `undefined`.
+      source: seed.source,
     };
   });
 

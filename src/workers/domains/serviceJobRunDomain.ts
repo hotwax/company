@@ -1,4 +1,7 @@
-import { serviceJobRunCache } from "@/utils/db/cacheEntities";
+import { cachedEntity } from "@/utils/db/appCacheDb";
+
+const serviceJobRunCache = cachedEntity("serviceJobRuns");
+
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";
 

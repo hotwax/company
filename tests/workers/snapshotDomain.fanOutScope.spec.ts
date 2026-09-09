@@ -9,9 +9,7 @@ const state = vi.hoisted(() => ({
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
-  // Mirrors pageAll's unkeyable-row behavior: a record whose keyOf returns undefined is dropped
-  // before the fan-out code receives the page.
+const mockWorkerFetch = vi.hoisted(() => () => ({
   pageAll: vi.fn(async (options: any) => state.fetched.filter((row) => {
     const key = options.keyOf?.(row);
     state.pageKeys.push(key);
@@ -21,24 +19,47 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   unwrapCollection: (response: any) => (Array.isArray(response) ? response : []),
 }));
 
+vi.mock("@/workers/domains/workerFetch", mockWorkerFetch);
+vi.mock("./workerFetch", mockWorkerFetch);
+vi.mock("@common/db/sync/workerFetch", mockWorkerFetch);
+
+
+import { setAppDb } from "@common/db/appDbRegistry";
+
 vi.mock("@/db/companyDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
-  return {
-    companyDb: {
-      ...actual.companyDb,
-      raw: () => ({
-        table: (table: string) => ({
-          count: async () => 0,
-          toCollection: () => ({
-            toArray: async () => table === "productStores"
-              ? [{ productStoreId: AUTHORITATIVE_STORE }]
-              : [],
-          }),
+  const mockRaw = () => ({
+    table: (table: string) => ({
+      count: async () => 0,
+      toCollection: () => ({
+        toArray: async () => table === "productStores"
+          ? [{ productStoreId: AUTHORITATIVE_STORE }]
+          : [],
+        primaryKeys: async () => [],
+      }),
+      where: () => ({
+        equals: () => ({
+          toArray: async () => [],
         }),
       }),
-    },
+      bulkDelete: async () => {},
+      bulkPut: async (rows: any[]) => {
+        state.snapshots.push({ rows, scope: null });
+      },
+      put: async () => {},
+      delete: async () => {},
+    }),
+    transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+  });
+  const mockDb = {
+    ...actual.companyDb,
+    raw: mockRaw,
+    get: mockRaw,
   };
+  setAppDb(mockDb as any);
+  return { companyDb: mockDb };
 });
+
 
 vi.mock("@/utils/db/appCacheDb", () => ({
   defineCachedEntity: () => ({
@@ -78,7 +99,10 @@ const ctx = { maargUrl: "https://example.test/", token: "token" };
 
 async function register() {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
+  const { companyDb } = await import("@/db/companyDb");
+  const { setAppDb } = await import("@common/db/appDbRegistry");
+  setAppDb(companyDb as any);
+  const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
   registerSnapshotDomain(CONFIG as any);
   const { getSyncDomain } = await import("@/workers/syncRegistry");
   return getSyncDomain(CONFIG.name)!;

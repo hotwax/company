@@ -10,33 +10,23 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
+  useDb: () => ({
     rows: { value: [] },
     records: { value: [] },
+    first: { value: undefined },
+    count: { value: 0 },
     hydrated: { value: true },
   }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
-vi.mock("@/utils/db/cacheEntities", () => ({
-  dataManagerLogCache: { __kind: "logs" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyShopCache: { __kind: "shops" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: {
-    __kind: "remotes",
-    all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+vi.mock("@/utils/db/appCacheDb", () => ({
+  cachedEntity: (table: string) => {
+    if (table === "systemMessageRemotes") {
+      return {
+        all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+      };
+    }
+    return { all: vi.fn(async () => []) };
   },
 }));
 

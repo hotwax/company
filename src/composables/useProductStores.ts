@@ -1,16 +1,9 @@
 import { computed, ref, reactive, toRefs, toValue, type MaybeRefOrGetter } from "vue";
-import { api, commonUtil, logger } from "@common";
-import {
-  productStoreCache,
-  productStoreFacilityCache,
-  productStoreShipmentCountCache,
-  productStoreShippingMethodCache,
-} from "@/utils/db/cacheEntities";
+import { api, commonUtil, logger, useDb } from "@common";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { isEffectiveNow } from "@/utils/db/cacheProjection";
-import { useCachedList, useCachedRecord } from "./useCachedList";
 import { useEffectiveNow } from "./useEffectiveNow";
 
 import { useOrganization } from "./useSeed";
@@ -57,7 +50,7 @@ export function useProductStoreShippingMethodsLive() {
 
 /** How many facilities each product store is associated with, from the cached association table. */
 export function useProductStoreFacilityCounts() {
-  const { records } = useCachedList<any>(productStoreFacilityCache);
+  const { records } = useDb<any>("productStoreFacilities");
   const counts = computed<Record<string, number>>(() =>
     records.value.reduce((map: Record<string, number>, row: any) => {
       if (row.productStoreId) map[row.productStoreId] = (map[row.productStoreId] ?? 0) + 1;
@@ -68,7 +61,7 @@ export function useProductStoreFacilityCounts() {
 
 /** The store list, with its per-store facility and shipment-method counts folded in. */
 export function useProductStores() {
-  const { records, hydrated } = useCachedList<any>(productStoreCache);
+  const { records, hydrated } = useDb<any>("productStores");
   const { counts } = useProductStoreShipmentCounts();
   const { counts: facilityCounts } = useProductStoreFacilityCounts();
 
@@ -84,8 +77,10 @@ export function useProductStores() {
   return { productStores, records, hydrated };
 }
 
-export const useProductStoreRecord = (productStoreId: string | undefined) =>
-  useCachedRecord(productStoreCache, "productStoreId", productStoreId);
+export const useProductStoreRecord = (productStoreId: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("productStores", () => productStoreId ? { equals: { productStoreId } } : {});
+  return { record, hydrated };
+};
 
 /**
  * The product store mapped to a NetSuite subsidiary, derived from the cache.
@@ -95,7 +90,7 @@ export const useProductStoreRecord = (productStoreId: string | undefined) =>
  * externalId changed outside this screen.
  */
 export function useNetSuiteProductStore() {
-  const { records, hydrated } = useCachedList<any>(productStoreCache);
+  const { records, hydrated } = useDb<any>("productStores");
 
   const netSuiteProductStore = computed(() => {
     const mapped = records.value.find((store: any) => !!store.externalId);
@@ -108,7 +103,7 @@ export function useNetSuiteProductStore() {
 
 /** productStoreId → shipment-method count. */
 export function useProductStoreShipmentCounts() {
-  const { records, hydrated } = useCachedList<any>(productStoreShipmentCountCache);
+  const { records, hydrated } = useDb<any>("productStoreShipmentCounts");
   return {
     counts: computed<Record<string, number>>(() => records.value.reduce(
       (map: Record<string, number>, row: any) => {
@@ -126,7 +121,7 @@ export function useProductStoreShipmentCounts() {
  * scope once: Shopify and NetSuite discover their productStoreId asynchronously after setup.
  */
 export function useProductStoreShippingMethods(productStoreId?: MaybeRefOrGetter<string | undefined>) {
-  const { records, hydrated } = useCachedList<any>(productStoreShippingMethodCache);
+  const { records, hydrated } = useDb<any>("productStoreShippingMethods");
   const effectiveNow = useEffectiveNow(records);
   const shippingMethods = computed(() => {
     const resolvedProductStoreId = String(toValue(productStoreId) ?? "").trim();

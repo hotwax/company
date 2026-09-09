@@ -27,10 +27,7 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
+  useDb: () => ({
     records: cachedJobs,
     rows: cachedJobs,
     hydrated: ref(true),

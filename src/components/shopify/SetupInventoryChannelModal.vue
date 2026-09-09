@@ -160,8 +160,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
-import { commonUtil, logger, translate } from "@common";
-import { useCachedList } from "@/composables/useCachedList";
+import { commonUtil, logger, translate, useDb } from "@common";
 import { useFacilityGroups, useGroupFacilities } from "@/composables/useFacilities";
 import {
   createInventoryChannel,
@@ -172,7 +171,6 @@ import {
   fetchShopifyShopLocations,
   useShopifySyncContext,
 } from "@/composables/useShopify";
-import { inventoryChannelCache } from "@/utils/db/cacheEntities";
 import { isEffectiveNow } from "@/utils/db/cacheProjection";
 
 const props = defineProps<{ shopId: string }>();
@@ -199,7 +197,7 @@ const omsMappings = ref<any[]>([]);
 
 const { records: facilityGroups, hydrated: groupsHydrated } = useFacilityGroups();
 const { members: groupMembers, hydrated: membersHydrated } = useGroupFacilities();
-const { records: inventoryChannels } = useCachedList<any>(inventoryChannelCache);
+const { records: inventoryChannels } = useDb<any>("inventoryChannels");
 
 const facilityDataReady = computed(() => groupsHydrated.value && membersHydrated.value);
 

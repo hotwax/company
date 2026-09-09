@@ -24,11 +24,43 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    raw: () => ({ table: () => ({ count: async () => state.cachedCount }) }),
-  },
+vi.mock("./workerFetch", () => ({
+  pageAll: vi.fn(async () => state.fetched),
+  workerGet: vi.fn(async () => null),
+  unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
+
+
+import { setAppDb } from "@common/db/appDbRegistry";
+
+const mockRaw = () => ({
+  table: () => ({
+    count: async () => state.cachedCount,
+    toCollection: () => ({ primaryKeys: async () => [] }),
+    bulkDelete: async () => {},
+    bulkPut: async () => {},
+    put: async () => {},
+    delete: async () => {},
+  }),
+  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+});
+
+const mockDb = { raw: mockRaw, get: mockRaw };
+setAppDb(mockDb as any);
+
+vi.mock("@/db/companyDb", () => ({
+  companyDb: mockDb,
+}));
+
+
+vi.mock("@common/db/baseDb", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    hasSyncedThisLogin: vi.fn(async () => state.syncedAlready),
+    markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
+  };
+});
 
 vi.mock("@/utils/db/appCacheDb", () => ({
   defineCachedEntity: () => ({
@@ -44,6 +76,7 @@ vi.mock("@/utils/db/appCacheDb", () => ({
   markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
 }));
 
+
 const CONFIG = {
   name: "productStoreTest",
   table: "productStores" as const,
@@ -56,7 +89,7 @@ const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 async function register() {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
+  const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
   registerSnapshotDomain(CONFIG as any);
   const { getSyncDomain } = await import("@/workers/syncRegistry");
   return getSyncDomain(CONFIG.name)!;

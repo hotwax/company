@@ -23,7 +23,13 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@common/db/baseDb", () => ({ ensureDbReady: vi.fn(async () => undefined) }));
+vi.mock("@common/db/baseDb", async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    ensureDbReady: vi.fn(async () => undefined),
+  };
+});
 
 vi.mock("@/utils/pollingTokenChannel", () => ({
   subscribeToken: vi.fn(),

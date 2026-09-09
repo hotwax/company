@@ -1,16 +1,17 @@
 import { computed, ref } from "vue";
 import { DateTime } from "luxon";
-import { api, commonUtil, logger, translate } from "@common";
+import { api, commonUtil, logger, translate, useDb } from "@common";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow, toCount, toMillis } from "@/utils/db/cacheProjection";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
-import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/db/cacheEntities";
-import { facilityGroupProductStoreCache, productStoreFacilityCache } from "@/utils/db/cacheEntities";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";
 import { useFacilityIdentifications } from "./useNetSuite";
-import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * Facility master entity — facilities, their types, and facility GROUPS with their memberships.
@@ -63,7 +64,7 @@ export interface FacilityFilters {
  * screen states which facilities it wants rather than issuing a scoped request.
  */
 export function useFacilities(filters: FacilityFilters = {}) {
-  const { records, hydrated } = useCachedList<any>(facilityCache);
+  const { records, hydrated } = useDb<any>("facilities");
 
   const facilities = computed(() => records.value.filter((facility: any) => {
     if (filters.excludeVirtual && isVirtualFacility(facility)) return false;
@@ -76,8 +77,10 @@ export function useFacilities(filters: FacilityFilters = {}) {
   return { facilities, records, hydrated };
 }
 
-export const useFacilityRecord = (facilityId: string | undefined) =>
-  useCachedRecord(facilityCache, "facilityId", facilityId);
+export const useFacilityRecord = (facilityId: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("facilities", () => facilityId ? { equals: { facilityId } } : {});
+  return { record, hydrated };
+};
 
 export interface FacilityTypeFilters {
   /**
@@ -95,7 +98,7 @@ export interface FacilityTypeFilters {
 
 /** Facility types, description-ordered for pickers, narrowed by `filters`. */
 export function useFacilityTypes(filters: FacilityTypeFilters = {}) {
-  const { records, hydrated } = useCachedList<any>(facilityTypeCache);
+  const { records, hydrated } = useDb<any>("facilityTypes");
 
   const facilityTypes = computed(() => records.value
     .filter((type: any) => {
@@ -121,7 +124,7 @@ export const ARCHIVE_FACILITY_GROUP_ID = "ARCHIVE";
  * marks it. Filtering on the facility rows alone would keep showing it in the active list.
  */
 export function useFacilityPartitions() {
-  const { records, hydrated } = useCachedList<any>(facilityCache);
+  const { records, hydrated } = useDb<any>("facilities");
   const { archivedIds } = useArchivedFacilities();
 
   const allVirtual = computed(() => records.value.filter(isVirtualFacility));
@@ -143,7 +146,7 @@ export function useFacilityPartitions() {
  */
 export function useArchivedFacilities() {
   const { active, hydrated: membershipsHydrated } = useGroupMembershipIndex();
-  const { records: facilities, hydrated: facilitiesHydrated } = useCachedList<any>(facilityCache);
+  const { records: facilities, hydrated: facilitiesHydrated } = useDb<any>("facilities");
 
   const archivedMembers = computed(() =>
     active.value.filter((row: any) => row.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID));
@@ -175,7 +178,7 @@ export function useArchivedFacilities() {
 
 /** Groups with their member counts folded in — what the group list renders. */
 export function useFacilityGroups() {
-  const { records, hydrated } = useCachedList<any>(facilityGroupCache);
+  const { records, hydrated } = useDb<any>("facilityGroups");
   const { facilityCountByGroup } = useGroupFacilityCounts();
 
   const { productStoreCountByGroup } = useFacilityGroupProductStoreCounts();
@@ -189,13 +192,15 @@ export function useFacilityGroups() {
   return { facilityGroups, records, hydrated };
 }
 
-export const useFacilityGroupRecord = (facilityGroupId: string | undefined) =>
-  useCachedRecord(facilityGroupCache, "facilityGroupId", facilityGroupId);
+export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("facilityGroups", () => facilityGroupId ? { equals: { facilityGroupId } } : {});
+  return { record, hydrated };
+};
 
 /**
  * Members of one group, or every membership when no group is given.
  *
- * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useCachedList`
+ * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useDb`
  * hands back `row.raw`, i.e. whatever shape the OMS emitted the timestamp as, and the group screen
  * echoes `fromDate` back on every membership revision. Since `store` matches the row on the exact
  * timestamp, echoing an un-normalized value inserts a duplicate member instead of updating one —
@@ -207,12 +212,12 @@ export const useFacilityGroupRecord = (facilityGroupId: string | undefined) =>
  * being one duplicate row and becomes a duplicate of the whole group.
  */
 export function useGroupFacilities(facilityGroupId?: string) {
-  const { rows, records, hydrated } = useCachedList<any>(
-    groupFacilityCache,
+  const { records, hydrated } = useDb<any>(
+    "groupFacilities",
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  const members = computed<any[]>(() => rows.value.map((row: any) => {
-    const raw = row.raw ?? {};
+  const members = computed<any[]>(() => records.value.map((row: any) => {
+    const raw = row.raw ?? row;
     const sequenceNum = toCount(raw.sequenceNum);
     return {
       ...raw,
@@ -228,7 +233,7 @@ export function useGroupFacilities(facilityGroupId?: string) {
 
 /** facilityGroupId → member count, honoring `thruDate` (memberships are date-effective). */
 export function useGroupFacilityCounts() {
-  const { records, hydrated } = useCachedList<any>(groupFacilityCache);
+  const { records, hydrated } = useDb<any>("groupFacilities");
   return {
     facilityCountByGroup: computed<Record<string, number>>(() => {
       const now = Date.now();
@@ -248,7 +253,7 @@ export function useGroupFacilityCounts() {
  * Expired memberships (`thruDate` in the past) are excluded, matching the server's `filterByDate`.
  */
 export function useGroupMembershipIndex() {
-  const { records, hydrated } = useCachedList<any>(groupFacilityCache);
+  const { records, hydrated } = useDb<any>("groupFacilities");
 
   const active = computed(() => {
     const now = Date.now();
@@ -283,7 +288,7 @@ export function useGroupMembershipIndex() {
  * Deriving the distinct ids off `facilityGroups` makes them work.
  */
 export function useFacilityGroupTypes() {
-  const { records, hydrated } = useCachedList<any>(facilityGroupCache);
+  const { records, hydrated } = useDb<any>("facilityGroups");
   const facilityGroupTypes = computed(() => {
     const seen = new Set<string>();
     for (const group of records.value as any[]) {
@@ -346,8 +351,8 @@ export function useFacilityGroupTypeOptions() {
  * which is what lets the facility list filter by product store.
  */
 export function useFacilityProductStores(facilityId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    productStoreFacilityCache,
+  const { records, hydrated } = useDb<any>(
+    "productStoreFacilities",
     facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
   );
 
@@ -377,8 +382,8 @@ export const useFacilityShopifyMappings = (facilityId: string | undefined) =>
  * membership counts use.
  */
 export function useFacilityGroupProductStores(facilityGroupId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    facilityGroupProductStoreCache,
+  const { records, hydrated } = useDb<any>(
+    "facilityGroupProductStores",
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
   // `Date.now()` belongs INSIDE the computed. Read once at setup it freezes the cutoff at the

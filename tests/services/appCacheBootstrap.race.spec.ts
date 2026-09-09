@@ -23,51 +23,52 @@ const harnessState = vi.hoisted(() => ({
   statusHandler: undefined as undefined | ((status: Record<string, any>) => void),
 }));
 
-vi.mock("@/services/pollingService", () => ({
-  createSyncService: (options: { onStatus?: (status: Record<string, any>) => void }) => {
-    harnessState.statusHandler = options.onStatus;
+vi.mock("@common/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db")>();
+  return {
+    ...actual,
+    createSyncService: (options: { onStatus?: (status: Record<string, any>) => void }) => {
+      harnessState.statusHandler = options.onStatus;
 
-    return {
-      // Spawning a worker takes real time. Resolving on a macrotask reproduces the window in which
-      // `service` is already assigned but the Comlink handle is not.
-      start: () => {
-        harnessState.startCalls += 1;
+      return {
+        start: () => {
+          harnessState.startCalls += 1;
 
-        return new Promise<void>((resolve, reject) => {
-          setTimeout(() => {
-            if(harnessState.startError) {
-              harnessState.statusHandler?.({
-                type: "sync-error",
-                message: harnessState.startError.message,
-              });
-              reject(harnessState.startError);
+          return new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              if(harnessState.startError) {
+                harnessState.statusHandler?.({
+                  type: "sync-error",
+                  message: harnessState.startError.message,
+                });
+                reject(harnessState.startError);
 
-              return;
-            }
-            harnessState.startResolved = true;
-            resolve();
-          }, 5);
-        });
-      },
-      // Mirrors pollingService: returns 0 while `harness` is still null.
-      refetchOne: async (domain: string) => {
-        harnessState.refetchCalls.push({ domain, whenStartResolved: harnessState.startResolved });
-        if(harnessState.refetchError) {throw harnessState.refetchError;}
+                return;
+              }
+              harnessState.startResolved = true;
+              resolve();
+            }, 5);
+          });
+        },
+        refetchOne: async (domain: string) => {
+          harnessState.refetchCalls.push({ domain, whenStartResolved: harnessState.startResolved });
+          if(harnessState.refetchError) {throw harnessState.refetchError;}
 
-        return harnessState.startResolved ? 1 : 0;
-      },
-      syncDomainNow: async (domain: string) => {
-        harnessState.syncDomainCalls.push(domain);
+          return harnessState.startResolved ? 1 : 0;
+        },
+        syncDomainNow: async (domain: string) => {
+          harnessState.syncDomainCalls.push(domain);
 
-        return harnessState.startResolved ? 1 : 0;
-      },
-      syncNow: async () => undefined,
-      setDomains: async () => undefined,
-      registeredDomains: async () => [],
-      stop: () => undefined,
-    };
-  },
-}));
+          return harnessState.startResolved ? 1 : 0;
+        },
+        syncNow: async () => undefined,
+        setDomains: async () => undefined,
+        registeredDomains: async () => [],
+        stop: () => undefined,
+      };
+    },
+  };
+});
 
 vi.mock("@common", () => ({
   commonUtil: { getMaargURL: () => "https://example.test/rest/s1/" },

@@ -1,9 +1,10 @@
-import {
-  netSuiteDecisionRuleCache,
-  netSuiteOrderPushBacklogCache,
-  netSuiteRuleGroupCache,
-  netSuiteRuleGroupRunCache,
-} from "@/utils/db/cacheEntities";
+import { cachedEntity } from "@/utils/db/appCacheDb";
+
+const netSuiteDecisionRuleCache = cachedEntity("netSuiteDecisionRules");
+const netSuiteOrderPushBacklogCache = cachedEntity("netSuiteOrderPushBacklog");
+const netSuiteRuleGroupCache = cachedEntity("netSuiteRuleGroups");
+const netSuiteRuleGroupRunCache = cachedEntity("netSuiteRuleGroupRuns");
+
 import { keepNewerThan } from "@/utils/db/cacheProjection";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";

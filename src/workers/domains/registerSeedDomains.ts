@@ -1,6 +1,6 @@
 import type { Entity } from "@common/db/defineEntity";
-import type { SeedSource } from "@common/db/domains/seedSources";
-import { registerSnapshotDomain } from "./snapshotDomain";
+import type { SeedSource } from "@common/db/domains/seedDomains";
+import { registerSnapshotDomain } from "@common/db";
 
 export interface SeedPick {
   name: string;
@@ -24,9 +24,9 @@ export interface SeedPick {
  * `sync(ctx, args?, options?)` / `refetchOne(ctx, pk, args?)`, both `Promise<number>`), so even a
  * type-compatible registration would call the wrong contract.
  *
- * Company's own `registerSnapshotDomain` factory (`./snapshotDomain.ts`) already accepts the same
+ * The framework's `registerSnapshotDomain` factory (`@common/db/sync/snapshotDomain`) accepts the same
  * config shape a seed entity's `source` carries (`listUrl`, `collectionKey`, `fanOut`, `byPk`,
- * `refetchScope`, …) and already reads/writes through `companyDb` directly, so each entity is fed
+ * `refetchScope`, …) and reads/writes through the registered `companyDb`, so each entity is fed
  * through unchanged — the adopted domains behave exactly like Company's hand-written ones: same
  * registry, same harness tick, same force-resync, same row count.
  */

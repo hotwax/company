@@ -9,18 +9,13 @@ vi.mock("@common", () => ({
   translate: (value: string, params: Record<string, unknown> = {}) => Object.entries(params)
     .reduce((text, [name, param]) => text.replace(`{${name}}`, String(param)), value),
   useProducts: () => ({ products: { value: new Map() }, resolve: vi.fn(), reset: vi.fn() }),
+  useDb: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
 }));
 
 vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
   bootstrapState: { running: false },
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ rows: { value: [] }, records: { value: [] }, hydrated: { value: true } }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";

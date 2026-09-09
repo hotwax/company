@@ -1,5 +1,8 @@
-import { dataManagerLogCache } from "@/utils/db/cacheEntities";
+import { cachedEntity } from "@/utils/db/appCacheDb";
 import { keepNewerThan } from "@/utils/db/cacheProjection";
+
+const dataManagerLogCache = cachedEntity("dataManagerLogs");
+
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst, workerGet } from "./workerFetch";
 

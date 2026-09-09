@@ -1303,7 +1303,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, logger, translate, useProducts } from "@common";
+import { commonUtil, logger, translate, useDb, useProducts } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
@@ -1324,7 +1324,6 @@ import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
-import { useCachedList } from "@/composables/useCachedList";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
 import { useFacilityTypes } from "@/composables/useFacilities";
@@ -1356,14 +1355,6 @@ import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useVirtualRows } from "@/composables/useVirtualRows";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { formatDateTime } from "@/utils";
-import {
-  dataFeedCache,
-  groupFacilityCache,
-  inventoryChannelCache,
-  shopifyInventoryAdjustmentDetailCache,
-  shopifyShopCache,
-  systemMessageCache,
-} from "@/utils/db/cacheEntities";
 import { isEffectiveNow } from "@/utils/db/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
@@ -1521,13 +1512,13 @@ const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#Old
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
-const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useCachedList<any>(dataFeedCache);
-const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useCachedList<any>(inventoryChannelCache);
-const { records: allInventoryDetails, hydrated: inventoryDetailsHydrated } = useCachedList<any>(shopifyInventoryAdjustmentDetailCache);
-const { records: cachedSystemMessages } = useCachedList<any>(systemMessageCache);
+const { records: cachedDataFeeds, hydrated: dataFeedsHydrated } = useDb<any>("dataFeeds");
+const { records: allInventoryChannels, hydrated: inventoryChannelsHydrated } = useDb<any>("inventoryChannels");
+const { records: allInventoryDetails, hydrated: inventoryDetailsHydrated } = useDb<any>("shopifyInventoryAdjustmentDetails");
+const { records: cachedSystemMessages } = useDb<any>("systemMessages");
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
-const { records: cachedGroupFacilities } = useCachedList<any>(groupFacilityCache);
+const { records: cachedGroupFacilities } = useDb<any>("groupFacilities");
 /**
  * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
  * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
@@ -1689,7 +1680,7 @@ const shopChannelIds = computed(() => allInventoryChannels.value
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,
  * so no request per row and no extra fetch for the toggle below.
  */
-const { records: allShopifyShops, hydrated: shopsHydrated } = useCachedList<any>(shopifyShopCache);
+const { records: allShopifyShops, hydrated: shopsHydrated } = useDb<any>("shopifyShops");
 const shopsById = computed<Record<string, any>>(() =>
   allShopifyShops.value.reduce((map: Record<string, any>, shop: any) => {
     map[String(shop.shopId)] = shop;

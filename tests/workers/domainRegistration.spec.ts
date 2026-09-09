@@ -15,8 +15,8 @@ import { CACHE_DOMAIN_CATALOG } from "@/utils/db/cacheDomainCatalog";
  */
 const registrationCalls = vi.hoisted(() => [] as string[]);
 
-vi.mock("@/workers/syncRegistry", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/workers/syncRegistry")>();
+vi.mock("@common/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db")>();
   return {
     ...actual,
     registerSyncDomain: (domain: { name: string }) => {
@@ -25,6 +25,7 @@ vi.mock("@/workers/syncRegistry", async (importOriginal) => {
     },
   };
 });
+
 
 // `pollingWorkerHarness.ts` (imported last by `appSync.worker.ts`) calls Comlink's `expose()`,
 // which needs a real worker global scope (`self.addEventListener`) that this test environment

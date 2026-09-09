@@ -1,5 +1,6 @@
 import { onUnmounted, ref } from "vue";
-import { createSyncService, type SyncService } from "@/services/pollingService";
+import { createSyncService, type SyncService } from "@common/db";
+import appSyncUrl from "@/workers/appSync.worker.ts?worker&url";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 
 /**
@@ -70,6 +71,7 @@ export function useCacheSync() {
     }
     error.value = "";
     service = createSyncService({
+      workerUrl: new URL(appSyncUrl, import.meta.url),
       domains,
       baseTickMs: options.baseTickMs,
       onStatus,

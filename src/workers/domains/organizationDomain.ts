@@ -1,14 +1,13 @@
 import {
+  cachedEntity,
   hasSyncedThisLogin,
   markSyncedThisLogin,
 } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
-import {
-  organizationCache,
-  organizationProjection,
-} from "@/utils/db/cacheEntities";
 import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet } from "./workerFetch";
+
+const organizationCache = cachedEntity("organizations");
 
 const INTERNAL_ORG_ROLE = "INTERNAL_ORGANIZATIO";
 const PARTY_GROUP = "PARTY_GROUP";
@@ -122,4 +121,5 @@ registerSyncDomain({
   },
 });
 
-export { INTERNAL_ORG_ROLE, PARTY_GROUP, organizationProjection };
+export { INTERNAL_ORG_ROLE, PARTY_GROUP };
+

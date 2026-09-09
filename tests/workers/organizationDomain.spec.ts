@@ -34,21 +34,21 @@ vi.mock("@/db/companyDb", () => ({
 vi.mock("@/utils/db/appCacheDb", () => ({
   hasSyncedThisLogin: vi.fn(async () => false),
   markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
-}));
-
-vi.mock("@/utils/db/cacheEntities", () => ({
-  organizationCache: {
-    snapshotReplace: vi.fn(async (rows: any[]) => {
-      state.snapshots.push(rows);
-
-      return { written: rows.length, pruned: 0 };
-    }),
-    upsertMany: vi.fn(async (rows: any[]) => {
-      state.upserts.push(rows);
-
-      return rows.length;
-    }),
-    remove: vi.fn(async (partyId: string) => { state.removed.push(partyId); }),
+  cachedEntity: (table: string) => {
+    if (table === "organizations") {
+      return {
+        snapshotReplace: vi.fn(async (rows: any[]) => {
+          state.snapshots.push(rows);
+          return { written: rows.length, pruned: 0 };
+        }),
+        upsertMany: vi.fn(async (rows: any[]) => {
+          state.upserts.push(rows);
+          return rows.length;
+        }),
+        remove: vi.fn(async (partyId: string) => { state.removed.push(partyId); }),
+      };
+    }
+    return {};
   },
 }));
 

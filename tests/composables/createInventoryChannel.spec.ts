@@ -7,18 +7,13 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: (resp: any) => Boolean(resp?.data?.errors), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
+  useDb: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
 }));
 
 vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: vi.fn(),
   bootstrapState: { running: false },
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ rows: { value: [] }, records: { value: [] }, hydrated: { value: true } }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
 import { createInventoryChannel } from "@/composables/useShopify";

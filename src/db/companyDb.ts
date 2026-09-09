@@ -43,3 +43,7 @@ export const companyDb = defineAppDb({
   version: 1,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
+
+// Default resolver for unit tests / fallback before main.ts or worker harness registers the live resolver.
+companyDb.setOmsInstanceResolver(() => "default");
+

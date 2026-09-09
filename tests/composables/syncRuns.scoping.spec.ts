@@ -1,17 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
-vi.mock("@common", () => ({
-  api: vi.fn(),
-  commonUtil: { hasError: () => false, showToast: vi.fn() },
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-  translate: (value: string) => value,
-}));
-
-/**
- * The spine as the cache holds it: two shops' runs in ONE table, projected (so `shopId` is present —
- * it is renamed from the document's `remoteInternalId` and exists only after projection).
- */
 const SPINE_ROWS = [
   // shop 10010, newest, imported nothing.
   { systemMessageId: "M228405", shopId: "10010", systemMessageTypeId: "BulkQueryShopifyProductUpdates", statusId: "SmsgConsumed", initDate: 1784713582739, raw: {} },
@@ -27,29 +16,23 @@ const SPINE_ROWS = [
 const MESSAGES = [{ systemMessageId: "M227136", statusId: "SmsgConsumed", messageText: "mutation { … }" }];
 const LOGS = [{ logId: "M101074", configId: "SYNC_SHOPIFY_PRODUCT", systemMessageId: "M227136", statusId: "DmlsFinished", totalRecordCount: 1 }];
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: vi.fn((entity: any) => ({
-    rows: { value: entity.__kind === "syncRuns" ? SPINE_ROWS : [] },
-    records: { value: entity.__kind === "messages" ? MESSAGES : entity.__kind === "logs" ? LOGS : [] },
-    hydrated: { value: true },
-  })),
-  useCachedRecord: vi.fn(() => ({ record: { value: undefined }, hydrated: { value: true } })),
-  byDescription: () => 0,
-}));
-
-vi.mock("@/utils/db/cacheEntities", () => ({
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  dataManagerLogCache: { __kind: "logs" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: { __kind: "remotes" },
-  shopifyShopCache: { __kind: "shops" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
+vi.mock("@common", () => ({
+  api: vi.fn(),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
+  useDb: vi.fn((entityOrTable: any) => {
+    const table = typeof entityOrTable === "string" ? entityOrTable : entityOrTable?.__kind;
+    const records = table === "syncRuns" ? SPINE_ROWS : table === "systemMessages" || table === "messages" ? MESSAGES : table === "dataManagerLogs" || table === "logs" ? LOGS : [];
+    return {
+      rows: ref(records),
+      records: ref(records),
+      first: ref(records[0]),
+      count: ref(records.length),
+      hydrated: ref(true),
+      error: ref(null),
+    };
+  }),
 }));
 
 const hydrate = vi.hoisted(() => ({ messages: [] as string[], logs: [] as string[] }));

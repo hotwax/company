@@ -5,7 +5,8 @@ import { companyDb } from "@/db/companyDb";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { REFERENCE_DOMAIN_NAMES } from "@/utils/db/cacheDomainCatalog";
 import { cacheScopeKey } from "@/utils/db/cacheScopeKey";
-import { type SyncService, createSyncService } from "./pollingService";
+import { type SyncService, createSyncService } from "@common/db";
+import appSyncUrl from "@/workers/appSync.worker.ts?worker&url";
 import type { ActiveDomain } from "@/workers/syncRegistry";
 
 /**
@@ -110,6 +111,7 @@ export function startReferenceSync(): Promise<void> {
   const generation = ++startGeneration;
   bootstrapState.running = true;
   const attemptService = createSyncService({
+    workerUrl: new URL(appSyncUrl, import.meta.url),
     domains: REFERENCE_DOMAINS,
     // Base tick only decides when DUE domains run; class B is never due after its bootstrap, so
     // this loop costs nothing beyond one wake-up per interval.

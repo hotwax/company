@@ -2,7 +2,7 @@
  * Company's own tables, each declared exactly once.
  *
  * Keyed by IndexedDB store name. Replaces the split between `COMPANY_SCHEMA`'s hand-written Dexie
- * strings in `companyDb.ts` and the projections in `src/utils/db/cacheEntities.ts` — the two could
+ * strings in `companyDb.ts` and legacy projections — the two could
  * disagree, and nothing checked them against each other.
  *
  * This file covers the 29 tables whose primary key is a single stored field. Composite-key tables
@@ -299,7 +299,7 @@ export const companySchema = defineSchema({
 
   /**
    * DISAGREEMENT: `COMPANY_SCHEMA` declares `users: "partyId, userLoginId"`, but no
-   * `defineCachedEntity("users", ...)` / projection exists anywhere in `cacheEntities.ts` — the
+   * user projection was registered — the
    * table is listed in `appCacheDb.ts`'s `CACHE_TABLES` but nothing registers what it stores. There
    * is no second source to copy `fields` from, so this declares only the two fields the schema
    * string itself names; a real cache entity for `users`, if one is ever written, should replace
@@ -557,7 +557,7 @@ export const companySchema = defineSchema({
 
   // =============================================================================================
   // Composite-key tables (formerly a synthetic `*Key` field joining the fields below with `|`).
-  // Each `primaryKey` here was derived from the corresponding `buildKey` in `cacheEntities.ts`,
+  // Each `primaryKey` here was derived from the corresponding `buildKey` in entity definitions,
   // in that function's join order, cross-checked against its doc comment.
   // =============================================================================================
 

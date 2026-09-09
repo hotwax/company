@@ -27,10 +27,9 @@ const state = vi.hoisted(() => ({
   removed: [] as string[],
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+const mockWorkerFetch = vi.hoisted(() => () => ({
   pageAll: vi.fn(async (options: any) => { state.pageAllParams = options.params; return state.pageAllResponse; }),
   workerGet: vi.fn(async () => state.getResponse),
-  // The real implementation: a `collectionKey` that is absent yields NO rows.
   unwrapCollection: (resp: any, collectionKey?: string | null) => {
     if (Array.isArray(resp)) return resp;
     if (collectionKey && Array.isArray(resp?.[collectionKey])) return resp[collectionKey];
@@ -38,11 +37,33 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   },
 }));
 
+vi.mock("@/workers/domains/workerFetch", mockWorkerFetch);
+vi.mock("./workerFetch", mockWorkerFetch);
+vi.mock("@common/db/sync/workerFetch", mockWorkerFetch);
+
+
+import { setAppDb } from "@common/db/appDbRegistry";
+
+const mockRaw = () => ({
+  table: () => ({
+    count: async () => 1,
+    toCollection: () => ({ primaryKeys: async () => [] }),
+    where: () => ({ equals: () => ({ toArray: async () => [] }) }),
+    put: async (record: any) => { state.upserted.push(record); },
+    bulkPut: async (rows: any[]) => { state.upserted.push(...rows); },
+    delete: async (key: string) => { state.removed.push(key); },
+    bulkDelete: async () => {},
+  }),
+  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+});
+
+const mockDb = { raw: mockRaw, get: mockRaw };
+setAppDb(mockDb as any);
+
 vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    raw: () => ({ table: () => ({ count: async () => 1 }) }),
-  },
+  companyDb: mockDb,
 }));
+
 
 vi.mock("@/utils/db/appCacheDb", () => ({
   defineCachedEntity: () => ({
@@ -62,7 +83,7 @@ const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 async function register(config: any) {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
+  const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
   registerSnapshotDomain(config);
   const { getSyncDomain } = await import("@/workers/syncRegistry");
   return getSyncDomain(config.name)!;

@@ -68,34 +68,35 @@ function stableStringify(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
 }
 
-const registry = new Map<string, SyncDomain>();
+import {
+  registerSyncDomain as frameworkRegisterSyncDomain,
+  getSyncDomain as frameworkGetSyncDomain,
+  getAllSyncDomains as frameworkGetAllSyncDomains,
+  clearSyncRegistry as frameworkClearSyncRegistry,
+  registeredDomainNames as frameworkRegisteredDomainNames,
+  type SyncDomain as FrameworkSyncDomain,
+} from "@common/db";
 
-/** Register a domain. Called at worker module load by each domain module. */
-export function registerSyncDomain(domain: SyncDomain): void {
-  registry.set(domain.name, domain);
+export function registerSyncDomain(domain: any): any {
+  return frameworkRegisterSyncDomain(domain);
 }
 
-export function getSyncDomain(name: string): SyncDomain | undefined {
-  return registry.get(name);
+export function getSyncDomain(name: string): any {
+  return frameworkGetSyncDomain(name);
 }
 
 export function registeredDomainNames(): string[] {
-  return [...registry.keys()];
+  return frameworkRegisteredDomainNames();
 }
 
-/**
- * Every registered domain, in registration order (`Map` preserves insertion order). Used by tests
- * asserting completeness, uniqueness, and that fan-out children register after the parent table
- * they read.
- */
-export function getAllSyncDomains(): SyncDomain[] {
-  return [...registry.values()];
+export function getAllSyncDomains(): any[] {
+  return frameworkGetAllSyncDomains();
 }
 
-/** Reset the registry to empty. Test-only: lets a spec re-run module registration from scratch. */
 export function clearSyncRegistry(): void {
-  registry.clear();
+  frameworkClearSyncRegistry();
 }
+
 
 /** The effective cadence for an activation: explicit override, else the domain default. */
 export function effectiveInterval(active: ActiveDomain, domain: SyncDomain | undefined): number | undefined {

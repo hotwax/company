@@ -1,8 +1,9 @@
 import Dexie, { type Table, liveQuery, type Observable } from "dexie";
 import { ensureDbReady } from "@common/db/baseDb";
+import { dbClient } from "@common/db/dbClient";
 import { companyDb } from "@/db/companyDb";
 import type { Entity } from "@common/db/defineEntity";
-import type { DbKey } from "@common/db/types";
+import type { DbKey, QueryOptions } from "@common/db/types";
 import { entityKeyOf } from "@common/db/projection";
 import {
   type CachedRow,
@@ -25,47 +26,10 @@ import {
  * instantly from IndexedDB and revalidates in the background. It is cleared on logout only.
  */
 
-/**
- * Every table the current schema declares, plus `syncMeta` (bookkeeping, injected by `BaseDB`
- * rather than declared in `companyDb`'s own schema).
- *
- * Deriving this directly from `companyDb.tableNames` would widen `CacheTableName` to plain
- * `string` — `tableNames` is typed `string[]` on the `AppDb` interface, not a literal tuple — which
- * would silently drop the type-checking every `defineCachedEntity` call site relies on. So this
- * stays a hand-written literal tuple, guarded below so it cannot drift from the composed schema.
- */
-export const CACHE_TABLES = [
-  "dataManagerLogs", "systemMessages", "serviceJobRuns", "syncRuns", "systemMessageErrors",
-  "productUpdateHistories", "shopifyInventoryAdjustmentDetails", "dataFeeds", "serviceJobs",
-  "systemMessageRemotes", "productStores", "carriers", "carrierShipmentMethods", "carrierFacilities",
-  "shopifyShops", "inventoryChannels", "inventoryEventDocuments", "organizations",
-  "organizationRelationships", "facilities", "facilityGroups", "groupFacilities", "users",
-  "permissions", "integrationTypeMappings", "statuses", "enums", "facilityTypes",
-  "facilityGroupTypes", "userGroups", "productTypes", "shipmentMethodTypes", "currencies",
-  "paymentMethodTypes", "roleTypes", "shopifyLocations", "shopifyTypeMappings",
-  "productStoreShipmentCounts", "shopifyCarrierShipments", "productStoreShippingMethods",
-  "enumTypes", "geos", "geoAssocs", "productStoreFacilities", "facilityGroupProductStores",
-  "enumGroupMembers", "facilityIdentifications", "systemMessageTypes", "apps", "appVersions",
-  "shopifyBulkOperations", "netSuiteRuleGroups", "netSuiteDecisionRules", "netSuiteRuleGroupRuns",
-  "netSuiteOrderPushBacklog", "syncMeta",
-] as const;
-
 /** Table names that exist in the cache. */
-export type CacheTableName = (typeof CACHE_TABLES)[number];
+export const CACHE_TABLES = [...companyDb.tableNames, "syncMeta"] as const;
+export type CacheTableName = string;
 
-// Guard so CACHE_TABLES cannot drift from the composed schema. `syncMeta` is skipped: it is
-// injected by `BaseDB` itself and never appears in `companyDb.tableNames` (the composed DATA
-// tables only). Runs at module load using `tableNames`, a plain synchronous property — never
-// `companyDb.raw()`, which throws until `main.ts` registers the OMS-instance resolver at boot.
-{
-  const composed = new Set(companyDb.tableNames);
-  for (const table of CACHE_TABLES) {
-    if (table === "syncMeta") continue;
-    if (!composed.has(table)) {
-      throw new Error(`[db] CACHE_TABLES lists "${table}", which the composed schema does not create.`);
-    }
-  }
-}
 
 /**
  * How a view narrows a cached table.
@@ -173,22 +137,31 @@ function normalizeIndexName(name: string): string {
  * Bind a projection to a cache table, yielding the operations every sync domain needs. This is
  * the seam that keeps domain code free of Dexie: a domain declares its fields and gets storage.
  */
+export function cachedEntity(table: CacheTableName): CachedEntity {
+  const entity = (companyDb.entities as any)[table];
+  if (!entity) {
+    throw new Error(`[db] No entity definition found in companyDb for table "${table}".`);
+  }
+  return defineCachedEntity(table, entity);
+}
+
 export function defineCachedEntity(table: CacheTableName, entity: Entity): CachedEntity {
   const dexieTable = () => (companyDb.raw() as any)[table] as Table<CachedRow, DbKey>;
+  const client = () => dbClient(companyDb.raw());
 
   return {
     table,
 
     async upsertMany(rawRows) {
       const rows = projectRows(rawRows, entity, Date.now());
-      if (rows.length) await dexieTable().bulkPut(rows);
+      if (rows.length) await client().bulkPut(table, rows);
       return rows.length;
     },
 
     async snapshotReplace(rawRows, scope) {
       const rows = projectRows(rawRows, entity, Date.now());
       let pruned = 0;
-      await companyDb.raw().transaction("rw", dexieTable(), async () => {
+      await client().transaction("rw", [table], async () => {
         const existingKeys = (scope
           ? await dexieTable().where(scope.field).equals(scope.value as any).primaryKeys()
           : await dexieTable().toCollection().primaryKeys()) as DbKey[];
@@ -201,40 +174,40 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
 
         const stale = diffStaleKeys(existingKeys, freshKeys);
         if (stale.length) {
-          await dexieTable().bulkDelete(stale as any[]);
+          await client().bulkRemove(table, stale);
           pruned = stale.length;
         }
-        if (rows.length) await dexieTable().bulkPut(rows);
+        if (rows.length) await client().bulkPut(table, rows);
       });
       return { written: rows.length, pruned };
     },
 
     async newestCursor(dateField, scope, equals) {
-      const table = dexieTable();
+      const tableRef = dexieTable();
       const equalityFields = equals ? Object.keys(equals) : [];
 
       if (scope && equalityFields.length) {
         // Prefer `[scope+...equals+date]` — one index seek for the newest row of this partition.
         const path = `[${[scope.field, ...equalityFields, dateField].join("+")}]`;
-        const indexed = (table.schema.indexes ?? []).some(
+        const indexed = (tableRef.schema.indexes ?? []).some(
           (index: any) => normalizeIndexName(index?.name ?? "") === path,
         );
         const prefix = [scope.value, ...equalityFields.map((field) => equals![field])];
         if (indexed) {
-          const newest = await table
+          const newest = await tableRef
             .where(path)
             .between([...prefix, -Infinity], [...prefix, Infinity])
             .last();
           return newest?.[dateField] as number | undefined;
         }
-        const rows = (await table.where(scope.field).equals(scope.value as any).toArray())
+        const rows = (await tableRef.where(scope.field).equals(scope.value as any).toArray())
           .filter((row) => equalityFields.every((field) => row[field] === equals![field]));
         return newestValue(rows, dateField);
       }
 
       if (scope) {
         // Scoped: walk the scoped rows (small by construction) and take the max.
-        const rows = await table.where(scope.field).equals(scope.value as any).toArray();
+        const rows = await tableRef.where(scope.field).equals(scope.value as any).toArray();
         return newestValue(rows, dateField);
       }
 
@@ -242,37 +215,37 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
         // No partition, but still narrowed (e.g. one message type across all remotes). Seek on the
         // first equality field when it is indexed, then apply the rest in memory.
         const [first, ...rest] = equalityFields;
-        const firstIndexed = (table.schema.indexes ?? []).some(
+        const firstIndexed = (tableRef.schema.indexes ?? []).some(
           (index: any) => normalizeIndexName(index?.name ?? "") === first,
         );
         const rows = firstIndexed
-          ? await table.where(first).equals(equals![first] as any).toArray()
-          : await table.toCollection().toArray();
+          ? await tableRef.where(first).equals(equals![first] as any).toArray()
+          : await client().all(table);
         const narrowed = rows.filter((row) =>
           (firstIndexed ? rest : equalityFields).every((field) => row[field] === equals![field]));
         return newestValue(narrowed, dateField);
       }
 
-      const newest = await table.orderBy(dateField).last();
+      const newest = await tableRef.orderBy(dateField).last();
       return newest?.[dateField] as number | undefined;
     },
 
     async rowsMissing(dateField, options = {}) {
       const { limit = 50, since } = options;
-      const table = dexieTable();
+      const tableRef = dexieTable();
 
       // Bound by age through the index when we can, so this is a range read rather than a scan of
       // every cached row. Rows with no `since` value at all are excluded: without one there is no
       // way to tell a still-in-flight record from an abandoned one.
       const indexed = since
-        ? (table.schema.indexes ?? []).some(
+        ? (tableRef.schema.indexes ?? []).some(
             (index: any) => normalizeIndexName(index?.name ?? "") === since.field,
           )
         : false;
 
       const collection = since && indexed
-        ? table.where(since.field).above(since.afterMs)
-        : table.toCollection();
+        ? tableRef.where(since.field).above(since.afterMs)
+        : tableRef.toCollection();
 
       const rows = await collection
         .filter((row) => {
@@ -288,7 +261,7 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
     },
 
     async count(scope, equals) {
-      const rows = await dexieTable().toArray();
+      const rows = await client().all(table);
       return rows.filter((row: any) => {
         if (scope && String(row?.[scope.field]) !== String(scope.value)) return false;
         for (const [field, value] of Object.entries(equals ?? {})) {
@@ -299,19 +272,19 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
     },
 
     async remove(key) {
-      await dexieTable().delete(key);
+      await client().remove(table, key);
     },
 
     live(options: LiveQueryOptions = {}) {
       const { dateField, scope, equals, filter, limit } = options;
 
       return liveQuery(async () => {
-        const table = dexieTable();
+        const tableRef = dexieTable();
         const equalityFields = equals ? Object.keys(equals) : [];
 
         /** An index exists for this exact key path, so the read can be a range scan. */
         const hasIndex = (path: string) =>
-          (table.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === path);
+          (tableRef.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === path);
 
         let rows: CachedRow[];
 
@@ -324,24 +297,24 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
           if (dateField && equalityFields.length && hasIndex(compoundWithDate)) {
             // Range over [scope, ...equals, *] — every row of this partition, index-ordered by date.
             const prefix = [scope.value, ...equalityFields.map((field) => equals![field])];
-            rows = await table
+            rows = await tableRef
               .where(compoundWithDate)
               .between([...prefix, -Infinity], [...prefix, Infinity])
               .reverse()
               .toArray();
           } else if (equalityFields.length && hasIndex(compound)) {
-            rows = await table
+            rows = await tableRef
               .where(compound)
               .equals([scope.value, ...equalityFields.map((field) => equals![field])] as any)
               .toArray();
           } else if (dateField && !equalityFields.length && hasIndex(`[${scope.field}+${dateField}]`)) {
-            rows = await table
+            rows = await tableRef
               .where(`[${scope.field}+${dateField}]`)
               .between([scope.value, -Infinity], [scope.value, Infinity])
               .reverse()
               .toArray();
           } else {
-            rows = await table.where(scope.field).equals(scope.value as any).toArray();
+            rows = await tableRef.where(scope.field).equals(scope.value as any).toArray();
             // Equalities the index could not absorb still have to hold.
             if (equalityFields.length) {
               rows = rows.filter((row) =>
@@ -349,12 +322,12 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
             }
           }
         } else if (dateField) {
-          rows = await table.orderBy(dateField).reverse().toArray();
+          rows = await tableRef.orderBy(dateField).reverse().toArray();
           if (equalityFields.length) {
             rows = rows.filter((row) => equalityFields.every((field) => row[field] === equals![field]));
           }
         } else {
-          rows = await table.toCollection().toArray();
+          rows = await client().all(table);
           if (equalityFields.length) {
             rows = rows.filter((row) => equalityFields.every((field) => row[field] === equals![field]));
           }
@@ -378,11 +351,11 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
     },
 
     all() {
-      return dexieTable().toCollection().toArray();
+      return client().all(table);
     },
 
     async clear() {
-      await dexieTable().clear();
+      await client().clear(table);
     },
   };
 }
@@ -393,7 +366,8 @@ export function defineCachedEntity(table: CacheTableName, entity: Entity): Cache
  * in another's session.
  */
 export async function clearAllCaches(): Promise<void> {
-  await Promise.all(companyDb.raw().tables.map((table) => table.clear()));
+  const client = dbClient(companyDb.raw());
+  await Promise.all(client.tableNames().map((table) => client.clear(table)));
 }
 
 /** Drop the superseded fixed-name cache databases, if present. */
@@ -421,20 +395,21 @@ const IDENTITY_KEY = "identity";
 /** Has this domain already synced for the current login? */
 export async function hasSyncedThisLogin(domain: string): Promise<boolean> {
   await ensureDbReady(companyDb.raw());
-  const row = await companyDb.raw().syncMeta.get(DOMAIN_MARKER_PREFIX + domain);
+  const row = await dbClient(companyDb.raw()).get("syncMeta", DOMAIN_MARKER_PREFIX + domain);
   return !!row;
 }
 
 export async function markSyncedThisLogin(domain: string): Promise<void> {
-  await companyDb.raw().syncMeta.put({ key: DOMAIN_MARKER_PREFIX + domain, syncedAt: Date.now() });
+  await dbClient(companyDb.raw()).put("syncMeta", { key: DOMAIN_MARKER_PREFIX + domain, syncedAt: Date.now() });
 }
 
 /** Drop every domain marker so the next pass re-snapshots (used by a manual resync). */
 export async function clearSyncMarkers(): Promise<void> {
   await ensureDbReady(companyDb.raw());
+  const client = dbClient(companyDb.raw());
   const keys = await companyDb.raw().syncMeta.toCollection().primaryKeys();
   const domainKeys = (keys as string[]).filter((key) => key.startsWith(DOMAIN_MARKER_PREFIX));
-  if (domainKeys.length) await companyDb.raw().syncMeta.bulkDelete(domainKeys);
+  if (domainKeys.length) await client.bulkRemove("syncMeta", domainKeys);
 }
 
 /**
@@ -447,9 +422,11 @@ export async function clearSyncMarkers(): Promise<void> {
  */
 export async function ensureCacheIdentity(identity: string): Promise<boolean> {
   await ensureDbReady(companyDb.raw());
-  const stored = await companyDb.raw().syncMeta.get(IDENTITY_KEY);
+  const client = dbClient(companyDb.raw());
+  const stored = await client.get<{ key: string; identity: string; at: number }>("syncMeta", IDENTITY_KEY);
   if (stored?.identity === identity) return false;
   await clearAllCaches();
-  await companyDb.raw().syncMeta.put({ key: IDENTITY_KEY, identity, at: Date.now() });
+  await client.put("syncMeta", { key: IDENTITY_KEY, identity, at: Date.now() });
   return true;
 }
+

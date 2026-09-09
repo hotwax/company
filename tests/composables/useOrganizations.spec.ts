@@ -19,22 +19,12 @@ vi.mock("@common", () => ({
       Boolean(response?.data?._ERROR_MESSAGE_ || response?.data?._ERROR_MESSAGE_LIST_),
   },
   translate: mocks.translate,
+  useDb: () => ({ records: ref([]), rows: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
 }));
 
 vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: mocks.refreshAfterMutation,
   resyncDomain: mocks.resyncDomain,
-}));
-
-vi.mock("@/utils/db/cacheEntities", () => ({
-  facilityCache: {},
-  organizationCache: {},
-  organizationRelationshipCache: {},
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ records: ref([]), hydrated: ref(true) }),
-  useCachedRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/sessionScope", () => ({

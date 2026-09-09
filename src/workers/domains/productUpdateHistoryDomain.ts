@@ -1,4 +1,4 @@
-import { productUpdateHistoryCache } from "@/utils/db/cacheEntities";
+import { companyDb } from "@/db/companyDb";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { pageNewestFirst } from "./workerFetch";
 
@@ -25,7 +25,7 @@ export interface ProductUpdateHistoryArgs {
 }
 
 async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHistoryArgs): Promise<number> {
-  const cursor = await productUpdateHistoryCache.newestCursor("lastUpdatedStamp", {
+  const cursor = await companyDb.client().newestCursor("productUpdateHistories", "lastUpdatedStamp", {
     field: "shopId",
     value: shopId,
   });
@@ -44,7 +44,7 @@ async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHis
       : (page) => page.filter((row: any) => Number(row?.lastUpdatedStamp ?? 0) > cursor),
   });
 
-  return productUpdateHistoryCache.upsertMany(rows);
+  return companyDb.client().upsertMany("productUpdateHistories", rows);
 }
 
 registerSyncDomain({

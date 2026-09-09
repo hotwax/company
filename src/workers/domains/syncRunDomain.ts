@@ -1,11 +1,12 @@
-import {
-  dataManagerLogCache,
-  shopifyShopCache,
-  syncRunCache,
-  systemMessageCache,
-} from "@/utils/db/cacheEntities";
+import { cachedEntity } from "@/utils/db/appCacheDb";
 import { registerSyncDomain, type SyncContext } from "../syncRegistry";
 import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
+
+const syncRunCache = cachedEntity("syncRuns");
+const shopifyShopCache = cachedEntity("shopifyShops");
+const systemMessageCache = cachedEntity("systemMessages");
+const dataManagerLogCache = cachedEntity("dataManagerLogs");
+
 
 /**
  * SyncRun — class A, and the only SHOP-SCOPED sync cursor.

@@ -1,9 +1,11 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, useDb } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
-import { permissionCache, userGroupCache } from "@/utils/db/cacheEntities";
-import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * Security master entity — user groups, the permission catalog, and what hangs off a group
@@ -17,7 +19,7 @@ import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
  */
 
 export function useUserGroups() {
-  const { records, hydrated } = useCachedList<any>(userGroupCache);
+  const { records, hydrated } = useDb<any>("userGroups");
   const userGroups = computed(() => [...records.value].sort(byDescription));
 
   /** Client-side search over the complete cached set — no server round-trip. */
@@ -31,12 +33,14 @@ export function useUserGroups() {
   return { userGroups, search, records, hydrated };
 }
 
-export const useUserGroupRecord = (userGroupId: string | undefined) =>
-  useCachedRecord(userGroupCache, "userGroupId", userGroupId);
+export const useUserGroupRecord = (userGroupId: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("userGroups", () => userGroupId ? { equals: { userGroupId } } : {});
+  return { record, hydrated };
+};
 
 /** The master permission catalog (moqui.security.UserPermission). */
 export function usePermissions() {
-  const { records, hydrated } = useCachedList<any>(permissionCache);
+  const { records, hydrated } = useDb<any>("permissions");
   return { permissions: computed(() => [...records.value].sort(byDescription)), records, hydrated };
 }
 
