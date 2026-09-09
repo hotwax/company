@@ -166,11 +166,11 @@
             <ion-list slot="content" lines="full">
               <ion-item v-for="run in recentRuns" :key="runKey(run)">
                 <ion-label>
-                  {{ statusLabel(run.statusId || run.status) }}
+                  {{ statusLabel(serviceJobRunStatus(run)) }}
                   <p>{{ formatDate(run.startTime || run.startedAt) }}</p>
                   <p v-if="run.endTime || run.completedAt">{{ translate('Completed') }} {{ formatDate(run.endTime || run.completedAt) }}</p>
                 </ion-label>
-                <ion-badge slot="end" :color="statusColor(run.statusId || run.status)">{{ statusLabel(run.statusId || run.status) }}</ion-badge>
+                <ion-badge slot="end" :color="statusColor(serviceJobRunStatus(run))">{{ statusLabel(serviceJobRunStatus(run)) }}</ion-badge>
               </ion-item>
               <ion-item v-if="!recentRuns.length"><ion-label>{{ translate('No recent runs found') }}</ion-label></ion-item>
             </ion-list>
@@ -224,6 +224,7 @@ import { computed, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
+import { serviceJobRunStatus } from '@/utils/serviceJobRun';
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
@@ -308,7 +309,7 @@ const nextRunLabel = computed(() => {
   return formatDateTime(nextRun) || translate('Not scheduled');
 });
 const lastRunLabel = computed(() => recentRuns.value.length
-  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)} · ${statusLabel(recentRuns.value[0].statusId || recentRuns.value[0].status)}`
+  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)} · ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
   : translate('No recent runs'));
 const productLabel = computed(() => jobDetails.value.instanceOfProductId || translate('Unavailable'));
 const scheduleOptions = [
@@ -366,7 +367,7 @@ async function load() {
   try {
     const [details, runs, audits] = await Promise.all([
       fetchJobDetail(props.jobName),
-      fetchJobRuns(props.jobName, { pageSize: 5, pageIndex: 0 }),
+      fetchJobRuns(props.jobName, { pageSize: 5, pageIndex: 0 }, { fromServer: true }),
       fetchJobAuditHistory(props.jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
     jobDetails.value = details || {};
