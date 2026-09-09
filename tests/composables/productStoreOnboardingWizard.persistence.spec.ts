@@ -100,8 +100,10 @@ describe("useProductStoreOnboardingWizard persistence", () => {
 
     wizard.updateDraftField("storeName", "Acme Outdoor Supply Company")
     expect(wizard.draft.productStoreId).toBe("ACME_OUTDOOR_SUPPLY_")
+    // An unpinned id keeps following the name: typing is a sequence of renames, so freezing here
+    // is what stranded the id on its first character.
     wizard.updateDraftField("storeName", "Renamed")
-    expect(wizard.draft.productStoreId).toBe("ACME_OUTDOOR_SUPPLY_")
+    expect(wizard.draft.productStoreId).toBe("RENAMED")
 
     wizard.goNext()
     expect(wizard.currentStepId).toBe("shopify")
@@ -177,6 +179,72 @@ describe("useProductStoreOnboardingWizard persistence", () => {
     expect(wizard.currentStepId).toBe("products")
     expect(wizard.draft.storeName).toBe("Legacy scoped store")
     expect(wizard.completedCount).toBe(2)
+  })
+
+  it("keeps the fetched id when an existing store hydrates name-before-id", async () => {
+    const { wizard } = await importWizardGraph()
+    wizard.initializeForProductStore("STORE_01")
+
+    // The view's STORE_DRAFT_FIELDS order: `storeName` lands before `productStoreId`, so the
+    // generator fires on the way through. The record's own id must still win.
+    wizard.updateDraftField("storeName", "Acme Outdoor Supply Company")
+    wizard.updateDraftField("productStoreId", "STORE_01")
+
+    expect(wizard.draft.productStoreId).toBe("STORE_01")
+    expect(wizard.draft.storeName).toBe("Acme Outdoor Supply Company")
+
+    // A later rename must not regenerate the id of a store that already exists.
+    wizard.updateDraftField("storeName", "Renamed Store")
+    expect(wizard.draft.productStoreId).toBe("STORE_01")
+  })
+
+  it("resumes an uncreated draft on base entry but not an already-created store", async () => {
+    const { wizard } = await importWizardGraph()
+
+    // Nothing created yet: the base route must keep the in-flight draft.
+    wizard.updateDraftField("storeName", "Half Finished")
+    wizard.selectStep("products")
+    wizard.initializeForNewSetup()
+    expect(wizard.draft.storeName).toBe("Half Finished")
+    expect(wizard.currentStepId).toBe("products")
+
+    // Once the store exists it owns the scoped url, so base entry starts a fresh setup.
+    wizard.setCreatedProductStoreId("STORE_01")
+    wizard.initializeForNewSetup()
+    expect(wizard.createdProductStoreId).toBe("")
+    expect(wizard.scopedProductStoreId).toBe("")
+    expect(wizard.draft.storeName).toBe("")
+    expect(wizard.draft.productStoreId).toBe("")
+
+    wizard.updateDraftField("storeName", "Second Store")
+    expect(wizard.draft.productStoreId).toBe("SECOND_STORE")
+  })
+
+  it("tracks the store name across keystrokes instead of freezing on the first one", async () => {
+    const { wizard } = await importWizardGraph()
+
+    // `ion-input` emits per keystroke, so this is what real typing looks like. Asserting on one
+    // whole-string call (as the other cases do) hides a guard that only ever fires once.
+    for(const value of ["A", "Ac", "Acm", "Acme", "Acme ", "Acme O"]) {
+      wizard.updateDraftField("storeName", value)
+    }
+
+    expect(wizard.draft.productStoreId).toBe("ACME_O")
+
+    // Clearing the name clears the derived id rather than stranding a stale one.
+    wizard.updateDraftField("storeName", "")
+    expect(wizard.draft.productStoreId).toBe("")
+  })
+
+  it("stops deriving the id once it is edited by hand", async () => {
+    const { wizard } = await importWizardGraph()
+
+    wizard.updateDraftField("storeName", "Acme")
+    expect(wizard.draft.productStoreId).toBe("ACME")
+
+    wizard.updateDraftField("productStoreId", "ACME_US")
+    wizard.updateDraftField("storeName", "Acme Outdoor")
+    expect(wizard.draft.productStoreId).toBe("ACME_US")
   })
 
   it("falls back after bad storage and clears persisted session state", async () => {

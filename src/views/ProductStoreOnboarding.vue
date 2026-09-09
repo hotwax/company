@@ -2635,7 +2635,11 @@ function loadSelectedProductStore(productStoreId: string, loadGeneration?: numbe
 async function initialiseSetup() {
   const requestedProductStoreId = String(props.productStoreId || "").trim()
   const generation = ++setupLoadGeneration
-  if(requestedProductStoreId) {onboarding.initializeForProductStore(requestedProductStoreId)}
+  if(requestedProductStoreId) {
+    onboarding.initializeForProductStore(requestedProductStoreId)
+  } else {
+    onboarding.initializeForNewSetup()
+  }
 
   if(!onboarding.draft.timezone) {
     onboarding.updateDraftField("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone)
