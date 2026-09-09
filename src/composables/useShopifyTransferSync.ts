@@ -313,7 +313,7 @@ async function loadReconciliation(options: {
     api({
       url: "shopify/webhook-subscription",
       method: "get",
-      // 250 is Shopify's page maximum, so one call covers every subscription on the shop.
+      // Refuse a full page below: it may hide additional subscriptions.
       params: { systemMessageRemoteId, queryParams: { first: 250 } },
     }) as Promise<any>,
     api({
@@ -337,10 +337,17 @@ async function loadReconciliation(options: {
     throw new Error("Shopify did not return the webhook subscriptions.");
   }
 
+  const subscriptions = subscriptionResp?.data?.webhookList ?? subscriptionResp?.webhookList;
+  if (!Array.isArray(subscriptions) || subscriptions.length >= 250) {
+    throw new Error('Shopify subscription listing is incomplete; registration is unavailable.');
+  }
   const enumData = enumResp?.data;
+  if (commonUtil.hasError(enumResp) || (!Array.isArray(enumData) && !Array.isArray(enumData?.enumerations))) {
+    throw new Error('OMS webhook topic configuration was not returned.');
+  }
 
   return reconcileWebhookTopics({
-    subscriptions: subscriptionResp?.data?.webhookList ?? subscriptionResp?.webhookList ?? [],
+    subscriptions,
     enumRows: Array.isArray(enumData) ? enumData : (enumData?.enumerations ?? []),
     receivedRows: receivedResp?.data?.systemMessages ?? [],
     receivedTotal: receivedResp?.data?.systemMessagesCount,
@@ -552,4 +559,36 @@ export function useShopifyWebhookReconciliation(
   }
 
   return { rows, summary, otherSubscriptionCount, receivedTruncated, loading, error, refresh };
+}
+
+/** Re-read subscriptions before adding one. Never replace a destination or replay an uncertain write. */
+export async function registerMissingTransferWebhook(shopId: string, topic: string, endPoint: string) {
+  const destination = endPoint.trim();
+  const eventBridge = /^arn:aws:events:[a-z0-9-]+:[0-9]*:event-source\/aws\.partner\/shopify\.com\/\S+$/.test(destination);
+  if (!eventBridge) {
+    let endpoint: URL;
+    try { endpoint = new URL(destination); } catch { throw new Error("Enter a full HTTPS callback URL or Shopify EventBridge ARN."); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash
+      || endpoint.hostname === 'localhost' || endpoint.hostname.endsWith('.localhost')
+      || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]') {
+      throw new Error("Enter a public HTTPS callback URL or Shopify EventBridge ARN for this OMS.");
+    }
+  }
+  const current = await loadReconciliation({shopId, topicPrefixes: ['INVENTORY_TRANSFERS_', 'INVENTORY_SHIPMENTS_']});
+  const row = current.rows.find(row => row.topic === topic);
+  if (!row || !row.systemMessageTypeId) throw new Error('This OMS has no consumer for the selected topic.');
+  if (row.subscribed) return {status: 'existing' as const, subscriptionId: row.subscriptionId};
+  const systemMessageRemoteId = await fetchShopRemoteId(shopId);
+  // Errors after submission cannot establish whether Shopify committed the subscription.
+  try {
+    const response: any = await api({url: 'shopify/webhook-subscription', method: 'post',
+      data: {systemMessageRemoteId, topic, endPoint: destination}});
+    const subscriptionId = response?.data?.webhookSubscriptionId;
+    if (commonUtil.hasError(response) || !subscriptionId) {
+      return {status: 'uncertain' as const};
+    }
+    return {status: 'created' as const, subscriptionId};
+  } catch {
+    return {status: 'uncertain' as const};
+  }
 }
