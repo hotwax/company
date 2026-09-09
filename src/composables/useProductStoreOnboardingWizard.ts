@@ -84,6 +84,8 @@ interface OnboardingWizardState {
   currentStepId: ProductStoreOnboardingStepId
   createdProductStoreId: string
   scopedProductStoreId: string
+  /** True once the id was chosen deliberately, so the store name must stop driving it. */
+  productStoreIdPinned: boolean
   stepStatuses: ProductStoreOnboardingStepStatuses
   draft: ProductStoreOnboardingDraft
   runRequests: Record<"products" | "inventory" | "orders", ProductStoreOnboardingRunRequest | null>
@@ -98,6 +100,7 @@ function defaultWizardState(): OnboardingWizardState {
     currentStepId: "name",
     createdProductStoreId: "",
     scopedProductStoreId: "",
+    productStoreIdPinned: false,
     stepStatuses: defaultStepStatuses(),
     draft: { ...DEFAULT_DRAFT },
     runRequests: { products: null, inventory: null, orders: null }
@@ -175,6 +178,11 @@ function readStoredWizardState(): OnboardingWizardState {
       currentStepId: migrateCurrentStepId(stored.currentStepId),
       createdProductStoreId,
       scopedProductStoreId,
+      // Older drafts predate the flag. An id already in the draft was deliberate, so treat it as
+      // pinned rather than letting the next keystroke rewrite it.
+      productStoreIdPinned: typeof stored.productStoreIdPinned === "boolean"
+        ? stored.productStoreIdPinned
+        : !!(stored.draft?.productStoreId || createdProductStoreId),
       stepStatuses: migrateStepStatuses(stored),
       draft: narrowDraft(stored.draft),
       runRequests: {
@@ -198,6 +206,7 @@ watch(
         currentStepId: state.currentStepId,
         createdProductStoreId: state.createdProductStoreId,
         scopedProductStoreId: state.scopedProductStoreId,
+        productStoreIdPinned: state.productStoreIdPinned,
         stepStatuses: state.stepStatuses,
         draft: state.draft,
         runRequests: state.runRequests
@@ -213,6 +222,7 @@ function replaceState(nextState: OnboardingWizardState) {
   state.currentStepId = nextState.currentStepId
   state.createdProductStoreId = nextState.createdProductStoreId
   state.scopedProductStoreId = nextState.scopedProductStoreId
+  state.productStoreIdPinned = nextState.productStoreIdPinned
   state.stepStatuses = nextState.stepStatuses
   state.draft = nextState.draft
   state.runRequests = nextState.runRequests
@@ -261,7 +271,18 @@ function selectStep(stepId: ProductStoreOnboardingStepId) {
 function updateDraftField(field: ProductStoreOnboardingDraftField, value: string) {
   state.draft[field] = value
 
-  if(field === "storeName" && value && !state.draft.productStoreId) {
+  // Writing the id pins it, so a later rename cannot overwrite a deliberate choice. That covers
+  // both the user typing in the field and the view hydrating a saved Product Store, whose id is
+  // permanent. Emptying the field unpins, letting the name drive it again.
+  if(field === "productStoreId") {
+    state.productStoreIdPinned = !!value
+
+    return
+  }
+
+  // `ion-input` emits per keystroke, so this has to re-derive on every one. Testing against the
+  // previous id instead of this flag froze it after the first character.
+  if(field === "storeName" && !state.productStoreIdPinned) {
     state.draft.productStoreId = generateInternalId(value).slice(0, 20)
   }
 }
@@ -286,7 +307,10 @@ function setCreatedProductStoreId(productStoreId: string) {
   const normalizedId = productStoreId.trim()
   state.createdProductStoreId = normalizedId
   state.scopedProductStoreId = normalizedId
-  if(normalizedId) {state.draft.productStoreId = normalizedId}
+  if(normalizedId) {
+    state.draft.productStoreId = normalizedId
+    state.productStoreIdPinned = true
+  }
 }
 
 function setRunRequest(
@@ -299,6 +323,18 @@ function setRunRequest(
 /** Explicitly starts a different new-store flow. Base-route entry alone deliberately does not. */
 function startNewSetup() {
   replaceState(defaultWizardState())
+}
+
+/**
+ * Base-route entry. An unfinished draft — one where no store has been created yet — resumes, which
+ * is the resumable behaviour this flow is designed around. A store that already exists does NOT
+ * resume here: `saveStore` redirects it to the scoped `/product-store-onboarding/:productStoreId`
+ * url, so reaching the bare base route again can only mean "set up another one". Resuming the old
+ * store there refills the form and disables the id field, which leaves a newly typed store name
+ * unable to generate its id.
+ */
+function initializeForNewSetup() {
+  if(state.createdProductStoreId || state.scopedProductStoreId) {startNewSetup()}
 }
 
 /**
@@ -351,6 +387,7 @@ export function useProductStoreOnboardingWizard() {
     setRunRequest,
     setCreatedProductStoreId,
     startNewSetup,
+    initializeForNewSetup,
     initializeForProductStore,
     goNext,
     goPrevious,

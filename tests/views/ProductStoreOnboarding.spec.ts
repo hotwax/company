@@ -209,6 +209,7 @@ function buildWizard() {
     },
     setCreatedProductStoreId: (id: string) => { state.createdProductStoreId = id },
     initializeForProductStore: vi.fn(),
+    initializeForNewSetup: vi.fn(),
     startNewSetup: vi.fn(),
     goNext: () => {
       const next = PRODUCT_STORE_ONBOARDING_STEPS[state.currentStepIndex + 1]
