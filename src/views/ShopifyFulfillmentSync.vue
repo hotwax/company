@@ -312,7 +312,7 @@
                      and displayStatus on the badge already says where it got to. -->
                 <ion-accordion value="events">
                   <ion-item slot="header" lines="full">
-                    <ion-label>{{ translate("events") }}</ion-label>
+                    <ion-label>{{ translate("Delivery events") }}</ion-label>
                     <ion-note v-if="card.details" slot="end">{{ card.details.events.length }}</ion-note>
                   </ion-item>
                   <div slot="content">
@@ -333,7 +333,7 @@
 
                 <ion-accordion value="tracking">
                   <ion-item slot="header" lines="full">
-                    <ion-label>{{ translate("trackingInfo") }}</ion-label>
+                    <ion-label>{{ translate("Tracking") }}</ion-label>
                     <ion-note v-if="card.details" slot="end">{{ card.details.trackingInfo.length }}</ion-note>
                   </ion-item>
                   <div slot="content">
@@ -353,7 +353,7 @@
 
                 <ion-accordion value="lineItems">
                   <ion-item slot="header" lines="full">
-                    <ion-label>{{ translate("fulfillmentLineItems") }}</ion-label>
+                    <ion-label>{{ translate("Items") }}</ion-label>
                     <ion-note v-if="card.details" slot="end">{{ card.details.lineItems.length }}</ion-note>
                   </ion-item>
                   <div slot="content">
