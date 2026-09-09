@@ -4,6 +4,7 @@ import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const cachedJobs = ref<any[]>([]);
+const cachedChannels = ref<any[]>([]);
 
 const harness = vi.hoisted(() => ({
   ensureChannelResetJob: vi.fn(),
@@ -30,9 +31,9 @@ vi.mock("@common", () => ({
 }));
 
 vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
-    records: cachedJobs,
-    rows: cachedJobs,
+  useCachedList: (entity: any) => ({
+    records: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
+    rows: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
     hydrated: ref(true),
   }),
 }));
@@ -49,6 +50,7 @@ describe("EditInventoryChannelModal", () => {
   beforeEach(() => {
     vi.resetModules();
     cachedJobs.value = [];
+    cachedChannels.value = [];
     harness.ensureChannelResetJob.mockReset();
     harness.fetchLocationsFromShopify.mockResolvedValue([]);
     harness.fetchShopifyShopLocations.mockResolvedValue([]);
@@ -208,4 +210,32 @@ describe("EditInventoryChannelModal", () => {
       },
     ]);
   });
+  it("keeps the current target and excludes active claims on this shop, including claims arriving after selection", async () => {
+    const { IonRadio, IonRadioGroup, IonFabButton } = await import("@ionic/vue");
+    const Component = (await import("@/components/shopify/EditInventoryChannelModal.vue")).default;
+    cachedChannels.value = [
+      { inventoryChannelId: "CURRENT", shopId: "SHOP", shopifyLocationId: "1" },
+      { inventoryChannelId: "OTHER", shopId: "SHOP", shopifyLocationId: "2" },
+      { inventoryChannelId: "EXPIRED", shopId: "SHOP", shopifyLocationId: "3", thruDate: Date.now() - 1000 },
+      { inventoryChannelId: "OTHER_SHOP", shopId: "ELSEWHERE", shopifyLocationId: "4" },
+    ];
+    harness.fetchLocationsFromShopify.mockResolvedValue([1, 2, 3, 4, 5].map(id => ({ id: `gid://shopify/Location/${id}`, name: `Location ${id}` })));
+    harness.fetchShopifyShopLocations.mockResolvedValue([{ shopifyLocationId: "5", facilityId: "PHYSICAL" }]);
+    const wrapper = mount(Component, {
+      props: { isOpen: false, channel: { inventoryChannelId: "CURRENT", shopId: "SHOP", shopifyLocationId: "1" } },
+      global: { stubs: { IonModal: { template: "<div><slot /></div>" } } },
+    });
+    await wrapper.setProps({ isOpen: true });
+    await flushPromises();
+    expect(wrapper.findAllComponents(IonRadio).map(row => row.props("value"))).toEqual(["1", "3", "4"]);
+    wrapper.findComponent(IonRadioGroup).vm.$emit("ionChange", { detail: { value: "4" } });
+    await flushPromises();
+    cachedChannels.value.push({ inventoryChannelId: "NEW", shopId: "SHOP", shopifyLocationId: "4" });
+    await flushPromises();
+    await wrapper.findComponent(IonFabButton).trigger("click");
+    expect(harness.updateInventoryChannel).not.toHaveBeenCalled();
+    expect(harness.showToast).toHaveBeenCalledWith("This location is no longer available for this channel. Choose another location.");
+    wrapper.unmount();
+  });
+
 });

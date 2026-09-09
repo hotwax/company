@@ -161,8 +161,9 @@ import {
   fetchShopifyShopLocations,
   updateInventoryChannel,
 } from "@/composables/useShopify";
-import { serviceJobCache } from "@/utils/cacheEntities";
+import { inventoryChannelCache, serviceJobCache } from "@/utils/cacheEntities";
 import { formatDateTime } from "@/utils";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
 
 const props = defineProps<{ isOpen: boolean; channel: any }>();
@@ -173,6 +174,7 @@ const emit = defineEmits<{
 }>();
 
 const { records: cachedJobs } = useCachedList<any>(serviceJobCache);
+const { records: inventoryChannels } = useCachedList<any>(inventoryChannelCache);
 
 const isSettingUpJob = ref(false);
 
@@ -265,9 +267,16 @@ const mappingByLocation = computed<Record<string, string>>(() =>
  * and cannot also be an aggregate one - plus this channel's own current location, which setup filters
  * out as "claimed" and an edit screen must obviously keep.
  */
+const claimedLocationIds = computed(() => new Set(inventoryChannels.value
+  .filter((channel: any) => String(channel.shopId) === String(props.channel?.shopId)
+    && String(channel.inventoryChannelId) !== String(props.channel?.inventoryChannelId)
+    && isEffectiveNow(channel, Date.now()))
+  .map((channel: any) => String(channel.shopifyLocationId))));
+
 const locationChoices = computed(() => shopifyLocations.value
   .filter((loc: any) => {
-    if (loc.shopifyLocationId === props.channel?.shopifyLocationId) return true;
+    if (String(loc.shopifyLocationId) === String(props.channel?.shopifyLocationId)) return true;
+    if (claimedLocationIds.value.has(String(loc.shopifyLocationId))) return false;
     const facilityId = mappingByLocation.value[loc.shopifyLocationId] ?? "";
     return !facilityId || facilityId === UNASSIGNED_FACILITY_ID;
   })
@@ -314,7 +323,12 @@ function close() {
 }
 
 async function save() {
-  if (!isDirty.value) return;
+  if (!isDirty.value || isSaving.value) return;
+  if (locationChanged.value && (loadingLocations.value || locationError.value
+    || !locationChoices.value.some((loc: any) => String(loc.shopifyLocationId) === draftLocationId.value))) {
+    commonUtil.showToast(translate("This location is no longer available for this channel. Choose another location."));
+    return;
+  }
   isSaving.value = true;
   try {
     await updateInventoryChannel({
