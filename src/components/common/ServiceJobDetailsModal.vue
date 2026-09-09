@@ -220,7 +220,7 @@ import {
 } from '@ionic/vue';
 import { closeOutline, refreshOutline, saveOutline } from 'ionicons/icons';
 import cronstrue from 'cronstrue';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
@@ -278,9 +278,10 @@ const draftParameters = ref<Record<string, string>>({});
 const modalTitle = computed(() => props.title || jobDetails.value.jobName || props.jobName || translate('Sync job details'));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
-const isDirty = computed(() => draftCronExpression.value !== originalCronExpression.value
+const hasLoadedJob = computed(() => !!props.jobName && jobDetails.value.jobName === props.jobName && !loadError.value);
+const isDirty = computed(() => hasLoadedJob.value && (draftCronExpression.value !== originalCronExpression.value
   || draftActive.value !== originalActive.value
-  || changedParameters.value.length > 0);
+  || changedParameters.value.length > 0));
 const isScheduleValid = computed(() => {
   if (!draftCronExpression.value) return false;
   try { cronstrue.toString(draftCronExpression.value); return true; } catch (_error) { return false; }
@@ -291,7 +292,7 @@ const isScheduleValid = computed(() => {
  * business: gate on it when the schedule is what changed, not when a parameter is.
  */
 const scheduleChanged = computed(() => draftCronExpression.value !== originalCronExpression.value);
-const canSave = computed(() => props.canEdit && isDirty.value && (!scheduleChanged.value || isScheduleValid.value));
+const canSave = computed(() => !isLoading.value && !isSaving.value && props.canEdit && isDirty.value && (!scheduleChanged.value || isScheduleValid.value));
 const scheduleDescription = computed(() => {
   if (!draftCronExpression.value) return translate('Not scheduled');
   try { return cronstrue.toString(draftCronExpression.value); } catch (_error) { return translate('Schedule preview unavailable'); }
@@ -361,25 +362,38 @@ const changedParameters = computed(() => jobParameters.value
   .filter((parameter) => draftParameters.value[parameter.name] !== originalParameters.value[parameter.name])
   .map((parameter) => ({ parameterName: parameter.name, parameterValue: draftParameters.value[parameter.name] })));
 
-watch(() => [props.isOpen, props.jobName], ([open]) => { if (open && props.jobName) void load(); });
+let loadGeneration = 0;
+watch(() => [props.isOpen, props.jobName], ([open]) => {
+  if (open && props.jobName) void load();
+  else { loadGeneration++; isLoading.value = false; }
+}, { immediate: true });
+onBeforeUnmount(() => { loadGeneration++; });
 
 async function load() {
   if (!props.jobName) return;
+  const request = ++loadGeneration;
+  const jobName = props.jobName;
   isLoading.value = true; loadError.value = '';
+  jobDetails.value = {}; recentRuns.value = []; auditHistory.value = [];
+  resetDraft();
   try {
     const [details, runs, audits] = await Promise.all([
-      fetchJobDetail(props.jobName),
-      fetchJobRuns(props.jobName, { pageSize: 5, pageIndex: 0 }, { fromServer: true }),
-      fetchJobAuditHistory(props.jobName, { pageSize: 10, pageIndex: 0 }),
+      fetchJobDetail(jobName),
+      fetchJobRuns(jobName, { pageSize: 5, pageIndex: 0 }, { fromServer: true }),
+      fetchJobAuditHistory(jobName, { pageSize: 10, pageIndex: 0 }),
     ]);
-    jobDetails.value = details || {};
+    if (request !== loadGeneration) return;
+    if (!details || details.jobName !== jobName) throw new Error('Job identity could not be verified');
+    jobDetails.value = details;
     recentRuns.value = Array.isArray(runs) ? runs : [];
     auditHistory.value = Array.isArray(audits) ? audits : [];
     resetDraft();
   } catch (_error) {
+    if (request !== loadGeneration) return;
     loadError.value = translate('Failed to load sync job details.');
     jobDetails.value = {}; recentRuns.value = []; auditHistory.value = [];
-  } finally { isLoading.value = false; }
+    resetDraft();
+  } finally { if (request === loadGeneration) isLoading.value = false; }
 }
 
 function resetDraft() {
@@ -404,7 +418,7 @@ async function requestClose() { if (await confirmDiscard()) { resetDraft(); emit
 function handleDidDismiss() { resetDraft(); emit('close'); }
 async function requestRefresh() { if (await confirmDiscard()) await load(); }
 async function runJobNow() {
-  if (!props.jobName || !props.canRunNow) return;
+  if (!hasLoadedJob.value || isLoading.value || isSaving.value || isRunning.value || !props.canRunNow) return;
   isRunning.value = true;
   try {
     const result = props.runHandler ? await props.runHandler() : await runNow(props.jobName);
