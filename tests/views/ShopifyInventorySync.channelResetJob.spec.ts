@@ -241,6 +241,21 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     expect(deliveryErrorsTitle().props("color") === "danger").toBe(danger);
   });
 
+  it.each([undefined, 1000])("retains an active job's cadence when its cached next run is %s", async (nextExecutionDateTime) => {
+    cachedJobs.value = [{
+      jobName: 'purge_OldShopifyInventoryAdjustmentDetails_hourly',
+      serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails',
+      paused: 'N', cronExpression: '0 0 * * * ?', cronString: 'Every hour', nextExecutionDateTime,
+    }];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old inventory events (all Shopify connections)'))!;
+    expect(row.text()).toContain('Runs every hour');
+    expect(row.text()).not.toContain('No active schedule');
+    wrapper.unmount();
+  });
+
   it("surfaces each channel's own jobs on that channel's card", async () => {
     cachedJobs.value = [
       {
