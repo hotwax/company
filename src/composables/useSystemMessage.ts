@@ -451,6 +451,52 @@ export function useSystemMessage() {
     return response?.data ?? {};
   };
 
+  /**
+   * Clear a message's error state so the sweep picks it up again.
+   *
+   * This is the recovery for SmsgError, which is TERMINAL to the sweep: it stops retrying once
+   * `failCount` reaches the limit, and only resetting the message puts it back in the queue. The
+   * stored payload is untouched — like `resendSystemMessage`, nothing is rebuilt, so a delivery
+   * that already landed cannot double-apply.
+   */
+  const resetSystemMessageError = async (systemMessageId: string) => {
+    if(!systemMessageId) {throw new Error("A system message is required to reset.");}
+    const response = await api({
+      url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/resetError`,
+      method: "POST",
+      data: { systemMessageId }
+    }) as any;
+    if(commonUtil.hasError(response)) {
+      logger.error("Reset rejected for system message", systemMessageId, response);
+      throw new Error("The OMS rejected the reset request.");
+    }
+
+    return response?.data ?? {};
+  };
+
+  /**
+   * Force a message to an explicit status.
+   *
+   * Exists for the one state neither send nor reset can reach: a message stranded in SmsgSending
+   * (a crashed send never rolled it back), which the sweep skips because it only picks up
+   * SmsgProduced and SmsgError. Setting it back to SmsgProduced is the documented unstick.
+   */
+  const forceSystemMessageStatus = async (systemMessageId: string, statusId: string) => {
+    if(!systemMessageId) {throw new Error("A system message is required to update.");}
+    if(!statusId) {throw new Error("A status is required to update a system message.");}
+    const response = await api({
+      url: `admin/systemMessages/${encodeURIComponent(systemMessageId)}/update`,
+      method: "POST",
+      data: { systemMessageId, statusId }
+    }) as any;
+    if(commonUtil.hasError(response)) {
+      logger.error("Status update rejected for system message", systemMessageId, response);
+      throw new Error("The OMS rejected the status update.");
+    }
+
+    return response?.data ?? {};
+  };
+
   return {
     ...toRefs(state),
     fetchSystemMessageById,
@@ -458,6 +504,8 @@ export function useSystemMessage() {
     fetchSystemMessageErrors,
     ensureSystemMessageErrors,
     resendSystemMessage,
+    resetSystemMessageError,
+    forceSystemMessageStatus,
     fetchShopifyBulkOperation,
     fetchShopifyBulkOperationBySystemMessageId,
     fetchSystemMessageLogDetailsPage,

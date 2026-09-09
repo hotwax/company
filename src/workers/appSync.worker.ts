@@ -14,6 +14,7 @@ import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
 import "./domains/shopifyLocationInventoryDomain";
 import "./domains/shopifyTransferSyncDomain";
+import "./domains/shopifyFulfillmentHistoryDomain";
 import "./domains/netSuiteOrderPushDomain";
 import "./domains/referenceDomains";
 

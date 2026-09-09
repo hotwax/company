@@ -227,7 +227,7 @@ const userPages = [
 
 const facilitiesPages = [
   {
-    title: "Find",
+    title: "Facilities",
     url: "/facilities/find",
     iosIcon: storefrontOutline,
     mdIcon: storefrontOutline,

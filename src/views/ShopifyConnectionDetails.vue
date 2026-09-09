@@ -217,6 +217,12 @@
             @open="openOrderSyncEntry()"
           />
           <section>
+            <ion-item detail class="item-box" lines="none" button @click="openFulfillmentSync()">
+              <ion-label>
+                {{ translate("Fulfillment sync") }}
+                <p>{{ translate("See which fulfillments Shopify has not confirmed, and how late each one is") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
             </ion-item>
@@ -1454,6 +1460,10 @@ function openInventorySync() {
 
 function openTransferSync() {
   router.push(`/shopify-connection-details/${props.id}/transfer-sync`);
+}
+
+function openFulfillmentSync() {
+  router.push(`/shopify-connection-details/${props.id}/fulfillment-sync`);
 }
 
 function openShipmentMethods() {
