@@ -6686,3 +6686,49 @@ export const unsubscribeWebhook = async (payload: any): Promise<any> => {
     }
   });
 };
+
+/** Read every variant and its existing OMS mapping without re-running an import. */
+export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
+  const productId = getExactShopifyProductGid(payload.productId);
+  if (!productId || !payload.systemMessageRemoteId || !payload.productStoreId) throw new Error('Product, Shopify connection and product store are required.');
+  const result: any[] = [];
+  let after: string | null = null;
+  const cursors = new Set<string>();
+  do {
+    const response = await requestBackend<any>({url: 'shopify/graphql', method: 'post', data: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      queryText: `query ProductMappings($id: ID!, $after: String) { product(id: $id) { variants(first: 100, after: $after) { nodes { id legacyResourceId title sku inventoryItem { id tracked } } pageInfo { hasNextPage endCursor } } } }`,
+      variables: {id: productId, after}
+    }});
+    const data = response?.response || response?.data || response;
+    if (response?.errors?.length || data?.errors?.length) throw new Error('Shopify could not return product mappings.');
+    const variants = data?.product?.variants;
+    if (!Array.isArray(variants?.nodes)) throw new Error('Shopify product variants were not returned.');
+    const ids = variants.nodes.map((v: any) => String(v.legacyResourceId));
+    let mappings: any[] = [];
+    if (ids.length) {
+      let pageIndex = 0;
+      let page: any[];
+      do {
+        const response = await requestBackend<any>({url: 'oms/dataDocumentView', method: 'post', data: {
+          dataDocumentId: 'PRODUCT_STORE_PRODUCT', pageIndex, pageSize: 100,
+          customParametersMap: {productStoreId: payload.productStoreId, shopifyProductId: ids},
+          fieldsToSelect: 'productId,shopifyProductId,internalName'
+        }});
+        if (!Array.isArray(response?.entityValueList)) throw new Error('HotWax product mappings were not returned.');
+        page = response.entityValueList;
+        mappings.push(...page);
+        pageIndex++;
+      } while (page.length === 100);
+    }
+    result.push(...variants.nodes.map((v: any) => ({id: String(v.legacyResourceId), title: v.title, sku: v.sku,
+      inventoryItemId: v.inventoryItem?.id?.split('/').pop(), tracked: v.inventoryItem?.tracked === true,
+      mappings: mappings.filter(m => String(m.shopifyProductId) === String(v.legacyResourceId))
+    })));
+    if (!variants.pageInfo?.hasNextPage) break;
+    after = variants.pageInfo.endCursor;
+    if (!after || cursors.has(after)) throw new Error('Shopify variant pagination did not advance.');
+    cursors.add(after);
+  } while (after);
+  return result;
+}
