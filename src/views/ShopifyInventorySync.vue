@@ -2016,7 +2016,7 @@ const PUBLISH_PENDING_SERVICES = [
   "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments",
 ];
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
-const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails";
 
@@ -2420,8 +2420,6 @@ function findChannelResetJob(channelId: string) {
     String(parameterMap(job).inventoryChannelId ?? "") === targetId) ||
     cachedJobs.value.find((job: any) =>
       job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
-      job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
-    cachedJobs.value.find((job: any) =>
       job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
     null;
 }

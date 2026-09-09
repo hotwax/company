@@ -187,8 +187,6 @@ const channelResetJob = computed(() => {
     || cachedJobs.value.find((job: any) =>
       job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
       job.jobName === `reset_InventoryChannelInventory_${channelId}`)
-    || cachedJobs.value.find((job: any) =>
-      job.jobName === `reset_InventoryChannelInventory_${channelId}`)
     || null;
 });
 

@@ -3242,5 +3242,8 @@
   "Shopify quantity": "Shopify quantity",
   "Shopify status": "Shopify status",
   "Checked at": "Checked at",
-  "This location is no longer available for this channel. Choose another location.": "This location is no longer available for this channel. Choose another location."
+  "This location is no longer available for this channel. Choose another location.": "This location is no longer available for this channel. Choose another location.",
+  "Could not verify the existing reset job.": "Could not verify the existing reset job.",
+  "The existing reset job uses an unexpected service. Review its configuration before changing it.": "The existing reset job uses an unexpected service. Review its configuration before changing it.",
+  "The OMS rejected the reset job repair.": "The OMS rejected the reset job repair."
 }

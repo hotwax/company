@@ -39,7 +39,7 @@ vi.mock("@/composables/useCachedList", () => ({
 }));
 
 vi.mock("@/composables/useShopify", () => ({
-  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
   fetchLocationsFromShopify: (...args: any[]) => harness.fetchLocationsFromShopify(...args),
   fetchShopifyShopLocations: (...args: any[]) => harness.fetchShopifyShopLocations(...args),
@@ -89,7 +89,7 @@ describe("EditInventoryChannelModal", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 0 * * ?",
         runtimeDataId: "RD_1",
@@ -127,7 +127,7 @@ describe("EditInventoryChannelModal", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 0 * * ?",
         runtimeData: {
