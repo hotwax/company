@@ -2343,7 +2343,11 @@ const aggregateResetJobs = computed<any[]>(() => {
 const primaryAggregateResetJob = computed<any>(() =>
   nextExecutionFor(aggregateResetJobs.value) ?? aggregateResetJobs.value[0] ?? null);
 
+const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
+  String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
+
 const watchedJobNames = computed(() => [...new Set([
+  locationPublishJob.value?.jobName,
   physicalResetJob.value?.jobName,
   effectiveDateJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
@@ -2539,6 +2543,12 @@ const sharedJobs = computed(() => {
   }
 
   definitions.push(
+    {
+      name: "Publish physical location event batches (all Shopify connections)",
+      jobs: locationPublishJob.value ? [locationPublishJob.value] : [],
+      icon: locationOutline,
+      setup: "",
+    },
     {
       name: "Process effective-dated inventory changes",
       jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
@@ -3586,8 +3596,6 @@ const locationInventorySummary = computed(() => allLocationInventorySummaries.va
  *  warns once the oldest unassigned row has outlived two publish intervals. */
 const LOCATION_PUBLISH_INTERVAL_MS = 60_000;
 
-const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
-  String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
 const locationPublishJobStatus = computed(() => {
   if (!locationPublishJob.value) return translate("Not configured");
   return locationPublishJob.value.paused === "Y" ? translate("Paused") : translate("Active");
