@@ -6805,3 +6805,26 @@ export async function repairInventoryResetImportConfig(): Promise<void> {
     throw new Error(translate("The update was submitted, but its saved value could not be verified. Check again before making another change."));
   }
 }
+
+
+/** Paged live history projection: current activation confirmations are not an append-only cache.
+ * Fetch only on entry, filtering, pagination or explicit refresh; no competing polling loop.
+ */
+export async function fetchProductFacilityActivations(shopId: string, params: {
+  activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
+}): Promise<{
+  activations: import("@/utils/shopifyActivation").ProductFacilityActivation[];
+  totalCount: number; checkedAt: string | number; itemSpecificConfirmation: boolean;
+}> {
+  if (!shopId) throw new Error("A Shopify connection is required.");
+  const response: any = await api({
+    url: "sob/shopify/productFacilityActivations", method: "get", params: { ...params, shopId },
+  });
+  if (commonUtil.hasError(response)) throw new Error("The OMS could not read product activation records.");
+  const data = response.data;
+  if (!Array.isArray(data?.activations) || !Number.isFinite(Number(data?.totalCount)) ||
+      typeof data?.itemSpecificConfirmation !== "boolean" || !data?.checkedAt) {
+    throw new Error("The OMS returned an unsupported activation response. Check the activation-monitor endpoint version.");
+  }
+  return { ...data, totalCount: Number(data.totalCount) };
+}

@@ -182,6 +182,18 @@
           </ion-card>
         </section>
 
+        <ion-card>
+          <ion-list lines="none">
+            <ion-item button detail @click="router.push(`/shopify-connection-details/${props.id}/inventory-sync/activations`)">
+              <ion-icon slot="start" :icon="checkmarkCircleOutline" />
+              <ion-label class="ion-text-wrap">
+                <h2>{{ translate("Product activation") }}</h2>
+                <p>{{ translate("Monitor pending product locations and review the latest Shopify activation confirmations.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+        </ion-card>
+
         <section class="inventory-channels">
           <ion-item lines="none">
             <ion-label>
