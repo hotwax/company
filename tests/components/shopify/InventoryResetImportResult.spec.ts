@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import { describe, it, expect, vi } from 'vitest';
 const harness = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('@common', () => ({ translate: (text: string) => text }));
+vi.mock('@/composables/useShopify', () => ({ repairInventoryResetImportConfig: vi.fn() }));
 vi.mock('@/utils', () => ({ formatDateTime: (value: any) => String(value) }));
 vi.mock('@/composables/useDataManager', () => ({ useDataManager: () => ({ errorLogs: ref([]), fetchLogDetails: harness.fetch }) }));
 import Result from '@/components/shopify/InventoryResetImportResult.vue';

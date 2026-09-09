@@ -3594,5 +3594,11 @@
   "The reset import could not be verified. Check again before retrying the reset.": "The reset import could not be verified. Check again before retrying the reset.",
   "Crashed": "Crashed",
   "Reset import configuration needs updating": "Reset import configuration needs updating",
-  "Feed generated": "Feed generated"
+  "Feed generated": "Feed generated",
+  "Could not verify the reset import configuration.": "Could not verify the reset import configuration.",
+  "The reset importer has an unexpected configuration. Review it before changing it.": "The reset importer has an unexpected configuration. Review it before changing it.",
+  "The OMS rejected the reset importer update.": "The OMS rejected the reset importer update.",
+  "The update was submitted, but its saved value could not be verified. Check again before making another change.": "The update was submitted, but its saved value could not be verified. Check again before making another change.",
+  "Repair updates the shared aggregate reset importer for every shop on this OMS. It does not retry imports or change schedules.": "Repair updates the shared aggregate reset importer for every shop on this OMS. It does not retry imports or change schedules.",
+  "Repair configuration": "Repair configuration"
 }
