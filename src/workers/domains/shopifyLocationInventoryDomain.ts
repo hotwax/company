@@ -2,7 +2,7 @@ import {
   shopifyLocationInventoryAdjustmentDetailCache,
   shopifyLocationInventorySummaryCache,
 } from "@/utils/cacheEntities";
-import { normalizeLocationInventorySummary } from "@/utils/shopifyLocationInventory";
+import { locationInventoryAdjustmentKey, normalizeLocationInventorySummary } from "@/utils/shopifyLocationInventory";
 import { registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet } from "./workerFetch";
 
@@ -12,14 +12,6 @@ import { pageAll, workerGet } from "./workerFetch";
 const DETAIL_ENDPOINT = "sob/shopify/locationInventoryAdjustmentDetails";
 /** get#ShopifyLocationInventoryAdjustmentDetails wraps its rows in a `details` list, not a bare array. */
 const DETAIL_COLLECTION = "details";
-
-/** Mirrors `shopifyLocationInventoryAdjustmentDetailProjection.buildKey` in cacheEntities.ts. */
-function detailKey(raw: Record<string, unknown>): string | undefined {
-  const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId];
-  if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
-
-  return JSON.stringify(identity.map(String));
-}
 
 interface LocationDetailSyncArgs {
   shopId?: string;
@@ -40,7 +32,7 @@ registerSyncDomain({
       ctx, url: DETAIL_ENDPOINT, collectionKey: DETAIL_COLLECTION,
       strictCollection: true, requireComplete: true,
       params: { shopId, mode: "RECENT" }, batchSize: args.batchSize ?? 250,
-      keyOf: detailKey,
+      keyOf: locationInventoryAdjustmentKey,
     });
     // Read the summary before committing: a failed pass must retain the prior snapshot.
     const response = await workerGet(ctx, DETAIL_ENDPOINT, { shopId, pageSize: 1 });
@@ -66,7 +58,7 @@ registerSyncDomain({
       url: DETAIL_ENDPOINT,
       collectionKey: DETAIL_COLLECTION,
       params: { shopId, shopifyLocationId, eventTypeId, mode: "RECENT" },
-      keyOf: detailKey,
+      keyOf: locationInventoryAdjustmentKey,
       batchSize: 50,
       label: "locationInventoryAdjustmentDetails:refetchOne",
     });
