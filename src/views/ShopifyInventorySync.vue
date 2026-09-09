@@ -2032,6 +2032,7 @@ const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#Shop
 const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails";
+const PURGE_LOCATION_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
@@ -2328,6 +2329,8 @@ const effectiveDateJob = computed<any>(() =>
 /** Retention cleanup for the event ledger. Connector-seeded and OMS-wide, so it is not per channel. */
 const purgeDetailsJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === PURGE_DETAILS_SERVICE) ?? null);
+const purgeLocationDetailsJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === PURGE_LOCATION_DETAILS_SERVICE) ?? null);
 
 /** The manual discard handle. One job serves every channel via its inventoryChannelId parameter. */
 const discardEventsJob = computed<any>(() =>
@@ -2373,6 +2376,7 @@ const watchedJobNames = computed(() => [...new Set([
   physicalResetJob.value?.jobName,
   effectiveDateJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
+  purgeLocationDetailsJob.value?.jobName,
   discardEventsJob.value?.jobName,
   ...inventoryAdjustmentSenderJobs.value.map((job: any) => job.jobName),
   ...pendingPublisherJobs.value.map((job: any) => job.jobName),
@@ -2596,8 +2600,14 @@ const sharedJobs = computed(() => {
     },
     // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
     {
-      name: "Purge old inventory events (all Shopify connections)",
+      name: "Purge old aggregate inventory events (all Shopify connections)",
       jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+      icon: trashBinOutline,
+      setup: "",
+    },
+    {
+      name: "Purge old physical location events (all Shopify connections)",
+      jobs: purgeLocationDetailsJob.value ? [purgeLocationDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
     },

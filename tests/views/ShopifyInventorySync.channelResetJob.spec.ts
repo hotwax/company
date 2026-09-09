@@ -250,9 +250,25 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import('@/views/ShopifyInventorySync.vue')).default;
     const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
     await flushPromises();
-    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old inventory events (all Shopify connections)'))!;
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old aggregate inventory events (all Shopify connections)'))!;
     expect(row.text()).toContain('Runs every hour');
     expect(row.text()).not.toContain('No active schedule');
+    wrapper.unmount();
+  });
+
+  it('opens each retention row with its own backend job', async () => {
+    cachedJobs.value = [
+      { jobName: 'AGGREGATE_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails', paused: 'N' },
+      { jobName: 'PHYSICAL_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails', paused: 'Y' },
+    ];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    for (const [label, jobName] of [['Purge old aggregate inventory events', 'AGGREGATE_RETENTION'], ['Purge old physical location events', 'PHYSICAL_RETENTION']]) {
+      const row = wrapper.findAll('ion-item').find(item => item.text().includes(label))!;
+      await row.trigger('click');
+      expect(wrapper.findComponent({ name: 'ServiceJobDetailsModal' }).props('jobName')).toBe(jobName);
+    }
     wrapper.unmount();
   });
 
