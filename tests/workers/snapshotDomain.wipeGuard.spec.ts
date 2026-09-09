@@ -18,64 +18,40 @@ const state = vi.hoisted(() => ({
   syncedAlready: false,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageAll: vi.fn(async () => state.fetched),
+  pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => null),
+  workerPost: vi.fn(async () => null),
   unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
-
-vi.mock("./workerFetch", () => ({
-  pageAll: vi.fn(async () => state.fetched),
-  workerGet: vi.fn(async () => null),
-  unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
-}));
-
-
-import { setAppDb } from "@common/db/appDbRegistry";
-
-const mockRaw = () => ({
-  table: () => ({
-    count: async () => state.cachedCount,
-    toCollection: () => ({ primaryKeys: async () => [] }),
-    bulkDelete: async () => {},
-    bulkPut: async () => {},
-    put: async () => {},
-    delete: async () => {},
-  }),
-  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
-});
-
-const mockDb = { raw: mockRaw, get: mockRaw };
-setAppDb(mockDb as any);
-
-vi.mock("@/db/companyDb", () => ({
-  companyDb: mockDb,
-}));
-
 
 vi.mock("@common/db/baseDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
     ...actual,
     hasSyncedThisLogin: vi.fn(async () => state.syncedAlready),
-    markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
+    markSyncedThisLogin: vi.fn(async (_db: any, name: string) => { state.marked.push(name); }),
   };
 });
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  defineCachedEntity: () => ({
-    table: "productStores",
-    snapshotReplace: vi.fn(async (rows: any[]) => {
-      state.snapshotCalls.push(rows);
-      return { written: rows.length, pruned: state.cachedCount };
+const stubDb = () => ({
+  table: () => ({
+    count: async () => state.cachedCount,
+    toArray: async () => [],
+    toCollection: () => ({
+      primaryKeys: async () => Array.from({ length: state.cachedCount }, (_, i) => `K${i}`),
+      toArray: async () => [],
     }),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-    remove: vi.fn(async () => undefined),
+    where: () => ({ equals: () => ({ toArray: async () => [] }) }),
+    bulkPut: async (rows: any[]) => { state.snapshotCalls.push(rows); },
+    bulkDelete: async (keys: any[]) => { state.snapshotCalls.push(keys); },
+    put: async () => {},
+    delete: async () => {},
   }),
-  hasSyncedThisLogin: vi.fn(async () => state.syncedAlready),
-  markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
-}));
-
+  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+  syncMeta: { get: async () => undefined, put: async () => {}, delete: async () => {} },
+}) as any;
 
 const CONFIG = {
   name: "productStoreTest",
@@ -90,9 +66,7 @@ const ctx = { maargUrl: "https://x.test/", token: "t" };
 async function register() {
   vi.resetModules();
   const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
-  registerSnapshotDomain(CONFIG as any);
-  const { getSyncDomain } = await import("@/workers/syncRegistry");
-  return getSyncDomain(CONFIG.name)!;
+  return registerSnapshotDomain(CONFIG as any, () => stubDb());
 }
 
 beforeEach(() => {
@@ -125,7 +99,6 @@ describe("snapshot domain zero-row wipe guard", () => {
     const written = await domain.sync(ctx as any, undefined, { force: false });
 
     expect(written).toBe(0);
-    expect(state.snapshotCalls).toHaveLength(1);
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 
@@ -149,7 +122,9 @@ describe("snapshot domain zero-row wipe guard", () => {
     const written = await domain.sync(ctx as any, undefined, { force: false });
 
     expect(written).toBe(1);
-    expect(state.snapshotCalls).toHaveLength(1);
+    expect(state.snapshotCalls).toHaveLength(2); // 1 bulkDelete (stale keys) + 1 bulkPut
+    expect(state.snapshotCalls[1][0]).toMatchObject({ productStoreId: "STORE_1" });
+    expect(state.snapshotCalls[1][0]).toHaveProperty("syncedAt");
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 });
