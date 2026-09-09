@@ -315,7 +315,7 @@ export const FEED_SYSTEM_MESSAGE_SERVICE =
 /** Must match the sync panel's physicalResetJob matcher. */
 export const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 export const ABSOLUTE_CHANNEL_RESET_SERVICE =
-  "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+  "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 
 /** Existence probe so both ensure* helpers are safe to call twice. */
 async function serviceJobExists(jobName: string): Promise<boolean> {
@@ -489,7 +489,28 @@ export async function ensureChannelResetJob(params: {
   description?: string;
 }): Promise<string> {
   const jobName = `reset_InventoryChannelInventory_${params.inventoryChannelId}`;
-  if(await serviceJobExists(jobName)) {return jobName;}
+  let existing: any;
+  if (await serviceJobExists(jobName)) {
+    const response: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if (commonUtil.hasError(response)) throw new Error(translate("Could not verify the existing reset job."));
+    existing = response?.data?.jobDetail ?? response?.data;
+    if (!existing?.jobName) throw new Error(translate("Could not verify the existing reset job."));
+  }
+  if (existing?.jobName) {
+    if (existing.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE) return jobName;
+    if (existing.serviceName !== "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory") {
+      throw new Error(translate("The existing reset job uses an unexpected service. Review its configuration before changing it."));
+    }
+    // Repair only the retired service name. Keep the operator's cadence and channel parameters.
+    const response: any = await api({
+      url: `admin/serviceJobs/${jobName}`, method: "PUT",
+      data: { jobName, serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE, paused: "Y" },
+    });
+    if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset job repair."));
+    await refreshAfterMutation("serviceJob", { jobName });
+    return jobName;
+  }
+
 
   await api({
     url: "admin/serviceJobs",

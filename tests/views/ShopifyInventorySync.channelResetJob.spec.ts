@@ -148,7 +148,7 @@ vi.mock("@/composables/useShopify", () => ({
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH: "push",
-  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
   DISCARD_PENDING_EVENTS_SERVICE: "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents",
   PRODUCED_SENDER_SERVICE: "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages",
   INVENTORY_ADJUSTMENT_MESSAGE_TYPE: "ShopifyInventoryAdjustment",
@@ -245,7 +245,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [
@@ -254,7 +254,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
       },
       {
         jobName: "reset_InventoryChannelInventory_IC_1002",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "Y",
         cronExpression: "0 0 4 * * ?",
         serviceJobParameters: [
@@ -304,7 +304,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [

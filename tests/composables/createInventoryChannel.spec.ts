@@ -21,7 +21,7 @@ vi.mock("@/composables/useCachedList", () => ({
   byDescription: () => 0,
 }));
 
-import { createInventoryChannel } from "@/composables/useShopify";
+import { createInventoryChannel, ensureChannelResetJob } from "@/composables/useShopify";
 
 describe("createInventoryChannel", () => {
   it("sends fromDate in the payload when creating an inventory channel", async () => {
@@ -83,5 +83,38 @@ describe("createInventoryChannel", () => {
         fromDate: customFromDate,
       },
     });
+  });
+});
+
+
+describe("ensureChannelResetJob", () => {
+  it("creates the main feed-generation service rather than the removed direct sender", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: {} });
+    await ensureChannelResetJob({ inventoryChannelId: "IC_NEW" });
+    expect(harness.api).toHaveBeenCalledWith(expect.objectContaining({
+      method: "POST", url: "admin/serviceJobs",
+      data: expect.objectContaining({ serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed", paused: "Y" }),
+    }));
+  });
+  it("repairs a legacy job without replacing its schedule or parameters", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: { jobDetail: {
+      jobName: "reset_InventoryChannelInventory_IC_OLD",
+      serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+      cronExpression: "0 5 * * * ?", paused: "Y",
+    } } });
+    await ensureChannelResetJob({ inventoryChannelId: "IC_OLD" });
+    expect(harness.api).toHaveBeenCalledWith({
+      url: "admin/serviceJobs/reset_InventoryChannelInventory_IC_OLD", method: "PUT",
+      data: { jobName: "reset_InventoryChannelInventory_IC_OLD", serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed", paused: "Y" },
+    });
+    expect(harness.api.mock.calls.filter(([arg]) => arg.method === "POST")).toHaveLength(0);
+  });
+  it("does not overwrite an unrelated service at the expected job name", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValue({ data: { jobDetail: { jobName: "reset_InventoryChannelInventory_IC_OTHER", serviceName: "other.Service#run" } } });
+    await expect(ensureChannelResetJob({ inventoryChannelId: "IC_OTHER" })).rejects.toThrow("unexpected service");
+    expect(harness.api.mock.calls.every(([arg]) => arg.method === "get")).toBe(true);
   });
 });
