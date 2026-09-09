@@ -481,8 +481,8 @@
               <ion-card-header>
                 <ion-card-title>{{ run.id }}</ion-card-title>
                 <ion-card-subtitle>Aggregate location ATP reset</ion-card-subtitle>
-                <ion-badge :color="run.badgeColor">
-                  {{ run.status }}
+                <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">
+                  {{ run.importLogId ? translate('Feed generated') : run.status }}
                 </ion-badge>
               </ion-card-header>
               <ion-list lines="full">
@@ -512,6 +512,7 @@
                   </ion-chip>
                 </ion-item>
               </ion-list>
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" />
             </ion-card>
             <ion-card v-if="jobsHydrated && inventoryChannelsHydrated && !aggregateResetRuns.length">
               <ion-item lines="none">
@@ -1813,6 +1814,7 @@ import {
   watch,
 } from "vue";
 import { useRouter } from "vue-router";
+import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
 import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
@@ -2736,7 +2738,10 @@ function projectRun(job: any, run: any, scope: string) {
     .map(([name, value]) => `${name}: ${value}`)
     .join(", ");
 
+  let importLogId = "";
+  try { importLogId = String((typeof run.results === "string" ? JSON.parse(run.results) : run.results)?.dataManagerLogId || ""); } catch { /* No structured result recorded. */ }
   return {
+    importLogId,
     id: run.jobRunId,
     parameters: run.parameters || configuredParameters || "No parameters recorded",
     scope,
