@@ -10,17 +10,21 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@common/db", () => ({
-  createSyncService: () => ({
-    start: async () => {},
-    setDomains: async () => {},
-    syncNow: async () => {},
-    syncDomainNow: async () => 0,
-    refetchOne: async () => 0,
-    registeredDomains: async () => [],
-    stop: () => {},
-  }),
-}));
+vi.mock("@common/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db")>();
+  return {
+    ...actual,
+    createSyncService: () => ({
+      start: async () => {},
+      setDomains: async () => {},
+      syncNow: async () => {},
+      syncDomainNow: async () => 0,
+      refetchOne: async () => 0,
+      registeredDomains: async () => [],
+      stop: () => {},
+    }),
+  };
+});
 
 /**
  * `markSyncedThisLogin` writes `loginSync:<domain>`. Deleting `domain:<domain>` clears nothing,
