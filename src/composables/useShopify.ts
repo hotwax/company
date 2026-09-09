@@ -6695,14 +6695,14 @@ export async function fetchProductMappings(payload: {productId: string; systemMe
   let after: string | null = null;
   const cursors = new Set<string>();
   do {
-    const response = await requestBackend<any>({url: 'shopify/graphql', method: 'post', data: {
+    const response: any = await requestBackend<any>({url: 'shopify/graphql', method: 'post', data: {
       systemMessageRemoteId: payload.systemMessageRemoteId,
       queryText: `query ProductMappings($id: ID!, $after: String) { product(id: $id) { variants(first: 100, after: $after) { nodes { id legacyResourceId title sku inventoryItem { id tracked } } pageInfo { hasNextPage endCursor } } } }`,
       variables: {id: productId, after}
     }});
-    const data = response?.response || response?.data || response;
+    const data: any = response?.response || response?.data || response;
     if (response?.errors?.length || data?.errors?.length) throw new Error('Shopify could not return product mappings.');
-    const variants = data?.product?.variants;
+    const variants: any = data?.product?.variants;
     if (!Array.isArray(variants?.nodes)) throw new Error('Shopify product variants were not returned.');
     const ids = variants.nodes.map((v: any) => String(v.legacyResourceId));
     let mappings: any[] = [];
@@ -6710,7 +6710,7 @@ export async function fetchProductMappings(payload: {productId: string; systemMe
       let pageIndex = 0;
       let page: any[];
       do {
-        const response = await requestBackend<any>({url: 'oms/dataDocumentView', method: 'post', data: {
+        const response: any = await requestBackend<any>({url: 'oms/dataDocumentView', method: 'post', data: {
           dataDocumentId: 'PRODUCT_STORE_PRODUCT', pageIndex, pageSize: 100,
           customParametersMap: {productStoreId: payload.productStoreId, shopifyProductId: ids},
           fieldsToSelect: 'productId,shopifyProductId,internalName'

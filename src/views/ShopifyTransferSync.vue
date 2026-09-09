@@ -431,6 +431,24 @@
           </ion-label>
         </ion-item>
 
+        <ion-card v-if="webhookSummary?.missingCount || webhookSetupResults.length">
+          <ion-card-header><ion-card-title>{{ translate('Register missing topics') }}</ion-card-title></ion-card-header>
+          <ion-card-content>
+            <ion-input v-model="webhookCallbackUrl" type="text" :disabled="webhookSetupBusy || webhookSetupUncertain" :label="translate('HTTPS callback URL or EventBridge ARN')" label-placement="stacked" placeholder="https://oms.example.com/rest/s1/shopify/webhook/payload" />
+            <p>{{ translate('Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.') }}</p>
+            <ion-button :disabled="!webhookCallbackUrl.trim() || webhookSetupBusy || webhookSetupUncertain || webhooksLoading || !!webhooksError || !webhookSummary?.missingCount" @click="registerMissingWebhooks">
+              <ion-spinner v-if="webhookSetupBusy" name="crescent" />
+              {{ translate('Register missing topics') }}
+            </ion-button>
+            <ion-list v-if="webhookSetupResults.length" aria-live="polite">
+              <ion-item v-for="result in webhookSetupResults" :key="result.topic">
+                <ion-label class="ion-text-wrap"><h3>{{ result.topic }}</h3><p>{{ result.message }}</p><p v-if="result.id">{{ result.id }}</p></ion-label>
+              </ion-item>
+            </ion-list>
+            <p v-if="webhookSetupError">{{ webhookSetupError }}</p>
+          </ion-card-content>
+        </ion-card>
+
         <ion-item v-if="webhooksError" lines="full" color="light">
           <ion-icon slot="start" :icon="warningOutline" color="danger" />
           <ion-label class="ion-text-wrap">
@@ -499,7 +517,7 @@ import {
   IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader,
   IonDatetime, IonDatetimeButton,
   IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
-  IonSegment, IonSegmentButton,
+  IonSegment, IonSegmentButton, IonInput,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import { checkmarkCircleOutline, closeOutline, refreshOutline, saveOutline, warningOutline } from "ionicons/icons";
@@ -511,6 +529,7 @@ import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
+  registerMissingTransferWebhook,
   useShopifyPendingCounts,
   useShopifyTransferSyncLaunch,
   useShopifyPendingSegment,
@@ -769,6 +788,35 @@ const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 
 const showJobModal = ref(false);
+const webhookCallbackUrl = ref('');
+const webhookSetupBusy = ref(false);
+const webhookSetupUncertain = ref(false);
+const webhookSetupError = ref('');
+const webhookSetupResults = ref<Array<{topic: string; message: string; id?: string}>>([]);
+async function registerMissingWebhooks() {
+  if (webhookSetupBusy.value || webhookSetupUncertain.value) return;
+  webhookSetupBusy.value = true;
+  webhookSetupError.value = '';
+  const targetShop = shopId.value;
+  const endpoint = webhookCallbackUrl.value.trim();
+  try {
+    await refreshWebhookReconciliation();
+    if (webhooksError.value) throw new Error(webhooksError.value);
+    const topics = webhookRows.value.filter(row => row.status === 'missing').map(row => row.topic);
+    for (const topic of topics) {
+      if (targetShop !== shopId.value) break;
+      const result = await registerMissingTransferWebhook(targetShop, topic, endpoint);
+      webhookSetupResults.value.push({topic, id: result.subscriptionId,
+        message: translate(result.status === 'created' ? 'Registered' : result.status === 'existing'
+          ? 'Already registered; existing destination preserved.'
+          : 'Registration outcome unknown. Check subscriptions before attempting further changes.')});
+      if (result.status === 'uncertain') { webhookSetupUncertain.value = true; break; }
+    }
+    await refreshWebhookReconciliation();
+  } catch (error: any) { webhookSetupError.value = error.message; }
+  finally { webhookSetupBusy.value = false; }
+}
+
 const showWebhooksModal = ref(false);
 const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
