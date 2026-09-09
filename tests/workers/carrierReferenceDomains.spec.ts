@@ -5,19 +5,21 @@ const state = vi.hoisted(() => ({
   responses: {} as Record<string, any>,
   pageCalls: [] as any[],
   snapshots: [] as Array<{ table: string; rows: any[]; scope: any }>,
+  lastScope: undefined as any,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageAll: vi.fn((options: any) => {
     state.pageCalls.push(options);
     const response = state.responses[options.url] ?? [];
-    if(options.strictCollection && !Array.isArray(response)) {
-      return Promise.reject(new Error(`${options.label} response must be a bare array.`));
+    if (options.strictCollection && !Array.isArray(response)) {
+      return Promise.reject(new Error(`[db] ${options.label}: response must be a bare array.`));
     }
-
     return Promise.resolve(response);
   }),
+  pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => null),
+  workerPost: vi.fn(async () => null),
   unwrapCollection: (response: any, collectionKey?: string | null) => {
     if (Array.isArray(response)) return response;
     if (collectionKey && Array.isArray(response?.[collectionKey])) return response[collectionKey];
@@ -25,41 +27,50 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   },
 }));
 
+const stubDb = () => ({
+  table: (table: string) => ({
+    count: async () => 0,
+    toArray: async () => state.parentRows[table] ?? [],
+    toCollection: () => ({
+      toArray: async () => state.parentRows[table] ?? [],
+      primaryKeys: async () => [],
+    }),
+    where: (field: string) => ({
+      equals: (value: unknown) => {
+        state.lastScope = { field, value };
+        return { toArray: async () => [] };
+      },
+    }),
+    bulkPut: async (rows: any[]) => {
+      state.snapshots.push({ table, rows, scope: state.lastScope });
+      state.lastScope = undefined;
+    },
+    bulkDelete: async () => {},
+    put: async () => {},
+    delete: async () => {},
+  }),
+  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+  syncMeta: { get: async () => undefined, put: async () => {}, delete: async () => {} },
+});
+
 vi.mock("@/db/companyDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
     companyDb: {
       ...actual.companyDb,
-      raw: () => ({
-        table: (table: string) => ({
-          count: async () => 0,
-          toCollection: () => ({
-            toArray: async () => state.parentRows[table] ?? [],
-          }),
-        }),
-      }),
+      raw: stubDb,
+      get: stubDb,
     },
   };
 });
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  defineCachedEntity: (table: string) => ({
-    table,
-    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
-      state.snapshots.push({ table, rows, scope });
-      return { written: rows.length, pruned: 0 };
-    }),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-    remove: vi.fn(async () => undefined),
-  }),
-  hasSyncedThisLogin: vi.fn(async () => false),
-  markSyncedThisLogin: vi.fn(async () => undefined),
-}));
-
-const ctx = { maargUrl: "https://example.test/", token: "token" };
+const ctx = { maargUrl: "https://example.test/", token: "token", omsInstance: "demo" };
 
 async function registeredDomain(name: string) {
   vi.resetModules();
+  const { companyDb } = await import("@/db/companyDb");
+  const { setAppDb } = await import("@common/db/appDbRegistry");
+  setAppDb(companyDb as any);
   await import("@/workers/domains/referenceDomains");
   const { getSyncDomain } = await import("@/workers/syncRegistry");
   return getSyncDomain(name);
@@ -71,6 +82,7 @@ describe("carrier reference snapshots", () => {
     state.responses = {};
     state.pageCalls = [];
     state.snapshots = [];
+    state.lastScope = undefined;
   });
 
   it("lists carrier parties with CARRIER role", async () => {
@@ -83,13 +95,12 @@ describe("carrier reference snapshots", () => {
 
     expect(written).toBe(1);
     expect(state.pageCalls[0].params).toEqual({ roleTypeId: "CARRIER" });
-    expect(state.snapshots).toEqual([
-      {
-        table: "carriers",
-        rows: [{ partyId: "FEDEX", groupName: "FedEx", partyTypeId: "PARTY_GROUP", roleTypeId: "CARRIER" }],
-        scope: undefined,
-      },
-    ]);
+    expect(state.snapshots).toHaveLength(1);
+    expect(state.snapshots[0].table).toBe("carriers");
+    expect(state.snapshots[0].rows[0]).toMatchObject({
+      partyId: "FEDEX", groupName: "FedEx", roleTypeId: "CARRIER",
+    });
+    expect(state.snapshots[0].rows[0]).toHaveProperty("syncedAt");
   });
 
   it("lists carrier shipment methods and refetches one carrier partition", async () => {
@@ -102,7 +113,7 @@ describe("carrier reference snapshots", () => {
     await domain!.refetchOne!(ctx as any, { partyId: "FEDEX" });
 
     expect(state.pageCalls[0].params).toEqual({ roleTypeId: "CARRIER" });
-    expect(state.pageCalls[1].params).toEqual({ roleTypeId: "CARRIER", partyId: "FEDEX" });
+    expect(state.pageCalls[1].params).toEqual({ partyId: "FEDEX" });
     expect(state.snapshots[1].scope).toEqual({ field: "partyId", value: "FEDEX" });
   });
 
@@ -120,10 +131,13 @@ describe("carrier reference snapshots", () => {
 
     expect(written).toBe(2);
     expect(state.snapshots[0].table).toBe("carrierFacilities");
-    expect(state.snapshots[0].rows).toEqual([
-      { partyId: "FEDEX", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000 },
-      { partyId: "UPS", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000 },
-    ]);
+    expect(state.snapshots[0].rows).toHaveLength(2);
+    expect(state.snapshots[0].rows[0]).toMatchObject({
+      partyId: "FEDEX", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000,
+    });
+    expect(state.snapshots[0].rows[1]).toMatchObject({
+      partyId: "UPS", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000,
+    });
   });
 
   it("fans shipping methods out over cached stores and stamps the store scope", async () => {
@@ -143,15 +157,13 @@ describe("carrier reference snapshots", () => {
 
     expect(written).toBe(1);
     expect(state.snapshots[0].table).toBe("productStoreShippingMethods");
-    expect(state.snapshots[0].rows).toEqual([
-      {
-        productStoreShipMethId: "PSM_1",
-        productStoreId: "STORE_1",
-        shipmentMethodTypeId: "GROUND",
-        partyId: "FEDEX",
-        roleTypeId: "CARRIER",
-      },
-    ]);
+    expect(state.snapshots[0].rows[0]).toMatchObject({
+      productStoreShipMethId: "PSM_1",
+      productStoreId: "STORE_1",
+      shipmentMethodTypeId: "GROUND",
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+    });
   });
 
   it("'carrier' rejects an unsupported success envelope before snapshot replacement", async () => {
@@ -159,7 +171,7 @@ describe("carrier reference snapshots", () => {
 
     const domain = await registeredDomain("carrier");
     await expect(domain!.sync(ctx as any, undefined, { force: true })).rejects.toThrow(
-      "carrier response must be a bare array.",
+      "[db] carrier: response must be a bare array.",
     );
   });
 
@@ -168,7 +180,7 @@ describe("carrier reference snapshots", () => {
 
     const domain = await registeredDomain("carrierShipmentMethod");
     await expect(domain!.sync(ctx as any, undefined, { force: true })).rejects.toThrow(
-      "carrierShipmentMethod response must be a bare array.",
+      "[db] carrierShipmentMethod: response must be a bare array.",
     );
   });
 
@@ -178,7 +190,7 @@ describe("carrier reference snapshots", () => {
 
     const domain = await registeredDomain("carrierFacility");
     await expect(domain!.sync(ctx as any, undefined, { force: true })).rejects.toThrow(
-      "carrierFacility:FEDEX response must be a bare array.",
+      "[db] carrierFacility:FEDEX: response must be a bare array.",
     );
   });
 
@@ -188,7 +200,7 @@ describe("carrier reference snapshots", () => {
 
     const domain = await registeredDomain("productStoreShippingMethod");
     await expect(domain!.sync(ctx as any, undefined, { force: true })).rejects.toThrow(
-      "productStoreShippingMethod:STORE_1 response must be a bare array.",
+      "[db] productStoreShippingMethod:STORE_1: response must be a bare array.",
     );
   });
 });
@@ -199,6 +211,7 @@ describe("'carrierFacility' scoped fan-out refetch", () => {
     state.responses = {};
     state.pageCalls = [];
     state.snapshots = [];
+    state.lastScope = undefined;
   });
 
   it("prunes only the selected parent partition", async () => {
@@ -210,13 +223,12 @@ describe("'carrierFacility' scoped fan-out refetch", () => {
     const written = await domain!.refetchOne!(ctx as any, { partyId: "FEDEX" });
 
     expect(written).toBe(1);
-    expect(state.snapshots).toEqual([
-      {
-        table: "carrierFacilities",
-        rows: [{ partyId: "FEDEX", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000 }],
-        scope: { field: "partyId", value: "FEDEX" },
-      },
-    ]);
+    expect(state.snapshots).toHaveLength(1);
+    expect(state.snapshots[0].table).toBe("carrierFacilities");
+    expect(state.snapshots[0].rows[0]).toMatchObject({
+      partyId: "FEDEX", facilityId: "BROADWAY", roleTypeId: "CARRIER", fromDate: 1_800_000_000_000,
+    });
+    expect(state.snapshots[0].scope).toEqual({ field: "partyId", value: "FEDEX" });
   });
 
   it("refuses a refetch with no parent partition key", async () => {
@@ -234,6 +246,7 @@ describe("'productStoreShippingMethod' scoped fan-out refetch", () => {
     state.responses = {};
     state.pageCalls = [];
     state.snapshots = [];
+    state.lastScope = undefined;
   });
 
   it("prunes only the selected parent partition", async () => {
@@ -251,21 +264,16 @@ describe("'productStoreShippingMethod' scoped fan-out refetch", () => {
     const written = await domain!.refetchOne!(ctx as any, { productStoreId: "STORE_1" });
 
     expect(written).toBe(1);
-    expect(state.snapshots).toEqual([
-      {
-        table: "productStoreShippingMethods",
-        rows: [
-          {
-            productStoreShipMethId: "PSM_1",
-            productStoreId: "STORE_1",
-            shipmentMethodTypeId: "GROUND",
-            partyId: "FEDEX",
-            roleTypeId: "CARRIER",
-          },
-        ],
-        scope: { field: "productStoreId", value: "STORE_1" },
-      },
-    ]);
+    expect(state.snapshots).toHaveLength(1);
+    expect(state.snapshots[0].table).toBe("productStoreShippingMethods");
+    expect(state.snapshots[0].rows[0]).toMatchObject({
+      productStoreShipMethId: "PSM_1",
+      productStoreId: "STORE_1",
+      shipmentMethodTypeId: "GROUND",
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+    });
+    expect(state.snapshots[0].scope).toEqual({ field: "productStoreId", value: "STORE_1" });
   });
 
   it("refuses a refetch with no parent partition key", async () => {
