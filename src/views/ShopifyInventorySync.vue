@@ -145,6 +145,7 @@
               </ion-badge>
             </ion-card-header>
             <ion-list lines="full">
+              <ion-item v-if="jobSetupError" role="alert"><ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label></ion-item>
               <ion-item
                 v-for="job in sharedJobs"
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
@@ -414,6 +415,25 @@
           </ion-card>
         </section>
 
+
+        <section>
+          <ion-item lines="none"><ion-label class="ion-text-wrap">
+            <h2>{{ translate('Physical location ATP reset runs') }}</h2>
+            <p>{{ translate('Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.') }}</p>
+          </ion-label></ion-item>
+          <ion-card v-for="run in physicalAtpResetRuns" :key="run.id">
+            <ion-card-header><ion-card-title>{{ run.id }}</ion-card-title>
+              <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">{{ run.importLogId ? translate('Feed generated') : run.status }}</ion-badge>
+            </ion-card-header>
+            <ion-list>
+              <ion-item><ion-label>{{ translate('Started') }}</ion-label><ion-label slot="end">{{ run.started }}</ion-label></ion-item>
+              <ion-item><ion-label class="ion-text-wrap">{{ translate('Parameters') }}<p>{{ run.parameters }}</p></ion-label></ion-item>
+              <ion-item><ion-label class="ion-text-wrap">{{ translate('Result') }}<p>{{ run.result }}</p></ion-label></ion-item>
+            </ion-list>
+            <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
+          </ion-card>
+          <ion-item v-if="jobsHydrated && !physicalAtpResetRuns.length"><ion-label>{{ translate('No recorded physical ATP reset runs') }}</ion-label></ion-item>
+        </section>
 
         <section class="run-section">
           <div class="section-header">
@@ -1853,6 +1873,8 @@ import {
   ensureChannelResetJob,
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
+  ensureShopPhysicalAtpResetJob,
+  PHYSICAL_ATP_RESET_SERVICE,
   fetchLocationsFromShopify,
   setInventoryEventDocumentAttached,
   updateShopifyInventoryEventFeedType,
@@ -2302,6 +2324,9 @@ const shopInventoryPushBadgeColor = computed(() => {
 
 const messageById = computed<Map<string, any>>(() => new Map(cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),));
 
+const physicalAtpResetJobs = computed<any[]>(() => cachedJobs.value.filter((job: any) =>
+  job.serviceName === PHYSICAL_ATP_RESET_SERVICE && String(parameterMap(job).shopId || "") === String(props.id)));
+
 const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) => {
   const parameters = parameterMap(job);
 
@@ -2374,6 +2399,7 @@ const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
 const watchedJobNames = computed(() => [...new Set([
   locationPublishJob.value?.jobName,
   physicalResetJob.value?.jobName,
+  ...physicalAtpResetJobs.value.map((job: any) => job.jobName),
   effectiveDateJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
   purgeLocationDetailsJob.value?.jobName,
@@ -2395,7 +2421,7 @@ function nextExecutionFor(jobs: any[]): any | null {
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
-type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "discard" | "sender";
+type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -2565,6 +2591,12 @@ const sharedJobs = computed(() => {
   }
 
   definitions.push(
+    {
+      name: "Reset physical location ATP (all mapped locations on this shop)",
+      jobs: physicalAtpResetJobs.value,
+      icon: refreshOutline,
+      setup: physicalAtpResetJobs.value.length ? "" : "physicalAtpReset",
+    },
     {
       name: "Publish physical location event batches (all Shopify connections)",
       jobs: locationPublishJob.value ? [locationPublishJob.value] : [],
@@ -2777,6 +2809,10 @@ function projectRun(job: any, run: any, scope: string) {
     startTime: toMillis(run.startTime),
   };
 }
+
+const physicalAtpResetRuns = computed(() => physicalAtpResetJobs.value
+  .flatMap((job: any) => runsFor(job.jobName).map((run: any) => projectRun(job, run, "Physical location ATP reset")))
+  .sort((a: any, b: any) => b.startTime - a.startTime));
 
 const physicalResetRuns = computed(() => {
   const job = physicalResetJob.value;
@@ -4194,7 +4230,7 @@ function serviceJobSelection(jobName: string, title: string, serviceName?: strin
     title,
     // Default to protecting the channel: every other job that carries inventoryChannelId is bound to
     // one channel, and only the discard tool takes it as an input.
-    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId"],
+    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId", "shopId"],
     parameterOptions: isDiscardJob ? { inventoryChannelId: channelFilterOptions.value } : {},
   };
 }
@@ -4219,6 +4255,7 @@ function refreshServiceJobData() {
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");
+const jobSetupError = ref("");
 
 /**
  * Create a row's missing job(s), PAUSED — activation stays a deliberate second step in the job's own
@@ -4232,9 +4269,12 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   if(!kind || provisioningJobKind.value) {return;}
   const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
   provisioningJobKind.value = provisioningKey as JobSetupKind;
+  jobSetupError.value = "";
   try {
     const created: string[] = [];
-    if(kind === "physicalReset") {
+    if(kind === "physicalAtpReset") {
+      created.push(await ensureShopPhysicalAtpResetJob(String(props.id)));
+    } else if(kind === "physicalReset") {
       const remoteId = String(syncContext.remoteId.value ?? "");
       if(!remoteId) {throw new Error("No Shopify remote is configured for this connection.");}
       created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
@@ -4285,7 +4325,8 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         : `${created.length} jobs created, paused. Open each row entry to schedule and activate them.`);
   } catch (error: any) {
     logger.error("Failed to set up inventory sync job", kind, error);
-    commonUtil.showToast(error?.message || "The job could not be created.");
+    jobSetupError.value = error?.message || translate("The job could not be created.");
+    commonUtil.showToast(jobSetupError.value);
   } finally {
     provisioningJobKind.value = "";
   }

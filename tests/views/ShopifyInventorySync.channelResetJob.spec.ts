@@ -21,6 +21,7 @@ const harness = vi.hoisted(() => ({
   ensureChannelEventDiscardJob: vi.fn(),
   ensureInventoryAdjustmentSenderJob: vi.fn(),
   ensureShopPhysicalInventoryResetJob: vi.fn(),
+  ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
   push: vi.fn(),
 }));
@@ -157,6 +158,8 @@ vi.mock("@/composables/useShopify", () => ({
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
   ensureInventoryAdjustmentSenderJob: (...args: any[]) => harness.ensureInventoryAdjustmentSenderJob(...args),
   ensureShopPhysicalInventoryResetJob: (...args: any[]) => harness.ensureShopPhysicalInventoryResetJob(...args),
+  ensureShopPhysicalAtpResetJob: (...args: any[]) => harness.ensureShopPhysicalAtpResetJob(...args),
+  PHYSICAL_ATP_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed",
   setInventoryEventDocumentAttached: vi.fn(),
   useInventoryEventDocuments: () => ({
     documents: ref([]),
@@ -379,6 +382,19 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     expect(modal.text()).toContain("Reset aggregate ATP");
     expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
+  });
+
+  it("keeps a physical ATP setup failure visible and scopes setup to the current shop", async () => {
+    harness.ensureShopPhysicalAtpResetJob.mockRejectedValue(new Error("Physical ATP reset setup is missing."));
+    const View = (await import("@/views/ShopifyInventorySync.vue")).default;
+    const wrapper = mount(View, { props: { id: "100002" }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical location ATP (all mapped locations on this shop)"));
+    expect(row).toBeDefined();
+    await row!.find("ion-button").trigger("click"); await flushPromises();
+    expect(harness.ensureShopPhysicalAtpResetJob).toHaveBeenCalledWith("100002");
+    expect(wrapper.find('[role="alert"]').text()).toContain("Physical ATP reset setup is missing.");
+    wrapper.unmount();
   });
 
   it("provisions a missing reset job from the row's Set up action and opens it", async () => {

@@ -585,6 +585,54 @@ export async function ensureShopPhysicalInventoryResetJob(params: {
   return jobName;
 }
 
+export const PHYSICAL_ATP_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed";
+
+/** Provision paused; never confuse an unsuccessful lookup with an absent job. */
+export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<string> {
+  if (!shopId.trim()) throw new Error(translate("A Shopify connection is required."));
+  const jobName = `generate_PhysicalLocationInventoryFeed_${shopId}`;
+  const response: any = await api({ url: "admin/serviceJobs", method: "get", params: { jobName, pageSize: 2 } });
+  if (commonUtil.hasError(response) || !(Array.isArray(response?.data?.serviceJobList) || response?.data?.serviceJobCount === 0)) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  const jobs = response.data.serviceJobList || [];
+  if (jobs.some((job: any) => job.jobName !== jobName) || jobs.length > 1) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  if (jobs.length) {
+    const job = jobs[0];
+    const parameters = job.serviceJobParameters || [];
+    if (job.serviceName !== PHYSICAL_ATP_RESET_SERVICE || !parameters.some((parameter: any) => parameter.parameterName === "shopId" && parameter.parameterValue === shopId)) {
+      throw new Error(translate("The physical ATP reset job has a different scope. Review its configuration."));
+    }
+    return jobName;
+  }
+  let config: any;
+  try {
+    config = await api({ url: "admin/dataManager/RESET_PHYSICAL_LOC_INV", method: "get" });
+  } catch {
+    throw new Error(translate("Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying."));
+  }
+  if (commonUtil.hasError(config) || config?.data?.configId !== "RESET_PHYSICAL_LOC_INV" || config.data.importServiceName !== "co.hotwax.sob.product.InventoryServices.import#PhysicalLocationInventory") {
+    throw new Error(translate("Physical ATP reset setup is missing. Load the connector upgrade configuration before creating this job."));
+  }
+  const created: any = await api({ url: "admin/serviceJobs", method: "POST", data: {
+    jobName, serviceName: PHYSICAL_ATP_RESET_SERVICE,
+    description: `Physical location ATP reset for ${shopId}`, cronExpression: "0 0 * * * ?", paused: "Y",
+  } });
+  if (commonUtil.hasError(created)) throw new Error(translate("The OMS rejected the physical ATP reset job."));
+  try {
+    const configured: any = await api({ url: `admin/serviceJobs/${jobName}`, method: "PUT", data: {
+      jobName, paused: "Y", serviceJobParameters: [{ parameterName: "shopId", parameterValue: shopId }],
+    } });
+    if (commonUtil.hasError(configured)) throw new Error("configuration rejected");
+    await refreshAfterMutation("serviceJob", { jobName });
+  } catch {
+    throw new Error(translate("The physical ATP reset job was created paused, but its configuration could not be confirmed. Review the existing job before retrying setup."));
+  }
+  return jobName;
+}
+
 /** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
 export const useShopifyShop = (shopId: string | undefined) =>
   useCachedRecord(shopifyShopCache, "shopId", shopId);

@@ -3632,5 +3632,16 @@
   "This checks current inventory only. It does not prove which items this reset published or resend the batch.": "This checks current inventory only. It does not prove which items this reset published or resend the batch.",
   "The item or channel target could not be identified for this connection.": "The item or channel target could not be identified for this connection.",
   "Purge old aggregate inventory events (all Shopify connections)": "Purge old aggregate inventory events (all Shopify connections)",
-  "Purge old physical location events (all Shopify connections)": "Purge old physical location events (all Shopify connections)"
+  "Purge old physical location events (all Shopify connections)": "Purge old physical location events (all Shopify connections)",
+  "A Shopify connection is required.": "A Shopify connection is required.",
+  "Could not verify the physical ATP reset job.": "Could not verify the physical ATP reset job.",
+  "The physical ATP reset job has a different scope. Review its configuration.": "The physical ATP reset job has a different scope. Review its configuration.",
+  "Physical ATP reset setup is missing. Load the connector upgrade configuration before creating this job.": "Physical ATP reset setup is missing. Load the connector upgrade configuration before creating this job.",
+  "The OMS rejected the physical ATP reset job.": "The OMS rejected the physical ATP reset job.",
+  "The physical ATP reset job was created paused, but its configuration could not be confirmed. Review the existing job before retrying setup.": "The physical ATP reset job was created paused, but its configuration could not be confirmed. Review the existing job before retrying setup.",
+  "Reset physical location ATP (all mapped locations on this shop)": "Reset physical location ATP (all mapped locations on this shop)",
+  "Physical location ATP reset runs": "Physical location ATP reset runs",
+  "Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.": "Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.",
+  "No recorded physical ATP reset runs": "No recorded physical ATP reset runs",
+  "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying.": "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying."
 }

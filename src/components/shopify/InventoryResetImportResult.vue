@@ -15,11 +15,11 @@
     </ion-item>
     <ion-item v-if="error" role="alert"><ion-label class="ion-text-wrap">{{ error }}</ion-label></ion-item>
     <template v-if="result">
-      <ion-item v-if="result.importServiceName && result.importServiceName !== 'co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory'" role="alert">
+      <ion-item v-if="result.importServiceName && result.importServiceName !== expectedImporter" role="alert">
         <ion-label class="ion-text-wrap">{{ translate('Reset import configuration needs updating') }}<p>{{ result.importServiceName }}</p>
-          <p>{{ translate('Repair updates the shared aggregate reset importer for every shop on this OMS. It does not retry imports or change schedules.') }}</p>
+          <p v-if="configId === 'RESET_INV_CHANNEL'">{{ translate('Repair updates the shared aggregate reset importer for every shop on this OMS. It does not retry imports or change schedules.') }}</p>
         </ion-label>
-        <ion-button v-if="result.importServiceName === 'co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory'" slot="end" :disabled="repairing" @click="repair">
+        <ion-button v-if="configId === 'RESET_INV_CHANNEL' && result.importServiceName === 'co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory'" slot="end" :disabled="repairing" @click="repair">
           {{ translate('Repair configuration') }}
         </ion-button>
       </ion-item>
@@ -47,7 +47,8 @@ import { useDataManager } from '@/composables/useDataManager';
 import { repairInventoryResetImportConfig } from '@/composables/useShopify';
 import { formatDateTime } from '@/utils';
 import InventoryResetBatchDetails from './InventoryResetBatchDetails.vue';
-const props = defineProps<{ logId: string; remoteId?: string; channels?: any[] }>();
+const props = withDefaults(defineProps<{ logId: string; remoteId?: string; channels?: any[]; configId?: 'RESET_INV_CHANNEL' | 'RESET_PHYSICAL_LOC_INV' }>(), { configId: 'RESET_INV_CHANNEL' });
+const expectedImporter = computed(() => props.configId === 'RESET_PHYSICAL_LOC_INV' ? 'co.hotwax.sob.product.InventoryServices.import#PhysicalLocationInventory' : 'co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory');
 const { errorLogs, fetchLogDetails } = useDataManager();
 const verifiedErrors = ref<any[]>([]);
 const result = ref<any>(null);
@@ -55,7 +56,7 @@ const loading = ref(false);
 const error = ref('');
 const repairing = ref(false);
 let generation = 0;
-watch(() => props.logId, () => { generation++; result.value = null; verifiedErrors.value = []; error.value = ''; loading.value = false; });
+watch(() => [props.logId, props.configId], () => { generation++; result.value = null; verifiedErrors.value = []; error.value = ''; loading.value = false; });
 const statusLabel = computed(() => {
   const labels: Record<string, string> = { DmlsPending: 'Pending', DmlsQueued: 'Queued', DmlsRunning: 'Running', DmlsFinished: 'Finished', DmlsFailed: 'Failed', DmlsCrashed: 'Crashed', DmlsCancelled: 'Cancelled' };
   return translate(labels[result.value?.statusId] || result.value?.statusId || 'Not available');
@@ -68,7 +69,7 @@ async function load() {
   try {
     const record = await fetchLogDetails(id);
     if (request !== generation) return;
-    if (!record || String(record.logId) !== id || record.configId !== 'RESET_INV_CHANNEL') throw new Error('unverified import');
+    if (!record || String(record.logId) !== id || record.configId !== props.configId) throw new Error('unverified import');
     result.value = record;
     verifiedErrors.value = [...errorLogs.value];
   } catch {
