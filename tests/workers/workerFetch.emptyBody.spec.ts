@@ -82,3 +82,26 @@ describe("strict collection response handling", () => {
     })).resolves.toEqual([{ partyId: "FEDEX" }]);
   });
 });
+
+
+describe("complete snapshot pagination", () => {
+  it("rejects repeated pages rather than returning a partial snapshot", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = '[{"id":"A"}]';
+    await expect(pageAll({ ctx, url: "rows", batchSize: 1, requireComplete: true,
+      strictCollection: true })).rejects.toThrow(/no progress/);
+  });
+  it("rejects a pagination backstop rather than returning a partial snapshot", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = '[{"id":"A"}]';
+    await expect(pageAll({ ctx, url: "rows", batchSize: 1, maxPages: 1,
+      requireComplete: true, strictCollection: true })).rejects.toThrow(/page limit/);
+  });
+});
+
+it("rejects a short page that still claims more snapshot rows", async () => {
+  const { pageAll } = await import("@/workers/domains/workerFetch");
+  transport.body = '{"details":[{"id":"A"}],"hasMore":true,"detailCount":2}';
+  await expect(pageAll({ ctx, url: "rows", collectionKey: "details", requireComplete: true,
+    strictCollection: true })).rejects.toThrow(/count mismatch/);
+});

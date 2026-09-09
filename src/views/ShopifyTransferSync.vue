@@ -79,15 +79,13 @@
                 <ion-card-subtitle>{{ translate("Outstanding changes and sync start date") }}</ion-card-subtitle>
               </ion-card-header>
               <ion-list lines="full">
-                <ion-item>
-                  <ion-label class="ion-text-wrap">
-                    {{ translate("Outstanding") }}
-                    <p>{{ translate("Total transfer events waiting to sync to Shopify") }}</p>
-                  </ion-label>
+                <ion-item-divider>
+                  <ion-label>{{ translate("Outstanding") }}</ion-label>
+                </ion-item-divider>
+                <ion-item v-for="tab in SEGMENT_TABS" :key="tab.key" button :detail="true" @click="openOutstanding(tab.key)">
+                  <ion-label>{{ translate(tab.key === 'create' ? 'Transfers to create' : tab.label) }}</ion-label>
                   <ion-skeleton-text v-if="!hydrated" slot="end" :animated="true" class="count-skeleton" />
-                  <ion-badge v-else slot="end" :color="pendingTotal > 0 ? 'warning' : 'medium'">
-                    {{ pendingTotal }}
-                  </ion-badge>
+                  <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
                 </ion-item>
                 <ion-item lines="none">
                   <ion-label class="ion-text-wrap">
@@ -179,9 +177,6 @@
             <ion-segment-button v-for="tab in SEGMENT_TABS" :key="tab.key" :value="tab.key">
               <ion-label>
                 {{ translate(tab.label) }}
-                <ion-badge v-if="tabCount(tab)" :color="tab.key === segment ? 'primary' : 'medium'">
-                  {{ tabCount(tab) }}
-                </ion-badge>
               </ion-label>
             </ion-segment-button>
           </ion-segment>
@@ -503,7 +498,7 @@ import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
   IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader,
   IonDatetime, IonDatetimeButton,
-  IonIcon, IonItem, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
+  IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
   IonSegment, IonSegmentButton,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
@@ -550,7 +545,7 @@ const SEGMENT_TABS = [
 
 const segment = ref<PendingSegment>("create");
 
-const { counts, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
+const { counts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
 const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
 // The paired segment for the combined tab; empty for every other tab.
 const { rows: pairedRows } = useShopifyPendingSegment(
@@ -683,6 +678,11 @@ watch(rawTransferRows, (rows) => {
  * read cannot. Synced history therefore shows the primary segment of the tab; the paired one has
  * its own resource and is reachable from the transfer's detail timeline.
  */
+function openOutstanding(next: PendingSegment) {
+  direction.value = "pending";
+  segment.value = next;
+}
+
 function setDirection(next: SyncDirection) {
   direction.value = next || "pending";
   if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}

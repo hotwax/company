@@ -80,7 +80,7 @@
               <ion-card-header>
                 <ion-card-title>{{ translate("Location event queue") }}</ion-card-title>
                 <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify physical locations") }}</ion-card-subtitle>
-                <ion-badge v-if="locationDeliveryErrorCount > 0" color="danger">
+                <ion-badge v-if="(locationDeliveryErrorCount ?? 0) > 0" color="danger">
                   {{ locationDeliveryErrorCount }} {{ translate("errors") }}
                 </ion-badge>
               </ion-card-header>
@@ -631,7 +631,7 @@
       <ion-content class="ion-padding-horizontal">
         <main class="history-page">
           <div class="kpi-grid">
-            <ion-card button @click="locationFilterState = translate('Unassigned (publishable)')">
+            <ion-card button @click="locationFilterState = 'unassigned'">
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Unassigned backlog") }}</ion-card-subtitle>
                 <ion-card-title :color="unassignedBacklogWarn ? 'warning' : undefined">
@@ -646,14 +646,14 @@
                 </p>
               </ion-card-content>
             </ion-card>
-            <ion-card button @click="locationFilterState = ''">
+            <ion-card button @click="locationFilterState = 'SmsgError'">
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
                 <ion-card-title :color="locationDeliveryErrorCount ? 'danger' : undefined">
                   {{ locationDeliveryErrorCount }}
                 </ion-card-title>
               </ion-card-header>
-              <ion-card-content>{{ translate("Details linked to a SystemMessage in error or stalled sending") }}</ion-card-content>
+              <ion-card-content>{{ translate("Details linked to a System Message in error") }}</ion-card-content>
             </ion-card>
             <ion-card>
               <ion-card-header>
@@ -738,8 +738,8 @@
                     @ion-change="locationFilterState = $event.detail.value || ''"
                   >
                     <ion-select-option value="">{{ translate("All") }}</ion-select-option>
-                    <ion-select-option v-for="option in locationStateOptions" :key="option" :value="option">
-                      {{ option }}
+                    <ion-select-option v-for="option in locationStateOptions" :key="option.id" :value="option.id">
+                      {{ option.label }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="locationFilterState" fill="clear" class="clear-filter-button" :aria-label="translate('Clear delivery state filter')" @click.stop="locationFilterState = ''">
@@ -749,19 +749,13 @@
                 <div class="filter-item">
                   <ion-item lines="none" class="date-filter-item">
                     <ion-label>{{ translate("From") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="location-history-from" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="location-history-from" presentation="date" v-model="locationFilterFrom" />
-                    </ion-popover>
+                    <input slot="end" type="date" :aria-label="translate('From date')" v-model="locationFilterFrom" />
                   </ion-item>
                 </div>
                 <div class="filter-item">
                   <ion-item lines="none" class="date-filter-item">
                     <ion-label>{{ translate("To") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="location-history-to" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="location-history-to" presentation="date" v-model="locationFilterTo" />
-                    </ion-popover>
+                    <input slot="end" type="date" :aria-label="translate('To date')" v-model="locationFilterTo" />
                   </ion-item>
                 </div>
               </div>
@@ -780,13 +774,30 @@
             </ion-badge>
           </div>
 
-          <ion-card v-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
+          <ion-card v-if="inventorySyncError"><ion-card-content>{{ translate("Refresh failed. Showing previously loaded data.") }} {{ inventorySyncError }}</ion-card-content></ion-card>
+          <ion-segment :value="locationHistoryMode" @ion-change="changeLocationMode(String($event.detail.value))">
+            <ion-segment-button value="events"><ion-label>{{ translate("All events") }}</ion-label></ion-segment-button>
+            <ion-segment-button value="batches"><ion-label>{{ translate("Grouped by batch") }}</ion-label></ion-segment-button>
+          </ion-segment>
+          <ion-accordion-group v-if="locationHistoryMode === 'batches' && filteredLocationDetailRows.length">
+            <ion-accordion v-for="batch in filteredLocationBatches.slice(0, locationVisibleCount)" :key="batch.id" :value="batch.id">
+              <ion-item slot="header"><ion-label>{{ batch.label }}<p>{{ batch.rows.length }} {{ translate("events") }} · {{ translate("Net adjustment") }} {{ batch.net }}</p><p>{{ batch.target }} · {{ formatDateTime(batch.created) }}</p></ion-label><ion-badge slot="end">{{ batch.state }}</ion-badge></ion-item>
+              <ion-list slot="content">
+                <ion-item v-if="batch.id !== 'unassigned'"><ion-button fill="clear" @click="openMessage(locationBatches.find(entry => entry.id === batch.id)!)">{{ translate("Message text") }}</ion-button></ion-item>
+                <ion-item v-for="row in batch.rows" :key="row.rowKey" button @click="selectedLocationDetail = row">
+                  <ion-label>{{ row.eventTypeDescription || row.eventTypeId }}<p>{{ row.eventReferenceId }} · {{ row.shopifyLocationId }} · {{ row.shopifyInventoryItemId }}</p><p>{{ formatDateTime(row.createdDate) }}</p></ion-label>
+                  <ion-note slot="end">{{ row.computedInventoryChange }}</ion-note>
+                </ion-item>
+              </ion-list>
+            </ion-accordion>
+          </ion-accordion-group>
+          <ion-card v-else-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
             <ion-card-content>{{ translate("No location inventory events match this view.") }}</ion-card-content>
           </ion-card>
 
           <ion-list v-else lines="full">
             <ion-item
-              v-for="row in filteredLocationDetailRows"
+              v-for="row in filteredLocationDetailRows.slice(0, locationVisibleCount)"
               :key="row.rowKey"
               button
               detail
@@ -815,6 +826,7 @@
             </ion-item>
           </ion-list>
 
+          <ion-button v-if="(locationHistoryMode === 'batches' ? filteredLocationBatches.length : filteredLocationDetailRows.length) > locationVisibleCount" expand="block" fill="clear" @click="locationVisibleCount += 50">{{ translate("Load more") }}</ion-button>
           <ion-card>
             <ion-card-header>
               <ion-card-title>{{ translate("Mapping gaps") }}</ion-card-title>
@@ -919,7 +931,7 @@
                       All
                     </ion-select-option>
                     <ion-select-option v-for="option in channelFilterOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
+                      {{ option }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="selectedChannel" fill="clear" class="clear-filter-button" aria-label="Clear inventory channel filter" @click.stop="selectedChannel = ''">
@@ -1532,7 +1544,7 @@ const {
 } = useCacheSync();
 
 const { labelFor: statusDescriptionFor } = useStatuses();
-const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+const { ensureSystemMessageErrors, ensureSystemMessageById, resendSystemMessage } = useSystemMessage();
 
 const batchErrors = ref<any[]>([]);
 const loadingBatchErrors = ref(false);
@@ -1762,7 +1774,7 @@ function latestRunFor(jobs: any[]): any | null {
 }
 
 function nextExecutionFor(jobs: any[]): any | null {
-  return jobs.filter((job) => job.paused !== "Y" && job.nextExecutionDateTime)
+  return jobs.filter((job) => job.paused !== "Y" && toMillis(job.nextExecutionDateTime) > Date.now())
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
@@ -2053,7 +2065,7 @@ const batches = computed<Batch[]>(() => {
 
   return [...grouped.entries()].map(([id, details]) => {
     const message = messageById.value.get(id);
-    const statusId = message?.statusId || details[0]?.systemMessageStatusId;
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.systemMessageInitDate || details[0]?.createdDate);
     const net = details.reduce((total, detail) => total + Number(detail.computedInventoryChange || 0), 0);
@@ -2388,8 +2400,7 @@ const locationInventorySummary = computed(() => allLocationInventorySummaries.va
 const LOCATION_PUBLISH_INTERVAL_MS = 60_000;
 
 const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
-  String(job.jobName ?? "").startsWith("publish_PendingShopifyLocationInventoryAdjustments")
-  && (job.serviceJobParameters ?? []).some((p: any) => p.parameterName === "shopId" && String(p.parameterValue) === String(props.id ?? ""))));
+  String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
 const locationPublishJobStatus = computed(() => {
   if (!locationPublishJob.value) return translate("Not configured");
   return locationPublishJob.value.paused === "Y" ? translate("Paused") : translate("Active");
@@ -2398,7 +2409,7 @@ const locationPublishJobBadgeColor = computed(() => {
   if (!locationPublishJob.value) return "medium";
   return locationPublishJob.value.paused === "Y" ? "warning" : "success";
 });
-const locationPublishJobNextRun = computed(() => locationPublishJob.value?.nextExecutionDateTime);
+const locationPublishJobNextRun = computed(() => nextExecutionFor(locationPublishJob.value ? [locationPublishJob.value] : [])?.nextExecutionDateTime);
 
 /**
  * Delivery state, derived ONLY from the linked message — never synthesized beyond the three cases
@@ -2413,15 +2424,16 @@ function locationDeliveryState(row: any): { label: string; color: string } {
       : { label: translate("No-op"), color: "medium" };
   }
   const message = cachedSystemMessages.value.find((m: any) => String(m.systemMessageId) === messageId);
-  if (!message) return { label: translate("Not available"), color: "medium" };
-  const label = statusDescriptionFor(message.statusId) || message.statusId || translate("Not available");
-  const errorish = /error|fail/i.test(String(message.statusId ?? ""));
+  const statusId = row.systemMessageStatusId || message?.statusId;
+  const label = statusDescriptionFor(statusId) || statusId || translate("Not available");
+  const errorish = /error|fail/i.test(String(statusId ?? ""));
   return { label, color: errorish ? "danger" : "medium" };
 }
 
 const locationDetailRows = computed(() => locationInventoryDetailsForShop.value.map((row: any) => {
   const state = locationDeliveryState(row);
   return {
+    ...row,
     rowKey: row.locationAdjustmentKey,
     eventTypeId: row.eventTypeId,
     eventReferenceId: row.eventReferenceId,
@@ -2447,22 +2459,69 @@ const locationLocationOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
 const locationEventTypeOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.eventTypeId).filter(Boolean))]);
-const locationStateOptions = computed(() =>
-  [...new Set(locationDetailRows.value.map((row) => row.stateLabel).filter(Boolean))]);
+const locationStateOptions = computed(() => [
+  { id: "pending", label: translate("Pending delivery") },
+  { id: "unassigned", label: translate("Unassigned (publishable)") },
+  { id: "noop", label: translate("No-op") },
+  ...["SmsgProduced", "SmsgSending", "SmsgError", "SmsgSent", "SmsgCancelled"].map(id => ({ id, label: statusDescriptionFor(id) || id })),
+]);
+const locationVisibleCount = ref(50);
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery], () => { locationVisibleCount.value = 50; });
+const locationHistoryMode = ref(props.initialHistoryMode === "batches" ? "batches" : "events");
+function changeLocationMode(mode: string) {
+  locationHistoryMode.value = mode;
+  void router.replace({ query: { ...router.currentRoute.value.query, mode } });
+}
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery],
+  ([state, location, eventType, from, to, search]) => {
+    if (activeView.value === "location-history") void router.replace({ query: {
+      ...router.currentRoute.value.query, state: state || undefined, location: location || undefined,
+      eventType: eventType || undefined, from: from || undefined, to: to || undefined, search: search || undefined,
+    } });
+  });
+watch(() => router.currentRoute.value.query, (query) => {
+  if (activeView.value !== "location-history") return;
+  locationHistoryMode.value = query.mode === "batches" ? "batches" : "events";
+  locationFilterLocationId.value = String(query.location || "");
+  locationFilterEventType.value = String(query.eventType || "");
+  locationFilterFrom.value = query.from ? String(query.from) : null;
+  locationFilterTo.value = query.to ? String(query.to) : null;
+  locationHistoryQuery.value = String(query.search || "");
+  locationFilterState.value = String(query.state || (query.mode === "unassigned" ? "unassigned" : ""));
+}, { immediate: true });
+const filteredLocationBatches = computed(() => {
+  const grouped = new Map<string, any[]>();
+  for (const row of filteredLocationDetailRows.value) {
+    const key = row.systemMessageId || "unassigned";
+    grouped.set(key, [...(grouped.get(key) || []), row]);
+  }
+  return [...grouped].map(([id, rows]) => ({ id, rows,
+    label: id === "unassigned" ? translate("Unbatched events") : id,
+    state: rows[0].stateLabel,
+    target: [...new Set(rows.map(row => row.shopifyLocationId))].join(", "),
+    created: rows[0].systemMessageInitDate || rows[0].createdDate,
+    net: rows.reduce((total, row) => total + row.computedInventoryChange, 0),
+  }));
+});
 
 const filteredLocationDetailRows = computed(() => {
   const query = locationHistoryQuery.value.trim().toLowerCase();
   return locationDetailRows.value
     .filter((row) => !locationFilterLocationId.value || row.shopifyLocationId === locationFilterLocationId.value)
     .filter((row) => !locationFilterEventType.value || row.eventTypeId === locationFilterEventType.value)
-    .filter((row) => !locationFilterState.value || row.stateLabel === locationFilterState.value)
+    .filter((row) => !locationFilterState.value
+      || (locationFilterState.value === "pending" && ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+      || (locationFilterState.value === "unassigned" && !row.systemMessageId && row.computedInventoryChange !== 0)
+      || (locationFilterState.value === "noop" && !row.systemMessageId && row.computedInventoryChange === 0)
+      || row.systemMessageStatusId === locationFilterState.value)
     .filter((row) => !locationFilterFrom.value
       || Number(row.createdDate ?? 0) >= DateTime.fromISO(locationFilterFrom.value).startOf("day").toMillis())
     .filter((row) => !locationFilterTo.value
       || Number(row.createdDate ?? 0) <= DateTime.fromISO(locationFilterTo.value).endOf("day").toMillis())
     .filter((row) => {
       if (!query) return true;
-      return String(row.eventReferenceId ?? "").toLowerCase().includes(query)
+      return String(row.systemMessageId ?? "").toLowerCase().includes(query)
+        || String(row.eventReferenceId ?? "").toLowerCase().includes(query)
         || String(row.shopifyLocationId ?? "").toLowerCase().includes(query)
         || String(row.shopifyInventoryItemId ?? "").toLowerCase().includes(query)
         || String(row.eventTypeDescription ?? "").toLowerCase().includes(query)
@@ -2474,8 +2533,8 @@ const filteredLocationDetailRows = computed(() => {
 // --- 2.1 Summary tiles ---
 const unassignedNonZeroRows = computed(() => locationDetailRows.value
   .filter((row) => !row.systemMessageId && row.computedInventoryChange !== 0));
-const unassignedNonZeroCount = computed(() => unassignedNonZeroRows.value.length);
-const oldestUnassignedCreatedAt = computed(() => unassignedNonZeroRows.value.reduce(
+const unassignedNonZeroCount = computed(() => locationInventorySummary.value?.backlogCount ?? unassignedNonZeroRows.value.length);
+const oldestUnassignedCreatedAt = computed(() => toMillis(locationInventorySummary.value?.oldestBacklogDate) || unassignedNonZeroRows.value.reduce(
   (oldest: number | undefined, row) => {
     const created = Number(row.createdDate ?? 0);
     return created && (oldest === undefined || created < oldest) ? created : oldest;
@@ -2503,16 +2562,9 @@ const locationMessageIds = computed(() => {
   return [...ids];
 });
 
-const pendingLocationBatchCount = computed(() => {
-  let count = 0;
-  for (const id of locationMessageIds.value) {
-    const message = messageById.value.get(id);
-    if (message && ["SmsgProduced", "SmsgSending", "SmsgError"].includes(String(message.statusId))) {
-      count++;
-    }
-  }
-  return count;
-});
+const pendingLocationBatchCount = computed(() => new Set(locationDetailRows.value
+  .filter((row: any) => ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+  .map((row: any) => row.systemMessageId).filter(Boolean)).size);
 
 const selectedLocationBatch = ref<Batch | null>(null);
 
@@ -2526,7 +2578,7 @@ const locationBatches = computed<Batch[]>(() => {
 
   return [...grouped.entries()].map(([id, details]) => {
     const message = messageById.value.get(id);
-    const statusId = message?.statusId || details[0]?.systemMessageStatusId;
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.createdDate);
     const net = details.reduce((total, detail) => total + Number(detail.computedInventoryChange || 0), 0);
@@ -2553,7 +2605,7 @@ const nextLocationBatchRun = computed(() => {
   if (!locationPublishJob.value) return translate("Not configured");
   if (locationPublishJob.value.paused === "Y") return translate("Paused");
   const nextRun = locationPublishJob.value?.nextExecutionDateTime;
-  return nextRun ? formatDateTime(nextRun) : translate("Not scheduled");
+  return nextRun && toMillis(nextRun) > Date.now() ? formatDateTime(nextRun) : translate("Schedule needs refresh");
 });
 
 const oldestLocationUnbatchedEvent = computed(() => {
@@ -2564,13 +2616,13 @@ const oldestLocationUnbatchedEvent = computed(() => {
 
 function openLocationHistory(mode?: "unassigned" | "batches" | "errors") {
   if (mode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   } else {
     locationFilterState.value = "";
   }
   void router.push({
     path: `/shopify-connection-details/${props.id}/inventory-sync/location-history`,
-    query: mode ? { mode } : {},
+    query: mode ? { mode, state: mode === "batches" ? "pending" : mode === "unassigned" ? "unassigned" : mode === "errors" ? "SmsgError" : undefined } : {},
   });
 }
 
@@ -2604,7 +2656,7 @@ function activeSyncDomains() {
     // The location ledger carries shopId natively, so it needs only the shop id to scope — no
     // channel resolution required.
     ...(props.id
-      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id), total: 300 } }]
+      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id) } }]
       : []),
   ];
 }
@@ -2617,7 +2669,7 @@ watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelI
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
 watch(() => props.initialHistoryMode, (mode) => {
   if (mode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   } else {
     historyMode.value = (mode as HistoryMode) ?? "events";
   }
@@ -2627,7 +2679,7 @@ onIonViewWillEnter(() => {
   isViewActive.value = true;
   if (props.initialView) activeView.value = props.initialView;
   if (props.initialHistoryMode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   }
   void startSyncDomains(activeSyncDomains());
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
@@ -2638,6 +2690,7 @@ onIonViewWillEnter(() => {
   // which the Moqui admin screen can also change. Skipped without an id - the by-PK read would go to
   // `oms/shopifyShops/shops/` and re-list every shop.
   if (props.id) void afterMutation("shopifyShop", { shopId: String(props.id) });
+  for (const jobName of [...watchedJobNames.value, "publish_PendingShopifyLocationInventoryAdjustments"]) void afterMutation("serviceJob", { jobName });
 });
 
 onIonViewDidLeave(() => {
@@ -2768,7 +2821,11 @@ const messageText = computed(() => {
   }, null, 2);
 });
 
-function openMessage(batch: Batch) { messageBatch.value = batch; }
+async function openMessage(batch: Batch) {
+  messageBatch.value = { ...batch, messageText: "Loading message…" };
+  const message = await ensureSystemMessageById(batch.id);
+  if (messageBatch.value?.id === batch.id) messageBatch.value = { ...batch, messageText: message?.messageText || "Message text unavailable" };
+}
 function openHistory(mode: HistoryMode = "events") {
   historyMode.value = mode;
   void router.push({
