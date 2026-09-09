@@ -115,6 +115,8 @@ async function refreshUnfinished(ctx: SyncContext, args: DataManagerLogArgs): Pr
 
 registerSyncDomain({
   name: "dataManagerLog",
+  label: "Data manager logs",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: DataManagerLogArgs = {}) {
     const created = await syncCreated(ctx, args);

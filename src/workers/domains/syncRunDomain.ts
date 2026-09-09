@@ -199,6 +199,8 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
 
 registerSyncDomain({
   name: "syncRun",
+  label: "Sync runs",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: SyncRunArgs = {}) {
     const scopes = await resolveScopes(args);

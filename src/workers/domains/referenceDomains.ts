@@ -3,6 +3,8 @@ import { registerSnapshotDomain } from "@common/db/sync/snapshotDomain";
 
 registerSnapshotDomain({
   name: "organizationRelationship",
+  label: "Organization relationships",
+  syncClass: "B",
   table: "organizationRelationships",
   projection: companyDb.entities.organizationRelationships,
   listUrl: "oms/partyRelationships",
@@ -32,6 +34,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "serviceJob",
+  label: "Service jobs",
+  syncClass: "B",
   table: "serviceJobs",
   projection: companyDb.entities.serviceJobs,
   listUrl: "admin/serviceJobs",
@@ -49,6 +53,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "inventoryEventDocument",
+  label: "Shopify inventory event sources",
+  syncClass: "B",
   table: "inventoryEventDocuments",
   projection: companyDb.entities.inventoryEventDocuments,
   listUrl: "admin/dataDocuments",
@@ -73,6 +79,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "systemMessageRemote",
+  label: "System message remotes",
+  syncClass: "B",
   table: "systemMessageRemotes",
   projection: companyDb.entities.systemMessageRemotes,
   listUrl: "oms/systemMessageRemotes",
@@ -103,6 +111,8 @@ registerSnapshotDomain({
  */
 registerSnapshotDomain({
   name: "carrier",
+  label: "Carriers",
+  syncClass: "B",
   table: "carriers",
   projection: companyDb.entities.carriers,
   listUrl: "oms/shippingGateways/carrierParties",
@@ -117,6 +127,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "carrierShipmentMethod",
+  label: "Carrier shipment methods",
+  syncClass: "B",
   table: "carrierShipmentMethods",
   projection: companyDb.entities.carrierShipmentMethods,
   listUrl: "oms/shippingGateways/carrierShipmentMethods",
@@ -135,6 +147,8 @@ registerSnapshotDomain({
  */
 registerSnapshotDomain({
   name: "carrierFacility",
+  label: "Carrier facilities",
+  syncClass: "B",
   table: "carrierFacilities",
   projection: companyDb.entities.carrierFacilities,
   listUrl: "oms/shippingGateways/carrierParties",
@@ -150,6 +164,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "shopifyShop",
+  label: "Shopify shops",
+  syncClass: "B",
   table: "shopifyShops",
   projection: companyDb.entities.shopifyShops,
   listUrl: "oms/shopifyShops/shops",
@@ -168,6 +184,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "facilityGroup",
+  label: "Facility groups",
+  syncClass: "B",
   table: "facilityGroups",
   projection: companyDb.entities.facilityGroups,
   listUrl: "oms/facilityGroups",
@@ -178,6 +196,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "permission",
+  label: "Permissions",
+  syncClass: "B",
   table: "permissions",
   projection: companyDb.entities.permissions,
   listUrl: "admin/userPermissions",
@@ -187,6 +207,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "integrationTypeMapping",
+  label: "Integration type mappings",
+  syncClass: "B",
   table: "integrationTypeMappings",
   projection: companyDb.entities.integrationTypeMappings,
   listUrl: "admin/integrationTypeMappings",
@@ -198,18 +220,20 @@ registerSnapshotDomain({
 
 // --- Tier 2: lookup / type reference domains. Small, bounded, bare-array endpoints. ---
 
-const LOOKUPS: Array<{ name: string; table: keyof typeof companyDb.entities; listUrl: string; listParams?: Record<string, unknown> }> = [
-  { name: "status", table: "statuses", listUrl: "oms/statuses" },
-  { name: "userGroup", table: "userGroups", listUrl: "admin/userGroups" },
-  { name: "productType", table: "productTypes", listUrl: "oms/products/productTypes" },
+const LOOKUPS: Array<{ name: string; table: keyof typeof companyDb.entities; label: string; listUrl: string; listParams?: Record<string, unknown> }> = [
+  { name: "status", table: "statuses", label: "Statuses", listUrl: "oms/statuses" },
+  { name: "userGroup", table: "userGroups", label: "User groups", listUrl: "admin/userGroups" },
+  { name: "productType", table: "productTypes", label: "Product types", listUrl: "oms/products/productTypes" },
   // `admin/uoms` covers every unit of measure; only the currency ones are wanted here.
-  { name: "currency", table: "currencies", listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
-  { name: "systemMessageType", table: "systemMessageTypes", listUrl: "admin/systemMessages/types" },
+  { name: "currency", table: "currencies", label: "Currencies", listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
+  { name: "systemMessageType", table: "systemMessageTypes", label: "System message types", listUrl: "admin/systemMessages/types" },
 ];
 
 for (const lookup of LOOKUPS) {
   registerSnapshotDomain({
     name: lookup.name,
+    label: lookup.label,
+    syncClass: "B",
     table: lookup.table,
     projection: companyDb.entities[lookup.table],
     listUrl: lookup.listUrl,
@@ -224,6 +248,8 @@ for (const lookup of LOOKUPS) {
 
 registerSnapshotDomain({
   name: "shopifyLocation",
+  label: "Shopify locations",
+  syncClass: "B",
   table: "shopifyLocations",
   projection: companyDb.entities.shopifyLocations,
   listUrl: "oms/shopifyShops/locations",
@@ -237,6 +263,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "shopifyTypeMapping",
+  label: "Shopify type mappings",
+  syncClass: "B",
   table: "shopifyTypeMappings",
   projection: companyDb.entities.shopifyTypeMappings,
   listUrl: "oms/shopifyShops/typeMappings",
@@ -262,6 +290,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "productStoreShipmentCount",
+  label: "Store shipment counts",
+  syncClass: "B",
   table: "productStoreShipmentCounts",
   projection: companyDb.entities.productStoreShipmentCounts,
   listUrl: "oms/productStores/shipmentMethods/counts",
@@ -270,6 +300,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "shopifyCarrierShipment",
+  label: "Shopify carrier shipments",
+  syncClass: "B",
   table: "shopifyCarrierShipments",
   projection: companyDb.entities.shopifyCarrierShipments,
   listUrl: "oms/shopifyShops/carrierShipments",
@@ -285,6 +317,8 @@ registerSnapshotDomain({
 // it uses as departments. Both are filtered server-side to the single id the app cares about.
 registerSnapshotDomain({
   name: "enumGroupMember",
+  label: "NetSuite reason group",
+  syncClass: "B",
   table: "enumGroupMembers",
   projection: companyDb.entities.enumGroupMembers,
   listUrl: "admin/enumGroups/NETSUITE_IIV_REASON/members",
@@ -301,6 +335,8 @@ registerSnapshotDomain({
  */
 registerSnapshotDomain({
   name: "facilityIdentification",
+  label: "Facility identifications",
+  syncClass: "B",
   table: "facilityIdentifications",
   projection: companyDb.entities.facilityIdentifications,
   listUrl: "oms/facilities/identifications",
@@ -311,6 +347,8 @@ registerSnapshotDomain({
 // productStoreId, so the generic fan-out contract stamps the parent scope onto every child row.
 registerSnapshotDomain({
   name: "productStoreShippingMethod",
+  label: "Store shipping methods",
+  syncClass: "B",
   table: "productStoreShippingMethods",
   projection: companyDb.entities.productStoreShippingMethods,
   listUrl: "admin/productStores",
@@ -328,6 +366,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "facilityGroupProductStore",
+  label: "Facility group product stores",
+  syncClass: "B",
   table: "facilityGroupProductStores",
   projection: companyDb.entities.facilityGroupProductStores,
   listUrl: "oms/groupProductStores",
@@ -342,6 +382,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "app",
+  label: "Apps",
+  syncClass: "B",
   table: "apps",
   projection: companyDb.entities.apps,
   listUrl: "admin/apps",
@@ -350,6 +392,8 @@ registerSnapshotDomain({
 
 registerSnapshotDomain({
   name: "appVersion",
+  label: "App versions",
+  syncClass: "B",
   table: "appVersions",
   projection: companyDb.entities.appVersions,
   // `CommerceAppAndDeployment` list — INNER-joined, so it returns only apps that HAVE a deployment.

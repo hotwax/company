@@ -262,6 +262,8 @@ async function refreshUnprocessed(ctx: SyncContext, args: SystemMessageArgs): Pr
 
 registerSyncDomain({
   name: "systemMessage",
+  label: "System messages",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: SystemMessageArgs = {}) {
     const recent = await syncRecent(ctx, args);

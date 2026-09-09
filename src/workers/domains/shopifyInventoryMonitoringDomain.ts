@@ -45,6 +45,8 @@ async function fetchInventoryEventFeed(ctx: SyncContext): Promise<any | null> {
 
 registerSyncDomain({
   name: "shopifyInventoryEventFeed",
+  label: "Shopify inventory event feed",
+  syncClass: "B",
   async sync(ctx, _args, options) {
     if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
     const feed = await fetchInventoryEventFeed(ctx);
@@ -88,6 +90,8 @@ function detailKey(row: Record<string, unknown>): string | undefined {
 
 registerSyncDomain({
   name: "inventoryChannel",
+  label: "Shopify inventory channels",
+  syncClass: "B",
   async sync(ctx, _args, options) {
     if (!options?.force && await hasSyncedThisLogin("inventoryChannel")) return 0;
     const rows = await pageAll({
@@ -168,6 +172,8 @@ async function enrichBatchMessages(
 
 registerSyncDomain({
   name: "shopifyInventoryAdjustmentDetail",
+  label: "Shopify aggregate inventory events",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: DetailSyncArgs = {}) {
     const inventoryChannelIds = (args.inventoryChannelIds ?? []).map(String).filter(Boolean);

@@ -50,6 +50,8 @@ async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHis
 
 registerSyncDomain({
   name: "productUpdateHistory",
+  label: "Product update history",
+  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: ProductUpdateHistoryArgs = {}) {
     const shopIds = [...new Set((args.shopIds ?? []).filter(Boolean))];

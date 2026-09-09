@@ -93,4 +93,33 @@ describe("company domain registration", () => {
     expect(names).not.toContain("facilityGroupMember");
     expect(names).toContain("groupFacility");
   });
+
+  it("gives every registered domain a label and a sync class", async () => {
+    const { getAllSyncDomains } = await import("@common/db/sync/syncRegistry");
+
+    const missing = getAllSyncDomains()
+      .filter((d) => !d.label || !d.syncClass)
+      .map((d) => d.name);
+
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * The catalog is derived from the registry now, so a label here IS the Settings card's text.
+   * The old hand-written catalog is the source of these strings; they must not silently change.
+   */
+  it("keeps the labels the Settings card already showed", async () => {
+    const { getAllSyncDomains } = await import("@common/db/sync/syncRegistry");
+    const { CACHE_DOMAIN_CATALOG } = await import("@/utils/db/cacheDomainCatalog");
+
+    const registered = new Map(getAllSyncDomains().map((d) => [d.name, d]));
+    const drifted = CACHE_DOMAIN_CATALOG
+      .filter((entry) => {
+        const domain = registered.get(entry.name);
+        return domain && (domain.label !== entry.label || domain.syncClass !== entry.syncClass);
+      })
+      .map((entry) => entry.name);
+
+    expect(drifted).toEqual([]);
+  });
 });

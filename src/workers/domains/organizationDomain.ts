@@ -77,6 +77,8 @@ async function fetchOrganizations(
 
 registerSyncDomain({
   name: "organization",
+  label: "Organizations",
+  syncClass: "B",
 
   async sync(ctx, _args, options) {
     if(!options?.force && (await hasSyncedThisLogin("organization"))) {return 0;}

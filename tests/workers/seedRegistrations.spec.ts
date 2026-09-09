@@ -43,9 +43,9 @@ describe("company seed domain registration", () => {
   });
 
   it("passes the source's fetch config, not the seed entry that wraps it", () => {
-    // `label` and a nested `source` on the config are the fingerprint of spreading the entry.
+    // A nested `source` on the config is the fingerprint of spreading the entry wrapper.
     const leaked = configs
-      .filter((config) => "label" in config || "source" in config)
+      .filter((config) => "source" in config)
       .map((config) => config.name);
 
     expect(leaked).toEqual([]);

@@ -140,6 +140,8 @@ async function syncBacklog(ctx: SyncContext, productStoreId: string): Promise<nu
 
 registerSyncDomain({
   name: "netSuiteOrderPush",
+  label: "NetSuite order push",
+  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: NetSuiteOrderPushArgs = {}) {
     const productStoreId = String(args.productStoreId ?? "").trim();

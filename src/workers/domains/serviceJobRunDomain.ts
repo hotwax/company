@@ -72,6 +72,8 @@ async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArg
 
 registerSyncDomain({
   name: "serviceJobRun",
+  label: "Service job runs",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: ServiceJobRunArgs = {}) {
     const jobNames = [...new Set((args.jobNames ?? []).filter(Boolean))];
