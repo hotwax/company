@@ -6857,22 +6857,34 @@ export async function repairInventoryResetImportConfig(): Promise<void> {
 
 /** Paged live history projection: current activation confirmations are not an append-only cache.
  * Fetch only on entry, filtering, pagination or explicit refresh; no competing polling loop.
+ *
+ * An entity resource, like the transfer-sync segments: rows come back as a bare array and the
+ * unpaged total in `x-total-count`. `activationStatus` is a real column on the OMS view, so it is
+ * both the filter value sent up and the status read back per row.
  */
 export async function fetchProductFacilityActivations(shopId: string, params: {
   activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
 }): Promise<{
   activations: import("@/utils/shopifyActivation").ProductFacilityActivation[];
-  totalCount: number; checkedAt: string | number; itemSpecificConfirmation: boolean;
+  totalCount: number;
 }> {
   if (!shopId) throw new Error("A Shopify connection is required.");
+  const { activationStatus, ...rest } = params;
   const response: any = await api({
-    url: "sob/shopify/productFacilityActivations", method: "get", params: { ...params, shopId },
+    url: "sob/shopify/productFacilityActivations",
+    method: "get",
+    params: {
+      ...rest,
+      shopId,
+      // Paging is only stable under an explicit order; this is the order the OMS activation
+      // query itself uses.
+      orderByField: "productId,facilityId,shopifyProductId",
+      // "all" is the page's own idea of no filter; the resource has no such value.
+      ...(activationStatus === "all" ? {} : { activationStatus }),
+    },
   });
   if (commonUtil.hasError(response)) throw new Error("The OMS could not read product activation records.");
-  const data = response.data;
-  if (!Array.isArray(data?.activations) || !Number.isFinite(Number(data?.totalCount)) ||
-      typeof data?.itemSpecificConfirmation !== "boolean" || !data?.checkedAt) {
-    throw new Error("The OMS returned an unsupported activation response. Check the activation-monitor endpoint version.");
-  }
-  return { ...data, totalCount: Number(data.totalCount) };
+  const activations = Array.isArray(response?.data) ? response.data : [];
+  const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
+  return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
 }
