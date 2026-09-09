@@ -315,8 +315,7 @@
             <ion-card-header>
               <ion-card-title>Event sources</ion-card-title>
               <ion-card-subtitle>
-                Choose which OMS changes each feed records. Turning a source off stops that kind of
-                inventory event being recorded for that feed.
+                {{ translate("Choose which OMS changes each feed records. Turning a source off stops that kind of inventory event being recorded for that feed.") }}
               </ion-card-subtitle>
             </ion-card-header>
             <ion-list lines="full">
@@ -340,29 +339,31 @@
                        "off" would send someone hunting for a toggle that will not help. -->
                   <p v-if="doc.missing">Not loaded on this OMS &mdash; run the connector's seed data</p>
                 </ion-label>
-                <div slot="end" class="event-source-controls">
-                  <label class="event-source-toggle">
-                    <span>Channel</span>
-                    <ion-toggle
-                      :key="`${doc.dataDocumentId}-channel-${doc.channelAttached}-${toggleNonce}`"
-                      :aria-label="`${doc.channelAttached ? 'Stop' : 'Start'} ${doc.documentName} for channel events`"
-                      :checked="doc.channelAttached"
-                      :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
-                      @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
-                    />
-                  </label>
-                  <label class="event-source-toggle" :class="{ 'event-source-toggle-disabled': !doc.locationSupported }">
-                    <span>Physical location</span>
-                    <ion-toggle
-                      v-if="doc.locationSupported"
-                      :key="`${doc.dataDocumentId}-location-${doc.locationAttached}-${toggleNonce}`"
-                      :aria-label="`${doc.locationAttached ? 'Stop' : 'Start'} ${doc.documentName} for physical location events`"
-                      :checked="doc.locationAttached"
-                      :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
-                      @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
-                    />
-                    <ion-note v-else>Not used</ion-note>
-                  </label>
+                <!-- One wrapper so the two feed switches can stack on narrow screens; the toggles carry
+                     their own labels, so no text styling is needed here. -->
+                <div slot="end" class="event-source-feeds">
+                  <ion-toggle
+                    :key="`${doc.dataDocumentId}-channel-${doc.channelAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.channelAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Channel") }}
+                  </ion-toggle>
+                  <ion-toggle
+                    v-if="doc.locationSupported"
+                    :key="`${doc.dataDocumentId}-location-${doc.locationAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.locationAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Physical location") }}
+                  </ion-toggle>
+                  <ion-note v-else>{{ translate("Physical location not used") }}</ion-note>
                 </div>
               </ion-item>
             </ion-list>
@@ -1431,9 +1432,6 @@ import {
   ensureChannelResetJob,
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
-  ensureShopPhysicalAtpResetJob,
-  PHYSICAL_ATP_RESET_SERVICE,
-  fetchLocationsFromShopify,
   setInventoryEventDocumentAttachedForFeed,
   useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
@@ -2200,6 +2198,21 @@ async function resyncEventDocuments() {
 const toggleNonce = ref(0);
 const redrawToggles = () => { toggleNonce.value += 1; };
 
+/** The feed a switch controls, as it reads inside a sentence: "... for channel events". */
+function inventoryEventFeedLabel(dataFeedId: string): string {
+  return dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? translate("physical location") : translate("channel");
+}
+
+/**
+ * Accessible name for one feed switch. The visible label only says which feed, so a screen reader
+ * would hear a column of identical "Channel" switches; name the document and the action as well.
+ */
+function eventSourceToggleLabel(doc: InventoryEventDocument, dataFeedId: string): string {
+  const attached = dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? doc.locationAttached : doc.channelAttached;
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
+  return attached ? translate("Stop {document} for {feed} events", copy) : translate("Start {document} for {feed} events", copy);
+}
+
 /**
  * Turning a source off is destructive in a way a toggle does not look: it stops that class of event
  * being RECORDED, so nothing accumulates to replay once it goes back on. Confirm before, and say that
@@ -2214,18 +2227,18 @@ async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, data
   }
   const attached = isLocationFeed ? doc.locationAttached : doc.channelAttached;
   const attaching = !attached;
-  const feedLabel = isLocationFeed ? "physical location" : "channel";
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
 
   const alert = await alertController.create({
     header: attaching
-      ? `Listen to ${doc.documentName} for ${feedLabel} events?`
-      : `Stop listening to ${doc.documentName} for ${feedLabel} events?`,
+      ? translate("Listen to {document} for {feed} events?", copy)
+      : translate("Stop listening to {document} for {feed} events?", copy),
     message: attaching
-      ? `New changes of this kind will start producing ${feedLabel} inventory events. Changes made while it was off were not recorded and will not be replayed; use the relevant inventory reset if Shopify needs to be reconciled.`
-      : `Changes of this kind stop producing ${feedLabel} inventory events entirely, and nothing accumulates to catch up later. Existing events are unaffected.`,
+      ? translate("New changes of this kind will start producing {feed} inventory events. Changes made while it was off were not recorded and will not be replayed; use the relevant inventory reset if Shopify needs to be reconciled.", copy)
+      : translate("Changes of this kind stop producing {feed} inventory events entirely, and nothing accumulates to catch up later. Existing events are unaffected.", copy),
     buttons: [
-      { text: "Cancel", role: "cancel" },
-      { text: attaching ? "Start listening" : "Stop listening", role: "confirm" },
+      { text: translate("Cancel"), role: "cancel" },
+      { text: attaching ? translate("Start listening") : translate("Stop listening"), role: "confirm" },
     ],
   });
   await alert.present();
@@ -2239,10 +2252,10 @@ async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, data
     // The composable's list updates from the cache write-through inside this call.
     await setInventoryEventDocumentAttachedForFeed(dataFeedId, doc.dataDocumentId, attaching);
     commonUtil.showToast(attaching
-      ? `${feedLabel} event source enabled. It can take a few minutes to take effect.`
-      : `${feedLabel} event source disabled. Events already recorded are unaffected.`);
+      ? translate("Event source enabled for {feed} events. It can take a few minutes to take effect.", copy)
+      : translate("Event source disabled for {feed} events. Events already recorded are unaffected.", copy));
   } catch (error: any) {
-    commonUtil.showToast(error?.message || "Failed to update the event source.");
+    commonUtil.showToast(error?.message || translate("Failed to update the event source."));
   } finally {
     savingDocumentKey.value = "";
     // The list was re-read above on success and left untouched on failure, so a redraw shows what is
@@ -3060,34 +3073,17 @@ function formatAge(timestamp: number): string {
   margin-block-start: var(--spacer-sm);
 }
 
-.event-source-controls {
-  display: flex;
+/* Layout only: the toggles style their own labels. Side by side normally, stacked on narrow screens. */
+.event-source-feeds {
+  display: grid;
+  grid-auto-flow: column;
   align-items: center;
   gap: var(--spacer-base);
-  margin-inline-start: var(--spacer-base);
 }
 
-.event-source-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacer-2xs);
-  color: var(--ion-color-medium);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-
-.event-source-toggle ion-toggle {
-  margin: 0;
-}
-
-.event-source-toggle-disabled {
-  opacity: 0.65;
-}
-
-@media screen and (max-width: 720px) {
-  .event-source-controls {
-    align-items: flex-end;
-    flex-direction: column;
+@media (max-width: 700px) {
+  .event-source-feeds {
+    grid-auto-flow: row;
     gap: var(--spacer-2xs);
   }
 }
