@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import { commonUtil } from "@common";
-import { createSyncService, createSyncServiceV2, serviceState, type SyncServiceV2 } from "@common/db";
+import { createSyncService, serviceState, type SyncService } from "@common/db";
 import { companyDb } from "@/db/companyDb";
 import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/db/appCacheDb";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
@@ -21,7 +21,7 @@ export const bootstrapState = reactive<{
   errors: serviceState.errors,
 });
 
-let service: SyncServiceV2 | null = null;
+let service: SyncService | null = null;
 let starting: Promise<void> | null = null;
 let startGeneration = 0;
 
@@ -75,9 +75,9 @@ function clearScopeError(domain: string, scope: string): void {
 }
 
 /**
- * Access the single active `SyncServiceV2` instance.
+ * Access the single active `SyncService` instance.
  */
-export function syncService(): SyncServiceV2 | null {
+export function syncService(): SyncService | null {
   return service;
 }
 
@@ -89,8 +89,7 @@ export function startReferenceSync(): Promise<void> {
   const generation = ++startGeneration;
 
   bootstrapState.running = true;
-  const factory = createSyncService || createSyncServiceV2;
-  const attemptService = factory({
+  const attemptService = createSyncService({
     workerUrl: new URL(appSyncUrl, import.meta.url),
     onStatus: (status: Record<string, any>) => {
       if (generation !== startGeneration || service !== attemptService) return;
