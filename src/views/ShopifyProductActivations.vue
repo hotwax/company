@@ -56,9 +56,6 @@
         <ion-label>{{ translate("Loading activation records") }}</ion-label>
       </ion-item>
       <template v-else-if="loaded">
-        <ion-card v-if="!itemSpecificConfirmation" color="warning">
-          <ion-card-content>{{ translate("This OMS records legacy product/location confirmations. It cannot verify that a confirmation belongs to the current Shopify inventory item. Deploy the inventory-item activation upgrade before relying on confirmations after a product remap.") }}</ion-card-content>
-        </ion-card>
         <ion-list lines="full">
           <ion-list-header>
             <ion-label>{{ translate("Product locations") }} ({{ totalCount }})</ion-label>
@@ -79,7 +76,7 @@
               <p v-else>{{ translate("Complete the missing inventory-item or location mapping before activation can proceed.") }}</p>
             </ion-label>
             <ion-badge slot="end" :color="row.activationStatus === 'confirmed' ? 'success' : 'warning'">
-              {{ translate(activationLabel(row.activationStatus, itemSpecificConfirmation)) }}
+              {{ translate(activationLabel(row.activationStatus)) }}
             </ion-badge>
           </ion-item>
         </ion-list>
@@ -121,8 +118,7 @@ const facilityId = ref("");
 const appliedFilters = ref({ productId: "", facilityId: "" });
 const pageIndex = ref(0);
 const totalCount = ref(0);
-const checkedAt = ref<unknown>();
-const itemSpecificConfirmation = ref(true);
+const checkedAt = ref<number | undefined>();
 const loading = ref(false);
 const loaded = ref(false);
 const error = ref("");
@@ -142,8 +138,7 @@ async function load() {
     if (request !== generation) return;
     rows.value = result.activations;
     totalCount.value = result.totalCount;
-    checkedAt.value = result.checkedAt;
-    itemSpecificConfirmation.value = result.itemSpecificConfirmation;
+    checkedAt.value = Date.now();
     loaded.value = true;
   } catch (cause) {
     if (request !== generation) return;
