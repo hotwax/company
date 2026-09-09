@@ -276,8 +276,7 @@ async function changeTimeZone() {
 }
 
 async function logout() {
-  await userStore.postLogout();
-  router.push('/login');
+  await useAuth().logout();
 }
 
 function goToLaunchpad() {

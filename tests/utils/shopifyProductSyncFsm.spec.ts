@@ -25,6 +25,15 @@ describe("getProductSyncFsmState", () => {
     expect(state.nextJobReason).toBe("The next logical step is to send the produced bulk query to Shopify.");
   });
 
+  it("returns correct state for SmsgSending", () => {
+    const state = getProductSyncFsmState({ statusId: "SmsgSending" });
+    expect(state.statusId).toBe("SmsgSending");
+    expect(state.primaryAction).toEqual({ id: "send", label: "Send now", kind: "primary" });
+    expect(state.secondaryActions).toEqual([{ id: "cancel", label: "Cancel", kind: "secondary" }]);
+    expect(state.nextJob).toBeNull();
+    expect(state.nextJobReason).toBe("The next logical step is to send the produced bulk query to Shopify.");
+  });
+
   it("builds nextJob for SmsgProduced when sendJob is provided", () => {
     const state = getProductSyncFsmState({
       statusId: "SmsgProduced",

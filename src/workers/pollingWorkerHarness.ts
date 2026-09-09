@@ -1,5 +1,5 @@
 import { expose } from "comlink";
-import { ensureCacheReady } from "@/utils/appCacheDb";
+import { ensureCacheReady, hasSyncedThisLogin } from "@/utils/appCacheDb";
 import { cacheScopeKey } from "@/utils/cacheScopeKey";
 import { subscribeToken } from "@/utils/pollingTokenChannel";
 import {
@@ -138,13 +138,21 @@ async function executeDomain(
   const clockKey = activationKey(entry);
   try {
     const written = await domain.sync(ctx, entry.args, { force });
-    lastRunAt[clockKey] = Date.now();
-    post({ type: "sync-end", domain: entry.name, written, at: lastRunAt[clockKey] });
+    const interval = effectiveInterval(entry, domain);
+    // A class-B sync can deliberately refuse a destructive snapshot and return 0 without throwing.
+    // Its durable login marker is the completion signal: until that marker exists, leave the
+    // activation unclocked so the next base tick retries it. Cadenced domains and forced runs use
+    // the in-memory clock as before.
+    const completed = force || interval !== undefined || await hasSyncedThisLogin(entry.name);
+    const at = Date.now();
+    if(completed) {lastRunAt[clockKey] = at;}
+    post({ type: "sync-end", domain: entry.name, written, at, retryPending: !completed });
 
     return written;
   } catch (err) {
-    // Record the attempt so one failing domain can't spin every base tick.
-    lastRunAt[clockKey] = Date.now();
+    // Cadenced domains record failed attempts so one bad endpoint cannot spin faster than its
+    // declared interval. A no-cadence/class-B domain must remain due until one pass succeeds.
+    if(effectiveInterval(entry, domain) !== undefined) {lastRunAt[clockKey] = Date.now();}
     const { isAuth, message } = classifyError(err);
     post({ type: isAuth ? "auth-error" : "sync-error", domain: entry.name, message });
     if(propagateError) {throw err;}

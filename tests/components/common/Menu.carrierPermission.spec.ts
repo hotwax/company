@@ -16,6 +16,9 @@ vi.mock("@common", () => ({
     getMaargURL: () => "https://rails-uat.hotwax.io/rest/s1/",
     getCurrentTime: () => "12:00 PM",
   },
+  // The footer is accxui's shared component; this spec only cares that the menu renders
+  // around it, so a stub keeps the mock's surface honest without pulling in Ionic.
+  DxpOmsInstanceFooter: { name: "DxpOmsInstanceFooter", template: "<div />" },
 }));
 
 // The footer reads the Maarg config for its instance label.

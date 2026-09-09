@@ -88,6 +88,12 @@ describe("maarg utils", () => {
         .toBe("");
     });
 
+    it("should return empty string for dev instance using default UAT unigate URL", () => {
+      const devInfo = { instanceInfo: { instancePurpose: "dev" } };
+      const defaultUrl = getDefaultUnigateSendUrl(devInfo);
+      expect(getUnigateSendUrlWarning(defaultUrl, devInfo)).toBe("");
+    });
+
     it("should warn on reverse-lookup environment mismatch (e.g. prod URL on dev instance)", () => {
       expect(getUnigateSendUrlWarning("https://unigate.hotwax.io/rest/s1/unigate/", { instanceInfo: { instancePurpose: "dev" } }))
         .toBe("This is the production Unigate URL configured on a dev OMS instance. Klaviyo calls will be proxied to the wrong environment.");

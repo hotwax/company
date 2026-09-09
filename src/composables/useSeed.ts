@@ -17,6 +17,7 @@ import {
   systemMessageTypeCache,
 } from "@/utils/cacheEntities";
 import { byDescription, useCachedList } from "./useCachedList";
+import { usePrimaryOrganization } from "./useOrganizations";
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -409,6 +410,11 @@ export function useOrganization() {
 
     organizationInFlight = (async () => {
       try {
+        const primaryOrgId = await usePrimaryOrganization().load();
+        if (primaryOrgId) {
+          organizationPartyId.value = primaryOrgId;
+          return primaryOrgId;
+        }
         const resp: any = await api({
           url: "admin/organizations",
           method: "get",

@@ -18,9 +18,9 @@ import { pageNewestFirst, workerGet } from "./workerFetch";
  * one (2386 B, 25 rows, max `initDate` exactly equal to the cursor, zero rows newer).
  *
  * Note the contrast with `admin/dataManager/details`, which honors `_from` but ignores `_op`:
- * date-filter support is per-endpoint and must be probed, never generalized. (This endpoint does
- * honor non-date `_op` filters — `systemMessageRemoteId_op: "in"` is relied on in
- * `src/store/shopifyProductSync.ts:626` — so `_op` support alone implies nothing about dates.)
+ * filter support is per-endpoint and must be probed, never generalized. This endpoint also returned
+ * zero rows for a multi-value `systemMessageRemoteId_op=in` probe, so callers issue one scalar
+ * remote-id request at a time.
  *
  * Consequence: incremental scoping is CLIENT-side, bounded to one page per (remote, type) per tick
  * (page 0 always contains the boundary record, so `keep` stops paging immediately) and writes zero
