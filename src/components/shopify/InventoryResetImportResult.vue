@@ -27,10 +27,13 @@
       <ion-item><ion-label>{{ translate('Batch records processed') }}</ion-label><ion-label slot="end">{{ result.totalRecordCount ?? translate('Not available') }}</ion-label></ion-item>
       <ion-item><ion-label>{{ translate('Failed batch records') }}</ion-label><ion-label slot="end">{{ result.failedRecordCount ?? translate('Not available') }}</ion-label></ion-item>
       <ion-item v-if="result.finishDateTime"><ion-label>{{ translate('Finished') }}</ion-label><ion-label slot="end">{{ formatDateTime(result.finishDateTime) }}</ion-label></ion-item>
-      <ion-accordion-group v-if="errorLogs.length">
+      <ion-accordion-group v-if="verifiedErrors.length">
         <ion-accordion value="errors">
           <ion-item slot="header"><ion-label>{{ translate('Import errors') }}</ion-label></ion-item>
-          <ion-list slot="content"><ion-item v-for="(record, index) in errorLogs" :key="index"><ion-label class="ion-text-wrap">{{ JSON.stringify(record) }}</ion-label></ion-item></ion-list>
+          <ion-accordion-group slot="content">
+            <InventoryResetBatchDetails v-for="(record, index) in verifiedErrors" :key="`${logId}:${index}`"
+              :record="record" :index="index" :remote-id="remoteId" :channels="channels" />
+          </ion-accordion-group>
         </ion-accordion>
       </ion-accordion-group>
     </template>
@@ -43,14 +46,16 @@ import { translate } from '@common';
 import { useDataManager } from '@/composables/useDataManager';
 import { repairInventoryResetImportConfig } from '@/composables/useShopify';
 import { formatDateTime } from '@/utils';
-const props = defineProps<{ logId: string }>();
+import InventoryResetBatchDetails from './InventoryResetBatchDetails.vue';
+const props = defineProps<{ logId: string; remoteId?: string; channels?: any[] }>();
 const { errorLogs, fetchLogDetails } = useDataManager();
+const verifiedErrors = ref<any[]>([]);
 const result = ref<any>(null);
 const loading = ref(false);
 const error = ref('');
 const repairing = ref(false);
 let generation = 0;
-watch(() => props.logId, () => { generation++; result.value = null; error.value = ''; loading.value = false; });
+watch(() => props.logId, () => { generation++; result.value = null; verifiedErrors.value = []; error.value = ''; loading.value = false; });
 const statusLabel = computed(() => {
   const labels: Record<string, string> = { DmlsPending: 'Pending', DmlsQueued: 'Queued', DmlsRunning: 'Running', DmlsFinished: 'Finished', DmlsFailed: 'Failed', DmlsCrashed: 'Crashed', DmlsCancelled: 'Cancelled' };
   return translate(labels[result.value?.statusId] || result.value?.statusId || 'Not available');
@@ -59,12 +64,13 @@ async function load() {
   if (loading.value) return;
   const request = ++generation;
   const id = props.logId;
-  loading.value = true; result.value = null; error.value = '';
+  loading.value = true; result.value = null; verifiedErrors.value = []; error.value = '';
   try {
     const record = await fetchLogDetails(id);
     if (request !== generation) return;
     if (!record || String(record.logId) !== id || record.configId !== 'RESET_INV_CHANNEL') throw new Error('unverified import');
     result.value = record;
+    verifiedErrors.value = [...errorLogs.value];
   } catch {
     if (request === generation) error.value = translate('The reset import could not be verified. Check again before retrying the reset.');
   } finally {
