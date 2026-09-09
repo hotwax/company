@@ -3230,5 +3230,6 @@
   "Available": "Available",
   "On hand": "On hand",
   "Incoming": "Incoming",
-  "Committed": "Committed"
+  "Committed": "Committed",
+  "Next run recalculated after saving": "Next run recalculated after saving"
 }
