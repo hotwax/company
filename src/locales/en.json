@@ -3235,5 +3235,11 @@
   "OMS product ID is required": "OMS product ID is required",
   "Search index refresh was not confirmed": "Search index refresh was not confirmed",
   "Refresh search index": "Refresh search index",
-  "Index refresh request completed. Check product search.": "Index refresh request completed. Check product search."
+  "Index refresh request completed. Check product search.": "Index refresh request completed. Check product search.",
+  "Current Shopify transfer": "Current Shopify transfer",
+  "Unable to read the current Shopify transfer. Check again.": "Unable to read the current Shopify transfer. Check again.",
+  "Shopify lines and units": "Shopify lines and units",
+  "Shopify quantity": "Shopify quantity",
+  "Shopify status": "Shopify status",
+  "Checked at": "Checked at"
 }

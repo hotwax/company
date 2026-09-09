@@ -18,7 +18,38 @@ vi.mock("@/workers/domains/shopifyTransferSyncDomain", () => ({
   },
 }));
 
-import { useShopifySyncedSegment } from "@/composables/useShopifyTransferSync";
+import { fetchCurrentShopifyTransfer, useShopifySyncedSegment } from "@/composables/useShopifyTransferSync";
+
+describe("fetchCurrentShopifyTransfer", () => {
+  const id = 'gid://shopify/InventoryTransfer/123';
+  const line = (n: number) => ({ id: `line-${n}`, totalQuantity: 2, inventoryItem: {id: `item-${n}`, sku: `sku-${n}`} });
+  const page = (nodes: any[], hasNextPage = false, endCursor: string | null = null) => ({data: {response: {node: {id, status: 'DRAFT', lineItems: {nodes, pageInfo: {hasNextPage, endCursor}}}}}});
+  beforeEach(() => {
+    api.mockReset();
+    api.mockResolvedValueOnce({data: {shopRemotes: [{systemMessageRemoteId: 'sandbox-remote'}]}});
+  });
+  it('fetches every line page for the exact selected transfer', async () => {
+    api.mockResolvedValueOnce(page([line(1), line(2)], true, 'next')).mockResolvedValueOnce(page([line(3)]));
+    const result = await fetchCurrentShopifyTransfer('sandbox', '123');
+    expect(result.lines.map((l: any) => l.inventoryItem.sku)).toEqual(['sku-1','sku-2','sku-3']);
+    expect(api.mock.calls[1][0].data.variables).toEqual({id, after: null});
+    expect(api.mock.calls[2][0].data.variables).toEqual({id, after: 'next'});
+  });
+  it('rejects a partial GraphQL result with errors', async () => {
+    const response: any = page([line(1)]);
+    response.data.response.errors = [{message: 'access denied'}];
+    api.mockResolvedValueOnce(response);
+    await expect(fetchCurrentShopifyTransfer('sandbox', '123')).rejects.toThrow('lookup failed');
+  });
+  it('rejects repeated lines rather than inflate totals', async () => {
+    api.mockResolvedValueOnce(page([line(1)], true, 'next')).mockResolvedValueOnce(page([line(1)]));
+    await expect(fetchCurrentShopifyTransfer('sandbox', '123')).rejects.toThrow('repeated');
+  });
+  it('rejects a mismatched or absent transfer', async () => {
+    api.mockResolvedValueOnce({data: {response: {node: null}}});
+    await expect(fetchCurrentShopifyTransfer('sandbox', '123')).rejects.toThrow('not returned completely');
+  });
+});
 
 describe("useShopifySyncedSegment", () => {
   beforeEach(() => {

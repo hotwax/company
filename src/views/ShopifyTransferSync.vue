@@ -233,6 +233,7 @@
                     <ion-label>{{ translate("Shopify transfer") }}</ion-label>
                     <ion-label slot="end">{{ row.shopifyTransferId }}</ion-label>
                   </ion-item>
+                  <ShopifyTransferSnapshot v-if="segment === 'create' && row.shopifyTransferId" :shop-id="shopId" :transfer-id="row.shopifyTransferId" />
                   <ion-item v-if="row.shipmentEventStatus">
                     <ion-label>{{ translate("Shipment event") }}</ion-label>
                     <ion-label slot="end">{{ translate(row.shipmentEventStatus) }}</ion-label>
@@ -524,6 +525,7 @@ import { checkmarkCircleOutline, closeOutline, refreshOutline, saveOutline, warn
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
