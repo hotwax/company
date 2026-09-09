@@ -3643,5 +3643,9 @@
   "Physical location ATP reset runs": "Physical location ATP reset runs",
   "Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.": "Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.",
   "No recorded physical ATP reset runs": "No recorded physical ATP reset runs",
-  "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying.": "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying."
+  "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying.": "Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying.",
+  "Facility created, but default pick location could not be set up.": "Facility created, but default pick location could not be set up.",
+  "Invalid phone number": "Invalid phone number",
+  "Invalid phone number.": "Invalid phone number.",
+  "next sync in": "next sync in"
 }
