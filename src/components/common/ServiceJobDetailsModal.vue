@@ -304,6 +304,8 @@ const scheduleDescription = computed(() => {
  * sync screen does.
  */
 const nextRunLabel = computed(() => {
+  // The server timestamp belongs to the saved schedule, never to an edited draft.
+  if (scheduleChanged.value) return translate('Next run recalculated after saving');
   const details = jobDetails.value;
   const nextRun = details.nextExecutionDateTime ?? details.nextRunTime ?? details.nextRunDate;
   return formatDateTime(nextRun) || translate('Not scheduled');
