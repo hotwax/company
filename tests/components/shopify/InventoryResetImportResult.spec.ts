@@ -28,3 +28,13 @@ describe('InventoryResetImportResult', () => {
    wrapper.unmount();
  });
 });
+
+it('verifies physical ATP imports independently of aggregate configuration', async () => {
+ harness.fetch.mockResolvedValue({ logId: 'PHYSICAL1', configId: 'RESET_PHYSICAL_LOC_INV', statusId: 'DmlsFinished', failedRecordCount: 1, importServiceName: 'co.hotwax.sob.product.InventoryServices.import#PhysicalLocationInventory' });
+ const wrapper = mount(Result, { props: { logId: 'PHYSICAL1', configId: 'RESET_PHYSICAL_LOC_INV' } });
+ await wrapper.find('ion-button').trigger('click'); await flushPromises();
+ expect(wrapper.text()).toContain('Failed batch records1');
+ expect(wrapper.text()).not.toContain('configuration needs updating');
+ expect(wrapper.text()).not.toContain('Repair configuration');
+ wrapper.unmount();
+});
