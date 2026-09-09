@@ -40,7 +40,7 @@ import { useCachedList } from "./useCachedList";
  * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
 export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
 
   const rows = computed<any[]>(() => {
     const wantedShop = String(shopId() ?? "");
@@ -62,11 +62,11 @@ export function useShopifyPendingSegment(shopId: () => string | undefined, segme
 }
 
 /**
- * Outstanding count per segment, for the tab badges. One pass over the shop's cached rows rather
+ * Outstanding record counts per segment for the summary. One pass over the shop's cached rows rather
  * than one query per tab, because they all live in the same table.
  */
 export function useShopifyPendingCounts(shopId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
 
   const counts = computed<Record<string, number>>(() => {
     const wanted = String(shopId() ?? "");
@@ -83,6 +83,10 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
 
   return {
     counts,
+    creationOrderCount: computed(() => new Set(records.value
+      .filter((row: any) => String(row?.shopId ?? "") === String(shopId() ?? "")
+        && row?.segment === "create" && row?.orderId)
+      .map((row: any) => String(row.orderId))).size),
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
@@ -494,7 +498,7 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
         jobName: job?.jobName ??
           (definition.scope === "shop" && currentShopId ? shopJobName(definition.template, currentShopId) : definition.template),
         status,
-        nextRun: job?.nextExecutionDateTime,
+        nextRun: job?.paused !== "Y" && Number(job?.nextExecutionDateTime) > Date.now() ? job.nextExecutionDateTime : undefined,
       };
     });
   });
