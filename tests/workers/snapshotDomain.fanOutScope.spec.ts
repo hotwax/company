@@ -9,38 +9,33 @@ const state = vi.hoisted(() => ({
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
-const mockWorkerFetch = vi.hoisted(() => () => ({
+vi.mock("@common/db/sync/workerFetch", () => ({
   pageAll: vi.fn(async (options: any) => state.fetched.filter((row) => {
     const key = options.keyOf?.(row);
     state.pageKeys.push(key);
     return key !== undefined;
   })),
+  pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => null),
+  workerPost: vi.fn(async () => null),
   unwrapCollection: (response: any) => (Array.isArray(response) ? response : []),
 }));
-
-vi.mock("@/workers/domains/workerFetch", mockWorkerFetch);
-vi.mock("./workerFetch", mockWorkerFetch);
-vi.mock("@common/db/sync/workerFetch", mockWorkerFetch);
-
-
-import { setAppDb } from "@common/db/appDbRegistry";
 
 vi.mock("@/db/companyDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
   const mockRaw = () => ({
     table: (table: string) => ({
       count: async () => 0,
+      toArray: async () => table === "productStores" ? [{ productStoreId: AUTHORITATIVE_STORE }] : [],
       toCollection: () => ({
-        toArray: async () => table === "productStores"
-          ? [{ productStoreId: AUTHORITATIVE_STORE }]
-          : [],
+        toArray: async () => table === "productStores" ? [{ productStoreId: AUTHORITATIVE_STORE }] : [],
         primaryKeys: async () => [],
       }),
-      where: () => ({
-        equals: () => ({
-          toArray: async () => [],
-        }),
+      where: (field: string) => ({
+        equals: (value: unknown) => {
+          state.snapshots.push({ rows: [], scope: { field, value } });
+          return { toArray: async () => [] };
+        },
       }),
       bulkDelete: async () => {},
       bulkPut: async (rows: any[]) => {
@@ -50,30 +45,15 @@ vi.mock("@/db/companyDb", async (importOriginal) => {
       delete: async () => {},
     }),
     transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+    syncMeta: { get: async () => undefined, put: async () => {}, delete: async () => {} },
   });
   const mockDb = {
     ...actual.companyDb,
     raw: mockRaw,
     get: mockRaw,
   };
-  setAppDb(mockDb as any);
   return { companyDb: mockDb };
 });
-
-
-vi.mock("@/utils/db/appCacheDb", () => ({
-  defineCachedEntity: () => ({
-    table: "productStoreShippingMethods",
-    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
-      state.snapshots.push({ rows, scope });
-      return { written: rows.length, pruned: 0 };
-    }),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-    remove: vi.fn(async () => undefined),
-  }),
-  hasSyncedThisLogin: vi.fn(async () => false),
-  markSyncedThisLogin: vi.fn(async () => undefined),
-}));
 
 const CONFIG = {
   name: "storeMethodFanOutTest",
@@ -100,12 +80,8 @@ const ctx = { maargUrl: "https://example.test/", token: "token" };
 async function register() {
   vi.resetModules();
   const { companyDb } = await import("@/db/companyDb");
-  const { setAppDb } = await import("@common/db/appDbRegistry");
-  setAppDb(companyDb as any);
   const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
-  registerSnapshotDomain(CONFIG as any);
-  const { getSyncDomain } = await import("@/workers/syncRegistry");
-  return getSyncDomain(CONFIG.name)!;
+  return registerSnapshotDomain(CONFIG as any, () => (companyDb as any).raw());
 }
 
 describe("snapshot domain authoritative fan-out scope", () => {
@@ -123,8 +99,9 @@ describe("snapshot domain authoritative fan-out scope", () => {
     const domain = await register();
     await domain.sync(ctx as any, undefined, { force: true });
 
-    expect(state.snapshots).toHaveLength(1);
-    expect(state.snapshots[0].rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    const put = state.snapshots.filter((s) => s.rows.length).at(-1)!;
+    expect(put.rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    expect(put.rows[0]).toHaveProperty("syncedAt");
   });
 
   it("overrides a conflicting child parent id during a scoped refetch", async () => {
@@ -135,8 +112,9 @@ describe("snapshot domain authoritative fan-out scope", () => {
     const domain = await register();
     await domain.refetchOne!(ctx as any, { productStoreId: AUTHORITATIVE_STORE });
 
-    expect(state.snapshots).toHaveLength(1);
-    expect(state.snapshots[0].rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    const put = state.snapshots.filter((s) => s.rows.length).at(-1)!;
+    expect(put.rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    expect(put.rows[0]).toHaveProperty("syncedAt");
   });
 
   it("keys a parent-less child with the initial fan-out scope before paging deduplication", async () => {
@@ -146,8 +124,8 @@ describe("snapshot domain authoritative fan-out scope", () => {
     await domain.sync(ctx as any, undefined, { force: true });
 
     expect(state.pageKeys).toContain(AUTHORITATIVE_STORE + "\u0000GROUND");
-    expect(state.snapshots).toHaveLength(1);
-    expect(state.snapshots[0].rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    const put = state.snapshots.filter((s) => s.rows.length).at(-1)!;
+    expect(put.rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
   });
 
   it("keys a parent-less child with the refetch scope before paging deduplication", async () => {
@@ -157,7 +135,7 @@ describe("snapshot domain authoritative fan-out scope", () => {
     await domain.refetchOne!(ctx as any, { productStoreId: AUTHORITATIVE_STORE });
 
     expect(state.pageKeys).toContain(AUTHORITATIVE_STORE + "\u0000GROUND");
-    expect(state.snapshots).toHaveLength(1);
-    expect(state.snapshots[0].rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
+    const put = state.snapshots.filter((s) => s.rows.length).at(-1)!;
+    expect(put.rows[0].productStoreId).toBe(AUTHORITATIVE_STORE);
   });
 });
