@@ -3291,5 +3291,7 @@
   "No error detail returned": "No error detail returned",
   "Check an item at the current channel target": "Check an item at the current channel target",
   "This checks current inventory only. It does not prove which items this reset published or resend the batch.": "This checks current inventory only. It does not prove which items this reset published or resend the batch.",
-  "The item or channel target could not be identified for this connection.": "The item or channel target could not be identified for this connection."
+  "The item or channel target could not be identified for this connection.": "The item or channel target could not be identified for this connection.",
+  "Purge old aggregate inventory events (all Shopify connections)": "Purge old aggregate inventory events (all Shopify connections)",
+  "Purge old physical location events (all Shopify connections)": "Purge old physical location events (all Shopify connections)"
 }
