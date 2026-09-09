@@ -75,6 +75,7 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 }));
 
 import {
+  fetchProductMappings,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
@@ -156,5 +157,33 @@ describe("fetchUpdateFilesToProcessCount", () => {
     ]);
     expect(request.data.customParametersMap.statusId).not.toContain("DmlSuccess");
     expect(request.data.customParametersMap.statusId).not.toContain("DmlError");
+  });
+});
+
+describe('product mapping inspection', () => {
+  const input = {productId: '8176602415268', systemMessageRemoteId: 'remote-a', productStoreId: 'store-a'};
+  const variant = (id: string) => ({legacyResourceId: id, title: id, inventoryItem: {id: `gid://shopify/InventoryItem/${id}`, tracked: true}});
+  const page = (id: string, hasNextPage = false, endCursor = '') => ({data: {response: {product: {variants: {nodes: [variant(id)], pageInfo: {hasNextPage, endCursor}}}}}});
+  it('loads all variant pages and preserves missing and ambiguous mappings', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1', true, 'next'))
+      .mockResolvedValueOnce({data: {entityValueList: [{shopifyProductId: '1', productId: 'A'}, {shopifyProductId: '1', productId: 'B'}]}})
+      .mockResolvedValueOnce(page('2'))
+      .mockResolvedValueOnce({data: {entityValueList: []}});
+    const result = await fetchProductMappings(input);
+    expect(result.map(row => row.mappings.length)).toEqual([2, 0]);
+    expect(harness.api.mock.calls[2][0].data.variables.after).toBe('next');
+    expect(harness.api.mock.calls[1][0].data.customParametersMap).toEqual({productStoreId: 'store-a', shopifyProductId: ['1']});
+  });
+  it('does not present an invalid OMS response as zero mappings', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1')).mockResolvedValueOnce({data: {}});
+    await expect(fetchProductMappings(input)).rejects.toThrow('HotWax product mappings were not returned');
+  });
+  it('stops on a repeated Shopify cursor instead of showing partial results', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}})
+      .mockResolvedValueOnce(page('2', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}});
+    await expect(fetchProductMappings(input)).rejects.toThrow('pagination did not advance');
   });
 });
