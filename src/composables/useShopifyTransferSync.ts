@@ -302,6 +302,48 @@ async function fetchShopRemoteId(shopId: string): Promise<string> {
   return remoteId;
 }
 
+/** Explicit current-state read, independent of the OMS history summary. */
+export async function fetchCurrentShopifyTransfer(shopId: string, transferId: string) {
+  const id = /^\d+$/.test(transferId) ? `gid://shopify/InventoryTransfer/${transferId}` : transferId;
+  if (!shopId || !/^gid:\/\/shopify\/InventoryTransfer\/\d+$/.test(id)) throw new Error('Invalid transfer identity');
+  const systemMessageRemoteId = await fetchShopRemoteId(shopId);
+  const queryText = `query TransferSnapshot($id: ID!, $after: String) {
+    node(id: $id) { ... on InventoryTransfer {
+      id status origin { name location { id } } destination { name location { id } }
+      lineItems(first: 100, after: $after) {
+        nodes { id totalQuantity inventoryItem { id sku } }
+        pageInfo { hasNextPage endCursor }
+      }
+    } }
+  }`;
+  let after: string | null = null;
+  const cursors = new Set<string>();
+  const seen = new Set<string>();
+  const lines: any[] = [];
+  let snapshot: any;
+  do {
+    const response: any = await api({ url: 'shopify/graphql', method: 'post', data: {systemMessageRemoteId, queryText, variables: {id, after}} });
+    const payload = response?.data;
+    const graph = payload?.response ?? payload;
+    const data = graph?.data ?? graph;
+    if (commonUtil.hasError(response) || payload?.errors?.length || graph?.errors?.length) throw new Error('Shopify transfer lookup failed');
+    const transfer = data?.node;
+    const page = transfer?.lineItems;
+    if (transfer?.id !== id || !Array.isArray(page?.nodes) || typeof page?.pageInfo?.hasNextPage !== 'boolean') throw new Error('Shopify transfer was not returned completely');
+    for (const line of page.nodes) {
+      if (!line?.id || seen.has(line.id) || !Number.isInteger(line.totalQuantity) || line.totalQuantity < 0) throw new Error('Invalid or repeated Shopify transfer line');
+      seen.add(line.id);
+      lines.push(line);
+    }
+    snapshot = transfer;
+    if (!page.pageInfo.hasNextPage) break;
+    after = page.pageInfo.endCursor;
+    if (!after || cursors.has(after)) throw new Error('Shopify transfer pagination did not advance');
+    cursors.add(after);
+  } while (after);
+  return { ...snapshot, lines, checkedAt: new Date().toISOString() };
+}
+
 async function loadReconciliation(options: {
   shopId: string;
   topicPrefixes?: string[];
