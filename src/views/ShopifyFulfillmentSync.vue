@@ -382,7 +382,7 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, logger, translate } from "@common";
+import { commonUtil, logger, translate, useProducts } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonItem,
@@ -398,7 +398,6 @@ import type {
 import FulfillmentShipmentCard from "@/components/shopify-fulfillment/FulfillmentShipmentCard.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useFacilities } from "@/composables/useFacilities";
-import { useProductNames } from "@/composables/useProductNames";
 import { useShopifySyncContext } from "@/composables/useShopify";
 import {
   type OmsShipmentContext, type QueuedFulfillmentRow, type SyncedFulfillmentRow,
@@ -422,7 +421,7 @@ const { rows: queuedRows, hydrated: queuedHydrated } = useQueuedFulfillments(() 
 const { getShipmentContext } = useOmsShipmentContext();
 const { rows: syncedRows, hydrated: syncedHydrated, endpointMissing } = useSyncedFulfillments(() => props.id);
 const { getFulfillmentDetails } = useShopifyFulfillmentDetails();
-const { products: resolvedProducts, resolve: resolveProductNames } = useProductNames();
+const { products: resolvedProducts, resolve: resolveProductNames } = useProducts();
 const {
   ensureSystemMessageErrors, forceSystemMessageStatus, resendSystemMessage, resetSystemMessageError,
 } = useSystemMessage();

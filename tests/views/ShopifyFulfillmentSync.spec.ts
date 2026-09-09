@@ -42,6 +42,10 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
+  useProducts: () => ({
+    products: resolvedProducts,
+    resolve: (...args: any[]) => harness.resolveProductNames(...args),
+  }),
 }));
 
 // Only the alert overlay is replaced: ion-alert cannot be presented in jsdom, so the controller
@@ -100,13 +104,6 @@ vi.mock("@/composables/useSystemMessage", () => ({
     errors: cachedErrors,
     errorText: ref(""),
     hydrated: ref(true),
-  }),
-}));
-
-vi.mock("@/composables/useProductNames", () => ({
-  useProductNames: () => ({
-    products: resolvedProducts,
-    resolve: (...args: any[]) => harness.resolveProductNames(...args),
   }),
 }));
 
