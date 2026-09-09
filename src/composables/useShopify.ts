@@ -28,6 +28,7 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
+import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
 import {
@@ -6686,6 +6687,18 @@ export const unsubscribeWebhook = async (payload: any): Promise<any> => {
     }
   });
 };
+
+/** Explicit live check for one item at its exact Shopify location. */
+export async function fetchCurrentShopifyInventory(payload: {systemMessageRemoteId: string; inventoryItemId: string; locationId: string}) {
+  if (!payload.systemMessageRemoteId) throw new Error("Shopify connection is unavailable.");
+  const itemId = inventoryGid(payload.inventoryItemId, "InventoryItem");
+  const locationId = inventoryGid(payload.locationId, "Location");
+  const response = await requestBackend<any>({url: "shopify/graphql", method: "post", data: {
+    systemMessageRemoteId: payload.systemMessageRemoteId,
+    queryText: INVENTORY_AT_LOCATION_QUERY, variables: {itemId, locationId},
+  }});
+  return parseInventorySnapshot(response, itemId, locationId);
+}
 
 /** Read every variant and its existing OMS mapping without re-running an import. */
 export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
