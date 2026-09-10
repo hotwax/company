@@ -433,23 +433,60 @@
         </section>
 
 
-        <section>
-          <ion-item lines="none"><ion-label class="ion-text-wrap">
-            <h2>{{ translate('Physical location ATP reset runs') }}</h2>
-            <p>{{ translate('Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.') }}</p>
-          </ion-label></ion-item>
-          <ion-card v-for="run in physicalAtpResetRuns" :key="run.id">
-            <ion-card-header><ion-card-title>{{ run.id }}</ion-card-title>
-              <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">{{ run.importLogId ? translate('Feed generated') : run.status }}</ion-badge>
-            </ion-card-header>
-            <ion-list>
-              <ion-item><ion-label>{{ translate('Started') }}</ion-label><ion-label slot="end">{{ run.started }}</ion-label></ion-item>
-              <ion-item><ion-label class="ion-text-wrap">{{ translate('Parameters') }}<p>{{ run.parameters }}</p></ion-label></ion-item>
-              <ion-item><ion-label class="ion-text-wrap">{{ translate('Result') }}<p>{{ run.result }}</p></ion-label></ion-item>
-            </ion-list>
-            <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
-          </ion-card>
-          <ion-item v-if="jobsHydrated && !physicalAtpResetRuns.length"><ion-label>{{ translate('No recorded physical ATP reset runs') }}</ion-label></ion-item>
+        <!-- Same run-section/run-carousel structure as every other run list on this page. Outside the
+             carousel the badge positioning below does not apply, and "Feed generated" rendered as a
+             full-width bar across the card instead of a chip in its corner. -->
+        <section class="run-section">
+          <div class="section-header">
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <h2>{{ translate('Physical location ATP reset runs') }}</h2>
+                <p>{{ translate('Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.') }}</p>
+              </ion-label>
+            </ion-item>
+          </div>
+          <div class="run-carousel" aria-label="Physical location ATP reset job runs">
+            <ion-card v-for="run in physicalAtpResetRuns" :key="run.id">
+              <ion-card-header>
+                <ion-card-title>{{ run.id }}</ion-card-title>
+                <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">
+                  {{ run.importLogId ? translate('Feed generated') : run.status }}
+                </ion-badge>
+              </ion-card-header>
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate('Started') }}
+                    <p>{{ run.started }}</p>
+                  </ion-label>
+                  <ion-note slot="end">
+                    {{ run.duration }}
+                  </ion-note>
+                </ion-item>
+                <ion-item>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate('Parameters') }}
+                    <p>{{ run.parameters }}</p>
+                  </ion-label>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate('Result') }}
+                    <p>{{ run.result }}</p>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
+            </ion-card>
+            <ion-card v-if="jobsHydrated && !physicalAtpResetRuns.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="timeOutline" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate('No recorded physical ATP reset runs') }}
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </div>
         </section>
 
         <section class="run-section">
