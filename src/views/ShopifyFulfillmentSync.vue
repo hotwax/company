@@ -465,7 +465,18 @@ const {
 // one subscription serves every card where a per-row scope cannot be created inside v-for.
 const { errors: cachedMessageErrors } = useSystemMessageErrors();
 const { records: cachedFacilities } = useFacilities();
-const { start: startSyncDomains, stop: stopSyncDomains, afterMutation, syncNow } = useCacheSync();
+/**
+ * `syncNow` rather than `afterMutation` on purpose, and `afterMutation` is deliberately not taken.
+ *
+ * `afterMutation` re-reads ONE record through a domain's `refetchOne`, which only
+ * `shopifyFulfillmentHistoryDomain` implements. The other three domains behind this screen —
+ * pending, health, order-sync history — are per-shop snapshots with no record to address, so an
+ * `afterMutation` call for them is a silent no-op. Sending one shipment also moves the figures on
+ * every one of them at once: the shipment leaves Pending, a System Message appears in Queued, the
+ * health counts shift, and on success a row lands in Synced. A forced cycle is what refreshes all
+ * four; destructuring `afterMutation` here only suggested a targeted refresh that cannot work.
+ */
+const { start: startSyncDomains, stop: stopSyncDomains, syncNow } = useCacheSync();
 
 // ---------------------------------------------------------------------------------------------
 // Worker lifecycle — the same start/stop shape the inventory sync page uses.
