@@ -236,25 +236,25 @@
                   </ion-item>
                   <ion-item lines="none">
                     <ion-label>
-                      <p>{{ translate("totalQuantity") }}</p>
+                      <p>{{ translate("Quantity") }}</p>
                       {{ card.details.totalQuantity }}
                     </ion-label>
                   </ion-item>
                   <ion-item v-if="card.details.inTransitAt" lines="none">
                     <ion-label>
-                      <p>{{ translate("inTransitAt") }}</p>
+                      <p>{{ translate("In transit") }}</p>
                       {{ formatDateTime(card.details.inTransitAt) }}
                     </ion-label>
                   </ion-item>
                   <ion-item v-if="card.details.estimatedDeliveryAt" lines="none">
                     <ion-label>
-                      <p>{{ translate("estimatedDeliveryAt") }}</p>
+                      <p>{{ translate("Estimated delivery") }}</p>
                       {{ formatDateTime(card.details.estimatedDeliveryAt) }}
                     </ion-label>
                   </ion-item>
                   <ion-item v-if="card.details.deliveredAt" lines="none">
                     <ion-label>
-                      <p>{{ translate("deliveredAt") }}</p>
+                      <p>{{ translate("Delivered") }}</p>
                       {{ formatDateTime(card.details.deliveredAt) }}
                     </ion-label>
                   </ion-item>
@@ -268,20 +268,20 @@
                   <div class="detail-facts">
                     <ion-item v-if="order.fulfillBy" lines="none">
                       <ion-label>
-                        <p>{{ translate("fulfillBy") }}</p>
+                        <p>{{ translate("Fulfill by") }}</p>
                         {{ formatDateTime(order.fulfillBy) }}
                       </ion-label>
                     </ion-item>
                     <ion-item v-if="order.destination" lines="none">
                       <ion-label class="ion-text-wrap">
-                        <p>{{ translate("destination") }}</p>
+                        <p>{{ translate("Destination") }}</p>
                         {{ order.destination }}
                       </ion-label>
                     </ion-item>
                   </div>
                   <ion-item v-if="order.holds.length" lines="none">
                     <ion-label class="ion-text-wrap">
-                      <p>{{ translate("fulfillmentHolds") }}</p>
+                      <p>{{ translate("Holds") }}</p>
                       {{ order.holds.join(", ") }}
                     </ion-label>
                     <ion-badge slot="end" color="warning">{{ translate("On hold") }}</ion-badge>
