@@ -217,8 +217,10 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
   ])("renders authoritative delivery-error count $label with danger=$danger", async ({ summary, label, danger }) => {
     cachedLocationSummaries.value = summary ? [summary] : [];
     const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
+    // The delivery-error card is a filter control on the location history view, not a monitor KPI.
+    // The monitor view surfaces the same count as a badge on the location queue card instead.
     const wrapper = mount(ShopifyInventorySync, {
-      props: { id: "100002" },
+      props: { id: "100002", initialView: "location-history" },
       global: {
         stubs: {
           IonBackButton: true,

@@ -701,8 +701,10 @@
             <ion-card button @click="locationFilterState = ''">
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
+                <!-- An absent count is not zero. Say so, the way the no-op/quarantined card does,
+                     rather than rendering an empty title that reads as "none". -->
                 <ion-card-title :color="locationDeliveryErrorCount ? 'danger' : undefined">
-                  {{ locationDeliveryErrorCount }}
+                  {{ locationDeliveryErrorCount ?? translate("Not available") }}
                 </ion-card-title>
               </ion-card-header>
               <ion-card-content>{{ translate("Details linked to a SystemMessage in error or stalled sending") }}</ion-card-content>
