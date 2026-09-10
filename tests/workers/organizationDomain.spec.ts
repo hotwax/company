@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   domains: [] as any[],
 }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn(async () => state.roles),
   workerGet: vi.fn(async (_ctx: any, url: string) => {
     const partyId = decodeURIComponent(url.split("/").at(-1) ?? "");
@@ -28,29 +28,33 @@ vi.mock("@/db/companyDb", () => ({
     entities: {
       organizations: defineEntity({ primaryKey: "partyId", fields: { partyId: "text" } }),
     },
+    entity: (table: string) => {
+      if (table === "organizations") {
+        return {
+          snapshotReplace: vi.fn(async (rows: any[]) => {
+            state.snapshots.push(rows);
+            return { written: rows.length, pruned: 0 };
+          }),
+          upsertMany: vi.fn(async (rows: any[]) => {
+            state.upserts.push(rows);
+            return rows.length;
+          }),
+          remove: vi.fn(async (partyId: string) => { state.removed.push(partyId); }),
+        };
+      }
+      return {};
+    },
   },
 }));
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  hasSyncedThisLogin: vi.fn(async () => false),
-  markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
-  cachedEntity: (table: string) => {
-    if (table === "organizations") {
-      return {
-        snapshotReplace: vi.fn(async (rows: any[]) => {
-          state.snapshots.push(rows);
-          return { written: rows.length, pruned: 0 };
-        }),
-        upsertMany: vi.fn(async (rows: any[]) => {
-          state.upserts.push(rows);
-          return rows.length;
-        }),
-        remove: vi.fn(async (partyId: string) => { state.removed.push(partyId); }),
-      };
-    }
-    return {};
-  },
-}));
+vi.mock("@common/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@common/db")>();
+  return {
+    ...actual,
+    hasSyncedThisLogin: vi.fn(async () => false),
+    markSyncedThisLogin: vi.fn(async (_db: any, name: string) => { state.marked.push(name); }),
+  };
+});
 
 vi.mock("@common/db/sync/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { state.domains.push(domain); },

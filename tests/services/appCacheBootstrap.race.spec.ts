@@ -80,10 +80,7 @@ vi.mock("@/db/companyDb", () => ({
   },
 }));
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  clearSyncMarkers: vi.fn(async () => undefined),
-  ensureCacheIdentity: vi.fn(async () => false),
-}));
+
 
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ current: { userId: "u1" } }) }));
 

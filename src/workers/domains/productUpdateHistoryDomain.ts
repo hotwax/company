@@ -1,7 +1,7 @@
 import { companyDb } from "@/db/companyDb";
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst } from "@common/db/sync/workerFetch";
+import { pageNewestFirst } from "@common/core/workerRemoteApi";
 
 /**
  * ProductUpdateHistory — class A (live), PER SHOP, bounded window.
@@ -25,8 +25,10 @@ export interface ProductUpdateHistoryArgs {
   batchSize?: number;
 }
 
+const productUpdateHistoryEntity = companyDb.entity("productUpdateHistories");
+
 async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHistoryArgs): Promise<number> {
-  const cursor = await companyDb.client().newestCursor("productUpdateHistories", "lastUpdatedStamp", {
+  const cursor = await productUpdateHistoryEntity.newestCursor("lastUpdatedStamp", {
     field: "shopId",
     value: shopId,
   });
@@ -45,7 +47,7 @@ async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHis
       : (page) => page.filter((row: any) => Number(row?.lastUpdatedStamp ?? 0) > cursor),
   });
 
-  return companyDb.client().upsertMany("productUpdateHistories", rows);
+  return productUpdateHistoryEntity.upsertMany(rows);
 }
 
 registerSyncDomain({

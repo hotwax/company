@@ -8,22 +8,24 @@ const state = vi.hoisted(() => ({
   upserts: [] as any[][],
 }));
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  cachedEntity: (table: string) => {
-    if (table === "serviceJobRuns") {
-      return {
-        newestCursor: vi.fn(async () => state.cursor),
-        upsertMany: vi.fn(async (rows: any[]) => {
-          state.upserts.push(rows);
-          return rows.length;
-        }),
-      };
-    }
-    return {};
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "serviceJobRuns") {
+        return {
+          newestCursor: vi.fn(async () => state.cursor),
+          upsertMany: vi.fn(async (rows: any[]) => {
+            state.upserts.push(rows);
+            return rows.length;
+          }),
+        };
+      }
+      return {};
+    },
   },
 }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) =>
     options.keep ? options.keep(state.serverPage) : state.serverPage),
   workerGet: vi.fn(),

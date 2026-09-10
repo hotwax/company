@@ -1,10 +1,10 @@
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 
-const serviceJobRunCache = cachedEntity("serviceJobRuns");
+const serviceJobRunCache = companyDb.entity("serviceJobRuns");
 
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
+import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
 /**
  * ServiceJobRun — class A (live), fetched PER JOB.

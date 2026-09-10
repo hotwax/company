@@ -19,14 +19,16 @@ vi.mock("@common", () => ({
   }),
 }));
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  cachedEntity: (table: string) => {
-    if (table === "systemMessageRemotes") {
-      return {
-        all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
-      };
-    }
-    return { all: vi.fn(async () => []) };
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+        };
+      }
+      return { all: vi.fn(async () => []) };
+    },
   },
 }));
 

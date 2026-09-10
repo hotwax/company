@@ -141,7 +141,7 @@ export function useSystemMessage() {
       if (errors.length) {
         // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
         // otherwise the synthetic key cannot be built and the join has nothing to match on.
-        void companyDb.client().upsertMany("systemMessageErrors", errors.map((error) => ({ ...error, systemMessageId })));
+        void companyDb.entity("systemMessageErrors").upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
       }
       return errors;
     } catch (err) {
@@ -161,7 +161,7 @@ export function useSystemMessage() {
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
 
     try {
-      const cached = (await companyDb.client().all("systemMessageErrors"))
+      const cached = (await companyDb.entity("systemMessageErrors").all())
         .filter((row: any) => row.systemMessageId === systemMessageId);
       if (cached.length) return cached.map((row: any) => row.raw);
     } catch {
@@ -193,7 +193,7 @@ export function useSystemMessage() {
   const ensureSystemMessageById = async (systemMessageId: string) => {
     if (!systemMessageId) return null;
     try {
-      const cached = (await companyDb.client().all("systemMessages"))
+      const cached = (await companyDb.entity("systemMessages").all())
         .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
       if (cached) return cached.raw ?? cached;
     } catch {
@@ -201,7 +201,7 @@ export function useSystemMessage() {
     }
 
     const fetched = await fetchSystemMessageById(systemMessageId).catch(() => null);
-    if (fetched) await companyDb.client().upsertMany("systemMessages", [fetched]);
+    if (fetched) await companyDb.entity("systemMessages").upsertMany([fetched]);
     return fetched;
   };
 
@@ -286,7 +286,7 @@ export function useSystemMessage() {
   const fetchShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
     // Cache-first: a finished operation is immutable, so serve it locally and skip the remote call.
     try {
-      const cached = (await companyDb.client().all("shopifyBulkOperations"))
+      const cached = (await companyDb.entity("shopifyBulkOperations").all())
         .find((row: any) => row.id === bulkOperationId);
       if (cached && isTerminalBulkOperation(cached.status as string)) {
         state.currentShopifyBulkOperation = cached.raw;
@@ -316,7 +316,7 @@ export function useSystemMessage() {
       if (payload) {
         state.currentShopifyBulkOperation = payload;
         // Cache it so a later visit needs no Shopify round-trip once it has finished.
-        void companyDb.client().upsertMany("shopifyBulkOperations", [{ ...payload, systemMessageRemoteId }]);
+        void companyDb.entity("shopifyBulkOperations").upsertMany([{ ...payload, systemMessageRemoteId }]);
         return payload;
       }
     } catch (err) {

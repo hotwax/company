@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
   lastScope: undefined as any,
 }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn((options: any) => {
     state.pageCalls.push(options);
     const response = state.responses[options.url] ?? [];

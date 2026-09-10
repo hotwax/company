@@ -1,12 +1,12 @@
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { unwrapCollection, workerGet, workerPost } from "@common/db/sync/workerFetch";
+import { unwrapCollection, workerGet, workerPost } from "@common/core/workerRemoteApi";
 
-const syncRunCache = cachedEntity("syncRuns");
-const shopifyShopCache = cachedEntity("shopifyShops");
-const systemMessageCache = cachedEntity("systemMessages");
-const dataManagerLogCache = cachedEntity("dataManagerLogs");
+const syncRunCache = companyDb.entity("syncRuns");
+const shopifyShopCache = companyDb.entity("shopifyShops");
+const systemMessageCache = companyDb.entity("systemMessages");
+const dataManagerLogCache = companyDb.entity("dataManagerLogs");
 
 
 /**

@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[], workerGet: [] as any[] }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options.params);
     return [];
@@ -45,26 +45,28 @@ const systemMessageCacheMock = {
   upsertMany: vi.fn(async (rows: any[]) => rows.length),
 };
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  cachedEntity: (table: string) => {
-    if (table === "systemMessages") return systemMessageCacheMock;
-    if (table === "shopifyShops") {
-      return {
-        all: vi.fn(async () => [
-          { shopId: "10000", shopifyShopId: "111" },
-          { shopId: "10010", shopifyShopId: "222" },
-        ]),
-      };
-    }
-    if (table === "systemMessageRemotes") {
-      return {
-        all: vi.fn(async () => [
-          { systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" },
-          { systemMessageRemoteId: "RemoteB", remoteId: "222", internalId: "10010" },
-        ]),
-      };
-    }
-    return {};
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessages") return systemMessageCacheMock;
+      if (table === "shopifyShops") {
+        return {
+          all: vi.fn(async () => [
+            { shopId: "10000", shopifyShopId: "111" },
+            { shopId: "10010", shopifyShopId: "222" },
+          ]),
+        };
+      }
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(async () => [
+            { systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" },
+            { systemMessageRemoteId: "RemoteB", remoteId: "222", internalId: "10010" },
+          ]),
+        };
+      }
+      return {};
+    },
   },
 }));
 

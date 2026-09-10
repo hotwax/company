@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { isEffectiveNow } from "@/utils/db/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { alertController } from "@ionic/vue";
 import { api, commonUtil, emitter, logger, useDb } from "@common";
 import { translate } from "@/i18n";

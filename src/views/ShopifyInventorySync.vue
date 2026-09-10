@@ -1355,7 +1355,7 @@ import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useVirtualRows } from "@/composables/useVirtualRows";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { formatDateTime } from "@/utils";
-import { isEffectiveNow } from "@/utils/db/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { parameterMap } from "@/utils/serviceJob";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {

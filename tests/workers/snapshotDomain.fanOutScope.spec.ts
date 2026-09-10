@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn(async (options: any) => state.fetched.filter((row) => {
     const key = options.keyOf?.(row);
     state.pageKeys.push(key);

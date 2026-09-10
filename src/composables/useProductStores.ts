@@ -3,7 +3,7 @@ import { api, commonUtil, logger, useDb } from "@common";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
-import { isEffectiveNow } from "@/utils/db/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { useEffectiveNow } from "./useEffectiveNow";
 
 import { useOrganization } from "./useSeed";

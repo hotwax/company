@@ -1,7 +1,7 @@
 import { computed, reactive, toRefs } from "vue";
 import { api, logger, useDb } from "@common";
 import cronstrue from "cronstrue";
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 
 /**
@@ -217,7 +217,7 @@ export function useServiceJob() {
     const key = `jobs_${JSON.stringify(normalizedParams)}`;
 
     try {
-      const cached = await cachedEntity("serviceJobs").all();
+      const cached = await companyDb.entity("serviceJobs").all();
       if (cached.length) {
         state.jobs = cached.map((row: any) => {
           const job = row.raw ?? row;
@@ -356,7 +356,7 @@ export function useServiceJob() {
     // CACHE-FIRST: the `serviceJobRun` domain keeps the newest runs per job, which is what every
     // caller here asks for (`pageSize: 1` or a handful, ordered by -startTime).
     if (!options.fromServer) try {
-      const cached = (await cachedEntity("serviceJobRuns").all())
+      const cached = (await companyDb.entity("serviceJobRuns").all())
         .filter((row: any) => row.jobName === jobName)
         .sort((a: any, b: any) => (Number(b.startTime ?? 0) - Number(a.startTime ?? 0)));
       if (cached.length) {

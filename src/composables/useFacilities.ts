@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { DateTime } from "luxon";
 import { api, commonUtil, logger, translate, useDb } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow, toCount, toMillis } from "@/utils/db/cacheProjection";
+import { isEffectiveNow, toCount, toMillis } from "@common/db";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { useShopifyFacilityMappings } from "./useShopify";

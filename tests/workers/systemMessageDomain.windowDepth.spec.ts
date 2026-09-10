@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[] }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options);
     return [];
@@ -32,26 +32,28 @@ vi.mock("@common/db/sync/workerFetch", () => ({
 /** How many rows the cache claims to hold for the scope under test. */
 const cacheState = vi.hoisted(() => ({ count: 0 }));
 
-vi.mock("@/utils/db/appCacheDb", () => ({
-  cachedEntity: (table: string) => {
-    if (table === "systemMessages") {
-      return {
-        all: vi.fn(async () => []),
-        count: vi.fn(async () => cacheState.count),
-        newestCursor: vi.fn(async () => 1_700_000_000_000),
-        rowsMissing: vi.fn(async () => []),
-        upsertMany: vi.fn(async (rows: any[]) => rows.length),
-      };
-    }
-    if (table === "shopifyShops") {
-      return { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) };
-    }
-    if (table === "systemMessageRemotes") {
-      return {
-        all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
-      };
-    }
-    return {};
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessages") {
+        return {
+          all: vi.fn(async () => []),
+          count: vi.fn(async () => cacheState.count),
+          newestCursor: vi.fn(async () => 1_700_000_000_000),
+          rowsMissing: vi.fn(async () => []),
+          upsertMany: vi.fn(async (rows: any[]) => rows.length),
+        };
+      }
+      if (table === "shopifyShops") {
+        return { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) };
+      }
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
+        };
+      }
+      return {};
+    },
   },
 }));
 
@@ -63,9 +65,13 @@ vi.mock("@/utils/systemMessage", () => ({
   resolveShopRemoteIds: () => ["RemoteA"],
 }));
 
-vi.mock("@/utils/db/cacheProjection", () => ({
-  keepNewerThan: (page: any[]) => page,
-}));
+vi.mock("@common/db", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    keepNewerThan: (page: any[]) => page,
+  };
+});
 
 const domains = vi.hoisted(() => ({ registered: [] as any[] }));
 vi.mock("@common/db/sync/syncRegistry", () => ({

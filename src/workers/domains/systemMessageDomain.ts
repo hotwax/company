@@ -1,14 +1,14 @@
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { liveScopeFor } from "@/config/appSyncConfig";
-import { keepNewerThan } from "@/utils/db/cacheProjection";
+import { keepNewerThan } from "@common/db";
 import { resolveShopRemoteIds } from "@/utils/systemMessage";
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
+import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
-const systemMessageCache = cachedEntity("systemMessages");
-const shopifyShopCache = cachedEntity("shopifyShops");
-const systemMessageRemoteCache = cachedEntity("systemMessageRemotes");
+const systemMessageCache = companyDb.entity("systemMessages");
+const shopifyShopCache = companyDb.entity("shopifyShops");
+const systemMessageRemoteCache = companyDb.entity("systemMessageRemotes");
 
 /**
  * SystemMessage — class A (live, append-mostly).

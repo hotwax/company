@@ -7,7 +7,7 @@ import {
   toValue,
   watch,
 } from "vue";
-import { toMillis } from "@/utils/db/cacheProjection";
+import { toMillis } from "@common/db";
 
 const MAX_TIMER_DELAY = 2_147_483_647;
 

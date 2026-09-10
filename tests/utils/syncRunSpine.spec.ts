@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectRow, projectRows } from "@/utils/db/cacheProjection";
+import { projectRow, projectRows } from "@common/db/projection";
 import { companyDb } from "@/db/companyDb";
 
 const syncRunEntity = companyDb.entities.syncRuns;

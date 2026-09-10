@@ -28,7 +28,7 @@ const state = vi.hoisted(() => ({
   lastScope: undefined as any,
 }));
 
-vi.mock("@common/db/sync/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn(async (options: any) => { state.pageAllParams = options.params; return state.pageAllResponse; }),
   pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => state.getResponse),

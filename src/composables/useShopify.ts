@@ -22,7 +22,7 @@
 
 
 import { api, commonUtil, logger, translate, useDb } from "@common";
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import {
   type ComputedRef, type MaybeRefOrGetter, computed, onBeforeUnmount, reactive, ref, toRefs,
@@ -5681,7 +5681,7 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
  */
 async function fetchShopRemoteCandidates(payload: any) {
   try {
-    const cached = await cachedEntity("systemMessageRemotes").all();
+    const cached = await companyDb.entity("systemMessageRemotes").all();
     if(cached.length) {
       const remotes = cached.map((row: any) => row.raw);
 
@@ -5916,16 +5916,16 @@ async function cachedSyncMessageHistory(query: {
   pageSize?: number;
 }): Promise<any[] | null> {
   try {
-    const remotes = (await cachedEntity("systemMessageRemotes").all()).map((row: any) => row.raw ?? row);
+    const remotes = (await companyDb.entity("systemMessageRemotes").all()).map((row: any) => row.raw ?? row);
     const remoteIds = new Set(remotes
       .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
       .map((remote: any) => String(remote.systemMessageRemoteId)),);
     if(!remoteIds.size) {return null;}
 
-    const messages = (await cachedEntity("systemMessages").all()).map((row: any) => row.raw ?? row);
+    const messages = (await companyDb.entity("systemMessages").all()).map((row: any) => row.raw ?? row);
     if(!messages.length) {return null;}
 
-    const logs = (await cachedEntity("dataManagerLogs").all()).map((row: any) => row.raw ?? row);
+    const logs = (await companyDb.entity("dataManagerLogs").all()).map((row: any) => row.raw ?? row);
     const logByMessageId = new Map<string, any>();
     for(const log of logs) {
       const key = String(log?.systemMessageId ?? "");

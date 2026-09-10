@@ -2,7 +2,7 @@ import { reactive } from "vue";
 import { commonUtil } from "@common";
 import { createSyncService, serviceState, type SyncService } from "@common/db";
 import { companyDb } from "@/db/companyDb";
-import { clearSyncMarkers, ensureCacheIdentity } from "@/utils/db/appCacheDb";
+import { clearDatabaseTables } from "@common/db";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { cacheScopeKey } from "@/utils/db/cacheScopeKey";
 import appSyncUrl from "@/workers/appSync.worker.ts?worker&url";
@@ -134,6 +134,22 @@ export function startReferenceSync(): Promise<void> {
 
   starting = readiness;
   return readiness;
+}
+
+async function ensureCacheIdentity(identity: string): Promise<boolean> {
+  const syncMeta = companyDb.entity("syncMeta");
+  const stored = await syncMeta.get<{ key: string; identity: string; at: number }>("identity");
+  if (stored?.identity === identity) return false;
+  await clearDatabaseTables(companyDb.raw());
+  await syncMeta.put({ key: "identity", identity, at: Date.now() });
+  return true;
+}
+
+export async function clearSyncMarkers(): Promise<void> {
+  const syncMeta = companyDb.entity("syncMeta");
+  const keys = await companyDb.raw().syncMeta.toCollection().primaryKeys();
+  const domainKeys = (keys as string[]).filter((key) => key.startsWith("domain:") || key.startsWith("loginSync:"));
+  if (domainKeys.length) await syncMeta.bulkRemove(domainKeys);
 }
 
 /**

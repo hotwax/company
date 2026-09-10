@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { companyDb } from "@/db/companyDb";
-import { CACHE_TABLES } from "@/utils/db/appCacheDb";
 
 describe("company database declaration", () => {
   it("composes exactly the 55 data stores Company has today", () => {
@@ -41,11 +40,6 @@ describe("company database declaration", () => {
       "facilityGroupId", "facilityId", "fromDate",
     ]);
     expect(companyDb.seedTables.has("groupFacilities")).toBe(true);
-  });
-
-  it("matches CACHE_TABLES exactly once syncMeta is excluded — same 55 stores", () => {
-    const legacyTables = new Set(CACHE_TABLES.filter((t) => t !== "syncMeta"));
-    expect(new Set(companyDb.tableNames)).toEqual(legacyTables);
   });
 
   it("picks all 17 seed tables", () => {

@@ -8,7 +8,7 @@ import {
 } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
-import { isEffectiveNow } from "@/utils/db/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { expireProductStoreShipmentMethod } from "./useProductStores";
 import { useEffectiveNow } from "./useEffectiveNow";
 

@@ -951,9 +951,9 @@ export const useUserStore = defineStore("user", {
       // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
       // sessions yet, so one user's cached data can never surface in another's session.
       const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
-      stopReferenceSync()
-      const { clearAllCaches } = await import("@/utils/db/appCacheDb")
-      await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
+      const { clearDatabaseTables } = await import("@common/db")
+      const { companyDb } = await import("@/db/companyDb")
+      await clearDatabaseTables(companyDb.raw()).catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
       const { useMaargConfig } = await import("@/composables/useSeed")
       useMaargConfig().clear()

@@ -3,7 +3,7 @@ import { api, commonUtil, translate, useDb } from "@common";
 import { computed, ref, type Ref } from "vue";
 import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow } from "@/utils/db/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
 
 export const INTERNAL_ORGANIZATION_ROLE = "INTERNAL_ORGANIZATIO";

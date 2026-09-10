@@ -1,11 +1,11 @@
-import { cachedEntity } from "@/utils/db/appCacheDb";
-import { keepNewerThan } from "@/utils/db/cacheProjection";
+import { companyDb } from "@/db/companyDb";
+import { keepNewerThan } from "@common/db";
 
-const dataManagerLogCache = cachedEntity("dataManagerLogs");
+const dataManagerLogCache = companyDb.entity("dataManagerLogs");
 
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
+import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
 /**
  * DataManagerLog — class A (live, append-mostly).

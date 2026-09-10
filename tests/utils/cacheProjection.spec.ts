@@ -11,7 +11,7 @@ import {
   toCount,
   toMillis,
   toText,
-} from "@/utils/db/cacheProjection";
+} from "@common/db/projection";
 
 const NOW = 1_700_000_000_000;
 

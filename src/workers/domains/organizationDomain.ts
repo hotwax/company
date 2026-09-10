@@ -1,14 +1,10 @@
-import {
-  cachedEntity,
-  hasSyncedThisLogin,
-  markSyncedThisLogin,
-} from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageAll, workerGet } from "@common/db/sync/workerFetch";
+import { pageAll, workerGet } from "@common/core/workerRemoteApi";
 
-const organizationCache = cachedEntity("organizations");
+const organizationCache = companyDb.entity("organizations");
 
 const INTERNAL_ORG_ROLE = "INTERNAL_ORGANIZATIO";
 const PARTY_GROUP = "PARTY_GROUP";
@@ -81,7 +77,7 @@ registerSyncDomain({
   syncClass: "B",
 
   async sync(ctx, _args, options) {
-    if(!options?.force && (await hasSyncedThisLogin("organization"))) {return 0;}
+    if(!options?.force && (await hasSyncedThisLogin(companyDb.raw(), "organization"))) {return 0;}
 
     const roles = await fetchRoleRows(ctx);
     const organizations = await fetchOrganizations(ctx, roles);
@@ -95,7 +91,7 @@ registerSyncDomain({
     }
 
     const { written } = await organizationCache.snapshotReplace(organizations);
-    if(roles.length === 0 || written > 0) {await markSyncedThisLogin("organization");}
+    if(roles.length === 0 || written > 0) {await markSyncedThisLogin(companyDb.raw(), "organization");}
 
     return written;
   },

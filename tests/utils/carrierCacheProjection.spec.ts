@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { companyDb } from "@/db/companyDb";
-import { cachedEntity } from "@/utils/db/appCacheDb";
-import { projectRow } from "@/utils/db/cacheProjection";
+import { projectRow } from "@common/db/projection";
 
 const CACHED_AT = 1_800_000_000_000;
 
@@ -20,7 +19,7 @@ describe("carrier cache projections", () => {
       roleTypeId: "CARRIER",
       cachedAt: CACHED_AT,
     });
-    expect(cachedEntity("carriers").table).toBe("carriers");
+    expect(companyDb.entity("carriers").table).toBe("carriers");
   });
 
   it("includes the carrier in a shipment-method compound key", () => {
@@ -48,7 +47,7 @@ describe("carrier cache projections", () => {
       deliveryDays: 5,
     });
     expect(ups?.partyId).toBe("UPS");
-    expect(cachedEntity("carrierShipmentMethods").table).toBe("carrierShipmentMethods");
+    expect(companyDb.entity("carrierShipmentMethods").table).toBe("carrierShipmentMethods");
   });
 
   it("includes carrier, facility, role, and effective start in a facility compound key", () => {
@@ -74,7 +73,7 @@ describe("carrier cache projections", () => {
       thruDate: 1_800_003_600_000,
     });
     expect(ups?.partyId).toBe("UPS");
-    expect(cachedEntity("carrierFacilities").table).toBe("carrierFacilities");
+    expect(companyDb.entity("carrierFacilities").table).toBe("carrierFacilities");
   });
 
   it("retains store scope, sequencing, gateway, and expiration fields", () => {

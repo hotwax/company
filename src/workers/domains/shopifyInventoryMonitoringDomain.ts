@@ -1,14 +1,14 @@
-import { cachedEntity, hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/db/appCacheDb";
 import { companyDb } from "@/db/companyDb";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
 import { canonicalKey, entityKeyOf } from "@common/db/projection";
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "@common/db/sync/workerFetch";
+import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
 
-const dataFeedCache = cachedEntity("dataFeeds");
-const inventoryChannelCache = cachedEntity("inventoryChannels");
-const shopifyInventoryAdjustmentDetailCache = cachedEntity("shopifyInventoryAdjustmentDetails");
-const systemMessageCache = cachedEntity("systemMessages");
+const dataFeedCache = companyDb.entity("dataFeeds");
+const inventoryChannelCache = companyDb.entity("inventoryChannels");
+const shopifyInventoryAdjustmentDetailCache = companyDb.entity("shopifyInventoryAdjustmentDetails");
+const systemMessageCache = companyDb.entity("systemMessages");
 
 /**
  * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
@@ -48,10 +48,10 @@ registerSyncDomain({
   label: "Shopify inventory event feed",
   syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
+    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed")) return 0;
     const feed = await fetchInventoryEventFeed(ctx);
     const result = await dataFeedCache.snapshotReplace(feed ? [feed] : []);
-    await markSyncedThisLogin("shopifyInventoryEventFeed");
+    await markSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -93,7 +93,7 @@ registerSyncDomain({
   label: "Shopify inventory channels",
   syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin("inventoryChannel")) return 0;
+    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "inventoryChannel")) return 0;
     const rows = await pageAll({
       ctx,
       url: CHANNEL_ENDPOINT,
@@ -103,7 +103,7 @@ registerSyncDomain({
       label: CHANNEL_ENDPOINT,
     });
     const result = await inventoryChannelCache.snapshotReplace(rows);
-    await markSyncedThisLogin("inventoryChannel");
+    await markSyncedThisLogin(companyDb.raw(), "inventoryChannel");
     return result.written;
   },
   async refetchOne(ctx, pk) {

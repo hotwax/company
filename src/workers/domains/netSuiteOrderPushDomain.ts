@@ -1,14 +1,13 @@
-import { cachedEntity } from "@/utils/db/appCacheDb";
+import { companyDb } from "@/db/companyDb";
+import { keepNewerThan } from "@common/db";
 
-const netSuiteDecisionRuleCache = cachedEntity("netSuiteDecisionRules");
-const netSuiteOrderPushBacklogCache = cachedEntity("netSuiteOrderPushBacklog");
-const netSuiteRuleGroupCache = cachedEntity("netSuiteRuleGroups");
-const netSuiteRuleGroupRunCache = cachedEntity("netSuiteRuleGroupRuns");
-
-import { keepNewerThan } from "@/utils/db/cacheProjection";
+const netSuiteDecisionRuleCache = companyDb.entity("netSuiteDecisionRules");
+const netSuiteOrderPushBacklogCache = companyDb.entity("netSuiteOrderPushBacklog");
+const netSuiteRuleGroupCache = companyDb.entity("netSuiteRuleGroups");
+const netSuiteRuleGroupRunCache = companyDb.entity("netSuiteRuleGroupRuns");
 import { registerSyncDomain } from "@common/db/sync/syncRegistry";
 import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/db/sync/workerFetch";
+import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
 /**
  * NetSuite order push — the live half of the sync monitor.
