@@ -40,14 +40,26 @@
         </ion-card>
 
         <template v-if="!monitoringLoaded">
-          <div class="kpi-grid ion-margin-top">
-            <ion-card v-for="i in 4" :key="i">
+          <section class="sync-summary ion-margin-top" :aria-label="translate('Loading transfer sync monitoring')">
+            <ion-card v-for="i in 2" :key="i">
               <ion-card-header>
-                <ion-skeleton-text :animated="true" style="width: 60%" />
-                <ion-skeleton-text :animated="true" style="width: 30%; height: 1.5rem" />
+                <ion-card-title>
+                  <ion-skeleton-text :animated="true" style="width: 40%" />
+                </ion-card-title>
+                <ion-card-subtitle>
+                  <ion-skeleton-text :animated="true" style="width: 70%" />
+                </ion-card-subtitle>
               </ion-card-header>
+              <ion-list lines="full">
+                <ion-item v-for="j in 3" :key="j">
+                  <ion-label>
+                    <ion-skeleton-text :animated="true" style="width: 50%" />
+                    <p><ion-skeleton-text :animated="true" style="width: 70%" /></p>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
             </ion-card>
-          </div>
+          </section>
           <ion-list lines="full">
             <ion-item v-for="i in 5" :key="i">
               <ion-label>
@@ -59,173 +71,98 @@
         </template>
 
         <template v-else>
-          <section class="kpi-grid ion-margin-top">
-            <ion-card>
+          <section class="sync-summary ion-margin-top">
+            <!-- Left Card: Pending event count and syncing from date -->
+            <ion-card class="summary">
               <ion-card-header>
-                <ion-card-subtitle>{{ translate("Outstanding") }}</ion-card-subtitle>
-                <ion-card-title :color="pendingTotal ? 'warning' : undefined">{{ pendingTotal }}</ion-card-title>
+                <ion-card-title>{{ translate("Summary") }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Outstanding changes and sync start date") }}</ion-card-subtitle>
               </ion-card-header>
-              <ion-card-content>{{ translate("Changes this shop has not sent to Shopify yet") }}</ion-card-content>
+              <ion-list lines="full">
+                <ion-item-divider>
+                  <ion-label>{{ translate("Outstanding") }}</ion-label>
+                </ion-item-divider>
+                <ion-item v-for="tab in SEGMENT_TABS" :key="tab.key" button :detail="true" @click="openOutstanding(tab.key)">
+                  <ion-label>{{ translate(tab.key === 'create' ? 'Transfers to create' : tab.label) }}</ion-label>
+                  <ion-skeleton-text v-if="!hydrated" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Syncing from") }}
+                    <p v-if="launchDate">
+                      {{ formatDateTime(launchDate) || translate("Not available") }}
+                    </p>
+                    <p v-else>
+                      {{ translate("Nothing will sync until a start date is set.") }}
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="launchLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-button v-else slot="end" fill="outline" size="small" @click="openLaunchModal()">
+                    {{ launchDate ? translate("Change start date") : translate("Set start date") }}
+                  </ion-button>
+                </ion-item>
+              </ion-list>
             </ion-card>
 
-            <!-- Not a preference: nothing syncs at all until this is set, so an unset shop has to say
-                 so loudly rather than looking like a shop with no work. -->
-            <ion-card>
+            <!-- Right Card: Webhook stats and job stats -->
+            <ion-card class="progress">
               <ion-card-header>
-                <ion-card-subtitle>{{ translate("Syncing from") }}</ion-card-subtitle>
-                <ion-card-title :color="launchDate ? undefined : 'danger'">
-                  {{ launchDate ? formatDateTime(launchDate) : translate("Not set") }}
-                </ion-card-title>
+                <ion-card-title>{{ translate("Webhooks and jobs") }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Webhook subscriptions and background sync jobs") }}</ion-card-subtitle>
               </ion-card-header>
-              <ion-card-content>
-                {{ launchDate
-                  ? translate("Only transfer orders entered on or after this date sync to Shopify.")
-                  : translate("Nothing will sync until a start date is set.") }}
-                <ion-button size="small" fill="outline" class="job-action" @click="openLaunchModal()">
-                  {{ launchDate ? translate("Change start date") : translate("Set start date") }}
-                </ion-button>
-              </ion-card-content>
-            </ion-card>
-
-            <ion-card>
-              <ion-card-header>
-                <ion-card-subtitle>{{ translate("Webhook subscriptions") }}</ion-card-subtitle>
-                <ion-card-title v-if="!webhookSummary" color="medium">
-                  <ion-skeleton-text v-if="webhooksLoading" :animated="true" class="count-skeleton" />
-                  <template v-else>
+              <ion-list lines="full">
+                <ion-item
+                  button
+                  detail
+                  @click="showWebhooksModal = true"
+                >
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Webhook subscriptions") }}
+                    <p>{{ translate("Subscribed of the topics this OMS can consume") }}</p>
+                    <p v-if="webhookSummary && webhookProblems.length" class="ion-text-wrap">
+                      {{ webhookProblems.join(", ") }}
+                    </p>
+                    <p v-if="webhookSummary && !webhookSummary.endpointAsserted" class="ion-text-wrap">
+                      {{ translate("Callback URLs are not being checked.") }}
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="webhooksLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-badge v-else-if="webhookSummary" slot="end" :color="webhookSummaryColor">
+                    {{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}
+                  </ion-badge>
+                  <ion-note v-else slot="end" color="medium">
                     {{ translate("Not checked") }}
-                  </template>
-                </ion-card-title>
-                <ion-card-title v-else :color="webhookSummaryColor">
-                  {{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}
-                </ion-card-title>
-              </ion-card-header>
-              <ion-card-content>
-                {{ translate("Subscribed of the topics this OMS can consume") }}
-                <p v-if="webhookSummary && webhookProblems.length" class="ion-text-wrap">
-                  {{ webhookProblems.join(" · ") }}
-                </p>
-                <p v-if="webhookSummary && !webhookSummary.endpointAsserted" class="ion-text-wrap">
-                  {{ translate("Callback URLs are not being checked.") }}
-                </p>
-              </ion-card-content>
-            </ion-card>
-          </section>
+                  </ion-note>
+                </ion-item>
 
-          <!-- Every job the sync depends on, in pipeline order. Neither stager calls Shopify: they
-               write MDM files that the framework's ScheduledDataManagerRunner picks up, so an
-               active stager and a delivered transfer are still two different questions. -->
-          <h2 class="section-heading">
-            {{ translate("Jobs") }}
-          </h2>
-          <section class="kpi-grid">
-            <ion-card v-for="card in jobCards" :key="card.definition.key">
-              <ion-card-header>
-                <ion-card-subtitle>{{ translate(card.definition.label) }}</ion-card-subtitle>
-                <ion-card-title v-if="!jobsHydrated">
-                  <ion-skeleton-text :animated="true" class="count-skeleton" />
-                </ion-card-title>
-                <ion-card-title v-else :color="jobStatusColor(card.status)">
-                  {{ jobStatusLabel(card) }}
-                </ion-card-title>
-              </ion-card-header>
-              <ion-card-content>
-                <p class="message-type">
-                  {{ card.jobName }}
-                </p>
-                <p class="ion-text-wrap">
-                  {{ translate(card.definition.purpose) }}
-                </p>
-                <p v-if="card.nextRun" class="overline">
-                  {{ translate("Next run") }} {{ formatDateTime(card.nextRun) || translate("Not available") }}
-                </p>
-                <ion-button
-                  v-if="jobsHydrated && (card.job || card.definition.scope === 'shop')"
-                  size="small"
-                  fill="outline"
-                  class="job-action"
-                  :disabled="configuringJobKey === card.definition.key"
+                <!-- Every job the sync depends on, in pipeline order. Neither stager calls Shopify: they
+                     write MDM files that the framework's ScheduledDataManagerRunner picks up, so an
+                     active stager and a delivered transfer are still two different questions. -->
+                <ion-item
+                  v-for="card in jobCards"
+                  :key="card.definition.key"
+                  :button="jobsHydrated && (card.job || card.definition.scope === 'shop')"
+                  :detail="jobsHydrated && (card.job || card.definition.scope === 'shop')"
                   @click="card.job ? openJobModal(card) : configureJob(card)"
                 >
-                  <ion-spinner v-if="configuringJobKey === card.definition.key" name="crescent" />
-                  <template v-else>
-                    {{ card.job ? translate("Manage job") : translate("Set up and manage job") }}
-                  </template>
-                </ion-button>
-              </ion-card-content>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate(card.definition.label) }}
+                    <p class="message-type">{{ card.jobName }}</p>
+                    <p>{{ translate(card.definition.purpose) }}</p>
+                    <p v-if="card.nextRun" class="overline">
+                      {{ translate("Next run") }} {{ formatDateTime(card.nextRun) || translate("Not available") }}
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="!jobsHydrated" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-spinner v-else-if="configuringJobKey === card.definition.key" slot="end" name="crescent" />
+                  <ion-badge v-else slot="end" :color="jobStatusColor(card.status)">
+                    {{ jobStatusLabel(card) }}
+                  </ion-badge>
+                </ion-item>
+              </ion-list>
             </ion-card>
           </section>
-
-          <!-- Topics subscribed at Shopify, the OMS message type each one is consumed by, and the
-               received-status backlog per type — reconciled in one table so an operator never has
-               to open three screens to answer "is this topic actually wired end to end?". -->
-          <ion-accordion-group class="webhook-card" expand="inset">
-            <ion-accordion value="webhook-subscriptions">
-              <ion-item slot="header" lines="none" class="webhook-header">
-                <ion-label class="ion-text-wrap">
-                  <p class="webhook-subtitle">{{ translate("Webhook subscriptions") }}</p>
-                  <h2 class="webhook-title">{{ translate("Transfer and shipment topics registered at Shopify") }}</h2>
-                </ion-label>
-              </ion-item>
-
-              <div slot="content" class="webhook-content">
-                <ion-card-content>
-                  <div class="webhook-actions">
-                    <ion-button size="small" fill="outline" :disabled="webhooksLoading" @click="loadWebhookReconciliation()">
-                      <ion-spinner v-if="webhooksLoading" name="crescent" />
-                      <template v-else>
-                        {{ translate("Refresh") }}
-                      </template>
-                    </ion-button>
-                    <span v-if="otherWebhookCount" class="overline">
-                      {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
-                    </span>
-                    <span v-if="webhookSummary && webhookSummary.elsewhereCount" class="overline">
-                      {{ translate("Delivering to") }} {{ elsewhereHosts.join(", ") }}, {{ translate("not this OMS") }}
-                    </span>
-                    <span v-if="receivedTruncated" class="overline">
-                      {{ translate("Received counts are a floor; the backlog is deeper than one page.") }}
-                    </span>
-                  </div>
-
-                  <ion-label v-if="webhooksError" class="ion-text-wrap webhook-error">
-                    <ion-icon :icon="warningOutline" color="danger" />
-                    {{ webhooksError }}
-                  </ion-label>
-
-                  <ion-label v-else-if="webhooksLoading && !webhookRows.length" class="ion-text-wrap">
-                    <ion-skeleton-text :animated="true" style="width: 45%" />
-                  </ion-label>
-
-                  <ion-label v-else-if="!webhookRows.length" class="ion-text-wrap">
-                    <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
-                  </ion-label>
-                </ion-card-content>
-
-                <ion-list v-if="webhookRows.length" lines="full">
-                  <ion-item v-for="row in webhookRows" :key="row.topic">
-                    <ion-label class="ion-text-wrap">
-                      {{ row.topic }}
-                      <p>{{ row.uri || translate("No callback URL registered") }}</p>
-                      <p v-if="row.status === 'elsewhere'" class="overline">
-                        {{ translate("Delivers to") }} {{ row.uriHost }}
-                      </p>
-                      <p class="message-type">
-                        {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
-                      </p>
-                    </ion-label>
-                    <ion-label slot="end" class="ion-text-end received-count">
-                      {{ row.receivedCount }}
-                      <p>{{ translate("Received") }}</p>
-                    </ion-label>
-                    <ion-badge slot="end" :color="webhookStatusColor(row.status)">
-                      {{ webhookStatusLabel(row.status) }}
-                    </ion-badge>
-                  </ion-item>
-                </ion-list>
-              </div>
-            </ion-accordion>
-          </ion-accordion-group>
 
           <!-- Four tabs over five resources. Each row is one artifact the shop has not sent to
                Shopify yet; the server view decides that from the provenance ledger, so there is no
@@ -240,9 +177,6 @@
             <ion-segment-button v-for="tab in SEGMENT_TABS" :key="tab.key" :value="tab.key">
               <ion-label>
                 {{ translate(tab.label) }}
-                <ion-badge v-if="tabCount(tab)" :color="tab.key === segment ? 'primary' : 'medium'">
-                  {{ tabCount(tab) }}
-                </ion-badge>
               </ion-label>
             </ion-segment-button>
           </ion-segment>
@@ -285,31 +219,32 @@
                 <ion-list slot="content" class="transfer-row-content" lines="full">
                   <ion-item v-if="row.occurredAt">
                     <ion-label>{{ translate("OMS recorded") }}</ion-label>
-                    <ion-note slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-note>
+                    <ion-label slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-label>
                   </ion-item>
                   <ion-item v-if="row.syncedAt">
                     <ion-label>{{ translate("Shopify confirmed") }}</ion-label>
-                    <ion-note slot="end">{{ formatDateTime(row.syncedAt) || translate("Not available") }}</ion-note>
+                    <ion-label slot="end">{{ formatDateTime(row.syncedAt) || translate("Not available") }}</ion-label>
                   </ion-item>
                   <ion-item>
                     <ion-label>{{ translate("OMS transfer") }}</ion-label>
-                    <ion-note slot="end">{{ row.orderId }}</ion-note>
+                    <ion-label slot="end">{{ row.orderId }}</ion-label>
                   </ion-item>
                   <ion-item v-if="row.shopifyTransferId">
                     <ion-label>{{ translate("Shopify transfer") }}</ion-label>
-                    <ion-note slot="end">{{ row.shopifyTransferId }}</ion-note>
+                    <ion-label slot="end">{{ row.shopifyTransferId }}</ion-label>
                   </ion-item>
+                  <ShopifyTransferSnapshot v-if="segment === 'create' && row.shopifyTransferId" :shop-id="shopId" :transfer-id="row.shopifyTransferId" />
                   <ion-item v-if="row.shipmentEventStatus">
                     <ion-label>{{ translate("Shipment event") }}</ion-label>
-                    <ion-note slot="end">{{ translate(row.shipmentEventStatus) }}</ion-note>
+                    <ion-label slot="end">{{ translate(row.shipmentEventStatus) }}</ion-label>
                   </ion-item>
                   <ion-item v-if="row.omsShipmentId">
                     <ion-label>{{ translate("OMS shipment ID") }}</ion-label>
-                    <ion-note slot="end">{{ row.omsShipmentId }}</ion-note>
+                    <ion-label slot="end">{{ row.omsShipmentId }}</ion-label>
                   </ion-item>
                   <ion-item v-for="shopifyShipmentId in row.shopifyShipmentIds" :key="shopifyShipmentId">
                     <ion-label>{{ translate("Shopify shipment ID") }}</ion-label>
-                    <ion-note slot="end">{{ shopifyShipmentId }}</ion-note>
+                    <ion-label slot="end">{{ shopifyShipmentId }}</ion-label>
                   </ion-item>
                 </ion-list>
               </ion-accordion>
@@ -357,27 +292,27 @@
               <ion-list slot="content" class="transfer-row-content" lines="full">
                 <ion-item v-if="row.occurredAt">
                   <ion-label>{{ translate("OMS recorded") }}</ion-label>
-                  <ion-note slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-note>
+                  <ion-label slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-label>
                 </ion-item>
                 <ion-item>
                   <ion-label>{{ translate("OMS transfer") }}</ion-label>
-                  <ion-note slot="end">{{ row.orderId }}</ion-note>
+                  <ion-label slot="end">{{ row.orderId }}</ion-label>
                 </ion-item>
                 <ion-item v-if="row.shopifyTransferId">
                   <ion-label>{{ translate("Shopify transfer") }}</ion-label>
-                  <ion-note slot="end">{{ row.shopifyTransferId }}</ion-note>
+                  <ion-label slot="end">{{ row.shopifyTransferId }}</ion-label>
                 </ion-item>
                 <ion-item v-if="row.shipmentEventStatus">
                   <ion-label>{{ translate("Shipment event") }}</ion-label>
-                  <ion-note slot="end">{{ translate(row.shipmentEventStatus) }}</ion-note>
+                  <ion-label slot="end">{{ translate(row.shipmentEventStatus) }}</ion-label>
                 </ion-item>
                 <ion-item v-if="row.omsShipmentId">
                   <ion-label>{{ translate("OMS shipment ID") }}</ion-label>
-                  <ion-note slot="end">{{ row.omsShipmentId }}</ion-note>
+                  <ion-label slot="end">{{ row.omsShipmentId }}</ion-label>
                 </ion-item>
                 <ion-item v-for="shopifyShipmentId in row.shopifyShipmentIds" :key="shopifyShipmentId">
                   <ion-label>{{ translate("Shopify shipment ID") }}</ion-label>
-                  <ion-note slot="end">{{ shopifyShipmentId }}</ion-note>
+                  <ion-label slot="end">{{ shopifyShipmentId }}</ion-label>
                 </ion-item>
               </ion-list>
             </ion-accordion>
@@ -454,23 +389,112 @@
             </p>
           </ion-card-content>
         </ion-card>
+        <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+          <ion-fab-button :disabled="!selectedLaunchDate || launchSaving" @click="confirmLaunch()">
+            <ion-icon :icon="saveOutline" />
+          </ion-fab-button>
+        </ion-fab>
       </ion-content>
+    </ion-modal>
 
-      <ion-footer>
+    <!-- Webhook subscriptions modal -->
+    <ion-modal :is-open="showWebhooksModal" @did-dismiss="showWebhooksModal = false">
+      <ion-header>
         <ion-toolbar>
-          <ion-buttons slot="end">
-            <ion-button fill="clear" @click="showLaunchModal = false">
-              {{ translate("Cancel") }}
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="showWebhooksModal = false">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
             </ion-button>
-            <ion-button fill="solid" :disabled="!selectedLaunchDate || launchSaving" @click="confirmLaunch()">
-              <ion-spinner v-if="launchSaving" name="crescent" />
-              <template v-else>
-                {{ translate("Save") }}
-              </template>
+          </ion-buttons>
+          <ion-title>{{ translate("Webhook subscriptions") }}</ion-title>
+          <ion-buttons slot="end">
+            <ion-button :disabled="webhooksLoading" :aria-label="translate('Refresh')" @click="loadWebhookReconciliation()">
+              <ion-spinner v-if="webhooksLoading" name="crescent" />
+              <ion-icon v-else slot="icon-only" :icon="refreshOutline" />
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
-      </ion-footer>
+      </ion-header>
+
+      <ion-content>
+        <ion-item lines="none">
+          <ion-label class="ion-text-wrap">
+            <h2>{{ translate("Transfer and shipment topics registered at Shopify") }}</h2>
+            <p v-if="otherWebhookCount">
+              {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
+            </p>
+            <p v-if="webhookSummary && webhookSummary.elsewhereCount">
+              {{ translate("Delivering to") }} {{ elsewhereHosts.join(", ") }}, {{ translate("not this OMS") }}
+            </p>
+            <p v-if="receivedTruncated" class="overline">
+              {{ translate("Received counts are a floor; the backlog is deeper than one page.") }}
+            </p>
+          </ion-label>
+        </ion-item>
+
+        <ion-card v-if="webhookSummary?.missingCount || webhookSetupResults.length">
+          <ion-card-header><ion-card-title>{{ translate('Register missing topics') }}</ion-card-title></ion-card-header>
+          <ion-card-content>
+            <ion-input v-model="webhookCallbackUrl" type="text" :disabled="webhookSetupBusy || webhookSetupUncertain" :label="translate('HTTPS callback URL or EventBridge ARN')" label-placement="stacked" placeholder="https://oms.example.com/rest/s1/shopify/webhook/payload" />
+            <p>{{ translate('Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.') }}</p>
+            <ion-button :disabled="!webhookCallbackUrl.trim() || webhookSetupBusy || webhookSetupUncertain || webhooksLoading || !!webhooksError || !webhookSummary?.missingCount" @click="registerMissingWebhooks">
+              <ion-spinner v-if="webhookSetupBusy" name="crescent" />
+              {{ translate('Register missing topics') }}
+            </ion-button>
+            <ion-list v-if="webhookSetupResults.length" aria-live="polite">
+              <ion-item v-for="result in webhookSetupResults" :key="result.topic">
+                <ion-label class="ion-text-wrap"><h3>{{ result.topic }}</h3><p>{{ result.message }}</p><p v-if="result.id">{{ result.id }}</p></ion-label>
+              </ion-item>
+            </ion-list>
+            <p v-if="webhookSetupError">{{ webhookSetupError }}</p>
+          </ion-card-content>
+        </ion-card>
+
+        <ion-item v-if="webhooksError" lines="full" color="light">
+          <ion-icon slot="start" :icon="warningOutline" color="danger" />
+          <ion-label class="ion-text-wrap">
+            <p>{{ webhooksError }}</p>
+          </ion-label>
+          <ion-button slot="end" fill="outline" size="small" :disabled="webhooksLoading" @click="loadWebhookReconciliation()">
+            {{ translate("Retry") }}
+          </ion-button>
+        </ion-item>
+
+        <ion-list v-else-if="webhooksLoading && !webhookRows.length" lines="full">
+          <ion-item v-for="i in 4" :key="i">
+            <ion-label>
+              <ion-skeleton-text :animated="true" style="width: 50%" />
+              <p><ion-skeleton-text :animated="true" style="width: 70%" /></p>
+            </ion-label>
+          </ion-item>
+        </ion-list>
+
+        <div v-else-if="!webhookRows.length" class="empty-state">
+          <p>{{ translate("No transfer or shipment webhook topics are registered on this shop.") }}</p>
+        </div>
+
+        <ion-list v-if="webhookRows.length" lines="full">
+          <ion-item v-for="row in webhookRows" :key="row.topic">
+            <ion-label class="ion-text-wrap">
+              {{ row.topic }}
+              <p>{{ row.uri || translate("No callback URL registered") }}</p>
+              <p v-if="row.status === 'elsewhere'" class="overline">
+                {{ translate("Delivers to") }} {{ row.uriHost }}
+              </p>
+              <p class="message-type">
+                {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
+              </p>
+            </ion-label>
+            <ion-label slot="end" class="ion-text-end received-count">
+              {{ row.receivedCount }}
+              <p>{{ translate("Received") }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="webhookStatusColor(row.status)">
+              {{ webhookStatusLabel(row.status) }}
+            </ion-badge>
+          </ion-item>
+        </ion-list>
+      </ion-content>
     </ion-modal>
 
     <!-- Schedule, activate, and run the selected transfer job without leaving this page. -->
@@ -491,21 +515,23 @@
 import { commonUtil, translate } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader,
-  IonCardSubtitle, IonCardTitle, IonContent, IonHeader,
-  IonDatetime, IonDatetimeButton, IonFooter,
-  IonIcon, IonItem, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
-  IonSegment, IonSegmentButton,
+  IonCardSubtitle, IonCardTitle, IonContent, IonFab, IonFabButton, IonHeader,
+  IonDatetime, IonDatetimeButton,
+  IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
+  IonSegment, IonSegmentButton, IonInput,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
-import { checkmarkCircleOutline, closeOutline, warningOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, closeOutline, refreshOutline, saveOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
+  registerMissingTransferWebhook,
   useShopifyPendingCounts,
   useShopifyTransferSyncLaunch,
   useShopifyPendingSegment,
@@ -540,7 +566,7 @@ const SEGMENT_TABS = [
 
 const segment = ref<PendingSegment>("create");
 
-const { counts, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
+const { counts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
 const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
 // The paired segment for the combined tab; empty for every other tab.
 const { rows: pairedRows } = useShopifyPendingSegment(
@@ -673,6 +699,11 @@ watch(rawTransferRows, (rows) => {
  * read cannot. Synced history therefore shows the primary segment of the tab; the paired one has
  * its own resource and is reachable from the transfer's detail timeline.
  */
+function openOutstanding(next: PendingSegment) {
+  direction.value = "pending";
+  segment.value = next;
+}
+
 function setDirection(next: SyncDirection) {
   direction.value = next || "pending";
   if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
@@ -759,6 +790,36 @@ const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 
 const showJobModal = ref(false);
+const webhookCallbackUrl = ref('');
+const webhookSetupBusy = ref(false);
+const webhookSetupUncertain = ref(false);
+const webhookSetupError = ref('');
+const webhookSetupResults = ref<Array<{topic: string; message: string; id?: string}>>([]);
+async function registerMissingWebhooks() {
+  if (webhookSetupBusy.value || webhookSetupUncertain.value) return;
+  webhookSetupBusy.value = true;
+  webhookSetupError.value = '';
+  const targetShop = shopId.value;
+  const endpoint = webhookCallbackUrl.value.trim();
+  try {
+    await refreshWebhookReconciliation();
+    if (webhooksError.value) throw new Error(webhooksError.value);
+    const topics = webhookRows.value.filter(row => row.status === 'missing').map(row => row.topic);
+    for (const topic of topics) {
+      if (targetShop !== shopId.value) break;
+      const result = await registerMissingTransferWebhook(targetShop, topic, endpoint);
+      webhookSetupResults.value.push({topic, id: result.subscriptionId,
+        message: translate(result.status === 'created' ? 'Registered' : result.status === 'existing'
+          ? 'Already registered; existing destination preserved.'
+          : 'Registration outcome unknown. Check subscriptions before attempting further changes.')});
+      if (result.status === 'uncertain') { webhookSetupUncertain.value = true; break; }
+    }
+    await refreshWebhookReconciliation();
+  } catch (error: any) { webhookSetupError.value = error.message; }
+  finally { webhookSetupBusy.value = false; }
+}
+
+const showWebhooksModal = ref(false);
 const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
 const configuringJobKey = ref("");
@@ -865,17 +926,6 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
 </script>
 
 <style scoped>
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--spacer-base);
-  margin-block-end: var(--spacer-base);
-}
-
-.kpi-grid ion-card {
-  margin: 0;
-}
-
 .count-skeleton {
   width: var(--spacer-3xl);
 }
@@ -951,58 +1001,10 @@ onIonViewDidLeave(() => { stopSyncDomains(); });
   margin: 0;
 }
 
-.webhook-card {
-  margin-block-end: var(--spacer-base);
-}
-
-.webhook-header {
-  --background: var(--ion-card-background, var(--ion-background-color));
-  --inner-padding-end: var(--spacer-base);
-  --padding-start: var(--spacer-base);
-}
-
-.webhook-subtitle {
-  margin: 0 0 var(--spacer-xs);
-  color: var(--ion-color-medium);
-  font-size: 0.875rem;
-}
-
-.webhook-title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.webhook-content {
-  background: var(--ion-card-background, var(--ion-background-color));
-}
-
-.webhook-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-sm);
-  flex-wrap: wrap;
-  margin-block-end: var(--spacer-sm);
-}
-
-.webhook-error {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-xs);
-}
-
 /* Not .overline: these are CamelCase SystemMessageType ids, and uppercasing them is unreadable. */
 .message-type {
   font-size: 0.75rem;
   color: var(--ion-color-medium);
-}
-
-.section-heading {
-  margin-block: var(--spacer-base) var(--spacer-sm);
-}
-
-.job-action {
-  margin-block-start: var(--spacer-sm);
 }
 
 .received-count {

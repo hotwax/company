@@ -82,7 +82,7 @@
               <ion-card-header>
                 <ion-card-title>{{ translate("Location event queue") }}</ion-card-title>
                 <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify physical locations") }}</ion-card-subtitle>
-                <ion-badge v-if="locationDeliveryErrorCount > 0" color="danger">
+                <ion-badge v-if="(locationDeliveryErrorCount ?? 0) > 0" color="danger">
                   {{ locationDeliveryErrorCount }} {{ translate("errors") }}
                 </ion-badge>
               </ion-card-header>
@@ -145,6 +145,7 @@
               </ion-badge>
             </ion-card-header>
             <ion-list lines="full">
+              <ion-item v-if="jobSetupError" role="alert"><ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label></ion-item>
               <ion-item
                 v-for="job in sharedJobs"
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
@@ -181,6 +182,18 @@
             </ion-list>
           </ion-card>
         </section>
+
+        <ion-card>
+          <ion-list lines="none">
+            <ion-item button detail @click="router.push(`/shopify-connection-details/${props.id}/inventory-sync/activations`)">
+              <ion-icon slot="start" :icon="checkmarkCircleOutline" />
+              <ion-label class="ion-text-wrap">
+                <h2>{{ translate("Product activation") }}</h2>
+                <p>{{ translate("Monitor pending product locations and review the latest Shopify activation confirmations.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+        </ion-card>
 
         <section class="inventory-channels">
           <ion-item lines="none">
@@ -420,6 +433,25 @@
         </section>
 
 
+        <section>
+          <ion-item lines="none"><ion-label class="ion-text-wrap">
+            <h2>{{ translate('Physical location ATP reset runs') }}</h2>
+            <p>{{ translate('Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.') }}</p>
+          </ion-label></ion-item>
+          <ion-card v-for="run in physicalAtpResetRuns" :key="run.id">
+            <ion-card-header><ion-card-title>{{ run.id }}</ion-card-title>
+              <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">{{ run.importLogId ? translate('Feed generated') : run.status }}</ion-badge>
+            </ion-card-header>
+            <ion-list>
+              <ion-item><ion-label>{{ translate('Started') }}</ion-label><ion-label slot="end">{{ run.started }}</ion-label></ion-item>
+              <ion-item><ion-label class="ion-text-wrap">{{ translate('Parameters') }}<p>{{ run.parameters }}</p></ion-label></ion-item>
+              <ion-item><ion-label class="ion-text-wrap">{{ translate('Result') }}<p>{{ run.result }}</p></ion-label></ion-item>
+            </ion-list>
+            <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
+          </ion-card>
+          <ion-item v-if="jobsHydrated && !physicalAtpResetRuns.length"><ion-label>{{ translate('No recorded physical ATP reset runs') }}</ion-label></ion-item>
+        </section>
+
         <section class="run-section">
           <div class="section-header">
             <ion-item lines="none">
@@ -498,8 +530,8 @@
               <ion-card-header>
                 <ion-card-title>{{ run.id }}</ion-card-title>
                 <ion-card-subtitle>Aggregate location ATP reset</ion-card-subtitle>
-                <ion-badge :color="run.badgeColor">
-                  {{ run.status }}
+                <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">
+                  {{ run.importLogId ? translate('Feed generated') : run.status }}
                 </ion-badge>
               </ion-card-header>
               <ion-list lines="full">
@@ -529,6 +561,8 @@
                   </ion-chip>
                 </ion-item>
               </ion-list>
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId"
+                :remote-id="syncContext.remoteId.value || ''" :channels="inventoryChannels" />
             </ion-card>
             <ion-card v-if="jobsHydrated && inventoryChannelsHydrated && !aggregateResetRuns.length">
               <ion-item lines="none">
@@ -700,7 +734,7 @@
       <ion-content class="ion-padding-horizontal">
         <main class="history-page">
           <div class="kpi-grid">
-            <ion-card button @click="locationFilterState = translate('Unassigned (publishable)')">
+            <ion-card button @click="locationFilterState = 'unassigned'">
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Unassigned backlog") }}</ion-card-subtitle>
                 <ion-card-title :color="unassignedBacklogWarn ? 'warning' : undefined">
@@ -715,7 +749,7 @@
                 </p>
               </ion-card-content>
             </ion-card>
-            <ion-card button @click="locationFilterState = ''">
+            <ion-card button @click="locationFilterState = 'SmsgError'">
               <ion-card-header>
                 <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
                 <!-- An absent count is not zero. Say so, the way the no-op/quarantined card does,
@@ -724,7 +758,7 @@
                   {{ locationDeliveryErrorCount ?? translate("Not available") }}
                 </ion-card-title>
               </ion-card-header>
-              <ion-card-content>{{ translate("Details linked to a SystemMessage in error or stalled sending") }}</ion-card-content>
+              <ion-card-content>{{ translate("Details linked to a System Message in error") }}</ion-card-content>
             </ion-card>
             <ion-card>
               <ion-card-header>
@@ -809,8 +843,8 @@
                     @ion-change="locationFilterState = $event.detail.value || ''"
                   >
                     <ion-select-option value="">{{ translate("All") }}</ion-select-option>
-                    <ion-select-option v-for="option in locationStateOptions" :key="option" :value="option">
-                      {{ option }}
+                    <ion-select-option v-for="option in locationStateOptions" :key="option.id" :value="option.id">
+                      {{ option.label }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="locationFilterState" fill="clear" class="clear-filter-button" :aria-label="translate('Clear delivery state filter')" @click.stop="locationFilterState = ''">
@@ -820,19 +854,13 @@
                 <div class="filter-item">
                   <ion-item lines="none" class="date-filter-item">
                     <ion-label>{{ translate("From") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="location-history-from" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="location-history-from" presentation="date" v-model="locationFilterFrom" />
-                    </ion-popover>
+                    <input slot="end" type="date" :aria-label="translate('From date')" v-model="locationFilterFrom" />
                   </ion-item>
                 </div>
                 <div class="filter-item">
                   <ion-item lines="none" class="date-filter-item">
                     <ion-label>{{ translate("To") }}</ion-label>
-                    <ion-datetime-button slot="end" datetime="location-history-to" />
-                    <ion-popover :keep-contents-on-did-dismiss="true">
-                      <ion-datetime id="location-history-to" presentation="date" v-model="locationFilterTo" />
-                    </ion-popover>
+                    <input slot="end" type="date" :aria-label="translate('To date')" v-model="locationFilterTo" />
                   </ion-item>
                 </div>
               </div>
@@ -851,13 +879,30 @@
             </ion-badge>
           </div>
 
-          <ion-card v-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
+          <ion-card v-if="inventorySyncError"><ion-card-content>{{ translate("Refresh failed. Showing previously loaded data.") }} {{ inventorySyncError }}</ion-card-content></ion-card>
+          <ion-segment :value="locationHistoryMode" @ion-change="changeLocationMode(String($event.detail.value))">
+            <ion-segment-button value="events"><ion-label>{{ translate("All events") }}</ion-label></ion-segment-button>
+            <ion-segment-button value="batches"><ion-label>{{ translate("Grouped by batch") }}</ion-label></ion-segment-button>
+          </ion-segment>
+          <ion-accordion-group v-if="locationHistoryMode === 'batches' && filteredLocationDetailRows.length">
+            <ion-accordion v-for="batch in filteredLocationBatches.slice(0, locationVisibleCount)" :key="batch.id" :value="batch.id">
+              <ion-item slot="header"><ion-label>{{ batch.label }}<p>{{ batch.rows.length }} {{ translate("events") }} · {{ translate("Net adjustment") }} {{ batch.net }}</p><p>{{ batch.target }} · {{ formatDateTime(batch.created) }}</p></ion-label><ion-badge slot="end">{{ batch.state }}</ion-badge></ion-item>
+              <ion-list slot="content">
+                <ion-item v-if="batch.id !== 'unassigned'"><ion-button fill="clear" @click="openMessage(locationBatches.find(entry => entry.id === batch.id)!)">{{ translate("Message text") }}</ion-button></ion-item>
+                <ion-item v-for="row in batch.rows" :key="row.rowKey" button @click="selectedLocationDetail = row">
+                  <ion-label>{{ row.eventTypeDescription || row.eventTypeId }}<p>{{ row.eventReferenceId }} · {{ row.shopifyLocationId }} · {{ row.shopifyInventoryItemId }}</p><p>{{ formatDateTime(row.createdDate) }}</p></ion-label>
+                  <ion-note slot="end">{{ row.computedInventoryChange }}</ion-note>
+                </ion-item>
+              </ion-list>
+            </ion-accordion>
+          </ion-accordion-group>
+          <ion-card v-else-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
             <ion-card-content>{{ translate("No location inventory events match this view.") }}</ion-card-content>
           </ion-card>
 
           <ion-list v-else lines="full">
             <ion-item
-              v-for="row in filteredLocationDetailRows"
+              v-for="row in filteredLocationDetailRows.slice(0, locationVisibleCount)"
               :key="row.rowKey"
               button
               detail
@@ -886,6 +931,7 @@
             </ion-item>
           </ion-list>
 
+          <ion-button v-if="(locationHistoryMode === 'batches' ? filteredLocationBatches.length : filteredLocationDetailRows.length) > locationVisibleCount" expand="block" fill="clear" @click="locationVisibleCount += 50">{{ translate("Load more") }}</ion-button>
           <ion-card>
             <ion-card-header>
               <ion-card-title>{{ translate("Mapping gaps") }}</ion-card-title>
@@ -990,7 +1036,7 @@
                       All
                     </ion-select-option>
                     <ion-select-option v-for="option in channelFilterOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
+                      {{ option }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="selectedChannel" fill="clear" class="clear-filter-button" aria-label="Clear inventory channel filter" @click.stop="selectedChannel = ''">
@@ -1511,6 +1557,10 @@
               <p>{{ selectedEvent?.calculation || translate("No calculation comment recorded") }}</p>
             </ion-label>
           </ion-item>
+          <ShopifyInventorySnapshot v-if="selectedEvent" :key="selectedEvent.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedEvent.shopifyInventoryItem || ''"
+            :location-id="selectedEvent.locationId || ''" />
         </ion-list>
       </ion-content>
     </ion-modal>
@@ -1699,6 +1749,10 @@
               </ion-text>
             </ion-label>
           </ion-item>
+          <ShopifyInventorySnapshot :key="selectedLocationDetail.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedLocationDetail.shopifyInventoryItemId || ''"
+            :location-id="selectedLocationDetail.shopifyLocationId || ''" />
         </ion-list>
       </ion-content>
     </ion-modal>
@@ -1812,6 +1866,8 @@ import {
   watch,
 } from "vue";
 import { useRouter } from "vue-router";
+import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
+import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
@@ -1836,6 +1892,8 @@ import {
   ensureChannelResetJob,
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
+  ensureShopPhysicalAtpResetJob,
+  PHYSICAL_ATP_RESET_SERVICE,
   fetchLocationsFromShopify,
   setInventoryEventDocumentAttachedForFeed,
   updateShopifyInventoryEventFeedType,
@@ -2012,9 +2070,10 @@ const PUBLISH_PENDING_SERVICES = [
   "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments",
 ];
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
-const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails";
+const PURGE_LOCATION_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
@@ -2128,7 +2187,7 @@ function sourceLine(event: InventoryEvent): string {
 }
 
 const { labelFor: statusDescriptionFor } = useStatuses();
-const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+const { ensureSystemMessageErrors, ensureSystemMessageById, resendSystemMessage } = useSystemMessage();
 
 const batchErrors = ref<any[]>([]);
 const loadingBatchErrors = ref(false);
@@ -2284,6 +2343,9 @@ const shopInventoryPushBadgeColor = computed(() => {
 
 const messageById = computed<Map<string, any>>(() => new Map(cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),));
 
+const physicalAtpResetJobs = computed<any[]>(() => cachedJobs.value.filter((job: any) =>
+  job.serviceName === PHYSICAL_ATP_RESET_SERVICE && String(parameterMap(job).shopId || "") === String(props.id)));
+
 const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) => {
   const parameters = parameterMap(job);
 
@@ -2311,6 +2373,8 @@ const effectiveDateJob = computed<any>(() =>
 /** Retention cleanup for the event ledger. Connector-seeded and OMS-wide, so it is not per channel. */
 const purgeDetailsJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === PURGE_DETAILS_SERVICE) ?? null);
+const purgeLocationDetailsJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === PURGE_LOCATION_DETAILS_SERVICE) ?? null);
 
 /** The manual discard handle. One job serves every channel via its inventoryChannelId parameter. */
 const discardEventsJob = computed<any>(() =>
@@ -2348,10 +2412,16 @@ const aggregateResetJobs = computed<any[]>(() => {
 const primaryAggregateResetJob = computed<any>(() =>
   nextExecutionFor(aggregateResetJobs.value) ?? aggregateResetJobs.value[0] ?? null);
 
+const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
+  String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
+
 const watchedJobNames = computed(() => [...new Set([
+  locationPublishJob.value?.jobName,
   physicalResetJob.value?.jobName,
+  ...physicalAtpResetJobs.value.map((job: any) => job.jobName),
   effectiveDateJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
+  purgeLocationDetailsJob.value?.jobName,
   discardEventsJob.value?.jobName,
   ...inventoryAdjustmentSenderJobs.value.map((job: any) => job.jobName),
   ...pendingPublisherJobs.value.map((job: any) => job.jobName),
@@ -2366,11 +2436,11 @@ function latestRunFor(jobs: any[]): any | null {
 }
 
 function nextExecutionFor(jobs: any[]): any | null {
-  return jobs.filter((job) => job.paused !== "Y" && job.nextExecutionDateTime)
+  return jobs.filter((job) => job.paused !== "Y" && toMillis(job.nextExecutionDateTime) > Date.now())
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
-type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "discard" | "sender";
+type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -2413,8 +2483,6 @@ function findChannelResetJob(channelId: string) {
     cachedJobs.value.find((job: any) =>
       job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
       job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
-    cachedJobs.value.find((job: any) =>
-      job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
     null;
 }
 
@@ -2438,11 +2506,8 @@ type JobDefinition = {
  * this connection every job reported a next run behind its own last one. Calling that overdue would be
  * a false alarm on a job running perfectly well every fifteen minutes.
  *
- * Three cases, and only one of them is an alarm:
- *   future             -> the delta, which is what an operator actually wants to read
- *   a run came after   -> the stored value is PROVABLY stale, so fall back to the cron's cadence, which
- *                         is the one schedule fact that cannot decay
- *   past, no later run -> genuinely overdue
+ * A future timestamp can be displayed. Missing or expired timestamps cannot establish that the
+ * schedule is absent or overdue; retain the configured cadence until refreshed scheduler data arrives.
  */
 function nextRunLine(nextJob: any, latestRun: any): string {
   if(!nextJob) {return translate("No active schedule");}
@@ -2450,7 +2515,7 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   const nextMs = toMillis(nextJob.nextExecutionDateTime);
   const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
 
-  if(nextMs && lastMs && lastMs > nextMs) {
+  if(!nextMs || nextMs <= Date.now() || (lastMs && lastMs > nextMs)) {
     // `useServiceJobs` already normalises this, preferring the OMS's own `cronDescription` over a
     // cronstrue rendering. Re-deriving it here made this row disagree with the job's detail modal.
     if(nextJob.cronString) {
@@ -2460,8 +2525,6 @@ function nextRunLine(nextJob: any, latestRun: any): string {
     return translate("Next run not yet recalculated");
   }
 
-  if(!nextMs) {return translate("No active schedule");}
-
   return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
@@ -2470,12 +2533,15 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
   const nextJob = nextExecutionFor(jobs);
   const missing = !jobs.length;
   const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
+  // nextExecutionFor intentionally selects only future runs for queue ETA calculations. A cached
+  // timestamp aging out must not erase the fact that an active job still has a cron schedule.
+  const scheduledJob = nextJob ?? jobs.find((job) => job.paused !== "Y" && job.cronExpression);
 
   return {
     name,
     job: nextJob ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
-    nextRun: nextRunLine(nextJob, latestRun),
+    nextRun: nextRunLine(scheduledJob, latestRun),
     status: missing ? translate("Not configured") : paused ? translate("Paused") : translate("Active"),
     badgeColor: missing ? "medium" : paused ? "warning" : "success",
     icon,
@@ -2545,6 +2611,18 @@ const sharedJobs = computed(() => {
 
   definitions.push(
     {
+      name: "Reset physical location ATP (all mapped locations on this shop)",
+      jobs: physicalAtpResetJobs.value,
+      icon: refreshOutline,
+      setup: physicalAtpResetJobs.value.length ? "" : "physicalAtpReset",
+    },
+    {
+      name: "Publish physical location event batches (all Shopify connections)",
+      jobs: locationPublishJob.value ? [locationPublishJob.value] : [],
+      icon: locationOutline,
+      setup: "",
+    },
+    {
       name: "Process effective-dated inventory changes",
       jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
       icon: layersOutline,
@@ -2573,8 +2651,14 @@ const sharedJobs = computed(() => {
     },
     // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
     {
-      name: "Purge old inventory events (all Shopify connections)",
+      name: "Purge old aggregate inventory events (all Shopify connections)",
       jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+      icon: trashBinOutline,
+      setup: "",
+    },
+    {
+      name: "Purge old physical location events (all Shopify connections)",
+      jobs: purgeLocationDetailsJob.value ? [purgeLocationDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
     },
@@ -2726,7 +2810,10 @@ function projectRun(job: any, run: any, scope: string) {
     .map(([name, value]) => `${name}: ${value}`)
     .join(", ");
 
+  let importLogId = "";
+  try { importLogId = String((typeof run.results === "string" ? JSON.parse(run.results) : run.results)?.dataManagerLogId || ""); } catch { /* No structured result recorded. */ }
   return {
+    importLogId,
     id: run.jobRunId,
     parameters: run.parameters || configuredParameters || "No parameters recorded",
     scope,
@@ -2741,6 +2828,10 @@ function projectRun(job: any, run: any, scope: string) {
     startTime: toMillis(run.startTime),
   };
 }
+
+const physicalAtpResetRuns = computed(() => physicalAtpResetJobs.value
+  .flatMap((job: any) => runsFor(job.jobName).map((run: any) => projectRun(job, run, "Physical location ATP reset")))
+  .sort((a: any, b: any) => b.startTime - a.startTime));
 
 const physicalResetRuns = computed(() => {
   const job = physicalResetJob.value;
@@ -2914,7 +3005,7 @@ const batches = computed<Batch[]>(() => {
 
   return [...grouped.entries()].map(([id, details]) => {
     const message = messageById.value.get(id);
-    const statusId = message?.statusId || details[0]?.systemMessageStatusId;
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.systemMessageInitDate || details[0]?.createdDate);
     const entries = changeEntriesOf(details);
@@ -3612,9 +3703,6 @@ const locationInventorySummary = computed(() => allLocationInventorySummaries.va
  *  warns once the oldest unassigned row has outlived two publish intervals. */
 const LOCATION_PUBLISH_INTERVAL_MS = 60_000;
 
-const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
-  String(job.jobName ?? "").startsWith("publish_PendingShopifyLocationInventoryAdjustments")
-  && (job.serviceJobParameters ?? []).some((p: any) => p.parameterName === "shopId" && String(p.parameterValue) === String(props.id ?? ""))));
 const locationPublishJobStatus = computed(() => {
   if (!locationPublishJob.value) return translate("Not configured");
   return locationPublishJob.value.paused === "Y" ? translate("Paused") : translate("Active");
@@ -3623,7 +3711,7 @@ const locationPublishJobBadgeColor = computed(() => {
   if (!locationPublishJob.value) return "medium";
   return locationPublishJob.value.paused === "Y" ? "warning" : "success";
 });
-const locationPublishJobNextRun = computed(() => locationPublishJob.value?.nextExecutionDateTime);
+const locationPublishJobNextRun = computed(() => nextExecutionFor(locationPublishJob.value ? [locationPublishJob.value] : [])?.nextExecutionDateTime);
 
 /**
  * Delivery state, derived ONLY from the linked message — never synthesized beyond the three cases
@@ -3638,15 +3726,16 @@ function locationDeliveryState(row: any): { label: string; color: string } {
       : { label: translate("No-op"), color: "medium" };
   }
   const message = cachedSystemMessages.value.find((m: any) => String(m.systemMessageId) === messageId);
-  if (!message) return { label: translate("Not available"), color: "medium" };
-  const label = statusDescriptionFor(message.statusId) || message.statusId || translate("Not available");
-  const errorish = /error|fail/i.test(String(message.statusId ?? ""));
+  const statusId = row.systemMessageStatusId || message?.statusId;
+  const label = statusDescriptionFor(statusId) || statusId || translate("Not available");
+  const errorish = /error|fail/i.test(String(statusId ?? ""));
   return { label, color: errorish ? "danger" : "medium" };
 }
 
 const locationDetailRows = computed(() => locationInventoryDetailsForShop.value.map((row: any) => {
   const state = locationDeliveryState(row);
   return {
+    ...row,
     rowKey: row.locationAdjustmentKey,
     eventTypeId: row.eventTypeId,
     eventReferenceId: row.eventReferenceId,
@@ -3671,22 +3760,69 @@ const locationLocationOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
 const locationEventTypeOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.eventTypeId).filter(Boolean))]);
-const locationStateOptions = computed(() =>
-  [...new Set(locationDetailRows.value.map((row) => row.stateLabel).filter(Boolean))]);
+const locationStateOptions = computed(() => [
+  { id: "pending", label: translate("Pending delivery") },
+  { id: "unassigned", label: translate("Unassigned (publishable)") },
+  { id: "noop", label: translate("No-op") },
+  ...["SmsgProduced", "SmsgSending", "SmsgError", "SmsgSent", "SmsgCancelled"].map(id => ({ id, label: statusDescriptionFor(id) || id })),
+]);
+const locationVisibleCount = ref(50);
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery], () => { locationVisibleCount.value = 50; });
+const locationHistoryMode = ref(props.initialHistoryMode === "batches" ? "batches" : "events");
+function changeLocationMode(mode: string) {
+  locationHistoryMode.value = mode;
+  void router.replace({ query: { ...router.currentRoute.value.query, mode } });
+}
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery],
+  ([state, location, eventType, from, to, search]) => {
+    if (activeView.value === "location-history") void router.replace({ query: {
+      ...router.currentRoute.value.query, state: state || undefined, location: location || undefined,
+      eventType: eventType || undefined, from: from || undefined, to: to || undefined, search: search || undefined,
+    } });
+  });
+watch(() => router.currentRoute.value.query, (query) => {
+  if (activeView.value !== "location-history") return;
+  locationHistoryMode.value = query.mode === "batches" ? "batches" : "events";
+  locationFilterLocationId.value = String(query.location || "");
+  locationFilterEventType.value = String(query.eventType || "");
+  locationFilterFrom.value = query.from ? String(query.from) : null;
+  locationFilterTo.value = query.to ? String(query.to) : null;
+  locationHistoryQuery.value = String(query.search || "");
+  locationFilterState.value = String(query.state || (query.mode === "unassigned" ? "unassigned" : ""));
+}, { immediate: true });
+const filteredLocationBatches = computed(() => {
+  const grouped = new Map<string, any[]>();
+  for (const row of filteredLocationDetailRows.value) {
+    const key = row.systemMessageId || "unassigned";
+    grouped.set(key, [...(grouped.get(key) || []), row]);
+  }
+  return [...grouped].map(([id, rows]) => ({ id, rows,
+    label: id === "unassigned" ? translate("Unbatched events") : id,
+    state: rows[0].stateLabel,
+    target: [...new Set(rows.map(row => row.shopifyLocationId))].join(", "),
+    created: rows[0].systemMessageInitDate || rows[0].createdDate,
+    net: rows.reduce((total, row) => total + row.computedInventoryChange, 0),
+  }));
+});
 
 const filteredLocationDetailRows = computed(() => {
   const query = locationHistoryQuery.value.trim().toLowerCase();
   return locationDetailRows.value
     .filter((row) => !locationFilterLocationId.value || row.shopifyLocationId === locationFilterLocationId.value)
     .filter((row) => !locationFilterEventType.value || row.eventTypeId === locationFilterEventType.value)
-    .filter((row) => !locationFilterState.value || row.stateLabel === locationFilterState.value)
+    .filter((row) => !locationFilterState.value
+      || (locationFilterState.value === "pending" && ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+      || (locationFilterState.value === "unassigned" && !row.systemMessageId && row.computedInventoryChange !== 0)
+      || (locationFilterState.value === "noop" && !row.systemMessageId && row.computedInventoryChange === 0)
+      || row.systemMessageStatusId === locationFilterState.value)
     .filter((row) => !locationFilterFrom.value
       || Number(row.createdDate ?? 0) >= DateTime.fromISO(locationFilterFrom.value).startOf("day").toMillis())
     .filter((row) => !locationFilterTo.value
       || Number(row.createdDate ?? 0) <= DateTime.fromISO(locationFilterTo.value).endOf("day").toMillis())
     .filter((row) => {
       if (!query) return true;
-      return String(row.eventReferenceId ?? "").toLowerCase().includes(query)
+      return String(row.systemMessageId ?? "").toLowerCase().includes(query)
+        || String(row.eventReferenceId ?? "").toLowerCase().includes(query)
         || String(row.shopifyLocationId ?? "").toLowerCase().includes(query)
         || String(row.shopifyInventoryItemId ?? "").toLowerCase().includes(query)
         || String(row.eventTypeDescription ?? "").toLowerCase().includes(query)
@@ -3698,8 +3834,8 @@ const filteredLocationDetailRows = computed(() => {
 // --- 2.1 Summary tiles ---
 const unassignedNonZeroRows = computed(() => locationDetailRows.value
   .filter((row) => !row.systemMessageId && row.computedInventoryChange !== 0));
-const unassignedNonZeroCount = computed(() => unassignedNonZeroRows.value.length);
-const oldestUnassignedCreatedAt = computed(() => unassignedNonZeroRows.value.reduce(
+const unassignedNonZeroCount = computed(() => locationInventorySummary.value?.backlogCount ?? unassignedNonZeroRows.value.length);
+const oldestUnassignedCreatedAt = computed(() => toMillis(locationInventorySummary.value?.oldestBacklogDate) || unassignedNonZeroRows.value.reduce(
   (oldest: number | undefined, row) => {
     const created = Number(row.createdDate ?? 0);
     return created && (oldest === undefined || created < oldest) ? created : oldest;
@@ -3727,16 +3863,9 @@ const locationMessageIds = computed(() => {
   return [...ids];
 });
 
-const pendingLocationBatchCount = computed(() => {
-  let count = 0;
-  for (const id of locationMessageIds.value) {
-    const message = messageById.value.get(id);
-    if (message && ["SmsgProduced", "SmsgSending", "SmsgError"].includes(String(message.statusId))) {
-      count++;
-    }
-  }
-  return count;
-});
+const pendingLocationBatchCount = computed(() => new Set(locationDetailRows.value
+  .filter((row: any) => ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+  .map((row: any) => row.systemMessageId).filter(Boolean)).size);
 
 const selectedLocationBatch = ref<Batch | null>(null);
 
@@ -3750,7 +3879,7 @@ const locationBatches = computed<Batch[]>(() => {
 
   return [...grouped.entries()].map(([id, details]) => {
     const message = messageById.value.get(id);
-    const statusId = message?.statusId || details[0]?.systemMessageStatusId;
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.createdDate);
     const net = details.reduce((total, detail) => total + Number(detail.computedInventoryChange || 0), 0);
@@ -3777,7 +3906,7 @@ const nextLocationBatchRun = computed(() => {
   if (!locationPublishJob.value) return translate("Not configured");
   if (locationPublishJob.value.paused === "Y") return translate("Paused");
   const nextRun = locationPublishJob.value?.nextExecutionDateTime;
-  return nextRun ? formatDateTime(nextRun) : translate("Not scheduled");
+  return nextRun && toMillis(nextRun) > Date.now() ? formatDateTime(nextRun) : translate("Schedule needs refresh");
 });
 
 const oldestLocationUnbatchedEvent = computed(() => {
@@ -3788,13 +3917,13 @@ const oldestLocationUnbatchedEvent = computed(() => {
 
 function openLocationHistory(mode?: "unassigned" | "batches" | "errors") {
   if (mode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   } else {
     locationFilterState.value = "";
   }
   void router.push({
     path: `/shopify-connection-details/${props.id}/inventory-sync/location-history`,
-    query: mode ? { mode } : {},
+    query: mode ? { mode, state: mode === "batches" ? "pending" : mode === "unassigned" ? "unassigned" : mode === "errors" ? "SmsgError" : undefined } : {},
   });
 }
 
@@ -3828,7 +3957,7 @@ function activeSyncDomains() {
     // The location ledger carries shopId natively, so it needs only the shop id to scope — no
     // channel resolution required.
     ...(props.id
-      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id), total: 300 } }]
+      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id) } }]
       : []),
   ];
 }
@@ -3841,7 +3970,7 @@ watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelI
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
 watch(() => props.initialHistoryMode, (mode) => {
   if (mode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   } else {
     historyMode.value = (mode as HistoryMode) ?? "events";
   }
@@ -3851,7 +3980,7 @@ onIonViewWillEnter(() => {
   isViewActive.value = true;
   if (props.initialView) activeView.value = props.initialView;
   if (props.initialHistoryMode === "unassigned") {
-    locationFilterState.value = translate("Unassigned (publishable)");
+    locationFilterState.value = "unassigned";
   }
   void startSyncDomains(activeSyncDomains());
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
@@ -3862,6 +3991,11 @@ onIonViewWillEnter(() => {
   // which the Moqui admin screen can also change. Skipped without an id - the by-PK read would go to
   // `oms/shopifyShops/shops/` and re-list every shop.
   if(props.id) {void afterMutation("shopifyShop", { shopId: String(props.id) });}
+  // The location publisher is global, so it is not in watchedJobNames but its run state still
+  // changes what this page reports.
+  for(const jobName of [...watchedJobNames.value, "publish_PendingShopifyLocationInventoryAdjustments"]) {
+    void afterMutation("serviceJob", { jobName });
+  }
 });
 
 onIonViewDidLeave(() => {
@@ -4064,7 +4198,11 @@ const messageText = computed(() => {
   }, null, 2);
 });
 
-function openMessage(batch: Batch) { messageBatch.value = batch; }
+async function openMessage(batch: Batch) {
+  messageBatch.value = { ...batch, messageText: "Loading message…" };
+  const message = await ensureSystemMessageById(batch.id);
+  if (messageBatch.value?.id === batch.id) messageBatch.value = { ...batch, messageText: message?.messageText || "Message text unavailable" };
+}
 function openHistory(mode: HistoryMode = "events") {
   historyMode.value = mode;
   void router.push({
@@ -4137,7 +4275,7 @@ function serviceJobSelection(jobName: string, title: string, serviceName?: strin
     title,
     // Default to protecting the channel: every other job that carries inventoryChannelId is bound to
     // one channel, and only the discard tool takes it as an input.
-    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId"],
+    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId", "shopId"],
     parameterOptions: isDiscardJob ? { inventoryChannelId: channelFilterOptions.value } : {},
   };
 }
@@ -4162,6 +4300,7 @@ function refreshServiceJobData() {
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");
+const jobSetupError = ref("");
 
 /**
  * Create a row's missing job(s), PAUSED — activation stays a deliberate second step in the job's own
@@ -4175,9 +4314,12 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   if(!kind || provisioningJobKind.value) {return;}
   const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
   provisioningJobKind.value = provisioningKey as JobSetupKind;
+  jobSetupError.value = "";
   try {
     const created: string[] = [];
-    if(kind === "physicalReset") {
+    if(kind === "physicalAtpReset") {
+      created.push(await ensureShopPhysicalAtpResetJob(String(props.id)));
+    } else if(kind === "physicalReset") {
       const remoteId = String(syncContext.remoteId.value ?? "");
       if(!remoteId) {throw new Error("No Shopify remote is configured for this connection.");}
       created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
@@ -4228,7 +4370,8 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         : `${created.length} jobs created, paused. Open each row entry to schedule and activate them.`);
   } catch (error: any) {
     logger.error("Failed to set up inventory sync job", kind, error);
-    commonUtil.showToast(error?.message || "The job could not be created.");
+    jobSetupError.value = error?.message || translate("The job could not be created.");
+    commonUtil.showToast(jobSetupError.value);
   } finally {
     provisioningJobKind.value = "";
   }

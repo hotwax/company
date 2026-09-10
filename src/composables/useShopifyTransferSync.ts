@@ -40,7 +40,7 @@ import { useCachedList } from "./useCachedList";
  * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
 export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
 
   const rows = computed<any[]>(() => {
     const wantedShop = String(shopId() ?? "");
@@ -62,11 +62,11 @@ export function useShopifyPendingSegment(shopId: () => string | undefined, segme
 }
 
 /**
- * Outstanding count per segment, for the tab badges. One pass over the shop's cached rows rather
+ * Outstanding record counts per segment for the summary. One pass over the shop's cached rows rather
  * than one query per tab, because they all live in the same table.
  */
 export function useShopifyPendingCounts(shopId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache, { dateField: "occurredAt" });
+  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
 
   const counts = computed<Record<string, number>>(() => {
     const wanted = String(shopId() ?? "");
@@ -83,6 +83,10 @@ export function useShopifyPendingCounts(shopId: () => string | undefined) {
 
   return {
     counts,
+    creationOrderCount: computed(() => new Set(records.value
+      .filter((row: any) => String(row?.shopId ?? "") === String(shopId() ?? "")
+        && row?.segment === "create" && row?.orderId)
+      .map((row: any) => String(row.orderId))).size),
     hydrated,
     total: computed(() => Object.values(counts.value).reduce((sum, n) => sum + n, 0)),
   };
@@ -298,6 +302,48 @@ async function fetchShopRemoteId(shopId: string): Promise<string> {
   return remoteId;
 }
 
+/** Explicit current-state read, independent of the OMS history summary. */
+export async function fetchCurrentShopifyTransfer(shopId: string, transferId: string) {
+  const id = /^\d+$/.test(transferId) ? `gid://shopify/InventoryTransfer/${transferId}` : transferId;
+  if (!shopId || !/^gid:\/\/shopify\/InventoryTransfer\/\d+$/.test(id)) throw new Error('Invalid transfer identity');
+  const systemMessageRemoteId = await fetchShopRemoteId(shopId);
+  const queryText = `query TransferSnapshot($id: ID!, $after: String) {
+    node(id: $id) { ... on InventoryTransfer {
+      id status origin { name location { id } } destination { name location { id } }
+      lineItems(first: 100, after: $after) {
+        nodes { id totalQuantity inventoryItem { id sku } }
+        pageInfo { hasNextPage endCursor }
+      }
+    } }
+  }`;
+  let after: string | null = null;
+  const cursors = new Set<string>();
+  const seen = new Set<string>();
+  const lines: any[] = [];
+  let snapshot: any;
+  do {
+    const response: any = await api({ url: 'shopify/graphql', method: 'post', data: {systemMessageRemoteId, queryText, variables: {id, after}} });
+    const payload = response?.data;
+    const graph = payload?.response ?? payload;
+    const data = graph?.data ?? graph;
+    if (commonUtil.hasError(response) || payload?.errors?.length || graph?.errors?.length) throw new Error('Shopify transfer lookup failed');
+    const transfer = data?.node;
+    const page = transfer?.lineItems;
+    if (transfer?.id !== id || !Array.isArray(page?.nodes) || typeof page?.pageInfo?.hasNextPage !== 'boolean') throw new Error('Shopify transfer was not returned completely');
+    for (const line of page.nodes) {
+      if (!line?.id || seen.has(line.id) || !Number.isInteger(line.totalQuantity) || line.totalQuantity < 0) throw new Error('Invalid or repeated Shopify transfer line');
+      seen.add(line.id);
+      lines.push(line);
+    }
+    snapshot = transfer;
+    if (!page.pageInfo.hasNextPage) break;
+    after = page.pageInfo.endCursor;
+    if (!after || cursors.has(after)) throw new Error('Shopify transfer pagination did not advance');
+    cursors.add(after);
+  } while (after);
+  return { ...snapshot, lines, checkedAt: new Date().toISOString() };
+}
+
 async function loadReconciliation(options: {
   shopId: string;
   topicPrefixes?: string[];
@@ -309,7 +355,7 @@ async function loadReconciliation(options: {
     api({
       url: "shopify/webhook-subscription",
       method: "get",
-      // 250 is Shopify's page maximum, so one call covers every subscription on the shop.
+      // Refuse a full page below: it may hide additional subscriptions.
       params: { systemMessageRemoteId, queryParams: { first: 250 } },
     }) as Promise<any>,
     api({
@@ -333,10 +379,17 @@ async function loadReconciliation(options: {
     throw new Error("Shopify did not return the webhook subscriptions.");
   }
 
+  const subscriptions = subscriptionResp?.data?.webhookList ?? subscriptionResp?.webhookList;
+  if (!Array.isArray(subscriptions) || subscriptions.length >= 250) {
+    throw new Error('Shopify subscription listing is incomplete; registration is unavailable.');
+  }
   const enumData = enumResp?.data;
+  if (commonUtil.hasError(enumResp) || (!Array.isArray(enumData) && !Array.isArray(enumData?.enumerations))) {
+    throw new Error('OMS webhook topic configuration was not returned.');
+  }
 
   return reconcileWebhookTopics({
-    subscriptions: subscriptionResp?.data?.webhookList ?? subscriptionResp?.webhookList ?? [],
+    subscriptions,
     enumRows: Array.isArray(enumData) ? enumData : (enumData?.enumerations ?? []),
     receivedRows: receivedResp?.data?.systemMessages ?? [],
     receivedTotal: receivedResp?.data?.systemMessagesCount,
@@ -494,7 +547,7 @@ export function useShopifyTransferSyncJobs(shopId: () => string | undefined, cac
         jobName: job?.jobName ??
           (definition.scope === "shop" && currentShopId ? shopJobName(definition.template, currentShopId) : definition.template),
         status,
-        nextRun: job?.nextExecutionDateTime,
+        nextRun: job?.paused !== "Y" && Number(job?.nextExecutionDateTime) > Date.now() ? job.nextExecutionDateTime : undefined,
       };
     });
   });
@@ -548,4 +601,36 @@ export function useShopifyWebhookReconciliation(
   }
 
   return { rows, summary, otherSubscriptionCount, receivedTruncated, loading, error, refresh };
+}
+
+/** Re-read subscriptions before adding one. Never replace a destination or replay an uncertain write. */
+export async function registerMissingTransferWebhook(shopId: string, topic: string, endPoint: string) {
+  const destination = endPoint.trim();
+  const eventBridge = /^arn:aws:events:[a-z0-9-]+:[0-9]*:event-source\/aws\.partner\/shopify\.com\/\S+$/.test(destination);
+  if (!eventBridge) {
+    let endpoint: URL;
+    try { endpoint = new URL(destination); } catch { throw new Error("Enter a full HTTPS callback URL or Shopify EventBridge ARN."); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash
+      || endpoint.hostname === 'localhost' || endpoint.hostname.endsWith('.localhost')
+      || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]') {
+      throw new Error("Enter a public HTTPS callback URL or Shopify EventBridge ARN for this OMS.");
+    }
+  }
+  const current = await loadReconciliation({shopId, topicPrefixes: ['INVENTORY_TRANSFERS_', 'INVENTORY_SHIPMENTS_']});
+  const row = current.rows.find(row => row.topic === topic);
+  if (!row || !row.systemMessageTypeId) throw new Error('This OMS has no consumer for the selected topic.');
+  if (row.subscribed) return {status: 'existing' as const, subscriptionId: row.subscriptionId};
+  const systemMessageRemoteId = await fetchShopRemoteId(shopId);
+  // Errors after submission cannot establish whether Shopify committed the subscription.
+  try {
+    const response: any = await api({url: 'shopify/webhook-subscription', method: 'post',
+      data: {systemMessageRemoteId, topic, endPoint: destination}});
+    const subscriptionId = response?.data?.webhookSubscriptionId;
+    if (commonUtil.hasError(response) || !subscriptionId) {
+      return {status: 'uncertain' as const};
+    }
+    return {status: 'created' as const, subscriptionId};
+  } catch {
+    return {status: 'uncertain' as const};
+  }
 }

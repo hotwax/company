@@ -187,7 +187,7 @@ const CACHE_SCHEMA = {
     "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
   /**
    * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time push ledger.
-   * PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId, so `locationAdjustmentKey`
+   * PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey`
    * is the synthetic cache key. Indexed by shopId directly (unlike the aggregate ledger, this row
    * carries its shop identity natively rather than through a channel indirection).
    */

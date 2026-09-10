@@ -1,3 +1,11 @@
+/** Match the main ledger's full remote-target primary key, including the inventory item. */
+export function locationInventoryAdjustmentKey(raw: Record<string, unknown>): string | undefined {
+  const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId, raw?.shopifyInventoryItemId];
+  if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
+  return JSON.stringify(identity.map(String));
+}
+
 /** Attach shop identity to the backend-computed location inventory summary before caching. */
 export function normalizeLocationInventorySummary(shopId: string, summary: any): any {
   if(!summary) {return undefined;}

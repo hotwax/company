@@ -146,6 +146,8 @@ function receiptSummary(
   return {
     key: `receipt:${orderId}:${shipmentId}:${receivedAt}:${receiverId}`,
     orderId,
+    omsShipmentId: shipmentId || undefined,
+    shopifyShipmentIds: enrichment.shopifyShipmentIdsByOmsShipmentId[shipmentId] ?? [],
     shopifyTransferId: transferId,
     title: transferName(orderId, enrichment.ordersById[orderId]),
     detail: joinDetail(

@@ -107,10 +107,12 @@ export async function enrichTransferSyncRows(
 
   const shipmentIdsByShopId = new Map<string, Set<string>>();
   for(const row of rows) {
-    if(String(row.segment ?? "") !== "shipment") {continue;}
+    if(!["shipment", "receipt"].includes(String(row.segment ?? ""))) {continue;}
     const shopId = String(row.shopId ?? "");
     const shipmentId = String(row.shipmentId ?? "");
-    if(!shopId || !shipmentId || hasOwn(next.shopifyShipmentIdsByOmsShipmentId, shipmentId)) {continue;}
+    // An outstanding shipment legitimately has no remote ID yet. Recheck an empty result when
+    // refreshed rows arrive so the transition to Synced does not require a full page reload.
+    if(!shopId || !shipmentId || next.shopifyShipmentIdsByOmsShipmentId[shipmentId]?.length) {continue;}
     const shipmentIds = shipmentIdsByShopId.get(shopId) ?? new Set<string>();
     shipmentIds.add(shipmentId);
     shipmentIdsByShopId.set(shopId, shipmentIds);

@@ -28,6 +28,7 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
+import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
 import {
@@ -355,7 +356,7 @@ export const FEED_SYSTEM_MESSAGE_SERVICE =
 /** Must match the sync panel's physicalResetJob matcher. */
 export const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 export const ABSOLUTE_CHANNEL_RESET_SERVICE =
-  "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+  "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 
 /** Existence probe so both ensure* helpers are safe to call twice. */
 async function serviceJobExists(jobName: string): Promise<boolean> {
@@ -529,7 +530,28 @@ export async function ensureChannelResetJob(params: {
   description?: string;
 }): Promise<string> {
   const jobName = `reset_InventoryChannelInventory_${params.inventoryChannelId}`;
-  if(await serviceJobExists(jobName)) {return jobName;}
+  let existing: any;
+  if (await serviceJobExists(jobName)) {
+    const response: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if (commonUtil.hasError(response)) throw new Error(translate("Could not verify the existing reset job."));
+    existing = response?.data?.jobDetail ?? response?.data;
+    if (!existing?.jobName) throw new Error(translate("Could not verify the existing reset job."));
+  }
+  if (existing?.jobName) {
+    if (existing.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE) return jobName;
+    if (existing.serviceName !== "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory") {
+      throw new Error(translate("The existing reset job uses an unexpected service. Review its configuration before changing it."));
+    }
+    // Repair only the retired service name. Keep the operator's cadence and channel parameters.
+    const response: any = await api({
+      url: `admin/serviceJobs/${jobName}`, method: "PUT",
+      data: { jobName, serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE, paused: "Y" },
+    });
+    if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset job repair."));
+    await refreshAfterMutation("serviceJob", { jobName });
+    return jobName;
+  }
+
 
   await api({
     url: "admin/serviceJobs",
@@ -601,6 +623,54 @@ export async function ensureShopPhysicalInventoryResetJob(params: {
   });
   await refreshAfterMutation("serviceJob", { jobName });
 
+  return jobName;
+}
+
+export const PHYSICAL_ATP_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed";
+
+/** Provision paused; never confuse an unsuccessful lookup with an absent job. */
+export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<string> {
+  if (!shopId.trim()) throw new Error(translate("A Shopify connection is required."));
+  const jobName = `generate_PhysicalLocationInventoryFeed_${shopId}`;
+  const response: any = await api({ url: "admin/serviceJobs", method: "get", params: { jobName, pageSize: 2 } });
+  if (commonUtil.hasError(response) || !(Array.isArray(response?.data?.serviceJobList) || response?.data?.serviceJobCount === 0)) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  const jobs = response.data.serviceJobList || [];
+  if (jobs.some((job: any) => job.jobName !== jobName) || jobs.length > 1) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  if (jobs.length) {
+    const job = jobs[0];
+    const parameters = job.serviceJobParameters || [];
+    if (job.serviceName !== PHYSICAL_ATP_RESET_SERVICE || !parameters.some((parameter: any) => parameter.parameterName === "shopId" && parameter.parameterValue === shopId)) {
+      throw new Error(translate("The physical ATP reset job has a different scope. Review its configuration."));
+    }
+    return jobName;
+  }
+  let config: any;
+  try {
+    config = await api({ url: "admin/dataManager/RESET_PHYSICAL_LOC_INV", method: "get" });
+  } catch {
+    throw new Error(translate("Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying."));
+  }
+  if (commonUtil.hasError(config) || config?.data?.configId !== "RESET_PHYSICAL_LOC_INV" || config.data.importServiceName !== "co.hotwax.sob.product.InventoryServices.import#PhysicalLocationInventory") {
+    throw new Error(translate("Physical ATP reset setup is missing. Load the connector upgrade configuration before creating this job."));
+  }
+  const created: any = await api({ url: "admin/serviceJobs", method: "POST", data: {
+    jobName, serviceName: PHYSICAL_ATP_RESET_SERVICE,
+    description: `Physical location ATP reset for ${shopId}`, cronExpression: "0 0 * * * ?", paused: "Y",
+  } });
+  if (commonUtil.hasError(created)) throw new Error(translate("The OMS rejected the physical ATP reset job."));
+  try {
+    const configured: any = await api({ url: `admin/serviceJobs/${jobName}`, method: "PUT", data: {
+      jobName, paused: "Y", serviceJobParameters: [{ parameterName: "shopId", parameterValue: shopId }],
+    } });
+    if (commonUtil.hasError(configured)) throw new Error("configuration rejected");
+    await refreshAfterMutation("serviceJob", { jobName });
+  } catch {
+    throw new Error(translate("The physical ATP reset job was created paused, but its configuration could not be confirmed. Review the existing job before retrying setup."));
+  }
   return jobName;
 }
 
@@ -6727,3 +6797,135 @@ export const unsubscribeWebhook = async (payload: any): Promise<any> => {
     }
   });
 };
+
+/** Explicit live check for one item at its exact Shopify location. */
+export async function fetchCurrentShopifyInventory(payload: {systemMessageRemoteId: string; inventoryItemId: string; locationId: string}) {
+  if (!payload.systemMessageRemoteId) throw new Error("Shopify connection is unavailable.");
+  const itemId = inventoryGid(payload.inventoryItemId, "InventoryItem");
+  const locationId = inventoryGid(payload.locationId, "Location");
+  const response = await requestBackend<any>({url: "shopify/graphql", method: "post", data: {
+    systemMessageRemoteId: payload.systemMessageRemoteId,
+    queryText: INVENTORY_AT_LOCATION_QUERY, variables: {itemId, locationId},
+  }});
+  return parseInventorySnapshot(response, itemId, locationId);
+}
+
+/** Rebuild one mapped OMS product's local search document; does not write Shopify. */
+export async function refreshMappedProductSearchIndex(productId: string) {
+  if (!productId?.trim()) throw new Error(translate('OMS product ID is required'));
+  const response: any = await api({url: 'oms/search/index/product', method: 'post', data: {productId, indexVariants: false}});
+  if (!response || response.data == null || commonUtil.hasError(response)) {
+    throw new Error(translate('Search index refresh was not confirmed'));
+  }
+}
+
+/** Read every variant and its existing OMS mapping without re-running an import. */
+export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
+  const productId = getExactShopifyProductGid(payload.productId);
+  if (!productId || !payload.systemMessageRemoteId || !payload.productStoreId) throw new Error('Product, Shopify connection and product store are required.');
+  const result: any[] = [];
+  let after: string | null = null;
+  const cursors = new Set<string>();
+  do {
+    const response: any = await requestBackend<any>({url: 'shopify/graphql', method: 'post', data: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      queryText: `query ProductMappings($id: ID!, $after: String) { product(id: $id) { variants(first: 100, after: $after) { nodes { id legacyResourceId title sku inventoryItem { id tracked } } pageInfo { hasNextPage endCursor } } } }`,
+      variables: {id: productId, after}
+    }});
+    const data: any = response?.response || response?.data || response;
+    if (response?.errors?.length || data?.errors?.length) throw new Error('Shopify could not return product mappings.');
+    const variants: any = data?.product?.variants;
+    if (!Array.isArray(variants?.nodes)) throw new Error('Shopify product variants were not returned.');
+    const ids = variants.nodes.map((v: any) => String(v.legacyResourceId));
+    let mappings: any[] = [];
+    if (ids.length) {
+      let pageIndex = 0;
+      let page: any[];
+      do {
+        const response: any = await requestBackend<any>({url: 'oms/dataDocumentView', method: 'post', data: {
+          dataDocumentId: 'PRODUCT_STORE_PRODUCT', pageIndex, pageSize: 100,
+          customParametersMap: {productStoreId: payload.productStoreId, shopifyProductId: ids},
+          fieldsToSelect: 'productId,shopifyProductId,internalName'
+        }});
+        if (!Array.isArray(response?.entityValueList)) throw new Error('HotWax product mappings were not returned.');
+        page = response.entityValueList;
+        mappings.push(...page);
+        pageIndex++;
+      } while (page.length === 100);
+    }
+    result.push(...variants.nodes.map((v: any) => ({id: String(v.legacyResourceId), title: v.title, sku: v.sku,
+      inventoryItemId: v.inventoryItem?.id?.split('/').pop(), tracked: v.inventoryItem?.tracked === true,
+      mappings: mappings.filter(m => String(m.shopifyProductId) === String(v.legacyResourceId))
+    })));
+    if (!variants.pageInfo?.hasNextPage) break;
+    after = variants.pageInfo.endCursor;
+    if (!after || cursors.has(after)) throw new Error('Shopify variant pagination did not advance.');
+    cursors.add(after);
+  } while (after);
+  return result;
+}
+
+
+/** Repair the retired reset importer only; never requeue an existing import. */
+export async function repairInventoryResetImportConfig(): Promise<void> {
+  const configId = "RESET_INV_CHANNEL";
+  const expected = "co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory";
+  const legacy = "co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory";
+  const read = async () => {
+    const response: any = await api({ url: `admin/dataManager/${configId}`, method: "GET" });
+    if (commonUtil.hasError(response) || response?.data?.configId !== configId) {
+      throw new Error(translate("Could not verify the reset import configuration."));
+    }
+    return response.data;
+  };
+  const current = await read();
+  if (current.importServiceName === expected) return;
+  if (current.importServiceName !== legacy) {
+    throw new Error(translate("The reset importer has an unexpected configuration. Review it before changing it."));
+  }
+  const response: any = await api({
+    url: `admin/dataManager/${configId}`, method: "PUT",
+    data: { configId, importServiceName: expected },
+  });
+  if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset importer update."));
+  try {
+    if ((await read()).importServiceName !== expected) throw new Error("not updated");
+  } catch {
+    throw new Error(translate("The update was submitted, but its saved value could not be verified. Check again before making another change."));
+  }
+}
+
+
+/** Paged live history projection: current activation confirmations are not an append-only cache.
+ * Fetch only on entry, filtering, pagination or explicit refresh; no competing polling loop.
+ *
+ * An entity resource, like the transfer-sync segments: rows come back as a bare array and the
+ * unpaged total in `x-total-count`. `activationStatus` is a real column on the OMS view, so it is
+ * both the filter value sent up and the status read back per row.
+ */
+export async function fetchProductFacilityActivations(shopId: string, params: {
+  activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
+}): Promise<{
+  activations: import("@/utils/shopifyActivation").ProductFacilityActivation[];
+  totalCount: number;
+}> {
+  if (!shopId) throw new Error("A Shopify connection is required.");
+  const { activationStatus, ...rest } = params;
+  const response: any = await api({
+    url: "sob/shopify/productFacilityActivations",
+    method: "get",
+    params: {
+      ...rest,
+      shopId,
+      // Paging is only stable under an explicit order; this is the order the OMS activation
+      // query itself uses.
+      orderByField: "productId,facilityId,shopifyProductId",
+      // "all" is the page's own idea of no filter; the resource has no such value.
+      ...(activationStatus === "all" ? {} : { activationStatus }),
+    },
+  });
+  if (commonUtil.hasError(response)) throw new Error("The OMS could not read product activation records.");
+  const activations = Array.isArray(response?.data) ? response.data : [];
+  const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
+  return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
+}

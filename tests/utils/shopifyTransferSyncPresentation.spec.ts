@@ -101,6 +101,7 @@ describe("buildTransferSyncPresentation", () => {
     expect(rows).toEqual([
       expect.objectContaining({
         key: "receipt:M200103:S100:2026-08-31T13:42:00Z:JANE",
+        omsShipmentId: "S100",
         title: "Downtown replenishment",
         detail: "From Downtown to SoHo · Received by Jane Doe · 84 accepted · 2 rejected · 2 lines",
         status: "Outstanding",
