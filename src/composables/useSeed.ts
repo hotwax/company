@@ -17,6 +17,7 @@ import {
   systemMessageTypeCache,
 } from "@/utils/cacheEntities";
 import { byDescription, useCachedList } from "./useCachedList";
+import { usePrimaryOrganization } from "./useOrganizations";
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -409,6 +410,11 @@ export function useOrganization() {
 
     organizationInFlight = (async () => {
       try {
+        const primaryOrgId = await usePrimaryOrganization().load();
+        if (primaryOrgId) {
+          organizationPartyId.value = primaryOrgId;
+          return primaryOrgId;
+        }
         const resp: any = await api({
           url: "admin/organizations",
           method: "get",
@@ -588,3 +594,25 @@ export function useMaargConfig() {
     clear,
   };
 }
+
+export function useGoodIdentificationTypes() {
+  async function fetchGoodIdentificationTypes(parentTypeId = "HC_GOOD_ID_TYPE", pageSize = 50): Promise<any[]> {
+    try {
+      const resp: any = await api({
+        url: "oms/goodIdentificationTypes",
+        params: { parentTypeId, pageSize },
+        cache: true,
+      });
+      if (!commonUtil.hasError(resp) && resp?.data) {
+        return resp.data;
+      }
+      return [];
+    } catch (err) {
+      logger.error("Failed to fetch good identification types", err);
+      return [];
+    }
+  }
+
+  return { fetchGoodIdentificationTypes };
+}
+

@@ -210,12 +210,12 @@ describe("carrier shipment-method mutations", () => {
         },
       },
       {
-        url: "oms/productStores/STORE%2F1/shipmentMethods",
+        url: "admin/productStores/STORE%2F1/shippingMethods",
         method: "put",
         data: { productStoreShipMethId: "PSM_1", thruDate: NOW },
       },
       {
-        url: "oms/productStores/STORE%2F1/shipmentMethods",
+        url: "admin/productStores/STORE%2F1/shippingMethods",
         method: "put",
         data: { productStoreShipMethId: "PSM_2", thruDate: NOW },
       },
@@ -298,7 +298,7 @@ describe("carrier shipment-method mutations", () => {
         },
       },
       {
-        url: "oms/productStores/STORE_LIVE/shipmentMethods",
+        url: "admin/productStores/STORE_LIVE/shippingMethods",
         method: "put",
         data: { productStoreShipMethId: "PSM_LIVE", thruDate: NOW },
       },
@@ -573,7 +573,7 @@ describe("owned association mutations", () => {
 
     expect(harness.api.mock.calls.map(([request]) => request)).toEqual([
       {
-        url: "oms/productStores/STORE%2F1/shipmentMethods",
+        url: "admin/productStores/STORE%2F1/shippingMethods",
         method: "post",
         data: {
           productStoreId: "STORE/1",
@@ -584,7 +584,7 @@ describe("owned association mutations", () => {
         },
       },
       {
-        url: "oms/productStores/STORE%2F1/shipmentMethods",
+        url: "admin/productStores/STORE%2F1/shippingMethods",
         method: "put",
         data: {
           productStoreShipMethId: "PSM_1",
@@ -593,7 +593,7 @@ describe("owned association mutations", () => {
         },
       },
       {
-        url: "oms/productStores/STORE%2F1/shipmentMethods",
+        url: "admin/productStores/STORE%2F1/shippingMethods",
         method: "put",
         data: {
           productStoreShipMethId: "PSM_1",

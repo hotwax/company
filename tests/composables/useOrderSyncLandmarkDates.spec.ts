@@ -133,6 +133,22 @@ describe("useOrderSyncLandmarkDates — writes", () => {
     expect(shopA.landmarkDates.value.historyLastSyncDate).toBe("2026-04-14 03:12:45.223");
   });
 
+  it("records dates written by another Shopify setup surface without another request", async () => {
+    const { useOrderSyncLandmarkDates } = await freshModule();
+    const shopB = useOrderSyncLandmarkDates("10010");
+    await shopB.load();
+
+    shopB.record({
+      historyLastSyncDate: "2026-06-01 00:00:00",
+      launchDate: "2026-06-12 00:00:00",
+    });
+
+    expect(shopB.landmarkDates.value.historyLastSyncDate).toBe("2026-06-01 00:00:00");
+    expect(shopB.landmarkDates.value.launchDate).toBe("2026-06-12 00:00:00");
+    expect(api.mock.calls.filter(([c]: any) => c.method === "put")).toHaveLength(0);
+    expect(api.mock.calls.filter(([c]: any) => c.method === "get")).toHaveLength(1);
+  });
+
   it("refuses to write without a shop, rather than creating an unaddressed row", async () => {
     const { useOrderSyncLandmarkDates } = await freshModule();
     const noShop = useOrderSyncLandmarkDates("");

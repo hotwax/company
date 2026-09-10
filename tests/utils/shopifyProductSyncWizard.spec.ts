@@ -13,9 +13,6 @@ describe("normalizeProductSyncStatus", () => {
         expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsFinished" })).toBe("completed");
       });
 
-      it("returns error when logStatusId is DmlsError", () => {
-        expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsError" })).toBe("error");
-      });
     });
 
     describe("without logId (handling empty Shopify runs)", () => {
@@ -60,17 +57,69 @@ describe("normalizeProductSyncStatus", () => {
       expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgConsumed" })).toBe("importing");
     });
 
-    it("returns cancelled when systemMessageState is SmsgCancelled with logId present", () => {
-      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgCancelled" })).toBe("cancelled");
+    // Once an MDM log exists, the DataManager status owns the outcome and the system message no
+    // longer forces a terminal read. With no logStatusId yet the import is still in flight, so both
+    // of these stay importing rather than reporting the message's terminal state.
+    it("keeps importing when a logId is present and only the message is cancelled", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgCancelled" })).toBe("importing");
     });
 
-    it("returns error when systemMessageState is SmsgError with logId present", () => {
-      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgError" })).toBe("error");
+    it("keeps importing when a logId is present and only the message errored", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", systemMessageState: "SmsgError" })).toBe("importing");
+    });
+
+    it("reports the DataManager outcome once the log carries one", () => {
+      expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsCancelled" })).toBe("cancelled");
+      expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsFailed" })).toBe("error");
     });
 
     it("returns queued by default", () => {
       expect(normalizeProductSyncStatus({})).toBe("queued");
       expect(normalizeProductSyncStatus({ systemMessageState: "UnknownState" })).toBe("queued");
+    });
+  });
+  // Canonical DataManager statuses, matching the dataManagerLogState mapping the
+  // normalizer now routes through. DmlsError is not a real DataManager status and
+  // must never read as terminal.
+  describe("canonical DataManager statuses", () => {
+    it("recognizes every canonical terminal DataManager outcome", () => {
+      expect(normalizeProductSyncStatus({
+        logId: "L1",
+        logStatusId: "DmlsFinished",
+        systemMessageState: "SmsgConsumed",
+      })).toBe("completed");
+  
+      for(const logStatusId of ["DmlsFailed", "DmlsCrashed"]) {
+        expect(normalizeProductSyncStatus({
+          logId: "L1",
+          logStatusId,
+          systemMessageState: "SmsgConsumed",
+        })).toBe("error");
+      }
+  
+      expect(normalizeProductSyncStatus({
+        logId: "L1",
+        logStatusId: "DmlsCancelled",
+        systemMessageState: "SmsgConsumed",
+      })).toBe("cancelled");
+    });
+  
+    it("keeps canonical pending and active imports in progress", () => {
+      for(const logStatusId of ["DmlsPending", "DmlsQueued", "DmlsRunning"]) {
+        expect(normalizeProductSyncStatus({
+          logId: "L1",
+          logStatusId,
+          systemMessageState: "SmsgConsumed",
+        })).toBe("importing");
+      }
+    });
+  
+    it("does not treat the non-existent DmlsError status as terminal", () => {
+      expect(normalizeProductSyncStatus({
+        logId: "L1",
+        logStatusId: "DmlsError",
+        systemMessageState: "SmsgConsumed",
+      })).toBe("importing");
     });
   });
 });

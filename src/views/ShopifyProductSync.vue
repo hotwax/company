@@ -33,10 +33,16 @@
       </ion-card>
 
       <template v-else>
+        <ion-item v-if="requestedSystemMessageId" class="requested-run-context" color="light" lines="full">
+          <ion-label class="ion-text-wrap">
+            <strong>{{ translate("Viewing requested sync run") }}</strong>
+            <p>{{ translate("System message") }}: {{ requestedSystemMessageId }}</p>
+          </ion-label>
+        </ion-item>
+
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
           :is-secondary-loading="isSecondaryLoading"
-          :is-refreshing="isRefreshInFlight"
           :is-sync-scheduled="isSyncScheduled"
           :is-sync-paused="isSyncJobPaused"
           :last-sync-label="lastSyncLabel"
@@ -636,6 +642,7 @@ import {
   selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
+import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
@@ -761,6 +768,15 @@ const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystem
 const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
 const latestConsumedSystemMessage = computed<any>(() => spineRunState.value.latestConsumedSystemMessage);
 const lastProductUpdateSyncedAt = computed(() => spineRunState.value.lastSyncedAt || "");
+const requestedSystemMessageId = computed(() =>
+  getSafeSyncRunQueryId(router.currentRoute.value.query.systemMessageId));
+const requestedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? spineRunState.value.systemMessages.find((message: any) =>
+    String(message.systemMessageId) === requestedSystemMessageId.value) || null
+  : null);
+const displayedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? currentSyncRun.value?.systemMessage || requestedSystemMessage.value || null
+  : latestSystemMessage.value);
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
 const hasEverLoadedSecondary = ref(false);
@@ -879,7 +895,6 @@ const systemMessageActionLoadingId = ref("");
 const webhookSubscriptions = ref<any[]>([]);
 const isWebhookLoading = ref(false);
 const isWebhookSupported = ref(false);
-let progressPoll: number | undefined;
 
 /**
  * Clock for RELATIVE-TIME LABELS only ("2 min ago") — it drives no data loading.
@@ -892,9 +907,6 @@ let progressPoll: number | undefined;
 const currentTimeMs = ref(Date.now());
 let labelClock: number | undefined;
 
-/** Retained as a no-op binding: templates still reference it, and nothing is ever in flight now. */
-const isRefreshInFlight = computed(() => false);
-
 const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
 
 const { shops: cachedShops, hydrated: shopsHydrated } = useShopifyShops();
@@ -902,7 +914,7 @@ const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
 const { statusItems } = useStatuses();
-const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(displayedSystemMessage.value));
 const productSyncBackHref = computed(() => {
   return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
 });
@@ -999,7 +1011,7 @@ const shopifyAccessDetail = computed(() => {
   return translate("Shopify access scope could not be verified for this connection.");
 });
 const shopifyAccessBlockingMessage = computed(() => {
-  const syncMessageText = String(currentSyncRun.value?.systemMessage?.messageText || latestSystemMessage.value?.messageText || "").trim();
+  const syncMessageText = String(displayedSystemMessage.value?.messageText || "").trim();
 
   if (isShopifyWriteAccessError(syncMessageText)) {
     return translate("Product sync could not start. Shopify write access is required for bulk query creation.");
@@ -1130,7 +1142,7 @@ const systemMessageFsmState = computed(() => {
   });
 });
 const productSystemMessageDetails = computed(() => {
-  const message = currentSyncRun.value?.systemMessage || latestSystemMessage.value || {};
+  const message = displayedSystemMessage.value || {};
   const completed = !!currentSyncRun.value?.completed;
 
   return {
@@ -1710,7 +1722,6 @@ function whenHydrated(source: Ref<boolean> | ComputedRef<boolean>, then: () => u
 
 
 onBeforeUnmount(() => {
-  stopProgressPolling();
   stopNextSyncRefreshPolling();
   clearSearchDebounce();
 });
@@ -1725,6 +1736,9 @@ async function loadWizard() {
     // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
     await loadSelectedShopSystemMessageRemoteId();
+    if(requestedSystemMessageId.value) {
+      await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+    }
 
     setupState.value = await fetchSetupState({
       shopId: props.id,
@@ -1750,8 +1764,7 @@ async function loadWizard() {
       if (!reviewStats.value.loaded) {
         await loadReviewStats();
       }
-      const loadedProgress = await loadProgress();
-      if (loadedProgress) startProgressPolling();
+      await loadProgress();
     } else {
       currentStep.value = "home";
     }
@@ -1766,8 +1779,7 @@ async function loadWizard() {
         await loadReviewStats();
       }
       if (currentStep.value === "progress") {
-        const loadedProgress = await loadProgress();
-        if (loadedProgress) startProgressPolling();
+        await loadProgress();
       }
     }
 
@@ -1780,7 +1792,6 @@ async function loadWizard() {
     logger.error(error);
     loadErrorMessage.value = getErrorMessage(error, translate("Failed to load product sync"));
     commonUtil.showToast(translate("Failed to load product sync"));
-    stopProgressPolling();
   } finally {
     isLoading.value = false;
   }
@@ -1842,7 +1853,9 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
     await loadLiveDashboardCounts();
 
     try {
-      if (latestSystemMessage.value?.systemMessageId) {
+      if(requestedSystemMessageId.value) {
+        await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+      } else if(latestSystemMessage.value?.systemMessageId) {
         await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
       } else {
         clearSyncRun();
@@ -1880,7 +1893,6 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
   } finally {
     isSecondaryLoading.value = false;
     hasEverLoadedSecondary.value = true;
-    updateScheduledJobRefreshAt();
   }
 }
 
@@ -2291,7 +2303,9 @@ async function loadLatestSystemMessage() {
   // The latest message is a spine computed; refresh only the live counts, then point the run join.
   await loadLiveDashboardCounts();
 
-  if (latestSystemMessage.value?.systemMessageId) {
+  if(requestedSystemMessageId.value) {
+    await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+  } else if(latestSystemMessage.value?.systemMessageId) {
     await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
   } else {
     clearSyncRun();
@@ -2767,7 +2781,6 @@ async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
     if (!opts.silent) {
       isSyncJobDetailsLoading.value = false;
     }
-    updateScheduledJobRefreshAt();
   }
 }
 
@@ -3117,12 +3130,10 @@ async function startProductSync() {
       };
       currentStep.value = "progress";
       await loadProgress();
-      startProgressPolling();
     } else {
       // Fallback if no ID is returned
       currentStep.value = "progress";
-      const loadedProgress = await loadProgress();
-      if (loadedProgress) startProgressPolling();
+      await loadProgress();
     }
   } catch (err) {
     commonUtil.showToast(getErrorMessage(err, translate("Failed to start product sync.")));
@@ -3226,8 +3237,7 @@ async function performSync(params: any, successMsg: string, modalRef: any, loadi
       completed: false
     };
     currentStep.value = "progress";
-    const loadedProgress = await loadProgress();
-    if (loadedProgress) startProgressPolling();
+    await loadProgress();
 
     modalRef.value = false;
     commonUtil.showToast(translate(successMsg));
@@ -3291,17 +3301,17 @@ async function loadProgress() {
     loadedRunState = true;
 
     // Prioritize the system message ID we already have in state if it's still active
-    const currentMessageId = progressState.value?.systemMessageId;
+    const currentMessageId = requestedSystemMessageId.value || progressState.value?.systemMessageId;
     let latestMessage = syncRunState.latestSystemMessage;
 
     if (currentMessageId && syncRunState.systemMessages) {
       const currentMessage = syncRunState.systemMessages.find((m: any) => m.systemMessageId === currentMessageId);
       if (currentMessage) {
         latestMessage = currentMessage;
-      } else if (!progressState.value?.completed) {
+      } else if(requestedSystemMessageId.value || !progressState.value?.completed) {
         // If the message we are tracking is NOT in the list yet and it's not completed,
         // it means there's a backend lag for a newly started sync.
-        // We should NOT overwrite the progressState with an older message.
+        // A route-selected message is also never replaced by a newer, unrelated run.
         latestMessage = null;
       }
     }
@@ -3328,9 +3338,6 @@ async function loadProgress() {
       }
     }
 
-    if (isProgressComplete.value) {
-      stopProgressPolling();
-    }
     return true;
   } catch (error: any) {
     logger.error(error);
@@ -3340,27 +3347,8 @@ async function loadProgress() {
         status: "error",
         completed: true
       } as any;
-      stopProgressPolling();
     }
     return !!bulkOperationSendJob.value?.jobName || !!bulkOperationPollJob.value?.jobName;
-  }
-}
-
-/**
- * No-op: progress is now reactive.
- *
- * This used to re-run `loadProgress` every 5 seconds from the main thread. Progress is derived from
- * cached system messages, bulk operations and MDM logs, all of which the worker refreshes, so the
- * derived state advances on its own. Kept as a function so the existing call sites read unchanged.
- */
-function startProgressPolling() {
-  stopProgressPolling();
-}
-
-function stopProgressPolling() {
-  if (progressPoll) {
-    window.clearInterval(progressPoll);
-    progressPoll = undefined;
   }
 }
 
@@ -3438,18 +3426,6 @@ function getTrackedRefreshJobs() {
     return jobs.findIndex((candidate: any) => candidate?.jobName === job?.jobName) === index;
   });
 }
-
-/**
- * No-op: nothing schedules a main-thread refresh any more.
- *
- * This computed the next scheduled job run so the old 15s tick knew when to re-fetch. The worker
- * polls regardless of job schedules, so the answer is no longer needed. Kept as a function because
- * two call sites read naturally as "the schedule may have changed".
- */
-function updateScheduledJobRefreshAt() {}
-
-
-
 
 function isJobPaused(job: any) {
   const status = String(job?.statusId || job?.status || "").toLowerCase();

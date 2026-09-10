@@ -152,7 +152,10 @@ const createUser = async () => {
       return;
     }
 
-    const payload: any = { partyTypeId };
+    const payload: any = {
+      partyTypeId,
+      createdByUserLogin: userStore.current.username
+    };
     if(partyTypeId === "PARTY_GROUP") {
       payload.partyGroup = { groupName: formData.value.groupName };
     } else {
