@@ -653,6 +653,23 @@ export function usePartyQueries() {
 }
 
 export function useFacilityOrderCounts() {
+  async function fetchFacilityOrderHistory(facilityId: string) {
+    try {
+      const resp = await api({
+        url: 'oms/facilities/facilityOrderCounts',
+        method: 'get',
+        params: { facilityId, orderByField: 'entryDate DESC', pageSize: 10 }
+      });
+      if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
+        return resp.data;
+      }
+      return [];
+    } catch (error) {
+      logger.error("Failed to fetch facility order history", error);
+      return [];
+    }
+  }
+
   async function fetchOrderCounts(facilityIds: string[]): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
     if (!facilityIds.length) return counts;
