@@ -45,6 +45,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 3, shipment: 2 }),
+    creationOrderCount: ref(3),
     total: ref(5),
     hydrated: ref(true),
   }),
@@ -138,6 +139,7 @@ describe("ShopifyTransferSync - Summary Cards", () => {
           IonCardContent: { template: "<div class='ion-card-content'><slot /></div>" },
           IonList: { template: "<div class='ion-list'><slot /></div>" },
           IonItem: { template: "<div class='ion-item'><slot /></div>" },
+          IonItemDivider: { template: "<div class='ion-item-divider'><slot /></div>" },
           IonLabel: { template: "<div class='ion-label'><slot /></div>" },
           IonBadge: { template: "<span class='ion-badge'><slot /></span>" },
           IonButton: { template: "<button><slot /></button>" },
@@ -172,7 +174,14 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     const leftCard = cards[0];
     expect(leftCard.text()).toContain("Summary");
     expect(leftCard.text()).toContain("Outstanding");
-    expect(leftCard.text()).toContain("5");
+    // Scoped to the row, not the whole card: the card also renders a "Syncing from" date, and a
+    // bare toContain("3") would pass on any date that happened to contain the digit. That is exactly
+    // how the old toContain("5") survived here after the total badge it was written for was replaced
+    // by this per-segment list -- it was matching 5:00 PM at UTC-7, and failed in CI, which runs UTC.
+    const outstandingRow = (label: string) => leftCard.findAll(".ion-item")
+      .find((row) => row.text().includes(label));
+    expect(outstandingRow("Transfers to create")?.text()).toContain("3");
+    expect(outstandingRow("Shipments")?.text()).toContain("2");
     expect(leftCard.text()).toContain("Syncing from");
     expect(leftCard.text()).toContain("Change start date");
 
