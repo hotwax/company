@@ -1838,7 +1838,6 @@ import {
   ensureShopPhysicalInventoryResetJob,
   fetchLocationsFromShopify,
   setInventoryEventDocumentAttachedForFeed,
-  useInventoryEventDocuments,
   updateShopifyInventoryEventFeedType,
   updateShopifyLocationInventoryEventFeedType,
   useInventoryEventDocuments,
