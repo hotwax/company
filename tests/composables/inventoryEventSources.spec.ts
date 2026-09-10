@@ -12,7 +12,7 @@ vi.mock("@common", () => ({
   useDb: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
   bootstrapState: { running: false },

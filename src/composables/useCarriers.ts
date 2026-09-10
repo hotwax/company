@@ -5,7 +5,7 @@ import {
   refreshAfterMutation,
   resyncDomain,
   startReferenceSync,
-} from "@/services/appCacheBootstrap";
+} from "@/services/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { isEffectiveNow } from "@common/db";

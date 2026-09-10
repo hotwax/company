@@ -71,12 +71,12 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   resyncDomain: vi.fn(),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
+vi.mock("@/composables/useDbSync", () => ({
+  useDbSync: () => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     ready: syncReady,

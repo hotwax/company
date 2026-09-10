@@ -50,9 +50,9 @@ vi.mock("@/composables/useDataManager", () => ({
   useRecentDataManagerLogs: () => ({ logs: { value: [] }, totalFailedRecords: { value: 0 }, hydrated: { value: true } }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
+vi.mock("@/composables/useDbSync", () => ({ useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
 vi.mock("@/composables/useServiceJobs", () => ({ useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }) }));
-vi.mock("@/services/appCacheBootstrap", () => ({ refreshAfterMutation: vi.fn(), bootstrapState: { running: false } }));
+vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn(), bootstrapState: { running: false } }));
 
 import { useShopifySyncRuns } from "@/composables/useShopify";
 

@@ -2,7 +2,7 @@ import { computed, reactive, toRefs } from "vue";
 import { api, logger, useDb } from "@common";
 import cronstrue from "cronstrue";
 import { companyDb } from "@/db/companyDb";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 
 /**
  * Service job master entity — job definitions, plus the live detail/history surface.

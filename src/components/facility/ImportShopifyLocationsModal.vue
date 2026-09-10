@@ -92,7 +92,7 @@ import {
 } from '@ionic/vue'
 import { close, downloadOutline } from 'ionicons/icons'
 import { commonUtil, logger, translate } from '@common'
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { useProductStoreMutations } from "@/composables/useProductStores";
 import { computed, ref, onMounted } from 'vue'
 

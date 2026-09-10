@@ -1,5 +1,4 @@
 import { reactive } from "vue";
-import { commonUtil } from "@common";
 import { createSyncService, serviceState, type SyncService } from "@common/db";
 import { companyDb } from "@/db/companyDb";
 import { clearDatabaseTables } from "@common/db";
@@ -84,13 +83,13 @@ export function syncService(): SyncService | null {
 /**
  * Start the reference-data sync. Idempotent.
  */
-export function startReferenceSync(): Promise<void> {
+export function startAppDbSync(): Promise<void> {
   if (starting) return starting;
   const generation = ++startGeneration;
 
-  bootstrapState.running = true;
   const attemptService = createSyncService({
     workerUrl: new URL(appSyncUrl, import.meta.url),
+    db: companyDb.raw(),
     onStatus: (status: Record<string, any>) => {
       if (generation !== startGeneration || service !== attemptService) return;
       if (status.type === "sync-end" && status.domain) {
@@ -109,12 +108,11 @@ export function startReferenceSync(): Promise<void> {
         recordSyncError(domain, String(status.message ?? "failed"), scope);
       }
     },
-  }) as SyncServiceV2;
+  }) as SyncService;
   service = attemptService;
 
   let succeeded = false;
-  const readiness = cacheIdentityCheck()
-    .then(() => attemptService.start())
+  const readiness = attemptService.start()
     .then(() => {
       if (generation !== startGeneration || service !== attemptService) return;
       succeeded = true;
@@ -136,16 +134,9 @@ export function startReferenceSync(): Promise<void> {
   return readiness;
 }
 
-async function ensureCacheIdentity(identity: string): Promise<boolean> {
-  const syncMeta = companyDb.entity("syncMeta");
-  const stored = await syncMeta.get<{ key: string; identity: string; at: number }>("identity");
-  if (stored?.identity === identity) return false;
-  await clearDatabaseTables(companyDb.raw());
-  await syncMeta.put({ key: "identity", identity, at: Date.now() });
-  return true;
-}
+export const startReferenceSync = startAppDbSync;
 
-export async function clearSyncMarkers(): Promise<void> {
+async function clearSyncMarkers(): Promise<void> {
   const syncMeta = companyDb.entity("syncMeta");
   const keys = await companyDb.raw().syncMeta.toCollection().primaryKeys();
   const domainKeys = (keys as string[]).filter((key) => key.startsWith("domain:") || key.startsWith("loginSync:"));
@@ -153,24 +144,10 @@ export async function clearSyncMarkers(): Promise<void> {
 }
 
 /**
- * Bind cache identity to user + environment.
- */
-async function cacheIdentityCheck(): Promise<void> {
-  try {
-    const { useUserStore } = await import("@/store/user");
-    const userId = useUserStore().current?.userId ?? "";
-    const identity = `${commonUtil.getMaargURL()}::${userId}`;
-    await ensureCacheIdentity(identity);
-  } catch {
-    // Never block bootstrap on identity check.
-  }
-}
-
-/**
  * Wait for bootstrap readiness.
  */
 async function whenReady(): Promise<void> {
-  const readiness = starting ?? startReferenceSync();
+  const readiness = starting ?? startAppDbSync();
   try {
     await readiness;
   } catch {
@@ -234,7 +211,7 @@ export async function resyncDomain(domain: string): Promise<void> {
 /**
  * Tear down sync service on logout.
  */
-export function stopReferenceSync(): void {
+export function stopAppDbSync(): void {
   startGeneration += 1;
   if (service) {
     service.stop();
@@ -245,5 +222,7 @@ export function stopReferenceSync(): void {
   domainErrors.clear();
   scopedDomainErrors.clear();
 }
+
+export const stopReferenceSync = stopAppDbSync;
 
 export const referenceDomainNames: string[] = [];

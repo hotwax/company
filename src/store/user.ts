@@ -5,6 +5,7 @@ import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
 import { useMaargConfig } from "@/composables/useSeed"
+import { startAppDbSync, stopAppDbSync } from "@/services/appDbSync"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -933,8 +934,7 @@ export const useUserStore = defineStore("user", {
       // cache identity check needs). `startReferenceSync` is idempotent, so the watcher still
       // covering the page-refresh case is harmless.
       try {
-        const { startReferenceSync } = await import("@/services/appCacheBootstrap")
-        void startReferenceSync()
+        void startAppDbSync()
       } catch (error) {
         logger.error("Failed to start the reference cache sync after login", error)
       }
@@ -948,12 +948,8 @@ export const useUserStore = defineStore("user", {
       this.$reset()
       useAuth().clearAuth()
 
-      // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
-      // sessions yet, so one user's cached data can never surface in another's session.
-      const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
-      const { clearDatabaseTables } = await import("@common/db")
-      const { companyDb } = await import("@/db/companyDb")
-      await clearDatabaseTables(companyDb.raw()).catch(() => { /* never block logout on cache cleanup */ })
+      // Stop worker and wipe the local read cache (IndexedDB)
+      await stopAppDbSync().catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
       const { useMaargConfig } = await import("@/composables/useSeed")
       useMaargConfig().clear()

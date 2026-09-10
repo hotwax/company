@@ -28,7 +28,7 @@ vi.mock("@/utils", () => ({
   getResponseErrorMessage: (_error: any, fallback: string) => fallback,
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
 }));

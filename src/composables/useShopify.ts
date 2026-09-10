@@ -29,7 +29,7 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { parseDateTimeValue } from "@/utils";
 import {
   DATA_MANAGER_LOG_STATUS_IDS,
@@ -41,9 +41,9 @@ import {
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
 import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
-import type { ActiveDomain } from "@/workers/syncRegistry";
+import type { ActiveDomain } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
-import { useCacheSync } from "./useCacheSync";
+import { useDbSync } from "./useDbSync";
 import { useDataManager } from "./useDataManager";
 import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
@@ -1928,7 +1928,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop } = useCacheSync();
+  const { start, stop } = useDbSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */

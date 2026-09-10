@@ -635,10 +635,10 @@ import {
   selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { useDbSync } from "@/composables/useDbSync";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
 import {
   cancelSystemMessage,
@@ -890,7 +890,7 @@ const isWebhookSupported = ref(false);
 const currentTimeMs = ref(Date.now());
 let labelClock: number | undefined;
 
-const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+const { start: startSyncDomains, stop: stopSyncDomains } = useDbSync();
 
 const { shops: cachedShops, hydrated: shopsHydrated } = useShopifyShops();
 const { record: shopRecord } = useShopifyShop(props.id);

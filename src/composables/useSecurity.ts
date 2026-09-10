@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger, useDb } from "@common";
 import { useUserStore } from "@/store/user";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 
 function byDescription(a: any, b: any): number {
   return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));

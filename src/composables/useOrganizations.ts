@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-syntax -- pure hierarchy helpers and entity mutations share this entity composable */
 import { api, commonUtil, translate, useDb } from "@common";
 import { computed, ref, type Ref } from "vue";
-import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
 import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow } from "@common/db";
 import { onSessionCleared } from "./sessionScope";

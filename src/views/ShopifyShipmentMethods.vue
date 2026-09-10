@@ -135,7 +135,7 @@
 import { useShopifyCarrierShipments, useShopifyShop, useShopifyShopMutations } from "@/composables/useShopify";
 import { useShipmentMethodTypeMutations, useShipmentMethodTypes } from "@/composables/useSeed";
 import { useProductStoreMutations, useProductStoreShippingMethods } from "@/composables/useProductStores";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 import {
   CACHE_RECONCILIATION_ERROR_MESSAGE,
   isCacheReconciliationError,

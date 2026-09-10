@@ -53,15 +53,15 @@ vi.mock("@/composables/useSeed", () => ({
   useStatuses: () => ({ labelFor: (statusId: string) => statusId }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }),
+vi.mock("@/composables/useDbSync", () => ({
+  useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }),
 }));
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
 }));

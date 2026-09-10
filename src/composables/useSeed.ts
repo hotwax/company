@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger, useDb } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { usePrimaryOrganization } from "./useOrganizations";
 

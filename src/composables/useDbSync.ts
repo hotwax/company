@@ -1,9 +1,8 @@
 import { getCurrentInstance, onUnmounted, ref } from "vue";
-import { serviceState } from "@common/db";
-import { refreshAfterMutation, syncService } from "@/services/appCacheBootstrap";
-import type { ActiveDomain } from "@/workers/syncRegistry";
+import { serviceState, type ActiveDomain } from "@common/db";
+import { refreshAfterMutation, syncService } from "@/services/appDbSync";
 
-export interface CacheSyncStatus {
+export interface DbSyncStatus {
   domain?: string;
   type: string;
   written?: number;
@@ -11,7 +10,9 @@ export interface CacheSyncStatus {
   at?: number;
 }
 
-export function useCacheSync() {
+export type CacheSyncStatus = DbSyncStatus;
+
+export function useDbSync() {
   const ready = ref(false);
   const busy = ref(false);
   const error = ref("");

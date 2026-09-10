@@ -1324,7 +1324,7 @@ import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { useDbSync } from "@/composables/useDbSync";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
 import { useFacilityTypes } from "@/composables/useFacilities";
 import { useStatuses } from "@/composables/useSeed";
@@ -1353,7 +1353,7 @@ import {
 } from "@/composables/useShopify";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useVirtualRows } from "@/composables/useVirtualRows";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 import { formatDateTime } from "@/utils";
 import { isEffectiveNow } from "@common/db";
 import { parameterMap } from "@/utils/serviceJob";
@@ -1531,7 +1531,7 @@ const {
   ready: inventorySyncReady,
   error: inventorySyncError,
   afterMutation,
-} = useCacheSync();
+} = useDbSync();
 
 /**
  * SHOPIFY'S OWN NAME FOR EACH LOCATION, read from Shopify through get#ShopifyLocations -- the same

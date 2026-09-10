@@ -3,7 +3,7 @@ import { isEffectiveNow } from "@common/db";
 import { alertController } from "@ionic/vue";
 import { api, commonUtil, emitter, logger, useDb } from "@common";
 import { translate } from "@/i18n";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.

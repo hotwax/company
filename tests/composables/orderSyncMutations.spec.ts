@@ -110,7 +110,7 @@ vi.mock("@common", () => ({
   },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   bootstrapState: { running: false },
 }));
@@ -130,7 +130,7 @@ vi.mock("@/composables/useDataManager", () => ({
   }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
+vi.mock("@/composables/useDbSync", () => ({ useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
 
 import { useShopifyOrderSync } from "@/composables/useShopify";
 

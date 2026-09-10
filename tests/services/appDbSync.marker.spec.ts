@@ -33,7 +33,7 @@ vi.mock("@common/db", async (importOriginal) => {
 describe("resyncDomain login marker", () => {
   it("deletes the marker key that markSyncedThisLogin actually writes", async () => {
     deleted.length = 0;
-    const { resyncDomain } = await import("@/services/appCacheBootstrap");
+    const { resyncDomain } = await import("@/services/appDbSync");
 
     await resyncDomain("carrier").catch(() => {});
 

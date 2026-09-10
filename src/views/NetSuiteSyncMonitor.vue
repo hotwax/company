@@ -221,7 +221,7 @@ import {
 import { alertCircleOutline, checkmarkCircleOutline, playOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useNetSuiteProductStore } from "@/composables/useProductStores";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { useDbSync } from "@/composables/useDbSync";
 import {
   describeConditions,
   describeSortBy,
@@ -254,7 +254,7 @@ const { pendingCount, checkedAt: backlogCheckedAt, hydrated: backlogHydrated } =
   useNetSuiteOrderPushBacklog(() => productStoreId.value);
 
 const { setRuleEnabled: setRuleEnabledApi, runNow } = useNetSuiteRuleGroupMutations();
-const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+const { start: startSyncDomains, stop: stopSyncDomains } = useDbSync();
 
 // Rules for every group are already cached, so the per-group count needs no extra read.
 const { countFor: ruleCountFor } = useNetSuiteRulesByGroup();

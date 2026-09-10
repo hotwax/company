@@ -97,7 +97,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not drop the refresh when the worker is still starting", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
 
     // App.vue: fire-and-forget. `service` is assigned synchronously, `start()` is still pending.
     void mod.startReferenceSync();
@@ -112,7 +112,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not drop a forced domain resync when the worker is still starting", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     void mod.startReferenceSync();
 
     await mod.resyncDomain("facilityGroup");
@@ -122,7 +122,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("still works when nothing started the bootstrap yet", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
 
     const written = await mod.refreshAfterMutation("productStore", { productStoreId: "STORE" });
 
@@ -131,7 +131,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears a stale domain error when a later sync succeeds", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -153,7 +153,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears only the recovered scope when a targeted refetch succeeds", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -182,7 +182,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears every scoped error only after a domain-wide resync succeeds", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -208,7 +208,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("records and clears a service-level refetch rejection under the canonical PK scope", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     await mod.startReferenceSync();
     const cause = new Error("carrier refetch HTTP 503");
     harnessState.refetchError = cause;
@@ -235,7 +235,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not reorder a worker-recorded scoped error when the service rejects it again", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -259,7 +259,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("wraps a missing service after a concurrent stop instead of silently returning zero", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     const refresh = mod.refreshAfterMutation("carrier", { partyId: "FEDEX" });
 
     mod.stopReferenceSync();
@@ -273,7 +273,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("records domainless startup failures globally and clears them only after recovery", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
 
     await mod.startReferenceSync();
@@ -291,7 +291,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("restarts a failed bootstrap from the visible domain-refresh path", async () => {
-    const mod = await import("@/services/appCacheBootstrap");
+    const mod = await import("@/services/appDbSync");
     harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
 
     await mod.startReferenceSync();

@@ -110,8 +110,8 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 | **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage` |
 | **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation` |
 
-Class B runs in an **app-lifetime** worker started by `appCacheBootstrap`; class A runs in a
-**view-scoped** worker started by `useCacheSync`. Two workers is a known, bounded deviation from the
+Class B runs in an **app-lifetime** worker started by `appDbSync`; class A runs in a
+**view-scoped** worker started by `useDbSync`. Two workers is a known, bounded deviation from the
 one-worker principle (their lifecycles differ); consolidating them is a candidate cleanup, not a bug
 to "fix" incidentally.
 
@@ -124,15 +124,15 @@ to "fix" incidentally.
 | [`src/utils/db/cacheEntities.ts`](src/utils/db/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
 | [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) | Domain → table → label → sync class |
 | [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows, and which seed domains to exclude |
-| [`src/services/appCacheBootstrap.ts`](src/services/appCacheBootstrap.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
+| [`src/services/appDbSync.ts`](src/services/appDbSync.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
 | [`src/services/pollingService.ts`](src/services/pollingService.ts) | Main-thread half: spawns/terminates the worker, pushes the bearer token over `BroadcastChannel`, routes `auth-error` |
 | [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — importing a domain module registers it; the harness must be imported **last** |
 | [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
 | [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
 | [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `workerFetch` |
 | [`src/composables/useCachedList.ts`](src/composables/useCachedList.ts) | The read seam for views |
-| [`src/composables/useCacheSync.ts`](src/composables/useCacheSync.ts) | View-scoped class-A lifecycle (`start`/`stop`/`syncNow`) |
-| [`src/composables/useCacheStatus.ts`](src/composables/useCacheStatus.ts) | Live row counts / last-sync times for the Settings diagnostics card |
+| [`src/composables/useDbSync.ts`](src/composables/useDbSync.ts) | View-scoped class-A lifecycle (`start`/`stop`/`syncNow`) |
+
 
 `pollingService`, `pollingWorkerHarness`, and `syncRegistry` are **framework-shaped, app-local**:
 they are written to be promoted into `@common` later. Keep app specifics out of them — those belong

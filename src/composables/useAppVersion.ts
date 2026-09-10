@@ -1,6 +1,6 @@
 import { api, commonUtil, useDb } from "@common";
 import { computed } from "vue";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 import { useTypedEnums } from "./useSeed";
 
 /**
