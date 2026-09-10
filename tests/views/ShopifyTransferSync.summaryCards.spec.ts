@@ -10,8 +10,10 @@ vi.mock("@common", () => ({
   commonUtil: {
     hasError: (res: any) => Boolean(res?.data?.error),
     showToast: vi.fn(),
-    // The webhook modal derives its default callback URL from the connected OMS.
-    getMaargURL: () => "https://rails-oms.hotwax.io/rest/s1/",
+    // The webhook modal derives its default callback URL from the connected OMS. A reserved
+    // example.com host, not a real instance: a fixture naming a live tenant invites someone to
+    // point a test at it.
+    getMaargURL: () => "https://oms.example.com/rest/s1/",
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
@@ -116,17 +118,7 @@ vi.mock("@/utils/shopifyTransferSync", () => ({
   isTransferSyncMonitoringLoaded: () => true,
 }));
 
-describe("ShopifyTransferSync - Summary Cards", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("renders two summary cards: left with pending count and syncing from, right with webhooks and jobs", async () => {
-    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
-    const wrapper = mount(ShopifyTransferSync, {
-      props: { id: "1000" },
-      global: {
-        stubs: {
+const STUBS = {
           IonPage: { template: "<div><slot /></div>" },
           IonHeader: { template: "<div><slot /></div>" },
           IonToolbar: { template: "<div><slot /></div>" },
@@ -162,8 +154,44 @@ describe("ShopifyTransferSync - Summary Cards", () => {
           IonFab: { template: "<div class='ion-fab'><slot /></div>" },
           IonFabButton: { template: "<button class='ion-fab-button'><slot /></button>" },
           ServiceJobDetailsModal: { template: "<div />" },
-        },
-      },
+};
+
+describe("ShopifyTransferSync - Summary Cards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("defaults the webhook callback to the connected OMS's own receiver", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, { props: { id: "1000" }, global: { stubs: STUBS } });
+
+    // The field is seeded when the modal opens, not at setup: getMaargURL reads a cookie, so a
+    // value captured at setup would be the pre-login empty string for the session.
+    (wrapper.vm as any).showWebhooksModal = true;
+    await wrapper.vm.$nextTick();
+
+    // One slash, not two: getMaargURL returns a trailing slash for an alias but not for a base that
+    // already carries /rest/s1.
+    expect((wrapper.vm as any).webhookCallbackUrl)
+      .toBe("https://oms.example.com/rest/s1/shopify/webhook/payload");
+  });
+
+  it("keeps a callback the operator already typed", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, { props: { id: "1000" }, global: { stubs: STUBS } });
+
+    (wrapper.vm as any).webhookCallbackUrl = "arn:aws:events:us-east-2::event-source/aws.partner/shopify.com/1/Commerce";
+    (wrapper.vm as any).showWebhooksModal = true;
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.vm as any).webhookCallbackUrl).toContain("arn:aws:events:");
+  });
+
+  it("renders two summary cards: left with pending count and syncing from, right with webhooks and jobs", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, {
+      props: { id: "1000" },
+      global: { stubs: STUBS },
     });
 
     const summaryGrid = wrapper.find(".sync-summary");
