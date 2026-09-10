@@ -98,7 +98,6 @@ class CompanyCacheDB extends Dexie {
   shopifyFulfillmentHistorySupport!: Table<CachedRow, string>;
   /** Shopify inventory transfer sync — one row per (shopId, orderId). */
   shopifyTransferPending!: Table<CachedRow, string>;
-  /** Latest transfer webhook subscription health check, one row per shop. */
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
