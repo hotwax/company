@@ -167,26 +167,49 @@ export const SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS = [
   "ShopifyInventoryChannelAuditEvent",
 ] as const;
 
+/**
+ * Physical-location inventory events are deliberately a smaller surface than the aggregate
+ * channel feed. The connector seeds these six documents on ShopifyShopLocationInventoryEventFeed;
+ * the audit and facility-configuration documents belong only to the aggregate feed.
+ */
+export const SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS = [
+  "ShopifyShipmentReceiptEvent",
+  "ShopifyPosItemIssuanceEvent",
+  "ShopifyPhysicalInventoryEvent",
+  "ShopifyExternalInventoryResetEvent",
+  "ShopifyReservationCreatedEvent",
+  "ShopifyReservationReleaseEvent",
+] as const;
+
 export interface InventoryEventDocument {
   dataDocumentId: string;
   documentName: string;
   primaryEntityName: string;
-  /** false when the row exists but carries no DataFeedDocument for this feed. */
-  attached: boolean;
+  /** Whether this document is attached to the OMS-wide aggregate/channel feed. */
+  channelAttached: boolean;
+  /** Whether this document is attached to the OMS-wide physical-location feed. */
+  locationAttached: boolean;
+  /** False for documents that are valid only for aggregate/channel inventory events. */
+  locationSupported: boolean;
   /** true when the OMS has no DataDocument by this id at all - the seed data never loaded. */
   missing: boolean;
 }
 
 /** Collapse (document, feed) rows into one entry per document this feature ships. */
 function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
-  const byId = new Map<string, { row: any; attached: boolean }>();
+  const byId = new Map<string, { row: any; channelAttached: boolean; locationAttached: boolean }>();
   for(const row of rows) {
     const id = String(row?.dataDocumentId ?? "");
     if(!id) {continue;}
-    const attached = String(row?.dataFeedId ?? "") === SHOPIFY_INVENTORY_EVENT_FEED_ID;
+    const feedId = String(row?.dataFeedId ?? "");
     const seen = byId.get(id);
-    // Attached on any row wins: the same document can appear once per feed it belongs to.
-    byId.set(id, { row: seen?.row ?? row, attached: (seen?.attached ?? false) || attached });
+    // A document can appear once per feed it belongs to. Preserve both independent switches when
+    // the same document is attached to channel and physical-location feeds.
+    byId.set(id, {
+      row: seen?.row ?? row,
+      channelAttached: (seen?.channelAttached ?? false) || feedId === SHOPIFY_INVENTORY_EVENT_FEED_ID,
+      locationAttached: (seen?.locationAttached ?? false) || feedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+    });
   }
 
   return SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS.map((id) => {
@@ -196,7 +219,9 @@ function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
       dataDocumentId: id,
       documentName: found?.row?.documentName || id,
       primaryEntityName: found?.row?.primaryEntityName || "",
-      attached: found?.attached ?? false,
+      channelAttached: found?.channelAttached ?? false,
+      locationAttached: found?.locationAttached ?? false,
+      locationSupported: SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS.includes(id as typeof SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS[number]),
       missing: !found,
     };
   });
@@ -224,16 +249,20 @@ export function useInventoryEventDocuments() {
  * documents attached to it, so detaching one stops that class of inventory event being recorded at
  * all. The change lands when the entity cache behind that lookup expires, not immediately.
  */
-export async function setInventoryEventDocumentAttached(
+export async function setInventoryEventDocumentAttachedForFeed(
+  dataFeedId: string,
   dataDocumentId: string,
   attached: boolean,
 ): Promise<void> {
-  const base = `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}/documents`;
+  if (![SHOPIFY_INVENTORY_EVENT_FEED_ID, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID].includes(dataFeedId)) {
+    throw new Error("Unsupported Shopify inventory event feed.");
+  }
+  const base = `admin/dataFeeds/${dataFeedId}/documents`;
   const resp: any = attached
     ? await api({
       url: base,
       method: "post",
-      data: { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID, dataDocumentId },
+      data: { dataFeedId, dataDocumentId },
     })
     : await api({ url: `${base}/${dataDocumentId}`, method: "delete" });
   if(commonUtil.hasError(resp)) {
@@ -244,6 +273,18 @@ export async function setInventoryEventDocumentAttached(
   // Write-through. The domain re-lists just this document and snapshot-replaces its slice, so the
   // row for the feed it just left is pruned rather than left behind as a phantom attachment.
   await refreshAfterMutation("inventoryEventDocument", { dataDocumentId });
+}
+
+/** Backwards-compatible shorthand for callers that control the aggregate/channel feed. */
+export async function setInventoryEventDocumentAttached(
+  dataDocumentId: string,
+  attached: boolean,
+): Promise<void> {
+  return setInventoryEventDocumentAttachedForFeed(
+    SHOPIFY_INVENTORY_EVENT_FEED_ID,
+    dataDocumentId,
+    attached,
+  );
 }
 
 /**

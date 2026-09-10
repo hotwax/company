@@ -360,8 +360,7 @@
             <ion-card-header>
               <ion-card-title>Event sources</ion-card-title>
               <ion-card-subtitle>
-                Which OMS changes this feed listens to. Turning one off stops that kind of inventory
-                event being recorded at all.
+                {{ translate("Choose which OMS changes each feed records. Turning a source off stops that kind of inventory event being recorded for that feed.") }}
               </ion-card-subtitle>
             </ion-card-header>
             <ion-list lines="full">
@@ -389,14 +388,32 @@
                     Not loaded on this OMS &mdash; run the connector's seed data
                   </p>
                 </ion-label>
-                <ion-toggle
-                  slot="end"
-                  :key="`${doc.dataDocumentId}-${doc.attached}-${toggleNonce}`"
-                  :aria-label="`Feed events from ${doc.documentName}`"
-                  :checked="doc.attached"
-                  :disabled="doc.missing || savingDocumentId === doc.dataDocumentId"
-                  @click.prevent="requestDocumentAttachChange(doc)"
-                />
+                <!-- One wrapper so the two feed switches can stack on narrow screens; the toggles carry
+                     their own labels, so no text styling is needed here. -->
+                <div slot="end" class="event-source-feeds">
+                  <ion-toggle
+                    :key="`${doc.dataDocumentId}-channel-${doc.channelAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.channelAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Channel") }}
+                  </ion-toggle>
+                  <ion-toggle
+                    v-if="doc.locationSupported"
+                    :key="`${doc.dataDocumentId}-location-${doc.locationAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.locationAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Physical location") }}
+                  </ion-toggle>
+                  <ion-note v-else>{{ translate("Physical location not used") }}</ion-note>
+                </div>
               </ion-item>
             </ion-list>
           </ion-card>
@@ -1820,7 +1837,7 @@ import {
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
   fetchLocationsFromShopify,
-  setInventoryEventDocumentAttached,
+  setInventoryEventDocumentAttachedForFeed,
   updateShopifyInventoryEventFeedType,
   updateShopifyLocationInventoryEventFeedType,
   useInventoryEventDocuments,
@@ -3339,7 +3356,7 @@ const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? 
 // truthful after a change by the domain's write-through rather than by re-fetching here.
 const { documents: inventoryEventDocuments, hydrated: documentsHydrated } = useInventoryEventDocuments();
 const documentsError = ref("");
-const savingDocumentId = ref("");
+const savingDocumentKey = ref("");
 const documentsLoading = computed(() => !documentsHydrated.value);
 
 /** Re-snapshot the domain. The read path is the cache, so "retry" means refill it, not re-fetch here. */
@@ -3364,27 +3381,48 @@ async function resyncEventDocuments() {
 const toggleNonce = ref(0);
 const redrawToggles = () => { toggleNonce.value += 1; };
 
+/** The feed a switch controls, as it reads inside a sentence: "... for channel events". */
+function inventoryEventFeedLabel(dataFeedId: string): string {
+  return dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? translate("physical location") : translate("channel");
+}
+
+/**
+ * Accessible name for one feed switch. The visible label only says which feed, so a screen reader
+ * would hear a column of identical "Channel" switches; name the document and the action as well.
+ */
+function eventSourceToggleLabel(doc: InventoryEventDocument, dataFeedId: string): string {
+  const attached = dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? doc.locationAttached : doc.channelAttached;
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
+  return attached ? translate("Stop {document} for {feed} events", copy) : translate("Start {document} for {feed} events", copy);
+}
+
 /**
  * Turning a source off is destructive in a way a toggle does not look: it stops that class of event
  * being RECORDED, so nothing accumulates to replay once it goes back on. Confirm before, and say that
  * the change is not instant - Moqui reads this through a cached query.
  */
-async function requestDocumentAttachChange(doc: InventoryEventDocument) {
-  if(doc.missing || savingDocumentId.value) {
+async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, dataFeedId: string) {
+  const savingKey = `${dataFeedId}:${doc.dataDocumentId}`;
+  const isLocationFeed = dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID;
+  if(doc.missing || (isLocationFeed && !doc.locationSupported) || savingDocumentKey.value) {
     redrawToggles();
 
     return;
   }
-  const attaching = !doc.attached;
+  const attached = isLocationFeed ? doc.locationAttached : doc.channelAttached;
+  const attaching = !attached;
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
 
   const alert = await alertController.create({
-    header: attaching ? `Listen to ${doc.documentName}?` : `Stop listening to ${doc.documentName}?`,
+    header: attaching
+      ? translate("Listen to {document} for {feed} events?", copy)
+      : translate("Stop listening to {document} for {feed} events?", copy),
     message: attaching
-      ? "New changes of this kind will start producing inventory events. Changes made while it was off were not recorded and will not be replayed; run a full aggregate ATP reset to reconcile."
-      : "Changes of this kind stop producing inventory events entirely, and nothing accumulates to catch up on later. Shopify keeps whatever quantity it already has until a full aggregate ATP reset corrects it.",
+      ? translate("New changes of this kind will start producing {feed} inventory events. Changes made while it was off were not recorded and will not be replayed; use the relevant inventory reset if Shopify needs to be reconciled.", copy)
+      : translate("Changes of this kind stop producing {feed} inventory events entirely, and nothing accumulates to catch up later. Existing events are unaffected.", copy),
     buttons: [
-      { text: "Cancel", role: "cancel" },
-      { text: attaching ? "Start listening" : "Stop listening", role: "confirm" },
+      { text: translate("Cancel"), role: "cancel" },
+      { text: attaching ? translate("Start listening") : translate("Stop listening"), role: "confirm" },
     ],
   });
   await alert.present();
@@ -3394,17 +3432,17 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
     return;
   }
 
-  savingDocumentId.value = doc.dataDocumentId;
+  savingDocumentKey.value = savingKey;
   try {
     // The composable's list updates from the cache write-through inside this call.
-    await setInventoryEventDocumentAttached(doc.dataDocumentId, attaching);
+    await setInventoryEventDocumentAttachedForFeed(dataFeedId, doc.dataDocumentId, attaching);
     commonUtil.showToast(attaching
-      ? "Event source enabled. It can take a few minutes to take effect."
-      : "Event source disabled. Events already recorded are unaffected.");
+      ? translate("Event source enabled for {feed} events. It can take a few minutes to take effect.", copy)
+      : translate("Event source disabled for {feed} events. Events already recorded are unaffected.", copy));
   } catch (error: any) {
-    commonUtil.showToast(error?.message || "Failed to update the event source.");
+    commonUtil.showToast(error?.message || translate("Failed to update the event source."));
   } finally {
-    savingDocumentId.value = "";
+    savingDocumentKey.value = "";
     // The list was re-read above on success and left untouched on failure, so a redraw shows what is
     // actually stored either way rather than what was clicked.
     redrawToggles();
@@ -3629,7 +3667,6 @@ const locationFilterEventType = ref("");
 const locationFilterState = ref("");
 const locationFilterFrom = ref<string | null>(null);
 const locationFilterTo = ref<string | null>(null);
-
 const locationLocationOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
 const locationEventTypeOptions = computed(() =>
@@ -4344,6 +4381,21 @@ function formatAge(timestamp: number): string {
 
 .event-feed-settings > ion-item {
   margin-block-start: var(--spacer-sm);
+}
+
+/* Layout only: the toggles style their own labels. Side by side normally, stacked on narrow screens. */
+.event-source-feeds {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: var(--spacer-base);
+}
+
+@media (max-width: 700px) {
+  .event-source-feeds {
+    grid-auto-flow: row;
+    gap: var(--spacer-2xs);
+  }
 }
 
 .sync-error-banner ion-card-content {
