@@ -463,18 +463,13 @@
                     {{ run.duration }}
                   </ion-note>
                 </ion-item>
-                <ion-item>
-                  <ion-label class="ion-text-wrap">
-                    {{ translate('Parameters') }}
-                    <p>{{ run.parameters }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label class="ion-text-wrap">
-                    {{ translate('Result') }}
-                    <p>{{ run.result }}</p>
-                  </ion-label>
-                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
               </ion-list>
               <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
             </ion-card>
@@ -520,22 +515,13 @@
                     {{ run.duration }}
                   </ion-note>
                 </ion-item>
-                <ion-item>
-                  <ion-label>
-                    Parameters
-                    <p>{{ run.parameters }}</p>
-                    <p>Scope: {{ run.scope }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label>
-                    Result
-                    <p>{{ run.result }}</p>
-                  </ion-label>
-                  <ion-chip slot="end" outline :color="run.failed ? 'danger' : 'success'">
-                    <ion-label>{{ run.failed ? 'Job error' : 'No job error' }}</ion-label>
-                  </ion-chip>
-                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
               </ion-list>
             </ion-card>
             <ion-card v-if="jobsHydrated && !physicalResetRuns.length">
@@ -581,22 +567,13 @@
                     {{ run.duration }}
                   </ion-note>
                 </ion-item>
-                <ion-item>
-                  <ion-label>
-                    Parameters
-                    <p>{{ run.parameters }}</p>
-                    <p>Scope: {{ run.scope }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label>
-                    Result
-                    <p>{{ run.result }}</p>
-                  </ion-label>
-                  <ion-chip slot="end" outline :color="run.failed ? 'danger' : 'success'">
-                    <ion-label>{{ run.failed ? 'Job error' : 'No job error' }}</ion-label>
-                  </ion-chip>
-                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
               </ion-list>
               <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId"
                 :remote-id="syncContext.remoteId.value || ''" :channels="inventoryChannels" />
@@ -1882,7 +1859,7 @@
 import { commonUtil, logger, translate, useProducts } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent, IonDatetime,
+  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonDatetime,
   IonDatetimeButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonPage, IonPopover, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
   IonSkeletonText, IonSpinner, IonText, IonTextarea, IonTitle, IonToggle, IonToolbar, alertController,
@@ -1904,6 +1881,7 @@ import {
 } from "vue";
 import { useRouter } from "vue-router";
 import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
+import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
 import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
@@ -1956,6 +1934,7 @@ import {
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
+import { describeRunParameters, describeRunResult } from "@/utils/serviceJobRun";
 import { locationInventoryDeliveryErrorCount } from "@/utils/shopifyLocationInventory";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {
@@ -2849,9 +2828,15 @@ function projectRun(job: any, run: any, scope: string) {
 
   let importLogId = "";
   try { importLogId = String((typeof run.results === "string" ? JSON.parse(run.results) : run.results)?.dataManagerLogId || ""); } catch { /* No structured result recorded. */ }
+  const parameterDetail = describeRunParameters(run.parameters);
+  const resultRows = describeRunResult(run.results);
+
   return {
     importLogId,
     id: run.jobRunId,
+    parameterScope: parameterDetail.scope,
+    parameterTuning: parameterDetail.tuning,
+    resultRows: resultRows.length ? resultRows : describeRunResult(run.messages),
     parameters: run.parameters || configuredParameters || "No parameters recorded",
     scope,
     started: formatDateTime(run.startTime),
