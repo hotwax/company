@@ -219,7 +219,7 @@ export function deleteArtifactAuthz(payload: { userGroupId: string; artifactAuth
  *
  * Write-through is `resyncDomain`, NOT `refreshAfterMutation`: the `userGroup` domain is registered
  * as a plain lookup (referenceDomains.ts:155) with neither `byPk` nor `refetchScope`, and for such
- * a domain `refetchOne` silently returns 0 (snapshotDomain.ts:256) — the row would keep its old
+ * a domain `refetchOne` silently returns 0 (defineSnapshotDomain.ts:256) — the row would keep its old
  * description until the next login sync. Re-snapshotting the whole lookup table is one small
  * request and actually lands the update; it also supersedes the old `updateUserGroupInState`
  * hand-patch, because cached readers re-emit via liveQuery.

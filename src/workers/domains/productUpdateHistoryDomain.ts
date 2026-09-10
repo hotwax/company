@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst } from "@common/core/workerRemoteApi";
 
@@ -50,8 +50,9 @@ async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHis
   return productUpdateHistoryEntity.upsertMany(rows);
 }
 
-registerSyncDomain({
+export const productUpdateHistoryDomain = defineSyncDomain({
   name: "productUpdateHistory",
+  table: "productUpdateHistories",
   label: "Product update history",
   syncClass: "A",
   intervalMs: 15_000,

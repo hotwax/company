@@ -5,7 +5,7 @@ const netSuiteDecisionRuleCache = companyDb.entity("netSuiteDecisionRules");
 const netSuiteOrderPushBacklogCache = companyDb.entity("netSuiteOrderPushBacklog");
 const netSuiteRuleGroupCache = companyDb.entity("netSuiteRuleGroups");
 const netSuiteRuleGroupRunCache = companyDb.entity("netSuiteRuleGroupRuns");
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
@@ -137,8 +137,9 @@ async function syncBacklog(ctx: SyncContext, productStoreId: string): Promise<nu
   ]);
 }
 
-registerSyncDomain({
+export const netSuiteOrderPushDomain = defineSyncDomain({
   name: "netSuiteOrderPush",
+  table: "netSuiteRuleGroups",
   label: "NetSuite order push",
   syncClass: "A",
   intervalMs: 15_000,

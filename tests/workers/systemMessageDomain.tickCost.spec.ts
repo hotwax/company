@@ -79,10 +79,8 @@ describe("systemMessage domain per-tick request budget", () => {
   });
 
   async function runTick() {
-    await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
-    const domain = getSyncDomain("systemMessage")!;
-    await domain.sync({ maargUrl: "https://x.test/", token: "t" }, {});
+    const { systemMessageDomain } = await import("@/workers/domains/systemMessageDomain");
+    await systemMessageDomain.sync({ maargUrl: "https://x.test/", token: "t" }, {});
     return calls.pageNewestFirst.length + calls.workerGet.length;
   }
 
@@ -137,9 +135,8 @@ describe("systemMessage domain per-tick request budget", () => {
       { systemMessageId: "OUTSIDE", initDate: now - 10 * 60 * 1000 },
     ];
 
-    await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
-    await getSyncDomain("systemMessage")!.sync(
+    const { systemMessageDomain } = await import("@/workers/domains/systemMessageDomain");
+    await systemMessageDomain.sync(
       { maargUrl: "https://x.test/", token: "t" },
       { refreshMaxAgeMs: 60_000 },
     );

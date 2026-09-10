@@ -1,7 +1,9 @@
 import { companyDb } from "@/db/companyDb";
-import { registerSnapshotDomain } from "@common/db/sync/snapshotDomain";
+import { defineSnapshotDomain } from "@common/db/sync/defineSnapshotDomain";
+import type { SyncDomain } from "@common/db/types";
 
-registerSnapshotDomain({
+export const referenceDomains: SyncDomain[] = [
+  defineSnapshotDomain({
   name: "organizationRelationship",
   label: "Organization relationships",
   syncClass: "B",
@@ -18,11 +20,11 @@ registerSnapshotDomain({
     params: { partyIdTo: pk.partyIdTo },
     scope: { field: "partyIdTo", value: pk.partyIdTo },
   }),
-});
+}),
 
 /**
  * Class-B (reference/config) sync domains — registration is pure configuration; the snapshot +
- * prune + refetch-by-PK behavior lives in `snapshotDomain.ts`.
+ * prune + refetch-by-PK behavior lives in `defineSnapshotDomain.ts`.
  *
  * These have NO cadence: the harness runs each once when activated (app load, per decision D2)
  * and thereafter only when a mutation triggers `refetchOne`.
@@ -32,7 +34,7 @@ registerSnapshotDomain({
  * `collectionKey` is explicit rather than inferred.
  */
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "serviceJob",
   label: "Service jobs",
   syncClass: "B",
@@ -49,9 +51,9 @@ registerSnapshotDomain({
    * `queue_ShopifyOrderSync_99992` left the cache at its pre-write 156 rows.
    */
   byPkRecordKey: "jobDetail",
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "inventoryEventDocument",
   label: "Shopify inventory event sources",
   syncClass: "B",
@@ -75,9 +77,9 @@ registerSnapshotDomain({
     params: { dataDocumentId: pk.dataDocumentId },
     scope: { field: "dataDocumentId", value: pk.dataDocumentId },
   }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "systemMessageRemote",
   label: "System message remotes",
   syncClass: "B",
@@ -101,7 +103,7 @@ registerSnapshotDomain({
     params: { systemMessageRemoteId: pk.systemMessageRemoteId },
     scope: { field: "systemMessageRemoteId", value: pk.systemMessageRemoteId },
   }),
-});
+}),
 
 /**
  * `carrier` / `carrierShipmentMethod` / `shopifyShop` stay Company's own registration rather than
@@ -109,7 +111,7 @@ registerSnapshotDomain({
  * `refetchScope`, and `strictCollection` for the first two, and `byPk` for the third — see
  * `COMPANY_SEED_ENTITIES`'s comment in `src/db/companyDb.ts` for the full comparison.
  */
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "carrier",
   label: "Carriers",
   syncClass: "B",
@@ -123,9 +125,9 @@ registerSnapshotDomain({
     params: { partyId: pk.partyId },
     scope: { field: "partyId", value: pk.partyId },
   }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "carrierShipmentMethod",
   label: "Carrier shipment methods",
   syncClass: "B",
@@ -139,13 +141,13 @@ registerSnapshotDomain({
     params: { partyId: pk.partyId },
     scope: { field: "partyId", value: pk.partyId },
   }),
-});
+}),
 
 /**
  * Carrier ↔ facility associations have no global list. Build the snapshot by walking the cached
  * carrier ids, and use the same parent scope for post-mutation refetch/prune.
  */
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "carrierFacility",
   label: "Carrier facilities",
   syncClass: "B",
@@ -160,9 +162,9 @@ registerSnapshotDomain({
     urlFor: (partyId) =>
       `oms/shippingGateways/carrierParties/${encodeURIComponent(partyId)}/facilities`,
   },
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "shopifyShop",
   label: "Shopify shops",
   syncClass: "B",
@@ -180,9 +182,9 @@ registerSnapshotDomain({
    * `productStoreId: undefined`. Keying on what callers actually pass removes that mismatch.
    */
   byPk: (pk) => ({ url: `oms/shopifyShops/shops/${encodeURIComponent(String(pk.shopId))}` }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "facilityGroup",
   label: "Facility groups",
   syncClass: "B",
@@ -192,9 +194,9 @@ registerSnapshotDomain({
   collectionKey: null, // bare array
   // No id-level GET in use — re-list and snapshot the whole (small) set.
   refetchScope: () => ({ params: {} }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "permission",
   label: "Permissions",
   syncClass: "B",
@@ -203,9 +205,9 @@ registerSnapshotDomain({
   listUrl: "admin/userPermissions",
   collectionKey: null, // bare array
   listParams: { orderByField: "userPermissionId" },
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "integrationTypeMapping",
   label: "Integration type mappings",
   syncClass: "B",
@@ -216,37 +218,33 @@ registerSnapshotDomain({
   byPk: (pk) => ({
     url: `admin/integrationTypeMappings/${encodeURIComponent(String(pk.integrationMappingId))}`,
   }),
-});
+}),
 
-// --- Tier 2: lookup / type reference domains. Small, bounded, bare-array endpoints. ---
-
-const LOOKUPS: Array<{ name: string; table: keyof typeof companyDb.entities; label: string; listUrl: string; listParams?: Record<string, unknown> }> = [
-  { name: "status", table: "statuses", label: "Statuses", listUrl: "oms/statuses" },
-  { name: "userGroup", table: "userGroups", label: "User groups", listUrl: "admin/userGroups" },
-  { name: "productType", table: "productTypes", label: "Product types", listUrl: "oms/products/productTypes" },
-  // `admin/uoms` covers every unit of measure; only the currency ones are wanted here.
-  { name: "currency", table: "currencies", label: "Currencies", listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
-  { name: "systemMessageType", table: "systemMessageTypes", label: "System message types", listUrl: "admin/systemMessages/types" },
-];
-
-for (const lookup of LOOKUPS) {
-  registerSnapshotDomain({
-    name: lookup.name,
-    label: lookup.label,
-    syncClass: "B",
-    table: lookup.table,
-    projection: companyDb.entities[lookup.table],
-    listUrl: lookup.listUrl,
-    listParams: lookup.listParams,
-    collectionKey: null, // bare array
-  });
-}
+  // --- Tier 2: lookup / type reference domains. Small, bounded, bare-array endpoints. ---
+  ...[
+    { name: "status", table: "statuses", label: "Statuses", listUrl: "oms/statuses" },
+    { name: "userGroup", table: "userGroups", label: "User groups", listUrl: "admin/userGroups" },
+    { name: "productType", table: "productTypes", label: "Product types", listUrl: "oms/products/productTypes" },
+    // `admin/uoms` covers every unit of measure; only the currency ones are wanted here.
+    { name: "currency", table: "currencies", label: "Currencies", listUrl: "admin/uoms", listParams: { uomTypeEnumId: "UT_CURRENCY_MEASURE" } },
+    { name: "systemMessageType", table: "systemMessageTypes", label: "System message types", listUrl: "admin/systemMessages/types" },
+  ].map((lookup) =>
+    defineSnapshotDomain({
+      name: lookup.name,
+      label: lookup.label,
+      syncClass: "B",
+      table: lookup.table,
+      listUrl: lookup.listUrl,
+      listParams: lookup.listParams,
+      collectionKey: null,
+    }),
+  ),
 
 // --- Tier 3: shop-scoped tables, fetched unscoped as ONE snapshot (verified: the endpoints
 // return every shop and every mappedTypeId). Pages read their slice with a `shopId` scope, so a
 // single table serves all four Shopify mapping pages. ---
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "shopifyLocation",
   label: "Shopify locations",
   syncClass: "B",
@@ -259,9 +257,9 @@ registerSnapshotDomain({
     params: { shopId: pk.shopId },
     scope: { field: "shopId", value: pk.shopId },
   }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "shopifyTypeMapping",
   label: "Shopify type mappings",
   syncClass: "B",
@@ -286,9 +284,9 @@ registerSnapshotDomain({
     params: { shopId: pk.shopId },
     scope: { field: "shopId", value: pk.shopId },
   }),
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "productStoreShipmentCount",
   label: "Store shipment counts",
   syncClass: "B",
@@ -296,9 +294,9 @@ registerSnapshotDomain({
   projection: companyDb.entities.productStoreShipmentCounts,
   listUrl: "oms/productStores/shipmentMethods/counts",
   collectionKey: null, // bare array
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "shopifyCarrierShipment",
   label: "Shopify carrier shipments",
   syncClass: "B",
@@ -310,12 +308,12 @@ registerSnapshotDomain({
     params: { shopId: pk.shopId },
     scope: { field: "shopId", value: pk.shopId },
   }),
-});
+}),
 
 
 // NetSuite reference sets: the reason group it maps variances to, and the facility identifications
 // it uses as departments. Both are filtered server-side to the single id the app cares about.
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "enumGroupMember",
   label: "NetSuite reason group",
   syncClass: "B",
@@ -324,7 +322,7 @@ registerSnapshotDomain({
   listUrl: "admin/enumGroups/NETSUITE_IIV_REASON/members",
   collectionKey: null,
   listParams: { enumerationGroupId: "NETSUITE_IIV_REASON" },
-});
+}),
 
 /**
  * Every facility's identifications, ALL types — the detail page lists them and the find page will
@@ -333,7 +331,7 @@ registerSnapshotDomain({
  * reduced this to 0 rows on an instance with no ERP department codes, blanking the detail page's
  * identification cards.
  */
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "facilityIdentification",
   label: "Facility identifications",
   syncClass: "B",
@@ -341,11 +339,11 @@ registerSnapshotDomain({
   projection: companyDb.entities.facilityIdentifications,
   listUrl: "oms/facilities/identifications",
   collectionKey: null,
-});
+}),
 
 // Shipping methods configured on every cached product store. The response does not reliably echo
 // productStoreId, so the generic fan-out contract stamps the parent scope onto every child row.
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "productStoreShippingMethod",
   label: "Store shipping methods",
   syncClass: "B",
@@ -360,11 +358,11 @@ registerSnapshotDomain({
     urlFor: (productStoreId) =>
       `admin/productStores/${encodeURIComponent(productStoreId)}/shippingMethods`,
   },
-});
+}),
 
 // --- Facility group <-> product store association. ---
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "facilityGroupProductStore",
   label: "Facility group product stores",
   syncClass: "B",
@@ -376,11 +374,11 @@ registerSnapshotDomain({
     params: { facilityGroupId: pk.facilityGroupId },
     scope: { field: "facilityGroupId", value: pk.facilityGroupId },
   }),
-});
+}),
 
 // --- App registry + version pins (the App Version screen). ---
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "app",
   label: "Apps",
   syncClass: "B",
@@ -388,9 +386,9 @@ registerSnapshotDomain({
   projection: companyDb.entities.apps,
   listUrl: "admin/apps",
   collectionKey: null, // bare array
-});
+}),
 
-registerSnapshotDomain({
+defineSnapshotDomain({
   name: "appVersion",
   label: "App versions",
   syncClass: "B",
@@ -403,4 +401,5 @@ registerSnapshotDomain({
   // (`admin/apps/{appId}/appVersions`). The set is tiny, so a mutation re-lists the whole thing and
   // the snapshot prunes any pin the server dropped. Callers trigger this via `resyncDomain("appVersion")`.
   refetchScope: () => ({ params: {} }),
-});
+}),
+];

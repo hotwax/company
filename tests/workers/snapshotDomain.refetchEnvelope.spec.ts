@@ -69,7 +69,7 @@ const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 async function register(config: any) {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
+  const { registerSnapshotDomain } = await import("@common/db/sync/defineSnapshotDomain");
   return registerSnapshotDomain(config, () => stubDb());
 }
 

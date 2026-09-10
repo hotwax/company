@@ -1,7 +1,7 @@
 import { companyDb } from "@/db/companyDb";
 import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
 import { canonicalKey, entityKeyOf } from "@common/db/projection";
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
 
@@ -43,8 +43,9 @@ async function fetchInventoryEventFeed(ctx: SyncContext): Promise<any | null> {
   return response?.dataFeedId ? response : null;
 }
 
-registerSyncDomain({
+export const shopifyInventoryEventFeedDomain = defineSyncDomain({
   name: "shopifyInventoryEventFeed",
+  table: "dataFeeds",
   label: "Shopify inventory event feed",
   syncClass: "B",
   async sync(ctx, _args, options) {
@@ -88,8 +89,9 @@ function detailKey(row: Record<string, unknown>): string | undefined {
   return key ? canonicalKey(key) : undefined;
 }
 
-registerSyncDomain({
+export const inventoryChannelDomain = defineSyncDomain({
   name: "inventoryChannel",
+  table: "inventoryChannels",
   label: "Shopify inventory channels",
   syncClass: "B",
   async sync(ctx, _args, options) {
@@ -170,8 +172,9 @@ async function enrichBatchMessages(
   return written;
 }
 
-registerSyncDomain({
+export const shopifyInventoryAdjustmentDetailDomain = defineSyncDomain({
   name: "shopifyInventoryAdjustmentDetail",
+  table: "shopifyInventoryAdjustmentDetails",
   label: "Shopify aggregate inventory events",
   syncClass: "A",
   intervalMs: 10_000,

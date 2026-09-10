@@ -73,17 +73,12 @@ vi.mock("@common/db", async (importOriginal) => {
   };
 });
 
-const domains = vi.hoisted(() => ({ registered: [] as any[] }));
-vi.mock("@common/db/sync/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { domains.registered.push(domain); },
-}));
+import { systemMessageDomain } from "@/workers/domains/systemMessageDomain";
 
 const ctx = { maargUrl: "http://x", token: "t" } as any;
 
 async function tick(args: any) {
-  await import("@/workers/domains/systemMessageDomain");
-  const domain = domains.registered.find((d) => d.name === "systemMessage");
-  return domain.sync(ctx, args);
+  return systemMessageDomain.sync(ctx, args);
 }
 
 beforeEach(() => {

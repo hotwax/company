@@ -2,7 +2,7 @@ import { companyDb } from "@/db/companyDb";
 
 const serviceJobRunCache = companyDb.entity("serviceJobRuns");
 
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
@@ -70,8 +70,9 @@ async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArg
   return serviceJobRunCache.upsertMany(runs.map((run: any) => ({ ...run, jobName })));
 }
 
-registerSyncDomain({
+export const serviceJobRunDomain = defineSyncDomain({
   name: "serviceJobRun",
+  table: "serviceJobRuns",
   label: "Service job runs",
   syncClass: "A",
   intervalMs: 10_000,

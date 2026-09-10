@@ -80,7 +80,7 @@ const ctx = { maargUrl: "https://example.test/", token: "token" };
 async function register() {
   vi.resetModules();
   const { companyDb } = await import("@/db/companyDb");
-  const { registerSnapshotDomain } = await import("@common/db/sync/snapshotDomain");
+  const { registerSnapshotDomain } = await import("@common/db/sync/defineSnapshotDomain");
   return registerSnapshotDomain(CONFIG as any, () => (companyDb as any).raw());
 }
 

@@ -38,11 +38,8 @@ vi.mock("@common/db/sync/syncRegistry", () => ({
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 
 async function loadDomain() {
-  vi.resetModules();
-  state.domains = [];
-  await import("@/workers/domains/serviceJobRunDomain");
-
-  return state.domains.find((domain) => domain.name === "serviceJobRun");
+  const { serviceJobRunDomain } = await import("@/workers/domains/serviceJobRunDomain");
+  return serviceJobRunDomain;
 }
 
 describe("serviceJobRun cache domain", () => {

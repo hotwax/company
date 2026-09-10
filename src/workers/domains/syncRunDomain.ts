@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { unwrapCollection, workerGet, workerPost } from "@common/core/workerRemoteApi";
 
@@ -197,8 +197,9 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
   return written;
 }
 
-registerSyncDomain({
+export const syncRunDomain = defineSyncDomain({
   name: "syncRun",
+  table: "syncRuns",
   label: "Sync runs",
   syncClass: "A",
   intervalMs: 10_000,

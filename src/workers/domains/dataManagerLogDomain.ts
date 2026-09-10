@@ -3,7 +3,7 @@ import { keepNewerThan } from "@common/db";
 
 const dataManagerLogCache = companyDb.entity("dataManagerLogs");
 
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
@@ -113,8 +113,9 @@ async function refreshUnfinished(ctx: SyncContext, args: DataManagerLogArgs): Pr
   return dataManagerLogCache.upsertMany(refreshed);
 }
 
-registerSyncDomain({
+export const dataManagerLogDomain = defineSyncDomain({
   name: "dataManagerLog",
+  table: "dataManagerLogs",
   label: "Data manager logs",
   syncClass: "A",
   intervalMs: 10_000,

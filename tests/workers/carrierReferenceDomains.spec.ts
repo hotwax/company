@@ -71,9 +71,8 @@ async function registeredDomain(name: string) {
   const { companyDb } = await import("@/db/companyDb");
   const { setAppDb } = await import("@common/db/appDbRegistry");
   setAppDb(companyDb as any);
-  await import("@/workers/domains/referenceDomains");
-  const { getSyncDomain } = await import("@common/db/sync/syncRegistry");
-  return getSyncDomain(name);
+  const { referenceDomains } = await import("@/workers/domains/referenceDomains");
+  return referenceDomains.find((d) => d.name === name);
 }
 
 describe("carrier reference snapshots", () => {

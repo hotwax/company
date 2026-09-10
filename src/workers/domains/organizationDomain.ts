@@ -1,6 +1,6 @@
 import { companyDb } from "@/db/companyDb";
 import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageAll, workerGet } from "@common/core/workerRemoteApi";
 
@@ -71,8 +71,9 @@ async function fetchOrganizations(
   return organizations;
 }
 
-registerSyncDomain({
+export const organizationDomain = defineSyncDomain({
   name: "organization",
+  table: "organizations",
   label: "Organizations",
   syncClass: "B",
 

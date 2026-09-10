@@ -2,7 +2,7 @@ import { companyDb } from "@/db/companyDb";
 import { liveScopeFor } from "@/config/appSyncConfig";
 import { keepNewerThan } from "@common/db";
 import { resolveShopRemoteIds } from "@/utils/systemMessage";
-import { registerSyncDomain } from "@common/db/sync/syncRegistry";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
 
@@ -260,8 +260,9 @@ async function refreshUnprocessed(ctx: SyncContext, args: SystemMessageArgs): Pr
   return systemMessageCache.upsertMany(refreshed);
 }
 
-registerSyncDomain({
+export const systemMessageDomain = defineSyncDomain({
   name: "systemMessage",
+  table: "systemMessages",
   label: "System messages",
   syncClass: "A",
   intervalMs: 10_000,
