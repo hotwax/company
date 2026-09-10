@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 
 const apiMock = vi.fn();
+let maargUrl = "https://oms.example.com/rest/s1/";
 
 vi.mock("@common", () => ({
   api: (args: any) => apiMock(args),
@@ -12,8 +13,8 @@ vi.mock("@common", () => ({
     showToast: vi.fn(),
     // The webhook modal derives its default callback URL from the connected OMS. A reserved
     // example.com host, not a real instance: a fixture naming a live tenant invites someone to
-    // point a test at it.
-    getMaargURL: () => "https://oms.example.com/rest/s1/",
+    // point a test at it. Mutable, so a test can stand in for switching OMS.
+    getMaargURL: () => maargUrl,
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
@@ -158,6 +159,7 @@ const STUBS = {
 
 describe("ShopifyTransferSync - Summary Cards", () => {
   beforeEach(() => {
+    maargUrl = "https://oms.example.com/rest/s1/";
     vi.clearAllMocks();
   });
 
@@ -174,6 +176,27 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     // already carries /rest/s1.
     expect((wrapper.vm as any).webhookCallbackUrl)
       .toBe("https://oms.example.com/rest/s1/shopify/webhook/payload");
+  });
+
+  it("rederives its own default after the OMS changes under a retained view", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, { props: { id: "1000" }, global: { stubs: STUBS } });
+
+    (wrapper.vm as any).showWebhooksModal = true;
+    await wrapper.vm.$nextTick();
+    expect((wrapper.vm as any).webhookCallbackUrl).toContain("oms.example.com");
+
+    // Ionic retains this view between visits, so a logout and a switch to another OMS leaves the
+    // first instance's URL in the field. Registering with it would point the new shop's
+    // subscriptions at the old OMS.
+    (wrapper.vm as any).showWebhooksModal = false;
+    await wrapper.vm.$nextTick();
+    maargUrl = "https://other-oms.example.com/rest/s1/";
+    (wrapper.vm as any).showWebhooksModal = true;
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.vm as any).webhookCallbackUrl)
+      .toBe("https://other-oms.example.com/rest/s1/shopify/webhook/payload");
   });
 
   it("keeps a callback the operator already typed", async () => {

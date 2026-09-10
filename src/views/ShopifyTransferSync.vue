@@ -803,13 +803,20 @@ const showJobModal = ref(false);
  * to IS the answer in the ordinary case: rails-oms's own BULK_OPERATIONS_FINISH subscription points
  * exactly there. Still a text field, because an EventBridge ARN or a proxy in front of the OMS are
  * both valid and neither can be derived from here.
+ *
+ * A function and NOT a computed: getMaargURL reads a cookie, which is not reactive, so a computed
+ * has no dependency to invalidate it and would hand back the first OMS's URL for the life of the
+ * view -- and Ionic retains this component between visits. Menu.vue calls its instance label from
+ * the template for the same reason.
  */
-const defaultWebhookCallbackUrl = computed(() => {
+function defaultWebhookCallbackUrl() {
   const base = commonUtil.getMaargURL();
 
   return base ? `${base.replace(/\/+$/, "")}/shopify/webhook/payload` : "";
-});
+}
 const webhookCallbackUrl = ref('');
+/** What this screen last seeded, so a reseed can tell its own default from a typed destination. */
+const seededWebhookCallbackUrl = ref('');
 const webhookSetupBusy = ref(false);
 const webhookSetupUncertain = ref(false);
 const webhookSetupError = ref('');
@@ -860,9 +867,16 @@ const showWebhooksModal = ref(false);
  * blank field, so it never overwrites what an operator typed.
  */
 watch(showWebhooksModal, (open) => {
-  if(open && !webhookCallbackUrl.value.trim()) {
-    webhookCallbackUrl.value = defaultWebhookCallbackUrl.value;
-  }
+  if(!open) {return;}
+  const current = webhookCallbackUrl.value.trim();
+  // Reseed a blank field, and also one still holding the default this screen put there: after a
+  // logout and a switch to another OMS the retained value names the PREVIOUS instance, and
+  // registering with it would point the new shop's Shopify subscriptions at the old OMS. A
+  // destination the operator typed is theirs and is left alone.
+  if(current && current !== seededWebhookCallbackUrl.value) {return;}
+  const seeded = defaultWebhookCallbackUrl();
+  webhookCallbackUrl.value = seeded;
+  seededWebhookCallbackUrl.value = seeded;
 });
 const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
