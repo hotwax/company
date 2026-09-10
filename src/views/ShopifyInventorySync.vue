@@ -1854,9 +1854,6 @@ import {
   sectionOfEvent,
   sumDelta,
 } from "@/utils/shopifyInventoryPipeline";
-import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
-import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
-import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 
 type ViewName = "monitor" | "history" | "location-history";
 type HistoryMode = "events" | "batches" | "unassigned";
