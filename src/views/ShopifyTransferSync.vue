@@ -432,7 +432,7 @@
           </ion-label>
         </ion-item>
 
-        <ion-card v-if="webhookSummary?.missingCount || webhookSetupResults.length">
+        <ion-card v-if="webhookSummary?.missingCount || webhookSetupError || webhookSetupUncertain">
           <ion-card-header><ion-card-title>{{ translate('Register missing topics') }}</ion-card-title></ion-card-header>
           <ion-card-content>
             <ion-input v-model="webhookCallbackUrl" type="text" :disabled="webhookSetupBusy || webhookSetupUncertain" :label="translate('HTTPS callback URL or EventBridge ARN')" label-placement="stacked" placeholder="https://oms.example.com/rest/s1/shopify/webhook/payload" />
@@ -441,11 +441,6 @@
               <ion-spinner v-if="webhookSetupBusy" name="crescent" />
               {{ translate('Register missing topics') }}
             </ion-button>
-            <ion-list v-if="webhookSetupResults.length" aria-live="polite">
-              <ion-item v-for="result in webhookSetupResults" :key="result.topic">
-                <ion-label class="ion-text-wrap"><h3>{{ result.topic }}</h3><p>{{ result.message }}</p><p v-if="result.id">{{ result.id }}</p></ion-label>
-              </ion-item>
-            </ion-list>
             <p v-if="webhookSetupError">{{ webhookSetupError }}</p>
           </ion-card-content>
         </ion-card>
@@ -483,6 +478,15 @@
               </p>
               <p class="message-type">
                 {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
+              </p>
+              <!-- This run's outcome for THIS topic. It used to be a second list of 14 rows beneath
+                   the button, which said the same thing twice and left the operator matching topics
+                   by eye between the two. -->
+              <p v-if="webhookSetupResultFor(row.topic)" class="overline" aria-live="polite">
+                {{ webhookSetupResultFor(row.topic).message }}
+                <template v-if="webhookSetupResultFor(row.topic).id">
+                  {{ webhookSetupResultFor(row.topic).id }}
+                </template>
               </p>
             </ion-label>
             <ion-label slot="end" class="ion-text-end received-count">
@@ -810,10 +814,25 @@ const webhookSetupBusy = ref(false);
 const webhookSetupUncertain = ref(false);
 const webhookSetupError = ref('');
 const webhookSetupResults = ref<Array<{topic: string; message: string; id?: string}>>([]);
+/**
+ * This run's outcome for one topic, so each row can report its own result.
+ *
+ * Indexed rather than searched because the row list renders the lookup per row; `registerMissingWebhooks`
+ * pushes at most one entry per topic, so the last write for a topic is the one that stands.
+ */
+const webhookSetupResultByTopic = computed(
+  () => new Map(webhookSetupResults.value.map((result) => [result.topic, result])),
+);
+function webhookSetupResultFor(topic: string) {
+  return webhookSetupResultByTopic.value.get(topic);
+}
 async function registerMissingWebhooks() {
   if (webhookSetupBusy.value || webhookSetupUncertain.value) return;
   webhookSetupBusy.value = true;
   webhookSetupError.value = '';
+  // Each run reports only its own outcomes. Left uncleared, a topic that succeeded on an earlier run
+  // kept its message on the row even when this run never touched it.
+  webhookSetupResults.value = [];
   const targetShop = shopId.value;
   const endpoint = webhookCallbackUrl.value.trim();
   try {
