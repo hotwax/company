@@ -67,10 +67,10 @@
 <script setup lang="ts">
 import { IonButton, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCheckbox, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonPage, IonSelect, IonSelectOption, IonTitle, IonToolbar, alertController, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, copyOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, logger, translate } from "@common";
+import { commonUtil, emitter, logger, translate } from "@common";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useProductStoreMutations, useProductStores } from "@/composables/useProductStores";
+import { useProductStoreMutations, useProductStores, useProductStoreQueries } from "@/composables/useProductStores";
 
 
 const sourceStoreId = ref("");
@@ -158,11 +158,12 @@ async function confirmClone() {
 async function executeClone() {
   emitter.emit("presentLoader");
   try {
+    const { fetchStoreDetails, fetchStoreSettings } = useProductStoreQueries();
     // 1. Fetch details and settings of source store, and details of target store
     const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
-      api({ url: `admin/productStores/${sourceStoreId.value}`, method: "get" }),
-      api({ url: `admin/productStores/${sourceStoreId.value}/settings`, method: "get" }),
-      api({ url: `admin/productStores/${targetStoreId.value}`, method: "get" })
+      fetchStoreDetails(sourceStoreId.value),
+      fetchStoreSettings(sourceStoreId.value),
+      fetchStoreDetails(targetStoreId.value)
     ]);
 
     if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {

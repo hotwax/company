@@ -4,7 +4,7 @@ import {
   syncRunCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
+import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
 
 /**
@@ -60,8 +60,8 @@ export interface SyncRunArgs {
 }
 
 async function resolveScopes(args: SyncRunArgs): Promise<SyncRunScope[]> {
-  if (args.scopes?.length) return args.scopes;
-  if (!args.systemMessageTypeIds?.length) return [];
+  if(args.scopes?.length) {return args.scopes;}
+  if(!args.systemMessageTypeIds?.length) {return [];}
 
   const shops = await shopifyShopCache.all();
   const shopIds = [...new Set(shops.map((shop: any) => String(shop.shopId ?? "")).filter(Boolean))];
@@ -90,6 +90,7 @@ async function fetchPage(
     pageSize,
     pageIndex,
   });
+
   return unwrapCollection(resp, "entityValueList");
 }
 
@@ -112,11 +113,11 @@ async function syncScope(ctx: SyncContext, scope: SyncRunScope, args: SyncRunArg
   const wanted = cached < target ? target : batchSize;
 
   const rows: any[] = [];
-  for (let pageIndex = 0; rows.length < wanted; pageIndex += 1) {
+  for(let pageIndex = 0; rows.length < wanted; pageIndex += 1) {
     const page = await fetchPage(ctx, scope, pageIndex, batchSize);
-    if (!page.length) break;
+    if(!page.length) {break;}
     rows.push(...page);
-    if (page.length < batchSize) break;
+    if(page.length < batchSize) {break;}
   }
 
   return rows.length ? syncRunCache.upsertMany(rows.slice(0, wanted)) : 0;
@@ -130,12 +131,13 @@ async function missingIds(
   limit: number,
 ): Promise<string[]> {
   const wanted: string[] = [];
-  for (const run of runs) {
+  for(const run of runs) {
     const id = String(run?.[idField] ?? "");
-    if (!id || cachedIds.has(id) || wanted.includes(id)) continue;
+    if(!id || cachedIds.has(id) || wanted.includes(id)) {continue;}
     wanted.push(id);
-    if (wanted.length >= limit) break;
+    if(wanted.length >= limit) {break;}
   }
+
   return wanted;
 }
 
@@ -157,7 +159,7 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
   const runs = (await syncRunCache.all())
     .slice()
     .sort((a: any, b: any) => Number(b.initDate ?? 0) - Number(a.initDate ?? 0));
-  if (!runs.length) return 0;
+  if(!runs.length) {return 0;}
 
   const [cachedMessages, cachedLogs] = await Promise.all([
     systemMessageCache.all(),
@@ -168,7 +170,7 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
 
   let written = 0;
 
-  for (const systemMessageId of await missingIds(runs, "systemMessageId", haveMessages, limit)) {
+  for(const systemMessageId of await missingIds(runs, "systemMessageId", haveMessages, limit)) {
     try {
       const resp = await workerGet(ctx, MESSAGE_ENDPOINT, {
         systemMessageId,
@@ -176,17 +178,17 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
         pageSize: 1,
       });
       const row = resp?.systemMessages?.[0];
-      if (row) written += await systemMessageCache.upsertMany([row]);
+      if(row) {written += await systemMessageCache.upsertMany([row]);}
     } catch {
       // one bad id must not sink the pass; the next tick retries it
     }
   }
 
-  for (const logId of await missingIds(runs, "logId", haveLogs, limit)) {
+  for(const logId of await missingIds(runs, "logId", haveLogs, limit)) {
     try {
       const resp = await workerGet(ctx, LOG_ENDPOINT, { logId });
       const row = resp?.dataManagerLogs?.[0];
-      if (row) written += await dataManagerLogCache.upsertMany([row]);
+      if(row) {written += await dataManagerLogCache.upsertMany([row]);}
     } catch {
       // as above
     }
@@ -201,23 +203,30 @@ registerSyncDomain({
   async sync(ctx, args: SyncRunArgs = {}) {
     const scopes = await resolveScopes(args);
     // No scope, no poll — the same rule as messages. Better than pulling other shops' runs.
-    if (!scopes.length) return 0;
+    if(!scopes.length) {return 0;}
 
     let written = 0;
-    for (const scope of scopes) {
+    let firstError: unknown = null;
+    for(const scope of scopes) {
       try {
         written += await syncScope(ctx, scope, args);
-      } catch {
+      } catch (error) {
         // one shop's failure must not stop the others
+        firstError ||= error;
       }
     }
+
+    // A truth-sensitive caller must be able to distinguish an authoritative empty scope from a
+    // failed scope. Finish the other scopes first, then surface that at least one requested scope
+    // could not be refreshed so it is never rendered as "Not started".
+    if(firstError) {throw firstError;}
 
     return written + await enrich(ctx, args);
   },
   async refetchOne(ctx, pk) {
     const systemMessageId = pk?.systemMessageId;
     const shopId = pk?.shopId;
-    if (!systemMessageId) return 0;
+    if(!systemMessageId) {return 0;}
 
     const resp = await workerPost(ctx, ENDPOINT, {
       dataDocumentId: DATA_DOCUMENT_ID,
@@ -229,6 +238,7 @@ registerSyncDomain({
       pageIndex: 0,
     });
     const rows = unwrapCollection(resp, "entityValueList");
+
     return rows.length ? syncRunCache.upsertMany(rows) : 0;
   },
 });
