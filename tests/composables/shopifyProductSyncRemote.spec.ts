@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
+  hasError: vi.fn((_response: any) => false),
   remotes: [] as any[],
 }));
 
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
-  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
 }));
@@ -75,6 +76,8 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 }));
 
 import {
+  fetchProductMappings,
+  refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
@@ -94,7 +97,31 @@ function remote(systemMessageRemoteId: string) {
 
 beforeEach(() => {
   harness.api.mockReset();
+  harness.hasError.mockReset().mockReturnValue(false);
   harness.remotes = [remote("RemoteA"), remote("RemoteB")];
+});
+
+describe("refreshMappedProductSearchIndex", () => {
+  it("indexes only the selected OMS product without an import or Shopify call", async () => {
+    harness.api.mockResolvedValue({ data: {} });
+    await refreshMappedProductSearchIndex("M223281");
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api).toHaveBeenCalledWith({
+      url: "oms/search/index/product", method: "post", data: { productId: "M223281", indexVariants: false },
+    });
+  });
+  it("rejects a missing product without a write", async () => {
+    await expect(refreshMappedProductSearchIndex(" ")).rejects.toThrow("OMS product ID is required");
+    expect(harness.api).not.toHaveBeenCalled();
+  });
+  it("does not report a payload error or missing response as completed", async () => {
+    harness.api.mockResolvedValue({ data: {} });
+    harness.hasError.mockReturnValue(true);
+    await expect(refreshMappedProductSearchIndex("M223281")).rejects.toThrow("not confirmed");
+    harness.api.mockResolvedValue({ data: null });
+    harness.hasError.mockReturnValue(false);
+    await expect(refreshMappedProductSearchIndex("M223281")).rejects.toThrow("not confirmed");
+  });
 });
 
 describe("fetchShopSystemMessageRemoteId", () => {
@@ -156,5 +183,33 @@ describe("fetchUpdateFilesToProcessCount", () => {
     ]);
     expect(request.data.customParametersMap.statusId).not.toContain("DmlSuccess");
     expect(request.data.customParametersMap.statusId).not.toContain("DmlError");
+  });
+});
+
+describe('product mapping inspection', () => {
+  const input = {productId: '8176602415268', systemMessageRemoteId: 'remote-a', productStoreId: 'store-a'};
+  const variant = (id: string) => ({legacyResourceId: id, title: id, inventoryItem: {id: `gid://shopify/InventoryItem/${id}`, tracked: true}});
+  const page = (id: string, hasNextPage = false, endCursor = '') => ({data: {response: {product: {variants: {nodes: [variant(id)], pageInfo: {hasNextPage, endCursor}}}}}});
+  it('loads all variant pages and preserves missing and ambiguous mappings', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1', true, 'next'))
+      .mockResolvedValueOnce({data: {entityValueList: [{shopifyProductId: '1', productId: 'A'}, {shopifyProductId: '1', productId: 'B'}]}})
+      .mockResolvedValueOnce(page('2'))
+      .mockResolvedValueOnce({data: {entityValueList: []}});
+    const result = await fetchProductMappings(input);
+    expect(result.map(row => row.mappings.length)).toEqual([2, 0]);
+    expect(harness.api.mock.calls[2][0].data.variables.after).toBe('next');
+    expect(harness.api.mock.calls[1][0].data.customParametersMap).toEqual({productStoreId: 'store-a', shopifyProductId: ['1']});
+  });
+  it('does not present an invalid OMS response as zero mappings', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1')).mockResolvedValueOnce({data: {}});
+    await expect(fetchProductMappings(input)).rejects.toThrow('HotWax product mappings were not returned');
+  });
+  it('stops on a repeated Shopify cursor instead of showing partial results', async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page('1', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}})
+      .mockResolvedValueOnce(page('2', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}});
+    await expect(fetchProductMappings(input)).rejects.toThrow('pagination did not advance');
   });
 });

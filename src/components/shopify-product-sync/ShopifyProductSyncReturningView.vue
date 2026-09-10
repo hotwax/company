@@ -706,20 +706,6 @@ ion-buttons {
   grid-area: actions;
 }
 
-.sync-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  align-items: flex-start;
-}
-
-.summary{
-  grid-column: 1 / 2;
-}
-
-.progress{
-  grid-column: -1 / -2;
-}
-
 .sync-monitor {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
