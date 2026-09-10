@@ -436,7 +436,7 @@
           <ion-card-header><ion-card-title>{{ translate('Register missing topics') }}</ion-card-title></ion-card-header>
           <ion-card-content>
             <ion-input v-model="webhookCallbackUrl" type="text" :disabled="webhookSetupBusy || webhookSetupUncertain" :label="translate('HTTPS callback URL or EventBridge ARN')" label-placement="stacked" placeholder="https://oms.example.com/rest/s1/shopify/webhook/payload" />
-            <p>{{ translate('Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.') }}</p>
+            <p>{{ translate('Prefilled with this OMS\'s own webhook receiver. Replace it with an EventBridge ARN or a proxy URL if Shopify reaches this OMS by another route. Existing subscriptions will be preserved.') }}</p>
             <ion-button :disabled="!webhookCallbackUrl.trim() || webhookSetupBusy || webhookSetupUncertain || webhooksLoading || !!webhooksError || !webhookSummary?.missingCount" @click="registerMissingWebhooks">
               <ion-spinner v-if="webhookSetupBusy" name="crescent" />
               {{ translate('Register missing topics') }}
@@ -790,6 +790,21 @@ const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 
 const showJobModal = ref(false);
+/**
+ * Where Shopify should call back, defaulted to this OMS's own receiver.
+ *
+ * The field started empty, so the Register button sat disabled behind a URL the operator had to
+ * know by heart -- and nothing on screen said what it should be. `receive#WebhookPayload` is
+ * mounted at `shopify/webhook/payload` on every instance, so the OMS this page is already talking
+ * to IS the answer in the ordinary case: rails-oms's own BULK_OPERATIONS_FINISH subscription points
+ * exactly there. Still a text field, because an EventBridge ARN or a proxy in front of the OMS are
+ * both valid and neither can be derived from here.
+ */
+const defaultWebhookCallbackUrl = computed(() => {
+  const base = commonUtil.getMaargURL();
+
+  return base ? `${base.replace(/\/+$/, "")}/shopify/webhook/payload` : "";
+});
 const webhookCallbackUrl = ref('');
 const webhookSetupBusy = ref(false);
 const webhookSetupUncertain = ref(false);
@@ -820,6 +835,16 @@ async function registerMissingWebhooks() {
 }
 
 const showWebhooksModal = ref(false);
+/**
+ * Seeded when the modal opens rather than at setup: getMaargURL reads a cookie, so an initial value
+ * captured at setup would be the pre-login empty string for the life of the session. Only fills a
+ * blank field, so it never overwrites what an operator typed.
+ */
+watch(showWebhooksModal, (open) => {
+  if(open && !webhookCallbackUrl.value.trim()) {
+    webhookCallbackUrl.value = defaultWebhookCallbackUrl.value;
+  }
+});
 const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
 const configuringJobKey = ref("");

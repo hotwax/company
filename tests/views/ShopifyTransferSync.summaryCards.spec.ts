@@ -10,6 +10,8 @@ vi.mock("@common", () => ({
   commonUtil: {
     hasError: (res: any) => Boolean(res?.data?.error),
     showToast: vi.fn(),
+    // The webhook modal derives its default callback URL from the connected OMS.
+    getMaargURL: () => "https://rails-oms.hotwax.io/rest/s1/",
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
