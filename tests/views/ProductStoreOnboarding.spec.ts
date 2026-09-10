@@ -138,6 +138,7 @@ vi.mock("@/composables/useServiceJobs", () => ({
 }))
 
 vi.mock("@/composables/useFacilities", () => ({
+  // The view destructures `facilities`, the filtered computed, not the raw `records`.
   useFacilities: () => ({ facilities: ref([]) }),
   // #390 merged useFacilityCreation into useFacilityMutations; the old export no longer exists.
   useFacilityMutations: () => ({ createFacility: vi.fn() })

@@ -1040,9 +1040,7 @@ export function useFacilityMutations(facilityId?: string) {
       return resp;
     },
     async deleteShopifyLocation(payload: { shopId: string } & Record<string, any>) {
-      const resp = await del(
-        `oms/shopifyShops/locations/${encodeURIComponent(payload.shopId)}/${requireFacilityId()}`,
-      );
+      const resp = await del("oms/shopifyShops/locations", { ...payload, facilityId });
       await refreshAfterMutation("shopifyLocation", { shopId: payload.shopId });
       return resp;
     },
