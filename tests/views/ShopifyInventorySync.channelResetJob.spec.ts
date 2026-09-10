@@ -24,11 +24,16 @@ const harness = vi.hoisted(() => ({
   ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
+    // The location history view mirrors its filters into the query string, so it both reads
+    // `currentRoute` and calls `replace`. Without these the immediate watcher throws on mount.
+    replace: harness.replace,
+    currentRoute: { value: { query: {} } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
