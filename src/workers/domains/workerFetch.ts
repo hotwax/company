@@ -156,6 +156,7 @@ export async function pageAll(options: {
    * an unexpected success envelope must not silently become `[]` for mutation-sensitive domains.
    */
   strictCollection?: boolean;
+  requireComplete?: boolean;
   params?: Record<string, unknown>;
   batchSize?: number;
   maxPages?: number;
@@ -164,7 +165,7 @@ export async function pageAll(options: {
   label?: string;
 }): Promise<any[]> {
   const {
-    ctx, url, collectionKey, strictCollection = false, params = {},
+    ctx, url, collectionKey, strictCollection = false, requireComplete = false, params = {},
     batchSize = 250, maxPages = 40, keyOf, label = url,
   } = options;
 
@@ -174,6 +175,7 @@ export async function pageAll(options: {
 
   for (let pageIndex = 0; ; pageIndex++) {
     if (pageIndex >= maxPages) {
+      if (requireComplete) throw new Error(`[sync] ${label}: incomplete snapshot (page limit)`);
       console.warn(
         `[sync] ${label}: stopped at the ${maxPages}-page backstop after ${collected.length} records — the set may be TRUNCATED.`,
       );
@@ -191,7 +193,12 @@ export async function pageAll(options: {
       }
     }
     const page = unwrapCollection(resp, collectionKey);
-    if (!page.length) break;
+    if (!page.length) {
+      if (requireComplete && (resp?.hasMore === true || (typeof resp?.detailCount === "number" && collected.length !== resp.detailCount))) {
+        throw new Error(`[sync] ${label}: incomplete snapshot (count mismatch)`);
+      }
+      break;
+    }
 
     let added = 0;
     for (const record of page) {
@@ -204,12 +211,18 @@ export async function pageAll(options: {
 
     // Server ignored pageIndex (same page returned again) — stop instead of looping.
     if (added === 0) {
+      if (requireComplete) throw new Error(`[sync] ${label}: incomplete snapshot (pagination made no progress)`);
       console.warn(
         `[sync] ${label}: page ${pageIndex} returned no new records — endpoint appears to ignore pageIndex; stopping with ${collected.length}.`,
       );
       break;
     }
-    if (page.length < batchSize) break; // last page
+    if (page.length < batchSize) {
+      if (requireComplete && (resp?.hasMore === true || (typeof resp?.detailCount === "number" && collected.length !== resp.detailCount))) {
+        throw new Error(`[sync] ${label}: incomplete snapshot (count mismatch)`);
+      }
+      break;
+    } // last page
   }
 
   return collected;

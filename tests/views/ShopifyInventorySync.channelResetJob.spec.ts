@@ -8,6 +8,7 @@ const cachedChannels = ref<any[]>([]);
 const cachedShops = ref<any[]>([]);
 const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
+const cachedLocationSummaries = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
 // The read layer's health, controllable: an empty section means "nothing there" only when these say so.
 const detailsHydrated = ref(true);
@@ -20,13 +21,19 @@ const harness = vi.hoisted(() => ({
   ensureChannelEventDiscardJob: vi.fn(),
   ensureInventoryAdjustmentSenderJob: vi.fn(),
   ensureShopPhysicalInventoryResetJob: vi.fn(),
+  ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
+    // The location history view mirrors its filters into the query string, so it both reads
+    // `currentRoute` and calls `replace`. Without these the immediate watcher throws on mount.
+    replace: harness.replace,
+    currentRoute: { value: { query: {} } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
@@ -79,6 +86,9 @@ vi.mock("@/composables/useCachedList", () => ({
     }
     if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
       return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: detailsHydrated };
+    }
+    if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
+      return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
     }
     if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
@@ -140,9 +150,10 @@ vi.mock("@/composables/useShopify", () => ({
     sourceKeyOf: (eventTypeId: string, eventReferenceId: string) => `${eventTypeId}|${eventReferenceId}`,
   }),
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
+  SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID: "ShopifyLocationInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH: "push",
-  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
   DISCARD_PENDING_EVENTS_SERVICE: "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents",
   PRODUCED_SENDER_SERVICE: "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages",
   INVENTORY_ADJUSTMENT_MESSAGE_TYPE: "ShopifyInventoryAdjustment",
@@ -151,7 +162,10 @@ vi.mock("@/composables/useShopify", () => ({
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
   ensureInventoryAdjustmentSenderJob: (...args: any[]) => harness.ensureInventoryAdjustmentSenderJob(...args),
   ensureShopPhysicalInventoryResetJob: (...args: any[]) => harness.ensureShopPhysicalInventoryResetJob(...args),
+  ensureShopPhysicalAtpResetJob: (...args: any[]) => harness.ensureShopPhysicalAtpResetJob(...args),
+  PHYSICAL_ATP_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed",
   setInventoryEventDocumentAttached: vi.fn(),
+  setInventoryEventDocumentAttachedForFeed: vi.fn(),
   useInventoryEventDocuments: () => ({
     documents: ref([]),
     hydrated: ref(true),
@@ -200,16 +214,79 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         inventoryFeedType: "manual",
       },
     ];
+    cachedLocationSummaries.value = [];
     harness.ensureChannelResetJob.mockReset();
     harness.showToast.mockReset();
     harness.push.mockReset();
+  });
+
+  it.each([
+    { summary: undefined, label: "Not available", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 0 }, label: "0", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 47 }, label: "47", danger: true },
+  ])("renders authoritative delivery-error count $label with danger=$danger", async ({ summary, label, danger }) => {
+    cachedLocationSummaries.value = summary ? [summary] : [];
+    const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
+    // The delivery-error card is a filter control on the location history view, not a monitor KPI.
+    // The monitor view surfaces the same count as a badge on the location queue card instead.
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "location-history" },
+      global: {
+        stubs: {
+          IonBackButton: true,
+          IonModal: { template: "<div><slot /></div>" },
+          IonSkeletonText: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const deliveryErrorsTitle = () => wrapper.findAll("ion-card")
+      .find((card) => card.text().includes("Delivery errors"))!
+      .findComponent({ name: "IonCardTitle" });
+    expect(deliveryErrorsTitle().text()).toBe(label);
+    expect(deliveryErrorsTitle().props("color") === "danger").toBe(danger);
+  });
+
+  it.each([undefined, 1000])("retains an active job's cadence when its cached next run is %s", async (nextExecutionDateTime) => {
+    cachedJobs.value = [{
+      jobName: 'purge_OldShopifyInventoryAdjustmentDetails_hourly',
+      serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails',
+      paused: 'N', cronExpression: '0 0 * * * ?', cronString: 'Every hour', nextExecutionDateTime,
+    }];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old aggregate inventory events (all Shopify connections)'))!;
+    expect(row.text()).toContain('Runs every hour');
+    expect(row.text()).not.toContain('No active schedule');
+    wrapper.unmount();
+  });
+
+  it('opens each retention row with its own backend job', async () => {
+    cachedJobs.value = [
+      { jobName: 'AGGREGATE_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails', paused: 'N' },
+      { jobName: 'PHYSICAL_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails', paused: 'Y' },
+    ];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    for (const [label, jobName] of [['Purge old aggregate inventory events', 'AGGREGATE_RETENTION'], ['Purge old physical location events', 'PHYSICAL_RETENTION']]) {
+      const row = wrapper.findAll('ion-item').find(item => item.text().includes(label))!;
+      await row.trigger('click');
+      expect(wrapper.findComponent({ name: 'ServiceJobDetailsModal' }).props('jobName')).toBe(jobName);
+    }
+    wrapper.unmount();
   });
 
   it("surfaces each channel's own jobs on that channel's card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [
@@ -218,7 +295,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
       },
       {
         jobName: "reset_InventoryChannelInventory_IC_1002",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "Y",
         cronExpression: "0 0 4 * * ?",
         serviceJobParameters: [
@@ -268,7 +345,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [
@@ -312,6 +389,19 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     expect(modal.text()).toContain("Reset aggregate ATP");
     expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
+  });
+
+  it("keeps a physical ATP setup failure visible and scopes setup to the current shop", async () => {
+    harness.ensureShopPhysicalAtpResetJob.mockRejectedValue(new Error("Physical ATP reset setup is missing."));
+    const View = (await import("@/views/ShopifyInventorySync.vue")).default;
+    const wrapper = mount(View, { props: { id: "100002" }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical location ATP (all mapped locations on this shop)"));
+    expect(row).toBeDefined();
+    await row!.find("ion-button").trigger("click"); await flushPromises();
+    expect(harness.ensureShopPhysicalAtpResetJob).toHaveBeenCalledWith("100002");
+    expect(wrapper.find('[role="alert"]').text()).toContain("Physical ATP reset setup is missing.");
+    wrapper.unmount();
   });
 
   it("provisions a missing reset job from the row's Set up action and opens it", async () => {

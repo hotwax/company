@@ -40,6 +40,34 @@ export function useCacheSync() {
   let pendingManualRefreshes = 0;
   let activeCycleFailed = false;
 
+  /**
+   * Errors are held per domain so one failing domain cannot mask another, and a domain that
+   * recovers clears only its own failure. `error` is always a projection of this map, so every
+   * clear below goes through `clearErrors`/`clearError` rather than assigning `error` directly.
+   */
+  const errorsByDomain = new Map<string, string>();
+
+  function refreshError() {
+    error.value = [...errorsByDomain.values()].pop() ?? "";
+  }
+
+  function recordError(domain: string, message: string) {
+    // Reinsert so the most recently failing domain remains the visible error.
+    errorsByDomain.delete(domain);
+    errorsByDomain.set(domain, message);
+    refreshError();
+  }
+
+  function clearError(domain: string) {
+    errorsByDomain.delete(domain);
+    refreshError();
+  }
+
+  function clearErrors() {
+    errorsByDomain.clear();
+    refreshError();
+  }
+
   function updateBusy() {
     manualRefreshing.value = pendingManualRefreshes > 0;
     busy.value = activeCycles > 0 || pendingManualRefreshes > 0;
@@ -52,7 +80,7 @@ export function useCacheSync() {
         // composable. Retire it only when genuinely newer worker work begins. The harness serializes
         // cycles, while the counter still keeps the UI correct if status delivery briefly overlaps.
         if(activeCycles === 0) {
-          error.value = "";
+          clearErrors();
           activeCycleFailed = false;
         }
         activeCycles += 1;
@@ -65,6 +93,7 @@ export function useCacheSync() {
             ...domainStatus.value,
             [data.domain]: { written: data.written ?? 0, at: data.at ?? Date.now() },
           };
+          clearError(String(data.domain));
         }
         break;
       }
@@ -74,19 +103,22 @@ export function useCacheSync() {
         // Keep a failure raised by this cycle visible. A clean cycle leaves no stale failure behind,
         // including errors emitted outside a prior cycle (for example, for an old shop scope).
         if(activeCycles === 0) {
-          if(!activeCycleFailed) {error.value = "";}
+          if(!activeCycleFailed) {clearErrors();}
           activeCycleFailed = false;
         }
         updateBusy();
         break;
       case "sync-error":
-        error.value = `${data.domain ?? "sync"}: ${data.message ?? "failed"}`;
+        recordError(
+          String(data.domain ?? "sync"),
+          `${data.domain ?? "sync"}: ${data.message ?? "failed"}`,
+        );
         if(activeCycles > 0) {activeCycleFailed = true;}
         break;
       case "auth-error":
         // `pollingService` also invokes the auth callback, but the status event is what lets this
         // lifecycle attribute the failure to the active cycle and avoid clearing it at cycle end.
-        error.value = `auth: ${data.message ?? "failed"}`;
+        recordError("auth", `auth: ${data.message ?? "failed"}`);
         if(activeCycles > 0) {activeCycleFailed = true;}
         break;
       default:
@@ -99,26 +131,26 @@ export function useCacheSync() {
     activeDomains.value = domains;
     // Domain changes can represent a different shop. Do not carry the previous scope's failure into
     // the new one while its first cycle is being scheduled.
-    error.value = "";
+    clearErrors();
     if(service) {
       // Already running — just swap the domain set, no respawn.
       await service.setDomains(domains);
 
       return;
     }
-    error.value = "";
+    clearErrors();
     service = createSyncService({
       domains,
       baseTickMs: options.baseTickMs,
       onStatus,
-      onAuthError: (message) => { error.value = `auth: ${message}`; },
+      onAuthError: (message) => { recordError("auth", `auth: ${message}`); },
     });
     try {
       await service.start();
       registeredDomains.value = await service.registeredDomains();
       ready.value = true;
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+      recordError("__start", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -127,7 +159,7 @@ export function useCacheSync() {
     if(!service) {return;}
     // If a scheduled cycle is already running, its error is current evidence. The worker queues a
     // forced cycle behind it; `sync-cycle-start` clears the failure when that newer attempt begins.
-    if(activeCycles === 0) {error.value = "";}
+    if(activeCycles === 0) {clearErrors();}
     pendingManualRefreshes += 1;
     updateBusy();
     try {
@@ -152,7 +184,7 @@ export function useCacheSync() {
     pendingManualRefreshes = 0;
     activeCycleFailed = false;
     ready.value = false;
-    error.value = "";
+    clearErrors();
     updateBusy();
   }
 

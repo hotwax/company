@@ -37,6 +37,17 @@ export function toText(value: unknown): string | undefined {
   return text === "" ? undefined : text;
 }
 
+/** Coerce a server Boolean without turning it into the truthy strings `"true"` / `"false"`. */
+export function toBoolean(value: unknown): boolean | undefined {
+  if (value === true || value === false) { return value; }
+
+  if (value === "true") { return true; }
+
+  if (value === "false") { return false; }
+
+  return undefined;
+}
+
 /**
  * Field kinds a cached entity can declare. The projector uses these to normalize server values
  * so the Dexie indexes are consistently typed (dates always millis, counts always numbers).
@@ -46,7 +57,7 @@ export function toText(value: unknown): string | undefined {
  * silently destroying it. Only ever use `structured` for a field that is NOT indexed; Dexie stores it
  * fine via structured clone, but it cannot be a key path.
  */
-export type FieldKind = "text" | "count" | "date" | "structured";
+export type FieldKind = "text" | "count" | "date" | "boolean" | "structured";
 
 export interface EntityProjection {
   /** Primary-key field name on the cached row (must project to a non-empty string). */
@@ -74,6 +85,7 @@ const COERCE: Record<FieldKind, (value: unknown) => unknown> = {
   text: toText,
   count: toCount,
   date: toMillis,
+  boolean: toBoolean,
   // Pass-through: arrays/objects survive intact. Empty arrays are dropped so the row stays sparse.
   structured: (value) => (Array.isArray(value) && value.length === 0 ? undefined : value ?? undefined),
 };
