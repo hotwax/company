@@ -10,12 +10,11 @@ const INTERNAL_ORG_ROLE = "INTERNAL_ORGANIZATIO";
 const PARTY_GROUP = "PARTY_GROUP";
 
 function unwrapPartyDetail(response: any): Record<string, unknown> | undefined {
-  if(!response || typeof response !== "object" || Array.isArray(response)) {return undefined;}
+  if (!response || typeof response !== "object") { return undefined; }
 
-  const detail = response.partyNameDetail ??
-    response.partyDetail ??
-    response.party ??
-    response;
+  const detail = Array.isArray(response)
+    ? response[0]
+    : (response.partyNameDetail ?? response.partyDetail ?? response.party ?? response);
 
   return Array.isArray(detail) ? detail[0] : detail;
 }
@@ -26,7 +25,7 @@ export function mergeInternalOrganization(
   detailResponse: any,
 ): Record<string, unknown> | undefined {
   const detail = unwrapPartyDetail(detailResponse);
-  if(!detail || detail.partyTypeId !== PARTY_GROUP) {return undefined;}
+  if (!detail) { return undefined; }
 
   return { ...role, ...detail, roleTypeId: INTERNAL_ORG_ROLE };
 }
@@ -92,7 +91,7 @@ export const organizationDomain = defineSyncDomain({
     }
 
     const { written } = await organizationCache.snapshotReplace(organizations);
-    if(roles.length === 0 || written > 0) {await markSyncedThisLogin(companyDb.raw(), "organization");}
+    if (roles.length === 0 || written > 0) { await markSyncedThisLogin(companyDb.raw(), "organization"); }
 
     return written;
   },
