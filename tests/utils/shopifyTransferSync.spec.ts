@@ -66,6 +66,26 @@ describe("Shopify transfer admin link", () => {
     expect(adminUrl("   ", "4604788917")).toBe("");
   });
 
+  // myshopifyDomain is operator input the connection form only checks for non-emptiness, so an
+  // unvalidated host would render a trusted-looking "Shopify Admin" link pointing anywhere.
+  it("refuses to build a link to a host that is not a lowercase *.myshopify.com name", () => {
+    expect(adminUrl("evil.com", "4604788917")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com.evil.com", "4604788917")).toBe("");
+    expect(adminUrl("evil.com/rails-paris.myshopify.com", "4604788917")).toBe("");
+    expect(adminUrl("Rails-Paris.myshopify.com", "4604788917")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com:8080", "4604788917")).toBe("");
+    expect(adminUrl("user@rails-paris.myshopify.com", "4604788917")).toBe("");
+    expect(adminUrl("myshopify.com", "4604788917")).toBe("");
+  });
+
+  it("refuses a transfer id that is not a positive integer", () => {
+    expect(adminUrl("rails-paris.myshopify.com", "../../settings")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", "46047889 17")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", "0")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", "-1")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", "gid://shopify/InventoryTransfer/not-a-number")).toBe("");
+  });
+
   it("accepts a numeric transfer id", () => {
     expect(adminUrl("rails-paris.myshopify.com", 4604788917))
       .toBe("https://rails-paris.myshopify.com/admin/transfers/4604788917");

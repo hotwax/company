@@ -4,6 +4,8 @@
  * page is now segments of outstanding and synced work, which carry no derived status to present.
  */
 
+import { isShopifyObjectId, shopifyAdminHostname } from "@/utils/shopifyAdminUrl";
+
 /**
  * A warm cache is immediately usable, but a cold empty cache is not authoritative until this
  * view-scoped domain has completed its first live pass.
@@ -27,14 +29,15 @@ export function isTransferSyncMonitoringLoaded(options: {
  * with. A `gid://shopify/InventoryTransfer/123` is reduced to its numeric tail, because the admin
  * path takes the legacy id and a gid would otherwise render a dead link.
  *
- * Returns "" when either half is missing — the caller renders no link rather than a broken one.
+ * Both halves are validated - see shopifyAdminHostname for why the host cannot be trusted as
+ * stored. Anything that fails returns "", so the caller renders no link rather than a bad one.
  */
 export function shopifyTransferAdminUrl(myshopifyDomain: unknown, transferId: unknown): string {
-  const domain = String(myshopifyDomain ?? "").trim();
+  const hostname = shopifyAdminHostname(myshopifyDomain);
   const rawId = String(transferId ?? "").trim();
-  if(!domain || !rawId) { return ""; }
+  if(!hostname || !rawId) { return ""; }
   const id = rawId.startsWith("gid://") ? rawId.split("/").pop() ?? "" : rawId;
-  if(!id) { return ""; }
+  if(!isShopifyObjectId(id)) { return ""; }
 
-  return `https://${domain}/admin/transfers/${encodeURIComponent(id)}`;
+  return `https://${hostname}/admin/transfers/${id}`;
 }
