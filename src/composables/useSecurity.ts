@@ -1,9 +1,11 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, useDb } from "@common";
 import { useUserStore } from "@/store/user";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
-import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
+import { resyncDomain } from "@/services/appDbSync";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * Security master entity — user groups, the permission catalog, and what hangs off a group
@@ -17,7 +19,7 @@ import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
  */
 
 export function useUserGroups() {
-  const { records, hydrated } = useCachedList<any>(userGroupCache);
+  const { records, hydrated } = useDb<any>("userGroups");
   const userGroups = computed(() => [...records.value].sort(byDescription));
 
   /** Client-side search over the complete cached set — no server round-trip. */
@@ -31,12 +33,14 @@ export function useUserGroups() {
   return { userGroups, search, records, hydrated };
 }
 
-export const useUserGroupRecord = (userGroupId: string | undefined) =>
-  useCachedRecord(userGroupCache, "userGroupId", userGroupId);
+export const useUserGroupRecord = (userGroupId: string | undefined) => {
+  const { first: record, hydrated } = useDb<any>("userGroups", () => userGroupId ? { equals: { userGroupId } } : {});
+  return { record, hydrated };
+};
 
 /** The master permission catalog (moqui.security.UserPermission). */
 export function usePermissions() {
-  const { records, hydrated } = useCachedList<any>(permissionCache);
+  const { records, hydrated } = useDb<any>("permissions");
   return { permissions: computed(() => [...records.value].sort(byDescription)), records, hydrated };
 }
 
@@ -215,7 +219,7 @@ export function deleteArtifactAuthz(payload: { userGroupId: string; artifactAuth
  *
  * Write-through is `resyncDomain`, NOT `refreshAfterMutation`: the `userGroup` domain is registered
  * as a plain lookup (referenceDomains.ts:155) with neither `byPk` nor `refetchScope`, and for such
- * a domain `refetchOne` silently returns 0 (snapshotDomain.ts:256) — the row would keep its old
+ * a domain `refetchOne` silently returns 0 (defineSnapshotDomain.ts:256) — the row would keep its old
  * description until the next login sync. Re-snapshotting the whole lookup table is one small
  * request and actually lands the update; it also supersedes the old `updateUserGroupInState`
  * hand-patch, because cached readers re-emit via liveQuery.

@@ -220,7 +220,7 @@ import {
   translateMutationError,
   translateReferenceDataError,
 } from "@/utils/errorPresentation";
-import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import router from "@/router";
 
 const props = defineProps<{

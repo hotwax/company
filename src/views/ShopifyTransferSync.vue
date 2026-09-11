@@ -526,8 +526,8 @@ import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
-import { useCacheSync } from "@/composables/useCacheSync";
-import { useCachedList } from "@/composables/useCachedList";
+import { useDbSync } from "@/composables/useDbSync";
+import { useDb } from "@common";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
@@ -577,7 +577,7 @@ const { rows: pairedRows } = useShopifyPendingSegment(
 const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
   .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
 
-const { records: facilities } = useCachedList<any>(facilityCache);
+const { records: facilities } = useDb<any>("facilities");
 const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntries(
   facilities.value
     .filter((facility: any) => facility?.facilityId)
@@ -885,7 +885,7 @@ const {
   error: transferSyncError,
   domainStatus,
   syncNow,
-} = useCacheSync();
+} = useDbSync();
 const viewSyncBaselineAt = ref(0);
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({

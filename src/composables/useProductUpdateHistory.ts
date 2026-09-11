@@ -1,8 +1,6 @@
 import { computed } from "vue";
-import { logger } from "@common";
+import { logger, useDb } from "@common";
 import { translate } from "@/i18n";
-import { productUpdateHistoryCache } from "@/utils/cacheEntities";
-import { useCachedList } from "./useCachedList";
 
 function parseJson(value: any, defaultValue: any) {
   if (!value) return defaultValue;
@@ -147,7 +145,7 @@ function getProductUpdateHistoryPayload(data: any): any[] {
  * valuable part of the old composable; only its data source moved.
  */
 export function useProductUpdateHistories(shopId?: string, limit = 10) {
-  const { records, hydrated } = useCachedList<any>(productUpdateHistoryCache, {
+  const { records, hydrated } = useDb<any>("productUpdateHistories", {
     dateField: "lastUpdatedStamp",
     ...(shopId ? { scope: { field: "shopId", value: shopId } } : {}),
     limit,

@@ -1,10 +1,10 @@
-import {
-  shopifyLocationInventoryAdjustmentDetailCache,
-  shopifyLocationInventorySummaryCache,
-} from "@/utils/cacheEntities";
+import { companyDb } from "@/db/companyDb";
 import { locationInventoryAdjustmentKey, normalizeLocationInventorySummary } from "@/utils/shopifyLocationInventory";
-import { registerSyncDomain } from "../syncRegistry";
-import { pageAll, workerGet } from "./workerFetch";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import { pageAll, workerGet } from "@common/core/workerRemoteApi";
+
+const shopifyLocationInventoryAdjustmentDetailEntity = companyDb.entity("shopifyLocationInventoryAdjustmentDetails" as any);
+const shopifyLocationInventorySummaryEntity = companyDb.entity("shopifyLocationInventorySummaries" as any);
 
 /** A complete shop-scoped snapshot: statuses and totals must not depend on payload enrichment.
  * Prune only after every page and the summary succeed. Page guards fail closed.
@@ -18,8 +18,11 @@ interface LocationDetailSyncArgs {
   batchSize?: number;
 }
 
-registerSyncDomain({
+export const shopifyLocationInventoryAdjustmentDetailDomain = defineSyncDomain({
   name: "shopifyLocationInventoryAdjustmentDetail",
+  table: "shopifyLocationInventoryAdjustmentDetails",
+  label: "Shopify location inventory adjustment details",
+  syncClass: "A",
   intervalMs: 60_000,
   async sync(ctx, args: LocationDetailSyncArgs = {}) {
     const shopId = String(args.shopId ?? "").trim();
@@ -38,9 +41,9 @@ registerSyncDomain({
     const response = await workerGet(ctx, DETAIL_ENDPOINT, { shopId, pageSize: 1 });
     const summary = normalizeLocationInventorySummary(shopId, response?.summary);
     if(!summary) {throw new Error("Location inventory summary unavailable");}
-    const result = await shopifyLocationInventoryAdjustmentDetailCache.snapshotReplace(rows, { field: "shopId", value: shopId },);
+    const result = await shopifyLocationInventoryAdjustmentDetailEntity.snapshotReplace(rows, { field: "shopId", value: shopId },);
     let written = result.written;
-    written += await shopifyLocationInventorySummaryCache.upsertMany([summary]);
+    written += await shopifyLocationInventorySummaryEntity.upsertMany([summary]);
 
     return written;
   },
@@ -63,6 +66,6 @@ registerSyncDomain({
       label: "locationInventoryAdjustmentDetails:refetchOne",
     });
 
-    return rows.length ? shopifyLocationInventoryAdjustmentDetailCache.upsertMany(rows) : 0;
+    return rows.length ? shopifyLocationInventoryAdjustmentDetailEntity.upsertMany(rows) : 0;
   },
 });

@@ -7,7 +7,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({ refreshAfterMutation: vi.fn() }));
+vi.mock("@/services/appDbSync", () => ({ refreshAfterMutation: vi.fn() }));
 vi.mock("@/utils/cacheEntities", () => ({ shopifyTransferPendingCache: {} }));
 vi.mock("@/composables/useCachedList", () => ({ useCachedList: vi.fn() }));
 vi.mock("@/utils/shopifyWebhookReconciliation", () => ({ reconcileWebhookTopics: vi.fn() }));

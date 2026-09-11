@@ -10,7 +10,7 @@
  * removable feature (it dies when every shop is on the new sync), and burying 1,100 lines of legacy
  * teardown logic in the everyday Shopify composable would outlive its usefulness.
  */
-import { serviceJobCache, systemMessageTypeCache } from "@/utils/cacheEntities";
+import { companyDb } from "@/db/companyDb";
 import { useMaargConfig } from "@/composables/useSeed";
 import { api, logger } from '@common'
 import { PRODUCT_SYNC_MIGRATION_CONFIG, isProductSyncMigrationEligibleRelease } from "@/config/productSyncMigration";
@@ -270,7 +270,7 @@ export async function fetchEligibility(): Promise<ProductSyncMigrationEligibilit
  */
 async function fetchSystemMessageTypeEntity(systemMessageTypeId: string) {
   try {
-    const cached = await systemMessageTypeCache.all();
+    const cached = await companyDb.entity("systemMessageTypes").all();
     if (cached.length) {
       return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId)?.raw;
     }
@@ -304,7 +304,7 @@ async function fetchDataManagerConfigEntity(configId: string) {
  */
 async function fetchServiceJobEntity(jobName: string) {
   try {
-    const cached = await serviceJobCache.all();
+    const cached = await companyDb.entity("serviceJobs").all();
     if (cached.length) {
       return cached.find((row: any) => row.jobName === jobName)?.raw;
     }
@@ -436,7 +436,7 @@ async function fetchDynamicLegacySystemMessageTypes(): Promise<string[]> {
   // The server form is a `_op: like` search over the type catalog. That catalog is cached in full,
   // so the same substring match runs locally (Moqui's bare `like` value is a contains match).
   try {
-    const cached = await systemMessageTypeCache.all();
+    const cached = await companyDb.entity("systemMessageTypes").all();
     if (cached.length) {
       return cached
         .map((row: any) => String(row.systemMessageTypeId || "").trim())

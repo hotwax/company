@@ -15,33 +15,22 @@ vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn(() => false) },
   logger: { error: vi.fn() },
+  useDb: (_entity: any, options: any = {}) => {
+    const records = options.scope
+      ? computed(() => harness.records.value.filter((row: any) => row[options.scope.field] === options.scope.value,))
+      : harness.records;
+
+    return { records, rows: records, first: computed(() => records.value?.[0]), count: computed(() => records.value?.length ?? 0), hydrated: harness.hydrated };
+  },
 }));
 
 vi.mock("@/utils", () => ({
   getResponseErrorMessage: (_error: any, fallback: string) => fallback,
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
-}));
-
-vi.mock("@/utils/cacheEntities", () => ({
-  productStoreCache: { __kind: "stores" },
-  productStoreFacilityCache: { __kind: "facilities" },
-  productStoreShipmentCountCache: { __kind: "counts" },
-  productStoreShippingMethodCache: { __kind: "shippingMethods" },
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (_entity: any, options: any = {}) => {
-    const records = options.scope
-      ? computed(() => harness.records.value.filter((row: any) => row[options.scope.field] === options.scope.value,))
-      : harness.records;
-
-    return { records, rows: records, hydrated: harness.hydrated };
-  },
-  useCachedRecord: vi.fn(),
 }));
 
 import { useProductStoreShippingMethods } from "@/composables/useProductStores";

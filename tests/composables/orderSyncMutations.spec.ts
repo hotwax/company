@@ -31,25 +31,6 @@ const harness = vi.hoisted(() => ({
   refreshAfterMutation: vi.fn(),
 }));
 
-vi.mock("@common", () => ({
-  api: (...args: any[]) => harness.api(...args),
-  commonUtil: { hasError: () => false, showToast: vi.fn() },
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-  translate: (value: string) => value,
-}));
-
-vi.mock("@/services/appCacheBootstrap", () => ({
-  refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
-  bootstrapState: { running: false },
-}));
-
-/**
- * The cached rows this session resolves from, in the shapes the live instance holds.
- *
- * The job is named `_10010` while its `systemMessageRemoteId` parameter belongs to shop 10000 — the
- * real record, kept because it is the reason a mutation must resolve its job through the cache rather
- * than from the shop id in its own arguments.
- */
 const SHOP_ID = "10000";
 const OTHER_SHOP_ID = "10010";
 const JOB_NAME = "queue_ShopifyOrderSync_10010";
@@ -84,31 +65,56 @@ const CACHE: Record<string, any[]> = {
   jobs: [JOB],
 };
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (entity: any) => ({
-    rows: { value: [] },
-    records: { value: CACHE[entity?.__kind] ?? [] },
-    hydrated: { value: true },
-  }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
+const TABLE_TO_CACHE_KEY: Record<string, string> = {
+  shopifyShops: "shops",
+  productStores: "stores",
+  systemMessageRemotes: "remotes",
+  serviceJobs: "jobs",
+  shops: "shops",
+  stores: "stores",
+  remotes: "remotes",
+  jobs: "jobs",
+};
+
+vi.mock("@common", () => ({
+  api: (...args: any[]) => harness.api(...args),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
+  useDb: (entity: any, selectorOrOptions?: any) => {
+    const raw = typeof entity === "string" ? entity : String(entity?.name ?? entity?.__kind ?? "");
+    const key = TABLE_TO_CACHE_KEY[raw] || raw;
+    let records = CACHE[key] ?? [];
+    if (typeof selectorOrOptions === "function") {
+      const criteria = selectorOrOptions();
+      if (criteria?.equals) {
+        records = records.filter((row: any) =>
+          Object.entries(criteria.equals).every(([k, v]) => String(row?.[k]) === String(v))
+        );
+      }
+    } else if (selectorOrOptions?.equals) {
+      records = records.filter((row: any) =>
+        Object.entries(selectorOrOptions.equals).every(([k, v]) => String(row?.[k]) === String(v))
+      );
+    } else if (selectorOrOptions?.scope) {
+      const { field, value } = selectorOrOptions.scope;
+      records = records.filter((row: any) => String(row?.[field]) === String(value));
+    }
+    return {
+      rows: { value: [] },
+      records: { value: records },
+      first: { value: records[0] },
+      count: { value: records.length },
+      hydrated: { value: true },
+    };
+  },
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  dataManagerLogCache: { __kind: "logs" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  serviceJobRunCache: { __kind: "jobRuns" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyShopCache: { __kind: "shops" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: { __kind: "remotes" },
+vi.mock("@/services/appDbSync", () => ({
+  refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
+  bootstrapState: { running: false },
 }));
+
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
@@ -124,7 +130,7 @@ vi.mock("@/composables/useDataManager", () => ({
   }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
+vi.mock("@/composables/useDbSync", () => ({ useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
 
 import { useShopifyOrderSync } from "@/composables/useShopify";
 

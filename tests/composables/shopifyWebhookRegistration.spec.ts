@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { api, reconcile } = vi.hoisted(() => ({api: vi.fn(), reconcile: vi.fn()}));
 vi.mock('@common', () => ({api, commonUtil: {hasError: (r: any) => !!r?.data?.errors, getMaargURL: () => 'http://localhost:8080'}}));
-vi.mock('@/services/appCacheBootstrap', () => ({refreshAfterMutation: vi.fn()}));
+vi.mock('@/services/appDbSync', () => ({refreshAfterMutation: vi.fn()}));
 vi.mock('@/utils/cacheEntities', () => ({shopifyTransferPendingCache: {}}));
 vi.mock('@/composables/useCachedList', () => ({useCachedList: vi.fn()}));
 vi.mock('@/utils/shopifyWebhookReconciliation', () => ({reconcileWebhookTopics: reconcile}));

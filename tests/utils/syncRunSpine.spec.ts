@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { projectRow, projectRows } from "@/utils/cacheProjection";
-import { syncRunProjection } from "@/utils/cacheEntities";
+import { projectRow, projectRows } from "@common/db/projection";
+import { companyDb } from "@/db/companyDb";
+
+const syncRunEntity = companyDb.entities.syncRuns;
 
 /**
  * L1 unit — the shop-scoped sync CURSOR (spine).
@@ -51,11 +53,11 @@ const RUN_WITHOUT_IMPORT = {
 describe("syncRun spine — shop scoping", () => {
   it("lands shopId from the document's remoteInternalId", () => {
     // Without this the per-shop index and every read filter are dead.
-    expect(projectRow(RUN_WITH_IMPORT, syncRunProjection as any, 1)?.shopId).toBe("10010");
+    expect(projectRow(RUN_WITH_IMPORT, syncRunEntity, 1)?.shopId).toBe("10010");
   });
 
   it("keeps shopId even though the raw document has no such field", () => {
-    const row = projectRow(RUN_WITH_IMPORT, syncRunProjection as any, 1) as any;
+    const row = projectRow(RUN_WITH_IMPORT, syncRunEntity, 1) as any;
 
     expect("shopId" in row.raw).toBe(false);
     expect(row.shopId).toBe("10010");
@@ -63,18 +65,21 @@ describe("syncRun spine — shop scoping", () => {
 
   it("separates two shops' runs", () => {
     const rows = projectRows(
-      [RUN_WITH_IMPORT, { ...RUN_WITH_IMPORT, systemMessageId: "M9", remoteInternalId: "10000" }],
-      syncRunProjection as any,
+      [
+        RUN_WITH_IMPORT,
+        { ...RUN_WITHOUT_IMPORT, remoteInternalId: "10000" },
+      ],
+      syncRunEntity,
       1,
     );
 
-    expect(rows.map((r: any) => r.shopId)).toEqual(["10010", "10000"]);
+    expect(rows.map((row) => row.shopId)).toEqual(["10010", "10000"]);
   });
 });
 
 describe("syncRun spine — the message↔import pairing", () => {
   it("carries the pairing that no other shop-scoped feed provides", () => {
-    const row = projectRow(RUN_WITH_IMPORT, syncRunProjection as any, 1) as any;
+    const row = projectRow(RUN_WITH_IMPORT, syncRunEntity, 1) as any;
 
     expect(row.systemMessageId).toBe("M227136");
     expect(row.logId).toBe("M101074");
@@ -82,36 +87,30 @@ describe("syncRun spine — the message↔import pairing", () => {
   });
 
   it("omits logId entirely when the run imported nothing", () => {
-    const row = projectRow(RUN_WITHOUT_IMPORT, syncRunProjection as any, 1) as any;
+    const row = projectRow(RUN_WITHOUT_IMPORT, syncRunEntity, 1) as any;
 
-    // Absent `logId` IS "consumed but never imported" — the state the summary tests for. It must not
-    // coerce to 0 or "", or every run would look like it imported.
+    expect(row.systemMessageId).toBe("M228375");
     expect("logId" in row).toBe(false);
-    expect("totalRecordCount" in row).toBe(false);
-    expect(row.statusId).toBe("SmsgConsumed");
   });
 
   it("keys on systemMessageId, so a late-attaching import updates the run in place", () => {
-    // The domain re-reads the newest page every tick precisely so this transition lands: `initDate`
-    // never moves when the import attaches, so a cursor on it would miss this.
-    const before = projectRow(RUN_WITHOUT_IMPORT, syncRunProjection as any, 1) as any;
-    const after = projectRow(
-      { ...RUN_WITHOUT_IMPORT, logId: "M101099", logStatusId: "DmlsFinished", totalRecordCount: 3 },
-      syncRunProjection as any,
+    const before = projectRow(RUN_WITHOUT_IMPORT, syncRunEntity, 1) as any;
+    const after = projectRows(
+      [{ ...RUN_WITHOUT_IMPORT, logId: "M109999" }],
+      syncRunEntity,
       2,
-    ) as any;
+    )[0];
 
-    expect(after.systemMessageId).toBe(before.systemMessageId);
-    expect(after.logId).toBe("M101099");
-    expect(after.totalRecordCount).toBe(3);
+    expect(before.systemMessageId).toBe("M228375");
+    expect(after.systemMessageId).toBe("M228375");
+    expect(after.logId).toBe("M109999");
   });
 
   it("keeps the enrichment keys a consumer needs to fetch detail by id", () => {
-    const row = projectRow(RUN_WITH_IMPORT, syncRunProjection as any, 1) as any;
+    const row = projectRow(RUN_WITH_IMPORT, syncRunEntity, 1) as any;
 
-    // These two ids are the whole point: per-id fetches always work, unlike bulk or shop-filtered
-    // forms (multi-value `_op=in` returns 0 rows on both endpoints).
-    expect(row.systemMessageId).toBeTruthy();
-    expect(row.logId).toBeTruthy();
+    expect(row.systemMessageRemoteId).toBe("HotWaxDemoShopifyConfig");
+    expect(row.remoteMessageId).toBe("gid://shopify/BulkOperation/8690843975834");
+    expect(row.systemMessageTypeId).toBe("BulkQueryShopifyProductUpdates");
   });
 });

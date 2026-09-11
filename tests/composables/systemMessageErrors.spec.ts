@@ -13,14 +13,18 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyBulkOperationCache: { all: vi.fn(), upsertMany: vi.fn() },
-  systemMessageCache: { all: vi.fn(), upsertMany: vi.fn() },
-  systemMessageErrorCache: {
-    all: (...args: any[]) => mocks.errorCacheAll(...args),
-    upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessageErrors") {
+        return {
+          all: (...args: any[]) => mocks.errorCacheAll(...args),
+          upsertMany: (...args: any[]) => mocks.errorCacheUpsertMany(...args),
+        };
+      }
+      return { all: vi.fn(async () => []), upsertMany: vi.fn(async () => 0) };
+    },
   },
-  systemMessageRemoteCache: { all: vi.fn(), upsertMany: vi.fn() },
 }));
 
 import { clearSessionScopedState } from "@/composables/sessionScope";

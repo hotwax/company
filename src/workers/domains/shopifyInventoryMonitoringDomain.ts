@@ -1,13 +1,14 @@
-import {
-  dataFeedCache,
-  inventoryChannelCache,
-  shopifyInventoryAdjustmentDetailCache,
-  shopifyInventoryAdjustmentDetailProjection,
-  systemMessageCache,
-} from "@/utils/cacheEntities";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
+import { canonicalKey, entityKeyOf } from "@common/db/projection";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { SyncContext } from "@common/db/types";
+import { pageAll, pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
+
+const dataFeedEntity = companyDb.entity("dataFeeds");
+const inventoryChannelEntity = companyDb.entity("inventoryChannels");
+const shopifyInventoryAdjustmentDetailEntity = companyDb.entity("shopifyInventoryAdjustmentDetails");
+const systemMessageEntity = companyDb.entity("systemMessages");
 
 /**
  * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
@@ -43,17 +44,20 @@ async function fetchInventoryEventFeed(ctx: SyncContext, feedId: string = SHOPIF
   return response?.dataFeedId ? response : null;
 }
 
-registerSyncDomain({
+export const shopifyInventoryEventFeedDomain = defineSyncDomain({
   name: "shopifyInventoryEventFeed",
+  table: "dataFeeds",
+  label: "Shopify inventory event feed",
+  syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
+    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed")) return 0;
     const [channelFeed, locationFeed] = await Promise.all([
       fetchInventoryEventFeed(ctx, SHOPIFY_INVENTORY_EVENT_FEED_ID),
       fetchInventoryEventFeed(ctx, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID),
     ]);
     const feeds = [channelFeed, locationFeed].filter(Boolean);
-    const result = await dataFeedCache.snapshotReplace(feeds);
-    await markSyncedThisLogin("shopifyInventoryEventFeed");
+    const result = await dataFeedEntity.snapshotReplace(feeds);
+    await markSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -61,10 +65,10 @@ registerSyncDomain({
     if (feedId !== SHOPIFY_INVENTORY_EVENT_FEED_ID && feedId !== SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID) return 0;
     const feed = await fetchInventoryEventFeed(ctx, feedId);
     if (!feed) {
-      await dataFeedCache.remove(feedId);
+      await dataFeedEntity.remove(feedId);
       return 0;
     }
-    return dataFeedCache.upsertMany([feed]);
+    return dataFeedEntity.upsertMany([feed]);
   },
 });
 
@@ -87,13 +91,17 @@ function channelFilter(inventoryChannelIds: string[]): Record<string, unknown> {
 }
 
 function detailKey(row: Record<string, unknown>): string | undefined {
-  return shopifyInventoryAdjustmentDetailProjection.buildKey(row);
+  const key = entityKeyOf(row, companyDb.entities.shopifyInventoryAdjustmentDetail);
+  return key ? canonicalKey(key) : undefined;
 }
 
-registerSyncDomain({
+export const inventoryChannelDomain = defineSyncDomain({
   name: "inventoryChannel",
+  table: "inventoryChannels",
+  label: "Shopify inventory channels",
+  syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin("inventoryChannel")) return 0;
+    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "inventoryChannel")) return 0;
     const rows = await pageAll({
       ctx,
       url: CHANNEL_ENDPOINT,
@@ -102,8 +110,8 @@ registerSyncDomain({
       keyOf: (row: any) => row?.inventoryChannelId ? String(row.inventoryChannelId) : undefined,
       label: CHANNEL_ENDPOINT,
     });
-    const result = await inventoryChannelCache.snapshotReplace(rows);
-    await markSyncedThisLogin("inventoryChannel");
+    const result = await inventoryChannelEntity.snapshotReplace(rows);
+    await markSyncedThisLogin(companyDb.raw(), "inventoryChannel");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -115,7 +123,7 @@ registerSyncDomain({
       pageSize: 1,
     });
     const rows = unwrapCollection(response, DETAIL_COLLECTION);
-    return rows.length ? inventoryChannelCache.upsertMany(rows) : 0;
+    return rows.length ? inventoryChannelEntity.upsertMany(rows) : 0;
   },
 });
 
@@ -141,8 +149,8 @@ async function enrichBatchMessages(
   max: number,
 ): Promise<number> {
   const [details, messages] = await Promise.all([
-    shopifyInventoryAdjustmentDetailCache.all(),
-    systemMessageCache.all(),
+    shopifyInventoryAdjustmentDetailEntity.all(),
+    systemMessageEntity.all(),
   ]);
   const wanted = new Set(inventoryChannelIds.map(String));
   const messageById = new Map(messages.map((message: any) => [String(message.systemMessageId), message]));
@@ -162,7 +170,7 @@ async function enrichBatchMessages(
         pageSize: 1,
       });
       const message = response?.systemMessages?.[0];
-      if (message) written += await systemMessageCache.upsertMany([message]);
+      if (message) written += await systemMessageEntity.upsertMany([message]);
     } catch {
       // One message must not sink the ledger pass; a later tick retries it.
     }
@@ -170,8 +178,11 @@ async function enrichBatchMessages(
   return written;
 }
 
-registerSyncDomain({
+export const shopifyInventoryAdjustmentDetailDomain = defineSyncDomain({
   name: "shopifyInventoryAdjustmentDetail",
+  table: "shopifyInventoryAdjustmentDetails",
+  label: "Shopify aggregate inventory events",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: DetailSyncArgs = {}) {
     const inventoryChannelIds = (args.inventoryChannelIds ?? []).map(String).filter(Boolean);
@@ -182,7 +193,7 @@ registerSyncDomain({
     const batchSize = args.batchSize ?? 50;
     const target = args.total ?? 500;
     const counts = await Promise.all(inventoryChannelIds.map((inventoryChannelId) =>
-      shopifyInventoryAdjustmentDetailCache.count({ field: "inventoryChannelId", value: inventoryChannelId })));
+      shopifyInventoryAdjustmentDetailEntity.count({ field: "inventoryChannelId", value: inventoryChannelId })));
     const cached = counts.reduce((sum, count) => sum + count, 0);
     const wanted = cached < target ? target : batchSize;
 
@@ -217,7 +228,7 @@ registerSyncDomain({
       if (key) merged.set(key, row);
     }
     let written = merged.size
-      ? await shopifyInventoryAdjustmentDetailCache.upsertMany([...merged.values()])
+      ? await shopifyInventoryAdjustmentDetailEntity.upsertMany([...merged.values()])
       : 0;
     written += await enrichBatchMessages(ctx, inventoryChannelIds, args.enrichMax ?? 40);
     return written;
@@ -240,6 +251,6 @@ registerSyncDomain({
       batchSize: 100,
       label: "inventoryAdjustmentDetails:refetchOne",
     });
-    return rows.length ? shopifyInventoryAdjustmentDetailCache.upsertMany(rows) : 0;
+    return rows.length ? shopifyInventoryAdjustmentDetailEntity.upsertMany(rows) : 0;
   },
 });
