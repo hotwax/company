@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  carrierCache,
-  carrierFacilityCache,
-  carrierFacilityProjection,
-  carrierProjection,
-  carrierShipmentMethodCache,
-  carrierShipmentMethodProjection,
-  productStoreShippingMethodProjection,
-} from "@/utils/cacheEntities";
-import { projectRow } from "@/utils/cacheProjection";
+import { companyDb } from "@/db/companyDb";
+import { projectRow } from "@common/db/projection";
 
 const CACHED_AT = 1_800_000_000_000;
 
@@ -19,19 +11,18 @@ describe("carrier cache projections", () => {
       groupName: "FedEx",
       partyTypeId: "PARTY_GROUP",
       roleTypeId: "CARRIER",
-    }, carrierProjection, CACHED_AT);
+    }, companyDb.entities.carriers, CACHED_AT);
 
     expect(row).toMatchObject({
       partyId: "FEDEX",
       groupName: "FedEx",
-      partyTypeId: "PARTY_GROUP",
       roleTypeId: "CARRIER",
       cachedAt: CACHED_AT,
     });
-    expect(carrierCache.table).toBe("carriers");
+    expect(companyDb.entity("carriers").table).toBe("carriers");
   });
 
-  it("includes the carrier in a shipment-method key so equal methods do not collide", () => {
+  it("includes the carrier in a shipment-method compound key", () => {
     const fedex = projectRow({
       partyId: "FEDEX",
       roleTypeId: "CARRIER",
@@ -39,48 +30,50 @@ describe("carrier cache projections", () => {
       sequenceNumber: "10",
       carrierServiceCode: "FEDEX_GROUND",
       deliveryDays: "5",
-    }, carrierShipmentMethodProjection, CACHED_AT);
+    }, companyDb.entities.carrierShipmentMethods, CACHED_AT);
     const ups = projectRow({
       partyId: "UPS",
       roleTypeId: "CARRIER",
       shipmentMethodTypeId: "GROUND",
       sequenceNumber: "10",
-    }, carrierShipmentMethodProjection, CACHED_AT);
+    }, companyDb.entities.carrierShipmentMethods, CACHED_AT);
 
     expect(fedex).toMatchObject({
-      carrierShipmentMethodKey: "FEDEX|CARRIER|GROUND",
+      partyId: "FEDEX",
+      roleTypeId: "CARRIER",
+      shipmentMethodTypeId: "GROUND",
       sequenceNumber: 10,
       carrierServiceCode: "FEDEX_GROUND",
       deliveryDays: 5,
     });
-    expect(ups?.carrierShipmentMethodKey).toBe("UPS|CARRIER|GROUND");
-    expect(ups?.carrierShipmentMethodKey).not.toBe(fedex?.carrierShipmentMethodKey);
-    expect(carrierShipmentMethodCache.table).toBe("carrierShipmentMethods");
+    expect(ups?.partyId).toBe("UPS");
+    expect(companyDb.entity("carrierShipmentMethods").table).toBe("carrierShipmentMethods");
   });
 
-  it("includes carrier, facility, role, and effective start in a facility key", () => {
+  it("includes carrier, facility, role, and effective start in a facility compound key", () => {
     const fedex = projectRow({
       partyId: "FEDEX",
       facilityId: "BROADWAY",
       roleTypeId: "CARRIER",
       fromDate: "1800000000000",
       thruDate: "1800003600000",
-    }, carrierFacilityProjection, CACHED_AT);
+    }, companyDb.entities.carrierFacilities, CACHED_AT);
     const ups = projectRow({
       partyId: "UPS",
       facilityId: "BROADWAY",
       roleTypeId: "CARRIER",
       fromDate: "1800000000000",
-    }, carrierFacilityProjection, CACHED_AT);
+    }, companyDb.entities.carrierFacilities, CACHED_AT);
 
     expect(fedex).toMatchObject({
-      carrierFacilityKey: "FEDEX|BROADWAY|CARRIER|1800000000000",
+      partyId: "FEDEX",
+      facilityId: "BROADWAY",
+      roleTypeId: "CARRIER",
       fromDate: 1_800_000_000_000,
       thruDate: 1_800_003_600_000,
     });
-    expect(ups?.carrierFacilityKey).toBe("UPS|BROADWAY|CARRIER|1800000000000");
-    expect(ups?.carrierFacilityKey).not.toBe(fedex?.carrierFacilityKey);
-    expect(carrierFacilityCache.table).toBe("carrierFacilities");
+    expect(ups?.partyId).toBe("UPS");
+    expect(companyDb.entity("carrierFacilities").table).toBe("carrierFacilities");
   });
 
   it("retains store scope, sequencing, gateway, and expiration fields", () => {
@@ -94,14 +87,14 @@ describe("carrier cache projections", () => {
       shipmentGatewayConfigId: "FEDEX_CONFIG",
       fromDate: "1800000000000",
       thruDate: "1800003600000",
-    }, productStoreShippingMethodProjection, CACHED_AT);
+    }, companyDb.entities.productStoreShippingMethods, CACHED_AT);
     const storeTwo = projectRow({
       productStoreShipMethId: "PSM_2",
       productStoreId: "STORE_2",
       shipmentMethodTypeId: "GROUND",
       partyId: "FEDEX",
       roleTypeId: "CARRIER",
-    }, productStoreShippingMethodProjection, CACHED_AT);
+    }, companyDb.entities.productStoreShippingMethods, CACHED_AT);
 
     expect(storeOne).toMatchObject({
       productStoreShipMethId: "PSM_1",

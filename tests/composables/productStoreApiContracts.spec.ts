@@ -17,7 +17,7 @@ vi.mock("@common", () => ({
   logger: { error: vi.fn(), warn: mocks.loggerWarn, info: vi.fn() },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: mocks.refreshAfterMutation,
   resyncDomain: mocks.resyncDomain,
 }));

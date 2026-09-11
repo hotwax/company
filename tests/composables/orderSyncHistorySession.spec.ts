@@ -21,8 +21,8 @@ vi.mock("@ionic/vue", () => ({
   onIonViewDidLeave: (callback: () => void) => { harness.leave = callback }
 }))
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => harness.cacheSync
+vi.mock("@/composables/useDbSync", () => ({
+  useDbSync: () => harness.cacheSync
 }))
 
 import {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { effectScope, ref } from "vue"
-import { useCacheSync } from "@/composables/useCacheSync"
+import { useDbSync } from "@/composables/useDbSync"
 import {
   ONBOARDING_INITIAL_LOAD_CONTRACTS,
   deriveOnboardingInitialLoadSnapshot,
@@ -31,7 +31,7 @@ vi.mock("@/composables/useShopify", () => ({
   useShopifySyncRuns: vi.fn()
 }))
 
-vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: vi.fn() }))
+vi.mock("@/composables/useDbSync", () => ({ useDbSync: vi.fn() }))
 vi.mock("@/composables/useServiceJobs", () => ({ useServiceJobRunsByJob: vi.fn() }))
 vi.mock("@/utils", () => ({ formatDateTime: (value: unknown) => String(value) }))
 
@@ -82,7 +82,7 @@ function arrangeLiveInitialLoadScope(options: {
     runsFor: () => [],
     hydrated: ref(true)
   } as any)
-  vi.mocked(useCacheSync).mockReturnValue({
+  vi.mocked(useDbSync).mockReturnValue({
     start,
     stop,
     syncNow,

@@ -1,15 +1,9 @@
 import { computed } from "vue";
-import { isEffectiveNow } from "@/utils/cacheProjection";
+import { isEffectiveNow } from "@common/db";
 import { alertController } from "@ionic/vue";
-import { api, commonUtil, emitter, logger } from "@common";
+import { api, commonUtil, emitter, logger, useDb } from "@common";
 import { translate } from "@/i18n";
-import {
-  enumGroupMemberCache,
-  facilityIdentificationCache,
-  integrationTypeMappingCache,
-} from "@/utils/cacheEntities";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { useCachedList } from "./useCachedList";
+import { resyncDomain } from "@/services/appDbSync";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.
@@ -34,8 +28,8 @@ import { useCachedList } from "./useCachedList";
  * This is the table every NetSuite mapping screen edits.
  */
 export function useIntegrationTypeMappings(integrationTypeId?: string) {
-  const { records, hydrated } = useCachedList<any>(
-    integrationTypeMappingCache,
+  const { records, hydrated } = useDb<any>(
+    "integrationTypeMappings",
     integrationTypeId ? { scope: { field: "integrationTypeId", value: integrationTypeId } } : {},
   );
 
@@ -63,15 +57,17 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
   return { mappings: records, valueByKey, mappingByKey, byType, records, hydrated };
 }
 
-/** Members of the NetSuite variance-reason enum group. */
-export function useEnumGroupMembers() {
-  const { records, hydrated } = useCachedList<any>(enumGroupMemberCache);
-  return { members: records, records, hydrated };
+/** Enum group members for one group (e.g. sales channel / variance reason sets). */
+export function useEnumGroupMembers(enumGroupId: string) {
+  const { records, hydrated } = useDb<any>("enumGroupMembers");
+  const members = computed(() =>
+    records.value.filter((row: any) => row.enumGroupId === enumGroupId));
+  return { members, hydrated };
 }
 
-/** Facility identifications NetSuite uses as departments. */
+/** Facility identifications (party/facility external-id mappings). */
 export function useFacilityIdentifications() {
-  const { records, hydrated } = useCachedList<any>(facilityIdentificationCache);
+  const { records, hydrated } = useDb<any>("facilityIdentifications");
 
   /**
    * Only identifications in force right now. `oms/facilities/identifications` returns thru-dated

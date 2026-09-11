@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[], workerGet: [] as any[] }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options.params);
     return [];
@@ -29,40 +29,44 @@ vi.mock("@/workers/domains/workerFetch", () => ({
 /** Rows the cache would hold. `rowsMissing` is what drives the per-row refresh pass. */
 const cacheState = vi.hoisted(() => ({ unprocessed: [] as any[] }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  systemMessageCache: {
-    all: vi.fn(async () => []),
-    newestCursor: vi.fn(async () => undefined),
-    /**
-     * Depth check. The domain pages DEEP while a scope holds fewer rows than its target and
-     * incrementally once it is full, so a mock that reports an empty window would measure the
-     * one-time backfill rather than the steady-state tick this budget is about.
-     */
-    count: vi.fn(async () => Number.MAX_SAFE_INTEGER),
-    // Mirrors the real `rowsMissing` contract: bounded by AGE as well as count.
-    rowsMissing: vi.fn(async (_field: string, options: any = {}) => {
-      const { limit = 50, since } = options;
-      const rows = since
-        ? cacheState.unprocessed.filter(
-            (row) => typeof row[since.field] === "number" && row[since.field] > since.afterMs,
-          )
-        : cacheState.unprocessed;
-      return rows.slice(0, limit);
-    }),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-  },
-  // Two shops, each linked to one remote by remoteId === shopifyShopId.
-  shopifyShopCache: {
-    all: vi.fn(async () => [
-      { shopId: "10000", shopifyShopId: "111" },
-      { shopId: "10010", shopifyShopId: "222" },
-    ]),
-  },
-  systemMessageRemoteCache: {
-    all: vi.fn(async () => [
-      { systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" },
-      { systemMessageRemoteId: "RemoteB", remoteId: "222", internalId: "10010" },
-    ]),
+const systemMessageCacheMock = {
+  all: vi.fn(async () => []),
+  newestCursor: vi.fn(async () => undefined),
+  count: vi.fn(async () => Number.MAX_SAFE_INTEGER),
+  rowsMissing: vi.fn(async (_field: string, options: any = {}) => {
+    const { limit = 50, since } = options;
+    const rows = since
+      ? cacheState.unprocessed.filter(
+          (row) => typeof row[since.field] === "number" && row[since.field] > since.afterMs,
+        )
+      : cacheState.unprocessed;
+    return rows.slice(0, limit);
+  }),
+  upsertMany: vi.fn(async (rows: any[]) => rows.length),
+};
+
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessages") return systemMessageCacheMock;
+      if (table === "shopifyShops") {
+        return {
+          all: vi.fn(async () => [
+            { shopId: "10000", shopifyShopId: "111" },
+            { shopId: "10010", shopifyShopId: "222" },
+          ]),
+        };
+      }
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(async () => [
+            { systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" },
+            { systemMessageRemoteId: "RemoteB", remoteId: "222", internalId: "10010" },
+          ]),
+        };
+      }
+      return {};
+    },
   },
 }));
 
@@ -75,10 +79,8 @@ describe("systemMessage domain per-tick request budget", () => {
   });
 
   async function runTick() {
-    await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@/workers/syncRegistry");
-    const domain = getSyncDomain("systemMessage")!;
-    await domain.sync({ maargUrl: "https://x.test/", token: "t" }, {});
+    const { systemMessageDomain } = await import("@/workers/domains/systemMessageDomain");
+    await systemMessageDomain.sync({ maargUrl: "https://x.test/", token: "t" }, {});
     return calls.pageNewestFirst.length + calls.workerGet.length;
   }
 
@@ -133,9 +135,8 @@ describe("systemMessage domain per-tick request budget", () => {
       { systemMessageId: "OUTSIDE", initDate: now - 10 * 60 * 1000 },
     ];
 
-    await import("@/workers/domains/systemMessageDomain");
-    const { getSyncDomain } = await import("@/workers/syncRegistry");
-    await getSyncDomain("systemMessage")!.sync(
+    const { systemMessageDomain } = await import("@/workers/domains/systemMessageDomain");
+    await systemMessageDomain.sync(
       { maargUrl: "https://x.test/", token: "t" },
       { refreshMaxAgeMs: 60_000 },
     );
@@ -144,12 +145,11 @@ describe("systemMessage domain per-tick request budget", () => {
   });
 
   it("seeks the per-(remote,type) cursor through the index instead of reading the whole table", async () => {
-    const { systemMessageCache } = await import("@/utils/cacheEntities");
     await runTick();
 
     // The old implementation called `.all()` once per (remote x type) — 12 full table reads a tick.
-    expect(systemMessageCache.all).not.toHaveBeenCalled();
-    expect(systemMessageCache.newestCursor).toHaveBeenCalledWith(
+    expect(systemMessageCacheMock.all).not.toHaveBeenCalled();
+    expect(systemMessageCacheMock.newestCursor).toHaveBeenCalledWith(
       "initDate",
       { field: "systemMessageRemoteId", value: expect.any(String) },
       { systemMessageTypeId: expect.any(String) },

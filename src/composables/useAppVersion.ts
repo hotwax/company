@@ -1,8 +1,6 @@
-import { api, commonUtil } from "@common";
+import { api, commonUtil, useDb } from "@common";
 import { computed } from "vue";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { appCache, appVersionCache } from "@/utils/cacheEntities";
-import { useCachedList } from "./useCachedList";
+import { resyncDomain } from "@/services/appDbSync";
 import { useTypedEnums } from "./useSeed";
 
 /**
@@ -22,7 +20,7 @@ export const APP_ENVIRONMENT_ENUM_TYPE_ID = "AppEnvironment";
 
 /**
  * The shape a version pin renders as. These are the RAW server fields from `admin/appVersion`
- * (`useCachedList` hands back `row.raw`, not the projected row), so the synthetic `appVersionKey`
+ * (`useDb` hands back `row.raw`, not the projected row), so the synthetic `appVersionKey`
  * is deliberately absent — the screen keys rows by `appId` + `environmentTypeId`.
  */
 export interface AppVersionRecord {
@@ -39,7 +37,7 @@ export interface AppVersionRecord {
 
 /** The configured app version pins, cached at login. */
 export function useAppVersions() {
-  const { records, hydrated } = useCachedList<AppVersionRecord>(appVersionCache);
+  const { records, hydrated } = useDb<AppVersionRecord>("appVersions");
 
   /** `${appId}_${environmentTypeId}` → the pin, matching the key the create modal excludes by. */
   const byAppEnv = computed<Record<string, AppVersionRecord>>(() =>
@@ -54,7 +52,7 @@ export function useAppVersions() {
 
 /** The app catalog (`admin/apps`) the create modal picks from. */
 export function useApps() {
-  const { records, hydrated } = useCachedList<{ appId: string; appName: string }>(appCache);
+  const { records, hydrated } = useDb<{ appId: string; appName: string }>("apps");
 
   return { apps: records, hydrated };
 }

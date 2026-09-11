@@ -8,7 +8,7 @@ import type {
 import { formatDateTime } from "@/utils"
 import { DATA_MANAGER_LOG_STATUS_IDS, logOutcome } from "@/utils/dataManagerLog"
 import type { ActiveDomain } from "@/workers/syncRegistry"
-import { useCacheSync } from "./useCacheSync"
+import { useDbSync } from "./useDbSync"
 import type { ProductStoreOnboardingRunRequest } from "./useProductStoreOnboardingWizard"
 import { useServiceJobRunsByJob } from "./useServiceJobs"
 import {
@@ -657,7 +657,7 @@ export function useProductStoreOnboardingInitialLoad(
   const orderJobName = computed(() => onboardingInitialLoadJobName("orders", shopId.value))
   const watchedJobNames = computed(() => [inventoryJobName.value, orderJobName.value].filter(Boolean))
   const serviceJobRuns = useServiceJobRunsByJob(() => watchedJobNames.value, 25)
-  const sync = useCacheSync()
+  const sync = useDbSync()
   const active = ref(false)
   const scopeRefreshed = ref(false)
 

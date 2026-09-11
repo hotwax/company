@@ -1,23 +1,13 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, commonUtil, logger, useDb } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { resyncDomain } from "@/services/appCacheBootstrap";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
-import {
-  currencyCache,
-  enumCache,
-  enumTypeCache,
-  geoAssocCache,
-  geoCache,
-  paymentMethodTypeCache,
-  productTypeCache,
-  roleTypeCache,
-  shipmentMethodTypeCache,
-  statusCache,
-  systemMessageTypeCache,
-} from "@/utils/cacheEntities";
-import { byDescription, useCachedList } from "./useCachedList";
+import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { usePrimaryOrganization } from "./useOrganizations";
+
+function byDescription(a: any, b: any): number {
+  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
+}
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -30,7 +20,7 @@ import { usePrimaryOrganization } from "./useOrganizations";
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
-  const { records, hydrated } = useCachedList<any>(statusCache);
+  const { records, hydrated } = useDb<any>("statuses");
 
   /** statusId → description, the map templates index into. */
   const statusItems = computed<Record<string, string>>(() =>
@@ -53,7 +43,7 @@ export function useStatuses() {
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
-  const { records, hydrated } = useCachedList<any>(enumCache);
+  const { records, hydrated } = useDb<any>("enums");
   const enumItems = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
       map[row.enumId] = row.description ?? row.enumId;
@@ -70,50 +60,43 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
-  const { records, hydrated } = useCachedList<any>(
-    enumCache,
+  const { records, hydrated } = useDb<any>(
+    "enums",
     { scope: { field: "enumTypeId", value: enumTypeId } },
   );
   const values = computed(() => [...records.value].sort(byDescription));
-  /**
-   * enumId → description. The Pinia state these replaced was a map, and templates index it
-   * directly (`locationTypes[location.locationTypeEnumId]`); handing back only the array made
-   * every such lookup silently `undefined`.
-   */
-  const descriptionById = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
+  const enumItems = computed<Record<string, string>>(() =>
+    values.value.reduce((map: Record<string, string>, row: any) => {
       if (row.enumId) map[row.enumId] = row.description ?? row.enumId;
       return map;
     }, {}));
-  return { values, descriptionById, hydrated };
+  const labelFor = (enumId: string | undefined) =>
+    (enumId ? enumItems.value[enumId] ?? enumId : "");
+  return { values, enumItems, descriptionById: enumItems, labelFor, hydrated };
 }
 
-/** The enumeration type catalog. */
+/** Enum types (id → description). */
 export function useEnumTypes() {
-  const { records, hydrated } = useCachedList<any>(enumTypeCache);
+  const { records, hydrated } = useDb<any>("enumTypes");
   return { enumTypes: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
-/**
- * Geo reference straight from Moqui — replaces `utilStore` states / operating countries.
- * `useGeos()` is the flat catalog; `statesOf(countryGeoId)` walks the association table.
- */
+// --- geographic boundaries ------------------------------------------------------------------
+
 export function useGeos() {
-  const { records: geos, hydrated } = useCachedList<any>(geoCache);
-  const { records: assocs } = useCachedList<any>(geoAssocCache);
+  const { records: geos, hydrated } = useDb<any>("geos");
+  const { records: assocs } = useDb<any>("geoAssocs");
 
   const byId = computed<Record<string, any>>(() =>
-    geos.value.reduce((map: Record<string, any>, geo: any) => { map[geo.geoId] = geo; return map; }, {}));
+    geos.value.reduce((map: Record<string, any>, row: any) => {
+      if (row.geoId) map[row.geoId] = row;
+      return map;
+    }, {}));
 
   const countries = computed(() => geos.value
-    .filter((geo: any) => String(geo.geoTypeEnumId ?? "").includes("COUNTRY"))
+    .filter((row: any) => row.geoTypeId === "COUNTRY")
     .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? ""))));
 
-  /**
-   * Child geos (states / provinces / regions) of a country, resolved through GeoAssoc.
-   * Direction verified live: `geoId` is the country, `toGeoId` the region (ARE → AE-AJ).
-   * Restricted to `GAT_REGIONS`; `GAT_GROUP_MEMBER` is a different relationship (geo groups).
-   */
   /**
    * Countries in the DBIC association group.
    *
@@ -137,13 +120,13 @@ export function useGeos() {
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: Parameters<typeof useCachedList>[0]) {
-  const { records, hydrated } = useCachedList<any>(cache);
+function sortedTypes(cache: Parameters<typeof useDb>[0]) {
+  const { records, hydrated } = useDb<any>(cache);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
 export function useProductTypes() {
-  const { records, hydrated } = sortedTypes(productTypeCache);
+  const { records, hydrated } = sortedTypes("productTypes");
   return { productTypes: records, hydrated };
 }
 
@@ -153,63 +136,69 @@ export function useProductTypes() {
  */
 export function useShipmentMethodTypeMutations() {
   const assertSuccessful = (response: any, fallback: string) => {
-    if(commonUtil.hasError(response)) {
-      throw new Error(getResponseErrorMessage(response, fallback));
-    }
-  };
-
-  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
-    try {
-      await resyncDomain("shipmentMethodType");
-    } catch (error) {
+    if (commonUtil.hasError(response)) {
       throw new CacheReconciliationError(
         "shipmentMethodType",
-        { shipmentMethodTypeId },
-        error,
+        {},
+        new Error(getResponseErrorMessage(response, fallback)),
       );
     }
   };
 
-  async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
-    const resp: any = await api({
-      url: "oms/shippingGateways/shipmentMethodTypes",
+  const createShipmentMethodType = async (payload: { shipmentMethodTypeId: string; description: string; sequenceNum?: number }) => {
+    const response: any = await api({
+      url: "oms/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    assertSuccessful(resp, "Failed to create the shipment method type.");
-    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
+    assertSuccessful(response, "Failed to create shipping method type");
+    try {
+      await resyncDomain("shipmentMethodType");
+    } catch (cause) {
+      throw new CacheReconciliationError(
+        "shipmentMethodType",
+        { shipmentMethodTypeId: payload.shipmentMethodTypeId },
+        cause,
+      );
+    }
+    return response;
+  };
 
-    return resp;
-  }
-
-  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
-    const resp: any = await api({
+  const renameShipmentMethodType = async (shipmentMethodTypeId: string, description: string) => {
+    const response: any = await api({
       url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
       method: "put",
-      data: { shipmentMethodTypeId, description: description.trim() },
+      data: { shipmentMethodTypeId, description },
     });
-    assertSuccessful(resp, "Failed to rename the shipment method type.");
-    await resyncShipmentMethodTypes(shipmentMethodTypeId);
-
-    return resp;
-  }
+    assertSuccessful(response, "Failed to rename shipping method type");
+    try {
+      await resyncDomain("shipmentMethodType");
+    } catch (cause) {
+      throw new CacheReconciliationError(
+        "shipmentMethodType",
+        { shipmentMethodTypeId },
+        cause,
+      );
+    }
+    return response;
+  };
 
   return { createShipmentMethodType, renameShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
 export function useCurrencies() {
-  const { records, hydrated } = sortedTypes(currencyCache);
+  const { records, hydrated } = sortedTypes("currencies");
   return { currencies: records, hydrated };
 }
 
 export function useShipmentMethodTypes() {
-  const { records, hydrated } = sortedTypes(shipmentMethodTypeCache);
+  const { records, hydrated } = sortedTypes("shipmentMethodTypes");
   return { shipmentMethodTypes: records, hydrated };
 }
 
 export function usePaymentMethodTypes() {
-  const { records, hydrated } = sortedTypes(paymentMethodTypeCache);
+  const { records, hydrated } = sortedTypes("paymentMethodTypes");
   return { paymentMethodTypes: records, hydrated };
 }
 
@@ -228,7 +217,7 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
-  const { records, hydrated } = sortedTypes(roleTypeCache);
+  const { records, hydrated } = sortedTypes("roleTypes");
   /** roleTypeId → description, matching the map the party-role templates index. */
   const descriptionById = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
@@ -245,7 +234,7 @@ export function useRoleTypes() {
  * on a single page load, for 9 distinct ids). Cached as one set, so labelling is a local lookup.
  */
 export function useSystemMessageTypes() {
-  const { records, hydrated } = useCachedList<any>(systemMessageTypeCache);
+  const { records, hydrated } = useDb<any>("systemMessageTypes");
 
   /** systemMessageTypeId → description. */
   const typeItems = computed<Record<string, string>>(() =>

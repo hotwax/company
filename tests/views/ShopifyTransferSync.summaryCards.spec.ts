@@ -13,6 +13,7 @@ vi.mock("@common", () => ({
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
+  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useCacheSync", () => ({

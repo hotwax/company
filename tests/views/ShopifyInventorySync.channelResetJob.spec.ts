@@ -56,14 +56,37 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
+  useDb: (cache: any) => {
+    const table = typeof cache === "string" ? cache : String(cache?.table || cache?.name || cache?.__kind || "");
+    if(table.includes("shopifyShop") || table.includes("ShopifyShop") || table.includes("shops")) {
+      return { records: cachedShops, rows: cachedShops, first: computed(() => cachedShops.value[0]), count: computed(() => cachedShops.value.length), hydrated: ref(true) };
+    }
+    if(table.includes("inventoryChannel") || table.includes("InventoryChannel") || table.includes("channels")) {
+      return { records: cachedChannels, rows: cachedChannels, first: computed(() => cachedChannels.value[0]), count: computed(() => cachedChannels.value.length), hydrated: ref(true) };
+    }
+    if(table.includes("dataFeed") || table.includes("DataFeed") || table.includes("feeds")) {
+      return { records: cachedDataFeeds, rows: cachedDataFeeds, first: computed(() => cachedDataFeeds.value[0]), count: computed(() => cachedDataFeeds.value.length), hydrated: ref(true) };
+    }
+    if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail") || table.includes("inventoryAdjustmentDetails") || table.includes("adjustmentDetails")) {
+      return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, first: computed(() => cachedAdjustmentDetails.value[0]), count: computed(() => cachedAdjustmentDetails.value.length), hydrated: detailsHydrated };
+    }
+    if(table.toLowerCase().includes("locationinventorysummar") || table.includes("locationSummaries")) {
+      return { records: cachedLocationSummaries, rows: cachedLocationSummaries, first: computed(() => cachedLocationSummaries.value[0]), count: computed(() => cachedLocationSummaries.value.length), hydrated: ref(true) };
+    }
+    if(table.includes("systemMessage") || table.includes("SystemMessage") || table.includes("messages")) {
+      return { records: cachedMessages, rows: cachedMessages, first: computed(() => cachedMessages.value[0]), count: computed(() => cachedMessages.value.length), hydrated: ref(true) };
+    }
+
+    return { records: ref([]), rows: ref([]), first: computed(() => undefined), count: computed(() => 0), hydrated: ref(true) };
+  },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   resyncDomain: vi.fn(),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
+vi.mock("@/composables/useDbSync", () => ({
+  useDbSync: () => ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     ready: syncReady,
@@ -72,31 +95,6 @@ vi.mock("@/composables/useCacheSync", () => ({
   }),
 }));
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (cache: any) => {
-    const table = String(cache?.table || cache?.name || "");
-    if(table.includes("shopifyShop") || table.includes("ShopifyShop")) {
-      return { records: cachedShops, rows: cachedShops, hydrated: ref(true) };
-    }
-    if(table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
-      return { records: cachedChannels, rows: cachedChannels, hydrated: ref(true) };
-    }
-    if(table.includes("dataFeed") || table.includes("DataFeed")) {
-      return { records: cachedDataFeeds, rows: cachedDataFeeds, hydrated: ref(true) };
-    }
-    if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
-      return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: detailsHydrated };
-    }
-    if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
-      return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
-    }
-    if(table.includes("systemMessage") || table.includes("SystemMessage")) {
-      return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
-    }
-
-    return { records: ref([]), rows: ref([]), hydrated: ref(true) };
-  },
-}));
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({
