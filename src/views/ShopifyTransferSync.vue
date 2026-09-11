@@ -215,6 +215,19 @@
                       <p>{{ translate(row.status) }}</p>
                     </template>
                   </ion-label>
+                  <ion-button
+                    v-if="row.adminUrl"
+                    slot="end"
+                    fill="clear"
+                    color="medium"
+                    :href="row.adminUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :aria-label="translate('Open transfer in Shopify Admin')"
+                    @click.stop
+                  >
+                    <ion-icon slot="icon-only" :icon="openOutline" />
+                  </ion-button>
                 </ion-item>
                 <ion-list slot="content" class="transfer-row-content" lines="full">
                   <ion-item v-if="row.occurredAt">
@@ -288,6 +301,19 @@
                   {{ formatDateTime(row.occurredAt) || translate("Not available") }}
                   <p>{{ translate(row.status) }}</p>
                 </ion-label>
+                <ion-button
+                  v-if="row.adminUrl"
+                  slot="end"
+                  fill="clear"
+                  color="medium"
+                  :href="row.adminUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="translate('Open transfer in Shopify Admin')"
+                  @click.stop
+                >
+                  <ion-icon slot="icon-only" :icon="openOutline" />
+                </ion-button>
               </ion-item>
               <ion-list slot="content" class="transfer-row-content" lines="full">
                 <ion-item v-if="row.occurredAt">
@@ -521,7 +547,7 @@ import {
   IonSegment, IonSegmentButton, IonInput,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
-import { checkmarkCircleOutline, closeOutline, refreshOutline, saveOutline, warningOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -529,6 +555,7 @@ import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapsho
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
+import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
   registerMissingTransferWebhook,
@@ -541,7 +568,7 @@ import {
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { facilityCache } from "@/utils/cacheEntities";
-import { isTransferSyncMonitoringLoaded } from "@/utils/shopifyTransferSync";
+import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl } from "@/utils/shopifyTransferSync";
 import { buildTransferSyncPresentation, formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
@@ -550,6 +577,14 @@ const props = defineProps<{ id?: string }>();
 const retrying = ref(false);
 
 const shopId = computed(() => String(props.id ?? ""));
+
+/**
+ * The shop's own domain, for deep-linking a transfer into the Shopify admin. Cached class-B data,
+ * so this is a read with no fetch; an empty domain simply renders no link.
+ */
+const { record: shopRecord } = useShopifyShop(props.id);
+const transferAdminUrl = (transferId: unknown) =>
+  shopifyTransferAdminUrl((shopRecord.value as any)?.myshopifyDomain, transferId);
 
 /**
  * The tabs. `cancellation` and `itemChange` share one tab: they are the same operator concern -
@@ -685,10 +720,12 @@ const {
 const rawTransferRows = computed<Record<string, unknown>[]>(() =>
   direction.value === "synced" ? syncedRows.value : segmentRows.value);
 const { enrichment, load: loadEnrichment } = useShopifyTransferSyncEnrichment();
+// `adminUrl` is decorated here rather than inside buildTransferSyncPresentation: the shop domain is
+// view state, and the presentation helper stays pure and shop-agnostic.
 const presentationRows = computed(() => buildTransferSyncPresentation(rawTransferRows.value, direction.value, {
   ...enrichment.value,
   facilityNamesById: facilityNamesById.value,
-}));
+}).map((row) => ({ ...row, adminUrl: transferAdminUrl(row.shopifyTransferId) })));
 
 watch(rawTransferRows, (rows) => {
   void loadEnrichment(rows);

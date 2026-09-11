@@ -44,3 +44,30 @@ describe("Shopify transfer monitoring readiness", () => {
     expect(isLoaded({ cacheHydrated: true, cachedRowCount: 0, liveSyncAt: 100, viewSyncBaselineAt: 100 })).toBe(false);
   });
 });
+
+describe("Shopify transfer admin link", () => {
+  const adminUrl = (transferSync as any).shopifyTransferAdminUrl;
+
+  it("builds the admin link from the shop domain and the transfer id", () => {
+    expect(adminUrl("rails-paris.myshopify.com", "4604788917"))
+      .toBe("https://rails-paris.myshopify.com/admin/transfers/4604788917");
+  });
+
+  it("reduces a gid to the legacy id the admin path expects", () => {
+    expect(adminUrl("rails-paris.myshopify.com", "gid://shopify/InventoryTransfer/4604788917"))
+      .toBe("https://rails-paris.myshopify.com/admin/transfers/4604788917");
+  });
+
+  it("renders no link rather than a broken one when either half is missing", () => {
+    expect(adminUrl("", "4604788917")).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", "")).toBe("");
+    expect(adminUrl(undefined, undefined)).toBe("");
+    expect(adminUrl("rails-paris.myshopify.com", null)).toBe("");
+    expect(adminUrl("   ", "4604788917")).toBe("");
+  });
+
+  it("accepts a numeric transfer id", () => {
+    expect(adminUrl("rails-paris.myshopify.com", 4604788917))
+      .toBe("https://rails-paris.myshopify.com/admin/transfers/4604788917");
+  });
+});
