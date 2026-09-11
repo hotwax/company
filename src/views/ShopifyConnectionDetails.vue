@@ -521,6 +521,7 @@ import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
+import { useShopifyUnsyncedProductCount } from '@/utils/shopifyUnsyncedProductCount';
 import { DateTime } from "luxon";
 import { computed, defineProps, reactive, ref, watch } from "vue";
 import router from "@/router";
@@ -581,7 +582,15 @@ const {
 const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.value }));
 const productSyncRecordsProcessed = computed(() =>
   Number(productSyncRunState.value.latestConsumedSystemMessage?.totalRecordCount || 0));
-const productSyncUnsyncedCount = ref(0);
+const {
+  count: productSyncUnsyncedCount,
+  refresh: refreshProductSyncUnsyncedCount,
+} = useShopifyUnsyncedProductCount({
+  remoteId: productSyncRemoteId,
+  lastSyncedAt: () => productSyncRunState.value.lastSyncedAt,
+  load: fetchUnsyncedProductUpdateCount,
+  onError: (error) => logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error),
+});
 const hasProductSyncSummaryError = ref(false);
 const productSyncMigrationEligibility = ref({
   componentRelease: "",
@@ -923,6 +932,12 @@ watch(selectedShopId, async (shopId: string) => {
   }
 }, { immediate: true });
 
+// Ionic keeps this page mounted while the product-sync page runs. Refresh remote truth whenever the
+// retained summary becomes visible again, even if the last-sync timestamp has not changed.
+onIonViewWillEnter(() => {
+  void refreshProductSyncUnsyncedCount().catch(() => undefined);
+});
+
 async function loadConnectionSummaries(shopId = selectedShopId.value) {
   if (!shopId) {
     selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
@@ -963,7 +978,6 @@ async function loadProductsInventorySummary() {
   };
   // Nothing to reset for the run state or the record count — both are cached projections that
   // re-derive from whichever shop is selected.
-  productSyncUnsyncedCount.value = 0;
   clearSyncRun();
 
   if (!props.id) {
@@ -999,37 +1013,11 @@ async function loadProductsInventorySummary() {
     logger.warn("Failed to inspect legacy product sync state", legacyTeardownStateResult.reason);
   }
 
-  /**
-   * The remote is resolved from the CACHE — it is a join of two cached tables, never a request.
-   * `fetchShopSystemMessageRemoteId` used to be the fourth leg of the batch above.
-   */
-  const systemMessageRemoteId = productSyncRemoteId.value || null;
-
-  try {
-    /**
-     * `unsyncedUpdates` is the only part of the old dashboard summary this page still asks for: it
-     * counts products changed in Shopify since the last sync, which only Shopify knows.
-     *
-     * Everything else the summary returned — the run state, the pending-request count — is now the
-     * reactive `productSyncRunState` above, derived from cached messages and imports. The old call
-     * fetched five things and this page read two of them.
-     */
-    productSyncUnsyncedCount.value = await loadUnsyncedProductUpdateCount(systemMessageRemoteId);
-  } catch (error) {
-    logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error);
-    productSyncUnsyncedCount.value = 0;
-  }
+  // `useShopifyUnsyncedProductCount` also refreshes when the retained page observes a new sync
+  // cursor. Await the first load so the summary skeleton does not briefly show an old count.
+  await refreshProductSyncUnsyncedCount().catch(() => undefined);
 
   isSyncSummaryLoading.value = false;
-}
-
-/** Shopify-only: how many products changed since the last completed sync. */
-async function loadUnsyncedProductUpdateCount(systemMessageRemoteId: string | null): Promise<number> {
-  if (!systemMessageRemoteId) return 0;
-  return fetchUnsyncedProductUpdateCount(
-    systemMessageRemoteId,
-    productSyncRunState.value.lastSyncedAt || undefined,
-  );
 }
 
 /**
