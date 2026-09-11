@@ -4,6 +4,8 @@
  * page is now segments of outstanding and synced work, which carry no derived status to present.
  */
 
+import { buildAppUrl } from "@common";
+
 import { isShopifyObjectId, shopifyAdminHostname } from "@/utils/shopifyAdminUrl";
 
 /**
@@ -40,4 +42,22 @@ export function shopifyTransferAdminUrl(myshopifyDomain: unknown, transferId: un
   if(!isShopifyObjectId(id)) { return ""; }
 
   return `https://${hostname}/admin/transfers/${id}`;
+}
+
+/**
+ * The Transfers app link for one OMS transfer order.
+ *
+ * Goes through the Fast Travel registry rather than a hardcoded host, so a deployment that sets
+ * VITE_TRANSFERS_URL is honoured and one with no Transfers app configured renders no link at all
+ * (buildAppUrl returns null there).
+ *
+ * The route is `/order-detail/:orderId`, confirmed against hotwax/transfers `main`. The
+ * inventory-history deep link in order-routing uses `/transfer-order-details/` — that path is
+ * stale and does not exist in the app; do not copy it.
+ */
+export function transfersAppOrderUrl(orderId: unknown): string {
+  const id = String(orderId ?? "").trim();
+  if(!id) { return ""; }
+
+  return buildAppUrl("transfers", `/order-detail/${encodeURIComponent(id)}`) ?? "";
 }

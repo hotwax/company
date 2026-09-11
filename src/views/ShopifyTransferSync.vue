@@ -216,6 +216,19 @@
                     </template>
                   </ion-label>
                   <ion-button
+                    v-if="row.transfersUrl"
+                    slot="end"
+                    fill="clear"
+                    color="medium"
+                    :href="row.transfersUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :aria-label="translate('Open in Transfers')"
+                    @click.stop
+                  >
+                    <ion-icon slot="icon-only" :icon="swapHorizontalOutline" />
+                  </ion-button>
+                  <ion-button
                     v-if="row.adminUrl"
                     slot="end"
                     fill="clear"
@@ -301,6 +314,19 @@
                   {{ formatDateTime(row.occurredAt) || translate("Not available") }}
                   <p>{{ translate(row.status) }}</p>
                 </ion-label>
+                <ion-button
+                  v-if="row.transfersUrl"
+                  slot="end"
+                  fill="clear"
+                  color="medium"
+                  :href="row.transfersUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="translate('Open in Transfers')"
+                  @click.stop
+                >
+                  <ion-icon slot="icon-only" :icon="swapHorizontalOutline" />
+                </ion-button>
                 <ion-button
                   v-if="row.adminUrl"
                   slot="end"
@@ -547,7 +573,7 @@ import {
   IonSegment, IonSegmentButton, IonInput,
   IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
-import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, warningOutline } from "ionicons/icons";
+import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
@@ -568,7 +594,7 @@ import {
 } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { facilityCache } from "@/utils/cacheEntities";
-import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl } from "@/utils/shopifyTransferSync";
+import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
 import { buildTransferSyncPresentation, formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
@@ -725,7 +751,11 @@ const { enrichment, load: loadEnrichment } = useShopifyTransferSyncEnrichment();
 const presentationRows = computed(() => buildTransferSyncPresentation(rawTransferRows.value, direction.value, {
   ...enrichment.value,
   facilityNamesById: facilityNamesById.value,
-}).map((row) => ({ ...row, adminUrl: transferAdminUrl(row.shopifyTransferId) })));
+}).map((row) => ({
+  ...row,
+  adminUrl: transferAdminUrl(row.shopifyTransferId),
+  transfersUrl: transfersAppOrderUrl(row.orderId),
+})));
 
 watch(rawTransferRows, (rows) => {
   void loadEnrichment(rows);

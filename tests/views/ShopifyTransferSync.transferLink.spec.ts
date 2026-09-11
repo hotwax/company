@@ -15,6 +15,8 @@ vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: () => false, showToast: vi.fn() },
   translate: (k: string) => k,
+  buildAppUrl: (appId: string, path = "") =>
+    (appId === "transfers" ? `https://transfers.example.test${path}` : null),
 }));
 
 vi.mock("@/composables/useShopify", () => ({
@@ -143,21 +145,43 @@ describe("ShopifyTransferSync - Shopify transfer link", () => {
     vi.clearAllMocks();
   });
 
-  it("opens the transfer in a new tab, not the current one", async () => {
+  /** Both row links, keyed by aria-label so the two are never confused for each other. */
+  async function links() {
     const wrapper = await mountView();
-    const link = wrapper.findAll("button").find((b) => b.attributes("href"));
 
-    expect(link).toBeTruthy();
-    expect(link!.attributes("href")).toBe("https://test-shop.myshopify.com/admin/transfers/4604788917");
-    // Without target="_blank" the anchor would replace the app in this tab.
-    expect(link!.attributes("target")).toBe("_blank");
-    expect(link!.attributes("rel")).toBe("noopener noreferrer");
+    return Object.fromEntries(wrapper.findAll("button")
+      .filter((b) => b.attributes("href"))
+      .map((b) => [b.attributes("aria-label"), b]));
+  }
+
+  it("opens the transfer in a new tab, not the current one", async () => {
+    const byLabel = await links();
+
+    for(const label of ["Open transfer in Shopify Admin", "Open in Transfers"]) {
+      const link = byLabel[label];
+      expect(link, `missing link: ${label}`).toBeTruthy();
+      // Without target="_blank" the anchor would replace the app in this tab.
+      expect(link.attributes("target")).toBe("_blank");
+      expect(link.attributes("rel")).toBe("noopener noreferrer");
+    }
   });
 
-  it("renders no link when the shop has no cached domain", async () => {
-    shopState.domain = undefined;
-    const wrapper = await mountView();
+  it("points each link at its own system", async () => {
+    const byLabel = await links();
 
-    expect(wrapper.findAll("button").find((b) => b.attributes("href"))).toBeUndefined();
+    expect(byLabel["Open transfer in Shopify Admin"].attributes("href"))
+      .toBe("https://test-shop.myshopify.com/admin/transfers/4604788917");
+    // The Transfers app is keyed by the OMS order id, not the Shopify transfer id.
+    expect(byLabel["Open in Transfers"].attributes("href"))
+      .toBe("https://transfers.example.test/order-detail/128253");
+  });
+
+  it("drops only the Shopify link when the shop has no cached domain", async () => {
+    shopState.domain = undefined;
+    const byLabel = await links();
+
+    expect(byLabel["Open transfer in Shopify Admin"]).toBeUndefined();
+    // The Transfers link does not depend on the shop domain, so it must survive.
+    expect(byLabel["Open in Transfers"]).toBeTruthy();
   });
 });

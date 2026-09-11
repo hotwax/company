@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+const fastTravel = vi.hoisted(() => ({ transfersBase: "https://transfers.example.test" as string | null }));
+
 vi.mock("@common", () => ({
   api: vi.fn(),
   commonUtil: { hasError: vi.fn() },
   translate: (value: string) => value,
+  // Mirrors buildAppUrl: null when the deployment has no URL for that app.
+  buildAppUrl: (appId: string, path = "") =>
+    (appId === "transfers" && fastTravel.transfersBase ? `${fastTravel.transfersBase}${path}` : null),
 }));
 
 import * as locationInventory from "@/utils/shopifyLocationInventory";
@@ -89,5 +94,35 @@ describe("Shopify transfer admin link", () => {
   it("accepts a numeric transfer id", () => {
     expect(adminUrl("rails-paris.myshopify.com", 4604788917))
       .toBe("https://rails-paris.myshopify.com/admin/transfers/4604788917");
+  });
+});
+
+describe("Transfers app link", () => {
+  const transfersUrl = (transferSync as any).transfersAppOrderUrl;
+
+  it("deep-links the OMS transfer order into the Transfers app", () => {
+    // Route confirmed against hotwax/transfers main; order-routing's /transfer-order-details/ is stale.
+    expect(transfersUrl("128253")).toBe("https://transfers.example.test/order-detail/128253");
+    expect(transfersUrl(128253)).toBe("https://transfers.example.test/order-detail/128253");
+  });
+
+  it("renders no link when the order id is missing", () => {
+    expect(transfersUrl("")).toBe("");
+    expect(transfersUrl(undefined)).toBe("");
+    expect(transfersUrl(null)).toBe("");
+    expect(transfersUrl("   ")).toBe("");
+  });
+
+  it("renders no link when the deployment has no Transfers app configured", () => {
+    fastTravel.transfersBase = null;
+    try {
+      expect(transfersUrl("128253")).toBe("");
+    } finally {
+      fastTravel.transfersBase = "https://transfers.example.test";
+    }
+  });
+
+  it("encodes an order id rather than letting it shape the path", () => {
+    expect(transfersUrl("../../settings")).toBe("https://transfers.example.test/order-detail/..%2F..%2Fsettings");
   });
 });
