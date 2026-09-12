@@ -534,10 +534,10 @@
               <!-- This run's outcome for THIS topic. It used to be a second list of 14 rows beneath
                    the button, which said the same thing twice and left the operator matching topics
                    by eye between the two. -->
-              <p v-if="webhookSetupResultFor(row.topic)" class="overline" aria-live="polite">
-                {{ webhookSetupResultFor(row.topic).message }}
-                <template v-if="webhookSetupResultFor(row.topic).id">
-                  {{ webhookSetupResultFor(row.topic).id }}
+              <p v-for="result in webhookSetupResultsFor(row.topic)" :key="result.topic" class="overline" aria-live="polite">
+                {{ result.message }}
+                <template v-if="result.id">
+                  {{ result.id }}
                 </template>
               </p>
             </ion-label>
@@ -901,8 +901,15 @@ const webhookSetupResults = ref<Array<{topic: string; message: string; id?: stri
 const webhookSetupResultByTopic = computed(
   () => new Map(webhookSetupResults.value.map((result) => [result.topic, result])),
 );
-function webhookSetupResultFor(topic: string) {
-  return webhookSetupResultByTopic.value.get(topic);
+/**
+ * As a 0-or-1 list, so the row binds the entry and reads `result.message` off a value that exists.
+ * Called three times inside one `v-if` it was `T | undefined` at each call site -- three `possibly
+ * undefined` errors, since a `v-if` on a function call narrows nothing for the calls beside it.
+ */
+function webhookSetupResultsFor(topic: string) {
+  const result = webhookSetupResultByTopic.value.get(topic);
+
+  return result ? [result] : [];
 }
 async function registerMissingWebhooks() {
   if (webhookSetupBusy.value || webhookSetupUncertain.value) return;
