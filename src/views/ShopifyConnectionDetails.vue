@@ -775,7 +775,7 @@ const productSyncMigrationNotice = computed(() => {
   };
 });
 const productSyncCardSubtitle = computed(() => {
-  if (hasProductSyncSummaryError.value) {
+  if (hasProductSyncSummaryError.value || syncWorkerError.value) {
     return translate("Open product sync to inspect the latest sync status.");
   }
 
@@ -927,7 +927,7 @@ const activityGraphAriaLabel = computed(() => {
  * its idle cadence (this page only summarises it; the product sync screen asks for the fast one)
  * while order sync escalates to 10s on its own whenever a batch is moving.
  */
-const { domainStatus: syncDomainStatus } = useShopifyConnectionSyncSession({
+const { domainStatus: syncDomainStatus, workerError: syncWorkerError } = useShopifyConnectionSyncSession({
   orderSyncActive: () => orderSyncBatchActive.value,
 });
 
@@ -946,10 +946,15 @@ const { domainStatus: syncDomainStatus } = useShopifyConnectionSyncSession({
  * Measured on a cold cache before this: the skeleton came down at 1.4s when the summary flag
  * cleared, the runs landed between three and six seconds later, and the gap rendered nothing at all
  * — so the section below the card moved twice, once up and once back down.
+ *
+ * A failed start or a failed pass records no `sync-end`, so waiting for success alone would hold the
+ * skeleton until the next retry — and the migration notice is behind the same flag, which would put
+ * the setup and upgrade actions out of reach for as long as the failure lasted. An error is an
+ * answer: it releases the card, and the card's subtitle says the status could not be read.
  */
 const isProductSyncCardLoading = computed(() =>
   isSyncSummaryLoading.value ||
-  (!shouldShowProductSyncWidget.value && !syncDomainStatus.value.syncRun));
+  (!shouldShowProductSyncWidget.value && !syncDomainStatus.value.syncRun && !syncWorkerError.value));
 
 /**
  * Load the summaries once the shop is known.

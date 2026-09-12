@@ -2188,8 +2188,15 @@ export function useShopifySyncSession(
    * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
    * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
    * result here instead.
+   *
+   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
+   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
+   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
    */
-  return { isPageActive, isRefreshing, manualRefresh, activate, deactivate, domainStatus };
+  return {
+    isPageActive, isRefreshing, manualRefresh, activate, deactivate,
+    domainStatus, workerError,
+  };
 }
 
 // =============================================================================================
