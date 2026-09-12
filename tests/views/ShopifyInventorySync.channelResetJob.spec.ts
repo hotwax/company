@@ -666,6 +666,9 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
   });
 
   const MINUTE = 60_000;
+  const kpi = (wrapper: VueWrapper, subtitle: string) => wrapper.findAll(".kpi-card")
+    .find((card) => card.find("ion-card-subtitle").text() === subtitle)
+    ?.find("ion-card-title").text();
   const sentRow = (over: Record<string, any>) => pendingRow({
     detailStatusId: "DETAIL_ASSIGNED",
     systemMessageId: "BATCH_OK",
@@ -712,9 +715,60 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     ];
     const wrapper = await mountHistory();
 
-    expect(wrapper.text()).toContain("Typically 4.0 min to reach Shopify");
-    expect(wrapper.text()).toContain("slowest 9.0 min");
-    expect(wrapper.text()).toContain("over the 3 of these events that were delivered");
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
+    expect(kpi(wrapper, "Slowest")).toBe("9.0 min");
+    // The denominator travels with the figure: the fourth event was never delivered.
+    expect(wrapper.text()).toContain("median of 3 delivered");
+    expect(kpi(wrapper, "Events")).toBe("4");
+  });
+
+  /**
+   * A no-change row netted to zero and a cancelled batch is not coming back, so neither is "not sent
+   * yet" -- that phrase promises a delivery the pipeline has already declined to make. Both carry no
+   * time label at all, and neither can be the oldest thing owed to Shopify.
+   */
+  it("puts no time label on an event that will never be sent", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_X", statusId: "SmsgCancelled" }];
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_NOOP", detailStatusId: "DETAIL_NOOP", computedInventoryChange: 0 }),
+      pendingRow({
+        eventReferenceId: "R_CANCELLED", detailStatusId: "DETAIL_ASSIGNED",
+        systemMessageId: "BATCH_X", systemMessageStatusId: "SmsgCancelled",
+      }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(wrapper.text()).not.toContain("later");
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
+  });
+
+  /**
+   * Delivered is a fact about the STATUS, not about whether the message carrying the timestamp
+   * happens to be cached -- only a few dozen messages are enriched per pass. Reading the missing
+   * timestamp as "not sent" reported 31-hour-old delivered rows as the oldest thing Shopify was owed.
+   */
+  it("does not call a sent event undelivered just because its message is not cached", async () => {
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: "R_SENT_UNCACHED", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_GONE", systemMessageStatusId: "SmsgSent",
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
+  });
+
+  it("reports the oldest event Shopify is still owed", async () => {
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_OLD", createdDate: Date.now() - 3 * 60 * 60 * 1000 }),
+      pendingRow({ eventReferenceId: "R_NEW", createdDate: Date.now() - 60 * 1000 }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("3h ago");
   });
 
   it("narrows the table to the rows the search matches", async () => {

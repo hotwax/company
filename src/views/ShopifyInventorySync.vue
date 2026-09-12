@@ -982,6 +982,42 @@
 
       <ion-content class="ion-padding-horizontal">
         <main class="history-page">
+          <!-- Scored over the rows the filters leave, not over the whole window, so narrowing to one
+               channel or event type re-measures for that slice. -->
+          <div class="kpi-grid">
+            <ion-card class="kpi-card">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Events") }}</ion-card-subtitle>
+                <ion-card-title><AnimatedNumber :value="historyEvents.length" /></ion-card-title>
+              </ion-card-header>
+            </ion-card>
+            <ion-card class="kpi-card">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Typically reaches Shopify in") }}</ion-card-subtitle>
+                <ion-card-title>{{ syncLag ? formatLag(syncLag.median) : translate("No data") }}</ion-card-title>
+                <ion-note v-if="syncLag">
+                  {{ translate("median of {count} delivered", { count: syncLag.count }) }}
+                </ion-note>
+              </ion-card-header>
+            </ion-card>
+            <ion-card class="kpi-card">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Slowest") }}</ion-card-subtitle>
+                <ion-card-title>{{ syncLag ? formatLag(syncLag.slowest) : translate("No data") }}</ion-card-title>
+              </ion-card-header>
+            </ion-card>
+            <!-- The one number that says how stale Shopify is RIGHT NOW; the other three describe
+                 deliveries that already happened. -->
+            <ion-card class="kpi-card" :class="{ 'kpi-warning': oldestAwaitingDelivery }">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Oldest still owed to Shopify") }}</ion-card-subtitle>
+                <ion-card-title>
+                  {{ oldestAwaitingDelivery ? formatAge(oldestAwaitingDelivery) : translate("Nothing waiting") }}
+                </ion-card-title>
+              </ion-card-header>
+            </ion-card>
+          </div>
+
           <ion-card class="history-filter-card">
             <ion-card-content>
               <ion-searchbar
@@ -1086,17 +1122,9 @@
                 <p>{{ translate("The newest 500 events for this connection, plus every event still waiting to batch or sitting in an unsent batch. Settled events are purged after five days, so this is a working window rather than a full history.") }}</p>
               </ion-label>
             </ion-item>
-            <div class="results-stats">
-              <ion-badge color="medium">
-                {{ historyEvents.length }} shown
-              </ion-badge>
-              <!-- Says what it is measured over, because it is measured over a fraction of the rows:
-                   only a row whose batch Shopify accepted has a delivery time at all. -->
-              <ion-note v-if="syncLag">
-                {{ translate("Typically {median} to reach Shopify, slowest {slowest} — over the {count} of these events that were delivered",
-                   { median: formatLag(syncLag.median), slowest: formatLag(syncLag.slowest), count: syncLag.count }) }}
-              </ion-note>
-            </div>
+            <ion-badge color="medium">
+              {{ historyEvents.length }} shown
+            </ion-badge>
           </div>
 
           <div v-if="historyEvents.length" ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
@@ -1148,10 +1176,12 @@
                    two -- the virtualiser sizes every spacer from a single measured row. -->
               <ion-label class="timing-cell">
                 <span class="one-line">{{ formatAge(event.createdAt) }}</span>
+                <!-- No label at all for a row that finished without a delivery: a no-change row
+                     owed Shopify nothing, and a quarantined or cancelled one is not coming. -->
                 <p v-if="event.sentAt" class="one-line">
                   {{ translate("sent {lag} later", { lag: formatLag(event.sentAt - event.createdAt) }) }}
                 </p>
-                <p v-else class="one-line">{{ translate("not sent yet") }}</p>
+                <p v-else-if="event.awaitingDelivery" class="one-line">{{ translate("not sent yet") }}</p>
               </ion-label>
 
               <ion-label class="status-cell">
@@ -1636,6 +1666,7 @@ import {
   watch,
 } from "vue";
 import { useRouter } from "vue-router";
+import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
 import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
 import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
 import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
@@ -1697,6 +1728,7 @@ import {
   deliveryStatusOf,
   deltaOutcome,
   isDeliveryTerminalFailure,
+  isDeliveryUnsettled,
   isWaitingDetail,
   roundDelta,
   sectionOfBatch,
@@ -1795,6 +1827,15 @@ interface InventoryEvent {
    * reading it unconditionally would report an event as delivered that Shopify never accepted.
    */
   sentAt?: number;
+  /**
+   * Is Shopify still owed this row?
+   *
+   * False for the three ways a row finishes WITHOUT a delivery: a no-change row netted to zero so no
+   * mutation was ever owed, a quarantined row is never batched again, and a rejected or cancelled
+   * batch is not retried by anything. Calling those "not sent yet" would be a promise the pipeline
+   * has already declined to keep -- and would put a five-day-old row at the top of "oldest waiting".
+   */
+  awaitingDelivery: boolean;
   /** Raw, so the search box still matches what the server actually wrote. */
   decisionComment?: string;
   /**
@@ -3075,6 +3116,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     section: sectionOfEvent(detail, delivery?.statusId),
     createdAt: toMillis(detail.createdDate),
     sentAt: sentAtOf(detail),
+    awaitingDelivery: isAwaitingDelivery(detail, delivery?.statusId),
     decisionComment: detail.decisionComment,
     productId,
     // The bare name: this template supplies its own item-id fallback, so it must not print one here.
@@ -3788,6 +3830,18 @@ const syncLag = computed(() => {
 });
 
 /**
+ * The oldest row Shopify is still owed -- the actual staleness, which no average of past deliveries
+ * can report. A median of five minutes says nothing about the event that has been sitting unsent for
+ * an hour, and that event is the one that makes Shopify wrong right now.
+ */
+const oldestAwaitingDelivery = computed(() => {
+  const waiting = historyEvents.value.filter((event) => event.awaitingDelivery && event.createdAt);
+  if(!waiting.length) {return null;}
+
+  return Math.min(...waiting.map((event) => event.createdAt));
+});
+
+/**
  * Only the rows near the viewport get DOM nodes. The history can hold tens of thousands of events,
  * and rendering one row each is what made this page slow to open.
  */
@@ -3813,9 +3867,31 @@ const {
  * `fanOut`) and resolved when the row's detail opens. The reservation, cycle-count and external-reset
  * families each cost one call, so the visible window carries real names without a click.
  */
+/**
+ * How many facilities a row's channel may be walked over before the list stops asking.
+ *
+ * The receipt and issuance families cannot be looked up by their own id: the scoped inventory-history
+ * mount needs a productId AND a facilityId, and the ledger carries no facility because the event is
+ * aggregate over a facility GROUP. So naming the order behind a POS issuance costs one request per
+ * member facility until one hits.
+ *
+ * That is one or two requests on a channel like `RetailAggregateUK`, and fifteen on
+ * `RetailAggregate` -- fifteen per row, for every row in the window, on every scroll. So the list
+ * resolves these names where the walk is short and leaves them to the row's own detail where it is
+ * not; opening a row still fans out unconditionally, because a person asked for that one.
+ *
+ * The durable fix is server-side: a mount that accepts the issuance or receipt id as its own scope
+ * collapses the walk to a single call and this threshold goes away.
+ */
+const SOURCE_WALK_LIMIT = 3;
+
 watch(virtualEvents, (events) => {
   if(!events.length) {return;}
-  void resolveSourceNames(events.map(lookupFor));
+  const lookups = events.map(lookupFor);
+  const short = lookups.filter((lookup) => lookup.facilityIds.length <= SOURCE_WALK_LIMIT);
+  const long = lookups.filter((lookup) => lookup.facilityIds.length > SOURCE_WALK_LIMIT);
+  if(short.length) {void resolveSourceNames(short, { fanOut: true });}
+  if(long.length) {void resolveSourceNames(long);}
 }, { immediate: true });
 
 /**
@@ -4096,6 +4172,28 @@ function sentAtOf(detail: any): number | undefined {
   return toMillis(message?.processedDate) || undefined;
 }
 
+/**
+ * Is this row still expected to reach Shopify?
+ *
+ * The three terminal-without-delivery cases come straight from the pipeline's own rules:
+ * `DETAIL_NOOP` netted to zero ("no mutation was ever owed to Shopify"), `DETAIL_ERROR` is
+ * quarantined ("never batched again"), and `isDeliveryTerminalFailure` is refused or cancelled
+ * ("nothing will retry them"). Everything else -- unbatched, staged, sending, or a retryable
+ * `SmsgError` -- is still owed.
+ */
+function isAwaitingDelivery(detail: any, deliveryStatusId?: string): boolean {
+  const detailStatusId = String(detail.detailStatusId ?? "");
+  if(detailStatusId === "DETAIL_NOOP" || detailStatusId === "DETAIL_ERROR") {return false;}
+  if(isDeliveryTerminalFailure(deliveryStatusId)) {return false;}
+
+  // Delivered is a fact about the STATUS, never about whether this cache happens to hold the message
+  // that carries the timestamp. Only a few dozen messages are enriched per sync pass, so a sent row
+  // usually has no `processedDate` here -- and reading that absence as "not sent" put 31-hour-old
+  // DELIVERED rows at the top of "oldest still owed to Shopify", which is the one number on this page
+  // that has to be right.
+  return isDeliveryUnsettled(deliveryStatusId);
+}
+
 /** A duration, in the largest unit that keeps it readable. */
 function formatLag(ms: number): string {
   if(!Number.isFinite(ms) || ms < 0) {return "";}
@@ -4334,13 +4432,30 @@ function formatAge(timestamp: number): string {
   min-width: 0;
 }
 
-.results-stats {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--spacer-2xs);
-  max-width: min(100%, 340px);
-  text-align: end;
+/* Job Manager's find pages score a page this way, so the shape is theirs. */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacer-sm);
+  margin-block-end: var(--spacer-sm);
+}
+
+.kpi-card {
+  margin: 0;
+  border-radius: 8px;
+}
+
+.kpi-card ion-card-title {
+  font-size: 1.5rem;
+}
+
+.kpi-card ion-note {
+  display: block;
+  margin-block-start: var(--spacer-2xs);
+}
+
+.kpi-card.kpi-warning ion-card-title {
+  color: var(--ion-color-warning-shade);
 }
 
 /* The virtualised rows scroll inside this box rather than the page, so the window maths has a
