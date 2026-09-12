@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, ref } from "vue";
+import { useUserCreationDraft } from "@/composables/useUserCreationDraft";
+import { clearSessionScopedState } from "@/composables/sessionScope";
 
 const harness = vi.hoisted(() => ({
-  route: undefined as any,
   enter: undefined as any,
   createUser: vi.fn(),
 }));
@@ -13,7 +14,6 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
   ...(await importOriginal<any>()),
   onIonViewWillEnter: (cb: any) => { harness.enter = cb; onMounted(cb); },
 }));
-vi.mock("vue-router", () => ({ useRoute: () => harness.route }));
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ createUser: harness.createUser }) }));
 vi.mock("@/composables/useFacilities", () => ({ useFacilities: () => ({ facilities: ref([]) }) }));
@@ -34,7 +34,7 @@ function names(wrapper: any) {
 describe("Create user search prefill", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    harness.route = reactive({ query: {} });
+    useUserCreationDraft().clearDraft();
   });
 
   it.each([
@@ -45,7 +45,7 @@ describe("Create user search prefill", () => {
     ["Mary-Jane O'Neill", "Mary-Jane", "O'Neill"],
     ["   ", "", ""],
   ])("prefills %j without submitting", async (name, firstName, lastName) => {
-    harness.route.query = { name };
+    useUserCreationDraft().setFromSearch(name);
     const wrapper = await mountView();
     expect(names(wrapper)).toEqual([firstName, lastName]);
     expect(harness.createUser).not.toHaveBeenCalled();
@@ -59,17 +59,25 @@ describe("Create user search prefill", () => {
   });
 
   it("uses the new search when Ionic re-enters a cached creation page", async () => {
-    harness.route.query = { name: "Anil Patel" };
+    useUserCreationDraft().setFromSearch("Anil Patel");
     const wrapper = await mountView();
-    harness.route.query = { name: "Mary Jane Watson" };
+    useUserCreationDraft().setFromSearch("Mary Jane Watson");
     harness.enter();
     await flushPromises();
     expect(names(wrapper)).toEqual(["Mary", "Jane Watson"]);
-    harness.route.query = {};
     harness.enter();
     await flushPromises();
     expect(names(wrapper)).toEqual(["", ""]);
     expect(harness.createUser).not.toHaveBeenCalled();
     wrapper.unmount();
   });
+
+  it("clears an unused draft on logout", async () => {
+    useUserCreationDraft().setFromSearch("Anil Patel");
+    clearSessionScopedState();
+    const wrapper = await mountView();
+    expect(names(wrapper)).toEqual(["", ""]);
+    wrapper.unmount();
+  });
+
 });

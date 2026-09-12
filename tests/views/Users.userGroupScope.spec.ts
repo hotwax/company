@@ -111,7 +111,9 @@ describe("Users security-group filter scope", () => {
     await create.trigger("click");
     expect(harness.userStore.clearSelectedUser).toHaveBeenCalledOnce();
     const router = (await import("@/router")).default;
-    expect(router.push).toHaveBeenCalledWith({ path: "/create-user", query: { name: "anil" } });
+    expect(router.push).toHaveBeenCalledWith("/create-user");
+    const { useUserCreationDraft } = await import("@/composables/useUserCreationDraft");
+    expect(useUserCreationDraft().consumeDraft()).toEqual({ firstName: "anil", lastName: "" });
   });
 
   it("offers search recovery without creation permission", async () => {
