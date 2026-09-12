@@ -484,20 +484,15 @@
           </ion-label>
         </ion-item>
 
-        <ion-card v-if="webhookSummary?.missingCount || webhookSetupResults.length">
+        <ion-card v-if="webhookSummary?.missingCount || webhookSetupError || webhookSetupUncertain">
           <ion-card-header><ion-card-title>{{ translate('Register missing topics') }}</ion-card-title></ion-card-header>
           <ion-card-content>
             <ion-input v-model="webhookCallbackUrl" type="text" :disabled="webhookSetupBusy || webhookSetupUncertain" :label="translate('HTTPS callback URL or EventBridge ARN')" label-placement="stacked" placeholder="https://oms.example.com/rest/s1/shopify/webhook/payload" />
-            <p>{{ translate('Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.') }}</p>
+            <p>{{ translate('Prefilled with this OMS\'s own webhook receiver. Replace it with an EventBridge ARN or a proxy URL if Shopify reaches this OMS by another route. Existing subscriptions will be preserved.') }}</p>
             <ion-button :disabled="!webhookCallbackUrl.trim() || webhookSetupBusy || webhookSetupUncertain || webhooksLoading || !!webhooksError || !webhookSummary?.missingCount" @click="registerMissingWebhooks">
               <ion-spinner v-if="webhookSetupBusy" name="crescent" />
               {{ translate('Register missing topics') }}
             </ion-button>
-            <ion-list v-if="webhookSetupResults.length" aria-live="polite">
-              <ion-item v-for="result in webhookSetupResults" :key="result.topic">
-                <ion-label class="ion-text-wrap"><h3>{{ result.topic }}</h3><p>{{ result.message }}</p><p v-if="result.id">{{ result.id }}</p></ion-label>
-              </ion-item>
-            </ion-list>
             <p v-if="webhookSetupError">{{ webhookSetupError }}</p>
           </ion-card-content>
         </ion-card>
@@ -535,6 +530,15 @@
               </p>
               <p class="message-type">
                 {{ row.systemMessageTypeId || translate("No OMS message type for this topic") }}
+              </p>
+              <!-- This run's outcome for THIS topic. It used to be a second list of 14 rows beneath
+                   the button, which said the same thing twice and left the operator matching topics
+                   by eye between the two. -->
+              <p v-for="result in webhookSetupResultsFor(row.topic)" :key="result.topic" class="overline" aria-live="polite">
+                {{ result.message }}
+                <template v-if="result.id">
+                  {{ result.id }}
+                </template>
               </p>
             </ion-label>
             <ion-label slot="end" class="ion-text-end received-count">
@@ -861,15 +865,59 @@ const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
 
 const showJobModal = ref(false);
+/**
+ * Where Shopify should call back, defaulted to this OMS's own receiver.
+ *
+ * The field started empty, so the Register button sat disabled behind a URL the operator had to
+ * know by heart -- and nothing on screen said what it should be. `receive#WebhookPayload` is
+ * mounted at `shopify/webhook/payload` on every instance, so the OMS this page is already talking
+ * to IS the answer in the ordinary case: rails-oms's own BULK_OPERATIONS_FINISH subscription points
+ * exactly there. Still a text field, because an EventBridge ARN or a proxy in front of the OMS are
+ * both valid and neither can be derived from here.
+ *
+ * A function and NOT a computed: getMaargURL reads a cookie, which is not reactive, so a computed
+ * has no dependency to invalidate it and would hand back the first OMS's URL for the life of the
+ * view -- and Ionic retains this component between visits. Menu.vue calls its instance label from
+ * the template for the same reason.
+ */
+function defaultWebhookCallbackUrl() {
+  const base = commonUtil.getMaargURL();
+
+  return base ? `${base.replace(/\/+$/, "")}/shopify/webhook/payload` : "";
+}
 const webhookCallbackUrl = ref('');
+/** What this screen last seeded, so a reseed can tell its own default from a typed destination. */
+const seededWebhookCallbackUrl = ref('');
 const webhookSetupBusy = ref(false);
 const webhookSetupUncertain = ref(false);
 const webhookSetupError = ref('');
 const webhookSetupResults = ref<Array<{topic: string; message: string; id?: string}>>([]);
+/**
+ * This run's outcome for one topic, so each row can report its own result.
+ *
+ * Indexed rather than searched because the row list renders the lookup per row; `registerMissingWebhooks`
+ * pushes at most one entry per topic, so the last write for a topic is the one that stands.
+ */
+const webhookSetupResultByTopic = computed(
+  () => new Map(webhookSetupResults.value.map((result) => [result.topic, result])),
+);
+/**
+ * As a 0-or-1 list, so the row binds the entry and reads `result.message` off a value that exists.
+ * Called three times inside one `v-if` it was `T | undefined` at each call site -- three `possibly
+ * undefined` errors, since a `v-if` on a function call narrows nothing for the calls beside it.
+ */
+function webhookSetupResultsFor(topic: string) {
+  const result = webhookSetupResultByTopic.value.get(topic);
+
+  return result ? [result] : [];
+}
 async function registerMissingWebhooks() {
   if (webhookSetupBusy.value || webhookSetupUncertain.value) return;
   webhookSetupBusy.value = true;
   webhookSetupError.value = '';
+  // Each run reports only its own outcomes. Left uncleared, a topic that succeeded on an earlier run
+  // kept its message on the row even when this run never touched it.
+  webhookSetupResults.value = [];
   const targetShop = shopId.value;
   const endpoint = webhookCallbackUrl.value.trim();
   try {
@@ -891,6 +939,23 @@ async function registerMissingWebhooks() {
 }
 
 const showWebhooksModal = ref(false);
+/**
+ * Seeded when the modal opens rather than at setup: getMaargURL reads a cookie, so an initial value
+ * captured at setup would be the pre-login empty string for the life of the session. Only fills a
+ * blank field, so it never overwrites what an operator typed.
+ */
+watch(showWebhooksModal, (open) => {
+  if(!open) {return;}
+  const current = webhookCallbackUrl.value.trim();
+  // Reseed a blank field, and also one still holding the default this screen put there: after a
+  // logout and a switch to another OMS the retained value names the PREVIOUS instance, and
+  // registering with it would point the new shop's Shopify subscriptions at the old OMS. A
+  // destination the operator typed is theirs and is left alone.
+  if(current && current !== seededWebhookCallbackUrl.value) {return;}
+  const seeded = defaultWebhookCallbackUrl();
+  webhookCallbackUrl.value = seeded;
+  seededWebhookCallbackUrl.value = seeded;
+});
 const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
 const configuringJobKey = ref("");
