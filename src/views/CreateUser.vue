@@ -68,12 +68,14 @@
 import { ref } from "vue";
 import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonItem, IonPage, IonText, IonTitle, IonToolbar, IonToggle, IonInput, IonSelect, IonSelectOption, onIonViewWillEnter } from "@ionic/vue";
 import router from "@/router";
+import { useUserAccountActions } from "@/composables/useSecurity";
 import { useFacilities } from "@/composables/useFacilities";
 import { useUserStore } from "@/store/user";
 import { businessOutline, desktopOutline, arrowForwardOutline } from "ionicons/icons";
 import { commonUtil, translate, logger } from "@common";
 
 const userStore = useUserStore();
+const { consumeUserCreationDraft } = useUserAccountActions();
 
 const isFacilityLogin = ref(false);
 const formData = ref({
@@ -92,6 +94,10 @@ const { facilities } = useFacilities({ excludeVirtual: true });
 
 onIonViewWillEnter(() => {
   clearFormData();
+  isFacilityLogin.value = false;
+  const draft = consumeUserCreationDraft();
+  formData.value.firstName = draft.firstName;
+  formData.value.lastName = draft.lastName;
 });
 
 const clearFormData = () => {

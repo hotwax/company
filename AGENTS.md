@@ -241,6 +241,16 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
   rejects on failure; an attempt timestamp is only a throttle clock, never success evidence.
 - Cached-row projections must tolerate real backend payloads — several fields the schema declares are
   absent live (e.g. `systemMessages` carries no `lastUpdatedStamp`; `initDate` is the usable cursor).
+- **A forced class-A refresh must wait for the requested worker pass.** `pollingWorkerHarness`
+  coalesces simultaneous forced ticks and queues one behind an active scheduled tick; it emits
+  whole-cycle boundaries around all domains. `useCacheSync.busy` covers that complete worker cycle,
+  while `manualRefreshing` is only for a user-triggered `syncNow()` affordance — background cadence
+  must not flash a page's Refresh spinner or unlock actions between domain commits.
+- **`ServiceJobRun` rows are mutable after their start cursor is written.** The incremental list uses
+  `startTime`, so an unfinished cached run would otherwise never receive its later `endTime` and
+  serialized `results`. `serviceJobRunDomain` therefore re-reads a bounded set of watched unfinished
+  rows by exact `(jobName, jobRunId)` (five per job, no older than six hours). Do not remove that
+  targeted convergence or replace it with an unbounded history poll.
 
 ## 5. Composables — one module per master entity
 
@@ -259,7 +269,7 @@ concept is the smell this rule prevents.
 | [`useServiceJobs.ts`](src/composables/useServiceJobs.ts) | Job definitions (cached) **and** the live detail/history surface — the two read paths are deliberately separate |
 | [`useSystemMessage.ts`](src/composables/useSystemMessage.ts) | System messages, remotes, and error lookups |
 | [`useDataManager.ts`](src/composables/useDataManager.ts) | DataManager configs/logs — the newest imports for a config, live from cache |
-| [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups and the permission catalog |
+| [`useSecurity.ts`](src/composables/useSecurity.ts) | User groups, the permission catalog, account/session accessors, and invocation-scoped JWT issuance through `useUserToken` |
 | [`useNetSuite.ts`](src/composables/useNetSuite.ts) | The NetSuite surface: cached reads + direct REST writes with a domain resync |
 | [`useProductUpdateHistory.ts`](src/composables/useProductUpdateHistory.ts) | Product-update history rows |
 | [`useProductStoreOnboardingWizard.ts`](src/composables/useProductStoreOnboardingWizard.ts) | Wizard step/draft state only — no server data. Persisted to `localStorage` by hand (key `company.productStoreOnboarding`), so a half-finished draft survives a reload. Replaced `store/productStoreOnboarding` |

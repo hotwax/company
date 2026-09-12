@@ -62,11 +62,47 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Products and Inventory") }}</h1>
-          <ion-skeleton-text 
-            v-if="isSyncSummaryLoading" 
-            animated 
-            class="product-sync-skeleton"
-          />
+          <!-- The same card shell the loaded state uses, down to the grid classes, with skeleton text
+               in place of the values. A standalone 180px block stood in for a 282px card, so every
+               load moved everything below it by roughly 100px; built out of the real shell, the box
+               is the right size by construction at any width. -->
+          <ion-card v-if="isProductSyncCardLoading" class="widget product-sync" aria-busy="true">
+            <div>
+              <!-- Every label on this card is a constant, so the shell prints them rather than
+                   skeletonising them: the text sizes each row exactly as the loaded card will, and
+                   the reader gets the card's structure while only the figures are still pending. -->
+              <ion-card-header>
+                <ion-card-title>{{ translate("Product sync") }}</ion-card-title>
+                <ion-card-subtitle><ion-skeleton-text animated style="width: 70%" /></ion-card-subtitle>
+              </ion-card-header>
+              <div class="product-sync-activity-graph">
+                <div class="product-sync-activity-canvas">
+                  <ion-skeleton-text animated class="product-sync-activity-placeholder" />
+                </div>
+              </div>
+              <div class="history">
+                <ion-list lines="full">
+                  <ion-item lines="full">
+                    <ion-label>
+                      {{ translate("Records processed in last sync") }}
+                      <p><ion-skeleton-text animated style="width: 55%" /></p>
+                    </ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                  </ion-item>
+                  <ion-item lines="full">
+                    <ion-label>
+                      {{ translate("Unsynced events") }}
+                      <!-- Two lines: this row's explanation wraps in the loaded card, and a one-line
+                           stand-in left the shell ~20px short of it. -->
+                      <p><ion-skeleton-text animated style="width: 92%" /></p>
+                      <p><ion-skeleton-text animated style="width: 45%" /></p>
+                    </ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                  </ion-item>
+                </ion-list>
+              </div>
+            </div>
+          </ion-card>
           <ion-card
             v-else-if="shouldShowProductSyncWidget"
             class="widget product-sync"
@@ -168,7 +204,7 @@
           </ion-card>
           <section>
             <ion-item
-              v-if="!isSyncSummaryLoading && productSyncMigrationNotice"
+              v-if="!isProductSyncCardLoading && productSyncMigrationNotice"
               :data-sync-state="productSyncMigrationNotice.state"
               detail
               class="item-box"
@@ -191,6 +227,12 @@
                 <p>{{ translate("Monitor inventory reset jobs, aggregate events, batches, and errors") }}</p>
               </ion-label>
             </ion-item>
+            <ion-item detail class="item-box" lines="none" button @click="openTransferSync()">
+              <ion-label>
+                {{ translate("Transfer sync") }}
+                <p>{{ translate("Monitor inventory transfer orders synced to Shopify and resolve blocked syncs") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openProductTypes()">
               <ion-label>{{ translate("Product types") }}</ion-label>
             </ion-item>
@@ -200,13 +242,7 @@
 
         <div class="ion-margin-top">
           <h1>{{ translate("Orders and fulfillment") }}</h1>
-          <ion-skeleton-text
-            v-if="orderSyncCardSnapshot.loading"
-            animated
-            class="product-sync-skeleton"
-          />
           <ShopifyOrderSyncCard
-            v-else
             :snapshot="orderSyncCardSnapshot"
             @open="openOrderSyncEntry()"
           />
@@ -573,6 +609,7 @@ const {
 } = useShopifyProductSyncRunState(() => props.id);
 
 const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.value }));
+
 const productSyncRecordsProcessed = computed(() =>
   Number(productSyncRunState.value.latestConsumedSystemMessage?.totalRecordCount || 0));
 const productSyncUnsyncedCount = ref(0);
@@ -738,7 +775,7 @@ const productSyncMigrationNotice = computed(() => {
   };
 });
 const productSyncCardSubtitle = computed(() => {
-  if (hasProductSyncSummaryError.value) {
+  if (hasProductSyncSummaryError.value || syncWorkerError.value) {
     return translate("Open product sync to inspect the latest sync status.");
   }
 
@@ -890,9 +927,34 @@ const activityGraphAriaLabel = computed(() => {
  * its idle cadence (this page only summarises it; the product sync screen asks for the fast one)
  * while order sync escalates to 10s on its own whenever a batch is moving.
  */
-useShopifyConnectionSyncSession({
+const { domainStatus: syncDomainStatus, workerError: syncWorkerError } = useShopifyConnectionSyncSession({
   orderSyncActive: () => orderSyncBatchActive.value,
 });
+
+/**
+ * Whether the product sync card can be drawn yet.
+ *
+ * Three signals have to agree, and only together:
+ *
+ *   - `isSyncSummaryLoading` covers `loadProductsInventorySummary` — eligibility, access state,
+ *     legacy teardown, the unsynced count. It does NOT cover the cached runs the card is gated on.
+ *   - `shouldShowProductSyncWidget` is true once those runs are in the cache.
+ *   - `syncDomainStatus.syncRun` is set the first time the worker finishes a pass of the domain that
+ *     fills them, which is the only thing that separates "this shop has never synced" from "we have
+ *     not looked yet".
+ *
+ * Measured on a cold cache before this: the skeleton came down at 1.4s when the summary flag
+ * cleared, the runs landed between three and six seconds later, and the gap rendered nothing at all
+ * — so the section below the card moved twice, once up and once back down.
+ *
+ * A failed start or a failed pass records no `sync-end`, so waiting for success alone would hold the
+ * skeleton until the next retry — and the migration notice is behind the same flag, which would put
+ * the setup and upgrade actions out of reach for as long as the failure lasted. An error is an
+ * answer: it releases the card, and the card's subtitle says the status could not be read.
+ */
+const isProductSyncCardLoading = computed(() =>
+  isSyncSummaryLoading.value ||
+  (!shouldShowProductSyncWidget.value && !syncDomainStatus.value.syncRun && !syncWorkerError.value));
 
 /**
  * Load the summaries once the shop is known.
@@ -1250,13 +1312,13 @@ async function updateCredentials() {
   emitter.emit('presentLoader');
   try {
     const updated = await updateShopifyRemote({
-      myShopifydomain: shop.value.myshopifyDomain || shop.value.domain,
+      myshopifyDomain: shop.value.myshopifyDomain || shop.value.domain,
       shopifyShopId: form.shopifyShopId.trim(),
       shopAccessToken: form.shopAccessToken.trim(),
       clientId: form.clientId.trim(),
       clientSecret: form.clientSecret.trim(),
       oldClientSecret: form.oldClientSecret.trim() || undefined,
-      hotwaxShopId: shop.value.shopId
+      name: shop.value.name
     });
     commonUtil.showToast(translate('Credentials updated successfully'));
     /**
@@ -1446,6 +1508,10 @@ function openInventorySync() {
   router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
 }
 
+function openTransferSync() {
+  router.push(`/shopify-connection-details/${props.id}/transfer-sync`);
+}
+
 function openShipmentMethods() {
   router.push(`/shopify-connection-details/${props.id}/shipment-methods`);
 }
@@ -1587,11 +1653,22 @@ ion-item[data-sync-state="teardown-needed"]::part(native) {
   border-color: var(--ion-color-danger);
 }
 
-.product-sync-skeleton {
-  height: 180px;
+/* `ion-skeleton-text` inherits its height from the line it replaces, so a skeleton standing in for a
+   value that is not there yet has nothing to inherit from and collapses to zero -- measured before
+   this rule: header 0, graph 0, list 0, whole card 0. `1lh` is the line box of whatever it sits in,
+   so each stand-in occupies exactly the line its value will. */
+.product-sync[aria-busy="true"] ion-skeleton-text {
+  height: 1lh;
+  border-radius: 4px;
+}
+
+
+.product-sync-activity-placeholder {
+  position: absolute;
+  inset: 0;
+  height: 100%;
   width: 100%;
-  border-radius: 16px;
-  margin-block: var(--spacer-lg);
+  margin: 0;
 }
 
 @media screen and (min-width: 700px) {

@@ -29,53 +29,105 @@
         <!-- A failed cache sync must never look like a healthy empty queue: without this the
              counts below render 0 / "None waiting" after the OMS rejects the query. -->
         <section class="summary-grid">
-          <ion-card>
-            <ion-card-header>
-              <ion-card-title>Aggregate event queue</ion-card-title>
-              <ion-card-subtitle>Inventory changes waiting to reach Shopify aggregate locations</ion-card-subtitle>
-            </ion-card-header>
-            <ion-list lines="full">
-              <ion-item button detail @click="openHistory()">
-                <ion-label>
-                  Aggregate events pending batching
-                  <p>Calculated inventory adjustments without a System Message</p>
-                </ion-label>
-                <ion-badge slot="end" color="warning">
-                  {{ pendingEventCount }}
+          <div class="queue-column">
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Aggregate event queue") }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify aggregate locations") }}</ion-card-subtitle>
+              </ion-card-header>
+              <ion-list lines="full">
+                <ion-item button detail @click="openHistory()">
+                  <ion-label>
+                    {{ translate("Aggregate events pending batching") }}
+                    <p>{{ translate("Calculated inventory adjustments without a System Message") }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" color="warning">
+                    {{ pendingEventCount }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item button detail @click="openHistory('batches')">
+                  <ion-label>
+                    {{ translate("Batches pending delivery") }}
+                    <p>{{ translate("System Messages waiting to send or retry") }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" color="primary">
+                    {{ pendingBatchCount }}
+                  </ion-badge>
+                </ion-item>
+                <!-- Reads as queue state ("when does what is waiting go out?"), not as a way into the
+                     publisher's config - that lives once, in Inventory sync jobs below. -->
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Next batch send") }}
+                    <p>{{ translate("Send Shopify aggregate inventory adjustments") }}</p>
+                  </ion-label>
+                  <ion-label slot="end">
+                    {{ nextBatchRun }}
+                    <p>{{ translate("Publisher job schedule") }}</p>
+                  </ion-label>
+                </ion-item>
+                <ion-item lines="none" button detail @click="openHistory()">
+                  <ion-label>
+                    {{ translate("Oldest unbatched event") }}
+                    <p>{{ translate("First calculated adjustment still waiting for a batch") }}</p>
+                  </ion-label>
+                  <ion-label slot="end">
+                    {{ oldestUnbatchedEvent }}
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+
+            <ion-card>
+              <ion-card-header>
+                <ion-card-title>{{ translate("Location event queue") }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify physical locations") }}</ion-card-subtitle>
+                <ion-badge v-if="(locationDeliveryErrorCount ?? 0) > 0" color="danger">
+                  {{ locationDeliveryErrorCount }} {{ translate("errors") }}
                 </ion-badge>
-              </ion-item>
-              <ion-item button detail @click="openHistory('batches')">
-                <ion-label>
-                  Batches pending delivery
-                  <p>System Messages waiting to send or retry</p>
-                </ion-label>
-                <ion-badge slot="end" color="primary">
-                  {{ pendingBatchCount }}
-                </ion-badge>
-              </ion-item>
-              <!-- Reads as queue state ("when does what is waiting go out?"), not as a way into the
-                   publisher's config - that lives once, in Inventory sync jobs below. -->
-              <ion-item>
-                <ion-label>
-                  Next batch send
-                  <p>Send Shopify aggregate inventory adjustments</p>
-                </ion-label>
-                <ion-label slot="end">
-                  {{ nextBatchRun }}
-                  <p>Publisher job schedule</p>
-                </ion-label>
-              </ion-item>
-              <ion-item lines="none" button detail @click="openHistory()">
-                <ion-label>
-                  Oldest unbatched event
-                  <p>First calculated adjustment still waiting for a batch</p>
-                </ion-label>
-                <ion-label slot="end">
-                  {{ oldestUnbatchedEvent }}
-                </ion-label>
-              </ion-item>
-            </ion-list>
-          </ion-card>
+              </ion-card-header>
+              <ion-list lines="full">
+                <ion-item button detail @click="openLocationHistory('unassigned')">
+                  <ion-label>
+                    {{ translate("Location events pending batching") }}
+                    <p>{{ translate("Location adjustments without a System Message") }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="unassignedNonZeroCount ? 'warning' : 'medium'">
+                    {{ unassignedNonZeroCount }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item button detail @click="openLocationHistory('batches')">
+                  <ion-label>
+                    {{ translate("Batches pending delivery") }}
+                    <p>{{ translate("System Messages waiting to send or retry") }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" :color="pendingLocationBatchCount ? 'primary' : 'medium'">
+                    {{ pendingLocationBatchCount }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Next batch send") }}
+                    <p>publish_PendingShopifyLocationInventoryAdjustments</p>
+                  </ion-label>
+                  <ion-label slot="end">
+                    {{ nextLocationBatchRun }}
+                    <p>{{ translate("Publisher job schedule") }}</p>
+                  </ion-label>
+                </ion-item>
+                <ion-item lines="none" button detail @click="openLocationHistory('unassigned')">
+                  <ion-label>
+                    {{ translate("Oldest unbatched event") }}
+                    <p>{{ translate("First location adjustment still waiting for a batch") }}</p>
+                  </ion-label>
+                  <ion-label slot="end">
+                    {{ oldestLocationUnbatchedEvent }}
+                    <p v-if="oldestUnassignedCreatedAt !== undefined">{{ oldestUnassignedAgeLabel }}</p>
+                  </ion-label>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+          </div>
 
           <!-- Sits beside the queue card rather than in a section of its own further down: the two
                answer the paired questions a monitor is opened for (what is waiting, and what will
@@ -93,6 +145,7 @@
               </ion-badge>
             </ion-card-header>
             <ion-list lines="full">
+              <ion-item v-if="jobSetupError" role="alert"><ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label></ion-item>
               <ion-item
                 v-for="job in sharedJobs"
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
@@ -129,6 +182,18 @@
             </ion-list>
           </ion-card>
         </section>
+
+        <ion-card>
+          <ion-list lines="none">
+            <ion-item button detail @click="router.push(`/shopify-connection-details/${props.id}/inventory-sync/activations`)">
+              <ion-icon slot="start" :icon="checkmarkCircleOutline" />
+              <ion-label class="ion-text-wrap">
+                <h2>{{ translate("Product activation") }}</h2>
+                <p>{{ translate("Monitor pending product locations and review the latest Shopify activation confirmations.") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+        </ion-card>
 
         <section class="inventory-channels">
           <ion-item lines="none">
@@ -281,11 +346,34 @@
           </ion-card>
 
           <ion-card>
+            <ion-list lines="none">
+              <ion-item>
+                <ion-icon slot="start" :icon="locationOutline" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Location event updates") }}
+                  <p>{{ translate("Physical inventory, receipts, POS issuances, and location adjustments") }}</p>
+                  <p>{{ translate("Applies to every Shopify connection on this OMS") }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="locationEventFeedBadgeColor">
+                  {{ locationEventFeedStatus }}
+                </ion-badge>
+                <ion-toggle
+                  slot="end"
+                  :key="`location-feed-${locationEventFeedPush}-${toggleNonce}`"
+                  :aria-label="translate('Use real-time push for Shopify location inventory events')"
+                  :checked="locationEventFeedPush"
+                  :disabled="locationEventFeedToggleDisabled"
+                  @click.prevent="requestLocationEventFeedChange($event)"
+                />
+              </ion-item>
+            </ion-list>
+          </ion-card>
+
+          <ion-card>
             <ion-card-header>
               <ion-card-title>Event sources</ion-card-title>
               <ion-card-subtitle>
-                Which OMS changes this feed listens to. Turning one off stops that kind of inventory
-                event being recorded at all.
+                {{ translate("Choose which OMS changes each feed records. Turning a source off stops that kind of inventory event being recorded for that feed.") }}
               </ion-card-subtitle>
             </ion-card-header>
             <ion-list lines="full">
@@ -313,19 +401,88 @@
                     Not loaded on this OMS &mdash; run the connector's seed data
                   </p>
                 </ion-label>
-                <ion-toggle
-                  slot="end"
-                  :key="`${doc.dataDocumentId}-${doc.attached}-${toggleNonce}`"
-                  :aria-label="`Feed events from ${doc.documentName}`"
-                  :checked="doc.attached"
-                  :disabled="doc.missing || savingDocumentId === doc.dataDocumentId"
-                  @click.prevent="requestDocumentAttachChange(doc)"
-                />
+                <!-- One wrapper so the two feed switches can stack on narrow screens; the toggles carry
+                     their own labels, so no text styling is needed here. -->
+                <div slot="end" class="event-source-feeds">
+                  <ion-toggle
+                    :key="`${doc.dataDocumentId}-channel-${doc.channelAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.channelAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Channel") }}
+                  </ion-toggle>
+                  <ion-toggle
+                    v-if="doc.locationSupported"
+                    :key="`${doc.dataDocumentId}-location-${doc.locationAttached}-${toggleNonce}`"
+                    label-placement="start"
+                    :aria-label="eventSourceToggleLabel(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                    :checked="doc.locationAttached"
+                    :disabled="doc.missing || savingDocumentKey === `${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}:${doc.dataDocumentId}`"
+                    @click.prevent="requestDocumentFeedAttachChange(doc, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID)"
+                  >
+                    {{ translate("Physical location") }}
+                  </ion-toggle>
+                  <ion-note v-else>{{ translate("Physical location not used") }}</ion-note>
+                </div>
               </ion-item>
             </ion-list>
           </ion-card>
         </section>
 
+
+        <!-- Same run-section/run-carousel structure as every other run list on this page. Outside the
+             carousel the badge positioning below does not apply, and "Feed generated" rendered as a
+             full-width bar across the card instead of a chip in its corner. -->
+        <section class="run-section">
+          <div class="section-header">
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                <h2>{{ translate('Physical location ATP reset runs') }}</h2>
+                <p>{{ translate('Resets available inventory at this shop’s mapped physical locations. Optional job filters restrict facilities and products.') }}</p>
+              </ion-label>
+            </ion-item>
+          </div>
+          <div class="run-carousel" aria-label="Physical location ATP reset job runs">
+            <ion-card v-for="run in physicalAtpResetRuns" :key="run.id">
+              <ion-card-header>
+                <ion-card-title>{{ run.id }}</ion-card-title>
+                <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">
+                  {{ run.importLogId ? translate('Feed generated') : run.status }}
+                </ion-badge>
+              </ion-card-header>
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label class="ion-text-wrap">
+                    {{ translate('Started') }}
+                    <p>{{ run.started }}</p>
+                  </ion-label>
+                  <ion-note slot="end">
+                    {{ run.duration }}
+                  </ion-note>
+                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
+              </ion-list>
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId" config-id="RESET_PHYSICAL_LOC_INV" />
+            </ion-card>
+            <ion-card v-if="jobsHydrated && !physicalAtpResetRuns.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="timeOutline" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate('No recorded physical ATP reset runs') }}
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </div>
+        </section>
 
         <section class="run-section">
           <div class="section-header">
@@ -358,22 +515,13 @@
                     {{ run.duration }}
                   </ion-note>
                 </ion-item>
-                <ion-item>
-                  <ion-label>
-                    Parameters
-                    <p>{{ run.parameters }}</p>
-                    <p>Scope: {{ run.scope }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label>
-                    Result
-                    <p>{{ run.result }}</p>
-                  </ion-label>
-                  <ion-chip slot="end" outline :color="run.failed ? 'danger' : 'success'">
-                    <ion-label>{{ run.failed ? 'Job error' : 'No job error' }}</ion-label>
-                  </ion-chip>
-                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
               </ion-list>
             </ion-card>
             <ion-card v-if="jobsHydrated && !physicalResetRuns.length">
@@ -405,8 +553,8 @@
               <ion-card-header>
                 <ion-card-title>{{ run.id }}</ion-card-title>
                 <ion-card-subtitle>Aggregate location ATP reset</ion-card-subtitle>
-                <ion-badge :color="run.badgeColor">
-                  {{ run.status }}
+                <ion-badge :color="run.importLogId ? 'medium' : run.badgeColor">
+                  {{ run.importLogId ? translate('Feed generated') : run.status }}
                 </ion-badge>
               </ion-card-header>
               <ion-list lines="full">
@@ -419,23 +567,16 @@
                     {{ run.duration }}
                   </ion-note>
                 </ion-item>
-                <ion-item>
-                  <ion-label>
-                    Parameters
-                    <p>{{ run.parameters }}</p>
-                    <p>Scope: {{ run.scope }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none">
-                  <ion-label>
-                    Result
-                    <p>{{ run.result }}</p>
-                  </ion-label>
-                  <ion-chip slot="end" outline :color="run.failed ? 'danger' : 'success'">
-                    <ion-label>{{ run.failed ? 'Job error' : 'No job error' }}</ion-label>
-                  </ion-chip>
-                </ion-item>
+                <InventoryRunDetails
+                  :scope="run.parameterScope"
+                  :tuning="run.parameterTuning"
+                  :result="run.resultRows"
+                  :parameters-fallback="run.parameters"
+                  :result-fallback="run.result"
+                />
               </ion-list>
+              <InventoryResetImportResult v-if="run.importLogId" :key="run.importLogId" :log-id="run.importLogId"
+                :remote-id="syncContext.remoteId.value || ''" :channels="inventoryChannels" />
             </ion-card>
             <ion-card v-if="jobsHydrated && inventoryChannelsHydrated && !aggregateResetRuns.length">
               <ion-item lines="none">
@@ -521,6 +662,311 @@
             </ion-card>
           </div>
         </section>
+
+        <section class="run-section ion-padding-bottom" id="real-time-location-inventory">
+          <div class="section-header">
+            <ion-item lines="none">
+              <ion-label>
+                <h2>{{ translate("Location event batches") }}</h2>
+                <p>{{ translate("System Messages containing direct location inventory adjustments") }}</p>
+              </ion-label>
+            </ion-item>
+            <ion-button fill="clear" @click="openLocationHistory()">
+              <ion-icon slot="start" :icon="listOutline" />
+              {{ translate("Event history") }}
+            </ion-button>
+          </div>
+          <div class="run-carousel" aria-label="Location inventory event batches">
+            <ion-card v-for="batch in locationBatches" :key="batch.id">
+              <ion-card-header>
+                <ion-card-title>{{ batch.id }}</ion-card-title>
+                <ion-card-subtitle>{{ translate("Location inventory adjustment batch") }}</ion-card-subtitle>
+                <ion-badge :color="batch.badgeColor">
+                  {{ batch.status }}
+                </ion-badge>
+              </ion-card-header>
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Created") }}
+                    <p>{{ batch.created }}</p>
+                  </ion-label>
+                  <ion-note slot="end">
+                    {{ batch.age }}
+                  </ion-note>
+                </ion-item>
+                <ion-item>
+                  <ion-label>
+                    {{ translate("Shopify target") }}
+                    <p>{{ batch.target }}</p>
+                  </ion-label>
+                </ion-item>
+                <ion-item button detail @click="selectedLocationBatch = batch">
+                  <ion-label>
+                    {{ translate("Events in this batch") }}
+                    <p>{{ batch.detail }}</p>
+                  </ion-label>
+                  <ion-badge slot="end" color="medium">
+                    {{ batch.eventCount }}
+                  </ion-badge>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-button fill="clear" @click="openMessage(batch)">
+                    <ion-icon slot="start" :icon="documentTextOutline" />
+                    {{ translate("Message text") }}
+                  </ion-button>
+                  <ion-button slot="end" fill="clear" @click="selectedLocationBatch = batch">
+                    {{ translate("View events") }}
+                  </ion-button>
+                </ion-item>
+              </ion-list>
+            </ion-card>
+            <ion-card v-if="locationInventoryDetailsHydrated && !locationBatches.length">
+              <ion-item lines="none">
+                <ion-icon slot="start" :icon="timeOutline" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("No location event batches") }}
+                  <p>{{ translate("No direct location inventory events for this Shopify connection have been assigned to a System Message yet.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-card>
+          </div>
+        </section>
+      </ion-content>
+    </template>
+
+    <template v-else-if="activeView === 'location-history'">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-back-button :default-href="`/shopify-connection-details/${props.id}/inventory-sync`" />
+          </ion-buttons>
+          <ion-title>{{ translate("Location inventory history") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="ion-padding-horizontal">
+        <main class="history-page">
+          <div class="kpi-grid">
+            <ion-card button @click="locationFilterState = 'unassigned'">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Unassigned backlog") }}</ion-card-subtitle>
+                <ion-card-title :color="unassignedBacklogWarn ? 'warning' : undefined">
+                  {{ unassignedNonZeroCount }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                {{ translate("Location adjustments not yet linked to a batch") }}
+                <p v-if="oldestUnassignedAgeLabel" class="overline">
+                  <ion-badge v-if="unassignedBacklogWarn" color="warning">{{ translate("Oldest") }}: {{ oldestUnassignedAgeLabel }}</ion-badge>
+                  <template v-else>{{ translate("Oldest") }}: {{ oldestUnassignedAgeLabel }}</template>
+                </p>
+              </ion-card-content>
+            </ion-card>
+            <ion-card button @click="locationFilterState = 'SmsgError'">
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
+                <!-- An absent count is not zero. Say so, the way the no-op/quarantined card does,
+                     rather than rendering an empty title that reads as "none". -->
+                <ion-card-title :color="locationDeliveryErrorCount ? 'danger' : undefined">
+                  {{ locationDeliveryErrorCount ?? translate("Not available") }}
+                </ion-card-title>
+              </ion-card-header>
+              <ion-card-content>{{ translate("Details linked to a System Message in error") }}</ion-card-content>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("No-op / quarantined") }}</ion-card-subtitle>
+                <ion-card-title>{{ locationNoOpOrQuarantinedCount }}</ion-card-title>
+              </ion-card-header>
+              <ion-card-content>{{ translate("Zero-change details or details quarantined in a cancelled SystemMessage") }}</ion-card-content>
+            </ion-card>
+            <ion-card>
+              <ion-card-header>
+                <ion-card-subtitle>{{ translate("Publish job") }}</ion-card-subtitle>
+                <ion-card-title v-if="!jobsHydrated">
+                  <ion-skeleton-text :animated="true" class="count-skeleton" />
+                </ion-card-title>
+                <ion-card-title v-else :color="locationPublishJobBadgeColor">{{ locationPublishJobStatus }}</ion-card-title>
+              </ion-card-header>
+              <ion-card-content>
+                {{ translate("publish_PendingShopifyLocationInventoryAdjustments") }}
+                <p v-if="locationPublishJobNextRun" class="overline">
+                  {{ translate("Next run") }} {{ formatDateTime(locationPublishJobNextRun) || translate("Not available") }}
+                </p>
+              </ion-card-content>
+            </ion-card>
+          </div>
+
+          <ion-card class="history-filter-card">
+            <ion-card-content>
+              <ion-searchbar
+                v-model="locationHistoryQuery"
+                class="history-search"
+                :debounce="250"
+                :placeholder="translate('Search event reference, location, or inventory item')"
+              />
+
+              <div class="filter-grid">
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterLocationId"
+                    :label="translate('Location')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterLocationId = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationLocationOptions" :key="option" :value="option">
+                      {{ option }}
+                    </ion-select-option>
+                  </ion-select>
+                  <ion-button v-if="locationFilterLocationId" fill="clear" class="clear-filter-button" :aria-label="translate('Clear location filter')" @click.stop="locationFilterLocationId = ''">
+                    <ion-icon slot="icon-only" :icon="closeCircleOutline" />
+                  </ion-button>
+                </div>
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterEventType"
+                    :label="translate('Event type')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterEventType = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationEventTypeOptions" :key="option" :value="option">
+                      {{ option }}
+                    </ion-select-option>
+                  </ion-select>
+                  <ion-button v-if="locationFilterEventType" fill="clear" class="clear-filter-button" :aria-label="translate('Clear event type filter')" @click.stop="locationFilterEventType = ''">
+                    <ion-icon slot="icon-only" :icon="closeCircleOutline" />
+                  </ion-button>
+                </div>
+                <div class="filter-item">
+                  <ion-select
+                    :value="locationFilterState"
+                    :label="translate('Delivery state')"
+                    label-placement="stacked"
+                    fill="outline"
+                    interface="popover"
+                    :placeholder="translate('All')"
+                    @ion-change="locationFilterState = $event.detail.value || ''"
+                  >
+                    <ion-select-option value="">{{ translate("All") }}</ion-select-option>
+                    <ion-select-option v-for="option in locationStateOptions" :key="option.id" :value="option.id">
+                      {{ option.label }}
+                    </ion-select-option>
+                  </ion-select>
+                  <ion-button v-if="locationFilterState" fill="clear" class="clear-filter-button" :aria-label="translate('Clear delivery state filter')" @click.stop="locationFilterState = ''">
+                    <ion-icon slot="icon-only" :icon="closeCircleOutline" />
+                  </ion-button>
+                </div>
+                <div class="filter-item">
+                  <ion-item lines="none" class="date-filter-item">
+                    <ion-label>{{ translate("From") }}</ion-label>
+                    <input slot="end" type="date" :aria-label="translate('From date')" v-model="locationFilterFrom" />
+                  </ion-item>
+                </div>
+                <div class="filter-item">
+                  <ion-item lines="none" class="date-filter-item">
+                    <ion-label>{{ translate("To") }}</ion-label>
+                    <input slot="end" type="date" :aria-label="translate('To date')" v-model="locationFilterTo" />
+                  </ion-item>
+                </div>
+              </div>
+            </ion-card-content>
+          </ion-card>
+
+          <div class="history-results-header">
+            <ion-item lines="none">
+              <ion-label>
+                <h2>{{ translate("Location event history") }}</h2>
+                <p>{{ translate("A list of direct location inventory adjustment events and their delivery states") }}</p>
+              </ion-label>
+            </ion-item>
+            <ion-badge color="medium">
+              {{ filteredLocationDetailRows.length }} {{ translate("shown") }}
+            </ion-badge>
+          </div>
+
+          <ion-card v-if="inventorySyncError"><ion-card-content>{{ translate("Refresh failed. Showing previously loaded data.") }} {{ inventorySyncError }}</ion-card-content></ion-card>
+          <ion-segment :value="locationHistoryMode" @ion-change="changeLocationMode(String($event.detail.value))">
+            <ion-segment-button value="events"><ion-label>{{ translate("All events") }}</ion-label></ion-segment-button>
+            <ion-segment-button value="batches"><ion-label>{{ translate("Grouped by batch") }}</ion-label></ion-segment-button>
+          </ion-segment>
+          <ion-accordion-group v-if="locationHistoryMode === 'batches' && filteredLocationDetailRows.length">
+            <ion-accordion v-for="batch in filteredLocationBatches.slice(0, locationVisibleCount)" :key="batch.id" :value="batch.id">
+              <ion-item slot="header"><ion-label>{{ batch.label }}<p>{{ batch.rows.length }} {{ translate("events") }} · {{ translate("Net adjustment") }} {{ batch.net }}</p><p>{{ batch.target }} · {{ formatDateTime(batch.created) }}</p></ion-label><ion-badge slot="end">{{ batch.state }}</ion-badge></ion-item>
+              <ion-list slot="content">
+                <ion-item v-if="batch.id !== 'unassigned'"><ion-button fill="clear" @click="openMessage(locationBatches.find(entry => entry.id === batch.id)!)">{{ translate("Message text") }}</ion-button></ion-item>
+                <ion-item v-for="row in batch.rows" :key="row.rowKey" button @click="selectedLocationDetail = row">
+                  <ion-label>{{ row.eventTypeDescription || row.eventTypeId }}<p>{{ row.eventReferenceId }} · {{ row.shopifyLocationId }} · {{ row.shopifyInventoryItemId }}</p><p>{{ formatDateTime(row.createdDate) }}</p></ion-label>
+                  <ion-note slot="end">{{ row.computedInventoryChange }}</ion-note>
+                </ion-item>
+              </ion-list>
+            </ion-accordion>
+          </ion-accordion-group>
+          <ion-card v-else-if="locationInventoryDetailsHydrated && !filteredLocationDetailRows.length">
+            <ion-card-content>{{ translate("No location inventory events match this view.") }}</ion-card-content>
+          </ion-card>
+
+          <ion-list v-else lines="full">
+            <ion-item
+              v-for="row in filteredLocationDetailRows.slice(0, locationVisibleCount)"
+              :key="row.rowKey"
+              button
+              detail
+              @click="selectedLocationDetail = row"
+            >
+              <ion-label class="ion-text-wrap">
+                {{ row.eventTypeDescription || row.eventTypeId }}
+                <p>{{ row.eventReferenceId }}</p>
+              </ion-label>
+              <ion-label slot="end">
+                {{ row.shopifyLocationId }}
+                <p>{{ translate("Location") }}</p>
+              </ion-label>
+              <ion-label slot="end">
+                {{ row.shopifyInventoryItemId }}
+                <p>{{ translate("Inventory item") }}</p>
+              </ion-label>
+              <ion-note slot="end" :color="row.computedInventoryChange < 0 ? 'danger' : 'success'">
+                {{ row.computedInventoryChange > 0 ? "+" : "" }}{{ row.computedInventoryChange }}
+              </ion-note>
+              <ion-label slot="end">
+                {{ formatDateTime(row.createdDate) || translate("Not available") }}
+                <p>{{ translate("Created") }}</p>
+              </ion-label>
+              <ion-badge slot="end" :color="row.stateColor">{{ row.stateLabel }}</ion-badge>
+            </ion-item>
+          </ion-list>
+
+          <ion-button v-if="(locationHistoryMode === 'batches' ? filteredLocationBatches.length : filteredLocationDetailRows.length) > locationVisibleCount" expand="block" fill="clear" @click="locationVisibleCount += 50">{{ translate("Load more") }}</ion-button>
+          <ion-card>
+            <ion-card-header>
+              <ion-card-title>{{ translate("Mapping gaps") }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Locations excluded from real-time push, intentionally or otherwise") }}</ion-card-subtitle>
+            </ion-card-header>
+            <ion-list lines="full">
+              <ion-item v-if="!shopInventoryPush" lines="none">
+                <ion-label class="ion-text-wrap" color="medium">
+                  {{ shopDisplayName }}
+                  <p>{{ translate("Real-time inventory push is off for this connection (intentional opt-out)") }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none">
+                <ion-label class="ion-text-wrap">
+                  <p>{{ translate("Not available") }}</p>
+                  <p>{{ translate("This OMS does not yet expose recent unusable location mapping omissions from posting-run outputs.") }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+          </ion-card>
+        </main>
       </ion-content>
     </template>
 
@@ -1125,6 +1571,10 @@
               <p>{{ selectedEvent?.calculation || translate("No calculation comment recorded") }}</p>
             </ion-label>
           </ion-item>
+          <ShopifyInventorySnapshot v-if="selectedEvent" :key="selectedEvent.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedEvent.shopifyInventoryItem || ''"
+            :location-id="selectedEvent.locationId || ''" />
         </ion-list>
       </ion-content>
     </ion-modal>
@@ -1263,7 +1713,7 @@
           <ion-item>
             <ion-label>
               Message type
-              <p>ShopifyInventoryAdjustment</p>
+              <p>{{ messageById.get(String(messageBatch?.id ?? ''))?.systemMessageTypeId || 'ShopifyInventoryAdjustment' }}</p>
             </ion-label>
           </ion-item>
         </ion-list>
@@ -1275,6 +1725,109 @@
           auto-grow
           readonly
         />
+      </ion-content>
+    </ion-modal>
+
+    <ion-modal :is-open="!!selectedLocationDetail" @did-dismiss="selectedLocationDetail = null">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close')" @click="selectedLocationDetail = null">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Location inventory event") }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content class="ion-padding" v-if="selectedLocationDetail">
+        <ion-list lines="full">
+          <ion-item>
+            <ion-label>{{ translate("Event type") }}</ion-label>
+            <ion-note slot="end">{{ selectedLocationDetail.eventTypeDescription || selectedLocationDetail.eventTypeId }}</ion-note>
+          </ion-item>
+          <ion-item>
+            <ion-label>{{ translate("Delivery state") }}</ion-label>
+            <ion-badge slot="end" :color="selectedLocationDetail.stateColor">{{ selectedLocationDetail.stateLabel }}</ion-badge>
+          </ion-item>
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              {{ translate("Decision comment") }}
+              <p>{{ selectedLocationDetail.decisionComment || translate("Not available") }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item v-if="locationDetailErrorText" lines="none">
+            <ion-label class="ion-text-wrap">
+              <ion-text color="danger">
+                {{ translate("Linked message error") }}
+                <p>{{ locationDetailErrorText }}</p>
+              </ion-text>
+            </ion-label>
+          </ion-item>
+          <ShopifyInventorySnapshot :key="selectedLocationDetail.rowKey"
+            :remote-id="syncContext.remoteId.value || ''"
+            :inventory-item-id="selectedLocationDetail.shopifyInventoryItemId || ''"
+            :location-id="selectedLocationDetail.shopifyLocationId || ''" />
+        </ion-list>
+      </ion-content>
+    </ion-modal>
+
+    <ion-modal :is-open="!!selectedLocationBatch" @did-dismiss="selectedLocationBatch = null">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button :aria-label="translate('Close batch events')" @click="selectedLocationBatch = null">
+              <ion-icon slot="icon-only" :icon="closeOutline" />
+            </ion-button>
+          </ion-buttons>
+          <ion-title>{{ translate("Events in") }} {{ selectedLocationBatch?.id }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list lines="full">
+          <ion-item>
+            <ion-label>
+              {{ translate("Shopify target") }}
+              <p>{{ selectedLocationBatch?.target }}</p>
+            </ion-label>
+            <ion-badge slot="end" :color="selectedLocationBatch?.badgeColor">
+              {{ selectedLocationBatch?.status }}
+            </ion-badge>
+          </ion-item>
+          <ion-item>
+            <ion-label>
+              {{ translate("Included events") }}
+              <p>{{ translate("Every event retains its original HotWax event key") }}</p>
+            </ion-label>
+            <ion-label slot="end">
+              {{ selectedLocationBatch?.eventCount }}
+            </ion-label>
+          </ion-item>
+          <ion-list-header>
+            <ion-label>{{ translate("Event details") }}</ion-label>
+          </ion-list-header>
+          <ion-item
+            v-for="event in eventsForSelectedLocationBatch"
+            :key="event.rowKey"
+            button
+            detail
+            @click="selectedLocationDetail = event"
+          >
+            <ion-label class="ion-text-wrap">
+              {{ event.eventTypeDescription || event.eventTypeId }}
+              <p>{{ event.eventReferenceId }}</p>
+            </ion-label>
+            <ion-label slot="end">
+              {{ event.shopifyInventoryItemId }}
+              <p>{{ translate("Inventory item") }}</p>
+            </ion-label>
+            <ion-note slot="end" :color="event.computedInventoryChange < 0 ? 'danger' : 'success'">
+              {{ event.computedInventoryChange > 0 ? "+" : "" }}{{ event.computedInventoryChange }}
+            </ion-note>
+            <ion-badge slot="end" :color="event.stateColor">
+              {{ event.stateLabel }}
+            </ion-badge>
+          </ion-item>
+        </ion-list>
       </ion-content>
     </ion-modal>
 
@@ -1306,11 +1859,11 @@
 import { commonUtil, logger, translate, useProducts } from "@common";
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
-  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip, IonContent,
-  IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
-  IonPage, IonSearchbar, IonSelect, IonSelectOption, IonSpinner,
-  IonTextarea, IonTitle, IonToggle, IonToolbar, alertController, modalController, onIonViewDidLeave,
-  onIonViewWillEnter,
+  IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonDatetime,
+  IonDatetimeButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
+  IonPage, IonPopover, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
+  IonSkeletonText, IonSpinner, IonText, IonTextarea, IonTitle, IonToggle, IonToolbar, alertController,
+  modalController, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import {
   addOutline, checkmarkCircleOutline, chevronForwardOutline,
@@ -1319,8 +1872,17 @@ import {
   refreshOutline, sendOutline, storefrontOutline, timeOutline, trashBinOutline, trashOutline,
   warningOutline,
 } from "ionicons/icons";
-import { computed, ref, watch } from "vue";
+import { DateTime } from "luxon";
+import {
+  computed,
+  nextTick,
+  ref,
+  watch,
+} from "vue";
 import { useRouter } from "vue-router";
+import InventoryResetImportResult from "@/components/shopify/InventoryResetImportResult.vue";
+import InventoryRunDetails from "@/components/shopify/InventoryRunDetails.vue";
+import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnapshot.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
@@ -1337,6 +1899,7 @@ import {
   type InventoryEventSourceLookup,
   PRODUCED_SENDER_SERVICE,
   SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
   ensureChannelEventDiscardJob,
@@ -1344,9 +1907,12 @@ import {
   ensureChannelResetJob,
   ensureInventoryAdjustmentSenderJob,
   ensureShopPhysicalInventoryResetJob,
+  ensureShopPhysicalAtpResetJob,
+  PHYSICAL_ATP_RESET_SERVICE,
   fetchLocationsFromShopify,
-  setInventoryEventDocumentAttached,
+  setInventoryEventDocumentAttachedForFeed,
   updateShopifyInventoryEventFeedType,
+  updateShopifyLocationInventoryEventFeedType,
   useInventoryEventDocuments,
   useInventoryEventSources,
   useShopifyShopMutations,
@@ -1361,11 +1927,15 @@ import {
   groupFacilityCache,
   inventoryChannelCache,
   shopifyInventoryAdjustmentDetailCache,
+  shopifyLocationInventoryAdjustmentDetailCache,
+  shopifyLocationInventorySummaryCache,
   shopifyShopCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
 import { parameterMap } from "@/utils/serviceJob";
+import { describeRunParameters, describeRunResult } from "@/utils/serviceJobRun";
+import { locationInventoryDeliveryErrorCount } from "@/utils/shopifyLocationInventory";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {
   deliveryStatusOf,
@@ -1378,8 +1948,8 @@ import {
   sumDelta,
 } from "@/utils/shopifyInventoryPipeline";
 
-type ViewName = "monitor" | "history";
-type HistoryMode = "events" | "batches";
+type ViewName = "monitor" | "history" | "location-history";
+type HistoryMode = "events" | "batches" | "unassigned";
 
 interface Batch {
   id: string;
@@ -1485,6 +2055,7 @@ const router = useRouter();
 const activeView = ref<ViewName>(props.initialView ?? "monitor");
 const historyMode = ref<HistoryMode>(props.initialHistoryMode ?? "events");
 const historyQuery = ref("");
+const locationHistoryQuery = ref("");
 const selectedHistoryStatus = ref("");
 const selectedEventType = ref("");
 const selectedChannel = ref("");
@@ -1515,9 +2086,10 @@ const PUBLISH_PENDING_SERVICES = [
   "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments",
 ];
 const EFFECTIVE_DATE_SERVICE = "co.hotwax.sob.product.InventoryServices.run#ShopifyInventoryEffectiveDateEvents";
-const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory";
+const ABSOLUTE_CHANNEL_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
 const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
 const PURGE_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails";
+const PURGE_LOCATION_DETAILS_SERVICE = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails";
 
 const syncContext = useShopifySyncContext(() => props.id);
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
@@ -1631,7 +2203,7 @@ function sourceLine(event: InventoryEvent): string {
 }
 
 const { labelFor: statusDescriptionFor } = useStatuses();
-const { ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+const { ensureSystemMessageErrors, ensureSystemMessageById, resendSystemMessage } = useSystemMessage();
 
 const batchErrors = ref<any[]>([]);
 const loadingBatchErrors = ref(false);
@@ -1730,6 +2302,31 @@ const inventoryEventFeedBadgeColor = computed(() => {
   return inventoryEventFeedPush.value ? "success" : "warning";
 });
 
+const locationEventFeed = computed<any>(() => cachedDataFeeds.value.find((feed: any) =>
+  String(feed.dataFeedId) === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID) ?? null);
+const locationEventFeedPush = computed(() =>
+  locationEventFeed.value?.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_PUSH);
+const locationEventFeedTypeSupported = computed(() => [
+  SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
+  SHOPIFY_INVENTORY_EVENT_FEED_PUSH,
+].includes(String(locationEventFeed.value?.dataFeedTypeEnumId ?? "")));
+const locationEventFeedToggleDisabled = computed(() =>
+  locationEventFeedSaving.value || !dataFeedsHydrated.value || !locationEventFeed.value ||
+  !locationEventFeedTypeSupported.value);
+const locationEventFeedStatus = computed(() => {
+  if (!dataFeedsHydrated.value) return "Loading";
+  if (!locationEventFeed.value) return "Not configured";
+  if (locationEventFeedPush.value) return "Real-time push";
+  if (locationEventFeed.value.dataFeedTypeEnumId === SHOPIFY_INVENTORY_EVENT_FEED_MANUAL) return "Manual";
+  return "Unsupported mode";
+});
+const locationEventFeedBadgeColor = computed(() => {
+  if (!dataFeedsHydrated.value || !locationEventFeed.value) return "medium";
+  if (!locationEventFeedTypeSupported.value) return "danger";
+  return locationEventFeedPush.value ? "success" : "warning";
+});
+const locationEventFeedSaving = ref(false);
+
 /**
  * The PER-SHOP half of real-time inventory, and a different switch from the feed above in every way
  * that matters. This is `ShopifyShop.realTimeInventoryPush` for the one connection this page is
@@ -1762,6 +2359,9 @@ const shopInventoryPushBadgeColor = computed(() => {
 
 const messageById = computed<Map<string, any>>(() => new Map(cachedSystemMessages.value.map((message: any) => [String(message.systemMessageId), message]),));
 
+const physicalAtpResetJobs = computed<any[]>(() => cachedJobs.value.filter((job: any) =>
+  job.serviceName === PHYSICAL_ATP_RESET_SERVICE && String(parameterMap(job).shopId || "") === String(props.id)));
+
 const physicalResetJob = computed<any>(() => cachedJobs.value.find((job: any) => {
   const parameters = parameterMap(job);
 
@@ -1789,6 +2389,8 @@ const effectiveDateJob = computed<any>(() =>
 /** Retention cleanup for the event ledger. Connector-seeded and OMS-wide, so it is not per channel. */
 const purgeDetailsJob = computed<any>(() =>
   cachedJobs.value.find((job: any) => job.serviceName === PURGE_DETAILS_SERVICE) ?? null);
+const purgeLocationDetailsJob = computed<any>(() =>
+  cachedJobs.value.find((job: any) => job.serviceName === PURGE_LOCATION_DETAILS_SERVICE) ?? null);
 
 /** The manual discard handle. One job serves every channel via its inventoryChannelId parameter. */
 const discardEventsJob = computed<any>(() =>
@@ -1826,10 +2428,16 @@ const aggregateResetJobs = computed<any[]>(() => {
 const primaryAggregateResetJob = computed<any>(() =>
   nextExecutionFor(aggregateResetJobs.value) ?? aggregateResetJobs.value[0] ?? null);
 
+const locationPublishJob = computed(() => cachedJobs.value.find((job: any) =>
+  String(job.jobName ?? "") === "publish_PendingShopifyLocationInventoryAdjustments"));
+
 const watchedJobNames = computed(() => [...new Set([
+  locationPublishJob.value?.jobName,
   physicalResetJob.value?.jobName,
+  ...physicalAtpResetJobs.value.map((job: any) => job.jobName),
   effectiveDateJob.value?.jobName,
   purgeDetailsJob.value?.jobName,
+  purgeLocationDetailsJob.value?.jobName,
   discardEventsJob.value?.jobName,
   ...inventoryAdjustmentSenderJobs.value.map((job: any) => job.jobName),
   ...pendingPublisherJobs.value.map((job: any) => job.jobName),
@@ -1844,11 +2452,11 @@ function latestRunFor(jobs: any[]): any | null {
 }
 
 function nextExecutionFor(jobs: any[]): any | null {
-  return jobs.filter((job) => job.paused !== "Y" && job.nextExecutionDateTime)
+  return jobs.filter((job) => job.paused !== "Y" && toMillis(job.nextExecutionDateTime) > Date.now())
     .sort((a, b) => toMillis(a.nextExecutionDateTime) - toMillis(b.nextExecutionDateTime))[0] ?? null;
 }
 
-type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "discard" | "sender";
+type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -1891,8 +2499,6 @@ function findChannelResetJob(channelId: string) {
     cachedJobs.value.find((job: any) =>
       job.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE &&
       job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
-    cachedJobs.value.find((job: any) =>
-      job.jobName === `reset_InventoryChannelInventory_${targetId}`) ||
     null;
 }
 
@@ -1916,11 +2522,8 @@ type JobDefinition = {
  * this connection every job reported a next run behind its own last one. Calling that overdue would be
  * a false alarm on a job running perfectly well every fifteen minutes.
  *
- * Three cases, and only one of them is an alarm:
- *   future             -> the delta, which is what an operator actually wants to read
- *   a run came after   -> the stored value is PROVABLY stale, so fall back to the cron's cadence, which
- *                         is the one schedule fact that cannot decay
- *   past, no later run -> genuinely overdue
+ * A future timestamp can be displayed. Missing or expired timestamps cannot establish that the
+ * schedule is absent or overdue; retain the configured cadence until refreshed scheduler data arrives.
  */
 function nextRunLine(nextJob: any, latestRun: any): string {
   if(!nextJob) {return translate("No active schedule");}
@@ -1928,7 +2531,7 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   const nextMs = toMillis(nextJob.nextExecutionDateTime);
   const lastMs = latestRun?.startTime ? toMillis(latestRun.startTime) : 0;
 
-  if(nextMs && lastMs && lastMs > nextMs) {
+  if(!nextMs || nextMs <= Date.now() || (lastMs && lastMs > nextMs)) {
     // `useServiceJobs` already normalises this, preferring the OMS's own `cronDescription` over a
     // cronstrue rendering. Re-deriving it here made this row disagree with the job's detail modal.
     if(nextJob.cronString) {
@@ -1938,8 +2541,6 @@ function nextRunLine(nextJob: any, latestRun: any): string {
     return translate("Next run not yet recalculated");
   }
 
-  if(!nextMs) {return translate("No active schedule");}
-
   return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
@@ -1948,12 +2549,15 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
   const nextJob = nextExecutionFor(jobs);
   const missing = !jobs.length;
   const paused = jobs.length > 0 && jobs.every((job) => job.paused === "Y");
+  // nextExecutionFor intentionally selects only future runs for queue ETA calculations. A cached
+  // timestamp aging out must not erase the fact that an active job still has a cron schedule.
+  const scheduledJob = nextJob ?? jobs.find((job) => job.paused !== "Y" && job.cronExpression);
 
   return {
     name,
     job: nextJob ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
-    nextRun: nextRunLine(nextJob, latestRun),
+    nextRun: nextRunLine(scheduledJob, latestRun),
     status: missing ? translate("Not configured") : paused ? translate("Paused") : translate("Active"),
     badgeColor: missing ? "medium" : paused ? "warning" : "success",
     icon,
@@ -2023,6 +2627,18 @@ const sharedJobs = computed(() => {
 
   definitions.push(
     {
+      name: "Reset physical location ATP (all mapped locations on this shop)",
+      jobs: physicalAtpResetJobs.value,
+      icon: refreshOutline,
+      setup: physicalAtpResetJobs.value.length ? "" : "physicalAtpReset",
+    },
+    {
+      name: "Publish physical location event batches (all Shopify connections)",
+      jobs: locationPublishJob.value ? [locationPublishJob.value] : [],
+      icon: locationOutline,
+      setup: "",
+    },
+    {
       name: "Process effective-dated inventory changes",
       jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
       icon: layersOutline,
@@ -2051,8 +2667,14 @@ const sharedJobs = computed(() => {
     },
     // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
     {
-      name: "Purge old inventory events (all Shopify connections)",
+      name: "Purge old aggregate inventory events (all Shopify connections)",
       jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
+      icon: trashBinOutline,
+      setup: "",
+    },
+    {
+      name: "Purge old physical location events (all Shopify connections)",
+      jobs: purgeLocationDetailsJob.value ? [purgeLocationDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
     },
@@ -2204,8 +2826,17 @@ function projectRun(job: any, run: any, scope: string) {
     .map(([name, value]) => `${name}: ${value}`)
     .join(", ");
 
+  let importLogId = "";
+  try { importLogId = String((typeof run.results === "string" ? JSON.parse(run.results) : run.results)?.dataManagerLogId || ""); } catch { /* No structured result recorded. */ }
+  const parameterDetail = describeRunParameters(run.parameters);
+  const resultRows = describeRunResult(run.results);
+
   return {
+    importLogId,
     id: run.jobRunId,
+    parameterScope: parameterDetail.scope,
+    parameterTuning: parameterDetail.tuning,
+    resultRows: resultRows.length ? resultRows : describeRunResult(run.messages),
     parameters: run.parameters || configuredParameters || "No parameters recorded",
     scope,
     started: formatDateTime(run.startTime),
@@ -2219,6 +2850,10 @@ function projectRun(job: any, run: any, scope: string) {
     startTime: toMillis(run.startTime),
   };
 }
+
+const physicalAtpResetRuns = computed(() => physicalAtpResetJobs.value
+  .flatMap((job: any) => runsFor(job.jobName).map((run: any) => projectRun(job, run, "Physical location ATP reset")))
+  .sort((a: any, b: any) => b.startTime - a.startTime));
 
 const physicalResetRuns = computed(() => {
   const job = physicalResetJob.value;
@@ -2392,7 +3027,7 @@ const batches = computed<Batch[]>(() => {
 
   return [...grouped.entries()].map(([id, details]) => {
     const message = messageById.value.get(id);
-    const statusId = message?.statusId || details[0]?.systemMessageStatusId;
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
     const state = batchState(statusId);
     const createdAt = toMillis(message?.initDate || details[0]?.systemMessageInitDate || details[0]?.createdDate);
     const entries = changeEntriesOf(details);
@@ -2834,7 +3469,7 @@ const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? 
 // truthful after a change by the domain's write-through rather than by re-fetching here.
 const { documents: inventoryEventDocuments, hydrated: documentsHydrated } = useInventoryEventDocuments();
 const documentsError = ref("");
-const savingDocumentId = ref("");
+const savingDocumentKey = ref("");
 const documentsLoading = computed(() => !documentsHydrated.value);
 
 /** Re-snapshot the domain. The read path is the cache, so "retry" means refill it, not re-fetch here. */
@@ -2859,27 +3494,48 @@ async function resyncEventDocuments() {
 const toggleNonce = ref(0);
 const redrawToggles = () => { toggleNonce.value += 1; };
 
+/** The feed a switch controls, as it reads inside a sentence: "... for channel events". */
+function inventoryEventFeedLabel(dataFeedId: string): string {
+  return dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? translate("physical location") : translate("channel");
+}
+
+/**
+ * Accessible name for one feed switch. The visible label only says which feed, so a screen reader
+ * would hear a column of identical "Channel" switches; name the document and the action as well.
+ */
+function eventSourceToggleLabel(doc: InventoryEventDocument, dataFeedId: string): string {
+  const attached = dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID ? doc.locationAttached : doc.channelAttached;
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
+  return attached ? translate("Stop {document} for {feed} events", copy) : translate("Start {document} for {feed} events", copy);
+}
+
 /**
  * Turning a source off is destructive in a way a toggle does not look: it stops that class of event
  * being RECORDED, so nothing accumulates to replay once it goes back on. Confirm before, and say that
  * the change is not instant - Moqui reads this through a cached query.
  */
-async function requestDocumentAttachChange(doc: InventoryEventDocument) {
-  if(doc.missing || savingDocumentId.value) {
+async function requestDocumentFeedAttachChange(doc: InventoryEventDocument, dataFeedId: string) {
+  const savingKey = `${dataFeedId}:${doc.dataDocumentId}`;
+  const isLocationFeed = dataFeedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID;
+  if(doc.missing || (isLocationFeed && !doc.locationSupported) || savingDocumentKey.value) {
     redrawToggles();
 
     return;
   }
-  const attaching = !doc.attached;
+  const attached = isLocationFeed ? doc.locationAttached : doc.channelAttached;
+  const attaching = !attached;
+  const copy = { document: doc.documentName, feed: inventoryEventFeedLabel(dataFeedId) };
 
   const alert = await alertController.create({
-    header: attaching ? `Listen to ${doc.documentName}?` : `Stop listening to ${doc.documentName}?`,
+    header: attaching
+      ? translate("Listen to {document} for {feed} events?", copy)
+      : translate("Stop listening to {document} for {feed} events?", copy),
     message: attaching
-      ? "New changes of this kind will start producing inventory events. Changes made while it was off were not recorded and will not be replayed; run a full aggregate ATP reset to reconcile."
-      : "Changes of this kind stop producing inventory events entirely, and nothing accumulates to catch up on later. Shopify keeps whatever quantity it already has until a full aggregate ATP reset corrects it.",
+      ? translate("New changes of this kind will start producing {feed} inventory events. Changes made while it was off were not recorded and will not be replayed; use the relevant inventory reset if Shopify needs to be reconciled.", copy)
+      : translate("Changes of this kind stop producing {feed} inventory events entirely, and nothing accumulates to catch up later. Existing events are unaffected.", copy),
     buttons: [
-      { text: "Cancel", role: "cancel" },
-      { text: attaching ? "Start listening" : "Stop listening", role: "confirm" },
+      { text: translate("Cancel"), role: "cancel" },
+      { text: attaching ? translate("Start listening") : translate("Stop listening"), role: "confirm" },
     ],
   });
   await alert.present();
@@ -2889,17 +3545,17 @@ async function requestDocumentAttachChange(doc: InventoryEventDocument) {
     return;
   }
 
-  savingDocumentId.value = doc.dataDocumentId;
+  savingDocumentKey.value = savingKey;
   try {
     // The composable's list updates from the cache write-through inside this call.
-    await setInventoryEventDocumentAttached(doc.dataDocumentId, attaching);
+    await setInventoryEventDocumentAttachedForFeed(dataFeedId, doc.dataDocumentId, attaching);
     commonUtil.showToast(attaching
-      ? "Event source enabled. It can take a few minutes to take effect."
-      : "Event source disabled. Events already recorded are unaffected.");
+      ? translate("Event source enabled for {feed} events. It can take a few minutes to take effect.", copy)
+      : translate("Event source disabled for {feed} events. Events already recorded are unaffected.", copy));
   } catch (error: any) {
-    commonUtil.showToast(error?.message || "Failed to update the event source.");
+    commonUtil.showToast(error?.message || translate("Failed to update the event source."));
   } finally {
-    savingDocumentId.value = "";
+    savingDocumentKey.value = "";
     // The list was re-read above on success and left untouched on failure, so a redraw shows what is
     // actually stored either way rather than what was clicked.
     redrawToggles();
@@ -2947,6 +3603,48 @@ async function requestInventoryEventFeedChange(event: Event) {
     commonUtil.showToast("Failed to update the inventory event feed.");
   } finally {
     inventoryEventFeedSaving.value = false;
+  }
+}
+
+async function requestLocationEventFeedChange(event: Event) {
+  event.stopImmediatePropagation();
+  if (locationEventFeedToggleDisabled.value) {
+    redrawToggles();
+    return;
+  }
+
+  const enablePush = !locationEventFeedPush.value;
+  const alert = await alertController.create({
+    header: enablePush ? translate("Enable real-time location updates?") : translate("Switch location updates to manual?"),
+    message: enablePush
+      ? translate("This affects every Shopify connection on this OMS. Restart every OMS node after saving so Moqui registers the real-time feed.")
+      : translate("This affects every Shopify connection on this OMS. New real-time events may continue for up to 15 minutes while Moqui's feed cache expires."),
+    buttons: [
+      { text: translate("Cancel"), role: "cancel" },
+      { text: enablePush ? translate("Enable real-time push") : translate("Switch to manual"), role: "confirm" },
+    ],
+  });
+  await alert.present();
+  const result = await alert.onDidDismiss();
+  if (result.role !== "confirm") {
+    redrawToggles();
+    return;
+  }
+
+  locationEventFeedSaving.value = true;
+  try {
+    await updateShopifyLocationInventoryEventFeedType(
+      enablePush ? SHOPIFY_INVENTORY_EVENT_FEED_PUSH : SHOPIFY_INVENTORY_EVENT_FEED_MANUAL,
+    );
+    await afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID });
+    commonUtil.showToast(enablePush
+      ? translate("Location events set to real-time push. Restart every OMS node before relying on event capture.")
+      : translate("Location events set to manual. Cached routing may take up to 15 minutes to expire."));
+  } catch (error) {
+    logger.error("Failed to update Shopify location inventory event feed", error);
+    commonUtil.showToast(translate("Failed to update the location inventory event feed."));
+  } finally {
+    locationEventFeedSaving.value = false;
   }
 }
 
@@ -3007,6 +3705,264 @@ async function requestShopInventoryPushChange(event: Event) {
   }
 }
 
+// =================================================================================================
+// Real-time location inventory (per-Shopify-location push ledger; ui.md §2) — additive section.
+// Distinct from the AGGREGATE channel ledger above: this row carries shopId/shopifyLocationId
+// directly, since real-time location push targets one Shopify location per mapped facility rather
+// than a facility-group aggregate, so it needs no channel indirection to scope by shop.
+// =================================================================================================
+const { records: allLocationInventoryDetails, hydrated: locationInventoryDetailsHydrated } =
+  useCachedList<any>(shopifyLocationInventoryAdjustmentDetailCache);
+const { records: allLocationInventorySummaries } =
+  useCachedList<any>(shopifyLocationInventorySummaryCache);
+
+const locationInventoryDetailsForShop = computed(() => allLocationInventoryDetails.value
+  .filter((row: any) => String(row.shopId ?? "") === String(props.id ?? "")));
+const locationInventorySummary = computed(() => allLocationInventorySummaries.value
+  .find((row: any) => String(row.shopId ?? "") === String(props.id ?? "")));
+
+/** `publish_PendingShopifyLocationInventoryAdjustments` runs every minute; the backlog age badge
+ *  warns once the oldest unassigned row has outlived two publish intervals. */
+const LOCATION_PUBLISH_INTERVAL_MS = 60_000;
+
+const locationPublishJobStatus = computed(() => {
+  if (!locationPublishJob.value) return translate("Not configured");
+  return locationPublishJob.value.paused === "Y" ? translate("Paused") : translate("Active");
+});
+const locationPublishJobBadgeColor = computed(() => {
+  if (!locationPublishJob.value) return "medium";
+  return locationPublishJob.value.paused === "Y" ? "warning" : "success";
+});
+const locationPublishJobNextRun = computed(() => nextExecutionFor(locationPublishJob.value ? [locationPublishJob.value] : [])?.nextExecutionDateTime);
+
+/**
+ * Delivery state, derived ONLY from the linked message — never synthesized beyond the three cases
+ * the blueprint names: unassigned+non-zero, unassigned+zero (no-op), and "whatever the message says".
+ */
+function locationDeliveryState(row: any): { label: string; color: string } {
+  const messageId = String(row.systemMessageId ?? "");
+  const change = Number(row.computedInventoryChange ?? 0);
+  if (!messageId) {
+    return change !== 0
+      ? { label: translate("Unassigned (publishable)"), color: "warning" }
+      : { label: translate("No-op"), color: "medium" };
+  }
+  const message = cachedSystemMessages.value.find((m: any) => String(m.systemMessageId) === messageId);
+  const statusId = row.systemMessageStatusId || message?.statusId;
+  const label = statusDescriptionFor(statusId) || statusId || translate("Not available");
+  const errorish = /error|fail/i.test(String(statusId ?? ""));
+  return { label, color: errorish ? "danger" : "medium" };
+}
+
+const locationDetailRows = computed(() => locationInventoryDetailsForShop.value.map((row: any) => {
+  const state = locationDeliveryState(row);
+  return {
+    ...row,
+    rowKey: row.locationAdjustmentKey,
+    eventTypeId: row.eventTypeId,
+    eventReferenceId: row.eventReferenceId,
+    eventTypeDescription: row.eventTypeDescription,
+    shopifyLocationId: row.shopifyLocationId,
+    shopifyInventoryItemId: row.shopifyInventoryItemId,
+    computedInventoryChange: Number(row.computedInventoryChange ?? 0),
+    createdDate: row.createdDate,
+    decisionComment: row.decisionComment,
+    systemMessageId: row.systemMessageId,
+    stateLabel: state.label,
+    stateColor: state.color,
+  };
+}));
+
+const locationFilterLocationId = ref("");
+const locationFilterEventType = ref("");
+const locationFilterState = ref("");
+const locationFilterFrom = ref<string | null>(null);
+const locationFilterTo = ref<string | null>(null);
+const locationLocationOptions = computed(() =>
+  [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
+const locationEventTypeOptions = computed(() =>
+  [...new Set(locationDetailRows.value.map((row) => row.eventTypeId).filter(Boolean))]);
+const locationStateOptions = computed(() => [
+  { id: "pending", label: translate("Pending delivery") },
+  { id: "unassigned", label: translate("Unassigned (publishable)") },
+  { id: "noop", label: translate("No-op") },
+  ...["SmsgProduced", "SmsgSending", "SmsgError", "SmsgSent", "SmsgCancelled"].map(id => ({ id, label: statusDescriptionFor(id) || id })),
+]);
+const locationVisibleCount = ref(50);
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery], () => { locationVisibleCount.value = 50; });
+const locationHistoryMode = ref(props.initialHistoryMode === "batches" ? "batches" : "events");
+function changeLocationMode(mode: string) {
+  locationHistoryMode.value = mode;
+  void router.replace({ query: { ...router.currentRoute.value.query, mode } });
+}
+watch([locationFilterState, locationFilterLocationId, locationFilterEventType, locationFilterFrom, locationFilterTo, locationHistoryQuery],
+  ([state, location, eventType, from, to, search]) => {
+    if (activeView.value === "location-history") void router.replace({ query: {
+      ...router.currentRoute.value.query, state: state || undefined, location: location || undefined,
+      eventType: eventType || undefined, from: from || undefined, to: to || undefined, search: search || undefined,
+    } });
+  });
+watch(() => router.currentRoute.value.query, (query) => {
+  if (activeView.value !== "location-history") return;
+  locationHistoryMode.value = query.mode === "batches" ? "batches" : "events";
+  locationFilterLocationId.value = String(query.location || "");
+  locationFilterEventType.value = String(query.eventType || "");
+  locationFilterFrom.value = query.from ? String(query.from) : null;
+  locationFilterTo.value = query.to ? String(query.to) : null;
+  locationHistoryQuery.value = String(query.search || "");
+  locationFilterState.value = String(query.state || (query.mode === "unassigned" ? "unassigned" : ""));
+}, { immediate: true });
+const filteredLocationBatches = computed(() => {
+  const grouped = new Map<string, any[]>();
+  for (const row of filteredLocationDetailRows.value) {
+    const key = row.systemMessageId || "unassigned";
+    grouped.set(key, [...(grouped.get(key) || []), row]);
+  }
+  return [...grouped].map(([id, rows]) => ({ id, rows,
+    label: id === "unassigned" ? translate("Unbatched events") : id,
+    state: rows[0].stateLabel,
+    target: [...new Set(rows.map(row => row.shopifyLocationId))].join(", "),
+    created: rows[0].systemMessageInitDate || rows[0].createdDate,
+    net: rows.reduce((total, row) => total + row.computedInventoryChange, 0),
+  }));
+});
+
+const filteredLocationDetailRows = computed(() => {
+  const query = locationHistoryQuery.value.trim().toLowerCase();
+  return locationDetailRows.value
+    .filter((row) => !locationFilterLocationId.value || row.shopifyLocationId === locationFilterLocationId.value)
+    .filter((row) => !locationFilterEventType.value || row.eventTypeId === locationFilterEventType.value)
+    .filter((row) => !locationFilterState.value
+      || (locationFilterState.value === "pending" && ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+      || (locationFilterState.value === "unassigned" && !row.systemMessageId && row.computedInventoryChange !== 0)
+      || (locationFilterState.value === "noop" && !row.systemMessageId && row.computedInventoryChange === 0)
+      || row.systemMessageStatusId === locationFilterState.value)
+    .filter((row) => !locationFilterFrom.value
+      || Number(row.createdDate ?? 0) >= DateTime.fromISO(locationFilterFrom.value).startOf("day").toMillis())
+    .filter((row) => !locationFilterTo.value
+      || Number(row.createdDate ?? 0) <= DateTime.fromISO(locationFilterTo.value).endOf("day").toMillis())
+    .filter((row) => {
+      if (!query) return true;
+      return String(row.systemMessageId ?? "").toLowerCase().includes(query)
+        || String(row.eventReferenceId ?? "").toLowerCase().includes(query)
+        || String(row.shopifyLocationId ?? "").toLowerCase().includes(query)
+        || String(row.shopifyInventoryItemId ?? "").toLowerCase().includes(query)
+        || String(row.eventTypeDescription ?? "").toLowerCase().includes(query)
+        || String(row.eventTypeId ?? "").toLowerCase().includes(query);
+    })
+    .sort((a, b) => Number(b.createdDate ?? 0) - Number(a.createdDate ?? 0));
+});
+
+// --- 2.1 Summary tiles ---
+const unassignedNonZeroRows = computed(() => locationDetailRows.value
+  .filter((row) => !row.systemMessageId && row.computedInventoryChange !== 0));
+const unassignedNonZeroCount = computed(() => locationInventorySummary.value?.backlogCount ?? unassignedNonZeroRows.value.length);
+const oldestUnassignedCreatedAt = computed(() => toMillis(locationInventorySummary.value?.oldestBacklogDate) || unassignedNonZeroRows.value.reduce(
+  (oldest: number | undefined, row) => {
+    const created = Number(row.createdDate ?? 0);
+    return created && (oldest === undefined || created < oldest) ? created : oldest;
+  },
+  undefined as number | undefined,
+));
+const oldestUnassignedAgeLabel = computed(() => {
+  if (oldestUnassignedCreatedAt.value === undefined) return "";
+  const minutes = Math.round((Date.now() - oldestUnassignedCreatedAt.value) / 60_000);
+  return minutes < 1 ? translate("< 1 min") : `${minutes} ${translate("min")}`;
+});
+const unassignedBacklogWarn = computed(() =>
+  oldestUnassignedCreatedAt.value !== undefined
+  && Date.now() - oldestUnassignedCreatedAt.value > LOCATION_PUBLISH_INTERVAL_MS * 2);
+const locationDeliveryErrorCount = computed<number | undefined>(() =>
+  locationInventoryDeliveryErrorCount(locationInventorySummary.value));
+const locationNoOpOrQuarantinedCount = computed(() =>
+  locationInventorySummary.value?.noOpOrQuarantinedCount ?? translate("Not available"));
+
+const locationMessageIds = computed(() => {
+  const ids = new Set<string>();
+  for (const row of locationDetailRows.value) {
+    if (row.systemMessageId) ids.add(String(row.systemMessageId));
+  }
+  return [...ids];
+});
+
+const pendingLocationBatchCount = computed(() => new Set(locationDetailRows.value
+  .filter((row: any) => ["SmsgProduced", "SmsgSending", "SmsgError"].includes(row.systemMessageStatusId))
+  .map((row: any) => row.systemMessageId).filter(Boolean)).size);
+
+const selectedLocationBatch = ref<Batch | null>(null);
+
+const locationBatches = computed<Batch[]>(() => {
+  const grouped = new Map<string, any[]>();
+  for (const detail of locationDetailRows.value) {
+    const id = String(detail.systemMessageId ?? "");
+    if (!id) continue;
+    grouped.set(id, [...(grouped.get(id) ?? []), detail]);
+  }
+
+  return [...grouped.entries()].map(([id, details]) => {
+    const message = messageById.value.get(id);
+    const statusId = details[0]?.systemMessageStatusId || message?.statusId;
+    const state = batchState(statusId);
+    const createdAt = toMillis(message?.initDate || details[0]?.createdDate);
+    const net = details.reduce((total, detail) => total + Number(detail.computedInventoryChange || 0), 0);
+    const locId = details[0]?.shopifyLocationId;
+    return {
+      id,
+      statusId,
+      ...state,
+      created: createdAt ? formatDateTime(createdAt) : translate("Unknown"),
+      createdAt,
+      age: formatAge(createdAt),
+      target: locId ? `${translate("Shopify location")} ${locId}` : translate("Shopify location"),
+      eventCount: details.length,
+      detail: `${translate("Net adjustment")} ${net > 0 ? "+" : ""}${net}`,
+      messageText: message?.messageText,
+    };
+  }).sort((a, b) => b.createdAt - a.createdAt);
+});
+
+const eventsForSelectedLocationBatch = computed(() => selectedLocationBatch.value
+  ? locationDetailRows.value.filter((row) => row.systemMessageId === selectedLocationBatch.value?.id) : []);
+
+const nextLocationBatchRun = computed(() => {
+  if (!locationPublishJob.value) return translate("Not configured");
+  if (locationPublishJob.value.paused === "Y") return translate("Paused");
+  const nextRun = locationPublishJob.value?.nextExecutionDateTime;
+  return nextRun && toMillis(nextRun) > Date.now() ? formatDateTime(nextRun) : translate("Schedule needs refresh");
+});
+
+const oldestLocationUnbatchedEvent = computed(() => {
+  return oldestUnassignedCreatedAt.value !== undefined
+    ? formatDateTime(oldestUnassignedCreatedAt.value)
+    : translate("None waiting");
+});
+
+function openLocationHistory(mode?: "unassigned" | "batches" | "errors") {
+  if (mode === "unassigned") {
+    locationFilterState.value = "unassigned";
+  } else {
+    locationFilterState.value = "";
+  }
+  void router.push({
+    path: `/shopify-connection-details/${props.id}/inventory-sync/location-history`,
+    query: mode ? { mode, state: mode === "batches" ? "pending" : mode === "unassigned" ? "unassigned" : mode === "errors" ? "SmsgError" : undefined } : {},
+  });
+}
+
+// --- Row expand modal: decisionComment verbatim + the linked message's error text ---
+const selectedLocationDetail = ref<any>(null);
+const locationDetailErrorText = ref("");
+watch(() => selectedLocationDetail.value?.systemMessageId, async (systemMessageId) => {
+  locationDetailErrorText.value = "";
+  if (!systemMessageId) return;
+  try {
+    const errors = await ensureSystemMessageErrors(String(systemMessageId));
+    locationDetailErrorText.value = errors?.[0]?.errorText || "";
+  } catch (error) {
+    logger.error("Could not load delivery errors for a location inventory detail", systemMessageId, error);
+  }
+});
+
 function activeSyncDomains() {
   return [
     // Skipped entirely until the channels are known: with no channel list the domain cannot tell
@@ -3020,6 +3976,11 @@ function activeSyncDomains() {
     ...(watchedJobNames.value.length
       ? [{ name: "serviceJobRun", args: { jobNames: watchedJobNames.value, total: 5 } }]
       : []),
+    // The location ledger carries shopId natively, so it needs only the shop id to scope — no
+    // channel resolution required.
+    ...(props.id
+      ? [{ name: "shopifyLocationInventoryAdjustmentDetail", args: { shopId: String(props.id) } }]
+      : []),
   ];
 }
 
@@ -3029,18 +3990,34 @@ watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelI
   if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
 });
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
-watch(() => props.initialHistoryMode, (mode) => { historyMode.value = mode ?? "events"; });
+watch(() => props.initialHistoryMode, (mode) => {
+  if (mode === "unassigned") {
+    locationFilterState.value = "unassigned";
+  } else {
+    historyMode.value = (mode as HistoryMode) ?? "events";
+  }
+});
 
 onIonViewWillEnter(() => {
   isViewActive.value = true;
+  if (props.initialView) activeView.value = props.initialView;
+  if (props.initialHistoryMode === "unassigned") {
+    locationFilterState.value = "unassigned";
+  }
   void startSyncDomains(activeSyncDomains());
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
+  void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID });
   // Same gate on the shop domain, and the same reason: this page renders the connection's push flag,
   // which the Moqui admin screen can also change. Skipped without an id - the by-PK read would go to
   // `oms/shopifyShops/shops/` and re-list every shop.
   if(props.id) {void afterMutation("shopifyShop", { shopId: String(props.id) });}
+  // The location publisher is global, so it is not in watchedJobNames but its run state still
+  // changes what this page reports.
+  for(const jobName of [...watchedJobNames.value, "publish_PendingShopifyLocationInventoryAdjustments"]) {
+    void afterMutation("serviceJob", { jobName });
+  }
 });
 
 onIonViewDidLeave(() => {
@@ -3232,7 +4209,10 @@ const messageText = computed(() => {
 
   return JSON.stringify({
     systemMessageId: messageBatch.value?.id,
-    systemMessageTypeId: "ShopifyInventoryAdjustment",
+    // A location batch is not always a ShopifyInventoryAdjustment, so read the real type when the
+    // message is cached and fall back to the aggregate type only when it is not.
+    systemMessageTypeId: messageById.value.get(String(messageBatch.value?.id ?? ""))?.systemMessageTypeId || "ShopifyInventoryAdjustment",
+    shopifyLocation: messageBatch.value?.target,
     inventoryChannel: messageBatch.value?.channel,
     reason: messageBatch.value?.reason,
     eventCount: messageBatch.value?.eventCount,
@@ -3240,7 +4220,11 @@ const messageText = computed(() => {
   }, null, 2);
 });
 
-function openMessage(batch: Batch) { messageBatch.value = batch; }
+async function openMessage(batch: Batch) {
+  messageBatch.value = { ...batch, messageText: "Loading message…" };
+  const message = await ensureSystemMessageById(batch.id);
+  if (messageBatch.value?.id === batch.id) messageBatch.value = { ...batch, messageText: message?.messageText || "Message text unavailable" };
+}
 function openHistory(mode: HistoryMode = "events") {
   historyMode.value = mode;
   void router.push({
@@ -3313,7 +4297,7 @@ function serviceJobSelection(jobName: string, title: string, serviceName?: strin
     title,
     // Default to protecting the channel: every other job that carries inventoryChannelId is bound to
     // one channel, and only the discard tool takes it as an input.
-    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId"],
+    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId", "shopId"],
     parameterOptions: isDiscardJob ? { inventoryChannelId: channelFilterOptions.value } : {},
   };
 }
@@ -3338,6 +4322,7 @@ function refreshServiceJobData() {
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");
+const jobSetupError = ref("");
 
 /**
  * Create a row's missing job(s), PAUSED — activation stays a deliberate second step in the job's own
@@ -3351,9 +4336,12 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
   if(!kind || provisioningJobKind.value) {return;}
   const provisioningKey = targetChannelId ? `${kind}-${targetChannelId}` : kind;
   provisioningJobKind.value = provisioningKey as JobSetupKind;
+  jobSetupError.value = "";
   try {
     const created: string[] = [];
-    if(kind === "physicalReset") {
+    if(kind === "physicalAtpReset") {
+      created.push(await ensureShopPhysicalAtpResetJob(String(props.id)));
+    } else if(kind === "physicalReset") {
       const remoteId = String(syncContext.remoteId.value ?? "");
       if(!remoteId) {throw new Error("No Shopify remote is configured for this connection.");}
       created.push(await ensureShopPhysicalInventoryResetJob({ systemMessageRemoteId: remoteId }));
@@ -3404,7 +4392,8 @@ async function setUpSyncJob(kind: JobSetupKind | "", targetChannelId?: string) {
         : `${created.length} jobs created, paused. Open each row entry to schedule and activate them.`);
   } catch (error: any) {
     logger.error("Failed to set up inventory sync job", kind, error);
-    commonUtil.showToast(error?.message || "The job could not be created.");
+    jobSetupError.value = error?.message || translate("The job could not be created.");
+    commonUtil.showToast(jobSetupError.value);
   } finally {
     provisioningJobKind.value = "";
   }
@@ -3470,6 +4459,47 @@ function formatAge(timestamp: number): string {
   align-items: flex-start;
 }
 
+.queue-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-column ion-card {
+  margin: 10px;
+}
+
+/* Location inventory section (ui.md §2) — kpi-grid copied from ShopifyInventoryJobRuns.vue. */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacer-base);
+  margin-block-end: var(--spacer-base);
+}
+
+.kpi-grid ion-card {
+  margin: 0;
+}
+
+.count-skeleton {
+  width: var(--spacer-3xl);
+}
+
+.location-filter-card {
+  margin-block-end: var(--spacer-base);
+}
+
+.date-filter-item {
+  width: 100%;
+}
+
+/* Copied from the same idiom already used in NetSuiteSyncMonitor.vue / ShopifyInventoryJobRuns.vue. */
+.overline {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ion-color-medium);
+}
+
 .summary-grid ion-card-header,
 .run-carousel ion-card-header {
   position: relative;
@@ -3516,6 +4546,21 @@ function formatAge(timestamp: number): string {
 
 .event-feed-settings > ion-item {
   margin-block-start: var(--spacer-sm);
+}
+
+/* Layout only: the toggles style their own labels. Side by side normally, stacked on narrow screens. */
+.event-source-feeds {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: var(--spacer-base);
+}
+
+@media (max-width: 700px) {
+  .event-source-feeds {
+    grid-auto-flow: row;
+    gap: var(--spacer-2xs);
+  }
 }
 
 .sync-error-banner ion-card-content {
