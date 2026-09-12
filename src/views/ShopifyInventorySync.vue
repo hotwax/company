@@ -3693,7 +3693,10 @@ const filteredEvents = computed(() => {
     const matchesQuery = !query || [event.eventTypeId, event.eventReferenceId, event.type,
       event.shopifyInventoryItem, event.channelLabel, event.locationId, event.locationLabel,
       event.reason, event.batchId, event.detailState, event.delivery, event.decisionComment,
-      event.productId, event.productName, event.productSku]
+      // Every one of these is rendered somewhere on the row, which is the rule: a search that hides a
+      // row for text the reader can see on it is a broken search. `productVariant` prints beside the
+      // SKU on the product cell, so it has to be matchable there.
+      event.productId, event.productName, event.productSku, event.productVariant]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
 
     return matchesQuery &&

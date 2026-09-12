@@ -41,8 +41,11 @@ vi.mock("vue-router", () => ({
   }),
 }));
 
+/** Solr-resolved products, so a test can give a row a real name, SKU and variant to render. */
+const resolvedProducts = ref(new Map<string, any>());
+
 vi.mock("@common", () => ({
-  useProducts: () => ({ products: ref(new Map()), resolve: vi.fn(), reset: vi.fn() }),
+  useProducts: () => ({ products: resolvedProducts, resolve: vi.fn(), reset: vi.fn() }),
   // Renders a real <img> rather than a stub: the event table puts one in every row, and a stub that
   // renders nothing would let a broken image cell pass.
   DxpShopifyImg: { props: ["src", "size"], template: "<img :src=\"src\" />" },
@@ -578,6 +581,7 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     syncError.value = null;
     cachedMessages.value = [];
     cachedJobs.value = [];
+    resolvedProducts.value = new Map();
     cachedChannels.value = [{
       inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
@@ -596,6 +600,40 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     expect(wrapper.text()).toContain("+1");
     expect(wrapper.text()).toContain("-2");
     expect(wrapper.text()).toContain("Not batched");
+  });
+
+  /**
+   * The rule the search has to keep: a row is findable by anything printed on it. The variant prints
+   * beside the SKU on the product cell, and leaving it out of the predicate meant typing the exact
+   * text on screen filtered that row away.
+   */
+  it("finds a row by the variant printed on it", async () => {
+    resolvedProducts.value = new Map([["140876", {
+      productId: "140876",
+      parentProductName: "Getty Wide Leg",
+      productName: "After Hours",
+      sku: "727A-218A-12160",
+      internalName: "",
+      mainImageUrl: "",
+      goodIdentifications: [],
+    }]]);
+    cachedAdjustmentDetails.value = [
+      pendingRow({
+        eventReferenceId: "R_VARIANT",
+        decisionComment: "Event RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
+      }),
+      pendingRow({ eventReferenceId: "R_OTHER" }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("After Hours");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+
+    wrapper.findComponent({ name: "IonSearchbar" }).vm.$emit("update:modelValue", "After Hours");
+    await flushPromises();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
+    expect(wrapper.text()).toContain("Getty Wide Leg");
   });
 
   it("narrows the table to the rows the search matches", async () => {
