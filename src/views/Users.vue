@@ -110,7 +110,11 @@
           </div>
         </div>
       </div>
-      <div v-if="!isLoading && searchFailed" class="ion-padding ion-text-center" role="alert">
+      <div v-if="!isLoading && hasUnsubmittedQuery" class="ion-padding ion-text-center">
+        <p>{{ translate("Your search has changed. Search again to update the results.") }}</p>
+        <ion-button fill="outline" @click="updateQuery()">{{ translate("Search users") }}</ion-button>
+      </div>
+      <div v-else-if="!isLoading && searchFailed" class="ion-padding ion-text-center" role="alert">
         <h2>{{ translate("Unable to load users") }}</h2>
         <p>{{ translate("Try again to see users matching your search and filters.") }}</p>
         <ion-button fill="outline" @click="fetchUsers()">{{ translate("Try again") }}</ion-button>
@@ -138,7 +142,7 @@
       </ion-fab>
 
       <ion-infinite-scroll
-        v-if="isScrollable"
+        v-if="isScrollable && !hasUnsubmittedQuery"
         threshold="100px"
         @ion-infinite="loadMoreUsers($event)"
       >
@@ -168,9 +172,12 @@ const { setFromSearch, clearDraft } = useUserCreationDraft();
 const USERS_PAGE_SIZE = 25;
 const isLoading = ref(true);
 const searchFailed = ref(false);
+const completedQueryKey = ref<string>();
+const queryKey = computed(() => JSON.stringify([userStore.query.queryString, userStore.query.userGroupId, userStore.query.status]));
+const hasUnsubmittedQuery = computed(() => completedQueryKey.value !== undefined && queryKey.value !== completedQueryKey.value);
 const canCreateUser = computed(() => userStore.hasPermission(Actions.APP_SECURITY_CREATE));
 const hasSearchOrFilters = computed(() => Boolean(userStore.query.queryString?.trim() || userStore.query.userGroupId || userStore.query.status));
-const showEmptyState = computed(() => !isLoading.value && !searchFailed.value && !users.value?.length && !currentUser.value.userId);
+const showEmptyState = computed(() => !isLoading.value && !searchFailed.value && !hasUnsubmittedQuery.value && !users.value?.length && !currentUser.value.userId);
 
 // The logged-in user's own record, pinned at the top of the list. The profile is already available from
 // login, but it doesn't carry group associations, so those are fetched separately via getUserGroups().
@@ -228,6 +235,7 @@ const clearSearchAndFilters = async () => {
 const fetchUsers = async (pSize?: any, pIndex?: any) => {
   const pageSize = pSize || USERS_PAGE_SIZE;
   const pageIndex = pIndex || 0;
+  const requestedQueryKey = queryKey.value;
 
   isLoading.value = true;
   searchFailed.value = false;
@@ -242,6 +250,7 @@ const fetchUsers = async (pSize?: any, pIndex?: any) => {
   } catch {
     searchFailed.value = true;
   } finally {
+    completedQueryKey.value = requestedQueryKey;
     isLoading.value = false;
   }
 };
