@@ -3466,5 +3466,11 @@
   "Set up with config.toml": "Set up with config.toml",
   "Open your user config file in a text editor: ~/.codex/config.toml on Mac or Linux, or %USERPROFILE%\\.codex\\config.toml on Windows. Add this entry, or replace the existing hotwax-oms entry, and replace the token placeholder locally.": "Open your user config file in a text editor: ~/.codex/config.toml on Mac or Linux, or %USERPROFILE%\\.codex\\config.toml on Windows. Add this entry, or replace the existing hotwax-oms entry, and replace the token placeholder locally.",
   "Codex app configuration": "Codex app configuration",
-  "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.": "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token."
+  "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.": "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.",
+  "Unable to load users": "Unable to load users",
+  "Try again to see users matching your search and filters.": "Try again to see users matching your search and filters.",
+  "Can't find the person you're looking for? Create a new user to get started.": "Can't find the person you're looking for? Create a new user to get started.",
+  "Try another search or clear your filters to find an existing user.": "Try another search or clear your filters to find an existing user.",
+  "Clear search and filters": "Clear search and filters",
+  "Try again": "Try again"
 }
