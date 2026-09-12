@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from "@vue/test-utils";
+import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
@@ -652,5 +652,69 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     expect(wrapper.text()).toContain("1 shown");
     expect(wrapper.text()).toContain("+1");
     expect(wrapper.text()).not.toContain("-2");
+  });
+});
+
+/**
+ * The channel filter's options are objects -- `{ value, label }` -- because two channels can share a
+ * facility group name, so the filter matches on the id while the label carries the name and, when a
+ * name repeats, the id that tells them apart.
+ *
+ * Rendering the option itself instead of its label is legal Vue: it prints the JSON of the object and
+ * nothing fails. Only the `:key` and `:value` keep working, so the filter still filters and the
+ * regression is visible exclusively to a person reading the dropdown.
+ */
+describe("ShopifyInventorySync - the inventory channel filter", () => {
+  const mountHistory = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "history" as const },
+      global: {
+        stubs: {
+          IonModal: { template: "<div><slot /></div>" },
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  beforeEach(() => {
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedMessages.value = [];
+    cachedJobs.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedChannels.value = [
+      { inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Retail Aggregate", shopifyLocationId: "LOC_1", fromDate: 1000 },
+      { inventoryChannelId: "IC_1002", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Warehouse Aggregate", shopifyLocationId: "LOC_2", fromDate: 1000 },
+      // Shares the first channel's name on purpose: this is the case the option object exists for.
+      { inventoryChannelId: "IC_1003", shopId: "100002", facilityGroupId: "FG_3", facilityGroupName: "Retail Aggregate", shopifyLocationId: "LOC_3", fromDate: 1000 },
+    ];
+  });
+
+  /**
+   * Read off the option ELEMENTS and compare exactly. A `toContain` against the page text passes even
+   * when the object is rendered, because the label it should have printed is inside that JSON.
+   */
+  const labelFor = (wrapper: VueWrapper, value: string) => wrapper.findAllComponents({ name: "IonSelectOption" })
+    .find((option) => String(option.props("value") ?? "") === value)?.text();
+
+  it("labels each option with the channel name, not the option object", async () => {
+    const wrapper = await mountHistory();
+
+    expect(labelFor(wrapper, "IC_1002")).toBe("Warehouse Aggregate");
+  });
+
+  it("appends the id to a name two channels share", async () => {
+    const wrapper = await mountHistory();
+
+    expect(labelFor(wrapper, "IC_1001")).toBe("Retail Aggregate (IC_1001)");
+    expect(labelFor(wrapper, "IC_1003")).toBe("Retail Aggregate (IC_1003)");
   });
 });

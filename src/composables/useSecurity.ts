@@ -56,11 +56,32 @@ export function useAuth() {
   return { hasPermission, userProfile };
 }
 
-/** Account actions a non-user screen occasionally needs (e.g. the facility login popover). */
+interface UserCreationDraft {
+  firstName: string;
+  lastName: string;
+}
+
+// A one-time handoff between routed pages. Never persisted or placed in the URL.
+let pendingUserCreationDraft: UserCreationDraft | undefined;
+const clearUserCreationDraft = () => { pendingUserCreationDraft = undefined; };
+onSessionCleared(clearUserCreationDraft);
+
+/** Shared user-account actions, including the search-to-creation handoff. */
 export function useUserAccountActions() {
   const userStore = useUserStore();
   const sendResetPasswordEmail = (userLoginId: string) => userStore.sendResetPasswordEmail({ userLoginId });
-  return { sendResetPasswordEmail };
+  const setUserCreationDraftFromSearch = (search: string) => {
+    const name = search.trim();
+    const [firstName = "", ...lastName] = name ? name.split(/\s+/) : [];
+    pendingUserCreationDraft = { firstName, lastName: lastName.join(" ") };
+  };
+  const consumeUserCreationDraft = (): UserCreationDraft => {
+    const draft = pendingUserCreationDraft ?? { firstName: "", lastName: "" };
+    clearUserCreationDraft();
+    return draft;
+  };
+
+  return { sendResetPasswordEmail, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft };
 }
 
 /** Preserve the authenticated REST context root; reject embedded credentials, queries, and fragments. */

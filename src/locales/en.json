@@ -52,6 +52,7 @@
   "Not batched": "Not batched",
   "Pass limit": "Pass limit",
   "Passes run": "Passes run",
+  "Prefilled with this OMS's own webhook receiver. Replace it with an EventBridge ARN or a proxy URL if Shopify reaches this OMS by another route. Existing subscriptions will be preserved.": "Prefilled with this OMS's own webhook receiver. Replace it with an EventBridge ARN or a proxy URL if Shopify reaches this OMS by another route. Existing subscriptions will be preserved.",
   "Re-queued from sending": "Re-queued from sending",
   "Records removed": "Records removed",
   "Removed for age only": "Removed for age only",
@@ -3142,7 +3143,6 @@
   "Use suggestion": "Use suggestion",
   "Use the existing inventory location audit and mapping screen.": "Use the existing inventory location audit and mapping screen.",
   "Use the price a product was sold at in the order.": "Use the price a product was sold at in the order.",
-  "Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.": "Use the public endpoint routed to this OMS. Existing subscriptions will be preserved.",
   "User": "User",
   "User changes recorded in EntityAuditLog.": "User changes recorded in EntityAuditLog.",
   "User created successfully": "User created successfully",
@@ -3472,5 +3472,12 @@
   "Set up with config.toml": "Set up with config.toml",
   "Open your user config file in a text editor: ~/.codex/config.toml on Mac or Linux, or %USERPROFILE%\\.codex\\config.toml on Windows. Add this entry, or replace the existing hotwax-oms entry, and replace the token placeholder locally.": "Open your user config file in a text editor: ~/.codex/config.toml on Mac or Linux, or %USERPROFILE%\\.codex\\config.toml on Windows. Add this entry, or replace the existing hotwax-oms entry, and replace the token placeholder locally.",
   "Codex app configuration": "Codex app configuration",
-  "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.": "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token."
+  "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.": "Remove any bearer_token_env_var line from this server entry so it uses the header. Save the file, then restart MCP from the Codex app. Keep the file private because it contains your token.",
+  "Unable to load users": "Unable to load users",
+  "Try again to see users matching your search and filters.": "Try again to see users matching your search and filters.",
+  "Can't find the person you're looking for? Create a new user to get started.": "Can't find the person you're looking for? Create a new user to get started.",
+  "Try another search or clear your filters to find an existing user.": "Try another search or clear your filters to find an existing user.",
+  "Clear search and filters": "Clear search and filters",
+  "Try again": "Try again",
+  "Your search has changed. Search again to update the results.": "Your search has changed. Search again to update the results."
 }
