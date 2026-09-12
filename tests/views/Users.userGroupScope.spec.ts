@@ -34,11 +34,14 @@ vi.mock("@common", async () => ({
   emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
 }));
 
-vi.mock("@/composables/useSecurity", () => ({
+vi.mock("@/composables/useSecurity", async (importOriginal) => ({
+  ...(await importOriginal<any>()),
   useUserGroups: () => ({ userGroups: harness.userGroups, records: harness.userGroups, hydrated: ref(true) }),
 }));
 
 vi.mock("@/store/user", () => ({ useUserStore: () => harness.userStore }));
+
+vi.mock("@/services/appCacheBootstrap", () => ({ resyncDomain: vi.fn() }));
 
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 
@@ -112,8 +115,8 @@ describe("Users security-group filter scope", () => {
     expect(harness.userStore.clearSelectedUser).toHaveBeenCalledOnce();
     const router = (await import("@/router")).default;
     expect(router.push).toHaveBeenCalledWith("/create-user");
-    const { useUserCreationDraft } = await import("@/composables/useUserCreationDraft");
-    expect(useUserCreationDraft().consumeDraft()).toEqual({ firstName: "anil", lastName: "" });
+    const { useUserAccountActions } = await import("@/composables/useSecurity");
+    expect(useUserAccountActions().consumeUserCreationDraft()).toEqual({ firstName: "anil", lastName: "" });
   });
 
   it("offers search recovery without creation permission", async () => {

@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { onMounted, ref } from "vue";
-import { useUserCreationDraft } from "@/composables/useUserCreationDraft";
+import { useUserAccountActions } from "@/composables/useSecurity";
 import { clearSessionScopedState } from "@/composables/sessionScope";
 
 const harness = vi.hoisted(() => ({
@@ -14,6 +14,8 @@ vi.mock("@ionic/vue", async (importOriginal) => ({
   ...(await importOriginal<any>()),
   onIonViewWillEnter: (cb: any) => { harness.enter = cb; onMounted(cb); },
 }));
+vi.mock("@/services/appCacheBootstrap", () => ({ resyncDomain: vi.fn() }));
+
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ createUser: harness.createUser }) }));
 vi.mock("@/composables/useFacilities", () => ({ useFacilities: () => ({ facilities: ref([]) }) }));
@@ -34,7 +36,7 @@ function names(wrapper: any) {
 describe("Create user search prefill", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useUserCreationDraft().clearDraft();
+    useUserAccountActions().clearUserCreationDraft();
   });
 
   it.each([
@@ -45,7 +47,7 @@ describe("Create user search prefill", () => {
     ["Mary-Jane O'Neill", "Mary-Jane", "O'Neill"],
     ["   ", "", ""],
   ])("prefills %j without submitting", async (name, firstName, lastName) => {
-    useUserCreationDraft().setFromSearch(name);
+    useUserAccountActions().setUserCreationDraftFromSearch(name);
     const wrapper = await mountView();
     expect(names(wrapper)).toEqual([firstName, lastName]);
     expect(harness.createUser).not.toHaveBeenCalled();
@@ -59,9 +61,9 @@ describe("Create user search prefill", () => {
   });
 
   it("uses the new search when Ionic re-enters a cached creation page", async () => {
-    useUserCreationDraft().setFromSearch("Anil Patel");
+    useUserAccountActions().setUserCreationDraftFromSearch("Anil Patel");
     const wrapper = await mountView();
-    useUserCreationDraft().setFromSearch("Mary Jane Watson");
+    useUserAccountActions().setUserCreationDraftFromSearch("Mary Jane Watson");
     harness.enter();
     await flushPromises();
     expect(names(wrapper)).toEqual(["Mary", "Jane Watson"]);
@@ -73,7 +75,7 @@ describe("Create user search prefill", () => {
   });
 
   it("clears an unused draft on logout", async () => {
-    useUserCreationDraft().setFromSearch("Anil Patel");
+    useUserAccountActions().setUserCreationDraftFromSearch("Anil Patel");
     clearSessionScopedState();
     const wrapper = await mountView();
     expect(names(wrapper)).toEqual(["", ""]);

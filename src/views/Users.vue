@@ -162,13 +162,12 @@ import { addOutline, peopleOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useUserCreationDraft } from "@/composables/useUserCreationDraft";
-import { useUserGroups } from "@/composables/useSecurity";
+import { useUserAccountActions, useUserGroups } from "@/composables/useSecurity";
 import { useUserStore } from "@/store/user";
 import Actions from "@/authorization/actions";
 
 const userStore = useUserStore();
-const { setFromSearch, clearDraft } = useUserCreationDraft();
+const { setUserCreationDraftFromSearch, clearUserCreationDraft } = useUserAccountActions();
 const USERS_PAGE_SIZE = 25;
 const isLoading = ref(true);
 const searchFailed = ref(false);
@@ -194,14 +193,14 @@ const userProfile = computed(() => userStore.getUserProfile)
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 
 onIonViewWillEnter(async () => {
-  clearDraft();
+  clearUserCreationDraft();
   await fetchUsers();
 });
 
 const createUser = () => {
   if (!canCreateUser.value) return;
   userStore.clearSelectedUser();
-  setFromSearch(userStore.query.queryString ?? "");
+  setUserCreationDraftFromSearch(userStore.query.queryString ?? "");
   router.push("/create-user");
 };
 
