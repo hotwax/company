@@ -191,7 +191,8 @@ onIonViewWillEnter(async () => {
 const createUser = () => {
   if (!canCreateUser.value) return;
   userStore.clearSelectedUser();
-  router.push("/create-user");
+  const name = userStore.query.queryString?.trim();
+  router.push(name ? { path: "/create-user", query: { name } } : "/create-user");
 };
 
 const getDate = (date: any) => {

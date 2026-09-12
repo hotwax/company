@@ -66,6 +66,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute } from "vue-router";
 import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonItem, IonPage, IonText, IonTitle, IonToolbar, IonToggle, IonInput, IonSelect, IonSelectOption, onIonViewWillEnter } from "@ionic/vue";
 import router from "@/router";
 import { useFacilities } from "@/composables/useFacilities";
@@ -74,6 +75,7 @@ import { businessOutline, desktopOutline, arrowForwardOutline } from "ionicons/i
 import { commonUtil, translate, logger } from "@common";
 
 const userStore = useUserStore();
+const route = useRoute();
 
 const isFacilityLogin = ref(false);
 const formData = ref({
@@ -92,6 +94,11 @@ const { facilities } = useFacilities({ excludeVirtual: true });
 
 onIonViewWillEnter(() => {
   clearFormData();
+  isFacilityLogin.value = false;
+  const name = typeof route.query.name === "string" ? route.query.name.trim() : "";
+  const [firstName = "", ...lastName] = name ? name.split(/\s+/) : [];
+  formData.value.firstName = firstName;
+  formData.value.lastName = lastName.join(" ");
 });
 
 const clearFormData = () => {
