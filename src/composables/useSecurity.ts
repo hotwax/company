@@ -1,9 +1,10 @@
-import { computed, ref } from "vue";
+import { computed, onScopeDispose, ref, watch } from "vue";
 import { api, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
 import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
+import { onSessionCleared } from "./sessionScope";
 
 /**
  * Security master entity — user groups, the permission catalog, and what hangs off a group
@@ -14,6 +15,7 @@ import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
  *     stay live reads, fetched on demand for the ONE group being viewed;
  *   - mutations are plain exported functions; the only one that touches a cached table
  *     (`updateUserGroup`) writes through to the cache.
+ *   - user JWT issuance is invocation-scoped through `useUserToken`; credentials are never cached.
  */
 
 export function useUserGroups() {
@@ -59,6 +61,107 @@ export function useUserAccountActions() {
   const userStore = useUserStore();
   const sendResetPasswordEmail = (userLoginId: string) => userStore.sendResetPasswordEmail({ userLoginId });
   return { sendResetPasswordEmail };
+}
+
+/** Preserve the authenticated REST context root; reject embedded credentials, queries, and fragments. */
+function userTokenBaseUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value.trim());
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return;
+    if (url.username || url.password || url.search || url.hash) return;
+    const path = url.pathname.replace(/\/+$/, "");
+    if (!path.endsWith("/rest/s1")) return;
+    url.pathname = `${path}/`;
+    return url.href;
+  } catch {
+    return;
+  }
+}
+
+/**
+ * Issue a JWT for the signed-in user on the backend displayed by the caller.
+ * Purpose and expiry are supplied by the consuming screen. Credentials stay local to this
+ * invocation, never enter the cache/store/logs, and must be cleared when a cached Ionic view leaves.
+ */
+export function useUserToken(expectedBackend: () => string) {
+  const { userProfile } = useAuth();
+  const username = computed(() => String(userProfile.value?.username || ""));
+  const token = ref("");
+  const expirationTime = ref<number>();
+  const pending = ref(false);
+  const error = ref("");
+  let requestId = 0;
+
+  const clear = () => {
+    requestId++;
+    token.value = "";
+    expirationTime.value = undefined;
+    error.value = "";
+  };
+
+  // Invalidate pending responses as well as displayed credentials when the session changes.
+  watch([username, expectedBackend, () => commonUtil.getMaargURL()], clear, { flush: "sync" });
+  const unregister = onSessionCleared(clear);
+  onScopeDispose(() => { clear(); unregister(); });
+
+  const unconfirmed = "Token generation could not be confirmed. Open JWT token settings in OMS for help.";
+  function failure(status?: number) {
+    // Older routes can interpret jwtToken as a partyId and return 405.
+    if (status === 404 || status === 405) return "This instance needs a backend update to generate tokens from Company. Use JWT token settings in OMS for now.";
+    if (status === 401) return "Your session has expired. Sign in again before generating a token.";
+    if (status === 403) return "OMS did not authorize token generation through Company. You may still be able to generate a token in JWT token settings in OMS.";
+    return unconfirmed;
+  }
+
+  async function generate({ purpose, expireDays }: { purpose: string; expireDays: number }) {
+    if (pending.value || token.value) return;
+    clear();
+    const baseURL = userTokenBaseUrl(commonUtil.getMaargURL());
+    if (!username.value || !baseURL || baseURL !== userTokenBaseUrl(expectedBackend())) {
+      error.value = "Generate a token for your signed-in OMS instance. Sign in to another instance before generating its token.";
+      return;
+    }
+    if (!purpose.trim() || !Number.isInteger(expireDays) || expireDays <= 0) {
+      error.value = "Enter a token purpose and a positive whole number of days.";
+      return;
+    }
+
+    const thisRequest = requestId;
+    const owner = username.value;
+    pending.value = true;
+    try {
+      const response = await api({
+        baseURL,
+        url: "admin/user/jwtToken",
+        method: "post",
+        data: { username: owner, purpose: purpose.trim(), expireDays },
+      });
+      if (thisRequest !== requestId) return;
+      if (username.value !== owner || userTokenBaseUrl(commonUtil.getMaargURL()) !== baseURL) {
+        clear();
+        return;
+      }
+      const result = response.data;
+      if (result?.errorCode) {
+        error.value = failure(Number(result.errorCode));
+      } else if (typeof result?.token !== "string" || !result.token.trim() || !Number.isFinite(result.expirationTime) || result.expirationTime <= Date.now()) {
+        error.value = unconfirmed;
+      } else {
+        token.value = result.token;
+        expirationTime.value = result.expirationTime;
+      }
+    } catch (cause: unknown) {
+      if (thisRequest !== requestId) return;
+      // Never log/throw an Axios response: it may contain a token or authorization header.
+      const response = (cause as { response?: { status?: number; data?: { errorCode?: number } } })?.response;
+      error.value = failure(Number(response?.data?.errorCode ?? response?.status));
+    } finally {
+      pending.value = false;
+    }
+  }
+
+  return { username, token, expirationTime, pending, error, generate, clear };
 }
 
 // --- live security reads — associations with no cached table -----------------------------------

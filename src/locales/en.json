@@ -3454,7 +3454,7 @@
   "90 days": "90 days",
   "180 days": "180 days",
   "365 days": "365 days",
-  "Choose a token expiry of 1, 7, 30, 90, 180, or 365 days.": "Choose a token expiry of 1, 7, 30, 90, 180, or 365 days.",
+  "Enter a token purpose and a positive whole number of days.": "Enter a token purpose and a positive whole number of days.",
   "Open MCP settings in the Codex app": "Open MCP settings in the Codex app",
   "Open Settings from the app menu (Cmd+, on Mac or Ctrl+, on Windows), then select MCP servers → Add server.": "Open Settings from the app menu (Cmd+, on Mac or Ctrl+, on Windows), then select MCP servers → Add server.",
   "Add your OMS server": "Add your OMS server",

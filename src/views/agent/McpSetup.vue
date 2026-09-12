@@ -278,13 +278,16 @@ import { copyOutline, eyeOffOutline, eyeOutline, helpCircleOutline, keyOutline, 
 import { computed, ref, watch } from "vue";
 import { getMcpConfig, getMcpConnection, tokenEnvironmentCommand, verificationPrompt } from "@/utils/mcpSetup";
 import type { McpClient } from "@/utils/mcpSetup";
-import { useMcpToken } from "@/composables/useMcpToken";
+import { useUserToken } from "@/composables/useSecurity";
 
-const connection = ref(getMcpConnection(commonUtil.getMaargURL()));
+const backendUrl = ref(commonUtil.getMaargURL());
+const connection = computed(() => getMcpConnection(backendUrl.value));
 const client = ref<McpClient>("codex");
 const claudeSurface = ref("code");
 const copyStatus = ref("");
-const { username, token, expirationTime, expireDays, pending: tokenPending, error: tokenError, generate: generateToken, clear: clearToken } = useMcpToken(() => connection.value?.endpoint);
+const expireDays = ref(30);
+const { username, token, expirationTime, pending: tokenPending, error: tokenError, generate, clear: clearToken } = useUserToken(() => backendUrl.value);
+const generateToken = () => generate({ purpose: "MCP", expireDays: expireDays.value });
 const revealToken = ref(false);
 watch(token, () => { revealToken.value = false; });
 const tokenExpiryLabel = computed(() => expirationTime.value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(expirationTime.value) : "");
@@ -293,7 +296,7 @@ const configuration = computed(() => connection.value ? getMcpConfig(client.valu
 // Ionic caches route components. Re-read the current instance on every entry.
 onIonViewWillEnter(() => {
   clearToken();
-  connection.value = getMcpConnection(commonUtil.getMaargURL());
+  backendUrl.value = commonUtil.getMaargURL();
   copyStatus.value = "";
 });
 onIonViewWillLeave(clearToken);
