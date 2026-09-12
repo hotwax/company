@@ -1050,7 +1050,7 @@
                       All
                     </ion-select-option>
                     <ion-select-option v-for="option in channelFilterOptions" :key="option.value" :value="option.value">
-                      {{ option }}
+                      {{ option.label }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="selectedChannel" fill="clear" class="clear-filter-button" aria-label="Clear inventory channel filter" @click.stop="selectedChannel = ''">

@@ -10,7 +10,7 @@
     <ion-content>
       <ion-card class="filter-card">
         <ion-card-content>
-          <ion-searchbar v-model="userStore.query.queryString" class="searchbar" :placeholder="translate('Search users')" @keyup.enter="updateQuery()" />
+          <ion-searchbar v-model="userStore.query.queryString" class="searchbar" :placeholder="translate('Search users')" @keyup.enter="updateQuery()" @ionClear="clearSearch()" />
           <div class="filter-row">
             <ion-select
               v-model="userStore.query.userGroupId"
@@ -110,20 +110,39 @@
           </div>
         </div>
       </div>
-      <div v-else>
-        <p class="ion-text-center">
-          {{ translate("No users found") }}
+      <div v-if="!isLoading && hasUnsubmittedQuery" class="ion-padding ion-text-center">
+        <p>{{ translate("Your search has changed. Search again to update the results.") }}</p>
+        <ion-button fill="outline" @click="updateQuery()">{{ translate("Search users") }}</ion-button>
+      </div>
+      <div v-else-if="!isLoading && searchFailed" class="ion-padding ion-text-center" role="alert">
+        <h2>{{ translate("Unable to load users") }}</h2>
+        <p>{{ translate("Try again to see users matching your search and filters.") }}</p>
+        <ion-button fill="outline" @click="fetchUsers()">{{ translate("Try again") }}</ion-button>
+      </div>
+      <div v-else-if="showEmptyState" class="ion-padding ion-text-center">
+        <div role="status">
+          <ion-icon :icon="peopleOutline" size="large" aria-hidden="true" />
+          <h2>{{ translate("No users found") }}</h2>
+          <p v-if="canCreateUser">{{ translate("Can't find the person you're looking for? Create a new user to get started.") }}</p>
+          <p v-else>{{ translate("Try another search or clear your filters to find an existing user.") }}</p>
+        </div>
+        <ion-button v-if="canCreateUser" @click="createUser()">
+          <ion-icon slot="start" :icon="addOutline" aria-hidden="true" />
+          {{ translate("Create user") }}
+        </ion-button>
+        <p v-if="hasSearchOrFilters">
+          <ion-button fill="clear" @click="clearSearchAndFilters()">{{ translate("Clear search and filters") }}</ion-button>
         </p>
       </div>
 
-      <ion-fab slot="fixed" vertical="bottom" horizontal="end">
-        <ion-fab-button :disabled="!userStore.hasPermission(Actions.APP_SECURITY_CREATE)" @click="createUser()">
+      <ion-fab v-if="!showEmptyState" slot="fixed" vertical="bottom" horizontal="end">
+        <ion-fab-button :disabled="!canCreateUser" :aria-label="translate('Create user')" @click="createUser()">
           <ion-icon :icon="addOutline" />
         </ion-fab-button>
       </ion-fab>
 
       <ion-infinite-scroll
-        v-if="isScrollable"
+        v-if="isScrollable && !hasUnsubmittedQuery"
         threshold="100px"
         @ion-infinite="loadMoreUsers($event)"
       >
@@ -138,17 +157,26 @@
 
 <script setup lang="ts">
 import { commonUtil, translate } from "@common";
-import { IonBadge, IonCard, IonCardContent, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
-import { addOutline } from "ionicons/icons";
+import { IonBadge, IonButton, IonCard, IonCardContent, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInfiniteScroll, IonInfiniteScrollContent, IonItem, IonLabel, IonMenuButton, IonPage, IonSearchbar, IonSelect, IonSelectOption, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
+import { addOutline, peopleOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref } from "vue";
 import router from "@/router";
-import { useUserGroups } from "@/composables/useSecurity";
+import { useUserAccountActions, useUserGroups } from "@/composables/useSecurity";
 import { useUserStore } from "@/store/user";
 import Actions from "@/authorization/actions";
 
 const userStore = useUserStore();
+const { setUserCreationDraftFromSearch, clearUserCreationDraft } = useUserAccountActions();
 const USERS_PAGE_SIZE = 25;
+const isLoading = ref(true);
+const searchFailed = ref(false);
+const completedQueryKey = ref<string>();
+const queryKey = computed(() => JSON.stringify([userStore.query.queryString, userStore.query.userGroupId, userStore.query.status]));
+const hasUnsubmittedQuery = computed(() => completedQueryKey.value !== undefined && queryKey.value !== completedQueryKey.value);
+const canCreateUser = computed(() => userStore.hasPermission(Actions.APP_SECURITY_CREATE));
+const hasSearchOrFilters = computed(() => Boolean(userStore.query.queryString?.trim() || userStore.query.userGroupId || userStore.query.status));
+const showEmptyState = computed(() => !isLoading.value && !searchFailed.value && !hasUnsubmittedQuery.value && !users.value?.length && !currentUser.value.userId);
 
 // The logged-in user's own record, pinned at the top of the list. The profile is already available from
 // login, but it doesn't carry group associations, so those are fetched separately via getUserGroups().
@@ -165,11 +193,14 @@ const userProfile = computed(() => userStore.getUserProfile)
 const currentTimeZoneId = computed(() => userProfile.value.timeZone)
 
 onIonViewWillEnter(async () => {
+  clearUserCreationDraft();
   await fetchUsers();
 });
 
 const createUser = () => {
+  if (!canCreateUser.value) return;
   userStore.clearSelectedUser();
+  setUserCreationDraftFromSearch(userStore.query.queryString ?? "");
   router.push("/create-user");
 };
 
@@ -185,21 +216,42 @@ const getUserGroupDescription = (userGroupId: string) => {
 
 const updateQuery = async () => {
   await userStore.updateQuery(userStore.query);
-  fetchUsers();
+  await fetchUsers();
+};
+
+const clearSearch = async () => {
+  userStore.query.queryString = "";
+  await updateQuery();
+};
+
+const clearSearchAndFilters = async () => {
+  userStore.query.queryString = "";
+  userStore.query.userGroupId = "";
+  userStore.query.status = "";
+  await updateQuery();
 };
 
 const fetchUsers = async (pSize?: any, pIndex?: any) => {
   const pageSize = pSize || USERS_PAGE_SIZE;
   const pageIndex = pIndex || 0;
+  const requestedQueryKey = queryKey.value;
 
-  if(!userStore.query.queryString) {
-    // Do not fetch the current user information again on infinite-scroll pages, as we already have it.
-    if(pageIndex === 0) {await fetchCurrentUser()}
-  } else {
-    currentUser.value = {};
+  isLoading.value = true;
+  searchFailed.value = false;
+  try {
+    if (!userStore.query.queryString?.trim()) {
+      // Keep the pinned current user when loading additional pages.
+      if (pageIndex === 0) await fetchCurrentUser();
+    } else {
+      currentUser.value = {};
+    }
+    searchFailed.value = !(await userStore.fetchUsers({ pageIndex, pageSize }));
+  } catch {
+    searchFailed.value = true;
+  } finally {
+    completedQueryKey.value = requestedQueryKey;
+    isLoading.value = false;
   }
-
-  await userStore.fetchUsers({ pageIndex, pageSize });
 };
 
 const fetchCurrentUser = async () => {

@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, linkOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -227,7 +227,7 @@ const userPages = [
 
 const facilitiesPages = [
   {
-    title: "Find",
+    title: "Facilities",
     url: "/facilities/find",
     iosIcon: storefrontOutline,
     mdIcon: storefrontOutline,
@@ -249,6 +249,12 @@ const facilitiesPages = [
 const visibleUserPages = computed(() => userPages.filter((screen) => hasPermission(screen.permission)))
 
 const agentPages = [
+  {
+    title: "MCP setup",
+    url: "/mcp-setup",
+    iosIcon: linkOutline,
+    mdIcon: linkOutline,
+  },
   {
     title: "Composer",
     url: "/composer",
