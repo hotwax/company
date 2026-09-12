@@ -759,6 +759,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { DateTime } from "luxon";
 import { closeOutline, flashOutline, openOutline, refreshOutline, timeOutline } from "ionicons/icons";
 import { formatDateTime } from "@/utils";
+import { shopifyOrderAdminUrl } from "@/utils/shopifyAdminUrl";
 import { useUserStore } from "@/store/user";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
@@ -1365,15 +1366,11 @@ function shopifyAdminOrderUrl(order: ShopifyOrderSyncRecentOrder): string {
     order.shopId !== props.id
     || orderSync.shop?.shopId !== props.id
     || order.shopifyFetchVerified !== true
-    || !/^(?!0+$)[0-9]{1,30}$/.test(order.shopifyOrderId)
   ) return "";
 
-  const hostname = String(orderSync.shop.myshopifyDomain || "").trim();
-  if (
-    hostname !== hostname.toLocaleLowerCase()
-    || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(hostname)
-  ) return "";
-  return `https://${hostname}/admin/orders/${order.shopifyOrderId}`;
+  // The host and the id are both checked by the shared guard, so this view holds no copy of the
+  // rules: a row that fails either one renders no link at all.
+  return shopifyOrderAdminUrl(orderSync.shop.myshopifyDomain, order.shopifyOrderId);
 }
 
 async function handleManualRefresh() {

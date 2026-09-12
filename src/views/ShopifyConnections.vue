@@ -47,7 +47,7 @@
             <div class="tablet">
               <ion-chip v-if="shop.myshopifyDomain" outline @click.stop="openShopifyLink(shop.myshopifyDomain)">
                 <ion-label>{{ shop.myshopifyDomain }}</ion-label>
-                <ion-icon :icon="openOutline" color="primary" />
+                <ion-icon v-if="shopifyShopAdminUrl(shop.myshopifyDomain)" :icon="openOutline" color="primary" />
               </ion-chip>
             </div>
 
@@ -80,6 +80,7 @@ import { translate } from '@common';
 import router from "@/router";
 import { useShopifyShops } from "@/composables/useShopify";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { shopifyShopAdminUrl } from "@/utils/shopifyAdminUrl";
 
 import ShopifyConnectionFilters from "@/components/shopify/ShopifyConnectionFilters.vue";
 import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConnectionModal.vue";
@@ -108,8 +109,13 @@ async function openCreateModal() {
   }
 }
 
+// myshopifyDomain is unvalidated operator input, so a stored domain that is not a real shop host
+// opens nothing rather than sending the operator to whatever was typed into the connection form.
 function openShopifyLink(domain: string) {
-  window.open(`https://${domain}/admin`, '_blank', 'noopener, noreferrer');
+  const adminUrl = shopifyShopAdminUrl(domain);
+  if (!adminUrl) return;
+
+  window.open(adminUrl, '_blank', 'noopener, noreferrer');
 }
 </script>
 

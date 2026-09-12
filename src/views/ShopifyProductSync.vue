@@ -655,6 +655,7 @@ import {
   selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
+import { shopifyProductAdminUrl } from "@/utils/shopifyAdminUrl";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
@@ -1503,17 +1504,13 @@ function getRecentSyncShopifyIdLabel(history: any) {
 }
 
 function getRecentSyncShopifyAdminUrl(history: any) {
-  const myshopifyDomain = String(shop.value?.myshopifyDomain || "").trim();
-  const productId = getRecentSyncShopifyProductId(history);
-  if (!myshopifyDomain || !productId) return "";
-
-  const variantId = getRecentSyncShopifyVariantId(history);
-  const baseUrl = `https://${myshopifyDomain}/admin/products/${productId}`;
-  if (variantId && variantId !== productId) {
-    return `${baseUrl}/variants/${variantId}`;
-  }
-
-  return baseUrl;
+  // myshopifyDomain is unvalidated operator input, so the shared guard decides whether a link can
+  // be built at all: an untrusted host or a product id that names no record renders no link.
+  return shopifyProductAdminUrl(
+    shop.value?.myshopifyDomain,
+    getRecentSyncShopifyProductId(history),
+    getRecentSyncShopifyVariantId(history)
+  );
 }
 
 function getRecentSyncIdentifications(history: any) {
