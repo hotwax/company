@@ -4249,11 +4249,12 @@ function formatAge(timestamp: number): string {
   overscroll-behavior: contain;
 }
 
-/* Four tracks: product, change, event, status. The row itself opens the detail, so there is no
-   button column. The grid -- and the rule that keeps only the first and last cell below 991px, which
-   here leaves the product and the status chips -- is `.list-item` in the theme. */
+/* Four cells over five tracks: product, change, event (two), status. The row itself opens the
+   detail, so there is no button column. The grid -- and the rule that keeps only the first and last
+   cell below 991px, which here leaves the product and the status chips -- is `.list-item` in the
+   theme. */
 .list-item {
-  --columns-desktop: 4;
+  --columns-desktop: 5;
   padding-inline-end: var(--spacer-sm);
   cursor: pointer;
 }
@@ -4347,7 +4348,15 @@ function formatAge(timestamp: number): string {
      first and the button, and those proportions would be meaningless. */
   .list-item {
     grid-template-columns:
-      minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 2fr) minmax(0, 1.5fr);
+      minmax(0, 2.2fr) minmax(0, 0.6fr) minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1.3fr);
+  }
+
+  /* Two tracks for the event: it carries the longest text on the row by some distance -- a
+     server-owned description that runs to "Inventory reservation created (reason unmapped, publishes
+     as correction)" plus the source artifact under it -- and every other cell is a number, a chip or
+     a short label. */
+  .list-item > .event-cell {
+    grid-column: span 2;
   }
 
   /* Ledger lifecycle and Shopify delivery stack in one cell: the second is the state OF the batch the
