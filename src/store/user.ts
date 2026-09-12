@@ -502,11 +502,20 @@ export const useUserStore = defineStore("user", {
     },
 
     sendResetPasswordEmail(payload: any): Promise<any> {
+      const launchpadUrl = import.meta.env.VITE_LOGIN_URL?.replace(/\/login\/?$/, "/reset-password");
+
       return api({
         baseURL: commonUtil.getOmsURL(),
         url: "sendResetPasswordMail",
         method: "post",
-        data: payload
+        data: {
+          username: payload.userName || payload.userLoginId || payload.username,
+          emailTemplateId: "APP_USER_PWD_RET",
+          bodyParameters: {
+            resetPasswordUrl: launchpadUrl,
+            maargInstanceUrl: commonUtil.getOmsURL()
+          }
+        }
       })
     },
 
