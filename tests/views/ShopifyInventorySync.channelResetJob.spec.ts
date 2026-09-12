@@ -665,6 +665,58 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     expect((wrapper.vm as any).selectedEvent?.eventReferenceId).toBe("R_OPEN");
   });
 
+  const MINUTE = 60_000;
+  const sentRow = (over: Record<string, any>) => pendingRow({
+    detailStatusId: "DETAIL_ASSIGNED",
+    systemMessageId: "BATCH_OK",
+    systemMessageStatusId: "SmsgSent",
+    createdDate: 1_000_000,
+    ...over,
+  });
+
+  it("says how long a delivered event took, and says nothing for one still in flight", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_OK", statusId: "SmsgSent", processedDate: 1_000_000 + 5 * MINUTE }];
+    cachedAdjustmentDetails.value = [sentRow({ eventReferenceId: "R_SENT" }), pendingRow({ eventReferenceId: "R_WAITING" })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 5.0 min later");
+    expect(wrapper.text()).toContain("not sent yet");
+  });
+
+  /**
+   * `processedDate` is stamped by the send ATTEMPT, not by its outcome. Reading it off a message the
+   * sender is retrying, or one Shopify refused, would report a delivery that never happened — and on
+   * this page that is the number an operator uses to decide whether Shopify is current.
+   */
+  it("does not read a failed send's attempt date as a delivery", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_OK", statusId: "SmsgError", processedDate: 1_000_000 + 5 * MINUTE }];
+    cachedAdjustmentDetails.value = [sentRow({ eventReferenceId: "R_FAILED", systemMessageStatusId: "SmsgError" })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("not sent yet");
+    expect(wrapper.text()).not.toContain("later");
+  });
+
+  it("summarises the typical lag over only the events that were delivered", async () => {
+    cachedMessages.value = [
+      { systemMessageId: "BATCH_A", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE },
+      { systemMessageId: "BATCH_B", statusId: "SmsgSent", processedDate: 1_000_000 + 4 * MINUTE },
+      { systemMessageId: "BATCH_C", statusId: "SmsgSent", processedDate: 1_000_000 + 9 * MINUTE },
+    ];
+    cachedAdjustmentDetails.value = [
+      sentRow({ eventReferenceId: "R_A", systemMessageId: "BATCH_A" }),
+      sentRow({ eventReferenceId: "R_B", systemMessageId: "BATCH_B" }),
+      sentRow({ eventReferenceId: "R_C", systemMessageId: "BATCH_C" }),
+      // Never delivered: it must not count toward the typical figure, and the denominator must say so.
+      pendingRow({ eventReferenceId: "R_PENDING" }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("Typically 4.0 min to reach Shopify");
+    expect(wrapper.text()).toContain("slowest 9.0 min");
+    expect(wrapper.text()).toContain("over the 3 of these events that were delivered");
+  });
+
   it("narrows the table to the rows the search matches", async () => {
     cachedAdjustmentDetails.value = [
       pendingRow({ eventReferenceId: "R_KEEP" }),

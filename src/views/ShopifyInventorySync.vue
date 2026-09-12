@@ -1086,9 +1086,17 @@
                 <p>{{ translate("The newest 500 events for this connection, plus every event still waiting to batch or sitting in an unsent batch. Settled events are purged after five days, so this is a working window rather than a full history.") }}</p>
               </ion-label>
             </ion-item>
-            <ion-badge color="medium">
-              {{ historyEvents.length }} shown
-            </ion-badge>
+            <div class="results-stats">
+              <ion-badge color="medium">
+                {{ historyEvents.length }} shown
+              </ion-badge>
+              <!-- Says what it is measured over, because it is measured over a fraction of the rows:
+                   only a row whose batch Shopify accepted has a delivery time at all. -->
+              <ion-note v-if="syncLag">
+                {{ translate("Typically {median} to reach Shopify, slowest {slowest} — over the {count} of these events that were delivered",
+                   { median: formatLag(syncLag.median), slowest: formatLag(syncLag.slowest), count: syncLag.count }) }}
+              </ion-note>
+            </div>
           </div>
 
           <div v-if="historyEvents.length" ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
@@ -1138,6 +1146,14 @@
                    same chip as "batched, mutation rejected". The chips sit on ONE line and the
                    message id on the next, so a row with one chip is exactly as tall as a row with
                    two -- the virtualiser sizes every spacer from a single measured row. -->
+              <ion-label class="timing-cell">
+                <span class="one-line">{{ formatAge(event.createdAt) }}</span>
+                <p v-if="event.sentAt" class="one-line">
+                  {{ translate("sent {lag} later", { lag: formatLag(event.sentAt - event.createdAt) }) }}
+                </p>
+                <p v-else class="one-line">{{ translate("not sent yet") }}</p>
+              </ion-label>
+
               <ion-label class="status-cell">
                 <span class="status-chips">
                   <ion-badge :color="event.detailStateColor">
@@ -1281,6 +1297,22 @@
             <ion-badge v-if="selectedEvent && !selectedEvent.reasonMapped" slot="end" color="warning">
               {{ translate("Unmapped") }}
             </ion-badge>
+          </ion-item>
+          <ion-item>
+            <ion-label>
+              {{ translate("Recorded") }}
+              <p>{{ formatDateTime(selectedEvent?.createdAt) }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-label>
+              {{ translate("Reached Shopify") }}
+              <p v-if="selectedEvent?.sentAt">
+                {{ formatDateTime(selectedEvent.sentAt) }}
+                ({{ translate("{lag} after it was recorded", { lag: formatLag(selectedEvent.sentAt - selectedEvent.createdAt) }) }})
+              </p>
+              <p v-else>{{ translate("Not delivered yet") }}</p>
+            </ion-label>
           </ion-item>
           <ion-item>
             <ion-label>Batch<p>{{ selectedEvent?.batchId || 'Not batched' }}</p></ion-label>
@@ -1757,6 +1789,12 @@ interface InventoryEvent {
    */
   section: PipelineSectionId;
   createdAt: number;
+  /**
+   * When the batch carrying this row reached Shopify -- the SystemMessage's `processedDate`, and only
+   * once its status says the send succeeded. A failed or retrying attempt also stamps a date, so
+   * reading it unconditionally would report an event as delivered that Shopify never accepted.
+   */
+  sentAt?: number;
   /** Raw, so the search box still matches what the server actually wrote. */
   decisionComment?: string;
   /**
@@ -3036,6 +3074,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     // Decided once, by the pipeline rule, so the sections cannot disagree about a row.
     section: sectionOfEvent(detail, delivery?.statusId),
     createdAt: toMillis(detail.createdDate),
+    sentAt: sentAtOf(detail),
     decisionComment: detail.decisionComment,
     productId,
     // The bare name: this template supplies its own item-id fallback, so it must not print one here.
@@ -3725,6 +3764,30 @@ function sortEvents(events: InventoryEvent[]): InventoryEvent[] {
 const historyEvents = computed(() => sortEvents(filteredEvents.value));
 
 /**
+ * How long these events took to reach Shopify.
+ *
+ * MEDIAN, not mean: one event that sat through an outage drags a mean somewhere no event actually
+ * was, and the question this answers -- "how far behind is my Shopify inventory" -- is about the
+ * typical row. The count travels with it because the denominator is the honest part: only a row
+ * whose batch was accepted has a delivery time at all, so this speaks for a fraction of what is on
+ * screen, and it is a fraction of the cache's own window rather than of all history.
+ */
+const syncLag = computed(() => {
+  const lags = historyEvents.value
+    .filter((event) => event.sentAt && event.createdAt)
+    .map((event) => (event.sentAt as number) - event.createdAt)
+    .filter((lag) => lag >= 0)
+    .sort((a, b) => a - b);
+  if(!lags.length) {return null;}
+
+  return {
+    median: lags[Math.floor(lags.length / 2)],
+    slowest: lags[lags.length - 1],
+    count: lags.length,
+  };
+});
+
+/**
  * Only the rows near the viewport get DOM nodes. The history can hold tens of thousands of events,
  * and rendering one row each is what made this page slow to open.
  */
@@ -4015,6 +4078,37 @@ function formatUntil(timestamp: number): string {
   return translate("in {days}d", { days: Math.floor(hours / 24) });
 }
 
+/**
+ * When this row's batch actually reached Shopify.
+ *
+ * `processedDate` is stamped by the send attempt, not by its outcome, so it is only a delivery time
+ * on a message whose status says the send succeeded; on `SmsgError` it dates the failure and on a
+ * retrying message it dates the last try. Anything else returns undefined, which the table reads as
+ * "not sent yet" rather than inventing a delivery.
+ */
+function sentAtOf(detail: any): number | undefined {
+  const systemMessageId = String(detail.systemMessageId ?? "");
+  if(!systemMessageId) {return undefined;}
+  const message = messageById.value.get(systemMessageId);
+  const statusId = deliveryStatusOf(detail, message?.statusId);
+  if(statusId !== "SmsgSent") {return undefined;}
+
+  return toMillis(message?.processedDate) || undefined;
+}
+
+/** A duration, in the largest unit that keeps it readable. */
+function formatLag(ms: number): string {
+  if(!Number.isFinite(ms) || ms < 0) {return "";}
+  const seconds = Math.round(ms / 1000);
+  if(seconds < 90) {return `${seconds}s`;}
+  const minutes = ms / 60_000;
+  if(minutes < 90) {return `${minutes.toFixed(1)} min`;}
+  const hours = minutes / 60;
+  if(hours < 48) {return `${hours.toFixed(1)}h`;}
+
+  return `${Math.round(hours / 24)}d`;
+}
+
 function formatAge(timestamp: number): string {
   if(!timestamp) {return "Unknown age";}
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
@@ -4240,6 +4334,15 @@ function formatAge(timestamp: number): string {
   min-width: 0;
 }
 
+.results-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacer-2xs);
+  max-width: min(100%, 340px);
+  text-align: end;
+}
+
 /* The virtualised rows scroll inside this box rather than the page, so the window maths has a
    viewport to measure against. The column header above it stays put while the rows move. */
 .event-scroller {
@@ -4249,12 +4352,12 @@ function formatAge(timestamp: number): string {
   overscroll-behavior: contain;
 }
 
-/* Four cells over five tracks: product, change, event (two), status. The row itself opens the
+/* Five cells over six tracks: product, change, event (two), timing, status. The row itself opens the
    detail, so there is no button column. The grid -- and the rule that keeps only the first and last
    cell below 991px, which here leaves the product and the status chips -- is `.list-item` in the
    theme. */
 .list-item {
-  --columns-desktop: 5;
+  --columns-desktop: 6;
   padding-inline-end: var(--spacer-sm);
   cursor: pointer;
 }
@@ -4348,7 +4451,8 @@ function formatAge(timestamp: number): string {
      first and the button, and those proportions would be meaningless. */
   .list-item {
     grid-template-columns:
-      minmax(0, 2.2fr) minmax(0, 0.6fr) minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1.3fr);
+      minmax(0, 2fr) minmax(0, 0.55fr) minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(0, 0.95fr)
+      minmax(0, 1.2fr);
   }
 
   /* Two tracks for the event: it carries the longest text on the row by some distance -- a
@@ -4362,6 +4466,10 @@ function formatAge(timestamp: number): string {
   /* Ledger lifecycle and Shopify delivery stack in one cell: the second is the state OF the batch the
      first put the row into, so they read as one fact rather than two columns that always move
      together. Only here -- below this width the theme hides the cell and the summary line says it. */
+  .timing-cell {
+    text-align: start;
+  }
+
   .status-cell {
     display: flex;
     flex-direction: column;
