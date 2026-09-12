@@ -43,6 +43,9 @@ vi.mock("vue-router", () => ({
 
 vi.mock("@common", () => ({
   useProducts: () => ({ products: ref(new Map()), resolve: vi.fn(), reset: vi.fn() }),
+  // Renders a real <img> rather than a stub: the event table puts one in every row, and a stub that
+  // renders nothing would let a broken image cell pass.
+  DxpShopifyImg: { props: ["src", "size"], template: "<img :src=\"src\" />" },
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
   },
@@ -456,7 +459,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
   });
 }, 20000);
 
-describe("ShopifyInventorySync - the pipeline never claims all-clear over unreadable data", () => {
+describe("ShopifyInventorySync - the event table never claims empty over unreadable data", () => {
   const mountHistory = async () => {
     const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
     const wrapper = mount(ShopifyInventorySync, {
@@ -475,11 +478,8 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     return wrapper;
   };
 
-  const allClearText = [
-    "Every recorded event has been claimed into a batch or settled.",
-    "Every batch produced for this connection has reached Shopify.",
-    "No event has produced a summed delta the publisher had to refuse.",
-  ];
+  const EMPTY_CLAIM = "No inventory events match this view";
+  const NOT_LOADED = "Not loaded";
 
   beforeEach(() => {
     detailsHydrated.value = true;
@@ -490,38 +490,38 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     cachedChannels.value = [];
   });
 
-  it("says the sections are all clear when the ledger really is readable and empty", async () => {
+  it("says the history is empty when the ledger really is readable and empty", async () => {
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).toContain(claim);
-    }
-    expect(wrapper.text()).not.toContain("Not loaded");
+    expect(wrapper.text()).toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).not.toContain(NOT_LOADED);
   });
 
-  it("makes no all-clear claim before the ledger cache has hydrated", async () => {
+  it("makes no empty claim before the ledger cache has hydrated", async () => {
     detailsHydrated.value = false;
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).not.toContain(claim);
-    }
-    expect(wrapper.text()).toContain("Not loaded");
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).toContain(NOT_LOADED);
   });
 
-  it("makes no all-clear claim when the sync reported an error, and shows the banner in this view", async () => {
+  it("makes no empty claim when the sync reported an error, and shows the banner in this view", async () => {
     syncError.value = "inventoryAdjustmentDetails returned 500";
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).not.toContain(claim);
-    }
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).toContain(NOT_LOADED);
     // The banner used to live inside the monitor template, so the history route never showed it.
     expect(wrapper.text()).toContain("Inventory data could not be loaded from the OMS");
     expect(wrapper.text()).toContain("inventoryAdjustmentDetails returned 500");
   });
 
-  it("keeps a rejected batch on the page instead of dropping it out of every section", async () => {
+  /**
+   * A refused batch is finished and nothing retries it, so its row has to stay readable with the
+   * message id that carried it. The table has one row per event and no section to fall out of, which
+   * is the property this guards -- the old four-section layout could drop such a row entirely.
+   */
+  it("keeps a rejected batch's event in the table with its system message", async () => {
     cachedChannels.value = [{
       inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
@@ -535,25 +535,14 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     cachedMessages.value = [{ systemMessageId: "BATCH_REJECTED", statusId: "SmsgRejected" }];
     const wrapper = await mountHistory();
 
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
     expect(wrapper.text()).toContain("BATCH_REJECTED");
-    expect(wrapper.text()).toContain("The sender will not retry this batch");
-    expect(wrapper.text()).not.toContain("Every batch produced for this connection has reached Shopify.");
+    expect(wrapper.text()).toContain("SmsgRejected");
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
   });
 });
 
-describe("ShopifyInventorySync - a group summarises the rows it actually holds", () => {
-  const PUBLISH_SERVICE = "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments";
-
-  const publisherJob = (channelId: string, groupByFields?: string) => ({
-    jobName: `publish_PendingShopifyInventoryAdjustments_${channelId}`,
-    serviceName: PUBLISH_SERVICE,
-    paused: "N",
-    serviceJobParameters: [
-      { parameterName: "inventoryChannelId", parameterValue: channelId },
-      ...(groupByFields ? [{ parameterName: "groupByFields", parameterValue: groupByFields }] : []),
-    ],
-  });
-
+describe("ShopifyInventorySync - the event table shows one row per event", () => {
   const pendingRow = (over: Record<string, any>) => ({
     detailStatusId: "DETAIL_PENDING",
     systemMessageId: "",
@@ -588,63 +577,42 @@ describe("ShopifyInventorySync - a group summarises the rows it actually holds",
     syncReady.value = true;
     syncError.value = null;
     cachedMessages.value = [];
-    cachedJobs.value = [publisherJob("IC_1001")];
+    cachedJobs.value = [];
     cachedChannels.value = [{
       inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
     }];
   });
 
-  /**
-   * A filter that matches part of a group changes what that group would publish, so its summed entries
-   * and count have to be restated. Left whole, the card showed a delta for rows the filter had hidden.
-   */
-  it("restates a partially matched group's count and summed delta from the matching rows", async () => {
+  it("renders every event, unbatched ones included, and says so when a row has no batch", async () => {
     cachedAdjustmentDetails.value = [
-      pendingRow({ eventReferenceId: "R_KEEP" }),
-      pendingRow({ eventReferenceId: "R_HIDE" }),
+      pendingRow({ eventReferenceId: "R_ONE" }),
+      pendingRow({ eventReferenceId: "R_TWO", computedInventoryChange: -2 }),
     ];
     const wrapper = await mountHistory();
 
-    // Both rows group together, so the card speaks for two events and a summed +2.
-    expect(wrapper.text()).toContain("2 events");
-    expect(wrapper.text()).toContain("+2");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+    expect(wrapper.text()).toContain("2 shown");
+    expect(wrapper.text()).toContain("+1");
+    expect(wrapper.text()).toContain("-2");
+    expect(wrapper.text()).toContain("Not batched");
+  });
+
+  it("narrows the table to the rows the search matches", async () => {
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_KEEP" }),
+      pendingRow({ eventReferenceId: "R_HIDE", computedInventoryChange: -2 }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
 
     wrapper.findComponent({ name: "IonSearchbar" }).vm.$emit("update:modelValue", "R_KEEP");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("1 events");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
+    expect(wrapper.text()).toContain("1 shown");
     expect(wrapper.text()).toContain("+1");
-    expect(wrapper.text()).not.toContain("+2");
-  });
-
-  /**
-   * `groupByFields` is a parameter on each channel's OWN drain job. Applying the first configured job's
-   * grouping to every channel previewed one of them the way its own publisher will not batch it.
-   */
-  it("groups each channel by its own publisher job's groupByFields", async () => {
-    cachedChannels.value = [
-      { inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Splits By Type", shopifyLocationId: "LOC_1", fromDate: 1000 },
-      { inventoryChannelId: "IC_1002", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Mixes Types", shopifyLocationId: "LOC_2", fromDate: 1000 },
-    ];
-    cachedJobs.value = [
-      // Keeps event type in the boundary: two event types stay in two groups.
-      publisherJob("IC_1001", "inventoryChannelId,shopifyInventoryItemId,eventTypeId"),
-      // Drops it: the same two event types land in ONE group and must publish under correction.
-      publisherJob("IC_1002", "inventoryChannelId,shopifyInventoryItemId"),
-    ];
-    cachedAdjustmentDetails.value = [
-      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A1", eventTypeId: "RECEIPT" }),
-      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A2", eventTypeId: "POS_ISSUANCE" }),
-      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B1", eventTypeId: "RECEIPT" }),
-      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B2", eventTypeId: "POS_ISSUANCE" }),
-    ];
-    const wrapper = await mountHistory();
-
-    // Only the channel that dropped event type reports a mixed group.
-    expect(wrapper.text()).toContain("2 event types mixed");
-    expect(wrapper.text().match(/2 event types mixed/g)?.length).toBe(1);
-    // And the warning names only the fields of the channel that actually drops it.
-    expect(wrapper.text()).toContain("Batches can mix event types");
+    expect(wrapper.text()).not.toContain("-2");
   });
 });
