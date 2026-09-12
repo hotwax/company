@@ -115,8 +115,15 @@ vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   }),
 }));
 
-vi.mock("@/utils/shopifyTransferSync", () => ({
+// Only the readiness gate is stubbed; the rest of the module (including the admin-link builder the
+// row headers use) stays real so the view exercises it.
+vi.mock("@/utils/shopifyTransferSync", async () => ({
+  ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
   isTransferSyncMonitoringLoaded: () => true,
+}));
+
+vi.mock("@/composables/useShopify", () => ({
+  useShopifyShop: () => ({ record: ref({ shopId: "1000", myshopifyDomain: "test-shop.myshopify.com" }) }),
 }));
 
 const STUBS = {
