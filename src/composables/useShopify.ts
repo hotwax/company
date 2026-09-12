@@ -674,9 +674,15 @@ export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<str
   return jobName;
 }
 
-/** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
-export const useShopifyShop = (shopId: string | undefined) =>
-  useCachedRecord(shopifyShopCache, "shopId", shopId);
+/**
+ * One shop by shopId. Replaces the old `shopifyStore.getShopById` getter.
+ *
+ * Takes a ref or getter as well as a plain string: `:id` routes reuse the component instance when
+ * only the param changes, so a view that reads this from a raw `props.id` stays pinned to the shop
+ * it first mounted with while everything else on the page re-scopes.
+ */
+export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) =>
+  useCachedRecord(shopifyShopCache, "shopId", computed(() => toValue(shopId)));
 
 export function useShopsForProductStore(productStoreId: string | undefined) {
   const { records, hydrated } = useCachedList<any>(

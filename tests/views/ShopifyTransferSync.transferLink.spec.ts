@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 /**
  * The row header's Shopify link. Guards the two halves that make it open in a NEW tab rather than
@@ -9,7 +9,10 @@ import { ref } from "vue";
  * away from the accordion's bubble-phase toggle.
  */
 
-const shopState = vi.hoisted(() => ({ domain: "test-shop.myshopify.com" as string | undefined }));
+const shopState = vi.hoisted(() => ({
+  domain: "test-shop.myshopify.com" as string | undefined,
+  domainByShop: {} as Record<string, string | undefined>,
+}));
 
 vi.mock("@common", () => ({
   api: vi.fn(),
@@ -19,8 +22,19 @@ vi.mock("@common", () => ({
     (appId === "transfers" ? `https://transfers.example.test${path}` : null),
 }));
 
+// Mirrors useCachedRecord's unwrapping, so a view that passes a raw prop instead of a reactive
+// shopId genuinely fails the re-scope test below rather than being papered over by the mock.
 vi.mock("@/composables/useShopify", () => ({
-  useShopifyShop: () => ({ record: ref({ shopId: "1000", myshopifyDomain: shopState.domain }) }),
+  useShopifyShop: (shopId: any) => ({
+    record: computed(() => {
+      const id = shopId && typeof shopId === "object" && "value" in shopId
+        ? shopId.value
+        : (typeof shopId === "function" ? shopId() : shopId);
+      if(!id) { return undefined; }
+
+      return { shopId: id, myshopifyDomain: shopState.domainByShop[id] ?? shopState.domain };
+    }),
+  }),
 }));
 
 vi.mock("@/composables/useCacheSync", () => ({
@@ -142,6 +156,7 @@ async function mountView() {
 describe("ShopifyTransferSync - Shopify transfer link", () => {
   beforeEach(() => {
     shopState.domain = "test-shop.myshopify.com";
+    shopState.domainByShop = {};
     vi.clearAllMocks();
   });
 
@@ -183,5 +198,25 @@ describe("ShopifyTransferSync - Shopify transfer link", () => {
     expect(byLabel["Open transfer in Shopify Admin"]).toBeUndefined();
     // The Transfers link does not depend on the shop domain, so it must survive.
     expect(byLabel["Open in Transfers"]).toBeTruthy();
+  });
+
+  /**
+   * `/shopify-connection-details/:id/transfer-sync` has no route key, so Vue Router reuses this
+   * component when only `:id` changes. Every other read on the page re-scopes with shopId; if the
+   * shop record does not, a row links to the previously-viewed shop's Shopify store.
+   */
+  it("re-scopes the Shopify link when the route switches shops without remounting", async () => {
+    shopState.domainByShop = { "1000": "shop-a.myshopify.com", "2000": "shop-b.myshopify.com" };
+    const wrapper = await mountView();
+
+    const hrefOf = () => wrapper.findAll("button")
+      .find((b) => b.attributes("aria-label") === "Open transfer in Shopify Admin")
+      ?.attributes("href");
+
+    expect(hrefOf()).toBe("https://shop-a.myshopify.com/admin/transfers/4604788917");
+
+    await wrapper.setProps({ id: "2000" });
+
+    expect(hrefOf()).toBe("https://shop-b.myshopify.com/admin/transfers/4604788917");
   });
 });

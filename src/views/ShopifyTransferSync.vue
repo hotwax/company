@@ -607,8 +607,12 @@ const shopId = computed(() => String(props.id ?? ""));
 /**
  * The shop's own domain, for deep-linking a transfer into the Shopify admin. Cached class-B data,
  * so this is a read with no fetch; an empty domain simply renders no link.
+ *
+ * Passed as the reactive `shopId`, not `props.id`: this route reuses the component instance when
+ * only `:id` changes, and every other read on this page re-scopes with it. A raw prop here would
+ * keep the previous shop's domain and link a row to the wrong Shopify store.
  */
-const { record: shopRecord } = useShopifyShop(props.id);
+const { record: shopRecord } = useShopifyShop(shopId);
 const transferAdminUrl = (transferId: unknown) =>
   shopifyTransferAdminUrl((shopRecord.value as any)?.myshopifyDomain, transferId);
 
