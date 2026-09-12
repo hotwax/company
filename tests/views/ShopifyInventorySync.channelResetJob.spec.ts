@@ -636,6 +636,35 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     expect(wrapper.text()).toContain("Getty Wide Leg");
   });
 
+  /**
+   * The row IS the control -- there is no chevron button any more -- so the click handler and the
+   * keyboard handlers live on the grid row itself. A row that stops opening its detail is invisible
+   * to every other test here, since they all assert on rendered text.
+   */
+  it("opens the event detail from the row itself", async () => {
+    cachedAdjustmentDetails.value = [pendingRow({ eventReferenceId: "R_OPEN" })];
+    const wrapper = await mountHistory();
+
+    const row = wrapper.find("[data-virtual-row]");
+    expect(row.attributes("role")).toBe("button");
+    expect(row.attributes("tabindex")).toBe("0");
+    // Asserted on the state, not on the modal's text: `IonModal` is stubbed as a plain slot wrapper
+    // here, so its content is in the DOM whether it is open or not and any text assertion passes
+    // vacuously.
+    expect((wrapper.vm as any).selectedEvent).toBeNull();
+
+    await row.trigger("click");
+    await flushPromises();
+
+    expect((wrapper.vm as any).selectedEvent?.eventReferenceId).toBe("R_OPEN");
+
+    (wrapper.vm as any).selectedEvent = null;
+    await row.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect((wrapper.vm as any).selectedEvent?.eventReferenceId).toBe("R_OPEN");
+  });
+
   it("narrows the table to the rows the search matches", async () => {
     cachedAdjustmentDetails.value = [
       pendingRow({ eventReferenceId: "R_KEEP" }),

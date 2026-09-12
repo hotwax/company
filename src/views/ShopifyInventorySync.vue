@@ -1091,72 +1091,70 @@
             </ion-badge>
           </div>
 
-          <ion-card v-if="historyEvents.length">
-            <div class="list-item table-header" role="row">
-              <ion-label>{{ translate("Product") }}</ion-label>
-              <ion-label>{{ translate("Change") }}</ion-label>
-              <ion-label>{{ translate("Event") }}</ion-label>
-              <ion-label>{{ translate("Status") }}</ion-label>
-              <ion-label>{{ translate("System message") }}</ion-label>
-              <span />
-            </div>
+          <div v-if="historyEvents.length" ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
+            <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
 
-            <div ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
-              <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
-
-              <div v-for="event in virtualEvents" :key="event.rowKey" data-virtual-row class="list-item" role="row">
-                <ion-item lines="none">
-                  <ion-thumbnail slot="start">
-                    <DxpShopifyImg :src="event.productImageUrl" size="small" />
-                  </ion-thumbnail>
-                  <ion-label class="ion-text-wrap">
-                    <span class="one-line">{{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}</span>
-                    <p>{{ productSecondaryLine(event) }}</p>
-                    <!-- Below 991px the grid keeps only this cell and the button, so the columns that
-                         disappear have to say their piece here or the row stops being readable. -->
-                    <p class="row-summary">
-                      {{ event.change }} &middot; {{ sourceLine(event) }} &middot; {{ event.delivery || event.detailState }}
-                    </p>
-                  </ion-label>
-                </ion-item>
-
-                <ion-label>
-                  <span class="change" :class="{ 'change-up': event.delta > 0, 'change-down': event.delta < 0 }">
-                    {{ event.change }}
-                  </span>
-                  <p class="one-line">{{ event.locationLabel }}</p>
-                </ion-label>
-
+            <div
+              v-for="event in virtualEvents"
+              :key="event.rowKey"
+              data-virtual-row
+              class="list-item"
+              role="button"
+              tabindex="0"
+              :aria-label="translate('View event details')"
+              @click="selectedEvent = event"
+              @keydown.enter="selectedEvent = event"
+              @keydown.space.prevent="selectedEvent = event"
+            >
+              <ion-item lines="none">
+                <ion-thumbnail slot="start">
+                  <DxpShopifyImg :src="event.productImageUrl" size="small" />
+                </ion-thumbnail>
                 <ion-label class="ion-text-wrap">
-                  <span class="one-line">{{ event.type }}</span>
-                  <p>{{ sourceLine(event) }}{{ event.sourcePhase ? ` · ${event.sourcePhase}` : "" }}</p>
+                  <span class="one-line">{{ event.productName || translate("Item {id}", { id: event.shopifyInventoryItem }) }}</span>
+                  <p>{{ productSecondaryLine(event) }}</p>
+                  <!-- Below 991px the grid keeps only this cell and the button, so the columns that
+                       disappear have to say their piece here or the row stops being readable. -->
+                  <p class="row-summary">
+                    {{ event.change }} &middot; {{ sourceLine(event) }}
+                  </p>
                 </ion-label>
+              </ion-item>
 
-                <!-- Ledger lifecycle and Shopify delivery are two state machines: an unbatched row has
-                     only the first, and collapsing them would hide "quarantined, never batches" behind
-                     the same chip as "batched, mutation rejected". -->
-                <ion-label class="status-cell">
+              <ion-label>
+                <span class="change" :class="{ 'change-up': event.delta > 0, 'change-down': event.delta < 0 }">
+                  {{ event.change }}
+                </span>
+                <p class="one-line">{{ event.locationLabel }}</p>
+              </ion-label>
+
+              <ion-label class="event-cell ion-text-wrap">
+                <span class="one-line">{{ event.type }}</span>
+                <p>{{ sourceLine(event) }}{{ event.sourcePhase ? ` · ${event.sourcePhase}` : "" }}</p>
+              </ion-label>
+
+              <!-- Ledger lifecycle and Shopify delivery stay two chips: an unbatched row has only
+                   the first, and collapsing them would hide "quarantined, never batches" behind the
+                   same chip as "batched, mutation rejected". The chips sit on ONE line and the
+                   message id on the next, so a row with one chip is exactly as tall as a row with
+                   two -- the virtualiser sizes every spacer from a single measured row. -->
+              <ion-label class="status-cell">
+                <span class="status-chips">
                   <ion-badge :color="event.detailStateColor">
                     {{ event.detailState }}
                   </ion-badge>
                   <ion-badge v-if="event.delivery" :color="event.deliveryColor">
                     {{ event.delivery }}
                   </ion-badge>
-                </ion-label>
+                </span>
+                <span v-if="event.batchId" class="one-line batch-id">{{ event.batchId }}</span>
+                <ion-note v-else class="one-line">{{ translate("Not batched") }}</ion-note>
+              </ion-label>
 
-                <ion-label>
-                  <span v-if="event.batchId" class="one-line">{{ event.batchId }}</span>
-                  <ion-note v-else>{{ translate("Not batched") }}</ion-note>
-                </ion-label>
-
-                <ion-button fill="clear" :aria-label="translate('View event details')" @click="selectedEvent = event">
-                  <ion-icon slot="icon-only" :icon="chevronForwardOutline" />
-                </ion-button>
-              </div>
-
-              <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
             </div>
-          </ion-card>
+
+          <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
+          </div>
 
           <!-- "Nothing here" is a claim about the data, so it may only be made once the ledger is
                readable. Before that, say the cache has not loaded rather than that the history is empty. -->
@@ -1592,7 +1590,7 @@ import {
   modalController, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import {
-  addOutline, checkmarkCircleOutline, chevronForwardOutline,
+  addOutline, checkmarkCircleOutline,
   closeCircleOutline, closeOutline, cloudUploadOutline, documentTextOutline,
   layersOutline, listOutline, locationOutline,
   refreshOutline, sendOutline, storefrontOutline, timeOutline, trashBinOutline, trashOutline,
@@ -4251,26 +4249,45 @@ function formatAge(timestamp: number): string {
   overscroll-behavior: contain;
 }
 
-/* Six tracks: product, change, event, status, system message, and the button that opens the row. The
-   grid itself -- and the rule that keeps only the first and last cell below 991px -- is `.list-item`
-   in the theme, so this page only says how many columns it has. */
+/* Four tracks: product, change, event, status. The row itself opens the detail, so there is no
+   button column. The grid -- and the rule that keeps only the first and last cell below 991px, which
+   here leaves the product and the status chips -- is `.list-item` in the theme. */
 .list-item {
-  --columns-desktop: 6;
+  --columns-desktop: 4;
   padding-inline-end: var(--spacer-sm);
+  cursor: pointer;
+}
+
+.list-item:hover {
+  background: var(--ion-color-light);
+}
+
+.list-item:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: -2px;
 }
 
 .list-item:last-child {
   border-bottom: none;
 }
 
-.table-header {
-  display: none;
-  border-block-end: var(--border-medium);
-}
-
 .list-item ion-item,
 .list-item ion-label {
   min-width: 0;
+}
+
+/* The theme centres grid items, which sizes each one to its content -- so a cell whose text is wider
+   than its track overflows it instead of being clipped, and a long event description ran under the
+   status chips with no ellipsis at all. Stretching the cells onto their tracks is what lets
+   `.one-line` do its job. The event column reads as prose, so its text starts at the track edge; the
+   short cells stay centred like the rest of the app's list rows. */
+.list-item > ion-label {
+  justify-self: stretch;
+  width: 100%;
+}
+
+.list-item > ion-label.event-cell {
+  text-align: start;
 }
 
 .list-item ion-thumbnail {
@@ -4330,11 +4347,7 @@ function formatAge(timestamp: number): string {
      first and the button, and those proportions would be meaningless. */
   .list-item {
     grid-template-columns:
-      minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1.1fr) max-content;
-  }
-
-  .table-header {
-    display: grid;
+      minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 2fr) minmax(0, 1.5fr);
   }
 
   /* Ledger lifecycle and Shopify delivery stack in one cell: the second is the state OF the batch the
@@ -4345,6 +4358,19 @@ function formatAge(timestamp: number): string {
     flex-direction: column;
     align-items: center;
     gap: var(--spacer-2xs);
+  }
+
+  /* One line for the chips, whether there are one or two, so the cell is the same height either way. */
+  .status-chips {
+    display: flex;
+    align-items: center;
+    gap: var(--spacer-2xs);
+  }
+
+  .batch-id {
+    font-size: 0.8rem;
+    color: var(--ion-color-medium);
+    max-width: 100%;
   }
 
   .list-item .row-summary {
