@@ -2091,7 +2091,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop, syncNow, error: workerError } = useCacheSync();
+  const { start, stop, syncNow, error: workerError, domainStatus } = useCacheSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -2182,7 +2182,21 @@ export function useShopifySyncSession(
   onIonViewDidLeave(() => deactivate());
   onBeforeUnmount(() => deactivate());
 
-  return { isPageActive, isRefreshing, manualRefresh, activate, deactivate };
+  /**
+   * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
+   * from "the worker has not fetched this shop yet" on its own. `useCachedList`'s `hydrated` answers
+   * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
+   * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
+   * result here instead.
+   *
+   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
+   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
+   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
+   */
+  return {
+    isPageActive, isRefreshing, manualRefresh, activate, deactivate,
+    domainStatus, workerError,
+  };
 }
 
 // =============================================================================================
