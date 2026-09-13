@@ -1976,13 +1976,9 @@ const { products: resolvedProducts, resolve: resolveProductNames } = useProducts
 const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = useInventoryEventSources();
 
 function lookupFor(event: InventoryEvent): InventoryEventSourceLookup {
-  const channel = allInventoryChannels.value.find((candidate: any) =>
-    String(candidate.inventoryChannelId) === event.inventoryChannelId);
-
   return {
     eventTypeId: event.eventTypeId,
     eventReferenceId: event.eventReferenceId,
-    productId: event.productId,
   };
 }
 
@@ -2774,8 +2770,8 @@ function locationLabel(detail: any): string {
  * A bare number tells an operator nothing about where to look, so this names the record type. It is a
  * DISPLAY LABEL ONLY and the raw reference is always shown beside it, so an unrecognised type -- a new
  * one seeded in the OMS before this app ships -- degrades to the reference alone rather than to a wrong
- * label. The durable fix for "which sales order was that" is a resolved source on the server; this
- * ledger row deliberately carries no order, return or shipment id at all.
+ * label. This ledger row deliberately carries no order, return or shipment id at all: "which sales
+ * order was that" is answered by resolving the reference against the OMS, not by reading this label.
  */
 const SOURCE_RECORD_LABELS: Record<string, string> = {
   RECEIPT: "Shipment receipt",
@@ -3864,10 +3860,11 @@ const {
 /**
  * Source artifacts for the rows actually on screen, not for the whole list.
  *
- * The families that resolve -- reservation, cycle count, external reset -- each cost one call keyed by
- * the reference the row already carries. The receipt and issuance families resolve to nothing at all
- * until the OMS exposes a read that takes their id without a facility; they render the reference
- * instead of a document name.
+ * The reservation, cycle count and external reset families each cost one call keyed by the reference
+ * the row already carries. The receipt and issuance families are answered in BULK -- the whole visible
+ * window in one request -- because the OMS GraphQL movement root takes their id with no facility scope
+ * and accepts a comma list. On an OMS that predates that root they fall back to rendering the bare
+ * reference, which is what this page did before it existed.
  */
 watch(virtualEvents, (events) => {
   if(!events.length) {return;}
