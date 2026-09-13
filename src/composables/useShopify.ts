@@ -1078,9 +1078,6 @@ export function useShopifyShopMutations(shopId: string) {
 export interface InventoryEventSourceLookup {
   eventTypeId: string;
   eventReferenceId: string;
-  /** Parsed from decisionComment. Scopes the hard-scoped inventory-history mounts. */
-  productId: string;
-
 }
 
 export interface InventoryEventSource {
@@ -1157,6 +1154,9 @@ onSessionCleared(() => {
   eventSourceAttempts.clear();
   eventSourceActors.clear();
   eventSourceActorRequests.clear();
+  // Re-probed per session: the next tenant may be on an OMS that does have the movement root.
+  movementRootAvailable = null;
+  movementRootProbe = null;
 });
 
 async function readEventSource(url: string, params?: Record<string, unknown>): Promise<any> {
@@ -1304,26 +1304,225 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
   };
 }
 
+/*
+ * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE -- the document behind a movement, in ONE
+ * call for a whole page.
+ *
+ * These four are the families the REST catalog could not reach from what the ledger carries.
+ * `InventoryItemDetailAndOrder` holds the order behind each of them, but both of its mounts are scoped
+ * by a path -- product + facility, or inventory item -- and the ledger carries neither, because the
+ * event is aggregate over a facility GROUP. Walking the group's member facilities one call at a time
+ * was the old workaround and cost a request per facility per row: fine on a two-store channel, fifteen
+ * per row on `RetailAggregate`.
+ *
+ * The OMS GraphQL layer now exposes the movement rows with no path scope at all, filtered on the
+ * movement id itself (hotwax/moqui-gql#101). That turns the walk inside out: instead of N facilities x
+ * M rows requests, a page of rows is ONE request, because `receiptId:` takes a comma list. The ledger's
+ * reference and the column filtered on are the same value by construction -- the connector creates the
+ * event by querying InventoryItemDetail on that very column (resolveShopifyInventoryEventContext.groovy,
+ * `detailRowsFor`) -- so a hit is exact, never a heuristic match.
+ *
+ * The configuration families still name no document at all. Their references decode locally to ids the
+ * app already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the
+ * changed entity and its PK values, neither of which the ledger keeps.
+ */
+type MovementFamily = "receipt" | "issuance";
+
+const MOVEMENT_FAMILIES: Record<string, MovementFamily> = {
+  RECEIPT: "receipt",
+  TRANSFER_RECEIPT: "receipt",
+  RETURN_RESTOCK: "receipt",
+  POS_ISSUANCE: "issuance",
+};
+
+/** The GraphQL search key each family filters on. Both are declared, index-backed keys on that root. */
+const MOVEMENT_SEARCH_KEYS: Record<MovementFamily, string> = {
+  receipt: "receiptId",
+  issuance: "itemIssuanceId",
+};
+
+/**
+ * How many movement ids go into one query, and how many rows are asked for back.
+ *
+ * A receipt is per shipment ITEM and an issuance per order ITEM, so each names one product at one
+ * facility and maps to exactly one InventoryItemDetail row -- measured 1.00 rows per id, max 1, over
+ * 174 receipts and 3,045 issuances. Asking for twice the chunk leaves room for that to be wrong
+ * somewhere without silently truncating; if it ever is, `hasNextPage` says so and the ids that did not
+ * come back are reported as unresolved rather than answered wrongly.
+ */
+const MOVEMENT_LOOKUP_CHUNK = 50;
+const MOVEMENT_LOOKUP_PAGE = 100;
+
+const MOVEMENT_DOCUMENT_QUERY = `query MovementDocuments($q: String!, $first: Int!) {
+  inventoryItemDetails(query: $q, first: $first) {
+    edges { node { receiptId itemIssuanceId orderId order { orderId orderName orderTypeId statusId } } }
+    pageInfo { hasNextPage }
+  }
+}`;
+
+/**
+ * Whether this deployment can answer a movement lookup at all.
+ *
+ * `null` until the first query comes back. Three things make the answer a permanent NO for the
+ * session, and all three are about the deployment rather than the data, so re-asking is pure waste:
+ *
+ *  - the OMS predates moqui-gql#101 and rejects the query at VALIDATION time, naming the undefined
+ *    field -- the remote schema is fixed at startup, so it will not appear mid-session;
+ *  - `/graphql` is not mounted at all (404), because the component is not deployed there;
+ *  - the signed-in user is not authorized for it (401/403). The component seeds `/graphql` for the
+ *    ADMIN group only (GqlSetupData.xml), so an app user gets
+ *    "User <id> is not authorized for Create on REST Path /graphql" until a deployment grants it.
+ *
+ * Latched to false, every movement row falls back to the bare reference -- exactly what this page
+ * showed before the root existed -- at a cost of ONE request for the session instead of one per row
+ * per retry. Getting this wrong is not a cosmetic bug: the caller re-fires on every cache tick and on
+ * every scroll, so an un-latched permanent failure is a request storm.
+ */
+let movementRootAvailable: boolean | null = null;
+
+/**
+ * The first movement query of the session, shared.
+ *
+ * Passes overlap -- the watch re-fires as rows scroll in, well before the first answer lands -- and
+ * each pass holds keys the others have not claimed, so without this every pass in flight would issue
+ * its own query and only then learn the deployment cannot answer any of them. Gating only while the
+ * answer is still unknown costs the happy path nothing: once the flag is set, queries run in parallel
+ * again, which is the whole point of asking for fifty ids at a time.
+ */
+let movementRootProbe: Promise<unknown> | null = null;
+
+/** A validation error naming our field means the schema lacks it, not that the data is missing. */
+function isMovementRootUndefined(errors: any[]): boolean {
+  return errors.some((error: any) => {
+    const message = String(error?.message ?? "");
+    if(!message.includes("Validation error") && !message.includes("FieldUndefined")) {return false;}
+
+    return message.includes("inventoryItemDetails") || message.includes("InventoryItemDetail")
+      || message.includes("orderTypeId");
+  });
+}
+
+/** Not mounted, or not ours to call. Either way it will not start working later in this session. */
+function movementRootDenialOf(error: any): string {
+  const status = Number(error?.response?.status ?? error?.status ?? 0);
+  if(status === 401 || status === 403) {
+    return translate("This app is not authorized to read inventory movements from the OMS.");
+  }
+  if(status === 404) {
+    return translate("This OMS does not expose the document behind a movement.");
+  }
+
+  return "";
+}
+
+/** The reason a row shows its bare reference instead of a document. Never blank. */
+function movementUnresolved(reason: string): InventoryEventSource {
+  return { label: "", unresolved: reason };
+}
+
+/**
+ * One GraphQL call for one family's ids. Returns an answer for every id asked about, so a caller never
+ * has to guess whether a missing key means "no document" or "never asked".
+ */
+async function readMovementDocuments(
+  family: MovementFamily, references: string[]
+): Promise<Map<string, InventoryEventSource>> {
+  const answers = new Map<string, InventoryEventSource>();
+  const searchKey = MOVEMENT_SEARCH_KEYS[family];
+  // Still unknown, and someone is already finding out: wait for them rather than asking in parallel.
+  if(movementRootAvailable === null && movementRootProbe) {
+    await movementRootProbe.catch(() => undefined);
+  }
+  if(movementRootAvailable === false) {
+    for(const reference of references) {
+      answers.set(reference, movementUnresolved(
+        translate("This OMS does not expose the document behind a movement.")));
+    }
+
+    return answers;
+  }
+  let response: any;
+  try {
+    const request = api({
+      url: "graphql",
+      method: "post",
+      data: {
+        query: MOVEMENT_DOCUMENT_QUERY,
+        variables: { q: `${searchKey}:${references.join(",")}`, first: MOVEMENT_LOOKUP_PAGE },
+        operationName: "MovementDocuments",
+      },
+    });
+    if(movementRootAvailable === null) {movementRootProbe = request;}
+    response = await request;
+  } catch (error) {
+    // A 401/403/404 is about the deployment, not this request: retrying it per row is the storm.
+    const denial = movementRootDenialOf(error);
+    if(!denial) {throw error;}
+    movementRootAvailable = false;
+    logger.info(`Inventory event sources - movement lookups are unavailable on this OMS: ${denial}`);
+    for(const reference of references) {answers.set(reference, movementUnresolved(denial));}
+
+    return answers;
+  }
+
+  // GraphQL answers 200 with an `errors` array, so the transport-level check cannot see a rejection.
+  const errors: any[] = Array.isArray(response?.data?.errors) ? response.data.errors : [];
+  if(errors.length) {
+    if(isMovementRootUndefined(errors)) {
+      movementRootAvailable = false;
+      logger.info("Inventory event sources - this OMS has no unscoped movement lookup; rows will show their reference");
+      for(const reference of references) {
+        answers.set(reference, movementUnresolved(
+          translate("This OMS does not expose the document behind a movement.")));
+      }
+
+      return answers;
+    }
+    // A real failure: let the caller's retry budget see it rather than storing a wrong answer.
+    throw response;
+  }
+
+  movementRootAvailable = true;
+  const connection = response?.data?.data?.inventoryItemDetails;
+  const rows: any[] = Array.isArray(connection?.edges) ? connection.edges.map((edge: any) => edge?.node) : [];
+  for(const row of rows) {
+    const reference = String(row?.[searchKey] ?? "").trim();
+    if(!reference || answers.has(reference)) {continue;}
+    const label = eventSourceOrderLabel(row?.order);
+    answers.set(reference, label
+      ? { label, note: row?.order?.statusId ? translate("Order status {status}", { status: row.order.statusId }) : undefined }
+      : movementUnresolved(translate("This movement carries no order.")));
+  }
+
+  // Anything not in the page: either the OMS holds no such movement, or the page truncated. Both are
+  // worth saying out loud on the row instead of leaving it blank.
+  const truncated = rows.length >= MOVEMENT_LOOKUP_PAGE || connection?.pageInfo?.hasNextPage;
+  for(const reference of references) {
+    if(answers.has(reference)) {continue;}
+    answers.set(reference, movementUnresolved(truncated
+      ? translate("Too many movements came back at once to name this one.")
+      : translate("The OMS has no inventory movement with this reference.")));
+  }
+  if(truncated) {
+    logger.warn(`Inventory event sources - a ${family} lookup filled its page; some rows could not be named`);
+  }
+
+  return answers;
+}
+
 function eventSourceResolverFor(eventTypeId: string) {
   if(eventTypeId.startsWith("RESERVATION_")) {return resolveReservationSource;}
   if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
   if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
 
-  /*
-   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
-   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
-   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
-   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
-   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
-   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
-   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
-   * an unscoped read exists.
-   *
-   * The configuration families name no document at all. Their references decode locally to ids the app
-   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
-   * entity and its PK values, neither of which the ledger keeps.
-   */
   return null;
+}
+
+/** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
+function movementFamilyFor(eventTypeId: string): MovementFamily | null {
+  if(movementRootAvailable === false) {return null;}
+
+  return MOVEMENT_FAMILIES[eventTypeId] ?? null;
 }
 
 /**
@@ -1362,7 +1561,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
   for(const lookup of lookups) {
     const key = inventoryEventSourceKey(lookup.eventTypeId, lookup.eventReferenceId);
     if(pending.has(key) || isEventSourceSettled(key)) {continue;}
-    if(!eventSourceResolverFor(lookup.eventTypeId)) {continue;}
+    if(!eventSourceResolverFor(lookup.eventTypeId) && !movementFamilyFor(lookup.eventTypeId)) {continue;}
     pending.set(key, lookup);
   }
   if(!pending.size) {return;}
@@ -1377,8 +1576,57 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
     eventSourceAttempts.set(key, attempt);
   }
 
-  for(let index = 0; index < entries.length; index += SOURCE_LOOKUP_CONCURRENCY) {
-    const batch = entries.slice(index, index + SOURCE_LOOKUP_CONCURRENCY);
+  /*
+   * The movement families go first and go in bulk. Everything below this loop is one call per key; a
+   * whole page of receipts or POS sales is one call per FIFTY keys, which is the entire point of the
+   * unscoped root. Their keys were claimed with the rest, so a concurrent pass cannot duplicate them.
+   */
+  const movementEntries = entries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId));
+  const singleEntries = entries.filter(([, lookup]) => !movementFamilyFor(lookup.eventTypeId));
+  for(const family of ["receipt", "issuance"] as MovementFamily[]) {
+    const familyEntries = movementEntries.filter(([, lookup]) => MOVEMENT_FAMILIES[lookup.eventTypeId] === family);
+    for(let index = 0; index < familyEntries.length; index += MOVEMENT_LOOKUP_CHUNK) {
+      const chunk = familyEntries.slice(index, index + MOVEMENT_LOOKUP_CHUNK);
+      // One reference can carry two event types (a receipt that is also a restock), so the ids are
+      // de-duplicated for the query while every claimed KEY still gets its own answer back.
+      const references = [...new Set(chunk.map(([, lookup]) => lookup.eventReferenceId))];
+      let answers = new Map<string, InventoryEventSource>();
+      let failure: unknown = null;
+      try {
+        answers = await readMovementDocuments(family, references);
+      } catch (error) {
+        failure = error;
+        logger.warn(`Inventory event sources - a ${family} document lookup failed`, error);
+      }
+
+      if(requestGeneration !== eventSourceGeneration) {return;}
+
+      const next = new Map(eventSources.value);
+      let changed = false;
+      for(const [key, lookup] of chunk) {
+        const attempt = eventSourceAttempts.get(key) as InventoryEventSourceAttempt;
+        attempt.pending = false;
+        if(failure) {
+          attempt.failures += 1;
+          // Attempts left: store nothing and let a later pass re-ask, same budget as a single lookup.
+          if(attempt.failures < MAX_SOURCE_LOOKUP_FAILURES) {continue;}
+          next.set(key, movementUnresolved(
+            translate("This lookup failed repeatedly and is no longer being retried.")));
+          changed = true;
+          continue;
+        }
+        attempt.failures = 0;
+        attempt.retryable = false;
+        next.set(key, answers.get(lookup.eventReferenceId)
+          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
+        changed = true;
+      }
+      if(changed) {eventSources.value = next;}
+    }
+  }
+
+  for(let index = 0; index < singleEntries.length; index += SOURCE_LOOKUP_CONCURRENCY) {
+    const batch = singleEntries.slice(index, index + SOURCE_LOOKUP_CONCURRENCY);
     const resolved = await Promise.all(batch.map(async ([key, lookup]) => {
       const attempt = eventSourceAttempts.get(key) as InventoryEventSourceAttempt;
       const resolver = eventSourceResolverFor(lookup.eventTypeId);
