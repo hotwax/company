@@ -25,21 +25,21 @@
           <ion-item lines="full">
             <ion-label>{{ translate("Orders processed") }}</ion-label>
             <ion-label slot="end">
-              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 32px" />
+              <ion-skeleton-text v-if="snapshot.loading" animated class="skeleton-count" />
               <template v-else>{{ processedCount }}</template>
             </ion-label>
           </ion-item>
           <ion-item lines="full">
             <ion-label>{{ translate("Pending batch requests") }}</ion-label>
             <ion-label slot="end">
-              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 32px" />
+              <ion-skeleton-text v-if="snapshot.loading" animated class="skeleton-count" />
               <template v-else>{{ pendingCount }}</template>
             </ion-label>
           </ion-item>
           <ion-item lines="none">
             <ion-label>{{ translate("Last completed batch") }}</ion-label>
             <ion-label slot="end">
-              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 120px" />
+              <ion-skeleton-text v-if="snapshot.loading" animated class="skeleton-timestamp" />
               <template v-else>{{ lastCompletedLabel }}</template>
             </ion-label>
           </ion-item>
@@ -51,7 +51,7 @@
           <ion-item lines="full" data-progress-row="shopify-order-batch-request">
             <ion-label>
               {{ translate("Shopify order batch request") }}
-              <p v-if="snapshot.loading"><ion-skeleton-text animated style="width: 70%" /></p>
+              <p v-if="snapshot.loading"><ion-skeleton-text animated class="skeleton-line" /></p>
               <p v-else>{{ batchDetail }}</p>
             </ion-label>
             <ion-badge slot="end" :color="batchBadge.color">
@@ -61,7 +61,7 @@
           <ion-item lines="none" data-progress-row="hotwax-order-import">
             <ion-label>
               {{ translate("HotWax order import") }}
-              <p v-if="snapshot.loading"><ion-skeleton-text animated style="width: 70%" /></p>
+              <p v-if="snapshot.loading"><ion-skeleton-text animated class="skeleton-line" /></p>
               <p v-else>{{ importDetail }}</p>
             </ion-label>
             <ion-badge slot="end" :color="importBadge.color">
@@ -246,6 +246,21 @@ function getProgressBadge(status: string | undefined) {
 </script>
 
 <style scoped>
+/* Stand-in widths belong here, not in the markup: the template says WHAT is pending and the
+   stylesheet decides how wide to draw it. A count is a couple of glyphs, a timestamp is a phrase,
+   a detail line runs most of the row. */
+.skeleton-count {
+  inline-size: 32px;
+}
+
+.skeleton-timestamp {
+  inline-size: 120px;
+}
+
+.skeleton-line {
+  inline-size: 70%;
+}
+
 /* `ion-skeleton-text` takes its height from the line it replaces, and a stand-in has no text to take
    one from, so without this each one collapses to nothing and the row loses its height. `1lh` is the
    line box of whatever it sits in — exactly the line the value will occupy. */

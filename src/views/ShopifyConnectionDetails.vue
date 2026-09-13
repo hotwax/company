@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/shopify"/>
-        <ion-title v-if="isLoading"><ion-skeleton-text animated style="width: 100px" /></ion-title>
+        <ion-title v-if="isLoading"><ion-skeleton-text animated class="skeleton-title" /></ion-title>
         <ion-title v-else>{{ shop.name || id }}</ion-title>
         <ion-buttons slot="end" v-if="!isLoading">
           <ion-button @click="openCloneSettingsModal()">
@@ -17,12 +17,12 @@
     <ion-content class="ion-padding-horizontal">
       <div v-if="isLoading">
         <section class="ion-margin-top" v-for="i in 3" :key="i">
-          <ion-skeleton-text animated style="width: 150px; height: 32px;" class="ion-margin-bottom" />
+          <ion-skeleton-text animated class="skeleton-heading ion-margin-bottom" />
           <div class="grid-container">
             <ion-item v-for="j in (i === 1 ? 2 : (i === 2 ? 2 : 4))" :key="j" class="item-box" lines="none">
               <ion-label>
-                <ion-skeleton-text animated style="width: 70%" />
-                <p><ion-skeleton-text animated style="width: 50%" /></p>
+                <ion-skeleton-text animated class="skeleton-line" />
+                <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
               </ion-label>
             </ion-item>
           </div>
@@ -73,7 +73,7 @@
                    the reader gets the card's structure while only the figures are still pending. -->
               <ion-card-header>
                 <ion-card-title>{{ translate("Product sync") }}</ion-card-title>
-                <ion-card-subtitle><ion-skeleton-text animated style="width: 70%" /></ion-card-subtitle>
+                <ion-card-subtitle><ion-skeleton-text animated class="skeleton-line" /></ion-card-subtitle>
               </ion-card-header>
               <div class="product-sync-activity-graph">
                 <div class="product-sync-activity-canvas">
@@ -85,19 +85,19 @@
                   <ion-item lines="full">
                     <ion-label>
                       {{ translate("Records processed in last sync") }}
-                      <p><ion-skeleton-text animated style="width: 55%" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
                     </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
                   </ion-item>
                   <ion-item lines="full">
                     <ion-label>
                       {{ translate("Unsynced events") }}
                       <!-- Two lines: this row's explanation wraps in the loaded card, and a one-line
                            stand-in left the shell ~20px short of it. -->
-                      <p><ion-skeleton-text animated style="width: 92%" /></p>
-                      <p><ion-skeleton-text animated style="width: 45%" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-long" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
                     </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
                   </ion-item>
                 </ion-list>
               </div>
@@ -1651,6 +1651,34 @@ ion-item[data-sync-state="upgrade-ready"]::part(native) {
 
 ion-item[data-sync-state="teardown-needed"]::part(native) {
   border-color: var(--ion-color-danger);
+}
+
+/* Stand-in widths belong here, not in the markup: the template says WHAT is pending and the
+   stylesheet decides how wide to draw it. Three line lengths rather than seven bespoke percentages --
+   the variation is visual rhythm, and a scale reads better than a number per element. */
+.skeleton-title {
+  inline-size: 100px;
+}
+
+.skeleton-heading {
+  inline-size: 150px;
+  block-size: 32px;
+}
+
+.skeleton-count {
+  inline-size: 48px;
+}
+
+.skeleton-line {
+  inline-size: 70%;
+}
+
+.skeleton-line-short {
+  inline-size: 50%;
+}
+
+.skeleton-line-long {
+  inline-size: 92%;
 }
 
 /* `ion-skeleton-text` inherits its height from the line it replaces, so a skeleton standing in for a
