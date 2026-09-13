@@ -796,6 +796,24 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("3h ago");
   });
 
+  /**
+   * Success is Sent OR Consumed OR Confirmed — `isSuccess` says so, and `sectionOfEvent` settles all
+   * three. Testing for `SmsgSent` alone left a confirmed row blank and dropped it from the median,
+   * which is the same mistake as reading a missing timestamp for "not sent".
+   */
+  it.each(["SmsgSent", "SmsgConsumed", "SmsgConfirmed"])("treats %s as delivered", async (statusId) => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_S", statusId, processedDate: 1_000_000 + 3 * MINUTE }];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: `R_${statusId}`, detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_S", systemMessageStatusId: statusId, createdDate: 1_000_000,
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 3.0 min later");
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("3.0 min");
+  });
+
   it("narrows the table to the rows the search matches", async () => {
     cachedAdjustmentDetails.value = [
       pendingRow({ eventReferenceId: "R_KEEP" }),

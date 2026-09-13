@@ -3203,6 +3203,7 @@
   "View Data Manager log": "View Data Manager log",
   "View DataManager run": "View DataManager run",
   "View details": "View details",
+  "View details: {event} for {product}": "View details: {event} for {product}",
   "View event details": "View event details",
   "View GraphQL query": "View GraphQL query",
   "View history": "View history",

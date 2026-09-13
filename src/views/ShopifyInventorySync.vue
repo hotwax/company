@@ -1137,7 +1137,10 @@
               class="list-item"
               role="button"
               tabindex="0"
-              :aria-label="translate('View event details')"
+              :aria-label="translate('View details: {event} for {product}', {
+                event: event.type,
+                product: event.productName || event.shopifyInventoryItem,
+              })"
               @click="selectedEvent = event"
               @keydown.enter="selectedEvent = event"
               @keydown.space.prevent="selectedEvent = event"
@@ -3126,7 +3129,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     createdAt: toMillis(detail.createdDate),
     sentAt: sentAtOf(detail),
     awaitingDelivery: isAwaitingDelivery(detail, delivery?.statusId),
-    delivered: delivery?.statusId === "SmsgSent",
+    delivered: !!delivery?.statusId && !isDeliveryUnsettled(delivery.statusId),
     decisionComment: detail.decisionComment,
     productId,
     // The bare name: this template supplies its own item-id fallback, so it must not print one here.
@@ -3845,10 +3848,15 @@ const syncLag = computed(() => {
  * an hour, and that event is the one that makes Shopify wrong right now.
  */
 const oldestAwaitingDelivery = computed(() => {
-  const waiting = historyEvents.value.filter((event) => event.awaitingDelivery && event.createdAt);
-  if(!waiting.length) {return null;}
+  let oldest = 0;
+  for(const event of historyEvents.value) {
+    if(!event.awaitingDelivery || !event.createdAt) {continue;}
+    if(!oldest || event.createdAt < oldest) {oldest = event.createdAt;}
+  }
 
-  return Math.min(...waiting.map((event) => event.createdAt));
+  // A loop, not `Math.min(...rows)`: the spread becomes one argument per row, and this list is sized
+  // for tens of thousands.
+  return oldest || null;
 });
 
 /**
@@ -4177,7 +4185,9 @@ function sentAtOf(detail: any): number | undefined {
   if(!systemMessageId) {return undefined;}
   const message = messageById.value.get(systemMessageId);
   const statusId = deliveryStatusOf(detail, message?.statusId);
-  if(statusId !== "SmsgSent") {return undefined;}
+  // `isDeliveryUnsettled` is `!isSuccess`, and success is Sent OR Consumed OR Confirmed. Testing for
+  // `SmsgSent` alone would leave a confirmed row blank and drop it from the median.
+  if(isDeliveryUnsettled(statusId)) {return undefined;}
 
   // The ledger row carries the message's dates denormalised -- `systemMessageProcessedDate` is on the
   // read resource and already in the projection -- so the delivery time never waits on the message
