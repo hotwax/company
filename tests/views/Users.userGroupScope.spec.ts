@@ -34,11 +34,14 @@ vi.mock("@common", async () => ({
   emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
 }));
 
-vi.mock("@/composables/useSecurity", () => ({
+vi.mock("@/composables/useSecurity", async (importOriginal) => ({
+  ...(await importOriginal<any>()),
   useUserGroups: () => ({ userGroups: harness.userGroups, records: harness.userGroups, hydrated: ref(true) }),
 }));
 
 vi.mock("@/store/user", () => ({ useUserStore: () => harness.userStore }));
+
+vi.mock("@/services/appCacheBootstrap", () => ({ resyncDomain: vi.fn() }));
 
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 
@@ -69,7 +72,7 @@ describe("Users security-group filter scope", () => {
       isScrollable: false,
       getUserProfile: {},
       hasPermission: () => true,
-      fetchUsers: vi.fn(async () => undefined),
+      fetchUsers: vi.fn(async () => true),
       getUserGroups: vi.fn(async () => []),
       updateQuery: vi.fn(async () => undefined),
       updateSelectedUser: vi.fn(async () => undefined),
@@ -99,4 +102,110 @@ describe("Users security-group filter scope", () => {
 
     expect(groupFilterOptions(wrapper)).toEqual(["All", "Store Manager"]);
   });
+
+  it("guides an empty search directly to the existing creation flow", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.query.queryString = "anil";
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("No users found");
+    const create = wrapper.findAll("ion-button").find(button => button.text().trim() === "Create user")!;
+    expect(create.exists()).toBe(true);
+    expect(wrapper.find("ion-fab").exists()).toBe(false);
+    await create.trigger("click");
+    expect(harness.userStore.clearSelectedUser).toHaveBeenCalledOnce();
+    const router = (await import("@/router")).default;
+    expect(router.push).toHaveBeenCalledWith("/create-user");
+    const { useUserAccountActions } = await import("@/composables/useSecurity");
+    expect(useUserAccountActions().consumeUserCreationDraft()).toEqual({ firstName: "anil", lastName: "" });
+  });
+
+  it("offers search recovery without creation permission", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.query.queryString = "anil";
+    harness.userStore.hasPermission = () => false;
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("Try another search or clear your filters");
+    expect(wrapper.findAll("ion-button").some(button => button.text().trim() === "Create user")).toBe(false);
+  });
+
+  it("does not suggest creation before the search finishes", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.query.queryString = "anil";
+    let complete!: (value: boolean) => void;
+    harness.userStore.fetchUsers = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+    const wrapper = await mountView();
+    expect(wrapper.text()).not.toContain("No users found");
+    complete(true);
+    await flushPromises();
+    expect(wrapper.text()).toContain("No users found");
+  });
+
+  it("shows a retryable error instead of a creation prompt when search fails", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.query.queryString = "anil";
+    harness.userStore.fetchUsers.mockResolvedValueOnce(false);
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("Unable to load users");
+    expect(wrapper.text()).not.toContain("No users found");
+    await wrapper.findAll("ion-button").find(button => button.text().trim() === "Try again")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("No users found");
+  });
+
+  it("clears the search and both filters and reruns the query", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.query = { queryString: "anil", userGroupId: "STORE_MANAGER", status: "Y" };
+    const wrapper = await mountView();
+    await wrapper.findAll("ion-button").find(button => button.text().trim() === "Clear search and filters")!.trigger("click");
+    await flushPromises();
+    expect(harness.userStore.query).toEqual({ queryString: "", userGroupId: "", status: "" });
+    expect(harness.userStore.fetchUsers).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps populated results and the existing floating create action", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.getUsers = [{ firstName: "Anil", username: "anil", partyId: "123" }];
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("Anil");
+    expect(wrapper.text()).not.toContain("No users found");
+    expect(wrapper.find("ion-fab").exists()).toBe(true);
+  });
+
+  it("does not claim there are no users when the pinned current user is visible", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.getUserProfile = { userId: "admin", userFullName: "Administrator" };
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("Administrator");
+    expect(wrapper.text()).not.toContain("No users found");
+  });
+
+  it.each(["existing.user", ""])("hides a stale empty result after editing the search to %j", async queryString => {
+    harness.userGroups = ref([]);
+    harness.userStore.query.queryString = "anil";
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain("No users found");
+    harness.userStore.query.queryString = queryString;
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("No users found");
+    expect(wrapper.text()).toContain("Your search has changed.");
+    expect(wrapper.findAll("ion-button").some(button => button.text().trim() === "Create user")).toBe(false);
+    expect(harness.userStore.fetchUsers).toHaveBeenCalledTimes(1);
+    await wrapper.findAll("ion-button").find(button => button.text().trim() === "Search users")!.trigger("click");
+    await flushPromises();
+    expect(harness.userStore.fetchUsers).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain("No users found");
+    expect(wrapper.text()).not.toContain("Your search has changed.");
+  });
+
+  it("does not paginate old results using an unsubmitted query", async () => {
+    harness.userGroups = ref([]);
+    harness.userStore.getUsers = [{ firstName: "Anil", username: "anil", partyId: "123" }];
+    harness.userStore.isScrollable = true;
+    const wrapper = await mountView();
+    expect(wrapper.find("ion-infinite-scroll").exists()).toBe(true);
+    harness.userStore.query.queryString = "new search";
+    await flushPromises();
+    expect(wrapper.find("ion-infinite-scroll").exists()).toBe(false);
+  });
+
 });

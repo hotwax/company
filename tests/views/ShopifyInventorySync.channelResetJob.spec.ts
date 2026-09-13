@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from "@vue/test-utils";
+import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
@@ -8,6 +8,7 @@ const cachedChannels = ref<any[]>([]);
 const cachedShops = ref<any[]>([]);
 const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
+const cachedLocationSummaries = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
 // The read layer's health, controllable: an empty section means "nothing there" only when these say so.
 const detailsHydrated = ref(true);
@@ -20,13 +21,19 @@ const harness = vi.hoisted(() => ({
   ensureChannelEventDiscardJob: vi.fn(),
   ensureInventoryAdjustmentSenderJob: vi.fn(),
   ensureShopPhysicalInventoryResetJob: vi.fn(),
+  ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({
     push: harness.push,
+    // The location history view mirrors its filters into the query string, so it both reads
+    // `currentRoute` and calls `replace`. Without these the immediate watcher throws on mount.
+    replace: harness.replace,
+    currentRoute: { value: { query: {} } },
   }),
   useRoute: () => ({
     params: { id: "100002" },
@@ -34,8 +41,14 @@ vi.mock("vue-router", () => ({
   }),
 }));
 
+/** Solr-resolved products, so a test can give a row a real name, SKU and variant to render. */
+const resolvedProducts = ref(new Map<string, any>());
+
 vi.mock("@common", () => ({
-  useProducts: () => ({ products: ref(new Map()), resolve: vi.fn(), reset: vi.fn() }),
+  useProducts: () => ({ products: resolvedProducts, resolve: vi.fn(), reset: vi.fn() }),
+  // Renders a real <img> rather than a stub: the event table puts one in every row, and a stub that
+  // renders nothing would let a broken image cell pass.
+  DxpShopifyImg: { props: ["src", "size"], template: "<img :src=\"src\" />" },
   commonUtil: {
     showToast: (...args: any[]) => harness.showToast(...args),
   },
@@ -79,6 +92,9 @@ vi.mock("@/composables/useCachedList", () => ({
     }
     if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
       return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: detailsHydrated };
+    }
+    if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
+      return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
     }
     if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
@@ -140,9 +156,10 @@ vi.mock("@/composables/useShopify", () => ({
     sourceKeyOf: (eventTypeId: string, eventReferenceId: string) => `${eventTypeId}|${eventReferenceId}`,
   }),
   SHOPIFY_INVENTORY_EVENT_FEED_ID: "ShopifyInventoryEventFeed",
+  SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID: "ShopifyLocationInventoryEventFeed",
   SHOPIFY_INVENTORY_EVENT_FEED_MANUAL: "manual",
   SHOPIFY_INVENTORY_EVENT_FEED_PUSH: "push",
-  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+  ABSOLUTE_CHANNEL_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
   DISCARD_PENDING_EVENTS_SERVICE: "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents",
   PRODUCED_SENDER_SERVICE: "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages",
   INVENTORY_ADJUSTMENT_MESSAGE_TYPE: "ShopifyInventoryAdjustment",
@@ -151,7 +168,10 @@ vi.mock("@/composables/useShopify", () => ({
   ensureChannelResetJob: (...args: any[]) => harness.ensureChannelResetJob(...args),
   ensureInventoryAdjustmentSenderJob: (...args: any[]) => harness.ensureInventoryAdjustmentSenderJob(...args),
   ensureShopPhysicalInventoryResetJob: (...args: any[]) => harness.ensureShopPhysicalInventoryResetJob(...args),
+  ensureShopPhysicalAtpResetJob: (...args: any[]) => harness.ensureShopPhysicalAtpResetJob(...args),
+  PHYSICAL_ATP_RESET_SERVICE: "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed",
   setInventoryEventDocumentAttached: vi.fn(),
+  setInventoryEventDocumentAttachedForFeed: vi.fn(),
   useInventoryEventDocuments: () => ({
     documents: ref([]),
     hydrated: ref(true),
@@ -200,16 +220,79 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         inventoryFeedType: "manual",
       },
     ];
+    cachedLocationSummaries.value = [];
     harness.ensureChannelResetJob.mockReset();
     harness.showToast.mockReset();
     harness.push.mockReset();
+  });
+
+  it.each([
+    { summary: undefined, label: "Not available", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 0 }, label: "0", danger: false },
+    { summary: { shopId: "100002", errorLinkedCount: 47 }, label: "47", danger: true },
+  ])("renders authoritative delivery-error count $label with danger=$danger", async ({ summary, label, danger }) => {
+    cachedLocationSummaries.value = summary ? [summary] : [];
+    const ShopifyInventorySync = (await import("@/views/ShopifyInventorySync.vue")).default;
+    // The delivery-error card is a filter control on the location history view, not a monitor KPI.
+    // The monitor view surfaces the same count as a badge on the location queue card instead.
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "location-history" },
+      global: {
+        stubs: {
+          IonBackButton: true,
+          IonModal: { template: "<div><slot /></div>" },
+          IonSkeletonText: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const deliveryErrorsTitle = () => wrapper.findAll("ion-card")
+      .find((card) => card.text().includes("Delivery errors"))!
+      .findComponent({ name: "IonCardTitle" });
+    expect(deliveryErrorsTitle().text()).toBe(label);
+    expect(deliveryErrorsTitle().props("color") === "danger").toBe(danger);
+  });
+
+  it.each([undefined, 1000])("retains an active job's cadence when its cached next run is %s", async (nextExecutionDateTime) => {
+    cachedJobs.value = [{
+      jobName: 'purge_OldShopifyInventoryAdjustmentDetails_hourly',
+      serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails',
+      paused: 'N', cronExpression: '0 0 * * * ?', cronString: 'Every hour', nextExecutionDateTime,
+    }];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old aggregate inventory events (all Shopify connections)'))!;
+    expect(row.text()).toContain('Runs every hour');
+    expect(row.text()).not.toContain('No active schedule');
+    wrapper.unmount();
+  });
+
+  it('opens each retention row with its own backend job', async () => {
+    cachedJobs.value = [
+      { jobName: 'AGGREGATE_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails', paused: 'N' },
+      { jobName: 'PHYSICAL_RETENTION', serviceName: 'co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails', paused: 'Y' },
+    ];
+    const View = (await import('@/views/ShopifyInventorySync.vue')).default;
+    const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
+    await flushPromises();
+    for (const [label, jobName] of [['Purge old aggregate inventory events', 'AGGREGATE_RETENTION'], ['Purge old physical location events', 'PHYSICAL_RETENTION']]) {
+      const row = wrapper.findAll('ion-item').find(item => item.text().includes(label))!;
+      await row.trigger('click');
+      expect(wrapper.findComponent({ name: 'ServiceJobDetailsModal' }).props('jobName')).toBe(jobName);
+    }
+    wrapper.unmount();
   });
 
   it("surfaces each channel's own jobs on that channel's card", async () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [
@@ -218,7 +301,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
       },
       {
         jobName: "reset_InventoryChannelInventory_IC_1002",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "Y",
         cronExpression: "0 0 4 * * ?",
         serviceJobParameters: [
@@ -268,7 +351,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     cachedJobs.value = [
       {
         jobName: "reset_InventoryChannelInventory_IC_1001",
-        serviceName: "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory",
+        serviceName: "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed",
         paused: "N",
         cronExpression: "0 0 2 * * ?",
         serviceJobParameters: [
@@ -312,6 +395,19 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     expect(modal.text()).toContain("Reset aggregate ATP");
     expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
+  });
+
+  it("keeps a physical ATP setup failure visible and scopes setup to the current shop", async () => {
+    harness.ensureShopPhysicalAtpResetJob.mockRejectedValue(new Error("Physical ATP reset setup is missing."));
+    const View = (await import("@/views/ShopifyInventorySync.vue")).default;
+    const wrapper = mount(View, { props: { id: "100002" }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } } });
+    await flushPromises();
+    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical location ATP (all mapped locations on this shop)"));
+    expect(row).toBeDefined();
+    await row!.find("ion-button").trigger("click"); await flushPromises();
+    expect(harness.ensureShopPhysicalAtpResetJob).toHaveBeenCalledWith("100002");
+    expect(wrapper.find('[role="alert"]').text()).toContain("Physical ATP reset setup is missing.");
+    wrapper.unmount();
   });
 
   it("provisions a missing reset job from the row's Set up action and opens it", async () => {
@@ -366,7 +462,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
   });
 }, 20000);
 
-describe("ShopifyInventorySync - the pipeline never claims all-clear over unreadable data", () => {
+describe("ShopifyInventorySync - the event table never claims empty over unreadable data", () => {
   const mountHistory = async () => {
     const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
     const wrapper = mount(ShopifyInventorySync, {
@@ -385,11 +481,8 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     return wrapper;
   };
 
-  const allClearText = [
-    "Every recorded event has been claimed into a batch or settled.",
-    "Every batch produced for this connection has reached Shopify.",
-    "No event has produced a summed delta the publisher had to refuse.",
-  ];
+  const EMPTY_CLAIM = "No inventory events match this view";
+  const NOT_LOADED = "Not loaded";
 
   beforeEach(() => {
     detailsHydrated.value = true;
@@ -400,38 +493,38 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     cachedChannels.value = [];
   });
 
-  it("says the sections are all clear when the ledger really is readable and empty", async () => {
+  it("says the history is empty when the ledger really is readable and empty", async () => {
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).toContain(claim);
-    }
-    expect(wrapper.text()).not.toContain("Not loaded");
+    expect(wrapper.text()).toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).not.toContain(NOT_LOADED);
   });
 
-  it("makes no all-clear claim before the ledger cache has hydrated", async () => {
+  it("makes no empty claim before the ledger cache has hydrated", async () => {
     detailsHydrated.value = false;
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).not.toContain(claim);
-    }
-    expect(wrapper.text()).toContain("Not loaded");
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).toContain(NOT_LOADED);
   });
 
-  it("makes no all-clear claim when the sync reported an error, and shows the banner in this view", async () => {
+  it("makes no empty claim when the sync reported an error, and shows the banner in this view", async () => {
     syncError.value = "inventoryAdjustmentDetails returned 500";
     const wrapper = await mountHistory();
 
-    for(const claim of allClearText) {
-      expect(wrapper.text()).not.toContain(claim);
-    }
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
+    expect(wrapper.text()).toContain(NOT_LOADED);
     // The banner used to live inside the monitor template, so the history route never showed it.
     expect(wrapper.text()).toContain("Inventory data could not be loaded from the OMS");
     expect(wrapper.text()).toContain("inventoryAdjustmentDetails returned 500");
   });
 
-  it("keeps a rejected batch on the page instead of dropping it out of every section", async () => {
+  /**
+   * A refused batch is finished and nothing retries it, so its row has to stay readable with the
+   * message id that carried it. The table has one row per event and no section to fall out of, which
+   * is the property this guards -- the old four-section layout could drop such a row entirely.
+   */
+  it("keeps a rejected batch's event in the table with its system message", async () => {
     cachedChannels.value = [{
       inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
@@ -445,25 +538,14 @@ describe("ShopifyInventorySync - the pipeline never claims all-clear over unread
     cachedMessages.value = [{ systemMessageId: "BATCH_REJECTED", statusId: "SmsgRejected" }];
     const wrapper = await mountHistory();
 
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
     expect(wrapper.text()).toContain("BATCH_REJECTED");
-    expect(wrapper.text()).toContain("The sender will not retry this batch");
-    expect(wrapper.text()).not.toContain("Every batch produced for this connection has reached Shopify.");
+    expect(wrapper.text()).toContain("SmsgRejected");
+    expect(wrapper.text()).not.toContain(EMPTY_CLAIM);
   });
 });
 
-describe("ShopifyInventorySync - a group summarises the rows it actually holds", () => {
-  const PUBLISH_SERVICE = "co.hotwax.sob.product.InventoryServices.publish#PendingShopifyInventoryAdjustments";
-
-  const publisherJob = (channelId: string, groupByFields?: string) => ({
-    jobName: `publish_PendingShopifyInventoryAdjustments_${channelId}`,
-    serviceName: PUBLISH_SERVICE,
-    paused: "N",
-    serviceJobParameters: [
-      { parameterName: "inventoryChannelId", parameterValue: channelId },
-      ...(groupByFields ? [{ parameterName: "groupByFields", parameterValue: groupByFields }] : []),
-    ],
-  });
-
+describe("ShopifyInventorySync - the event table shows one row per event", () => {
   const pendingRow = (over: Record<string, any>) => ({
     detailStatusId: "DETAIL_PENDING",
     systemMessageId: "",
@@ -498,63 +580,319 @@ describe("ShopifyInventorySync - a group summarises the rows it actually holds",
     syncReady.value = true;
     syncError.value = null;
     cachedMessages.value = [];
-    cachedJobs.value = [publisherJob("IC_1001")];
+    cachedJobs.value = [];
+    resolvedProducts.value = new Map();
     cachedChannels.value = [{
       inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
     }];
   });
 
-  /**
-   * A filter that matches part of a group changes what that group would publish, so its summed entries
-   * and count have to be restated. Left whole, the card showed a delta for rows the filter had hidden.
-   */
-  it("restates a partially matched group's count and summed delta from the matching rows", async () => {
+  it("renders every event, unbatched ones included, and says so when a row has no batch", async () => {
     cachedAdjustmentDetails.value = [
-      pendingRow({ eventReferenceId: "R_KEEP" }),
-      pendingRow({ eventReferenceId: "R_HIDE" }),
+      pendingRow({ eventReferenceId: "R_ONE" }),
+      pendingRow({ eventReferenceId: "R_TWO", computedInventoryChange: -2 }),
     ];
     const wrapper = await mountHistory();
 
-    // Both rows group together, so the card speaks for two events and a summed +2.
-    expect(wrapper.text()).toContain("2 events");
-    expect(wrapper.text()).toContain("+2");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+    expect(wrapper.text()).toContain("2 shown");
+    expect(wrapper.text()).toContain("+1");
+    expect(wrapper.text()).toContain("-2");
+    expect(wrapper.text()).toContain("Not batched");
+  });
+
+  /**
+   * The rule the search has to keep: a row is findable by anything printed on it. The variant prints
+   * beside the SKU on the product cell, and leaving it out of the predicate meant typing the exact
+   * text on screen filtered that row away.
+   */
+  it("finds a row by the variant printed on it", async () => {
+    resolvedProducts.value = new Map([["140876", {
+      productId: "140876",
+      parentProductName: "Getty Wide Leg",
+      productName: "After Hours",
+      sku: "727A-218A-12160",
+      internalName: "",
+      mainImageUrl: "",
+      goodIdentifications: [],
+    }]]);
+    cachedAdjustmentDetails.value = [
+      pendingRow({
+        eventReferenceId: "R_VARIANT",
+        decisionComment: "Event RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
+      }),
+      pendingRow({ eventReferenceId: "R_OTHER" }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("After Hours");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+
+    wrapper.findComponent({ name: "IonSearchbar" }).vm.$emit("update:modelValue", "After Hours");
+    await flushPromises();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
+    expect(wrapper.text()).toContain("Getty Wide Leg");
+  });
+
+  /**
+   * The row IS the control -- there is no chevron button any more -- so the click handler and the
+   * keyboard handlers live on the grid row itself. A row that stops opening its detail is invisible
+   * to every other test here, since they all assert on rendered text.
+   */
+  it("opens the event detail from the row itself", async () => {
+    cachedAdjustmentDetails.value = [pendingRow({ eventReferenceId: "R_OPEN" })];
+    const wrapper = await mountHistory();
+
+    const row = wrapper.find("[data-virtual-row]");
+    expect(row.attributes("role")).toBe("button");
+    expect(row.attributes("tabindex")).toBe("0");
+    // Asserted on the state, not on the modal's text: `IonModal` is stubbed as a plain slot wrapper
+    // here, so its content is in the DOM whether it is open or not and any text assertion passes
+    // vacuously.
+    expect((wrapper.vm as any).selectedEvent).toBeNull();
+
+    await row.trigger("click");
+    await flushPromises();
+
+    expect((wrapper.vm as any).selectedEvent?.eventReferenceId).toBe("R_OPEN");
+
+    (wrapper.vm as any).selectedEvent = null;
+    await row.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect((wrapper.vm as any).selectedEvent?.eventReferenceId).toBe("R_OPEN");
+  });
+
+  const MINUTE = 60_000;
+  const kpi = (wrapper: VueWrapper, subtitle: string) => wrapper.findAll(".kpi-card")
+    .find((card) => card.find("ion-card-subtitle").text() === subtitle)
+    ?.find("ion-card-title").text();
+  const sentRow = (over: Record<string, any>) => pendingRow({
+    detailStatusId: "DETAIL_ASSIGNED",
+    systemMessageId: "BATCH_OK",
+    systemMessageStatusId: "SmsgSent",
+    createdDate: 1_000_000,
+    ...over,
+  });
+
+  it("says how long a delivered event took, and says nothing for one still in flight", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_OK", statusId: "SmsgSent", processedDate: 1_000_000 + 5 * MINUTE }];
+    cachedAdjustmentDetails.value = [sentRow({ eventReferenceId: "R_SENT" }), pendingRow({ eventReferenceId: "R_WAITING" })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 5.0 min later");
+    expect(wrapper.text()).toContain("not sent yet");
+  });
+
+  /**
+   * `processedDate` is stamped by the send ATTEMPT, not by its outcome. Reading it off a message the
+   * sender is retrying, or one Shopify refused, would report a delivery that never happened — and on
+   * this page that is the number an operator uses to decide whether Shopify is current.
+   */
+  it("does not read a failed send's attempt date as a delivery", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_OK", statusId: "SmsgError", processedDate: 1_000_000 + 5 * MINUTE }];
+    cachedAdjustmentDetails.value = [sentRow({ eventReferenceId: "R_FAILED", systemMessageStatusId: "SmsgError" })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("not sent yet");
+    expect(wrapper.text()).not.toContain("later");
+  });
+
+  it("summarises the typical lag over only the events that were delivered", async () => {
+    cachedMessages.value = [
+      { systemMessageId: "BATCH_A", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE },
+      { systemMessageId: "BATCH_B", statusId: "SmsgSent", processedDate: 1_000_000 + 4 * MINUTE },
+      { systemMessageId: "BATCH_C", statusId: "SmsgSent", processedDate: 1_000_000 + 9 * MINUTE },
+    ];
+    cachedAdjustmentDetails.value = [
+      sentRow({ eventReferenceId: "R_A", systemMessageId: "BATCH_A" }),
+      sentRow({ eventReferenceId: "R_B", systemMessageId: "BATCH_B" }),
+      sentRow({ eventReferenceId: "R_C", systemMessageId: "BATCH_C" }),
+      // Never delivered: it must not count toward the typical figure, and the denominator must say so.
+      pendingRow({ eventReferenceId: "R_PENDING" }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
+    expect(kpi(wrapper, "Slowest")).toBe("9.0 min");
+    // The denominator travels with the figure: the fourth event was never delivered.
+    expect(wrapper.text()).toContain("median of 3 delivered");
+    expect(kpi(wrapper, "Events")).toBe("4");
+  });
+
+  /**
+   * A no-change row netted to zero and a cancelled batch is not coming back, so neither is "not sent
+   * yet" -- that phrase promises a delivery the pipeline has already declined to make. Both carry no
+   * time label at all, and neither can be the oldest thing owed to Shopify.
+   */
+  it("puts no time label on an event that will never be sent", async () => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_X", statusId: "SmsgCancelled" }];
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_NOOP", detailStatusId: "DETAIL_NOOP", computedInventoryChange: 0 }),
+      pendingRow({
+        eventReferenceId: "R_CANCELLED", detailStatusId: "DETAIL_ASSIGNED",
+        systemMessageId: "BATCH_X", systemMessageStatusId: "SmsgCancelled",
+      }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(wrapper.text()).not.toContain("later");
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
+  });
+
+  /**
+   * Delivered is a fact about the STATUS, not about whether the message carrying the timestamp
+   * happens to be cached -- only a few dozen messages are enriched per pass. Reading the missing
+   * timestamp as "not sent" reported 31-hour-old delivered rows as the oldest thing Shopify was owed.
+   */
+  /**
+   * The read resource denormalises the message's dates onto each ledger row, so the delivery time is
+   * already in IndexedDB beside the event and the view needs no join to show it. That matters because
+   * the message cache enriches only a few dozen per pass: joining made the lag disappear from rows
+   * that were plainly delivered. Verified against a live shop by emptying the message store -- all 126
+   * lags survived.
+   */
+  it("reads the delivery time off the ledger row, with no message cached at all", async () => {
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: "R_DENORM", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_DENORM", systemMessageStatusId: "SmsgSent",
+      createdDate: 1_000_000, systemMessageProcessedDate: 1_000_000 + 4 * MINUTE,
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 4.0 min later");
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
+  });
+
+  it("does not call a sent event undelivered just because its message is not cached", async () => {
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: "R_SENT_UNCACHED", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_GONE", systemMessageStatusId: "SmsgSent",
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
+    // It knows THAT it was sent without knowing WHEN, and says so: blank here would read as a
+    // no-change row, which is the one thing this is not.
+    const timing = wrapper.find("[data-virtual-row]").findAll("ion-label")[2];
+    expect(wrapper.find("[data-virtual-row]").text()).toContain("sent");
+    expect(timing).toBeTruthy();
+  });
+
+  it("reports the oldest event Shopify is still owed", async () => {
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_OLD", createdDate: Date.now() - 3 * 60 * 60 * 1000 }),
+      pendingRow({ eventReferenceId: "R_NEW", createdDate: Date.now() - 60 * 1000 }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("3h ago");
+  });
+
+  /**
+   * Success is Sent OR Consumed OR Confirmed — `isSuccess` says so, and `sectionOfEvent` settles all
+   * three. Testing for `SmsgSent` alone left a confirmed row blank and dropped it from the median,
+   * which is the same mistake as reading a missing timestamp for "not sent".
+   */
+  it.each(["SmsgSent", "SmsgConsumed", "SmsgConfirmed"])("treats %s as delivered", async (statusId) => {
+    cachedMessages.value = [{ systemMessageId: "BATCH_S", statusId, processedDate: 1_000_000 + 3 * MINUTE }];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: `R_${statusId}`, detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_S", systemMessageStatusId: statusId, createdDate: 1_000_000,
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 3.0 min later");
+    expect(wrapper.text()).not.toContain("not sent yet");
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("3.0 min");
+  });
+
+  it("narrows the table to the rows the search matches", async () => {
+    cachedAdjustmentDetails.value = [
+      pendingRow({ eventReferenceId: "R_KEEP" }),
+      pendingRow({ eventReferenceId: "R_HIDE", computedInventoryChange: -2 }),
+    ];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(2);
 
     wrapper.findComponent({ name: "IonSearchbar" }).vm.$emit("update:modelValue", "R_KEEP");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("1 events");
+    expect(wrapper.findAll("[data-virtual-row]")).toHaveLength(1);
+    expect(wrapper.text()).toContain("1 shown");
     expect(wrapper.text()).toContain("+1");
-    expect(wrapper.text()).not.toContain("+2");
+    expect(wrapper.text()).not.toContain("-2");
+  });
+});
+
+/**
+ * The channel filter's options are objects -- `{ value, label }` -- because two channels can share a
+ * facility group name, so the filter matches on the id while the label carries the name and, when a
+ * name repeats, the id that tells them apart.
+ *
+ * Rendering the option itself instead of its label is legal Vue: it prints the JSON of the object and
+ * nothing fails. Only the `:key` and `:value` keep working, so the filter still filters and the
+ * regression is visible exclusively to a person reading the dropdown.
+ */
+describe("ShopifyInventorySync - the inventory channel filter", () => {
+  const mountHistory = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002", initialView: "history" as const },
+      global: {
+        stubs: {
+          IonModal: { template: "<div><slot /></div>" },
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    return wrapper;
+  };
+
+  beforeEach(() => {
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedMessages.value = [];
+    cachedJobs.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedChannels.value = [
+      { inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Retail Aggregate", shopifyLocationId: "LOC_1", fromDate: 1000 },
+      { inventoryChannelId: "IC_1002", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Warehouse Aggregate", shopifyLocationId: "LOC_2", fromDate: 1000 },
+      // Shares the first channel's name on purpose: this is the case the option object exists for.
+      { inventoryChannelId: "IC_1003", shopId: "100002", facilityGroupId: "FG_3", facilityGroupName: "Retail Aggregate", shopifyLocationId: "LOC_3", fromDate: 1000 },
+    ];
   });
 
   /**
-   * `groupByFields` is a parameter on each channel's OWN drain job. Applying the first configured job's
-   * grouping to every channel previewed one of them the way its own publisher will not batch it.
+   * Read off the option ELEMENTS and compare exactly. A `toContain` against the page text passes even
+   * when the object is rendered, because the label it should have printed is inside that JSON.
    */
-  it("groups each channel by its own publisher job's groupByFields", async () => {
-    cachedChannels.value = [
-      { inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Splits By Type", shopifyLocationId: "LOC_1", fromDate: 1000 },
-      { inventoryChannelId: "IC_1002", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Mixes Types", shopifyLocationId: "LOC_2", fromDate: 1000 },
-    ];
-    cachedJobs.value = [
-      // Keeps event type in the boundary: two event types stay in two groups.
-      publisherJob("IC_1001", "inventoryChannelId,shopifyInventoryItemId,eventTypeId"),
-      // Drops it: the same two event types land in ONE group and must publish under correction.
-      publisherJob("IC_1002", "inventoryChannelId,shopifyInventoryItemId"),
-    ];
-    cachedAdjustmentDetails.value = [
-      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A1", eventTypeId: "RECEIPT" }),
-      pendingRow({ inventoryChannelId: "IC_1001", eventReferenceId: "A2", eventTypeId: "POS_ISSUANCE" }),
-      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B1", eventTypeId: "RECEIPT" }),
-      pendingRow({ inventoryChannelId: "IC_1002", eventReferenceId: "B2", eventTypeId: "POS_ISSUANCE" }),
-    ];
+  const labelFor = (wrapper: VueWrapper, value: string) => wrapper.findAllComponents({ name: "IonSelectOption" })
+    .find((option) => String(option.props("value") ?? "") === value)?.text();
+
+  it("labels each option with the channel name, not the option object", async () => {
     const wrapper = await mountHistory();
 
-    // Only the channel that dropped event type reports a mixed group.
-    expect(wrapper.text()).toContain("2 event types mixed");
-    expect(wrapper.text().match(/2 event types mixed/g)?.length).toBe(1);
-    // And the warning names only the fields of the channel that actually drops it.
-    expect(wrapper.text()).toContain("Batches can mix event types");
+    expect(labelFor(wrapper, "IC_1002")).toBe("Warehouse Aggregate");
+  });
+
+  it("appends the id to a name two channels share", async () => {
+    const wrapper = await mountHistory();
+
+    expect(labelFor(wrapper, "IC_1001")).toBe("Retail Aggregate (IC_1001)");
+    expect(labelFor(wrapper, "IC_1003")).toBe("Retail Aggregate (IC_1003)");
   });
 });

@@ -44,6 +44,9 @@ export interface ProductSyncProgressSnapshot {
   systemMessageState?: ProductSyncMessageState | string;
   logStatusId?: string;
   logId?: string;
+  totalRecordCount?: number | string;
+  successRecordCount?: number | string;
+  failedRecordCount?: number | string;
   completed?: boolean;
 }
 
@@ -149,6 +152,10 @@ export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot
     return "error";
   }
 
+  if (progress.status === "partial") {
+    return "partial";
+  }
+
   const systemMessageState = progress.systemMessageState;
   const logStatusId = progress.logStatusId;
   const logId = progress.logId;
@@ -165,6 +172,17 @@ export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot
   if (isTerminal) {
     if(logStatusId === "DmlsCancelled" || systemMessageState === "SmsgCancelled") {return "cancelled";}
     if(importState === "failed" || systemMessageState === "SmsgError") {return "error";}
+
+    const failedRecordCount = Math.max(Number(progress.failedRecordCount || 0), 0);
+    const successRecordCount = Math.max(Number(progress.successRecordCount || 0), 0);
+    const totalRecordCount = Math.max(Number(progress.totalRecordCount || 0), 0);
+    if (failedRecordCount > 0) {
+      if (successRecordCount === 0 || (totalRecordCount > 0 && failedRecordCount >= totalRecordCount)) {
+        return "error";
+      }
+      return "partial";
+    }
+
     return "completed";
   }
 

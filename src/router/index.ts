@@ -1,9 +1,10 @@
 import { useAuth } from "@common/composables/useAuth"
 import { Login, commonUtil, translate } from "@common/index"
 import { createRouter, createWebHistory } from "@ionic/vue-router"
-import { RouteRecordRaw } from "vue-router"
-import { useUserStore } from "@/store/user"
+import type { RouteLocationNormalized, RouteRecordRaw } from "vue-router"
 import Actions from "@/authorization/actions"
+import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
+import { useUserStore } from "@/store/user"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
 const FacilityDetails = () => import("@/views/FacilityDetails.vue")
@@ -21,7 +22,6 @@ const UserDetails = () => import("@/views/UserDetails.vue")
 const CreateUser = () => import("@/views/CreateUser.vue")
 const UserConfirmation = () => import("@/views/UserConfirmation.vue")
 const UserQuickSetup = () => import("@/views/UserQuickSetup.vue")
-const CreateProductStore = () => import("@/views/CreateProductStore.vue")
 const ProductStoreOnboarding = () => import("@/views/ProductStoreOnboarding.vue")
 const ProductStoreDetails = () => import("@/views/ProductStoreDetails.vue")
 const ProductStore = () => import("@/views/ProductStore.vue")
@@ -42,6 +42,7 @@ const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
 const Klaviyo = () => import("@/views/Klaviyo.vue")
 const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.vue")
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
+const McpSetup = () => import("@/views/agent/McpSetup.vue")
 const Composer = () => import("@/views/agent/Composer.vue")
 const Workforce = () => import("@/views/agent/Workforce.vue")
 const ResetPassword = () => import("@/views/ResetPassword.vue")
@@ -63,6 +64,21 @@ const requirePermission = (permissionId: string) => () => {
     commonUtil.showToast(translate("The requested page was not available to your user. Please contact your administrator to update your permissions."))
 
     return { path: "/product-store" }
+  }
+}
+
+/**
+ * `/create-product-store` is a compatibility command, not a resumable route. Reset before
+ * redirecting so old links always start a clean setup. The canonical base route remains resumable,
+ * and no transient query flag is left behind for a reload or later navigation to replay.
+ */
+export function redirectLegacyProductStoreCreation(to: Pick<RouteLocationNormalized, "query" | "hash">) {
+  useProductStoreOnboardingWizard().startNewSetup()
+
+  return {
+    name: "ProductStoreOnboarding",
+    query: to.query,
+    hash: to.hash,
   }
 }
 
@@ -117,6 +133,13 @@ const routes: Array<RouteRecordRaw> = [
     beforeEnter: authGuard,
   },
   {
+    path: "/shopify-connection-details/:id/inventory-sync/activations",
+    name: "ShopifyProductActivations",
+    component: () => import("@/views/ShopifyProductActivations.vue"),
+    props: true,
+    beforeEnter: authGuard,
+  },
+  {
     path: "/shopify-connection-details/:id/inventory-sync/history",
     name: "ShopifyInventorySyncHistory",
     component: ShopifyInventorySync,
@@ -124,6 +147,17 @@ const routes: Array<RouteRecordRaw> = [
       id: route.params.id,
       initialView: "history",
       initialHistoryMode: route.query.mode === "batches" ? "batches" : "events",
+    }),
+    beforeEnter: authGuard,
+  },
+  {
+    path: "/shopify-connection-details/:id/inventory-sync/location-history",
+    name: "ShopifyInventorySyncLocationHistory",
+    component: ShopifyInventorySync,
+    props: (route) => ({
+      id: route.params.id,
+      initialView: "location-history",
+      initialHistoryMode: typeof route.query.mode === "string" ? route.query.mode : "events",
     }),
     beforeEnter: authGuard,
   },
@@ -143,6 +177,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/order-sync/configure", name: "ShopifyOrderSyncConfigure", component: () => import("@/views/ShopifyOrderSyncConfigure.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync", name: "ShopifyOrderSync", component: () => import("@/views/ShopifyOrderSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },
+  { path: "/shopify-connection-details/:id/transfer-sync", name: "ShopifyTransferSync", component: () => import("@/views/ShopifyTransferSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/instance-details", name: "ShopifyInstanceDetails", component: () => import("@/views/ShopifyShopDetails.vue"), props: true, beforeEnter: authGuard },
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
@@ -159,14 +194,29 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/netsuite/sales-channel", name: "SalesChannel", component: SalesChannel, beforeEnter: authGuard },
   { path: "/netsuite/departments", name: "Departments", component: Departments, beforeEnter: authGuard },
   { path: "/netsuite/sync-monitor", name: "NetSuiteSyncMonitor", component: NetSuiteSyncMonitor, beforeEnter: authGuard },
-  { path: "/create-product-store", name: "CreateProductStore", component: CreateProductStore, beforeEnter: authGuard },
+  {
+    path: "/create-product-store",
+    name: "CreateProductStore",
+    redirect: redirectLegacyProductStoreCreation,
+  },
   { path: "/product-store-onboarding", name: "ProductStoreOnboarding", component: ProductStoreOnboarding, beforeEnter: authGuard },
   { path: "/product-store-onboarding/:productStoreId", name: "ProductStoreOnboardingForStore", component: ProductStoreOnboarding, props: true, beforeEnter: authGuard },
+  {
+    path: "/add-configurations/:productStoreId",
+    name: "AddConfigurations",
+    redirect: (to) => ({
+      name: "ProductStoreOnboardingForStore",
+      params: { productStoreId: to.params.productStoreId },
+      query: to.query,
+      hash: to.hash,
+    }),
+  },
   { path: "/login", name: "Login", component: Login },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
   { path: "/app-version", name: "AppVersion", component: AppVersion, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
+  { path: "/mcp-setup", name: "McpSetup", component: McpSetup, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },
   { path: "/workforce", name: "Workforce", component: Workforce, beforeEnter: authGuard },
 ]
@@ -180,7 +230,9 @@ router.beforeEach(() => {
   // Enforce the canonical version URL on every navigation (no-op until the version is resolved, or if
   // already canonical). Redirect cancels this navigation. Logic lives in useAuth so it's shared. Runs
   // globally (routes here use per-route beforeEnter guards, so this must be a top-level beforeEach).
-  if(useAuth().checkAppVersionRedirect()) return false
+  if(useAuth().checkAppVersionRedirect()) {
+    return false
+  }
 })
 
 export default router

@@ -12,7 +12,18 @@
       </ion-toolbar>
     </ion-header>
 
+    <ShopifyProductMappingsModal :product="mappingReviewProduct" :system-message-remote-id="productsPickerSystemMessageRemoteId" :product-store-id="draft.selectedProductStoreId" @close="mappingReviewProduct = null" />
     <ion-content>
+      <ion-card v-if="selectedProductSyncFeedback" role="status">
+        <ion-card-header>
+          <ion-card-title>{{ translate("Selected product sync") }}</ion-card-title>
+          <ion-card-subtitle>{{ selectedProductSyncFeedback.products.join(', ') }}</ion-card-subtitle>
+        </ion-card-header>
+        <ion-card-content>
+          <ion-spinner v-if="selectedProductSyncFeedback.pending" name="crescent" />
+          <p>{{ selectedProductSyncFeedback.message }}</p>
+        </ion-card-content>
+      </ion-card>
       <ion-card v-if="isLoading">
         <ion-card-header>
           <ion-card-title>{{ translate("Loading product sync") }}</ion-card-title>
@@ -33,6 +44,13 @@
       </ion-card>
 
       <template v-else>
+        <ion-item v-if="requestedSystemMessageId" class="requested-run-context" color="light" lines="full">
+          <ion-label class="ion-text-wrap">
+            <strong>{{ translate("Viewing requested sync run") }}</strong>
+            <p>{{ translate("System message") }}: {{ requestedSystemMessageId }}</p>
+          </ion-label>
+        </ion-item>
+
         <shopify-product-sync-returning-view
           v-if="activeExperienceMode === 'returning'"
           :is-secondary-loading="isSecondaryLoading"
@@ -500,6 +518,7 @@
                     <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
                     <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
                     <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
+                    <ion-button fill="clear" @click.stop="mappingReviewProduct = product">{{ translate('View mappings') }}</ion-button>
                   </ion-label>
                   <ion-note slot="end">
                     {{ product.variantsCount }} {{ translate("variants") }}
@@ -551,7 +570,7 @@
                   data-testid="product-sync-products-submit-btn"
                   fill="solid"
                   color="primary"
-                  :disabled="!selectedProducts.length"
+                  :disabled="!selectedProducts.length || isSaving"
                   @click="submitSelectedProducts"
                 >
                   {{ translate("Sync selected products") }}{{ selectedProducts.length ? ` (${selectedProducts.length})` : "" }}
@@ -614,6 +633,7 @@ import {
   onIonViewWillEnter,
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
+import ShopifyProductMappingsModal from '@/components/ShopifyProductMappingsModal.vue';
 import { commonUtil, logger, translate } from "@common";
 import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useUserStore } from "@/store/user";
@@ -635,6 +655,7 @@ import {
   selectProductStore,
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
+import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
@@ -734,7 +755,6 @@ const { downloadDataManagerFile, fetchLogDetails, currentMdmLog, errorLogs, fetc
  * already in IndexedDB — `fetchRecentLogsByConfigId` was re-requesting them on entry and again after
  * every action that might have produced one.
  */
-const { logs: recentMdmLogs } = useRecentDataManagerLogs(PRODUCT_SYNC_MDM_CONFIG_ID, PRODUCT_SYNC_ERROR_LOG_LIMIT);
 // Reactive cached read — the `productUpdateHistory` worker domain keeps it current, so there is
 // nothing to fetch and no loading state between updates.
 const { productUpdateHistories } = useProductUpdateHistories(props.id);
@@ -755,16 +775,32 @@ const {
   runState: spineRunState,
   pendingRequests: spinePendingRequests,
 } = useShopifyProductSyncRunState(() => props.id);
+const { logs: recentMdmLogs } = useRecentDataManagerLogs(
+  PRODUCT_SYNC_MDM_CONFIG_ID,
+  PRODUCT_SYNC_ERROR_LOG_LIMIT,
+  () => spineRunState.value.systemMessages.map((message) => String(message.systemMessageId || "")),
+);
 
 const latestSystemMessage = computed<any>(() => spineRunState.value.latestSystemMessage);
 const latestConfirmedSystemMessage = computed<any>(() => spineRunState.value.latestConfirmedSystemMessage);
 const latestConsumedSystemMessage = computed<any>(() => spineRunState.value.latestConsumedSystemMessage);
 const lastProductUpdateSyncedAt = computed(() => spineRunState.value.lastSyncedAt || "");
+const requestedSystemMessageId = computed(() =>
+  getSafeSyncRunQueryId(router.currentRoute.value.query.systemMessageId));
+const requestedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? spineRunState.value.systemMessages.find((message: any) =>
+    String(message.systemMessageId) === requestedSystemMessageId.value) || null
+  : null);
+const displayedSystemMessage = computed<any>(() => requestedSystemMessageId.value
+  ? currentSyncRun.value?.systemMessage || requestedSystemMessage.value || null
+  : latestSystemMessage.value);
 const isLoading = ref(true);
 const isSecondaryLoading = ref(false);
 const hasEverLoadedSecondary = ref(false);
 const loadErrorMessage = ref("");
 const isSaving = ref(false);
+const mappingReviewProduct = ref<any>(null);
+const selectedProductSyncFeedback = ref<{ products: string[]; pending: boolean; message: string } | null>(null);
 const isReviewLoading = ref(false);
 const isPreflightLoading = ref(false);
 const showModeModal = ref(false);
@@ -897,7 +933,7 @@ const { record: shopRecord } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
 const userProfile = computed(() => useUserStore().getUserProfile || {});
 const { statusItems } = useStatuses();
-const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(latestSystemMessage.value));
+const latestBulkOperationId = computed(() => getSystemMessageBulkOperationId(displayedSystemMessage.value));
 const productSyncBackHref = computed(() => {
   return getSafeProductSyncReturnPath(getQueryValue(router.currentRoute.value.query.returnTo)) || `/shopify-connection-details/${props.id}`;
 });
@@ -994,7 +1030,7 @@ const shopifyAccessDetail = computed(() => {
   return translate("Shopify access scope could not be verified for this connection.");
 });
 const shopifyAccessBlockingMessage = computed(() => {
-  const syncMessageText = String(currentSyncRun.value?.systemMessage?.messageText || latestSystemMessage.value?.messageText || "").trim();
+  const syncMessageText = String(displayedSystemMessage.value?.messageText || "").trim();
 
   if (isShopifyWriteAccessError(syncMessageText)) {
     return translate("Product sync could not start. Shopify write access is required for bulk query creation.");
@@ -1125,7 +1161,7 @@ const systemMessageFsmState = computed(() => {
   });
 });
 const productSystemMessageDetails = computed(() => {
-  const message = currentSyncRun.value?.systemMessage || latestSystemMessage.value || {};
+  const message = displayedSystemMessage.value || {};
   const completed = !!currentSyncRun.value?.completed;
 
   return {
@@ -1369,10 +1405,20 @@ const nextDisabled = computed(() => {
   });
 });
 const startSyncDisabled = computed(() => !canStartProductSync(draft.value.startConfirmed) || !hasShopifyWriteAccess.value);
-const progressStatus = computed(() => normalizeProductSyncStatus(progressState.value));
-const isProgressComplete = computed(() => normalizeProductSyncStatus(progressState.value) === "completed");
+const progressStatus = computed(() => normalizeProductSyncStatus({
+  ...progressState.value,
+  totalRecordCount: progressState.value?.totalRecordCount ?? currentSyncRun.value?.mdmLog?.totalRecordCount,
+  successRecordCount: progressState.value?.successRecordCount ?? currentSyncRun.value?.mdmLog?.successRecordCount,
+  failedRecordCount: progressState.value?.failedRecordCount ?? currentSyncRun.value?.mdmLog?.failedRecordCount,
+}));
+const isProgressComplete = computed(() => ["completed", "partial"].includes(progressStatus.value));
 const importStatusLabel = computed(() => {
-  if (currentStep.value === "progress") return progressStatus.value;
+  if (currentStep.value === "progress") {
+    if (progressStatus.value === "partial") return translate("Completed with errors");
+    if (progressStatus.value === "error") return translate("Failed");
+    if (progressStatus.value === "completed") return translate("Complete");
+    return translate(progressStatus.value);
+  }
   return translate("Not started");
 });
 const importStatusBadgeColor = computed(() => {
@@ -1382,6 +1428,7 @@ const importStatusBadgeColor = computed(() => {
 const progressBadgeColor = computed(() => {
   if (progressStatus.value === "completed") return "success";
   if (progressStatus.value === "error" || progressStatus.value === "cancelled") return "danger";
+  if (progressStatus.value === "partial") return "warning";
   if (progressStatus.value === "running" || progressStatus.value === "sent") return "primary";
   return "medium";
 });
@@ -1719,6 +1766,9 @@ async function loadWizard() {
     // No product-store fetch: `selectedProductStore` is a cached read, and the one field the wizard
     // needed from the detail route (`productIdentifierEnumId`) is now projected onto the cached row.
     await loadSelectedShopSystemMessageRemoteId();
+    if(requestedSystemMessageId.value) {
+      await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+    }
 
     setupState.value = await fetchSetupState({
       shopId: props.id,
@@ -1833,7 +1883,9 @@ async function loadSecondaryData(opts: { silent?: boolean } = {}) {
     await loadLiveDashboardCounts();
 
     try {
-      if (latestSystemMessage.value?.systemMessageId) {
+      if(requestedSystemMessageId.value) {
+        await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+      } else if(latestSystemMessage.value?.systemMessageId) {
         await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
       } else {
         clearSyncRun();
@@ -2236,8 +2288,13 @@ async function openResyncEntireCatalogModal() {
 
 async function handleSelectedProductsForSync(data: any) {
   const shopifyProductIds = getSelectedShopifyProductIds(data);
-  if (!shopifyProductIds.length) return;
+  if (!shopifyProductIds.length || isSaving.value) return;
 
+  selectedProductSyncFeedback.value = {
+    products: shopifyProductIds,
+    pending: true,
+    message: translate("Syncing selected products…"),
+  };
   isSaving.value = true;
   try {
     const result = await syncShopifyProductsOnDemand({
@@ -2245,11 +2302,21 @@ async function handleSelectedProductsForSync(data: any) {
       shopifyProductId: shopifyProductIds
     });
 
-    commonUtil.showToast(getSelectedProductSyncResultMessage(result, shopifyProductIds.length));
-    await loadLatestSystemMessage();
+    selectedProductSyncFeedback.value = {
+      products: shopifyProductIds,
+      pending: false,
+      message: getSelectedProductSyncResultMessage(result, shopifyProductIds.length),
+    };
+    // Keep the completed mutation result even if refreshing the separate bulk monitor fails.
+    try { await loadLatestSystemMessage(); }
+    catch (error) { logger.error(error); }
   } catch (error: any) {
     logger.error(error);
-    commonUtil.showToast(getErrorMessage(error, translate("Failed to sync selected products.")));
+    selectedProductSyncFeedback.value = {
+      products: shopifyProductIds,
+      pending: false,
+      message: getErrorMessage(error, translate("Failed to sync selected products.")),
+    };
   } finally {
     isSaving.value = false;
   }
@@ -2269,11 +2336,16 @@ function getShopifyProductLegacyId(productId: string) {
 }
 
 function getSelectedProductSyncResultMessage(result: any, requestedCount: number) {
-  return translate("Selected product sync completed: {synced} synced, {failed} failed, {rejected} rejected.", {
-    synced: Number(result?.syncedCount || 0),
-    failed: Number(result?.failedCount || 0),
-    rejected: Number(result?.rejectedCount || 0),
-    requested: requestedCount
+  const synced = result?.syncedCount;
+  const failed = result?.failedCount;
+  const missing = Array.isArray(result?.missingProductId) ? result.missingProductId.length : undefined;
+  // Rejected includes failed IDs in the backend contract, so it is not a separate outcome.
+  if (![synced, failed, missing].every(value => Number.isInteger(value) && value >= 0)
+    || synced + failed + missing !== requestedCount) {
+    return translate("Product sync returned an incomplete result. Verify product mappings before retrying.");
+  }
+  return translate("Selected product sync completed: {synced} synced, {failed} failed, {missing} not found in Shopify.", {
+    synced, failed, missing
   });
 }
 
@@ -2281,7 +2353,9 @@ async function loadLatestSystemMessage() {
   // The latest message is a spine computed; refresh only the live counts, then point the run join.
   await loadLiveDashboardCounts();
 
-  if (latestSystemMessage.value?.systemMessageId) {
+  if(requestedSystemMessageId.value) {
+    await fetchSyncRun(requestedSystemMessageId.value, requestedSystemMessage.value || undefined);
+  } else if(latestSystemMessage.value?.systemMessageId) {
     await fetchSyncRun(latestSystemMessage.value.systemMessageId, latestSystemMessage.value);
   } else {
     clearSyncRun();
@@ -3277,17 +3351,17 @@ async function loadProgress() {
     loadedRunState = true;
 
     // Prioritize the system message ID we already have in state if it's still active
-    const currentMessageId = progressState.value?.systemMessageId;
+    const currentMessageId = requestedSystemMessageId.value || progressState.value?.systemMessageId;
     let latestMessage = syncRunState.latestSystemMessage;
 
     if (currentMessageId && syncRunState.systemMessages) {
       const currentMessage = syncRunState.systemMessages.find((m: any) => m.systemMessageId === currentMessageId);
       if (currentMessage) {
         latestMessage = currentMessage;
-      } else if (!progressState.value?.completed) {
+      } else if(requestedSystemMessageId.value || !progressState.value?.completed) {
         // If the message we are tracking is NOT in the list yet and it's not completed,
         // it means there's a backend lag for a newly started sync.
-        // We should NOT overwrite the progressState with an older message.
+        // A route-selected message is also never replaced by a newer, unrelated run.
         latestMessage = null;
       }
     }
@@ -3296,7 +3370,10 @@ async function loadProgress() {
       const status = normalizeProductSyncStatus({ 
         systemMessageState: latestMessage.statusId,
         logStatusId: latestMessage.logStatusId,
-        logId: latestMessage.logId
+        logId: latestMessage.logId,
+        totalRecordCount: latestMessage.totalRecordCount,
+        successRecordCount: latestMessage.successRecordCount,
+        failedRecordCount: latestMessage.failedRecordCount,
       });
 
       progressState.value = {
@@ -3305,8 +3382,11 @@ async function loadProgress() {
         systemMessageState: latestMessage.statusId,
         logStatusId: latestMessage.logStatusId,
         logId: latestMessage.logId,
+        totalRecordCount: latestMessage.totalRecordCount,
+        successRecordCount: latestMessage.successRecordCount,
+        failedRecordCount: latestMessage.failedRecordCount,
         systemMessageId: latestMessage.systemMessageId,
-        completed: ["completed", "error", "cancelled"].includes(status)
+        completed: ["completed", "partial", "error", "cancelled"].includes(status)
       } as any;
 
       if (latestMessage.systemMessageId) {
