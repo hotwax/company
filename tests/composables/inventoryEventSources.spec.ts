@@ -132,12 +132,33 @@ const receiptLookup = (eventReferenceId: string, eventTypeId = "RECEIPT") => ({
   eventReferenceId,
 });
 
-/** The GraphQL envelope: 200 with an `errors` array, which the transport-level check cannot see. */
-const movementResponse = (nodes: any[], hasNextPage = false) => ({
-  data: { data: { inventoryItemDetails: { edges: nodes.map((node) => ({ node })), pageInfo: { hasNextPage } } }, errors: [] },
+/**
+ * The GraphQL envelope: 200 with an `errors` array, which the transport-level check cannot see.
+ * The root is `shipmentReceipts` / `itemIssuances` -- both 1:1 on their PK -- and NOT the movement
+ * ledger, whose receiptId is a denormalised stamp that can carry two unrelated movements per id.
+ */
+const movementResponse = (nodes: any[], hasNextPage = false, root = "shipmentReceipts") => ({
+  data: { data: { [root]: { edges: nodes.map((node) => ({ node })), pageInfo: { hasNextPage } } }, errors: [] },
+});
+
+/** Step two of the lookup: the orders those movement rows point at, named once and cached. */
+const orderResponse = (orders: any[]) => ({
+  data: { data: { orders: { edges: orders.map((node) => ({ node })) } }, errors: [] },
 });
 
 const graphqlCalls = () => harness.api.mock.calls.filter(([args]: any[]) => String(args?.url) === "graphql");
+const movementCalls = () => graphqlCalls().filter(([args]: any[]) => !String(args.data.query).includes("orders("));
+const orderCalls = () => graphqlCalls().filter(([args]: any[]) => String(args.data.query).includes("orders("));
+
+/**
+ * Routes each call to the right shape. The resolver asks for the movements first, then for whichever
+ * orders it has not already named, so a flat mockResolvedValue would answer the wrong question.
+ */
+const respondWith = (movements: any, orders: any[] = []) => harness.api.mockImplementation(async (args: any) => {
+  if(String(args?.url) !== "graphql") {return { data: [] };}
+
+  return String(args.data.query).includes("orders(") ? orderResponse(orders) : movements;
+});
 
 describe("useInventoryEventSources — the document behind a movement", () => {
   beforeEach(() => {
@@ -146,17 +167,26 @@ describe("useInventoryEventSources — the document behind a movement", () => {
   });
 
   it("names the order behind a whole page of receipts in ONE request", async () => {
-    harness.api.mockResolvedValue(movementResponse([
-      { receiptId: "R1", orderId: "10779", order: { orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER", statusId: "ORDER_APPROVED" } },
-      { receiptId: "R2", orderId: "10780", order: { orderId: "10780", orderName: "TO-42", orderTypeId: "TRANSFER_ORDER", statusId: "ORDER_APPROVED" } },
-      { receiptId: "R3", orderId: null, order: null },
-    ]));
+    respondWith(movementResponse([
+      { receiptId: "R1", orderId: "10779" },
+      { receiptId: "R2", orderId: "10780" },
+      { receiptId: "R3", orderId: null },
+    ]), [
+      { orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER", statusId: "ORDER_APPROVED" },
+      { orderId: "10780", orderName: "TO-42", orderTypeId: "TRANSFER_ORDER", statusId: "ORDER_APPROVED" },
+    ]);
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve(["R1", "R2", "R3"].map((reference) => receiptLookup(reference)));
 
-    expect(graphqlCalls().length).toBe(1);
-    expect(graphqlCalls()[0][0].data.variables.q).toBe("receiptId:R1,R2,R3");
+    // One call for the whole window, plus one that names every order it pointed at.
+    expect(movementCalls().length).toBe(1);
+    expect(orderCalls().length).toBe(1);
+    expect(movementCalls()[0][0].data.query).toContain("shipmentReceipts(");
+    expect(movementCalls()[0][0].data.variables.q).toBe("receiptId:R1,R2,R3");
+    // `first` is the id count exactly: these roots are 1:1 on their PK, and the governor charges per row.
+    expect(movementCalls()[0][0].data.variables.first).toBe(3);
+    expect(orderCalls()[0][0].data.variables.q).toBe("orderId:10779,10780");
     expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.label).toBe("Purchase order WeeklyASN_5");
     expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toBe("Transfer order TO-42");
     // A receipt with no order is a real answer, not a blank row.
@@ -164,19 +194,57 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     expect(sources.value.get(sourceKeyOf("RECEIPT", "R3"))?.unresolved).toContain("no order");
   });
 
+  /**
+   * Movements share documents heavily -- on a real transfer, 91 receipts resolved to ONE order -- and
+   * the governor charges per row, so re-naming a known order on every chunk is the difference between
+   * a page that scrolls and one that throttles.
+   */
+  it("names each order once and reuses it for later chunks", async () => {
+    respondWith(movementResponse([{ receiptId: "R1", orderId: "TO-1" }]),
+      [{ orderId: "TO-1", orderName: "MULTISHOP-85", orderTypeId: "TRANSFER_ORDER" }]);
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve([receiptLookup("R1")]);
+    expect(orderCalls().length).toBe(1);
+
+    // A different receipt pointing at the SAME order asks for the movement, never for the order again.
+    respondWith(movementResponse([{ receiptId: "R2", orderId: "TO-1" }]),
+      [{ orderId: "TO-1", orderName: "MULTISHOP-85", orderTypeId: "TRANSFER_ORDER" }]);
+    await resolve([receiptLookup("R2")]);
+
+    expect(orderCalls().length).toBe(1);
+    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toBe("Transfer order MULTISHOP-85");
+  });
+
+  it("names the return behind a restock receipt, which belongs to no order", async () => {
+    respondWith(movementResponse([
+      { receiptId: "R1", orderId: null, returnId: "M101225" },
+      { receiptId: "R2", orderId: null, returnId: null },
+    ]));
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve([receiptLookup("R1", "RETURN_RESTOCK"), receiptLookup("R2", "RETURN_RESTOCK")]);
+
+    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R1"))?.label).toBe("Return M101225");
+    // Neither an order nor a return: "carries no order" is the truth only here.
+    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R2"))?.unresolved).toContain("no order");
+  });
+
   it("asks separately per family, because each filters on its own key", async () => {
-    harness.api.mockResolvedValue(movementResponse([]));
+    respondWith(movementResponse([]));
     const { resolve } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1"), receiptLookup("I1", "POS_ISSUANCE")]);
 
-    const queries = graphqlCalls().map(([args]: any[]) => args.data.variables.q).sort();
+    const queries = movementCalls().map(([args]: any[]) => args.data.variables.q).sort();
     expect(queries).toEqual(["itemIssuanceId:I1", "receiptId:R1"]);
+    const roots = movementCalls().map(([args]: any[]) => args.data.query.match(/(shipmentReceipts|itemIssuances)\(/)[1]).sort();
+    expect(roots).toEqual(["itemIssuances", "shipmentReceipts"]);
   });
 
   it("stops asking an OMS whose schema has no movement root, after exactly one request", async () => {
     harness.api.mockResolvedValue({
-      data: { data: null, errors: [{ message: "Validation error (FieldUndefined@[inventoryItemDetails]) : Field 'inventoryItemDetails' in type 'Query' is undefined" }] },
+      data: { data: null, errors: [{ message: "Validation error (FieldUndefined@[shipmentReceipts]) : Field 'shipmentReceipts' in type 'Query' is undefined" }] },
     });
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
@@ -234,16 +302,16 @@ describe("useInventoryEventSources — the document behind a movement", () => {
   });
 
   it("does not serialize once the OMS has answered: two families still go out together", async () => {
-    harness.api.mockResolvedValue(movementResponse([]));
+    respondWith(movementResponse([]));
     const { resolve } = useInventoryEventSources();
 
     // First pass settles the capability question...
     await resolve([receiptLookup("R0")]);
-    const afterProbe = graphqlCalls().length;
+    const afterProbe = movementCalls().length;
     // ...so a later pass pays no gate, and each family still gets its own query.
     await resolve([receiptLookup("R1"), receiptLookup("I1", "POS_ISSUANCE")]);
 
-    expect(graphqlCalls().length - afterProbe).toBe(2);
+    expect(movementCalls().length - afterProbe).toBe(2);
   });
 
   it("still retries a plain network failure, which is not a fact about the deployment", async () => {
@@ -257,9 +325,8 @@ describe("useInventoryEventSources — the document behind a movement", () => {
   });
 
   it("says a reference is unknown rather than leaving the row blank", async () => {
-    harness.api.mockResolvedValue(movementResponse([
-      { receiptId: "R1", orderId: "10779", order: { orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" } },
-    ]));
+    respondWith(movementResponse([{ receiptId: "R1", orderId: "10779" }]),
+      [{ orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" }]);
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1"), receiptLookup("R_MISSING")]);
@@ -268,9 +335,8 @@ describe("useInventoryEventSources — the document behind a movement", () => {
   });
 
   it("does not name a row from a page that filled up, and says why", async () => {
-    harness.api.mockResolvedValue(movementResponse([
-      { receiptId: "R1", orderId: "10779", order: { orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" } },
-    ], true));
+    respondWith(movementResponse([{ receiptId: "R1", orderId: "10779" }], true),
+      [{ orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" }]);
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1"), receiptLookup("R2")]);
@@ -281,9 +347,8 @@ describe("useInventoryEventSources — the document behind a movement", () => {
 
   it("retries a failed batch instead of marking every row in it permanently unresolvable", async () => {
     harness.api.mockRejectedValueOnce(new Error("network"));
-    harness.api.mockResolvedValue(movementResponse([
-      { receiptId: "R1", orderId: "10779", order: { orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" } },
-    ]));
+    respondWith(movementResponse([{ receiptId: "R1", orderId: "10779" }]),
+      [{ orderId: "10779", orderName: "WeeklyASN_5", orderTypeId: "PURCHASE_ORDER" }]);
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1")]);

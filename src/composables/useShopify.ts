@@ -1157,6 +1157,7 @@ onSessionCleared(() => {
   // Re-probed per session: the next tenant may be on an OMS that does have the movement root.
   movementRootAvailable = null;
   movementRootProbe = null;
+  movementOrders.clear();
 });
 
 async function readEventSource(url: string, params?: Record<string, unknown>): Promise<any> {
@@ -1335,30 +1336,87 @@ const MOVEMENT_FAMILIES: Record<string, MovementFamily> = {
   POS_ISSUANCE: "issuance",
 };
 
-/** The GraphQL search key each family filters on. Both are declared, index-backed keys on that root. */
-const MOVEMENT_SEARCH_KEYS: Record<MovementFamily, string> = {
-  receipt: "receiptId",
-  issuance: "itemIssuanceId",
+/**
+ * Which root answers each family, and on which key.
+ *
+ * ShipmentReceipt and ItemIssuance are the AUTHORITATIVE sources: both are 1:1 on their primary key,
+ * so one id names exactly one document. The `receiptId` column on the movement ledger looks like it
+ * would do the same job and does not -- it is a denormalised stamp, and on a real OMS 70 of 1,278
+ * receipt ids had ledger rows disagreeing about the order, one id carrying both a return-item receipt
+ * and an unrelated shipment receipt. Reading the document from the ledger would pick between them at
+ * random; reading it from the receipt cannot.
+ */
+const MOVEMENT_ROOTS: Record<MovementFamily, { root: string; searchKey: string }> = {
+  receipt: { root: "shipmentReceipts", searchKey: "receiptId" },
+  issuance: { root: "itemIssuances", searchKey: "itemIssuanceId" },
 };
 
 /**
- * How many movement ids go into one query, and how many rows are asked for back.
+ * How many ids go into one query.
  *
- * A receipt is per shipment ITEM and an issuance per order ITEM, so each names one product at one
- * facility and maps to exactly one InventoryItemDetail row -- measured 1.00 rows per id, max 1, over
- * 174 receipts and 3,045 issuances. Asking for twice the chunk leaves room for that to be wrong
- * somewhere without silently truncating; if it ever is, `hasNextPage` says so and the ids that did not
- * come back are reported as unresolved rather than answered wrongly.
+ * These roots are 1:1 on their PK, so `first` is simply the number of ids asked about -- no headroom,
+ * and nothing to truncate. The chunk is sized against the COST GOVERNOR rather than the page: measured
+ * on a live instance the charge is 4 per row, against a 1000 bucket that refills at 50/s, so 25 rows
+ * costs 100 and a scroll cannot outrun the bucket. Naming the order through a nested `order` edge
+ * instead would cost 9 per row -- `first: 100` came back at 900, a single call for nine tenths of the
+ * budget -- which is why the order is fetched separately and cached below.
  */
-const MOVEMENT_LOOKUP_CHUNK = 50;
-const MOVEMENT_LOOKUP_PAGE = 100;
+const MOVEMENT_LOOKUP_CHUNK = 25;
 
-const MOVEMENT_DOCUMENT_QUERY = `query MovementDocuments($q: String!, $first: Int!) {
-  inventoryItemDetails(query: $q, first: $first) {
-    edges { node { receiptId itemIssuanceId orderId order { orderId orderName orderTypeId statusId } } }
+const MOVEMENT_DOCUMENT_QUERIES: Record<MovementFamily, string> = {
+  receipt: `query MovementDocuments($q: String!, $first: Int!) {
+  shipmentReceipts(query: $q, first: $first) {
+    edges { node { receiptId orderId returnId } }
     pageInfo { hasNextPage }
   }
+}`,
+  issuance: `query MovementDocuments($q: String!, $first: Int!) {
+  itemIssuances(query: $q, first: $first) {
+    edges { node { itemIssuanceId orderId } }
+    pageInfo { hasNextPage }
+  }
+}`,
+};
+
+const MOVEMENT_ORDER_QUERY = `query MovementOrders($q: String!, $first: Int!) {
+  orders(query: $q, first: $first) {
+    edges { node { orderId orderName orderTypeId statusId } }
+  }
 }`;
+
+/**
+ * Orders already named, for the session.
+ *
+ * Movements share documents heavily -- on a real transfer, 91 receipts resolved to ONE order -- so
+ * after the first chunk this is usually a full hit and the second call disappears entirely.
+ */
+const movementOrders = new Map<string, any>();
+
+/** Name the orders these movement rows point at, reusing anything already known. */
+async function loadMovementOrders(orderIds: string[]): Promise<void> {
+  const wanted = [...new Set(orderIds.filter((id) => id && !movementOrders.has(id)))];
+  if(!wanted.length) {return;}
+
+  const response: any = await api({
+    url: "graphql",
+    method: "post",
+    data: {
+      query: MOVEMENT_ORDER_QUERY,
+      variables: { q: `orderId:${wanted.join(",")}`, first: wanted.length },
+      operationName: "MovementOrders",
+    },
+  });
+  const errors: any[] = Array.isArray(response?.data?.errors) ? response.data.errors : [];
+  if(errors.length) {throw response;}
+
+  const edges: any[] = response?.data?.data?.orders?.edges ?? [];
+  for(const edge of edges) {
+    const orderId = String(edge?.node?.orderId ?? "").trim();
+    if(orderId) {movementOrders.set(orderId, edge.node);}
+  }
+  // Remember the misses too, so a deleted or out-of-scope order is not re-asked on every chunk.
+  for(const id of wanted) {if(!movementOrders.has(id)) {movementOrders.set(id, null);}}
+}
 
 /**
  * Whether this deployment can answer a movement lookup at all.
@@ -1397,7 +1455,8 @@ function isMovementRootUndefined(errors: any[]): boolean {
     const message = String(error?.message ?? "");
     if(!message.includes("Validation error") && !message.includes("FieldUndefined")) {return false;}
 
-    return message.includes("inventoryItemDetails") || message.includes("InventoryItemDetail")
+    return message.includes("shipmentReceipts") || message.includes("itemIssuances")
+      || message.includes("ShipmentReceipt") || message.includes("ItemIssuance")
       || message.includes("orderTypeId");
   });
 }
@@ -1428,7 +1487,7 @@ async function readMovementDocuments(
   family: MovementFamily, references: string[]
 ): Promise<Map<string, InventoryEventSource>> {
   const answers = new Map<string, InventoryEventSource>();
-  const searchKey = MOVEMENT_SEARCH_KEYS[family];
+  const { root, searchKey } = MOVEMENT_ROOTS[family];
   // Still unknown, and someone is already finding out: wait for them rather than asking in parallel.
   if(movementRootAvailable === null && movementRootProbe) {
     await movementRootProbe.catch(() => undefined);
@@ -1447,8 +1506,8 @@ async function readMovementDocuments(
       url: "graphql",
       method: "post",
       data: {
-        query: MOVEMENT_DOCUMENT_QUERY,
-        variables: { q: `${searchKey}:${references.join(",")}`, first: MOVEMENT_LOOKUP_PAGE },
+        query: MOVEMENT_DOCUMENT_QUERIES[family],
+        variables: { q: `${searchKey}:${references.join(",")}`, first: references.length },
         operationName: "MovementDocuments",
       },
     });
@@ -1483,20 +1542,32 @@ async function readMovementDocuments(
   }
 
   movementRootAvailable = true;
-  const connection = response?.data?.data?.inventoryItemDetails;
+  const connection = response?.data?.data?.[root];
   const rows: any[] = Array.isArray(connection?.edges) ? connection.edges.map((edge: any) => edge?.node) : [];
+  // Second half of the two-step: name the orders these rows point at, minus the ones already known.
+  await loadMovementOrders(rows.map((row: any) => String(row?.orderId ?? "").trim()));
+
   for(const row of rows) {
     const reference = String(row?.[searchKey] ?? "").trim();
     if(!reference || answers.has(reference)) {continue;}
-    const label = eventSourceOrderLabel(row?.order);
-    answers.set(reference, label
-      ? { label, note: row?.order?.statusId ? translate("Order status {status}", { status: row.order.statusId }) : undefined }
+    const order = movementOrders.get(String(row?.orderId ?? "").trim());
+    const label = eventSourceOrderLabel(order);
+    if(label) {
+      answers.set(reference, { label,
+        note: order?.statusId ? translate("Order status {status}", { status: order.statusId }) : undefined });
+      continue;
+    }
+    // A return receipt belongs to a return, not an order, and naming it is a better answer than
+    // "carries no order" -- which is the truth only for a receipt that belongs to neither.
+    const returnId = String(row?.returnId ?? "").trim();
+    answers.set(reference, returnId
+      ? { label: translate("Return {id}", { id: returnId }) }
       : movementUnresolved(translate("This movement carries no order.")));
   }
 
   // Anything not in the page: either the OMS holds no such movement, or the page truncated. Both are
   // worth saying out loud on the row instead of leaving it blank.
-  const truncated = rows.length >= MOVEMENT_LOOKUP_PAGE || connection?.pageInfo?.hasNextPage;
+  const truncated = Boolean(connection?.pageInfo?.hasNextPage);
   for(const reference of references) {
     if(answers.has(reference)) {continue;}
     answers.set(reference, movementUnresolved(truncated
