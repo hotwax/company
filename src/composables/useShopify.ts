@@ -1080,8 +1080,7 @@ export interface InventoryEventSourceLookup {
   eventReferenceId: string;
   /** Parsed from decisionComment. Scopes the hard-scoped inventory-history mounts. */
   productId: string;
-  /** The row's channel's member facilities, from cache. The same mounts need one of these too. */
-  facilityIds: string[];
+
 }
 
 export interface InventoryEventSource {
@@ -1111,7 +1110,6 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
   return `${eventTypeId}|${eventReferenceId}`;
 }
 
-const RECEIPT_EVENT_TYPES = ["RECEIPT", "TRANSFER_RECEIPT", "RETURN_RESTOCK"];
 const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
 
 const eventSources = ref(new Map<string, InventoryEventSource>());
@@ -1306,92 +1304,31 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
   };
 }
 
-/**
- * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE -- the families that need a scan.
- *
- * Both inventory-history mounts are scoped by path on purpose, so that "the InventoryItemDetail table
- * can never be scanned unfiltered". The consequence is that a receiptId alone cannot be looked up: it
- * takes a productId (which decisionComment gives) and a facilityId (which the ledger does not carry,
- * because the event is aggregate over a facility GROUP). So this walks the channel's member facilities
- * and stops at the first hit.
- *
- * That is affordable for one row a person opened and not for a whole list, which is why the caller has
- * to ask for it. See the enrichment map: a mount that accepts receiptId as its own scope would collapse
- * this to one call.
- */
-async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterField: string): Promise<InventoryEventSource> {
-  if(!lookup.productId) {
-    return { label: "", unresolved: translate("No product on the calculation comment, so the scoped inventory-history mount cannot be called.") };
-  }
-  if(!lookup.facilityIds.length) {
-    // The membership cache may simply not have hydrated yet, so this answer is provisional.
-    return {
-      label: "",
-      unresolved: translate("The channel's facility group has no cached member facilities to search."),
-      retryable: true,
-    };
-  }
-
-  // "Not found anywhere" is only true if every facility actually answered. A failed request that is
-  // reported as an absence gets cached as a confident wrong answer and never retried.
-  let anyFacilityFailed = false;
-  for(const facilityId of lookup.facilityIds) {
-    try {
-      const row = asEventSourceRows(await readEventSource(
-        `oms/products/${encodeURIComponent(lookup.productId)}/facilities/${encodeURIComponent(facilityId)}/inventoryDetail`,
-        { [filterField]: lookup.eventReferenceId, pageSize: 1 },
-      ))[0];
-      if(!row) {continue;}
-      const order = eventSourceOrderLabel(row);
-      const returnId = String(row?.returnId ?? "").trim();
-      const shipmentId = String(row?.shipmentId ?? "").trim();
-      const label = order || (returnId && translate("Customer return {id}", { id: returnId })) ||
-        (shipmentId && translate("Shipment {id}", { id: shipmentId })) || "";
-      if(!label) {
-        return { label: "", unresolved: translate("The movement row names no order, return or shipment.") };
-      }
-      // Whichever of the three did not become the label, when it adds something.
-      const note = [order && returnId && translate("return {id}", { id: returnId }), order && shipmentId && translate("shipment {id}", { id: shipmentId })]
-        .filter(Boolean).join(", ");
-
-      return { label, note: note || undefined };
-    } catch (error) {
-      // One unreachable facility must not end the walk: the movement may sit at the next one.
-      anyFacilityFailed = true;
-      logger.warn(`Inventory history [facility ${facilityId}] - Lookup failed`, error);
-    }
-  }
-
-  // Throwing hands this to the caller's retry-and-cap logic instead of storing a false diagnosis.
-  if(anyFacilityFailed) {
-    throw new Error("Inventory history - one or more facility lookups failed, so absence is not proven");
-  }
-
-  return { label: "", unresolved: translate("No movement row for this reference at any of the channel's facilities.") };
-}
-
-function eventSourceResolverFor(eventTypeId: string, fanOut: boolean) {
+function eventSourceResolverFor(eventTypeId: string) {
   if(eventTypeId.startsWith("RESERVATION_")) {return resolveReservationSource;}
   if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
   if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
-  if(RECEIPT_EVENT_TYPES.includes(eventTypeId)) {
-    return fanOut ? (l: InventoryEventSourceLookup) => resolveMovementSource(l, "receiptId") : null;
-  }
-  if(eventTypeId === "POS_ISSUANCE") {
-    return fanOut ? (l: InventoryEventSourceLookup) => resolveMovementSource(l, "itemIssuanceId") : null;
-  }
 
-  // The configuration families name no document. Their references decode locally to ids the app already
-  // holds, and the audit-keyed ones cannot be looked up at all -- entityAuditLogs filters on the changed
-  // entity and its PK values, neither of which the ledger keeps. Neither case belongs here.
+  /*
+   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
+   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
+   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
+   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
+   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
+   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
+   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
+   * an unscoped read exists.
+   *
+   * The configuration families name no document at all. Their references decode locally to ids the app
+   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
+   * entity and its PK values, neither of which the ledger keeps.
+   */
   return null;
 }
 
 /**
  * Resolve what is not already known. Safe to call on every render: it filters against `eventSourcesRequested` first,
  * so a stable set of rows is one round of calls and a background cache sync is none.
- *
- * `fanOut` opts into the facility walk for the receipt and issuance families. Leave it off for lists.
  */
 /** Has this key been answered in a way that does not need asking again? */
 function isEventSourceSettled(key: string): boolean {
@@ -1414,19 +1351,18 @@ function isEventSourceSettled(key: string): boolean {
  *
  * - Keys are claimed SYNCHRONOUSLY, before the first await. Claiming them one at a time inside the
  *   loop let a second call (a scroll, or the ten-second cache tick) re-queue every key the first pass
- *   had not reached yet, and with `fanOut` a duplicate is a whole facility walk.
+ *   had not reached yet, and a duplicate is a duplicate request.
  * - A thrown failure is retried, but only up to a cap. Un-marking it unconditionally turned an
  *   endpoint this OMS does not expose into a permanent request storm, once per tick, forever.
  * - Independent lookups run concurrently in bounded batches, and the ref is reassigned ONCE per batch.
  *   Reassigning per result re-rendered every row on the page for each artifact resolved.
  */
-async function resolveEventSources(lookups: InventoryEventSourceLookup[], opts: { fanOut?: boolean } = {}): Promise<void> {
-  const fanOut = !!opts.fanOut;
+async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promise<void> {
   const pending = new Map<string, InventoryEventSourceLookup>();
   for(const lookup of lookups) {
     const key = inventoryEventSourceKey(lookup.eventTypeId, lookup.eventReferenceId);
     if(pending.has(key) || isEventSourceSettled(key)) {continue;}
-    if(!eventSourceResolverFor(lookup.eventTypeId, fanOut)) {continue;}
+    if(!eventSourceResolverFor(lookup.eventTypeId)) {continue;}
     pending.set(key, lookup);
   }
   if(!pending.size) {return;}
@@ -1445,7 +1381,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[], opts: 
     const batch = entries.slice(index, index + SOURCE_LOOKUP_CONCURRENCY);
     const resolved = await Promise.all(batch.map(async ([key, lookup]) => {
       const attempt = eventSourceAttempts.get(key) as InventoryEventSourceAttempt;
-      const resolver = eventSourceResolverFor(lookup.eventTypeId, fanOut);
+      const resolver = eventSourceResolverFor(lookup.eventTypeId);
       if(!resolver) {
         eventSourceAttempts.delete(key);
 
