@@ -179,6 +179,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/order-sync/history", name: "ShopifyOrderSyncHistory", component: () => import("@/views/ShopifyOrderSyncHistory.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/transfer-sync", name: "ShopifyTransferSync", component: () => import("@/views/ShopifyTransferSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/instance-details", name: "ShopifyInstanceDetails", component: () => import("@/views/ShopifyShopDetails.vue"), props: true, beforeEnter: authGuard },
+  { path: "/aws", name: "Aws", component: () => import("@/views/Aws.vue"), beforeEnter: authGuard },
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
   { path: "/netsuite", name: "NetSuite", component: NetSuite, beforeEnter: authGuard },
