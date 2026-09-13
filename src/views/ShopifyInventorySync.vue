@@ -1196,8 +1196,8 @@
                     {{ event.delivery }}
                   </ion-badge>
                 </span>
-                <span v-if="event.batchId" class="one-line batch-id">{{ event.batchId }}</span>
-                <ion-note v-else class="one-line">{{ translate("Not batched") }}</ion-note>
+                <p v-if="event.batchId" class="one-line">{{ event.batchId }}</p>
+                <p v-else class="one-line">{{ translate("Not batched") }}</p>
               </ion-label>
 
             </div>
@@ -4258,16 +4258,8 @@ function formatAge(timestamp: number): string {
   margin-block-end: var(--spacer-base);
 }
 
-.kpi-grid ion-card {
-  margin: 0;
-}
-
 .count-skeleton {
   width: var(--spacer-3xl);
-}
-
-.location-filter-card {
-  margin-block-end: var(--spacer-base);
 }
 
 .date-filter-item {
@@ -4457,11 +4449,6 @@ function formatAge(timestamp: number): string {
 
 .kpi-card {
   margin: 0;
-  border-radius: 8px;
-}
-
-.kpi-card ion-card-title {
-  font-size: 1.5rem;
 }
 
 .kpi-card ion-note {
@@ -4526,11 +4513,6 @@ function formatAge(timestamp: number): string {
 
 .list-item ion-thumbnail {
   --size: 48px;
-  --border-radius: 4px;
-}
-
-.change {
-  font-size: 1.125rem;
 }
 
 /* Direction is the first thing read off an adjustment row, so it is carried by colour as well as by
@@ -4614,36 +4596,9 @@ function formatAge(timestamp: number): string {
     gap: var(--spacer-2xs);
   }
 
-  .batch-id {
-    font-size: 0.8rem;
-    color: var(--ion-color-medium);
-    max-width: 100%;
-  }
-
   .list-item .row-summary {
     display: none;
   }
-}
-
-.batch-header {
-  --columns-desktop: 4;
-  --columns-tablet: 3;
-  padding-inline-end: var(--spacer-sm);
-  border-block-end: var(--border-medium);
-}
-
-.batch-header > ion-label {
-  padding: var(--spacer-sm);
-}
-
-.batch-header ion-label,
-.batch-header ion-item {
-  min-width: 0;
-}
-
-.batch-header p,
-ion-modal p {
-  overflow-wrap: anywhere;
 }
 
 @media screen and (max-width: 900px) {
@@ -4651,38 +4606,7 @@ ion-modal p {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .batch-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) max-content;
-    justify-items: stretch;
-    padding-inline-end: var(--spacer-lg);
-  }
-
-  .batch-header > * {
-    display: unset;
-  }
-
-  .batch-header > ion-item:first-child {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .batch-header > ion-label {
-    grid-column: 1;
-    grid-row: 2;
-    justify-self: start;
-  }
-
-  .batch-header > ion-badge {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: center;
-  }
-
-  .batch-header > span {
-    display: none;
-  }
-}
+            }
 
 @media screen and (max-width: 600px) {
   .filter-grid {
