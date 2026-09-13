@@ -1128,7 +1128,7 @@
           </div>
 
           <div v-if="historyEvents.length" ref="eventScrollerRef" class="event-scroller" @scroll.passive="onEventScroll">
-            <div :style="{ height: `${eventTopSpacer}px` }" aria-hidden="true" />
+            <div class="event-spacer" :style="{ '--event-spacer-size': `${eventTopSpacer}px` }" aria-hidden="true" />
 
             <div
               v-for="event in virtualEvents"
@@ -1202,7 +1202,7 @@
 
             </div>
 
-          <div :style="{ height: `${eventBottomSpacer}px` }" aria-hidden="true" />
+            <div class="event-spacer" :style="{ '--event-spacer-size': `${eventBottomSpacer}px` }" aria-hidden="true" />
           </div>
 
           <!-- "Nothing here" is a claim about the data, so it may only be made once the ledger is
@@ -4458,6 +4458,13 @@ function formatAge(timestamp: number): string {
 
 .kpi-card.kpi-warning ion-card-title {
   color: var(--ion-color-warning-shade);
+}
+
+/* The rows outside the window, as height rather than DOM. The size is per-render geometry from
+   `useVirtualRows`, so it cannot be a static rule -- but the property belongs here and the template
+   passes only the value, which also gives the element somewhere to hang anything else it needs. */
+.event-spacer {
+  block-size: var(--event-spacer-size, 0);
 }
 
 /* The virtualised rows scroll inside this box rather than the page, so the window maths has a
