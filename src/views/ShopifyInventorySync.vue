@@ -1182,6 +1182,9 @@
                   {{ translate("sent {lag} later", { lag: formatLag(event.sentAt - event.createdAt) }) }}
                 </p>
                 <p v-else-if="event.awaitingDelivery" class="one-line">{{ translate("not sent yet") }}</p>
+                <!-- Delivered, but its message has not been fetched, so the duration is unknown
+                     rather than absent. -->
+                <p v-else-if="event.delivered" class="one-line">{{ translate("sent") }}</p>
               </ion-label>
 
               <ion-label class="status-cell">
@@ -1836,6 +1839,13 @@ interface InventoryEvent {
    * has already declined to keep -- and would put a five-day-old row at the top of "oldest waiting".
    */
   awaitingDelivery: boolean;
+  /**
+   * Shopify accepted the batch. Separate from `sentAt` because that needs the SystemMessage to be in
+   * the cache and the worker enriches only a few dozen per pass -- so a delivered row often knows
+   * THAT it was sent without knowing WHEN. Saying nothing in that case made it look like a no-change
+   * row, which is the one thing it is not.
+   */
+  delivered: boolean;
   /** Raw, so the search box still matches what the server actually wrote. */
   decisionComment?: string;
   /**
@@ -3117,6 +3127,7 @@ const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.
     createdAt: toMillis(detail.createdDate),
     sentAt: sentAtOf(detail),
     awaitingDelivery: isAwaitingDelivery(detail, delivery?.statusId),
+    delivered: delivery?.statusId === "SmsgSent",
     decisionComment: detail.decisionComment,
     productId,
     // The bare name: this template supplies its own item-id fallback, so it must not print one here.

@@ -759,6 +759,11 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
 
     expect(wrapper.text()).not.toContain("not sent yet");
     expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
+    // It knows THAT it was sent without knowing WHEN, and says so: blank here would read as a
+    // no-change row, which is the one thing this is not.
+    const timing = wrapper.find("[data-virtual-row]").findAll("ion-label")[2];
+    expect(wrapper.find("[data-virtual-row]").text()).toContain("sent");
+    expect(timing).toBeTruthy();
   });
 
   it("reports the oldest event Shopify is still owed", async () => {
