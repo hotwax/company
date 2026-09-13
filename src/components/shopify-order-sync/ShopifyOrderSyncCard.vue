@@ -1,6 +1,6 @@
 <template>
   <ion-card
-    :button="snapshot.actionable !== false"
+    :button="snapshot.actionable !== false && !snapshot.loading"
     class="widget order-sync"
     :aria-busy="snapshot.loading ? 'true' : 'false'"
     :aria-disabled="snapshot.actionable === false ? 'true' : undefined"
@@ -24,15 +24,24 @@
         <ion-list lines="full" aria-live="polite">
           <ion-item lines="full">
             <ion-label>{{ translate("Orders processed") }}</ion-label>
-            <ion-label slot="end">{{ processedCount }}</ion-label>
+            <ion-label slot="end">
+              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 32px" />
+              <template v-else>{{ processedCount }}</template>
+            </ion-label>
           </ion-item>
           <ion-item lines="full">
             <ion-label>{{ translate("Pending batch requests") }}</ion-label>
-            <ion-label slot="end">{{ pendingCount }}</ion-label>
+            <ion-label slot="end">
+              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 32px" />
+              <template v-else>{{ pendingCount }}</template>
+            </ion-label>
           </ion-item>
           <ion-item lines="none">
             <ion-label>{{ translate("Last completed batch") }}</ion-label>
-            <ion-label slot="end">{{ lastCompletedLabel }}</ion-label>
+            <ion-label slot="end">
+              <ion-skeleton-text v-if="snapshot.loading" animated style="width: 120px" />
+              <template v-else>{{ lastCompletedLabel }}</template>
+            </ion-label>
           </ion-item>
         </ion-list>
       </div>
@@ -42,7 +51,8 @@
           <ion-item lines="full" data-progress-row="shopify-order-batch-request">
             <ion-label>
               {{ translate("Shopify order batch request") }}
-              <p>{{ batchDetail }}</p>
+              <p v-if="snapshot.loading"><ion-skeleton-text animated style="width: 70%" /></p>
+              <p v-else>{{ batchDetail }}</p>
             </ion-label>
             <ion-badge slot="end" :color="batchBadge.color">
               {{ batchBadge.label }}
@@ -51,7 +61,8 @@
           <ion-item lines="none" data-progress-row="hotwax-order-import">
             <ion-label>
               {{ translate("HotWax order import") }}
-              <p>{{ importDetail }}</p>
+              <p v-if="snapshot.loading"><ion-skeleton-text animated style="width: 70%" /></p>
+              <p v-else>{{ importDetail }}</p>
             </ion-label>
             <ion-badge slot="end" :color="importBadge.color">
               {{ importBadge.label }}
@@ -73,6 +84,7 @@ import {
   IonItem,
   IonLabel,
   IonList,
+  IonSkeletonText,
 } from "@ionic/vue";
 import { translate } from "@common";
 import { computed } from "vue";
@@ -193,11 +205,15 @@ function getProgressDetail(detail: string | undefined, emptyLabel: string) {
 }
 
 function openCard() {
-  if (props.snapshot.actionable === false) return;
+  if (props.snapshot.actionable === false || props.snapshot.loading) return;
   emit("open");
 }
 
 function getProgressBadge(status: string | undefined) {
+  if (props.snapshot.loading) {
+    return { color: "medium", label: translate("Loading") };
+  }
+
   if (props.snapshot.error) {
     return { color: "danger", label: translate("Unavailable") };
   }
@@ -230,6 +246,15 @@ function getProgressBadge(status: string | undefined) {
 </script>
 
 <style scoped>
+/* `ion-skeleton-text` takes its height from the line it replaces, and a stand-in has no text to take
+   one from, so without this each one collapses to nothing and the row loses its height. `1lh` is the
+   line box of whatever it sits in — exactly the line the value will occupy. */
+ion-skeleton-text {
+  height: 1lh;
+  border-radius: 4px;
+  display: inline-block;
+}
+
 ion-card.widget {
   border-radius: 16px;
   margin-block: var(--spacer-lg);
