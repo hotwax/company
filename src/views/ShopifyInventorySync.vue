@@ -1840,10 +1840,9 @@ interface InventoryEvent {
    */
   awaitingDelivery: boolean;
   /**
-   * Shopify accepted the batch. Separate from `sentAt` because that needs the SystemMessage to be in
-   * the cache and the worker enriches only a few dozen per pass -- so a delivered row often knows
-   * THAT it was sent without knowing WHEN. Saying nothing in that case made it look like a no-change
-   * row, which is the one thing it is not.
+   * Shopify accepted the batch. Kept separate from `sentAt` as a safety net: a row can be Sent with
+   * no processed date on either the message or the ledger row, and saying nothing at all would read
+   * as a no-change row -- the one thing it is not.
    */
   delivered: boolean;
   /** Raw, so the search box still matches what the server actually wrote. */
@@ -4180,7 +4179,12 @@ function sentAtOf(detail: any): number | undefined {
   const statusId = deliveryStatusOf(detail, message?.statusId);
   if(statusId !== "SmsgSent") {return undefined;}
 
-  return toMillis(message?.processedDate) || undefined;
+  // The ledger row carries the message's dates denormalised -- `systemMessageProcessedDate` is on the
+  // read resource and already in the projection -- so the delivery time never waits on the message
+  // cache, which enriches only a few dozen per pass. Live message first for the same reason
+  // `deliveryStatusOf` prefers it: the worker refreshes unsent batches, so a batch that has just
+  // flipped to Sent is current there while the ledger row is a tick behind.
+  return toMillis(message?.processedDate || detail.systemMessageProcessedDate) || undefined;
 }
 
 /**

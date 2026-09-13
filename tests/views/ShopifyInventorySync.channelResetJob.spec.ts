@@ -749,6 +749,26 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
    * happens to be cached -- only a few dozen messages are enriched per pass. Reading the missing
    * timestamp as "not sent" reported 31-hour-old delivered rows as the oldest thing Shopify was owed.
    */
+  /**
+   * The read resource denormalises the message's dates onto each ledger row, so the delivery time is
+   * already in IndexedDB beside the event and the view needs no join to show it. That matters because
+   * the message cache enriches only a few dozen per pass: joining made the lag disappear from rows
+   * that were plainly delivered. Verified against a live shop by emptying the message store -- all 126
+   * lags survived.
+   */
+  it("reads the delivery time off the ledger row, with no message cached at all", async () => {
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [pendingRow({
+      eventReferenceId: "R_DENORM", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: "BATCH_DENORM", systemMessageStatusId: "SmsgSent",
+      createdDate: 1_000_000, systemMessageProcessedDate: 1_000_000 + 4 * MINUTE,
+    })];
+    const wrapper = await mountHistory();
+
+    expect(wrapper.text()).toContain("sent 4.0 min later");
+    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
+  });
+
   it("does not call a sent event undelivered just because its message is not cached", async () => {
     cachedMessages.value = [];
     cachedAdjustmentDetails.value = [pendingRow({
