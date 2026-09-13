@@ -260,6 +260,7 @@ export const useUserStore = defineStore("user", {
 
       let users = JSON.parse(JSON.stringify(this.users.list))
       let total = this.users.total
+      let succeeded = false
 
       try {
         const resp = await useSolrSearch().runSolrQuery(solrPayload)
@@ -268,6 +269,7 @@ export const useUserStore = defineStore("user", {
           const docs: any[] = resp.data?.response?.docs || []
           users = payload.pageIndex > 0 ? users.concat(docs) : docs
           total = resp.data?.response?.numFound || 0
+          succeeded = true
         } else {
           throw resp.data
         }
@@ -282,6 +284,7 @@ export const useUserStore = defineStore("user", {
       this.users.list = users
       this.users.total = total
       emitter.emit("dismissLoader")
+      return succeeded
     },
 
     addPartyToFacility(payload: { partyId: string; facilityId: string; roleTypeId: string; fromDate?: any }): Promise<any> {

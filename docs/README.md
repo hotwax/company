@@ -11,6 +11,7 @@ below is live; superseded material is in [`archive/`](archive/).
 
 | Doc | What it is |
 | --- | --- |
+| [mcp-setup-research.md](mcp-setup-research.md) | Verified OMS MCP endpoint, token behavior, and client setup sources for the Agents setup guide |
 | [organization-management-architecture.md](organization-management-architecture.md) | Internal-organization hierarchy and facility-owner management architecture. Phases 1–2 are implemented; facility-owner editing and compatibility cleanup remain. Includes cache/API contracts, Mermaid flows, blast radius, rollout, and verification |
 | [carrier-management-architecture.md](carrier-management-architecture.md) | Active architecture and verified backend boundary for carrier identity, shipment methods, facility/store associations, and observable Unigate readiness |
 | [carrier-credential-api-gap.md](carrier-credential-api-gap.md) | Source-backed carrier credential/config/link boundary plus the dated, secret-free ledger for authenticated environment evidence |
