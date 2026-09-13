@@ -77,7 +77,7 @@
          the time on the wall, and repeating it would be noise. Mirrors order-manager's footer. -->
     <DxpOmsInstanceFooter
       v-if="isAuthenticated"
-      :instance-label="omsInstanceLabel"
+      :instance-label="omsInstanceLabel()"
     />
   </ion-menu>
 </template>
@@ -113,22 +113,30 @@ const { instanceInfo, load: loadMaargConfig } = useMaargConfig();
 const HOTWAX_HOST_SUFFIX = ".hotwax.io";
 
 /**
- * The instance this app is talking to. Company is Maarg-backed, so the config's own instanceName is
- * the authoritative label ("rails-uat") and beats parsing it out of a URL; the host is only a fallback
- * for a config that has not loaded yet.
- *
- * Called from the template rather than memoised, for the same reason order-manager does: getMaargURL()
- * reads a cookie, so a computed would cache the pre-login empty value for the life of the session.
+ * Local databases can retain a remote instance name. Show the connected loopback host and port
+ * first so operators can distinguish local development from that remote tenant.
+ * Read the cookie-backed URL on render instead of caching a pre-login value in a computed.
  */
-let omsInstanceLabel = computed(() => {
+function omsInstanceLabel() {
+  const url = commonUtil.getMaargURL();
+  let host = "";
+  if (url) {
+    try {
+      const connection = new URL(url);
+      host = connection.host;
+      if (connection.hostname === "localhost" || connection.hostname.endsWith(".localhost") ||
+          /^127\.\d+\.\d+\.\d+$/.test(connection.hostname) || connection.hostname === "[::1]") {
+        return host;
+      }
+    } catch {
+      // Preserve the configured label when a connection URL cannot be parsed.
+    }
+  }
+
   const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
   if (instanceName) return instanceName;
-
-  const url = commonUtil.getMaargURL();
-  if (!url) return "";
-  const host = url.replace(/^https?:\/\//, "").split("/")[0];
   return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
-})
+}
 
 onMounted(() => {
   void loadMaargConfig();

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   initialAllowed: false,
+  maargUrl: "https://rails-uat.hotwax.io/rest/s1/",
   allowed: undefined as any,
   authenticated: { value: true },
   currentRoute: { value: { path: "/product-store" } },
@@ -13,12 +14,12 @@ const harness = vi.hoisted(() => ({
 vi.mock("@common", () => ({
   translate: (key: string) => key,
   commonUtil: {
-    getMaargURL: () => "https://rails-uat.hotwax.io/rest/s1/",
+    getMaargURL: () => harness.maargUrl,
     getCurrentTime: () => "12:00 PM",
   },
   // The footer is accxui's shared component; this spec only cares that the menu renders
   // around it, so a stub keeps the mock's surface honest without pulling in Ionic.
-  DxpOmsInstanceFooter: { name: "DxpOmsInstanceFooter", template: "<div />" },
+  DxpOmsInstanceFooter: { name: "DxpOmsInstanceFooter", props: ["instanceLabel"], template: '<footer>{{ instanceLabel }}</footer>' },
 }));
 
 // The footer reads the Maarg config for its instance label.
@@ -69,6 +70,7 @@ describe("carrier menu permission", () => {
     vi.resetModules();
     config.global.renderStubDefaultSlot = true;
     harness.initialAllowed = false;
+    harness.maargUrl = "https://rails-uat.hotwax.io/rest/s1/";
     if(harness.allowed) {
       harness.allowed.value = false;
     }
@@ -106,5 +108,20 @@ describe("carrier menu permission", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Carriers");
+  });
+});
+
+describe("connected instance footer", () => {
+  it.each([
+    ["http://localhost:8080/rest/s1/", "localhost:8080"],
+    ["http://127.0.0.1:8080/rest/s1/", "127.0.0.1:8080"],
+    ["http://[::1]:8080/rest/s1/", "[::1]:8080"],
+    ["https://rails-uat.hotwax.io/rest/s1/", "rails-uat"],
+    ["https://localhost.example.com/rest/s1/", "rails-uat"],
+  ])("labels %s without confusing a local copy with its tenant", async (url, label) => {
+    harness.maargUrl = url;
+    const wrapper = await mountMenu();
+    expect(wrapper.find("footer").text()).toBe(label);
+    wrapper.unmount();
   });
 });
