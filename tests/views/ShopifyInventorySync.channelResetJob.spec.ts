@@ -934,7 +934,7 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     const channelJobs = channelGroup.findAll("ion-item").map((row) => row.text().trim());
     const physicalJobs = physicalGroup.findAll("ion-item").map((row) => row.text().trim());
 
-    expect(wrapper.text()).toContain("Manage scheduling of inventory sync with Shopify");
+    expect(wrapper.text()).not.toContain("Manage scheduling of inventory sync with Shopify");
     expect(channelCard.findAll("ion-item-group")).toHaveLength(1);
     expect(physicalCard.findAll("ion-item-group")).toHaveLength(1);
     expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Inventory sync jobs");

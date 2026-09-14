@@ -26,18 +26,6 @@
       </ion-header>
 
       <ion-content class="ion-padding-horizontal">
-        <!-- A failed cache sync must never look like a healthy empty queue: without this the
-             counts below render 0 / "None waiting" after the OMS rejects the query. -->
-        <div class="section-header">
-          <ion-item lines="none">
-            <ion-label class="ion-text-wrap">
-              <h2>{{ translate("Manage scheduling of inventory sync with Shopify") }}</h2>
-            </ion-label>
-            <ion-badge slot="end" :color="scheduleHealthColor">
-              {{ scheduleHealth }}
-            </ion-badge>
-          </ion-item>
-        </div>
         <ion-item v-if="jobSetupError" role="alert">
           <ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label>
         </ion-item>
@@ -2646,12 +2634,6 @@ function channelStats(channel: any) {
   return channelStatsById.value.get(String(channel.inventoryChannelId ?? "")) ?? EMPTY_CHANNEL_STATS;
 }
 
-/** Every job on the page, whichever surface renders it. The health rollup reads this, not one half. */
-const monitoredJobs = computed(() => [
-  ...inventoryChannels.value.flatMap((channel: any) => jobsForChannel(channel)),
-  ...sharedJobs.value,
-]);
-
 const RESULT_SUMMARY_LIMIT = 200;
 
 function truncateResultText(text: string): string {
@@ -3221,10 +3203,6 @@ const nextBatchRun = computed(() => {
 
   return nextRun ? formatDateTime(nextRun) : "Not scheduled";
 });
-const scheduleHealth = computed(() => monitoredJobs.value.some((job) => job.status !== "Active")
-  ? "Needs attention" : "Healthy");
-const scheduleHealthColor = computed(() => scheduleHealth.value === "Healthy" ? "success" : "warning");
-
 // ----- Event sources: which DataDocuments this feed listens to -----
 // Cached like every other reference table: config that rarely moves, read on every entry, and kept
 // truthful after a change by the domain's write-through rather than by re-fetching here.
