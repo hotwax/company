@@ -146,39 +146,44 @@
             </ion-card-header>
             <ion-list lines="full">
               <ion-item v-if="jobSetupError" role="alert"><ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label></ion-item>
-              <ion-item
-                v-for="job in sharedJobs"
-                :key="`${job.name}-${job.targetChannelId ?? ''}`"
-                :button="!!job.job"
-                :detail="!!job.job"
-                @click="openServiceJob(job.job, job.name)"
-              >
-                <ion-icon slot="start" :icon="job.icon" />
-                <ion-label>
-                  {{ job.name }}
-                  <p>{{ job.lastRun }}</p>
-                  <p>{{ job.nextRun }}</p>
-                </ion-label>
-                <!-- Creates the row's missing job(s) PAUSED; activating is a second, deliberate step
-                     in the row's own modal. Also shown beside a Paused/Active badge when a newer
-                     channel still lacks its per-channel clone. -->
-                <ion-button
-                  v-if="job.setup"
-                  slot="end"
-                  fill="outline"
-                  size="small"
-                  :disabled="!!provisioningJobKind"
-                  @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
+              <ion-item-group v-for="group in sharedJobGroups" :key="group.label">
+                <ion-item-divider color="light">
+                  <ion-label>{{ translate(group.label) }}</ion-label>
+                </ion-item-divider>
+                <ion-item
+                  v-for="job in group.jobs"
+                  :key="`${job.name}-${job.targetChannelId ?? ''}`"
+                  :button="!!job.job"
+                  :detail="!!job.job"
+                  @click="openServiceJob(job.job, job.name)"
                 >
-                  <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
-                  <template v-else>
-                    {{ translate("Set up") }}
-                  </template>
-                </ion-button>
-                <ion-badge slot="end" :color="job.badgeColor">
-                  {{ job.status }}
-                </ion-badge>
-              </ion-item>
+                  <ion-icon slot="start" :icon="job.icon" />
+                  <ion-label>
+                    {{ job.name }}
+                    <p>{{ job.lastRun }}</p>
+                    <p>{{ job.nextRun }}</p>
+                  </ion-label>
+                  <!-- Creates the row's missing job(s) PAUSED; activating is a second, deliberate step
+                       in the row's own modal. Also shown beside a Paused/Active badge when a newer
+                       channel still lacks its per-channel clone. -->
+                  <ion-button
+                    v-if="job.setup"
+                    slot="end"
+                    fill="outline"
+                    size="small"
+                    :disabled="!!provisioningJobKind"
+                    @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
+                  >
+                    <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                    <template v-else>
+                      {{ translate("Set up") }}
+                    </template>
+                  </ion-button>
+                  <ion-badge slot="end" :color="job.badgeColor">
+                    {{ job.status }}
+                  </ion-badge>
+                </ion-item>
+              </ion-item-group>
             </ion-list>
           </ion-card>
         </section>
@@ -1651,7 +1656,7 @@ import { DxpShopifyImg, commonUtil, logger, translate, useProducts } from "@comm
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons, IonCard,
   IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonDatetime,
-  IonDatetimeButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
+  IonDatetimeButton, IonHeader, IonIcon, IonItem, IonItemDivider, IonItemGroup, IonLabel, IonList, IonListHeader, IonModal, IonNote,
   IonPage, IonPopover, IonSearchbar, IonSegment, IonSegmentButton, IonSelect, IonSelectOption,
   IonSkeletonText, IonSpinner, IonText, IonTextarea, IonThumbnail, IonTitle, IonToggle, IonToolbar,
   alertController,
@@ -2286,6 +2291,7 @@ function nextExecutionFor(jobs: any[]): any | null {
 }
 
 type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
+type SharedJobLocationGroup = "aggregateChannel" | "physical" | "shared";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -2341,7 +2347,10 @@ type JobDefinition = {
   icon: string;
   setup: JobSetupKind | "";
   targetChannelId?: string;
+  group?: SharedJobLocationGroup;
 };
+
+type SharedJobDefinition = JobDefinition & { group: SharedJobLocationGroup };
 
 /**
  * What to say about the next run, which depends on whether the stored value can be trusted.
@@ -2373,7 +2382,7 @@ function nextRunLine(nextJob: any, latestRun: any): string {
   return translate("Next run {until}, {at}", { until: formatUntil(nextMs), at: formatDateTime(nextJob.nextExecutionDateTime) });
 }
 
-function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition) {
+function describeJob({ name, jobs, icon, setup, targetChannelId, group }: JobDefinition) {
   const latestRun = latestRunFor(jobs);
   const nextJob = nextExecutionFor(jobs);
   const missing = !jobs.length;
@@ -2384,6 +2393,7 @@ function describeJob({ name, jobs, icon, setup, targetChannelId }: JobDefinition
 
   return {
     name,
+    ...(group ? { group } : {}),
     job: nextJob ?? jobs[0] ?? null,
     lastRun: latestRun?.startTime ? translate("Last run {at}", { at: formatDateTime(latestRun.startTime) }) : translate("No cached runs"),
     nextRun: nextRunLine(scheduledJob, latestRun),
@@ -2429,15 +2439,15 @@ function jobsForChannel(channel: any) {
 }
 
 /**
- * The jobs that are NOT per channel: one schedule serves every channel on the connection, or the whole
- * OMS. A fixed five, however many channels exist.
+ * Shared jobs serve every channel on the connection, or the whole OMS; their definitions do not
+ * multiply as channels are added.
  *
  * With no channel mapped yet, the two per-channel rows fall back to un-scoped ones here so a
  * misconfigured connection still shows them - there is no channel card to hang them on, and the
  * "Set up channel" button is the honest action rather than cloning a job for a channel that is absent.
  */
 const sharedJobs = computed(() => {
-  const definitions: JobDefinition[] = [];
+  const definitions: SharedJobDefinition[] = [];
 
   if(!inventoryChannels.value.length) {
     definitions.push({
@@ -2445,12 +2455,14 @@ const sharedJobs = computed(() => {
       jobs: pendingPublisherJobs.value,
       icon: cloudUploadOutline,
       setup: "",
+      group: "aggregateChannel",
     });
     definitions.push({
       name: "Reset aggregate ATP inventory",
       jobs: aggregateResetJobs.value,
       icon: refreshOutline,
       setup: "",
+      group: "aggregateChannel",
     });
   }
 
@@ -2460,24 +2472,28 @@ const sharedJobs = computed(() => {
       jobs: physicalAtpResetJobs.value,
       icon: refreshOutline,
       setup: physicalAtpResetJobs.value.length ? "" : "physicalAtpReset",
+      group: "physical",
     },
     {
       name: "Publish physical location event batches (all Shopify connections)",
       jobs: locationPublishJob.value ? [locationPublishJob.value] : [],
       icon: locationOutline,
       setup: "",
+      group: "physical",
     },
     {
       name: "Process effective-dated inventory changes",
       jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
       icon: layersOutline,
       setup: "",
+      group: "shared",
     },
     {
       name: "Reset physical location QOH",
       jobs: physicalResetJob.value ? [physicalResetJob.value] : [],
       icon: locationOutline,
       setup: !physicalResetJob.value && syncContext.remoteId.value ? "physicalReset" : "",
+      group: "physical",
     },
     // Delivery. Batches are left at SmsgProduced on purpose and a scheduled sender moves them, so a
     // paused sender stalls the whole flow while every other row still reads healthy. OMS-wide.
@@ -2486,6 +2502,7 @@ const sharedJobs = computed(() => {
       jobs: inventoryAdjustmentSenderJobs.value,
       icon: sendOutline,
       setup: dedicatedSenderJob.value ? "" : "sender",
+      group: "shared",
     },
     // Manual tool, not a schedule: it only ever runs from Run now.
     {
@@ -2493,6 +2510,7 @@ const sharedJobs = computed(() => {
       jobs: discardEventsJob.value ? [discardEventsJob.value] : [],
       icon: trashOutline,
       setup: discardEventsJob.value ? "" : "discard",
+      group: "shared",
     },
     // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
     {
@@ -2500,17 +2518,32 @@ const sharedJobs = computed(() => {
       jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
+      group: "aggregateChannel",
     },
     {
       name: "Purge old physical location events (all Shopify connections)",
       jobs: purgeLocationDetailsJob.value ? [purgeLocationDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
+      group: "physical",
     },
   );
 
   return definitions.map(describeJob);
 });
+
+const sharedJobGroupOrder: Array<{ group: SharedJobLocationGroup; label: string }> = [
+  { group: "aggregateChannel", label: "Aggregate / channel" },
+  { group: "physical", label: "Physical" },
+  { group: "shared", label: "Shared processing and cleanup" },
+];
+
+const sharedJobGroups = computed(() => sharedJobGroupOrder
+  .map(({ group, label }) => ({
+    label,
+    jobs: sharedJobs.value.filter((job) => job.group === group),
+  }))
+  .filter((group) => group.jobs.length > 0));
 
 /**
  * Facility types read for display. The group's members carry a facilityTypeId but no description, and

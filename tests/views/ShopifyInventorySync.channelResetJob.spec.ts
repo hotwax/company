@@ -896,3 +896,64 @@ describe("ShopifyInventorySync - the inventory channel filter", () => {
     expect(labelFor(wrapper, "IC_1003")).toBe("Retail Aggregate (IC_1003)");
   });
 });
+
+describe("ShopifyInventorySync - shared jobs location groups", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedChannels.value = [];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store", inventoryFeedType: "manual" }];
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedLocationSummaries.value = [];
+  });
+
+  it("groups aggregate/channel and physical jobs while retaining shared jobs", async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const card = wrapper.findAll("ion-card").find((item) => item.text().includes("Shared sync jobs"))!;
+    const list = card.find("ion-list");
+    const groups = Object.fromEntries(
+      list.findAll("ion-item-group").map((group) => [
+        group.find("ion-item-divider").text().trim(),
+        group.findAll("ion-item").map((row) => row.text().trim()),
+      ]),
+    );
+
+    expect(list.findAll("ion-item-group")).toHaveLength(3);
+    expect(list.findAll("ion-item-divider")).toHaveLength(3);
+    expect(Object.keys(groups)).toEqual([
+      "Aggregate / channel",
+      "Physical",
+      "Shared processing and cleanup",
+    ]);
+    expect(groups["Aggregate / channel"]).toHaveLength(3);
+    expect(groups["Physical"]).toHaveLength(4);
+    expect(groups["Shared processing and cleanup"]).toHaveLength(3);
+    expect(groups["Aggregate / channel"].join(" ")).toContain("Publish and send aggregate event batches");
+    expect(groups["Aggregate / channel"].join(" ")).toContain("Purge old aggregate inventory events");
+    expect(groups["Physical"].join(" ")).toContain("Reset physical location QOH");
+    expect(groups["Physical"].join(" ")).toContain("Purge old physical location events");
+    expect(groups["Shared processing and cleanup"].join(" ")).toContain("Process effective-dated inventory changes");
+    expect(groups["Shared processing and cleanup"].join(" ")).toContain("Send produced inventory batches");
+
+    const renderedJobRows = Object.values(groups).flat();
+    expect(renderedJobRows).toHaveLength(10);
+    wrapper.unmount();
+  });
+});
