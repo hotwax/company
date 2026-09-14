@@ -5,7 +5,7 @@
  * are explicitly imported and registered via `registerDomains(...)` prior to exposing the harness.
  */
 import { commonDomains } from "@common/db/domains/commonDomains";
-import { registerDomains } from "@common/db/sync/registerDomains";
+import { registerDomains } from "@common/db/sync/syncRegistry";
 
 import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
 import { systemMessageDomain } from "./domains/systemMessageDomain";
