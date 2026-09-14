@@ -1716,7 +1716,7 @@ main {
 }
 
 .warning-card {
-  margin-top: var(--spacer-md);
+  margin-top: var(--spacer-base);
 }
 
 .warning-icon {
