@@ -238,8 +238,7 @@
             <ion-card v-for="channel in inventoryChannels" :key="channel.inventoryChannelId">
               <ion-item lines="full" button detail @click="openChannelEdit(channel)">
                 <ion-label class="ion-text-wrap">
-                  {{ channel.description || channel.facilityGroupName || channel.facilityGroupId }}
-                  <p>{{ channelSubtitle(channel) }}</p>
+                  {{ channel.facilityGroupName || channel.description || channel.facilityGroupId || channel.inventoryChannelId }}
                 </ion-label>
                 <ion-label slot="end" class="ion-text-end">
                   {{ channel.shopifyLocationId }}
@@ -247,20 +246,27 @@
                 </ion-label>
               </ion-item>
 
-              <!-- What feeds this channel, and how much of it has actually landed at Shopify lately. -->
-              <div class="channel-stats">
-                <div class="channel-stat">
-                  <ion-note>{{ translate("Feeding this channel") }}</ion-note>
-                  <!-- The composition carries its own counts, so a separate total would just repeat one
-                       of them on a single-type group. -->
-                  <span>{{ channelStats(channel).composition }}</span>
-                </div>
-                <div class="channel-stat">
-                  <ion-note>{{ translate("Delivered in 24h") }}</ion-note>
-                  <span>{{ channelStats(channel).delivered }}</span>
-                  <p>{{ translate("From cached events") }}</p>
-                </div>
-              </div>
+              <ion-list class="channel-stats" lines="full">
+                <ion-item
+                  button
+                  detail
+                  :disabled="!groupFacilitiesHydrated || Boolean(savingGroupMembershipFor)"
+                  @click="openChannelFacilities(channel)"
+                >
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Participating facilities") }}
+                    <p>{{ channelStats(channel).composition }}</p>
+                  </ion-label>
+                  <ion-spinner v-if="savingGroupMembershipFor === String(channel.facilityGroupId)" slot="end" name="crescent" />
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Shopify deliveries in last 24 hours") }}
+                    <p>{{ translate("From cached events") }}</p>
+                  </ion-label>
+                  <ion-note slot="end">{{ channelStats(channel).delivered }}</ion-note>
+                </ion-item>
+              </ion-list>
 
               <ion-list lines="full">
                 <ion-item
@@ -1692,10 +1698,11 @@ import ShopifyInventorySnapshot from "@/components/shopify/ShopifyInventorySnaps
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
+import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
 import { useCachedList } from "@/composables/useCachedList";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
-import { useFacilityTypes } from "@/composables/useFacilities";
+import { useFacilityGroupMutations, useFacilityTypes } from "@/composables/useFacilities";
 import { useStatuses } from "@/composables/useSeed";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import {
@@ -1931,7 +1938,7 @@ const { records: allInventoryDetails, hydrated: inventoryDetailsHydrated } = use
 const { records: cachedSystemMessages } = useCachedList<any>(systemMessageCache);
 // Class B, so a local read. The two scoped inventory-history mounts need a facilityId, and the ledger
 // carries a facility GROUP because the event is aggregate; these are the candidates to search.
-const { records: cachedGroupFacilities } = useCachedList<any>(groupFacilityCache);
+const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = useCachedList<any>(groupFacilityCache);
 /**
  * A membership crossing its `fromDate` or `thruDate` while the page is open has to re-trigger the
  * computeds that read it. `Date.now()` is a snapshot, so an expired facility stayed in the channel's
@@ -3210,6 +3217,48 @@ const { documents: inventoryEventDocuments, hydrated: documentsHydrated } = useI
 const documentsError = ref("");
 const savingDocumentKey = ref("");
 const documentsLoading = computed(() => !documentsHydrated.value);
+const facilityGroupMemberFeedNotice = computed(() => {
+  const title = translate("Shopify group-member updates");
+  if(!documentsHydrated.value || !dataFeedsHydrated.value) {
+    return {
+      title,
+      message: translate("Checking the group-member event feed configuration."),
+      color: "medium",
+    };
+  }
+
+  const document = inventoryEventDocuments.value.find((item) =>
+    item.dataDocumentId === "ShopifyFacilityGroupMemberEvent");
+  if(!document || document.missing) {
+    return {
+      title,
+      message: translate("The group-member data document is not loaded on this OMS, so membership changes cannot be captured for Shopify."),
+      color: "warning",
+    };
+  }
+
+  if(!document.channelAttached) {
+    return {
+      title,
+      message: translate("Facility group changes are not being captured for Shopify. Enable Shopify Facility Group Member Event under Event sources before expecting Shopify inventory to update."),
+      color: "warning",
+    };
+  }
+
+  if(!inventoryEventFeed.value || !inventoryEventFeedTypeSupported.value || !inventoryEventFeedPush.value) {
+    return {
+      title,
+      message: translate("Facility group changes are captured, but the channel event feed is not set to real-time push. Changes will not reach Shopify immediately."),
+      color: "warning",
+    };
+  }
+
+  return {
+    title,
+    message: translate("Facility group changes are captured and the channel event feed is set to real-time push. Restart every OMS node after changing this feed setting before relying on event capture."),
+    color: "success",
+  };
+});
 
 /** Re-snapshot the domain. The read path is the cache, so "retry" means refill it, not re-fetch here. */
 async function resyncEventDocuments() {
@@ -3998,25 +4047,65 @@ async function openChannelSetup() {
   if(data?.created) {await startSyncDomains(activeSyncDomains());}
 }
 
-/**
- * "Online Facility Group, HC Demo" - what the channel maps, in the names people use for those two
- * things rather than their ids.
- *
- * Both halves are already cached: facilityGroupName rides along on the channel row, and the shop's
- * name comes from the shop table this page is scoped to, so this is a local read and not a fetch per
- * row. Falls back to the id on either side rather than rendering a bare separator, which is what a
- * shop whose row has not landed yet would otherwise produce.
- */
-function channelSubtitle(channel: any): string {
-  const groupLabel = channel?.facilityGroupName || channel?.facilityGroupId || "";
-  const shop = shopsById.value[String(channel?.shopId ?? "")];
-  const shopLabel = shop?.name || shop?.myshopifyDomain || channel?.shopId || "";
-
-  return [groupLabel, shopLabel].filter(Boolean).join(", ");
-}
-
 function openChannelEdit(channel: any) {
   editingChannel.value = channel;
+}
+
+const savingGroupMembershipFor = ref("");
+
+async function openChannelFacilities(channel: any) {
+  const facilityGroupId = String(channel?.facilityGroupId ?? "");
+  if(!facilityGroupId) {return;}
+  if(!groupFacilitiesHydrated.value) {
+    commonUtil.showToast(translate("Facilities are still loading, please try again"));
+    return;
+  }
+  if(savingGroupMembershipFor.value) {return;}
+
+  const currentMembers = cachedGroupFacilities.value
+    .filter((member: any) => String(member.facilityGroupId) === facilityGroupId && isEffectiveNow(member, groupFacilitiesEffectiveNow.value))
+    .map((member: any) => ({ ...member, facilityName: member.facilityName || member.facilityId }));
+  const notice = facilityGroupMemberFeedNotice.value;
+  const modal = await modalController.create({
+    component: SelectFacilityModal,
+    componentProps: {
+      selectedFacilities: currentMembers,
+      bannerTitle: notice.title,
+      bannerMessage: notice.message,
+      bannerColor: notice.color,
+    },
+  });
+  await modal.present();
+
+  const { data }: any = await modal.onDidDismiss();
+  if(!data?.value) {return;}
+
+  const { facilitiesToAdd = [], facilitiesToRemove = [] } = data.value;
+  if(!facilitiesToAdd.length && !facilitiesToRemove.length) {return;}
+
+  savingGroupMembershipFor.value = facilityGroupId;
+  try {
+    const now = Date.now();
+    const lastSequence = currentMembers.reduce((last: number, member: any) =>
+      Math.max(last, Number(member.sequenceNum) || 0), 0);
+    const additions = facilitiesToAdd.map((facility: any, index: number) => ({
+      facilityId: String(facility.facilityId),
+      fromDate: now,
+      sequenceNum: lastSequence + index + 1,
+    }));
+    const expirations = facilitiesToRemove.map((facility: any) => ({
+      facilityId: String(facility.facilityId),
+      fromDate: facility.fromDate,
+      thruDate: now,
+    }));
+    const { failed } = await useFacilityGroupMutations(facilityGroupId).saveMembers(additions, expirations);
+    commonUtil.showToast(translate(failed ? "Failed to update some facilities" : "Facilities updated"));
+  } catch (error) {
+    logger.error("Failed to update Shopify inventory channel facilities", facilityGroupId, error);
+    commonUtil.showToast(translate("Failed to update some facilities"));
+  } finally {
+    savingGroupMembershipFor.value = "";
+  }
 }
 
 function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
@@ -4322,22 +4411,8 @@ function formatAge(timestamp: number): string {
 }
 
 .channel-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--spacer-sm);
-  padding: var(--spacer-sm) var(--spacer-base);
-  border-block-end: var(--border-medium);
-}
-
-.channel-stat {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.channel-stat p {
-  margin-block: var(--spacer-2xs) 0;
-  overflow-wrap: anywhere;
+  margin-block: 0;
+  padding-block: 0;
 }
 
 .event-feed-settings > ion-item {

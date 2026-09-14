@@ -10,6 +10,10 @@ const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
 const cachedLocationSummaries = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
+const cachedGroupFacilities = ref<any[]>([]);
+const cachedInventoryEventDocuments = ref<any[]>([]);
+const inventoryEventDocumentsHydrated = ref(true);
+const groupFacilitiesHydrated = ref(true);
 // The read layer's health, controllable: an empty section means "nothing there" only when these say so.
 const detailsHydrated = ref(true);
 const syncReady = ref(true);
@@ -23,6 +27,7 @@ const harness = vi.hoisted(() => ({
   ensureShopPhysicalInventoryResetJob: vi.fn(),
   ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
+  saveFacilityGroupMembers: vi.fn(),
   push: vi.fn(),
   replace: vi.fn(),
 }));
@@ -78,6 +83,14 @@ vi.mock("@/composables/useCacheSync", () => ({
   }),
 }));
 
+vi.mock("@/composables/useFacilities", () => ({
+  useFacilityTypes: () => ({ facilityTypes: ref([]) }),
+  useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
+  useFacilityGroupMutations: (facilityGroupId: string) => ({
+    saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
+  }),
+}));
+
 vi.mock("@/composables/useCachedList", () => ({
   useCachedList: (cache: any) => {
     const table = String(cache?.table || cache?.name || "");
@@ -95,6 +108,9 @@ vi.mock("@/composables/useCachedList", () => ({
     }
     if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
       return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
+    }
+    if(table.includes("groupFacilities") || table.includes("GroupFacility")) {
+      return { records: cachedGroupFacilities, rows: cachedGroupFacilities, hydrated: groupFacilitiesHydrated };
     }
     if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
@@ -173,8 +189,8 @@ vi.mock("@/composables/useShopify", () => ({
   setInventoryEventDocumentAttached: vi.fn(),
   setInventoryEventDocumentAttachedForFeed: vi.fn(),
   useInventoryEventDocuments: () => ({
-    documents: ref([]),
-    hydrated: ref(true),
+    documents: cachedInventoryEventDocuments,
+    hydrated: inventoryEventDocumentsHydrated,
     refresh: vi.fn(),
     saving: ref(false),
   }),
@@ -951,5 +967,144 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     expect(physicalJobs.join(" ")).not.toContain("Send produced inventory batches");
     expect([...channelJobs, ...physicalJobs]).toHaveLength(10);
     wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - channel facilities", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedChannels.value = [{
+      inventoryChannelId: "IC_1001",
+      shopId: "100002",
+      facilityGroupId: "FG_1",
+      facilityGroupName: "Retail Aggregate",
+      description: "Retail Aggregate aggregate inventory",
+      shopifyLocationId: "LOC_1",
+      fromDate: 1000,
+    }];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store" }];
+    cachedDataFeeds.value = [{ dataFeedId: "ShopifyInventoryEventFeed", dataFeedTypeEnumId: "push" }];
+    cachedGroupFacilities.value = [{
+      facilityGroupId: "FG_1",
+      facilityId: "STORE_1",
+      facilityName: "Store One",
+      facilityTypeId: "STORE",
+      fromDate: 1000,
+      sequenceNum: 7,
+    }];
+    cachedInventoryEventDocuments.value = [{
+      dataDocumentId: "ShopifyFacilityGroupMemberEvent",
+      channelAttached: true,
+      missing: false,
+    }];
+    inventoryEventDocumentsHydrated.value = true;
+    groupFacilitiesHydrated.value = true;
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedLocationSummaries.value = [];
+    harness.showToast.mockReset();
+    harness.saveFacilityGroupMembers.mockReset().mockResolvedValue({ failed: false });
+  });
+
+  const mountMonitor = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+    return wrapper;
+  };
+
+  it("shows the group once and saves facility changes from the member row", async () => {
+    const overlay = {
+      present: vi.fn().mockResolvedValue(undefined),
+      onDidDismiss: vi.fn().mockResolvedValue({ data: {
+        value: {
+          facilitiesToAdd: [{ facilityId: "STORE_2" }],
+          facilitiesToRemove: [{ facilityId: "STORE_1", fromDate: 1000 }],
+        },
+      } }),
+    };
+    const { modalController } = await import("@ionic/vue");
+    const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
+    const wrapper = await mountMonitor();
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Participating facilities"))!;
+
+    expect(channelCard.text()).toContain("Retail Aggregate");
+    expect(channelCard.text()).not.toContain("Retail Aggregate aggregate inventory");
+    expect(channelCard.text()).not.toContain("Retail Aggregate, Shopify Store");
+
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Participating facilities"))!;
+    await memberRow.trigger("click");
+    await flushPromises();
+
+    expect(createModal).toHaveBeenCalledOnce();
+    const modalOptions = createModal.mock.calls[0][0] as any;
+    expect(modalOptions.componentProps.selectedFacilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ facilityId: "STORE_1", facilityName: "Store One", fromDate: 1000 }),
+    ]));
+    expect(modalOptions.componentProps.bannerTitle).toBe("Shopify group-member updates");
+    expect(modalOptions.componentProps.bannerMessage).toContain("set to real-time push");
+    expect(modalOptions.componentProps.bannerColor).toBe("success");
+    expect(harness.saveFacilityGroupMembers).toHaveBeenCalledWith("FG_1", [
+      { facilityId: "STORE_2", fromDate: expect.any(Number), sequenceNum: 8 },
+    ], [
+      { facilityId: "STORE_1", fromDate: 1000, thruDate: expect.any(Number) },
+    ]);
+    expect(harness.showToast).toHaveBeenCalledWith("Facilities updated");
+
+    wrapper.unmount();
+    createModal.mockRestore();
+  });
+
+  it.each([
+    {
+      attached: false,
+      feedType: "push",
+      message: "Facility group changes are not being captured for Shopify",
+    },
+    {
+      attached: true,
+      feedType: "manual",
+      message: "not set to real-time push",
+    },
+  ])("explains when group-member updates are not real-time (attached=$attached, mode=$feedType)", async ({ attached, feedType, message }) => {
+    cachedInventoryEventDocuments.value = [{
+      dataDocumentId: "ShopifyFacilityGroupMemberEvent",
+      channelAttached: attached,
+      missing: false,
+    }];
+    cachedDataFeeds.value = [{ dataFeedId: "ShopifyInventoryEventFeed", dataFeedTypeEnumId: feedType }];
+    const overlay = {
+      present: vi.fn().mockResolvedValue(undefined),
+      onDidDismiss: vi.fn().mockResolvedValue({ data: undefined }),
+    };
+    const { modalController } = await import("@ionic/vue");
+    const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
+    const wrapper = await mountMonitor();
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Participating facilities"))!;
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Participating facilities"))!;
+
+    await memberRow.trigger("click");
+    await flushPromises();
+
+    expect((createModal.mock.calls[0][0] as any).componentProps.bannerMessage).toContain(message);
+    expect((createModal.mock.calls[0][0] as any).componentProps.bannerColor).toBe("warning");
+    expect(harness.saveFacilityGroupMembers).not.toHaveBeenCalled();
+
+    wrapper.unmount();
+    createModal.mockRestore();
   });
 });
