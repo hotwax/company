@@ -1,4 +1,4 @@
-import { createAppDbSync, createSyncService } from "@common/db";
+import { createSyncService, setupAppDbSync } from "@common/db";
 import { companyDb } from "@/db/companyDb";
 import appSyncUrl from "@/workers/appSync.worker.ts?worker&url";
 
@@ -10,7 +10,7 @@ export const {
   resyncDomain,
   resyncReferenceData,
   bootstrapState,
-} = createAppDbSync({
+} = setupAppDbSync({
   db: companyDb,
   getWorkerUrl: () => new URL(appSyncUrl, import.meta.url),
   createSyncService,
