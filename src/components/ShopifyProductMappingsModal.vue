@@ -6,18 +6,19 @@
     </ion-toolbar></ion-header>
     <ion-content>
       <ion-list>
-        <ion-item><ion-label><h2>{{ product?.title }}</h2><p>{{ translate('Current mappings in HotWax') }}</p></ion-label></ion-item>
+        <ion-item><ion-label>{{ product?.title }}<p>{{ translate('Current mappings in HotWax') }}</p></ion-label></ion-item>
         <ion-item v-if="loading"><ion-spinner /><ion-label>{{ translate('Loading') }}</ion-label></ion-item>
         <ion-item v-else-if="error"><ion-label class="ion-text-wrap" color="danger">{{ error }}</ion-label><ion-button slot="end" @click="load">{{ translate('Check again') }}</ion-button></ion-item>
         <template v-else>
           <ion-item><ion-label>{{ translate('Mapped variants') }}</ion-label><ion-note slot="end">{{ mappedCount }} / {{ rows.length }}</ion-note></ion-item>
           <ion-item v-for="row in rows" :key="row.id">
             <ion-label class="ion-text-wrap">
-              <h2>{{ row.title }} · {{ row.sku || translate('No SKU') }}</h2>
+              {{ row.title }}
+              <p>{{ row.sku || translate('No SKU') }}</p>
               <p>{{ translate('Shopify variant ID') }}: {{ row.id }}</p>
               <p>{{ translate('Shopify inventory item ID') }}: {{ row.inventoryItemId }}</p>
               <p>{{ row.tracked ? translate('Inventory tracked') : translate('Inventory not tracked') }}</p>
-              <p v-for="mapping in row.mappings" :key="mapping.productId">{{ translate('OMS product ID') }}: {{ mapping.productId }} · {{ mapping.internalName }}</p>
+              <p v-for="mapping in row.mappings" :key="mapping.productId">{{ translate('OMS product ID') }}: {{ mapping.productId }}, {{ mapping.internalName }}</p>
               <template v-if="row.mappings.length === 1">
                 <ion-button fill="clear" :disabled="!!indexingProductId" @click="refreshIndex(row.mappings[0].productId)">
                   <ion-spinner v-if="indexingProductId === row.mappings[0].productId" name="crescent" />

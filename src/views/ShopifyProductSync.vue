@@ -249,7 +249,7 @@
             <ion-list lines="full">
               <ion-item lines="none">
                 <ion-label>
-                  <h2>{{ translate("Re-sync entire catalog") }}</h2>
+                  {{ translate("Re-sync entire catalog") }}
                   <p>{{ translate("This will import every product currently in Shopify again.") }}</p>
                   <p>{{ translate("This process can take time because Shopify has to export the catalog before HotWax imports it. This will not delete products that were deleted in Shopify.") }}</p>
                 </ion-label>
@@ -300,7 +300,7 @@
             <ion-list lines="full">
               <ion-item lines="none">
                 <ion-label>
-                  <h2>{{ translate("Replay sync from a certain time") }}</h2>
+                  {{ translate("Replay sync from a certain time") }}
                   <p>{{ translate("Select a date to rewind the product sync to. All updates from that date onwards will be re-imported.") }}</p>
                 </ion-label>
               </ion-item>
@@ -513,7 +513,7 @@
                     <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
                   </ion-thumbnail>
                   <ion-label>
-                    <h2>{{ product.title }}</h2>
+                    {{ product.title }}
                     <p>{{ product.handle }}</p>
                     <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
                     <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>

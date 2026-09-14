@@ -16,7 +16,7 @@
         <ion-card v-for="(facility, index) in sortedFacilities" :key="index">
           <ion-item lines="full">
             <ion-label>
-              <h1>{{ facility.facilityName }}</h1>
+              {{ facility.facilityName }}
               <p>{{ facility.facilityId }}</p>
             </ion-label>
             <ion-button fill="clear" size="default" color="medium" @click="openVirtualFacilityActionsPopover($event, facility)">

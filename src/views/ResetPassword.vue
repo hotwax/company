@@ -8,7 +8,7 @@
           <section v-if="!isLinkValid">
             <ion-item lines="none">
               <ion-icon slot="start" color="warning" :icon="warningOutline" />
-              <h4>{{ translate('Invalid reset password link') }}</h4>
+              <ion-label>{{ translate('Invalid reset password link') }}</ion-label>
             </ion-item>
             <p>{{ translate("This password reset link is invalid or incomplete. Please request a new password reset email.") }}</p>
           </section>

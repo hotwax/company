@@ -18,7 +18,7 @@
           {{ stepOrdinal(step) }}
         </ion-note>
         <ion-label>
-          <h3>{{ translate(step.label) }}</h3>
+          {{ translate(step.label) }}
           <p>{{ translate(statusLabel(stepStatuses[step.id])) }}</p>
         </ion-label>
         <ion-icon
