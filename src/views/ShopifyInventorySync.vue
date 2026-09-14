@@ -19,7 +19,7 @@
           <ion-buttons slot="start">
             <ion-back-button :default-href="`/shopify-connection-details/${props.id}`" />
           </ion-buttons>
-          <!-- No Event history button: every row of the queue card below opens the same view, in the
+          <!-- No Event history button: every row of the queue cards below opens the same view, in the
                context that says which slice of it you are about to read. -->
           <ion-title>Inventory sync</ion-title>
         </ion-toolbar>
@@ -28,130 +28,74 @@
       <ion-content class="ion-padding-horizontal">
         <!-- A failed cache sync must never look like a healthy empty queue: without this the
              counts below render 0 / "None waiting" after the OMS rejects the query. -->
+        <div class="section-header">
+          <ion-item lines="none">
+            <ion-label class="ion-text-wrap">
+              <h2>{{ translate("Manage scheduling of inventory sync with Shopify") }}</h2>
+            </ion-label>
+            <ion-badge slot="end" :color="scheduleHealthColor">
+              {{ scheduleHealth }}
+            </ion-badge>
+          </ion-item>
+        </div>
+        <ion-item v-if="jobSetupError" role="alert">
+          <ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label>
+        </ion-item>
+
         <section class="summary-grid">
-          <div class="queue-column">
-            <ion-card>
-              <ion-card-header>
-                <ion-card-title>{{ translate("Aggregate event queue") }}</ion-card-title>
-                <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify aggregate locations") }}</ion-card-subtitle>
-              </ion-card-header>
-              <ion-list lines="full">
-                <ion-item button detail @click="openHistory()">
-                  <ion-label>
-                    {{ translate("Aggregate events pending batching") }}
-                    <p>{{ translate("Calculated inventory adjustments without a System Message") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" color="warning">
-                    {{ pendingEventCount }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item button detail @click="openHistory('batches')">
-                  <ion-label>
-                    {{ translate("Batches pending delivery") }}
-                    <p>{{ translate("System Messages waiting to send or retry") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" color="primary">
-                    {{ pendingBatchCount }}
-                  </ion-badge>
-                </ion-item>
-                <!-- Reads as queue state ("when does what is waiting go out?"), not as a way into the
-                     publisher's config - that lives once, in Inventory sync jobs below. -->
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Next batch send") }}
-                    <p>{{ translate("Send Shopify aggregate inventory adjustments") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">
-                    {{ nextBatchRun }}
-                    <p>{{ translate("Publisher job schedule") }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none" button detail @click="openHistory()">
-                  <ion-label>
-                    {{ translate("Oldest unbatched event") }}
-                    <p>{{ translate("First calculated adjustment still waiting for a batch") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">
-                    {{ oldestUnbatchedEvent }}
-                  </ion-label>
-                </ion-item>
-              </ion-list>
-            </ion-card>
-
-            <ion-card>
-              <ion-card-header>
-                <ion-card-title>{{ translate("Location event queue") }}</ion-card-title>
-                <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify physical locations") }}</ion-card-subtitle>
-                <ion-badge v-if="(locationDeliveryErrorCount ?? 0) > 0" color="danger">
-                  {{ locationDeliveryErrorCount }} {{ translate("errors") }}
-                </ion-badge>
-              </ion-card-header>
-              <ion-list lines="full">
-                <ion-item button detail @click="openLocationHistory('unassigned')">
-                  <ion-label>
-                    {{ translate("Location events pending batching") }}
-                    <p>{{ translate("Location adjustments without a System Message") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" :color="unassignedNonZeroCount ? 'warning' : 'medium'">
-                    {{ unassignedNonZeroCount }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item button detail @click="openLocationHistory('batches')">
-                  <ion-label>
-                    {{ translate("Batches pending delivery") }}
-                    <p>{{ translate("System Messages waiting to send or retry") }}</p>
-                  </ion-label>
-                  <ion-badge slot="end" :color="pendingLocationBatchCount ? 'primary' : 'medium'">
-                    {{ pendingLocationBatchCount }}
-                  </ion-badge>
-                </ion-item>
-                <ion-item>
-                  <ion-label>
-                    {{ translate("Next batch send") }}
-                    <p>publish_PendingShopifyLocationInventoryAdjustments</p>
-                  </ion-label>
-                  <ion-label slot="end">
-                    {{ nextLocationBatchRun }}
-                    <p>{{ translate("Publisher job schedule") }}</p>
-                  </ion-label>
-                </ion-item>
-                <ion-item lines="none" button detail @click="openLocationHistory('unassigned')">
-                  <ion-label>
-                    {{ translate("Oldest unbatched event") }}
-                    <p>{{ translate("First location adjustment still waiting for a batch") }}</p>
-                  </ion-label>
-                  <ion-label slot="end">
-                    {{ oldestLocationUnbatchedEvent }}
-                    <p v-if="oldestUnassignedCreatedAt !== undefined">{{ oldestUnassignedAgeLabel }}</p>
-                  </ion-label>
-                </ion-item>
-              </ion-list>
-            </ion-card>
-          </div>
-
-          <!-- Sits beside the queue card rather than in a section of its own further down: the two
-               answer the paired questions a monitor is opened for (what is waiting, and what will
-               move it), and after the duplicate schedule card was removed each was left spanning a
-               desktop width to hold four rows. `auto-fit` still stacks them on narrow screens. -->
           <ion-card>
             <ion-card-header>
-              <ion-card-title>{{ translate("Shared sync jobs") }}</ion-card-title>
-              <ion-card-subtitle>{{ translate("One schedule each, serving every channel on this connection") }}</ion-card-subtitle>
-              <!-- The rollup badge that used to head its own card. Every job's status is listed
-                   below it, so this is the summary of the rows it sits on rather than a second
-                   place to read the same schedules. -->
-              <ion-badge :color="scheduleHealthColor">
-                {{ scheduleHealth }}
-              </ion-badge>
+              <ion-card-title>{{ translate("Channel inventory events") }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify aggregate locations") }}</ion-card-subtitle>
             </ion-card-header>
             <ion-list lines="full">
-              <ion-item v-if="jobSetupError" role="alert"><ion-label class="ion-text-wrap">{{ jobSetupError }}</ion-label></ion-item>
-              <ion-item-group v-for="group in sharedJobGroups" :key="group.label">
+              <ion-item button detail @click="openHistory()">
+                <ion-label>
+                  {{ translate("Aggregate events pending batching") }}
+                  <p>{{ translate("Calculated inventory adjustments without a System Message") }}</p>
+                </ion-label>
+                <ion-badge slot="end" color="warning">
+                  {{ pendingEventCount }}
+                </ion-badge>
+              </ion-item>
+              <ion-item button detail @click="openHistory('batches')">
+                <ion-label>
+                  {{ translate("Batches pending delivery") }}
+                  <p>{{ translate("System Messages waiting to send or retry") }}</p>
+                </ion-label>
+                <ion-badge slot="end" color="primary">
+                  {{ pendingBatchCount }}
+                </ion-badge>
+              </ion-item>
+              <!-- Reads as queue state ("when does what is waiting go out?"), not as a way into the
+                   publisher's config - that lives once, in Inventory sync jobs below. -->
+              <ion-item>
+                <ion-label>
+                  {{ translate("Next batch send") }}
+                  <p>{{ translate("Send Shopify aggregate inventory adjustments") }}</p>
+                </ion-label>
+                <ion-label slot="end">
+                  {{ nextBatchRun }}
+                  <p>{{ translate("Publisher job schedule") }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none" button detail @click="openHistory()">
+                <ion-label>
+                  {{ translate("Oldest unbatched event") }}
+                  <p>{{ translate("First calculated adjustment still waiting for a batch") }}</p>
+                </ion-label>
+                <ion-label slot="end">
+                  {{ oldestUnbatchedEvent }}
+                </ion-label>
+              </ion-item>
+            </ion-list>
+            <ion-list lines="full">
+              <ion-item-group>
                 <ion-item-divider color="light">
-                  <ion-label>{{ translate(group.label) }}</ion-label>
+                  <ion-label>{{ translate("Inventory sync jobs") }}</ion-label>
                 </ion-item-divider>
                 <ion-item
-                  v-for="job in group.jobs"
+                  v-for="job in channelSharedJobs"
                   :key="`${job.name}-${job.targetChannelId ?? ''}`"
                   :button="!!job.job"
                   :detail="!!job.job"
@@ -163,9 +107,6 @@
                     <p>{{ job.lastRun }}</p>
                     <p>{{ job.nextRun }}</p>
                   </ion-label>
-                  <!-- Creates the row's missing job(s) PAUSED; activating is a second, deliberate step
-                       in the row's own modal. Also shown beside a Paused/Active badge when a newer
-                       channel still lacks its per-channel clone. -->
                   <ion-button
                     v-if="job.setup"
                     slot="end"
@@ -175,13 +116,92 @@
                     @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
                   >
                     <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
-                    <template v-else>
-                      {{ translate("Set up") }}
-                    </template>
+                    <template v-else>{{ translate("Set up") }}</template>
                   </ion-button>
-                  <ion-badge slot="end" :color="job.badgeColor">
-                    {{ job.status }}
-                  </ion-badge>
+                  <ion-badge slot="end" :color="job.badgeColor">{{ job.status }}</ion-badge>
+                </ion-item>
+              </ion-item-group>
+            </ion-list>
+          </ion-card>
+
+          <ion-card>
+            <ion-card-header>
+              <ion-card-title>{{ translate("Physical inventory events") }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Inventory changes waiting to reach Shopify physical locations") }}</ion-card-subtitle>
+              <ion-badge v-if="(locationDeliveryErrorCount ?? 0) > 0" color="danger">
+                {{ locationDeliveryErrorCount }} {{ translate("errors") }}
+              </ion-badge>
+            </ion-card-header>
+            <ion-list lines="full">
+              <ion-item button detail @click="openLocationHistory('unassigned')">
+                <ion-label>
+                  {{ translate("Location events pending batching") }}
+                  <p>{{ translate("Location adjustments without a System Message") }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="unassignedNonZeroCount ? 'warning' : 'medium'">
+                  {{ unassignedNonZeroCount }}
+                </ion-badge>
+              </ion-item>
+              <ion-item button detail @click="openLocationHistory('batches')">
+                <ion-label>
+                  {{ translate("Batches pending delivery") }}
+                  <p>{{ translate("System Messages waiting to send or retry") }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="pendingLocationBatchCount ? 'primary' : 'medium'">
+                  {{ pendingLocationBatchCount }}
+                </ion-badge>
+              </ion-item>
+              <ion-item>
+                <ion-label>
+                  {{ translate("Next batch send") }}
+                  <p>publish_PendingShopifyLocationInventoryAdjustments</p>
+                </ion-label>
+                <ion-label slot="end">
+                  {{ nextLocationBatchRun }}
+                  <p>{{ translate("Publisher job schedule") }}</p>
+                </ion-label>
+              </ion-item>
+              <ion-item lines="none" button detail @click="openLocationHistory('unassigned')">
+                <ion-label>
+                  {{ translate("Oldest unbatched event") }}
+                  <p>{{ translate("First location adjustment still waiting for a batch") }}</p>
+                </ion-label>
+                <ion-label slot="end">
+                  {{ oldestLocationUnbatchedEvent }}
+                  <p v-if="oldestUnassignedCreatedAt !== undefined">{{ oldestUnassignedAgeLabel }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+            <ion-list lines="full">
+              <ion-item-group>
+                <ion-item-divider color="light">
+                  <ion-label>{{ translate("Inventory sync jobs") }}</ion-label>
+                </ion-item-divider>
+                <ion-item
+                  v-for="job in physicalSharedJobs"
+                  :key="`${job.name}-${job.targetChannelId ?? ''}`"
+                  :button="!!job.job"
+                  :detail="!!job.job"
+                  @click="openServiceJob(job.job, job.name)"
+                >
+                  <ion-icon slot="start" :icon="job.icon" />
+                  <ion-label>
+                    {{ job.name }}
+                    <p>{{ job.lastRun }}</p>
+                    <p>{{ job.nextRun }}</p>
+                  </ion-label>
+                  <ion-button
+                    v-if="job.setup"
+                    slot="end"
+                    fill="outline"
+                    size="small"
+                    :disabled="!!provisioningJobKind"
+                    @click.stop="setUpSyncJob(job.setup, job.targetChannelId)"
+                  >
+                    <ion-spinner v-if="provisioningJobKind === (job.targetChannelId ? `${job.setup}-${job.targetChannelId}` : job.setup)" name="crescent" />
+                    <template v-else>{{ translate("Set up") }}</template>
+                  </ion-button>
+                  <ion-badge slot="end" :color="job.badgeColor">{{ job.status }}</ion-badge>
                 </ion-item>
               </ion-item-group>
             </ion-list>
@@ -2291,7 +2311,7 @@ function nextExecutionFor(jobs: any[]): any | null {
 }
 
 type JobSetupKind = "publisher" | "aggregateReset" | "physicalReset" | "physicalAtpReset" | "discard" | "sender";
-type SharedJobLocationGroup = "aggregateChannel" | "physical" | "shared";
+type SharedJobLocationGroup = "channel" | "physical";
 
 /**
  * The channels a per-channel job list does NOT cover yet. Setup must know WHICH channels are
@@ -2455,14 +2475,14 @@ const sharedJobs = computed(() => {
       jobs: pendingPublisherJobs.value,
       icon: cloudUploadOutline,
       setup: "",
-      group: "aggregateChannel",
+      group: "channel",
     });
     definitions.push({
       name: "Reset aggregate ATP inventory",
       jobs: aggregateResetJobs.value,
       icon: refreshOutline,
       setup: "",
-      group: "aggregateChannel",
+      group: "channel",
     });
   }
 
@@ -2486,7 +2506,7 @@ const sharedJobs = computed(() => {
       jobs: effectiveDateJob.value ? [effectiveDateJob.value] : [],
       icon: layersOutline,
       setup: "",
-      group: "shared",
+      group: "channel",
     },
     {
       name: "Reset physical location QOH",
@@ -2502,7 +2522,7 @@ const sharedJobs = computed(() => {
       jobs: inventoryAdjustmentSenderJobs.value,
       icon: sendOutline,
       setup: dedicatedSenderJob.value ? "" : "sender",
-      group: "shared",
+      group: "channel",
     },
     // Manual tool, not a schedule: it only ever runs from Run now.
     {
@@ -2510,7 +2530,7 @@ const sharedJobs = computed(() => {
       jobs: discardEventsJob.value ? [discardEventsJob.value] : [],
       icon: trashOutline,
       setup: discardEventsJob.value ? "" : "discard",
-      group: "shared",
+      group: "channel",
     },
     // Retention. Connector-seeded, so its absence is a deploy gap rather than something to create.
     {
@@ -2518,7 +2538,7 @@ const sharedJobs = computed(() => {
       jobs: purgeDetailsJob.value ? [purgeDetailsJob.value] : [],
       icon: trashBinOutline,
       setup: "",
-      group: "aggregateChannel",
+      group: "channel",
     },
     {
       name: "Purge old physical location events (all Shopify connections)",
@@ -2532,18 +2552,8 @@ const sharedJobs = computed(() => {
   return definitions.map(describeJob);
 });
 
-const sharedJobGroupOrder: Array<{ group: SharedJobLocationGroup; label: string }> = [
-  { group: "aggregateChannel", label: "Aggregate / channel" },
-  { group: "physical", label: "Physical" },
-  { group: "shared", label: "Shared processing and cleanup" },
-];
-
-const sharedJobGroups = computed(() => sharedJobGroupOrder
-  .map(({ group, label }) => ({
-    label,
-    jobs: sharedJobs.value.filter((job) => job.group === group),
-  }))
-  .filter((group) => group.jobs.length > 0));
+const channelSharedJobs = computed(() => sharedJobs.value.filter((job) => job.group === "channel"));
+const physicalSharedJobs = computed(() => sharedJobs.value.filter((job) => job.group === "physical"));
 
 /**
  * Facility types read for display. The group's members carry a facilityTypeId but no description, and
@@ -4282,15 +4292,6 @@ function formatAge(timestamp: number): string {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
   align-items: flex-start;
-}
-
-.queue-column {
-  display: flex;
-  flex-direction: column;
-}
-
-.queue-column ion-card {
-  margin: 10px;
 }
 
 /* Location inventory section (ui.md §2) — kpi-grid copied from ShopifyInventoryJobRuns.vue. */
