@@ -191,10 +191,11 @@ async function editItem(id: string) {
 }
 
 async function saveMapping(facilityId: string) {
-  const shopifyLocationId = localMappings.value[facilityId];
+  const shopifyLocationId = (localMappings.value[facilityId] || "").trim();
+  const oldShopifyLocationId = getShopifyLocationId(facilityId) || "";
 
-  if (!shopifyLocationId) {
-    commonUtil.showToast(translate("Please provide a Shopify location ID"));
+  if (!shopifyLocationId && !oldShopifyLocationId) {
+    editingItemId.value = "";
     return;
   }
 
@@ -225,9 +226,10 @@ async function saveAllDirtyMappings() {
 
   try {
     for (const id of dirtyIds) {
+      const shopifyLocationId = (localMappings.value[id] || "").trim();
       await shopMutations.saveLocation({
         facilityId: id,
-        shopifyLocationId: localMappings.value[id]
+        shopifyLocationId
       }, { refresh: false });
     }
     await shopMutations.refreshLocations();
