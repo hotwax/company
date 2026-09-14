@@ -33,7 +33,7 @@
           <ion-item lines="full">
             <ion-label class="ion-text-wrap">
               <p>{{ group.facilityGroupId }}</p>
-              <h1>{{ group.facilityGroupName }}</h1>
+              {{ group.facilityGroupName }}
               <p>{{ group.description }}</p>
             </ion-label>
           </ion-item>

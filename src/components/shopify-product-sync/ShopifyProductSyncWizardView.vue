@@ -459,7 +459,7 @@
 
         <ion-item lines="none" v-else>
           <ion-label>
-            <h1>{{ preflightTitle }}</h1>
+            {{ preflightTitle }}
             <p>{{ preflightSubtitle }}</p>
           </ion-label>
         </ion-item>

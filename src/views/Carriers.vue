@@ -35,7 +35,7 @@
       <template v-else>
         <ion-item v-if="hasCatalogError" color="danger">
           <ion-label class="ion-text-wrap">
-            <h2>{{ translate("Unable to load the complete carrier catalog.") }}</h2>
+            {{ translate("Unable to load the complete carrier catalog.") }}
             <p v-for="message in catalogErrorMessages" :key="message">
               {{ translateReferenceDataError(message) }}
             </p>

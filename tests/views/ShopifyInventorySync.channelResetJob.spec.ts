@@ -282,7 +282,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import('@/views/ShopifyInventorySync.vue')).default;
     const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
     await flushPromises();
-    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old aggregate inventory events (all Shopify connections)'))!;
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old channel events (all shops)'))!;
     expect(row.text()).toContain('Runs every hour');
     expect(row.text()).not.toContain('No active schedule');
     wrapper.unmount();
@@ -296,7 +296,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import('@/views/ShopifyInventorySync.vue')).default;
     const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
     await flushPromises();
-    for (const [label, jobName] of [['Purge old aggregate inventory events', 'AGGREGATE_RETENTION'], ['Purge old physical location events', 'PHYSICAL_RETENTION']]) {
+    for (const [label, jobName] of [['Purge old channel events', 'AGGREGATE_RETENTION'], ['Purge old physical events', 'PHYSICAL_RETENTION']]) {
       const row = wrapper.findAll('ion-item').find(item => item.text().includes(label))!;
       await row.trigger('click');
       expect(wrapper.findComponent({ name: 'ServiceJobDetailsModal' }).props('jobName')).toBe(jobName);
@@ -346,7 +346,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     // Each channel owns a card carrying its own two schedules, so a row no longer needs the channel
     // name in brackets to be distinguishable -- the card it sits on supplies that.
     const channelCards = wrapper.findAll("ion-card")
-      .filter((card) => card.text().includes("Reset aggregate ATP"));
+      .filter((card) => card.text().includes("Reset channel ATP"));
     expect(channelCards.length).toBe(2);
 
     expect(channelCards[0].text()).toContain("Retail Channel");
@@ -359,7 +359,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     // The publisher is grouped with it, on the same card.
     channelCards.forEach((card) => {
-      expect(card.text()).toContain("Publish and send event batches");
+      expect(card.text()).toContain("Send channel batches");
     });
   });
 
@@ -400,7 +400,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     // IC_1001 has a job, so its row is the way in.
     const resetRow = wrapper.findAll("ion-item")
-      .find((item) => item.text().includes("Reset aggregate ATP") && item.text().includes("Active"));
+      .find((item) => item.text().includes("Reset channel ATP") && item.text().includes("Active"));
     expect(resetRow).toBeDefined();
 
     await resetRow!.trigger("click");
@@ -408,7 +408,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP");
+    expect(modal.text()).toContain("Reset channel ATP");
     expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
   });
@@ -418,7 +418,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import("@/views/ShopifyInventorySync.vue")).default;
     const wrapper = mount(View, { props: { id: "100002" }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } } });
     await flushPromises();
-    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical location ATP (all mapped locations on this shop)"));
+    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical ATP (this shop)"));
     expect(row).toBeDefined();
     await row!.find("ion-button").trigger("click"); await flushPromises();
     expect(harness.ensureShopPhysicalAtpResetJob).toHaveBeenCalledWith("100002");
@@ -449,13 +449,13 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     // IC_1002 has no reset job, so its row offers Set up rather than a click-through. That row is on
     // the Wholesale Channel's own card, which is how the channel is identified without a name suffix.
     const wholesaleCard = wrapper.findAll("ion-card")
-      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset aggregate ATP"));
+      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset channel ATP"));
     expect(wholesaleCard).toBeDefined();
 
     // Scope to the reset ROW, not the card: cachedJobs is empty here, so the publisher row offers a
     // Set up of its own and the card's first one is not the one under test.
     const resetRow = wholesaleCard!.findAll("ion-item")
-      .find((item) => item.text().includes("Reset aggregate ATP"));
+      .find((item) => item.text().includes("Reset channel ATP"));
     expect(resetRow).toBeDefined();
 
     const setUpButton = resetRow!.findAll("ion-button").find((b) => b.text().includes("Set up"));
@@ -466,14 +466,14 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     expect(harness.ensureChannelResetJob).toHaveBeenCalledWith({
       inventoryChannelId: "IC_1002",
-      description: "Full aggregate ATP reset for Wholesale Channel",
+      description: "Full channel ATP reset for Wholesale Channel",
     });
 
     // Creating from a single channel's row lands in that job's modal, which is the one thing the
     // removed button did that Set up alone did not.
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP - Wholesale Channel");
+    expect(modal.text()).toContain("Reset channel ATP - Wholesale Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1002");
   });
 }, 20000);
@@ -953,18 +953,18 @@ describe("ShopifyInventorySync - shared jobs location groups", () => {
     expect(wrapper.text()).not.toContain("Manage scheduling of inventory sync with Shopify");
     expect(channelCard.findAll("ion-item-group")).toHaveLength(1);
     expect(physicalCard.findAll("ion-item-group")).toHaveLength(1);
-    expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Inventory sync jobs");
-    expect(physicalGroup.find("ion-item-divider").text().trim()).toBe("Inventory sync jobs");
+    expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
+    expect(physicalGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
     expect(channelJobs).toHaveLength(6);
     expect(physicalJobs).toHaveLength(4);
-    expect(channelJobs.join(" ")).toContain("Publish and send aggregate event batches");
-    expect(channelJobs.join(" ")).toContain("Purge old aggregate inventory events");
-    expect(channelJobs.join(" ")).toContain("Process effective-dated inventory changes");
-    expect(channelJobs.join(" ")).toContain("Send produced inventory batches");
-    expect(physicalJobs.join(" ")).toContain("Reset physical location QOH");
-    expect(physicalJobs.join(" ")).toContain("Purge old physical location events");
-    expect(channelJobs.join(" ")).not.toContain("Reset physical location QOH");
-    expect(physicalJobs.join(" ")).not.toContain("Send produced inventory batches");
+    expect(channelJobs.join(" ")).toContain("Publish channel batches");
+    expect(channelJobs.join(" ")).toContain("Purge old channel events");
+    expect(channelJobs.join(" ")).toContain("Apply effective-dated inventory changes");
+    expect(channelJobs.join(" ")).toContain("Send channel batches");
+    expect(physicalJobs.join(" ")).toContain("Reset physical on-hand");
+    expect(physicalJobs.join(" ")).toContain("Purge old physical events");
+    expect(channelJobs.join(" ")).not.toContain("Reset physical on-hand");
+    expect(physicalJobs.join(" ")).not.toContain("Send channel batches");
     expect([...channelJobs, ...physicalJobs]).toHaveLength(10);
     wrapper.unmount();
   });
@@ -1040,13 +1040,13 @@ describe("ShopifyInventorySync - channel facilities", () => {
     const { modalController } = await import("@ionic/vue");
     const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
     const wrapper = await mountMonitor();
-    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Participating facilities"))!;
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Facilities"))!;
 
     expect(channelCard.text()).toContain("Retail Aggregate");
     expect(channelCard.text()).not.toContain("Retail Aggregate aggregate inventory");
     expect(channelCard.text()).not.toContain("Retail Aggregate, Shopify Store");
 
-    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Participating facilities"))!;
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Facilities"))!;
     await memberRow.trigger("click");
     await flushPromises();
 
@@ -1094,8 +1094,8 @@ describe("ShopifyInventorySync - channel facilities", () => {
     const { modalController } = await import("@ionic/vue");
     const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
     const wrapper = await mountMonitor();
-    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Participating facilities"))!;
-    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Participating facilities"))!;
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Facilities"))!;
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Facilities"))!;
 
     await memberRow.trigger("click");
     await flushPromises();
