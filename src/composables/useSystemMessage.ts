@@ -163,7 +163,7 @@ export function useSystemMessage() {
     try {
       const cached = (await companyDb.entity("systemMessageErrors").all())
         .filter((row: any) => row.systemMessageId === systemMessageId);
-      if (cached.length) return cached.map((row: any) => row.raw);
+      if (cached.length) return cached;
     } catch {
       // cache unavailable — fall through to the network
     }
@@ -195,7 +195,7 @@ export function useSystemMessage() {
     try {
       const cached = (await companyDb.entity("systemMessages").all())
         .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
-      if (cached) return cached.raw ?? cached;
+      if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
     }
@@ -289,8 +289,8 @@ export function useSystemMessage() {
       const cached = (await companyDb.entity("shopifyBulkOperations").all())
         .find((row: any) => row.id === bulkOperationId);
       if (cached && isTerminalBulkOperation(cached.status as string)) {
-        state.currentShopifyBulkOperation = cached.raw;
-        return cached.raw;
+        state.currentShopifyBulkOperation = cached;
+        return cached;
       }
     } catch {
       // cache miss or read failure — fall through to the live call

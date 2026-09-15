@@ -203,7 +203,7 @@ export function useProductStoreDetail(productStoreId: string) {
 
   /** Cached row first so the page is never blank, then the authoritative detail record on top. */
   const current = computed<Record<string, any>>(() => ({
-    ...((cachedRecord.value as any)?.raw ?? cachedRecord.value ?? {}),
+    ...(cachedRecord.value ?? {}),
     ...detail.value,
   }));
 

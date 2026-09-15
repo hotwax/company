@@ -17,7 +17,7 @@ describe("carrier cache projections", () => {
       partyId: "FEDEX",
       groupName: "FedEx",
       roleTypeId: "CARRIER",
-      cachedAt: CACHED_AT,
+      syncedAt: CACHED_AT,
     });
     expect(companyDb.entity("carriers").table).toBe("carriers");
   });

@@ -19,9 +19,9 @@ import { useTypedEnums } from "./useSeed";
 export const APP_ENVIRONMENT_ENUM_TYPE_ID = "AppEnvironment";
 
 /**
- * The shape a version pin renders as. These are the RAW server fields from `admin/appVersion`
- * (`useDb` hands back `row.raw`, not the projected row), so the synthetic `appVersionKey`
- * is deliberately absent — the screen keys rows by `appId` + `environmentTypeId`.
+ * The shape a version pin renders as — the projected fields of the `appVersions` entity. There is
+ * no synthetic `appVersionKey`: the screen keys rows by `appId` + `environmentTypeId`, which is
+ * also the entity's real compound primary key.
  */
 export interface AppVersionRecord {
   appId: string;

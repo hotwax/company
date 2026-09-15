@@ -69,7 +69,7 @@ import { ref, computed, onMounted } from "vue";
 const props = defineProps(["mappingId", "mapping", "type", "facilityId"]);
 const mutations = useFacilityMutations(props.facilityId);
 const { record } = useFacilityRecord(props.facilityId);
-const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const currentFacility = computed<any>(() => record.value ?? {});
 const { byId: externalMappingTypes } = useFacilityIdentificationTypes();
 
 const mappingValue = ref('');

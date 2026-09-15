@@ -56,11 +56,11 @@ describe("syncRun spine — shop scoping", () => {
     expect(projectRow(RUN_WITH_IMPORT, syncRunEntity, 1)?.shopId).toBe("10010");
   });
 
-  it("keeps shopId even though the raw document has no such field", () => {
-    const row = projectRow(RUN_WITH_IMPORT, syncRunEntity, 1) as any;
+  it("derives shopId even though the source document has no such field", () => {
+    // The document names it `remoteInternalId`; `rename` is what puts it on the stored row.
+    expect("shopId" in RUN_WITH_IMPORT).toBe(false);
 
-    expect("shopId" in row.raw).toBe(false);
-    expect(row.shopId).toBe("10010");
+    expect((projectRow(RUN_WITH_IMPORT, syncRunEntity, 1) as any).shopId).toBe("10010");
   });
 
   it("separates two shops' runs", () => {

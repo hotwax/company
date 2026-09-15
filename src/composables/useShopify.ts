@@ -224,7 +224,7 @@ function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
  */
 export function useInventoryEventDocuments() {
   const { records, hydrated } = useDb<any>("inventoryEventDocuments");
-  const documents = computed(() => toInventoryEventDocuments(records.value.map((row: any) => row?.raw ?? row)));
+  const documents = computed(() => toInventoryEventDocuments(records.value));
 
   return { documents, hydrated };
 }
@@ -5952,7 +5952,7 @@ async function fetchShopRemoteCandidates(payload: any) {
   try {
     const cached = await companyDb.entity("systemMessageRemotes").all();
     if(cached.length) {
-      const remotes = cached.map((row: any) => row.raw);
+      const remotes = cached;
 
       return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
     }
@@ -6185,16 +6185,16 @@ async function cachedSyncMessageHistory(query: {
   pageSize?: number;
 }): Promise<any[] | null> {
   try {
-    const remotes = (await companyDb.entity("systemMessageRemotes").all()).map((row: any) => row.raw ?? row);
+    const remotes = await companyDb.entity("systemMessageRemotes").all();
     const remoteIds = new Set(remotes
       .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
       .map((remote: any) => String(remote.systemMessageRemoteId)),);
     if(!remoteIds.size) {return null;}
 
-    const messages = (await companyDb.entity("systemMessages").all()).map((row: any) => row.raw ?? row);
+    const messages = await companyDb.entity("systemMessages").all();
     if(!messages.length) {return null;}
 
-    const logs = (await companyDb.entity("dataManagerLogs").all()).map((row: any) => row.raw ?? row);
+    const logs = await companyDb.entity("dataManagerLogs").all();
     const logByMessageId = new Map<string, any>();
     for(const log of logs) {
       const key = String(log?.systemMessageId ?? "");

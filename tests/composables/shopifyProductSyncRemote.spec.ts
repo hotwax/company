@@ -25,7 +25,7 @@ vi.mock("@/db/companyDb", () => ({
     entity: (table: string) => {
       if (table === "systemMessageRemotes") {
         return {
-          all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+          all: vi.fn(() => harness.remotes),
         };
       }
       return { all: vi.fn(async () => []) };

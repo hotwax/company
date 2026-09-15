@@ -167,7 +167,7 @@ export function useDataManager() {
     try {
       const cached = (await dataManagerLogCache.all())
         .find((row: any) => String(row.logId) === String(logId));
-      if (cached) return cached.raw ?? cached;
+      if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
     }

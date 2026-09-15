@@ -200,8 +200,8 @@ export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
 /**
  * Members of one group, or every membership when no group is given.
  *
- * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useDb`
- * hands back `row.raw`, i.e. whatever shape the OMS emitted the timestamp as, and the group screen
+ * `fromDate`/`thruDate` are served from the PROJECTION, so they are always epoch millis rather than
+ * whatever shape the OMS emitted. The group screen
  * echoes `fromDate` back on every membership revision. Since `store` matches the row on the exact
  * timestamp, echoing an un-normalized value inserts a duplicate member instead of updating one —
  * see `useFacilityGroupMutations.saveMembers`. The projected value is always epoch millis.
@@ -217,7 +217,7 @@ export function useGroupFacilities(facilityGroupId?: string) {
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
   const members = computed<any[]>(() => records.value.map((row: any) => {
-    const raw = row.raw ?? row;
+    const raw = row;
     const sequenceNum = toCount(raw.sequenceNum);
     return {
       ...raw,
@@ -832,7 +832,7 @@ export function useFacilityDetail(facilityId: string) {
 
   /** Everything, in the aggregate shape the template already binds. */
   const current = computed<Record<string, any>>(() => {
-    const base = (facility.value as any)?.raw ?? facility.value ?? {};
+    const base = facility.value ?? {};
     const maximumOrderLimit = base.maximumOrderLimit;
     const groups = groupsByFacility.value[facilityId] ?? [];
     // These four are NOT facility fields — they are derived from group membership, exactly as

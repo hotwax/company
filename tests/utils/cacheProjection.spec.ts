@@ -78,7 +78,7 @@ describe("projectRow", () => {
       configId: "SYNC_SHOPIFY_ORDER",
       totalRecordCount: "2",
       createdDate: "1784757294252",
-      extraServerField: "kept only in raw",
+      extraServerField: "not declared, so not stored",
     };
     const row = projectRow(raw, logEntity, NOW)!;
 
@@ -86,8 +86,10 @@ describe("projectRow", () => {
     expect(row.configId).toBe("SYNC_SHOPIFY_ORDER");
     expect(row.totalRecordCount).toBe(2);
     expect(row.createdDate).toBe(1_784_757_294_252);
-    expect(row.cachedAt).toBe(NOW);
-    expect(row.raw).toBe(raw);
+    expect(row.syncedAt).toBe(NOW);
+    // Undeclared server fields are dropped, not stashed alongside the row.
+    expect("extraServerField" in row).toBe(false);
+    expect("raw" in row).toBe(false);
     expect("finishDateTime" in row).toBe(false);
   });
 
@@ -137,12 +139,11 @@ describe("projectRow with a compound key", () => {
     expect(row.memberKey).toBeUndefined();
   });
 
-  it("keeps the untouched server payload and cachedAt", () => {
-    const raw = { facilityGroupId: "GRP1", facilityId: "FAC1", fromDate: 1, extra: "kept" };
+  it("stores only the declared fields, stamped with syncedAt", () => {
+    const raw = { facilityGroupId: "GRP1", facilityId: "FAC1", fromDate: 1, extra: "dropped" };
     const row = projectRow(raw, groupFacility, 500)!;
 
-    expect(row.raw).toEqual(raw);
-    expect(row.cachedAt).toBe(500);
+    expect(row).toEqual({ facilityGroupId: "GRP1", facilityId: "FAC1", fromDate: 1, syncedAt: 500 });
   });
 
   it("returns null when any key member is missing", () => {

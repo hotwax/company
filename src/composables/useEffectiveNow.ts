@@ -21,13 +21,7 @@ export function useEffectiveNow(rows: MaybeRefOrGetter<Array<Record<string, unkn
   const now = ref(Date.now());
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const boundaries = () => toValue(rows).flatMap((cachedRow) => {
-    const row = (
-      cachedRow.raw && typeof cachedRow.raw === "object"
-        ? cachedRow.raw
-        : cachedRow
-    ) as Record<string, unknown>;
-
+  const boundaries = () => toValue(rows).flatMap((row) => {
     return [toMillis(row.fromDate), toMillis(row.thruDate)]
       .filter((boundary): boundary is number => boundary !== undefined);
   });

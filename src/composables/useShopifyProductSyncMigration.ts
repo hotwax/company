@@ -272,7 +272,7 @@ async function fetchSystemMessageTypeEntity(systemMessageTypeId: string) {
   try {
     const cached = await companyDb.entity("systemMessageTypes").all();
     if (cached.length) {
-      return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId)?.raw;
+      return cached.find((row: any) => row.systemMessageTypeId === systemMessageTypeId);
     }
   } catch (error) {
     logger.warn("System message type cache unavailable; falling back to the server", error);
@@ -306,7 +306,7 @@ async function fetchServiceJobEntity(jobName: string) {
   try {
     const cached = await companyDb.entity("serviceJobs").all();
     if (cached.length) {
-      return cached.find((row: any) => row.jobName === jobName)?.raw;
+      return cached.find((row: any) => row.jobName === jobName);
     }
   } catch (error) {
     logger.warn("Service job cache unavailable; falling back to the server", error);

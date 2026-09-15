@@ -90,8 +90,8 @@ function channelFilter(inventoryChannelIds: string[]): Record<string, unknown> {
   return { inventoryChannelId: inventoryChannelIds.join(","), inventoryChannelId_op: "in" };
 }
 
-function detailKey(row: Record<string, unknown>): string | undefined {
-  const key = entityKeyOf(row, companyDb.entities.shopifyInventoryAdjustmentDetail);
+export function detailKey(row: Record<string, unknown>): string | undefined {
+  const key = entityKeyOf(row, companyDb.entities.shopifyInventoryAdjustmentDetails);
   return key ? canonicalKey(key) : undefined;
 }
 

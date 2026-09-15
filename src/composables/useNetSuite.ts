@@ -80,7 +80,7 @@ export function useFacilityIdentifications() {
    */
   const active = computed<any[]>(() => {
     const now = Date.now();
-    return records.value.filter((row: any) => isEffectiveNow(row.raw ?? row, now));
+    return records.value.filter((row: any) => isEffectiveNow(row, now));
   });
 
   /** facilityId → identification value, the shape the departments screen edits. */

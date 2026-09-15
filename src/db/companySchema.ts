@@ -239,11 +239,10 @@ export const companySchema = defineSchema({
   /**
    * SystemMessageRemote — the anchor that scopes a shop's messages.
    *
-   * The previous comment here claimed the list response returns only `systemMessageRemoteId`. That is
-   * WRONG (verified live 2026-07-27): `oms/systemMessageRemotes` returns the full record, including
-   * the two ids that link a remote to a shop. Because those were projected away, every consumer had
-   * to reach into `row.raw` to get them, and the worker's message scope — which read the projected
-   * row — silently resolved to nothing.
+   * `oms/systemMessageRemotes` returns the full record, including the two ids that link a remote to
+   * a shop, so both are declared below. A stored row carries only its declared fields, so a field
+   * left out here is not merely unindexed — it is not stored at all, and the worker's message scope
+   * resolves to nothing.
    *
    *   internalId / internalIdType   → the HotWax shopId  (HOTWAX_SHOP_ID)
    *   remoteId   / remoteIdType     → the Shopify shop id (SHOPIFY_SHOP_ID)
@@ -868,5 +867,60 @@ export const companySchema = defineSchema({
       occurredAt: "date",
     },
     indexes: ["shopId", "segment", "orderId", "[shopId+segment]"],
+  }),
+
+  /**
+   * ShopifyLocationInventoryAdjustmentDetail — the real-time PER-SHOPIFY-LOCATION push ledger.
+   *
+   * Distinct from `shopifyInventoryAdjustmentDetails`, which is the facility-group AGGREGATE
+   * ledger keyed on `inventoryChannelId`. This row targets one Shopify location directly, so it
+   * carries `shopId`/`shopifyLocationId` and needs no channel indirection to scope by shop — which
+   * is why `shopId` is both a key member and an index: the domain snapshot-replaces one shop's
+   * slice at a time.
+   *
+   * Key members match `locationInventoryAdjustmentKey` in `utils/shopifyLocationInventory.ts`,
+   * which the sync pass uses as its `keyOf` and which tolerates no missing member.
+   */
+  shopifyLocationInventoryAdjustmentDetails: defineEntity({
+    primaryKey: "eventTypeId,eventReferenceId,shopId,shopifyLocationId,shopifyInventoryItemId",
+    fields: {
+      eventTypeId: "text",
+      eventReferenceId: "text",
+      shopId: "text",
+      shopifyLocationId: "text",
+      shopifyInventoryItemId: "text",
+      eventTypeDescription: "text",
+      computedInventoryChange: "count",
+      decisionComment: "text",
+      systemMessageId: "text",
+      systemMessageStatusId: "text",
+      createdDate: "date",
+      /** Server-supplied row identity, read by the history list as its render key. */
+      locationAdjustmentKey: "text",
+    },
+    indexes: [
+      "shopId",
+      "shopifyLocationId",
+      "eventTypeId",
+      "systemMessageId",
+      "createdDate",
+      "[shopId+createdDate]",
+    ],
+  }),
+
+  /**
+   * The backend-computed rollup for one shop's location ledger. One row per shop, replaced whole on
+   * each pass — the counts are authoritative and must never be derived client-side from a windowed
+   * detail set. Shape matches `normalizeLocationInventorySummary`.
+   */
+  shopifyLocationInventorySummaries: defineEntity({
+    primaryKey: "shopId",
+    fields: {
+      shopId: "text",
+      backlogCount: "count",
+      oldestBacklogDate: "date",
+      errorLinkedCount: "count",
+      noOpOrQuarantinedCount: "count",
+    },
   }),
 });

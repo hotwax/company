@@ -3,8 +3,8 @@ import { locationInventoryAdjustmentKey, normalizeLocationInventorySummary } fro
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import { pageAll, workerGet } from "@common/core/workerRemoteApi";
 
-const shopifyLocationInventoryAdjustmentDetailEntity = companyDb.entity("shopifyLocationInventoryAdjustmentDetails" as any);
-const shopifyLocationInventorySummaryEntity = companyDb.entity("shopifyLocationInventorySummaries" as any);
+const shopifyLocationInventoryAdjustmentDetailEntity = companyDb.entity("shopifyLocationInventoryAdjustmentDetails");
+const shopifyLocationInventorySummaryEntity = companyDb.entity("shopifyLocationInventorySummaries");
 
 /** A complete shop-scoped snapshot: statuses and totals must not depend on payload enrichment.
  * Prune only after every page and the summary succeed. Page guards fail closed.

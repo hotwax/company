@@ -40,7 +40,8 @@ const COMPANY_SEED_TABLES = [
 
 export const companyDb = defineAppDb({
   suffix: "CompanyDB",
-  version: 1,
+  // v2: added the two shopifyLocationInventory* stores. Additive, so Dexie upgrades in place.
+  version: 2,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

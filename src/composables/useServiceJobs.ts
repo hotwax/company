@@ -220,7 +220,7 @@ export function useServiceJob() {
       const cached = await companyDb.entity("serviceJobs").all();
       if (cached.length) {
         state.jobs = cached.map((row: any) => {
-          const job = row.raw ?? row;
+          const job = row;
           return { ...job, cronString: job.cronExpression ? getCronString(job.cronExpression) : "" };
         });
         return state.jobs;
@@ -361,7 +361,7 @@ export function useServiceJob() {
         .sort((a: any, b: any) => (Number(b.startTime ?? 0) - Number(a.startTime ?? 0)));
       if (cached.length) {
         const wanted = Number(params.pageSize ?? 250);
-        return cached.slice(0, wanted).map((row: any) => row.raw ?? row);
+        return cached.slice(0, wanted);
       }
     } catch (err) {
       logger.warn("Service job run cache unavailable; falling back to the server", err);
