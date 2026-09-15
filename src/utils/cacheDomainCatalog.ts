@@ -18,6 +18,9 @@ export interface CacheDomainEntry {
 }
 
 export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
+  { name: "shopifyOrderSyncHistory", table: "shopifyOrderSyncHistory", label: "Selected order fulfillment history", syncClass: "A" },
+  { name: "shopifyFulfillmentHealth", table: "shopifyFulfillmentHealth", label: "Shopify fulfillment sync health", syncClass: "A" },
+  { name: "shopifyPendingFulfillment", table: "shopifyPendingFulfillments", label: "Pending Shopify fulfillments", syncClass: "A" },
   // --- class B: reference / config ---
   { name: "productStore", table: "productStores", label: "Product stores", syncClass: "B" },
   { name: "carrier", table: "carriers", label: "Carriers", syncClass: "B" },
