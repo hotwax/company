@@ -20,6 +20,42 @@
         </ion-segment-button>
       </ion-segment>
 
+      <section class="filters ion-margin-top">
+        <ion-searchbar
+          :value="state.filters.search"
+          :placeholder="translate('Search topic, event, facility or user')"
+          :debounce="150"
+          @ion-input="state.filters.search = ($event.target as HTMLIonSearchbarElement).value ?? ''"
+        />
+        <ion-select
+          :value="state.filters.facilityId"
+          interface="popover"
+          :label="translate('Facility')"
+          label-placement="stacked"
+          @ion-change="state.filters.facilityId = $event.detail.value"
+        >
+          <ion-select-option value="">{{ translate("All facilities") }}</ion-select-option>
+          <ion-select-option v-for="facility in facilityOptions" :key="facility.facilityId" :value="facility.facilityId">
+            {{ facility.facilityName }}
+          </ion-select-option>
+        </ion-select>
+        <ion-select
+          :value="state.filters.userId"
+          interface="popover"
+          :label="translate('User')"
+          label-placement="stacked"
+          @ion-change="state.filters.userId = $event.detail.value"
+        >
+          <ion-select-option value="">{{ translate("All users") }}</ion-select-option>
+          <ion-select-option v-for="user in userOptions" :key="user.userId" :value="user.userId">
+            {{ user.userName }}
+          </ion-select-option>
+        </ion-select>
+        <ion-button v-if="hasActiveFilters" fill="clear" size="small" @click="clearFilters()">
+          {{ translate("Clear filters") }}
+        </ion-button>
+      </section>
+
       <section class="summary-grid ion-margin-top">
         <ion-card>
           <ion-card-header>
@@ -31,7 +67,7 @@
                 look like a healthy empty tenant.
               -->
               <ion-skeleton-text v-if="state.loading" :animated="true" class="count-skeleton" />
-              <template v-else-if="state.subscriptions">{{ topics.length }}</template>
+              <template v-else-if="state.subscriptions">{{ filteredTopics.length }}</template>
               <template v-else>{{ translate("Unavailable") }}</template>
             </ion-card-title>
           </ion-card-header>
@@ -86,19 +122,21 @@
         </ion-card-content>
       </ion-card>
 
-      <ion-list v-if="topics.length">
+      <ion-list v-if="filteredTopics.length">
         <ion-list-header>
           <ion-label>{{ translate("Subscriptions by topic") }}</ion-label>
         </ion-list-header>
-        <ion-item v-for="topic in topics" :key="topic.topic" lines="full">
+        <ion-item v-for="topic in filteredTopics" :key="topic.topic" lines="full">
           <ion-label class="ion-text-wrap">
             <h2>{{ topic.eventName }}</h2>
             <p class="topic-name">{{ topic.topic }}</p>
             <p>
-              {{ translate("Facility") }}: {{ topic.facilityId || translate("unknown") }}
+              {{ topic.facilityName || translate("unknown") }}
+              <span v-if="topic.facilityName !== topic.facilityId"> ({{ topic.facilityId }})</span>
               &nbsp;&middot;&nbsp;
               {{ translate("Instance") }}: {{ topic.omsInstance || translate("unknown") }}
             </p>
+            <p class="subscribers">{{ topic.userNames.join(", ") }}</p>
             <!--
               A name that did not end in a known event id was split by position, so the facility
               and instance shown are a guess. Say so rather than presenting them as read values.
@@ -110,6 +148,15 @@
           </ion-note>
         </ion-item>
       </ion-list>
+
+      <ion-card v-else-if="!state.loading && state.subscriptions && hasActiveFilters">
+        <ion-card-header>
+          <ion-card-title>{{ translate("No matches") }}</ion-card-title>
+        </ion-card-header>
+        <ion-card-content>
+          {{ translate("No subscription matches the current filters. There are subscriptions for this app, they are just filtered out.") }}
+        </ion-card-content>
+      </ion-card>
 
       <ion-card v-else-if="!state.loading && state.subscriptions">
         <ion-card-header>
@@ -139,8 +186,8 @@
 import {
   IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle,
   IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader,
-  IonMenuButton, IonNote, IonPage, IonSegment, IonSegmentButton, IonSkeletonText, IonTitle,
-  IonToolbar, onIonViewWillEnter
+  IonMenuButton, IonNote, IonPage, IonSearchbar, IonSegment, IonSegmentButton, IonSelect,
+  IonSelectOption, IonSkeletonText, IonTitle, IonToolbar, onIonViewWillEnter
 } from "@ionic/vue";
 import { refreshOutline } from "ionicons/icons";
 import { translate } from "@common";
@@ -148,7 +195,10 @@ import { NOTIFICATION_APPS, useNotificationSubscriptions } from "@/composables/u
 import { useUserStore } from "@/store/user";
 
 const apps = NOTIFICATION_APPS;
-const { state, topics, facilityCount, userCount, unsubscribedEvents, load } = useNotificationSubscriptions();
+const {
+  state, topics, filteredTopics, facilityCount, userCount, unsubscribedEvents,
+  facilityOptions, userOptions, hasActiveFilters, clearFilters, load
+} = useNotificationSubscriptions();
 
 function currentUserId() {
   return (useUserStore().getUserProfile as any)?.userId;
@@ -176,6 +226,23 @@ onIonViewWillEnter(refresh);
 .count-skeleton {
   width: 40%;
   height: 1.2em;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(160px, 1fr)) auto;
+  gap: var(--spacer-xs, 8px);
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.subscribers {
+  font-size: 0.85em;
 }
 
 .topic-name {

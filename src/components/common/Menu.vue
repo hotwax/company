@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, linkOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -215,6 +215,13 @@ const userPages = [
     permission: Actions.APP_SECURITY_GROUPS_VIEW,
     iosIcon: keyOutline,
     mdIcon: keyOutline,
+  },
+  {
+    title: "Push Notifications",
+    url: "/notifications",
+    permission: Actions.APP_NOTIFICATIONS_VIEW,
+    iosIcon: notificationsOutline,
+    mdIcon: notificationsOutline,
   },
   {
     title: "App Permissions",

@@ -3581,5 +3581,10 @@
   "Users subscribed": "Users subscribed",
   "unknown": "unknown",
   "user": "user",
-  "users": "users"
+  "users": "users",
+  "All facilities": "All facilities",
+  "All users": "All users",
+  "No subscription matches the current filters. There are subscriptions for this app, they are just filtered out.": "No subscription matches the current filters. There are subscriptions for this app, they are just filtered out.",
+  "Push Notifications": "Push Notifications",
+  "Search topic, event, facility or user": "Search topic, event, facility or user"
 }
