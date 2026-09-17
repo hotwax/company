@@ -90,7 +90,7 @@
 
               <ion-item v-for="tool in composer.selectedTools" :key="tool.toolId">
                 <ion-label>
-                  <h2>{{ tool.toolName }}</h2>
+                  {{ tool.toolName }}
                   <p>{{ tool.description }}</p>
                 </ion-label>
 
@@ -161,7 +161,7 @@
               <ion-checkbox :checked="isToolSelected(tool.toolId)" justify="start">
                 <ion-label class="tool-picker-label">
                   <ion-note>{{ tool.effectEnumId === 'AI_TOOL_MUTATING' ? translate("Mutating") : translate("Read only") }}</ion-note>
-                  <h2>{{ tool.toolName }}</h2>
+                  {{ tool.toolName }}
                   <ion-note>{{ tool.description }}</ion-note>
                 </ion-label>
               </ion-checkbox>

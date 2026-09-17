@@ -15,7 +15,7 @@
  *   6. Order sync schedule                                  — cron validation/preview (pure)
  *   7. Order sync session                                   — worker activation, not main-thread polling
  *
- * Everything reads from IndexedDB through `useCachedList`; the sync worker owns all cadence. The only
+ * Everything reads from IndexedDB through `useDb`; the sync worker owns all cadence. The only
  * live reads left are the ones that cannot be cached — Shopify GraphQL, webhook subscriptions, the
  * order-sync history projection, and landmark system properties.
  */
@@ -660,9 +660,18 @@ export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<str
   return jobName;
 }
 
-/** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
-export const useShopifyShop = (shopId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("shopifyShops", () => shopId ? { equals: { shopId } } : {});
+/**
+ * One shop by shopId. Replaces the old `shopifyStore.getShopById` getter.
+ *
+ * Takes a ref or getter as well as a plain string: `:id` routes reuse the component instance when
+ * only the param changes, so a view that reads this from a raw `props.id` stays pinned to the shop
+ * it first mounted with while everything else on the page re-scopes.
+ */
+export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) => {
+  const { first: record, hydrated } = useDb<any>("shopifyShops", () => {
+    const id = toValue(shopId);
+    return id ? { equals: { shopId: id } } : {};
+  });
   return { record, hydrated };
 };
 
@@ -2025,7 +2034,7 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
  * The class-A domains ONE sync feature needs — its messages and the imports they produce.
  *
  * Exported because a page can render more than one feature (connection details shows both product
- * sync and order sync) and every `useCacheSync()` call owns its own worker. Composing two features'
+ * sync and order sync) and every `useDbSync()` call owns its own worker. Composing two features'
  * domain lists into a single session is therefore the difference between one worker and two.
  *
  * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
@@ -2073,7 +2082,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop, syncNow, error: workerError } = useDbSync();
+  const { start, stop, syncNow, error: workerError, domainStatus } = useDbSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -2164,7 +2173,21 @@ export function useShopifySyncSession(
   onIonViewDidLeave(() => deactivate());
   onBeforeUnmount(() => deactivate());
 
-  return { isPageActive, isRefreshing, manualRefresh, activate, deactivate };
+  /**
+   * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
+   * from "the worker has not fetched this shop yet" on its own. `useDb`'s `hydrated` answers
+   * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
+   * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
+   * result here instead.
+   *
+   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
+   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
+   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
+   */
+  return {
+    isPageActive, isRefreshing, manualRefresh, activate, deactivate,
+    domainStatus, workerError,
+  };
 }
 
 // =============================================================================================
@@ -5087,7 +5110,7 @@ export interface ConnectionSyncSessionOptions {
  * The Shopify connection details page's session — BOTH sync features on ONE worker.
  *
  * Why this exists instead of the page composing two separate sessions and
- * `useShopifyOrderSyncPolling` side by side: each `useCacheSync()` owns its own `SyncService`, so two
+ * `useShopifyOrderSyncPolling` side by side: each `useDbSync()` owns its own `SyncService`, so two
  * sessions spawn two workers with two independent timers, both polling on behalf of one screen. This
  * composes the two features' domain lists and hands them to a single session instead.
  *

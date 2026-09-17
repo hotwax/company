@@ -116,7 +116,7 @@
               <ion-icon slot="start" :icon="run.statusIcon" :color="run.statusColor" />
               <ion-label class="ion-text-wrap">
                 <p class="overline">#{{ run.jobRunId }}</p>
-                <h2>{{ run.jobName }}</h2>
+                {{ run.jobName }}
                 <p>{{ serviceName || translate("Service unavailable") }}</p>
               </ion-label>
               <ion-badge slot="end" :color="run.statusColor">{{ translate(run.statusLabel) }}</ion-badge>

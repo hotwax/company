@@ -15,7 +15,7 @@
     <template v-if="step === 1">
       <ion-item lines="none">
         <ion-label>
-          <h2>{{ translate("Choose a facility group") }}</h2>
+          {{ translate("Choose a facility group") }}
           <p>{{ translate("Inventory across every facility in this group is aggregated into one Shopify location") }}</p>
         </ion-label>
       </ion-item>
@@ -64,7 +64,7 @@
     <template v-else>
       <ion-item lines="none">
         <ion-label>
-          <h2>{{ translate("Choose a Shopify location") }}</h2>
+          {{ translate("Choose a Shopify location") }}
           <p>
             {{ translate("Aggregate inventory for") }}
             <strong>{{ selectedGroup?.facilityGroupName || selectedGroupId }}</strong>
@@ -81,7 +81,7 @@
       <ion-item v-else-if="locationError" lines="none">
         <ion-icon :icon="warningOutline" slot="start" color="danger" />
         <ion-label class="ion-text-wrap">
-          <h3>{{ translate("Could not reach Shopify") }}</h3>
+          {{ translate("Could not reach Shopify") }}
           <p>{{ locationError }}</p>
         </ion-label>
       </ion-item>

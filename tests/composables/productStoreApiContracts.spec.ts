@@ -22,19 +22,6 @@ vi.mock("@/services/appDbSync", () => ({
   resyncDomain: mocks.resyncDomain,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  productStoreCache: {},
-  productStoreFacilityCache: {},
-  productStoreShipmentCountCache: {},
-  productStoreShippingMethodCache: {},
-  serviceJobCache: {},
-  serviceJobRunCache: {},
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ records: ref([]), hydrated: ref(true) }),
-  useCachedRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
-}));
 
 vi.mock("@/composables/useSeed", () => ({
   useOrganization: () => ({ loadOrganizationPartyId: vi.fn() }),

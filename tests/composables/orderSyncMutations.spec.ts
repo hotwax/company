@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * strictly `false`, and — as the regression lock — that the resolved object is NOT the axios envelope.
  *
  * The api client is stubbed at `@common` (importing the composable otherwise pulls `useAuth` →
- * `cookieHelper`, which has no browser context here) and the Dexie layer at `useCachedList`, which is
+ * `cookieHelper`, which has no browser context here) and the Dexie layer at `useDb`, which is
  * the read seam every cached entity in this composable goes through. `useServiceJobs` is deliberately
  * NOT stubbed: `updateJob`/`runNow` are the functions that produce the axios envelope, so leaving them
  * real is what makes "the envelope is unwrapped" a genuine end-to-end assertion rather than a

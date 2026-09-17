@@ -15,11 +15,6 @@ vi.mock("@/services/appDbSync", () => ({
   bootstrapState: { running: false },
 }));
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ rows: { value: [] }, records: { value: [] }, hydrated: { value: true } }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
-}));
 
 import { createShopifyConnection, updateShopifyRemote } from "@/composables/useShopify";
 

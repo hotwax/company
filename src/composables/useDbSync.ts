@@ -78,4 +78,3 @@ export function useDbSync() {
   };
 }
 
-export const useCacheSync = useDbSync;
