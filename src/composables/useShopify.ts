@@ -1112,6 +1112,13 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
 
 const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
 
+const UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES: Record<string, string> = {
+  RECEIPT: "The OMS does not expose the receipt behind this movement.",
+  TRANSFER_RECEIPT: "The OMS does not expose the transfer receipt behind this movement.",
+  RETURN_RESTOCK: "The OMS does not expose the return receipt behind this movement.",
+  POS_ISSUANCE: "The OMS does not expose the POS sale behind this movement.",
+};
+
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
 /**
@@ -1323,6 +1330,14 @@ function eventSourceResolverFor(eventTypeId: string) {
    * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
    * entity and its PK values, neither of which the ledger keeps.
    */
+  const unresolvedMessage = UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES[eventTypeId];
+  if(unresolvedMessage) {
+    return async (): Promise<InventoryEventSource> => ({
+      label: "",
+      unresolved: translate(unresolvedMessage),
+    });
+  }
+
   return null;
 }
 

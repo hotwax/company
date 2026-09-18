@@ -55,6 +55,22 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     expect(harness.api.mock.calls.length).toBe(calls);
   });
 
+  it("records an explicit explanation for movement families without a reachable source path", async () => {
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve([
+      { eventTypeId: "RECEIPT", eventReferenceId: "R1", productId: "P1" },
+      { eventTypeId: "TRANSFER_RECEIPT", eventReferenceId: "R2", productId: "P1" },
+      { eventTypeId: "RETURN_RESTOCK", eventReferenceId: "R3", productId: "P1" },
+      { eventTypeId: "POS_ISSUANCE", eventReferenceId: "I1", productId: "P1" },
+    ]);
+
+    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain("receipt");
+    expect(sources.value.get(sourceKeyOf("TRANSFER_RECEIPT", "R2"))?.unresolved).toContain("transfer receipt");
+    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R3"))?.unresolved).toContain("return receipt");
+    expect(sources.value.get(sourceKeyOf("POS_ISSUANCE", "I1"))?.unresolved).toContain("POS sale");
+  });
+
   /**
    * The retry storm: the caller re-fires on every ten-second cache tick, and an unconditional
    * un-mark on failure turned an endpoint this OMS does not expose into one request per tick forever.
