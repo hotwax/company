@@ -717,6 +717,25 @@ export async function deleteLegacyCaches(): Promise<void> {
 const DOMAIN_MARKER_PREFIX = "domain:";
 const IDENTITY_KEY = "identity";
 
+/**
+ * THE SHAPE OF THE DATA, as distinct from the shape of the database.
+ *
+ * `schemaDrift()` compares STORE SETS, so it is blind to a release that changes what cached rows
+ * MEAN while leaving every table and key field identical. Those rows survive the release and are
+ * then read under rules that no longer fit them -- and because the class-A ledgers are append-mostly
+ * with no snapshot prune, nothing ever overwrites or removes them.
+ *
+ * Bump this in the same commit as such a change. Adding it is itself a bump, so every existing
+ * installation wipes once on the next load; that is intended, not a side effect.
+ *
+ * 1 — Shopify inventory event ids moved onto `moqui.basic.Enumeration` and every `eventTypeId`
+ *     gained an `SIE_` prefix (mantle-shopify-connector#777). Both inventory ledger caches build
+ *     their primary key from `eventTypeId`, so rows cached before that release would sit beside
+ *     their prefixed twins indefinitely, each one showing no source label and resolving no source
+ *     record, because the vocabulary no longer contains its id.
+ */
+const CACHE_CONTRACT_VERSION = 1;
+
 /** Has this domain already synced for the current login? */
 export async function hasSyncedThisLogin(domain: string): Promise<boolean> {
   await ensureCacheReady();
@@ -738,7 +757,8 @@ export async function clearSyncMarkers(): Promise<void> {
 }
 
 /**
- * Bind the cache to one identity (user + backend instance) and WIPE it when that changes.
+ * Bind the cache to one identity (user + backend instance + data contract) and WIPE it when that
+ * changes.
  *
  * Required because a stale cache can outlive a login: if the browser closes or the session expires
  * without a logout, `postLogout()` never runs and the cache survives. Without this check the next
@@ -747,10 +767,13 @@ export async function clearSyncMarkers(): Promise<void> {
  */
 export async function ensureCacheIdentity(identity: string): Promise<boolean> {
   await ensureCacheReady();
+  // The data contract is part of the identity. Rows written under a different one are as wrong as
+  // another user's, and folding it in here means no caller has to remember to ask for that.
+  const stamped = `v${CACHE_CONTRACT_VERSION}::${identity}`;
   const stored = await appCacheDb.syncMeta.get(IDENTITY_KEY);
-  if(stored?.identity === identity) {return false;}
+  if(stored?.identity === stamped) {return false;}
   await clearAllCaches();
-  await appCacheDb.syncMeta.put({ key: IDENTITY_KEY, identity, at: Date.now() });
+  await appCacheDb.syncMeta.put({ key: IDENTITY_KEY, identity: stamped, at: Date.now() });
 
   return true;
 }
