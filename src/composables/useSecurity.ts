@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, client, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
@@ -70,6 +70,29 @@ onSessionCleared(clearUserCreationDraft);
 export function useUserAccountActions() {
   const userStore = useUserStore();
   const sendResetPasswordEmail = (userLoginId: string) => userStore.sendResetPasswordEmail({ userLoginId });
+
+  const getBaseURL = (maarg: string) => {
+    if (maarg.startsWith("http")) {
+      const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+      return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+    }
+    return `https://${maarg}.hotwax.io/rest/s1/`;
+  };
+
+  const resetPassword = async (payload: any, maarg: string) => {
+    return client({
+      baseURL: getBaseURL(maarg),
+      url: `admin/users/${payload.userId}/changePassword`,
+      method: "post",
+      data: {
+        username: payload.username,
+        oldPassword: payload.oldPassword,
+        newPassword: payload.newPassword,
+        newPasswordVerify: payload.newPasswordVerify
+      }
+    });
+  };
+
   const setUserCreationDraftFromSearch = (search: string) => {
     const name = search.trim();
     const [firstName = "", ...lastName] = name ? name.split(/\s+/) : [];
@@ -81,7 +104,7 @@ export function useUserAccountActions() {
     return draft;
   };
 
-  return { sendResetPasswordEmail, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft };
+  return { sendResetPasswordEmail, resetPassword, getBaseURL, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft };
 }
 
 /** Preserve the authenticated REST context root; reject embedded credentials, queries, and fragments. */

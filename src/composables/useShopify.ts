@@ -65,6 +65,63 @@ import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
 import { useSystemMessage } from "./useSystemMessage";
 
+// The summary is retained while the Ionic view is cached, so the remote count must refresh both
+// when the cached sync cursor changes and when the operator re-enters the page. The sequence guard
+// prevents a slower Shopify response from replacing a newer count.
+export interface ShopifyUnsyncedProductCountOptions {
+  remoteId: MaybeRefOrGetter<string | null | undefined>;
+  lastSyncedAt: MaybeRefOrGetter<string | number | null | undefined>;
+  load: (remoteId: string, lastSyncedAt?: string | number) => Promise<number>;
+  onError?: (error: unknown) => void;
+}
+
+export function useShopifyUnsyncedProductCount(options: ShopifyUnsyncedProductCountOptions) {
+  const count = ref(0);
+  const isLoading = ref(false);
+  let requestSequence = 0;
+
+  const refresh = async (): Promise<number> => {
+    const sequence = ++requestSequence;
+    const remoteId = String(toValue(options.remoteId) ?? "").trim();
+    const lastSyncedAt = toValue(options.lastSyncedAt) || undefined;
+
+    if (!remoteId) {
+      if (sequence === requestSequence) {
+        count.value = 0;
+        isLoading.value = false;
+      }
+      return 0;
+    }
+
+    isLoading.value = true;
+    try {
+      const nextCount = await options.load(remoteId, lastSyncedAt);
+      const numericCount = Number(nextCount);
+      if (sequence === requestSequence) {
+        count.value = Number.isFinite(numericCount) ? numericCount : 0;
+      }
+      return Number.isFinite(numericCount) ? numericCount : 0;
+    } catch (error) {
+      if (sequence === requestSequence) {
+        count.value = 0;
+        options.onError?.(error);
+      }
+      throw error;
+    } finally {
+      if (sequence === requestSequence) {
+        isLoading.value = false;
+      }
+    }
+  };
+
+  watch(
+    () => [String(toValue(options.remoteId) ?? "").trim(), toValue(options.lastSyncedAt) ?? ""],
+    () => { void refresh().catch(() => undefined); },
+  );
+
+  return { count, isLoading, refresh };
+}
+
 // =============================================================================================
 // 1. Shops, locations, type mappings, carrier shipments
 // =============================================================================================
@@ -1109,6 +1166,13 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
 
 const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
 
+const UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES: Record<string, string> = {
+  RECEIPT: "The OMS does not expose the receipt behind this movement.",
+  TRANSFER_RECEIPT: "The OMS does not expose the transfer receipt behind this movement.",
+  RETURN_RESTOCK: "The OMS does not expose the return receipt behind this movement.",
+  POS_ISSUANCE: "The OMS does not expose the POS sale behind this movement.",
+};
+
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
 /**
@@ -1590,6 +1654,27 @@ function eventSourceResolverFor(eventTypeId: string) {
   if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
   if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
 
+  /*
+   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
+   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
+   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
+   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
+   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
+   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
+   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
+   * an unscoped read exists.
+   *
+   * The configuration families name no document at all. Their references decode locally to ids the app
+   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
+   * entity and its PK values, neither of which the ledger keeps.
+   */
+  const unresolvedMessage = UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES[eventTypeId];
+  if(unresolvedMessage) {
+    return async (): Promise<InventoryEventSource> => ({
+      label: "",
+      unresolved: translate(unresolvedMessage),
+    });
+  }
   return null;
 }
 
@@ -1690,8 +1775,11 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
         }
         attempt.failures = 0;
         attempt.retryable = false;
+        const fallbackResolver = eventSourceResolverFor(lookup.eventTypeId);
         next.set(key, answers.get(lookup.eventReferenceId)
-          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
+          ?? (fallbackResolver
+            ? await fallbackResolver(lookup)
+            : movementUnresolved(translate("The OMS has no inventory movement with this reference."))));
         changed = true;
       }
       if(changed) {eventSources.value = next;}
@@ -7206,3 +7294,20 @@ export async function fetchProductFacilityActivations(shopId: string, params: {
   const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
   return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
 }
+
+// Shopify is the owning composable for all Shopify-facing screen APIs. The fulfillment reader
+// implementation remains split into a focused submodule, but callers import it through this owner
+// so a screen does not assemble Shopify state from unrelated composable entry points.
+export {
+  useFulfillmentSyncHealth,
+  useOmsShipmentContext,
+  usePendingFulfillments,
+  useQueuedFulfillments,
+  useShopifyFulfillmentDetails,
+  useSyncedFulfillments,
+} from "./useShopifyFulfillment";
+export type {
+  OmsShipmentContext,
+  QueuedFulfillmentRow,
+  SyncedFulfillmentRow,
+} from "./useShopifyFulfillment";

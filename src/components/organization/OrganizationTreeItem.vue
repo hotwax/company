@@ -6,7 +6,7 @@
       detail
     >
       <ion-label class="ion-text-wrap">
-        <h2>{{ node.groupName || node.partyId }}</h2>
+        {{ node.groupName || node.partyId }}
         <p>{{ node.partyId }}<span v-if="node.externalId"> ({{ node.externalId }})</span></p>
       </ion-label>
       <ion-badge v-if="node.partyId === primaryId" slot="end" color="primary">

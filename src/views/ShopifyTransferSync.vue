@@ -15,7 +15,7 @@
         <ion-card-content class="fatal-error">
           <ion-icon :icon="warningOutline" color="danger" />
           <ion-label class="ion-text-wrap">
-            <h2>{{ translate("Transfer sync data could not be loaded") }}</h2>
+            {{ translate("Transfer sync data could not be loaded") }}
             <p>{{ transferSyncError }}</p>
           </ion-label>
           <ion-button fill="outline" :disabled="retrying" @click="retry()">
@@ -202,7 +202,7 @@
               <ion-accordion v-for="row in presentationRows" :key="row.key" :value="row.key">
                 <ion-item slot="header" lines="full" class="transfer-row-header">
                   <ion-label class="ion-text-wrap">
-                    <h2>{{ row.title }}</h2>
+                    {{ row.title }}
                     <p>{{ row.detail }}</p>
                   </ion-label>
                   <ion-label slot="end" class="ion-text-end last-activity">
@@ -291,7 +291,7 @@
             <ion-card-content class="empty-state">
               <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label class="ion-text-wrap">
-                <h2>{{ translate("Everything is in sync") }}</h2>
+                {{ translate("Everything is in sync") }}
                 <p>{{ translate("This shop has no transfer work waiting to reach Shopify. A transfer becomes owned by exactly one shop at approval time, when the order and the receiving location share exactly one common Shopify shop; a shop that owns none will also show nothing here.") }}</p>
               </ion-label>
             </ion-card-content>
@@ -307,7 +307,7 @@
             <ion-accordion v-for="row in presentationRows" :key="row.key" :value="row.key">
               <ion-item slot="header" lines="full" class="transfer-row-header">
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ row.title }}</h2>
+                  {{ row.title }}
                   <p>{{ row.detail }}</p>
                 </ion-label>
                 <ion-label slot="end" class="ion-text-end last-activity">
@@ -471,7 +471,7 @@
       <ion-content>
         <ion-item lines="none">
           <ion-label class="ion-text-wrap">
-            <h2>{{ translate("Transfer and shipment topics registered at Shopify") }}</h2>
+            {{ translate("Transfer and shipment topics registered at Shopify") }}
             <p v-if="otherWebhookCount">
               {{ otherWebhookCount }} {{ translate("other subscriptions on this shop") }}
             </p>

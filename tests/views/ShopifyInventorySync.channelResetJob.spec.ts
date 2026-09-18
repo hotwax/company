@@ -10,6 +10,10 @@ const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
 const cachedLocationSummaries = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
+const cachedGroupFacilities = ref<any[]>([]);
+const cachedInventoryEventDocuments = ref<any[]>([]);
+const inventoryEventDocumentsHydrated = ref(true);
+const groupFacilitiesHydrated = ref(true);
 // The read layer's health, controllable: an empty section means "nothing there" only when these say so.
 const detailsHydrated = ref(true);
 const syncReady = ref(true);
@@ -23,6 +27,7 @@ const harness = vi.hoisted(() => ({
   ensureShopPhysicalInventoryResetJob: vi.fn(),
   ensureShopPhysicalAtpResetJob: vi.fn(),
   showToast: vi.fn(),
+  saveFacilityGroupMembers: vi.fn(),
   push: vi.fn(),
   replace: vi.fn(),
 }));
@@ -78,6 +83,14 @@ vi.mock("@/composables/useCacheSync", () => ({
   }),
 }));
 
+vi.mock("@/composables/useFacilities", () => ({
+  useFacilityTypes: () => ({ facilityTypes: ref([]) }),
+  useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
+  useFacilityGroupMutations: (facilityGroupId: string) => ({
+    saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
+  }),
+}));
+
 vi.mock("@/composables/useCachedList", () => ({
   useCachedList: (cache: any) => {
     const table = String(cache?.table || cache?.name || "");
@@ -95,6 +108,9 @@ vi.mock("@/composables/useCachedList", () => ({
     }
     if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
       return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
+    }
+    if(table.includes("groupFacilities") || table.includes("GroupFacility")) {
+      return { records: cachedGroupFacilities, rows: cachedGroupFacilities, hydrated: groupFacilitiesHydrated };
     }
     if(table.includes("systemMessage") || table.includes("SystemMessage")) {
       return { records: cachedMessages, rows: cachedMessages, hydrated: ref(true) };
@@ -173,8 +189,8 @@ vi.mock("@/composables/useShopify", () => ({
   setInventoryEventDocumentAttached: vi.fn(),
   setInventoryEventDocumentAttachedForFeed: vi.fn(),
   useInventoryEventDocuments: () => ({
-    documents: ref([]),
-    hydrated: ref(true),
+    documents: cachedInventoryEventDocuments,
+    hydrated: inventoryEventDocumentsHydrated,
     refresh: vi.fn(),
     saving: ref(false),
   }),
@@ -266,7 +282,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import('@/views/ShopifyInventorySync.vue')).default;
     const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
     await flushPromises();
-    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old aggregate inventory events (all Shopify connections)'))!;
+    const row = wrapper.findAll('ion-item').find(item => item.text().includes('Purge old channel events (all shops)'))!;
     expect(row.text()).toContain('Runs every hour');
     expect(row.text()).not.toContain('No active schedule');
     wrapper.unmount();
@@ -280,7 +296,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import('@/views/ShopifyInventorySync.vue')).default;
     const wrapper = mount(View, { props: { id: '100002' }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true } } });
     await flushPromises();
-    for (const [label, jobName] of [['Purge old aggregate inventory events', 'AGGREGATE_RETENTION'], ['Purge old physical location events', 'PHYSICAL_RETENTION']]) {
+    for (const [label, jobName] of [['Purge old channel events', 'AGGREGATE_RETENTION'], ['Purge old physical events', 'PHYSICAL_RETENTION']]) {
       const row = wrapper.findAll('ion-item').find(item => item.text().includes(label))!;
       await row.trigger('click');
       expect(wrapper.findComponent({ name: 'ServiceJobDetailsModal' }).props('jobName')).toBe(jobName);
@@ -330,7 +346,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     // Each channel owns a card carrying its own two schedules, so a row no longer needs the channel
     // name in brackets to be distinguishable -- the card it sits on supplies that.
     const channelCards = wrapper.findAll("ion-card")
-      .filter((card) => card.text().includes("Reset aggregate ATP"));
+      .filter((card) => card.text().includes("Reset channel ATP"));
     expect(channelCards.length).toBe(2);
 
     expect(channelCards[0].text()).toContain("Retail Channel");
@@ -343,7 +359,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     // The publisher is grouped with it, on the same card.
     channelCards.forEach((card) => {
-      expect(card.text()).toContain("Publish and send event batches");
+      expect(card.text()).toContain("Send channel batches");
     });
   });
 
@@ -384,7 +400,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     // IC_1001 has a job, so its row is the way in.
     const resetRow = wrapper.findAll("ion-item")
-      .find((item) => item.text().includes("Reset aggregate ATP") && item.text().includes("Active"));
+      .find((item) => item.text().includes("Reset channel ATP") && item.text().includes("Active"));
     expect(resetRow).toBeDefined();
 
     await resetRow!.trigger("click");
@@ -392,7 +408,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP");
+    expect(modal.text()).toContain("Reset channel ATP");
     expect(modal.text()).toContain("Retail Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
   });
@@ -402,7 +418,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     const View = (await import("@/views/ShopifyInventorySync.vue")).default;
     const wrapper = mount(View, { props: { id: "100002" }, global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } } });
     await flushPromises();
-    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical location ATP (all mapped locations on this shop)"));
+    const row = wrapper.findAll("ion-item").find(item => item.text().includes("Reset physical ATP (this shop)"));
     expect(row).toBeDefined();
     await row!.find("ion-button").trigger("click"); await flushPromises();
     expect(harness.ensureShopPhysicalAtpResetJob).toHaveBeenCalledWith("100002");
@@ -433,13 +449,13 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     // IC_1002 has no reset job, so its row offers Set up rather than a click-through. That row is on
     // the Wholesale Channel's own card, which is how the channel is identified without a name suffix.
     const wholesaleCard = wrapper.findAll("ion-card")
-      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset aggregate ATP"));
+      .find((card) => card.text().includes("Wholesale Channel") && card.text().includes("Reset channel ATP"));
     expect(wholesaleCard).toBeDefined();
 
     // Scope to the reset ROW, not the card: cachedJobs is empty here, so the publisher row offers a
     // Set up of its own and the card's first one is not the one under test.
     const resetRow = wholesaleCard!.findAll("ion-item")
-      .find((item) => item.text().includes("Reset aggregate ATP"));
+      .find((item) => item.text().includes("Reset channel ATP"));
     expect(resetRow).toBeDefined();
 
     const setUpButton = resetRow!.findAll("ion-button").find((b) => b.text().includes("Set up"));
@@ -450,14 +466,14 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
 
     expect(harness.ensureChannelResetJob).toHaveBeenCalledWith({
       inventoryChannelId: "IC_1002",
-      description: "Full aggregate ATP reset for Wholesale Channel",
+      description: "Full channel ATP reset for Wholesale Channel",
     });
 
     // Creating from a single channel's row lands in that job's modal, which is the one thing the
     // removed button did that Set up alone did not.
     const modal = wrapper.find("[data-testid='service-job-modal']");
     expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset aggregate ATP - Wholesale Channel");
+    expect(modal.text()).toContain("Reset channel ATP - Wholesale Channel");
     expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1002");
   });
 }, 20000);
@@ -894,5 +910,201 @@ describe("ShopifyInventorySync - the inventory channel filter", () => {
 
     expect(labelFor(wrapper, "IC_1001")).toBe("Retail Aggregate (IC_1001)");
     expect(labelFor(wrapper, "IC_1003")).toBe("Retail Aggregate (IC_1003)");
+  });
+});
+
+describe("ShopifyInventorySync - shared jobs location groups", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedChannels.value = [];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store", inventoryFeedType: "manual" }];
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedLocationSummaries.value = [];
+  });
+
+  it("renders shared channel and physical jobs in their event summary cards", async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const cards = wrapper.findAll("ion-card");
+    const channelCard = cards.find((item) => item.text().includes("Channel inventory events"))!;
+    const physicalCard = cards.find((item) => item.text().includes("Physical inventory events"))!;
+    const channelGroup = channelCard.find("ion-item-group");
+    const physicalGroup = physicalCard.find("ion-item-group");
+    const channelJobs = channelGroup.findAll("ion-item").map((row) => row.text().trim());
+    const physicalJobs = physicalGroup.findAll("ion-item").map((row) => row.text().trim());
+
+    expect(wrapper.text()).not.toContain("Manage scheduling of inventory sync with Shopify");
+    expect(channelCard.findAll("ion-item-group")).toHaveLength(1);
+    expect(physicalCard.findAll("ion-item-group")).toHaveLength(1);
+    expect(channelGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
+    expect(physicalGroup.find("ion-item-divider").text().trim()).toBe("Jobs");
+    expect(channelJobs).toHaveLength(6);
+    expect(physicalJobs).toHaveLength(4);
+    expect(channelJobs.join(" ")).toContain("Publish channel batches");
+    expect(channelJobs.join(" ")).toContain("Purge old channel events");
+    expect(channelJobs.join(" ")).toContain("Apply effective-dated inventory changes");
+    expect(channelJobs.join(" ")).toContain("Send channel batches");
+    expect(physicalJobs.join(" ")).toContain("Reset physical on-hand");
+    expect(physicalJobs.join(" ")).toContain("Purge old physical events");
+    expect(channelJobs.join(" ")).not.toContain("Reset physical on-hand");
+    expect(physicalJobs.join(" ")).not.toContain("Send channel batches");
+    expect([...channelJobs, ...physicalJobs]).toHaveLength(10);
+    wrapper.unmount();
+  });
+});
+
+describe("ShopifyInventorySync - channel facilities", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedChannels.value = [{
+      inventoryChannelId: "IC_1001",
+      shopId: "100002",
+      facilityGroupId: "FG_1",
+      facilityGroupName: "Retail Aggregate",
+      description: "Retail Aggregate aggregate inventory",
+      shopifyLocationId: "LOC_1",
+      fromDate: 1000,
+    }];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store" }];
+    cachedDataFeeds.value = [{ dataFeedId: "ShopifyInventoryEventFeed", dataFeedTypeEnumId: "push" }];
+    cachedGroupFacilities.value = [{
+      facilityGroupId: "FG_1",
+      facilityId: "STORE_1",
+      facilityName: "Store One",
+      facilityTypeId: "STORE",
+      fromDate: 1000,
+      sequenceNum: 7,
+    }];
+    cachedInventoryEventDocuments.value = [{
+      dataDocumentId: "ShopifyFacilityGroupMemberEvent",
+      channelAttached: true,
+      missing: false,
+    }];
+    inventoryEventDocumentsHydrated.value = true;
+    groupFacilitiesHydrated.value = true;
+    cachedMessages.value = [];
+    cachedAdjustmentDetails.value = [];
+    cachedLocationSummaries.value = [];
+    harness.showToast.mockReset();
+    harness.saveFacilityGroupMembers.mockReset().mockResolvedValue({ failed: false });
+  });
+
+  const mountMonitor = async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+    return wrapper;
+  };
+
+  it("shows the group once and saves facility changes from the member row", async () => {
+    const overlay = {
+      present: vi.fn().mockResolvedValue(undefined),
+      onDidDismiss: vi.fn().mockResolvedValue({ data: {
+        value: {
+          facilitiesToAdd: [{ facilityId: "STORE_2" }],
+          facilitiesToRemove: [{ facilityId: "STORE_1", fromDate: 1000 }],
+        },
+      } }),
+    };
+    const { modalController } = await import("@ionic/vue");
+    const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
+    const wrapper = await mountMonitor();
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Facilities"))!;
+
+    expect(channelCard.text()).toContain("Retail Aggregate");
+    expect(channelCard.text()).not.toContain("Retail Aggregate aggregate inventory");
+    expect(channelCard.text()).not.toContain("Retail Aggregate, Shopify Store");
+
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Facilities"))!;
+    await memberRow.trigger("click");
+    await flushPromises();
+
+    expect(createModal).toHaveBeenCalledOnce();
+    const modalOptions = createModal.mock.calls[0][0] as any;
+    expect(modalOptions.componentProps.selectedFacilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ facilityId: "STORE_1", facilityName: "Store One", fromDate: 1000 }),
+    ]));
+    expect(modalOptions.componentProps.bannerTitle).toBe("Shopify group-member updates");
+    expect(modalOptions.componentProps.bannerMessage).toContain("set to real-time push");
+    expect(modalOptions.componentProps.bannerColor).toBe("success");
+    expect(harness.saveFacilityGroupMembers).toHaveBeenCalledWith("FG_1", [
+      { facilityId: "STORE_2", fromDate: expect.any(Number), sequenceNum: 8 },
+    ], [
+      { facilityId: "STORE_1", fromDate: 1000, thruDate: expect.any(Number) },
+    ]);
+    expect(harness.showToast).toHaveBeenCalledWith("Facilities updated");
+
+    wrapper.unmount();
+    createModal.mockRestore();
+  });
+
+  it.each([
+    {
+      attached: false,
+      feedType: "push",
+      message: "Facility group changes are not being captured for Shopify",
+    },
+    {
+      attached: true,
+      feedType: "manual",
+      message: "not set to real-time push",
+    },
+  ])("explains when group-member updates are not real-time (attached=$attached, mode=$feedType)", async ({ attached, feedType, message }) => {
+    cachedInventoryEventDocuments.value = [{
+      dataDocumentId: "ShopifyFacilityGroupMemberEvent",
+      channelAttached: attached,
+      missing: false,
+    }];
+    cachedDataFeeds.value = [{ dataFeedId: "ShopifyInventoryEventFeed", dataFeedTypeEnumId: feedType }];
+    const overlay = {
+      present: vi.fn().mockResolvedValue(undefined),
+      onDidDismiss: vi.fn().mockResolvedValue({ data: undefined }),
+    };
+    const { modalController } = await import("@ionic/vue");
+    const createModal = vi.spyOn(modalController, "create").mockResolvedValue(overlay as any);
+    const wrapper = await mountMonitor();
+    const channelCard = wrapper.findAll("ion-card").find((card) => card.text().includes("Facilities"))!;
+    const memberRow = channelCard.findAll("ion-item").find((row) => row.text().includes("Facilities"))!;
+
+    await memberRow.trigger("click");
+    await flushPromises();
+
+    expect((createModal.mock.calls[0][0] as any).componentProps.bannerMessage).toContain(message);
+    expect((createModal.mock.calls[0][0] as any).componentProps.bannerColor).toBe("warning");
+    expect(harness.saveFacilityGroupMembers).not.toHaveBeenCalled();
+
+    wrapper.unmount();
+    createModal.mockRestore();
   });
 });

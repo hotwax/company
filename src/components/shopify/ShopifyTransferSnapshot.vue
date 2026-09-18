@@ -12,7 +12,7 @@
     <ion-item><ion-label>{{ translate('Destination') }}</ion-label><ion-label slot="end">{{ snapshot.destination?.name || translate('Unavailable') }}<p>{{ snapshot.destination?.location?.id }}</p></ion-label></ion-item>
     <ion-item><ion-label>{{ translate('Shopify lines and units') }}</ion-label><ion-note slot="end">{{ snapshot.lines.length }} / {{ totalUnits }}</ion-note></ion-item>
     <ion-item v-for="line in snapshot.lines" :key="line.id">
-      <ion-label class="ion-text-wrap"><h3>{{ line.inventoryItem?.sku || translate('No SKU') }}</h3><p>{{ line.inventoryItem?.id }}</p></ion-label>
+      <ion-label class="ion-text-wrap">{{ line.inventoryItem?.sku || translate('No SKU') }}<p>{{ line.inventoryItem?.id }}</p></ion-label>
       <ion-label slot="end">{{ translate('Shopify quantity') }}<p>{{ line.totalQuantity }}</p></ion-label>
     </ion-item>
   </template>

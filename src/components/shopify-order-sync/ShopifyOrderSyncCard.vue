@@ -297,7 +297,7 @@ ion-card-header {
   grid-row: 1;
   justify-self: end;
   align-self: start;
-  padding: var(--spacer-md);
+  padding: var(--spacer-base);
 }
 
 .history {
@@ -325,7 +325,7 @@ ion-card-header {
     justify-self: start;
     padding-top: 0;
     padding-bottom: var(--spacer-xs);
-    padding-left: var(--spacer-md);
+    padding-left: var(--spacer-base);
   }
 
   .history {

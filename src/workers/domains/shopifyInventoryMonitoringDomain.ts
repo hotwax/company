@@ -125,11 +125,13 @@ async function fetchRecentDetails(
   wanted: number,
   batchSize: number,
 ): Promise<any[]> {
+  // The read view intentionally does not expose Moqui's lastUpdatedStamp. createdDate is the
+  // immutable ledger timestamp and is the correct cursor for this append-only event history.
   return pageNewestFirst({
     ctx,
     url: DETAIL_ENDPOINT,
     collectionKey: DETAIL_COLLECTION,
-    params: { ...channelFilter(inventoryChannelIds), orderByField: "-lastUpdatedStamp" },
+    params: { ...channelFilter(inventoryChannelIds), orderByField: "-createdDate" },
     total: wanted,
     batchSize,
   });

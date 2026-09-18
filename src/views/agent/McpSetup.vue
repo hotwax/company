@@ -32,7 +32,7 @@
             <ion-item>
               <ion-icon slot="start" :icon="linkOutline" aria-hidden="true" />
               <ion-label class="ion-text-wrap">
-                <h2>{{ translate("MCP server URL") }}</h2>
+                {{ translate("MCP server URL") }}
                 <p class="mcp-url">{{ connection?.endpoint || translate("Your OMS connection could not be determined. Sign in again to load your instance.") }}</p>
               </ion-label>
               <ion-button slot="end" fill="clear" :disabled="!connection" :aria-label="translate('Copy MCP server URL')" @click="copy(connection!.endpoint)">
@@ -42,13 +42,13 @@
             <ion-item>
               <ion-icon slot="start" :icon="keyOutline" aria-hidden="true" />
               <ion-label class="ion-text-wrap">
-                <h2>{{ translate("Generate your MCP token") }}</h2>
+                {{ translate("Generate your MCP token") }}
                 <p>{{ translate("Create a token for your signed-in account. It uses your existing OMS permissions and the purpose MCP.") }}</p>
               </ion-label>
             </ion-item>
             <ion-item>
               <ion-label class="ion-text-wrap">
-                <h2>{{ translate("Token owner") }}</h2>
+                {{ translate("Token owner") }}
                 <p>{{ username || translate("Waiting for your user profile") }}</p>
               </ion-label>
             </ion-item>
@@ -115,25 +115,25 @@
             <ion-list lines="none">
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Open MCP settings in the Codex app") }}</h2>
+                  {{ translate("Open MCP settings in the Codex app") }}
                   <p>{{ translate("Open Settings from the app menu (Cmd+, on Mac or Ctrl+, on Windows), then select MCP servers → Add server.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Add your OMS server") }}</h2>
+                  {{ translate("Add your OMS server") }}
                   <p>{{ translate("Name the server hotwax-oms, choose Streamable HTTP, and paste the MCP server URL from Step 1 into the URL field.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Add the token as an HTTP header") }}</h2>
+                  {{ translate("Add the token as an HTTP header") }}
                   <p>{{ translate("If the form offers HTTP headers, add a header named Authorization. For its value, type Bearer followed by a space, then paste the token from Step 1. Leave the bearer-token environment-variable field empty. If header fields are unavailable, use the config.toml setup below.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Save and restart in the app") }}</h2>
+                  {{ translate("Save and restart in the app") }}
                   <p>{{ translate("Save the server, then select Restart in MCP settings. Open a new task and type /mcp in the composer to check hotwax-oms. Use the verification prompt in Step 3 to confirm access. This OMS connection uses your JWT token and does not need an OAuth sign-in.") }}</p>
                 </ion-label>
               </ion-item>
@@ -160,25 +160,25 @@
             <ion-list lines="none">
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Requires the Request headers beta") }}</h2>
+                  {{ translate("Requires the Request headers beta") }}
                   <p>{{ translate("Claude Desktop and web use account connectors. Bearer-token headers are currently available only to selected organizations. An organization owner must configure the connector with an approved shared OMS account; its credential is shared across the organization.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Add a custom web connector") }}</h2>
+                  {{ translate("Add a custom web connector") }}
                   <p>{{ translate("In Organization settings → Connectors, select Add → Custom → Web, name it hotwax-oms, and enter the MCP server URL above. In the new two-step dialog, choose No sign-in, then add a required authorization request header with the value Bearer followed by a space and your token.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Enable it in your conversation") }}</h2>
+                  {{ translate("Enable it in your conversation") }}
                   <p>{{ translate("Add the connector, then connect to it under Customize → Connectors and enable it in your chat. The instance must be reachable from Anthropic's servers, even when using the desktop app.") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("No Request headers option?") }}</h2>
+                  {{ translate("No Request headers option?") }}
                   <p>{{ translate("Use the Claude Code instructions instead. A URL-only connector cannot authenticate to this token-based OMS endpoint. Do not put the token in the URL or in the OAuth client ID or secret fields.") }}</p>
                 </ion-label>
               </ion-item>
@@ -189,7 +189,7 @@
             <ion-list lines="none">
               <ion-item v-if="client === 'claude'">
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Make your token available to the client") }}</h2>
+                  {{ translate("Make your token available to the client") }}
                   <p>{{ translate("In a bash or zsh terminal, run the commands below and paste your token at the hidden prompt. This sets HOTWAX_OMS_MCP_TOKEN for programs launched from that terminal. It is not saved for future sessions.") }}</p>
                 </ion-label>
               </ion-item>
@@ -201,7 +201,7 @@
             <ion-list lines="none">
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate(configInstructions.title) }}</h2>
+                  {{ translate(configInstructions.title) }}
                   <p>{{ translate(configInstructions.body) }}</p>
                 </ion-label>
               </ion-item>
@@ -220,7 +220,7 @@
             <ion-list lines="none">
               <ion-item>
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate("Reload and connect") }}</h2>
+                  {{ translate("Reload and connect") }}
                   <p v-if="client === 'claude'">{{ translate("Start claude from that terminal in the project containing .mcp.json. Approve the project server when prompted, then use /mcp to check hotwax-oms. The Code tab in Claude Desktop also needs the token in its process environment.") }}</p>
                   <p v-else>{{ translate("Save the file, refresh the MCP server list, and enable hotwax-oms. In the CLI, use /mcp to reload and inspect its status. Update older clients if they do not support serverUrl and custom headers.") }}</p>
                 </ion-label>
@@ -257,7 +257,7 @@
             <ion-list slot="content" lines="full">
               <ion-item v-for="item in troubleshooting" :key="item.title">
                 <ion-label class="ion-text-wrap">
-                  <h2>{{ translate(item.title) }}</h2>
+                  {{ translate(item.title) }}
                   <p>{{ translate(item.body) }}</p>
                 </ion-label>
               </ion-item>
