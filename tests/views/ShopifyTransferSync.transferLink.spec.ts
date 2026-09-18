@@ -75,6 +75,10 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 }));
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferSyncEnrichment: () => ({
+    enrichment: { value: {} },
+    load: vi.fn(),
+  }),
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 1 }), creationOrderCount: ref(1), total: ref(1), hydrated: ref(true),
   }),
