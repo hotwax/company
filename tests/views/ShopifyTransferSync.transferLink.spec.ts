@@ -55,20 +55,6 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), paused: ref([]), active: ref([]), records: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSync", () => ({
-  useShopifyTransferSync: () => ({
-    enrichment: ref({
-      ordersById: { "128253": { orderName: "TO128253" } },
-      creationOccurredAtByOrderId: {},
-      facilityNamesById: {},
-      receiptsByOrderId: {},
-      receiverNamesById: {},
-      shopifyShipmentIdsByOmsShipmentId: {},
-    }),
-    load: vi.fn(),
-  }),
-}));
-
 vi.mock("@/utils/shopifyTransferSync", async () => ({
   ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
   isTransferSyncMonitoringLoaded: () => true,
@@ -76,7 +62,14 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyTransferSyncEnrichment: () => ({
-    enrichment: { value: {} },
+    enrichment: { value: {
+      ordersById: { "128253": { orderName: "TO128253" } },
+      creationOccurredAtByOrderId: {},
+      facilityNamesById: {},
+      receiptsByOrderId: {},
+      receiverNamesById: {},
+      shopifyShipmentIdsByOmsShipmentId: {},
+    } },
     load: vi.fn(),
   }),
   useShopifyPendingCounts: () => ({
