@@ -83,6 +83,23 @@ describe("fetchSqsConsumerQueues", () => {
     expect(hasLoaded.value).toBe(true);
     expect(loadError.value).toBe("Artifact group SOB_APP denied");
   });
+
+  it("does not let an in-flight response repopulate queues after logout", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => { release = resolve; });
+    harness.api.mockReturnValue(pending);
+    const aws = await loadComposable();
+    const { queues, hasLoaded } = aws.useAws();
+    const request = aws.useAws().fetchSqsConsumerQueues();
+
+    const { clearSessionScopedState } = await import("@/composables/sessionScope");
+    clearSessionScopedState();
+    release({ data: { queues: [ORDER_QUEUE] } });
+    await request;
+
+    expect(queues.value).toEqual([]);
+    expect(hasLoaded.value).toBe(false);
+  });
 });
 
 describe("updateSqsQueueDelay", () => {

@@ -93,7 +93,7 @@
                 <ion-button
                   slot="end"
                   fill="clear"
-                  :disabled="savingJobName === queue.jobName"
+                  :disabled="isLoading || savingJobName === queue.jobName"
                   :aria-label="translate('Edit delivery delay')"
                   :data-testid="`edit-delay-${queue.jobName}`"
                   @click="editDelay(queue)"

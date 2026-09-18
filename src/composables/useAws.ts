@@ -23,9 +23,13 @@ const state = reactive({
   hasLoaded: false,
   loadError: "",
 });
+let sessionGeneration = 0;
+let requestGeneration = 0;
 
 // Module state survives an SPA logout; without this user B would see user A's queues.
 onSessionCleared(() => {
+  sessionGeneration += 1;
+  requestGeneration += 1;
   state.queues = [];
   state.status = "none";
   state.hasLoaded = false;
@@ -33,20 +37,24 @@ onSessionCleared(() => {
 });
 
 async function fetchSqsConsumerQueues(): Promise<SqsConsumerQueue[]> {
+  const session = sessionGeneration;
+  const request = ++requestGeneration;
   state.status = "pending";
   try {
     const resp: any = await api({ url: "sob/shopify/sqsQueues", method: "get" });
     if(hasError(resp)) {throw new Error(getResponseErrorMessage(resp, translate("Failed to load SQS queues.")));}
+    if(session !== sessionGeneration || request !== requestGeneration) {return state.queues;}
     state.queues = Array.isArray(resp?.data?.queues) ? resp.data.queues : [];
     state.loadError = "";
     state.status = "success";
   } catch (error) {
+    if(session !== sessionGeneration || request !== requestGeneration) {return state.queues;}
     logger.error(error);
     state.queues = [];
     state.loadError = getResponseErrorMessage(error, translate("Failed to load SQS queues."));
     state.status = "error";
   } finally {
-    state.hasLoaded = true;
+    if(session === sessionGeneration && request === requestGeneration) {state.hasLoaded = true;}
   }
 
   return state.queues;
