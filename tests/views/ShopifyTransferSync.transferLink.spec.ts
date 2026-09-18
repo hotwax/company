@@ -55,23 +55,26 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), paused: ref([]), active: ref([]), records: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/utils/shopifyTransferSync", async () => ({
-  ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
-  isTransferSyncMonitoringLoaded: () => true,
-}));
-
-vi.mock("@/composables/useShopifyTransferSync", () => ({
+vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   useShopifyTransferSyncEnrichment: () => ({
-    enrichment: { value: {
+    enrichment: ref({
       ordersById: { "128253": { orderName: "TO128253" } },
       creationOccurredAtByOrderId: {},
       facilityNamesById: {},
       receiptsByOrderId: {},
       receiverNamesById: {},
       shopifyShipmentIdsByOmsShipmentId: {},
-    } },
+    }),
     load: vi.fn(),
   }),
+}));
+
+vi.mock("@/utils/shopifyTransferSync", async () => ({
+  ...(await vi.importActual<typeof import("@/utils/shopifyTransferSync")>("@/utils/shopifyTransferSync")),
+  isTransferSyncMonitoringLoaded: () => true,
+}));
+
+vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
     counts: ref({ create: 1 }), creationOrderCount: ref(1), total: ref(1), hydrated: ref(true),
   }),

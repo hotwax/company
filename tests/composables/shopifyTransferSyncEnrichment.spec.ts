@@ -7,7 +7,7 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false },
 }));
 
-import { createTransferSyncEnrichmentClient } from "@/composables/useShopifyTransferSync";
+import { createTransferSyncEnrichmentClient } from "@/composables/useShopifyTransferSyncEnrichment";
 
 describe("createTransferSyncEnrichmentClient", () => {
   beforeEach(() => {
