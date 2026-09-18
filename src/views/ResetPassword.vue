@@ -81,7 +81,7 @@ import { arrowForwardOutline, warningOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import Logo from "@common/components/Logo.vue";
 import router from "@/router";
-import { useResetPassword } from "@/composables/useResetPassword";
+import { useUserAccountActions } from "@/composables/useSecurity";
 
 const route = router.currentRoute.value;
 
@@ -98,7 +98,7 @@ const isSubmitting = ref(false);
 const newPasswordInput = ref<any>(null);
 const newPasswordVerifyInput = ref<any>(null);
 
-const { resetPassword: submitResetPassword } = useResetPassword();
+const { resetPassword: submitResetPassword } = useUserAccountActions();
 
 const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
