@@ -197,7 +197,22 @@
               {{ translate("The endpoint ships with a pending connector change; this segment fills in once it is deployed.") }}
             </ion-card-content>
           </ion-card>
+          <ion-card v-else-if="historySyncError && !syncedRows.length" color="danger">
+            <ion-card-header>
+              <ion-card-title>{{ translate("Fulfillment history could not be loaded") }}</ion-card-title>
+            </ion-card-header>
+            <ion-card-content>
+              <p>{{ historySyncError }}</p>
+              <ion-button fill="outline" @click="syncNow()">{{ translate("Retry") }}</ion-button>
+            </ion-card-content>
+          </ion-card>
           <template v-else>
+            <ion-card v-if="historySyncError" color="warning">
+              <ion-card-content>
+                {{ translate("The last fulfillment history refresh failed; showing the last cached result.") }}
+                <ion-button fill="clear" @click="syncNow()">{{ translate("Retry") }}</ion-button>
+              </ion-card-content>
+            </ion-card>
             <FulfillmentShipmentCard
               v-for="card in syncedCards"
               :key="card.key"
@@ -396,16 +411,16 @@ import FulfillmentOrderSearch from "@/components/shopify-fulfillment/Fulfillment
 import { useOrderSyncHistory } from "@/composables/useOrderSyncHistory";
 import { parseFulfillmentMessageText } from "@/utils/shopifyFulfillment";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
-import { useFulfillmentSyncHealth } from "@/composables/useShopifyFulfillment";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useCacheSync } from "@/composables/useCacheSync";
 import { useFacilities } from "@/composables/useFacilities";
-import { useShopifySyncContext } from "@/composables/useShopify";
+import {
+  useFulfillmentSyncHealth, useShopifySyncContext, useOmsShipmentContext, usePendingFulfillments,
+  useQueuedFulfillments, useShopifyFulfillmentDetails, useSyncedFulfillments,
+} from "@/composables/useShopify";
 import {
   type OmsShipmentContext, type QueuedFulfillmentRow, type SyncedFulfillmentRow,
-  useOmsShipmentContext, useQueuedFulfillments, useShopifyFulfillmentDetails,
-  useSyncedFulfillments, usePendingFulfillments,
-} from "@/composables/useShopifyFulfillment";
+} from "@/composables/useShopify";
 import { useSystemMessage, useSystemMessageErrors } from "@/composables/useSystemMessage";
 import { downloadTextFile, formatDateTime } from "@/utils";
 import {
@@ -422,7 +437,8 @@ const selectedOrders = ref<any[]>([]);
 const selectedOrderIds = computed(() => selectedOrders.value.map(order => order.orderId));
 const orderHistory = useOrderSyncHistory(() => String(props.id), () => selectedOrderIds.value);
 function messageStatusLabel(status: string) {
-  return translate(({ SmsgSent: 'Synced', SmsgProduced: 'Queued', SmsgSending: 'Sending', SmsgError: 'Error', SmsgCancelled: 'Canceled' } as Record<string, string>)[status] || status);
+  const labels = { SmsgSent: 'Synced', SmsgProduced: 'Queued', SmsgSending: 'Sending', SmsgError: 'Error', SmsgCancelled: 'Canceled' } as Record<string, string>;
+  return translate(labels[status] || 'Unknown fulfillment sync status ({status})', { status });
 }
 const syncContext = useShopifySyncContext(() => props.id);
 const { rows: recentQueuedRows, hydrated: recentQueuedHydrated } = useQueuedFulfillments(() => props.id);
@@ -476,7 +492,8 @@ const { records: cachedFacilities } = useFacilities();
  * health counts shift, and on success a row lands in Synced. A forced cycle is what refreshes all
  * four; destructuring `afterMutation` here only suggested a targeted refresh that cannot work.
  */
-const { start: startSyncDomains, stop: stopSyncDomains, syncNow } = useCacheSync();
+const { start: startSyncDomains, stop: stopSyncDomains, syncNow, error: syncError } = useCacheSync();
+const historySyncError = computed(() => String(syncError.value || "").startsWith("shopifyFulfillmentHistory:") ? syncError.value : "");
 
 // ---------------------------------------------------------------------------------------------
 // Worker lifecycle — the same start/stop shape the inventory sync page uses.
@@ -503,11 +520,14 @@ watch(() => `${props.id ?? ""}|${syncContext.remoteIds.value.join(",")}|${select
 
 onIonViewWillEnter(() => {
   isViewActive.value = true;
+  waitingClock.value = Date.now();
+  waitingClockTimer = setInterval(() => { waitingClock.value = Date.now(); }, 60_000);
   void startSyncDomains(activeSyncDomains());
 });
 
 onIonViewDidLeave(() => {
   isViewActive.value = false;
+  if(waitingClockTimer) {clearInterval(waitingClockTimer); waitingClockTimer = undefined;}
   stopSyncDomains();
 });
 
@@ -613,8 +633,11 @@ interface QueuedCardView {
 }
 
 /** An age ("3d 4h", "52m") rather than a stamp the operator has to subtract from now themselves. */
-function formatWaiting(initDate: number): string {
-  const minutes = Math.max(0, Math.floor((Date.now() - initDate) / 60_000));
+const waitingClock = ref(Date.now());
+let waitingClockTimer: ReturnType<typeof setInterval> | undefined;
+
+function formatWaiting(initDate: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - initDate) / 60_000));
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   if(days) {return hours ? `${days}d ${hours}h` : `${days}d`;}
@@ -700,7 +723,7 @@ const queuedCards = computed<QueuedCardView[]>(() => queuedRows.value.map((messa
           { icon: refreshOutline, label: translate("Last attempt"), value: formatDateTime(message.lastAttemptDate) },
         ] : []),
         ...(message.initDate ? [
-          { icon: timeOutline, label: translate("Waiting"), value: formatWaiting(message.initDate) },
+          { icon: timeOutline, label: translate("Waiting"), value: formatWaiting(message.initDate, waitingClock.value) },
         ] : []),
       ],
       items: shipmentItems(ctx?.items?.length ? ctx.items : message.parsed.items),

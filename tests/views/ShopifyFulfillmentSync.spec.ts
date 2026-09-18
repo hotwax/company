@@ -99,7 +99,7 @@ vi.mock("@/composables/useCacheSync", () => ({
 
 const shipmentContexts = new Map<string, any>();
 
-vi.mock("@/composables/useShopifyFulfillment", () => ({
+vi.mock("@/composables/useShopify", () => ({
   useFulfillmentSyncHealth: () => ({ health: healthRow, hydrated: ref(true) }),
   useOmsShipmentContext: () => ({
     getShipmentContext: (query: { shipmentId?: string; orderId?: string }) =>
@@ -110,6 +110,12 @@ vi.mock("@/composables/useShopifyFulfillment", () => ({
   useSyncedFulfillments: () => ({ rows: syncedRows, hydrated: syncedHydrated, endpointMissing }),
   useShopifyFulfillmentDetails: () => ({
     getFulfillmentDetails: (...args: any[]) => harness.getFulfillmentDetails(...args),
+  }),
+  useShopifySyncContext: () => ({
+    shopId: ref("100002"),
+    remoteId: ref("REMOTE_100002"),
+    remoteIds: ref(["REMOTE_100002"]),
+    hydrated: ref(true),
   }),
 }));
 
@@ -135,15 +141,6 @@ vi.mock("@/composables/useFacilities", () => ({
   useFacilities: () => ({
     facilities: cachedFacilities,
     records: cachedFacilities,
-    hydrated: ref(true),
-  }),
-}));
-
-vi.mock("@/composables/useShopify", () => ({
-  useShopifySyncContext: () => ({
-    shopId: ref("100002"),
-    remoteId: ref("REMOTE_100002"),
-    remoteIds: ref(["REMOTE_100002"]),
     hydrated: ref(true),
   }),
 }));

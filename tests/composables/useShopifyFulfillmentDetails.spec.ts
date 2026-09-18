@@ -193,6 +193,26 @@ describe("useShopifyFulfillmentDetails", () => {
     expect(harness.api).toHaveBeenCalledTimes(1);
   });
 
+  it("refreshes a cached fulfillment after the session TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-07T12:00:00.000Z"));
+    try {
+      harness.api
+        .mockResolvedValueOnce(graphqlEnvelope(FULFILLMENT))
+        .mockResolvedValueOnce(graphqlEnvelope({ ...FULFILLMENT, status: "CANCELLED" }));
+      const read = useShopifyFulfillmentDetails().getFulfillmentDetails;
+
+      await read({ shopId: "10000", fulfillmentId: "ttl-1" });
+      vi.advanceTimersByTime(5 * 60_000);
+      const refreshed = await read({ shopId: "10000", fulfillmentId: "ttl-1" });
+
+      expect(harness.api).toHaveBeenCalledTimes(2);
+      expect(refreshed).toMatchObject({ status: "CANCELLED" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("bypasses cached data for a fresh downloadable snapshot", async () => {
     harness.api.mockResolvedValueOnce(graphqlEnvelope(FULFILLMENT)).mockResolvedValueOnce(graphqlEnvelope({ ...FULFILLMENT, status: "CANCELLED", updatedAt: "2026-09-08T01:00:00Z" }));
     const read = useShopifyFulfillmentDetails().getFulfillmentDetails;

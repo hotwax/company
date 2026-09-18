@@ -239,6 +239,7 @@ export interface ShopifyFulfillmentDetailsRequest {
  * card to "unreachable" all session.
  */
 const fulfillmentDetailsSessionCache = new Map<string, ShopifyFulfillmentDetails>();
+const FULFILLMENT_DETAILS_CACHE_TTL_MS = 5 * 60_000;
 
 onSessionCleared(() => fulfillmentDetailsSessionCache.clear());
 
@@ -252,7 +253,10 @@ export function useShopifyFulfillmentDetails() {
 
     const cacheKey = `${scopeId}:${fulfillmentId}`;
     const cached = fulfillmentDetailsSessionCache.get(cacheKey);
-    if(cached && !request.forceRefresh) {return cached;}
+    const cachedAt = cached?.fetchedAt ? Date.parse(cached.fetchedAt) : NaN;
+    if(cached && !request.forceRefresh && Number.isFinite(cachedAt) && Date.now() - cachedAt < FULFILLMENT_DETAILS_CACHE_TTL_MS) {
+      return cached;
+    }
 
     try {
       const variables = {
