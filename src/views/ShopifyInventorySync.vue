@@ -1971,30 +1971,10 @@ watch(() => syncContext.shopId?.value, (shopId) => {
 const { products: resolvedProducts, resolve: resolveProductNames } = useProducts();
 const { sources: resolvedSources, resolve: resolveSourceNames, sourceKeyOf } = useInventoryEventSources();
 
-/** Effective member facilities of a channel's group, which is what a scoped lookup can search. */
-const facilityIdsByGroup = computed(() => {
-  const byGroup = new Map<string, string[]>();
-  for(const member of cachedGroupFacilities.value) {
-    if(!isEffectiveNow(member, groupFacilitiesEffectiveNow.value)) {continue;}
-    const group = String(member.facilityGroupId ?? "");
-    const facilityId = String(member.facilityId ?? "");
-    if(!group || !facilityId) {continue;}
-    const bucket = byGroup.get(group);
-    if(bucket) {bucket.push(facilityId);} else {byGroup.set(group, [facilityId]);}
-  }
-
-  return byGroup;
-});
-
 function lookupFor(event: InventoryEvent): InventoryEventSourceLookup {
-  const channel = allInventoryChannels.value.find((candidate: any) =>
-    String(candidate.inventoryChannelId) === event.inventoryChannelId);
-
   return {
     eventTypeId: event.eventTypeId,
     eventReferenceId: event.eventReferenceId,
-    productId: event.productId,
-    facilityIds: facilityIdsByGroup.value.get(String(channel?.facilityGroupId ?? "")) ?? [],
   };
 }
 
@@ -2798,8 +2778,8 @@ function locationLabel(detail: any): string {
  * A bare number tells an operator nothing about where to look, so this names the record type. It is a
  * DISPLAY LABEL ONLY and the raw reference is always shown beside it, so an unrecognised type -- a new
  * one seeded in the OMS before this app ships -- degrades to the reference alone rather than to a wrong
- * label. The durable fix for "which sales order was that" is a resolved source on the server; this
- * ledger row deliberately carries no order, return or shipment id at all.
+ * label. This ledger row deliberately carries no order, return or shipment id at all: "which sales
+ * order was that" is answered by resolving the reference against the OMS, not by reading this label.
  */
 const SOURCE_RECORD_LABELS: Record<string, string> = {
   [SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT]: "Shipment receipt",
@@ -3949,46 +3929,22 @@ const {
 } = useVirtualRows(historyEvents, { estimatedRowHeight: 67 });
 
 /**
- * Source artifacts for the rows actually on screen.
+ * Source artifacts for the rows actually on screen, not for the whole list.
  *
- * NOT for the whole list. The receipt and issuance families need a walk over the channel's facilities,
- * which is affordable for a row a person opened and not for hundreds; those are skipped here (no
- * `fanOut`) and resolved when the row's detail opens. The reservation, cycle-count and external-reset
- * families each cost one call, so the visible window carries real names without a click.
+ * The reservation, cycle count and external reset families each cost one call keyed by the reference
+ * the row already carries. The receipt and issuance families are answered in BULK -- the whole visible
+ * window in one request -- because the OMS GraphQL movement root takes their id with no facility scope
+ * and accepts a comma list. On an OMS that predates that root they fall back to rendering the bare
+ * reference, which is what this page did before it existed.
  */
-/**
- * How many facilities a row's channel may be walked over before the list stops asking.
- *
- * The receipt and issuance families cannot be looked up by their own id: the scoped inventory-history
- * mount needs a productId AND a facilityId, and the ledger carries no facility because the event is
- * aggregate over a facility GROUP. So naming the order behind a POS issuance costs one request per
- * member facility until one hits.
- *
- * That is one or two requests on a channel like `RetailAggregateUK`, and fifteen on
- * `RetailAggregate` -- fifteen per row, for every row in the window, on every scroll. So the list
- * resolves these names where the walk is short and leaves them to the row's own detail where it is
- * not; opening a row still fans out unconditionally, because a person asked for that one.
- *
- * The durable fix is server-side: a mount that accepts the issuance or receipt id as its own scope
- * collapses the walk to a single call and this threshold goes away.
- */
-const SOURCE_WALK_LIMIT = 3;
-
 watch(virtualEvents, (events) => {
   if(!events.length) {return;}
-  const lookups = events.map(lookupFor);
-  const short = lookups.filter((lookup) => lookup.facilityIds.length <= SOURCE_WALK_LIMIT);
-  const long = lookups.filter((lookup) => lookup.facilityIds.length > SOURCE_WALK_LIMIT);
-  if(short.length) {void resolveSourceNames(short, { fanOut: true });}
-  if(long.length) {void resolveSourceNames(long);}
+  void resolveSourceNames(events.map(lookupFor));
 }, { immediate: true });
 
-/**
- * Opening a row is the explicit request that pays for the facility walk. Everything already resolved is
- * skipped inside the resolver, so this only ever adds the receipt/issuance families.
- */
+/** An opened row is resolved on its own, in case it was outside the window the list resolved. */
 watch(selectedEvent, (event) => {
-  if(event) {void resolveSourceNames([lookupFor(event)], { fanOut: true });}
+  if(event) {void resolveSourceNames([lookupFor(event)]);}
 });
 
 // A narrower filter should start the reader at the top of the new results rather than mid-scroll.
