@@ -108,8 +108,8 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
   }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  useShopifyTransferSyncEnrichment: () => ({
+vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferSync: () => ({
     enrichment: ref({}),
     load: vi.fn(),
   }),

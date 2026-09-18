@@ -55,8 +55,8 @@ vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({ jobs: ref([]), paused: ref([]), active: ref([]), records: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
-  useShopifyTransferSyncEnrichment: () => ({
+vi.mock("@/composables/useShopifyTransferSync", () => ({
+  useShopifyTransferSync: () => ({
     enrichment: ref({
       ordersById: { "128253": { orderName: "TO128253" } },
       creationOccurredAtByOrderId: {},
