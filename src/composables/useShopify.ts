@@ -1464,7 +1464,7 @@ function isMovementRootUndefined(errors: any[]): boolean {
 /** Not mounted, or not ours to call. Either way it will not start working later in this session. */
 function movementRootDenialOf(error: any): string {
   const status = Number(error?.response?.status ?? error?.status ?? 0);
-  if(status === 401 || status === 403) {
+  if(status === 403) {
     return translate("This app is not authorized to read inventory movements from the OMS.");
   }
   if(status === 404) {
@@ -1486,11 +1486,13 @@ function movementUnresolved(reason: string): InventoryEventSource {
 async function readMovementDocuments(
   family: MovementFamily, references: string[]
 ): Promise<Map<string, InventoryEventSource>> {
+  const requestGeneration = eventSourceGeneration;
   const answers = new Map<string, InventoryEventSource>();
   const { root, searchKey } = MOVEMENT_ROOTS[family];
   // Still unknown, and someone is already finding out: wait for them rather than asking in parallel.
   if(movementRootAvailable === null && movementRootProbe) {
     await movementRootProbe.catch(() => undefined);
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
   }
   if(movementRootAvailable === false) {
     for(const reference of references) {
@@ -1513,7 +1515,9 @@ async function readMovementDocuments(
     });
     if(movementRootAvailable === null) {movementRootProbe = request;}
     response = await request;
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
   } catch (error) {
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
     // A 401/403/404 is about the deployment, not this request: retrying it per row is the storm.
     const denial = movementRootDenialOf(error);
     if(!denial) {throw error;}
@@ -1591,8 +1595,6 @@ function eventSourceResolverFor(eventTypeId: string) {
 
 /** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
 function movementFamilyFor(eventTypeId: string): MovementFamily | null {
-  if(movementRootAvailable === false) {return null;}
-
   return MOVEMENT_FAMILIES[eventTypeId] ?? null;
 }
 

@@ -263,7 +263,6 @@ describe("useInventoryEventSources — the document behind a movement", () => {
    */
   it.each([
     [403, "not authorized"],
-    [401, "not authorized"],
     [404, "does not expose"],
   ])("stops asking after HTTP %i and says why", async (status, expected) => {
     harness.api.mockRejectedValue({ response: { status } });
@@ -274,6 +273,32 @@ describe("useInventoryEventSources — the document behind a movement", () => {
 
     expect(graphqlCalls().length).toBe(1);
     expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain(expected);
+  });
+
+  it("does not let a stale pre-logout capability response poison the next session", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const gate = new Promise((resolve) => { release = resolve; });
+    harness.api
+      .mockImplementationOnce(async () => {
+        await gate;
+        throw { response: { status: 403 } };
+      })
+      .mockImplementation(async (args: any) => {
+        if(String(args?.url) !== "graphql") {return { data: [] };}
+        return String(args.data.query).includes("orders(")
+          ? orderResponse([{ orderId: "10779", orderName: "Next-session order", orderTypeId: "PURCHASE_ORDER" }])
+          : movementResponse([{ receiptId: "R2", orderId: "10779" }]);
+      });
+
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+    const previousSession = resolve([receiptLookup("R1")]);
+    clearSessionScopedState();
+    const nextSession = resolve([receiptLookup("R2")]);
+    release(undefined);
+    await Promise.all([previousSession, nextSession]);
+
+    expect(movementCalls().length).toBe(2);
+    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toContain("Next-session order");
   });
 
   /**
