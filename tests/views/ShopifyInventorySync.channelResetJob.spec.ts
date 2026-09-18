@@ -2,6 +2,7 @@
 import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
+import { SHOPIFY_INVENTORY_EVENT_TYPE } from "@/utils/shopifyInventoryEventTypes";
 
 const cachedJobs = ref<any[]>([]);
 const cachedChannels = ref<any[]>([]);
@@ -546,7 +547,7 @@ describe("ShopifyInventorySync - the event table never claims empty over unreada
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
     }];
     cachedAdjustmentDetails.value = [{
-      eventTypeId: "RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
+      eventTypeId: SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT, eventReferenceId: "R1", inventoryChannelId: "IC_1001",
       shopifyInventoryItemId: "ITEM_1", detailStatusId: "DETAIL_ASSIGNED",
       systemMessageId: "BATCH_REJECTED", systemMessageStatusId: "SmsgRejected",
       computedInventoryChange: 1, createdDate: 1000,
@@ -567,7 +568,7 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     systemMessageId: "",
     inventoryChannelId: "IC_1001",
     shopifyInventoryItemId: "ITEM_1",
-    eventTypeId: "RECEIPT",
+    eventTypeId: SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT,
     computedInventoryChange: 1,
     createdDate: 1000,
     ...over,
@@ -636,7 +637,8 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     cachedAdjustmentDetails.value = [
       pendingRow({
         eventReferenceId: "R_VARIANT",
-        decisionComment: "Event RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
+        decisionComment:
+          `Event ${SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT}:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.`,
       }),
       pendingRow({ eventReferenceId: "R_OTHER" }),
     ];

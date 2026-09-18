@@ -28,6 +28,9 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
+import {
+  PHYSICAL_EVENT_TYPES, RECEIPT_EVENT_TYPES, SHOPIFY_INVENTORY_EVENT_TYPE, isReservationEventType,
+} from "@/utils/shopifyInventoryEventTypes";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
@@ -1111,9 +1114,6 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
   return `${eventTypeId}|${eventReferenceId}`;
 }
 
-const RECEIPT_EVENT_TYPES = ["RECEIPT", "TRANSFER_RECEIPT", "RETURN_RESTOCK"];
-const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
-
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
 /**
@@ -1227,7 +1227,7 @@ async function eventSourceActorName(userLoginId: string): Promise<string> {
 }
 
 /**
- * RESERVATION_CREATE / RESERVATION_RELEASE -- one call, no scan.
+ * The four reservation families -- generic and transfer, create and release -- one call, no scan.
  *
  * The reference is `inventoryItemId:inventoryItemDetailSeqId`, which is exactly the path id plus the
  * filter this mount takes, so the row it describes is addressable directly. The only family where that
@@ -1251,13 +1251,13 @@ async function resolveReservationSource(lookup: InventoryEventSourceLookup): Pro
 }
 
 /**
- * PHYSICAL_INVENTORY / CYCLE_COUNT -- who, and which count.
+ * SIE_PHYSICAL_INVENTORY / SIE_CYCLE_COUNT -- who, and which count.
  *
  * `varianceDecisions` is the one enrichment resource on this OMS that needs no path scope: it takes the
  * physicalInventoryId straight off the ledger reference. Its own contract describes it as bridging a
  * cycle-count variance to the decision that produced it, which is precisely the question here.
  *
- * A PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
+ * A SIE_PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
  * is the expected answer for half this family rather than a failure. The fallback -- the manual-variance
  * audit trail on inventoryItem/{id}/variances -- needs an inventoryItemId that only the decision would
  * have supplied, so a manual variance stops here and says so.
@@ -1290,7 +1290,7 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
   };
 }
 
-/** EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
+/** SIE_EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
 async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
   const reset = await readEventSource(`poorti/externalInventoryResets/${encodeURIComponent(lookup.eventReferenceId)}`);
   if(!reset?.resetItemId) {
@@ -1307,7 +1307,7 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
 }
 
 /**
- * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE -- the families that need a scan.
+ * SIE_RECEIPT / SIE_TRANSFER_RECEIPT / SIE_RETURN_RESTOCK / SIE_POS_ISSUANCE -- the families that need a scan.
  *
  * Both inventory-history mounts are scoped by path on purpose, so that "the InventoryItemDetail table
  * can never be scanned unfiltered". The consequence is that a receiptId alone cannot be looked up: it
@@ -1371,13 +1371,13 @@ async function resolveMovementSource(lookup: InventoryEventSourceLookup, filterF
 }
 
 function eventSourceResolverFor(eventTypeId: string, fanOut: boolean) {
-  if(eventTypeId.startsWith("RESERVATION_")) {return resolveReservationSource;}
+  if(isReservationEventType(eventTypeId)) {return resolveReservationSource;}
   if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
-  if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
+  if(eventTypeId === SHOPIFY_INVENTORY_EVENT_TYPE.EXTERNAL_RESET) {return resolveExternalResetSource;}
   if(RECEIPT_EVENT_TYPES.includes(eventTypeId)) {
     return fanOut ? (l: InventoryEventSourceLookup) => resolveMovementSource(l, "receiptId") : null;
   }
-  if(eventTypeId === "POS_ISSUANCE") {
+  if(eventTypeId === SHOPIFY_INVENTORY_EVENT_TYPE.POS_ISSUANCE) {
     return fanOut ? (l: InventoryEventSourceLookup) => resolveMovementSource(l, "itemIssuanceId") : null;
   }
 

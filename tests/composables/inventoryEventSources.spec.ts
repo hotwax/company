@@ -25,10 +25,11 @@ vi.mock("@/composables/useCachedList", () => ({
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
 import { useInventoryEventSources } from "@/composables/useShopify";
+import { RESERVATION_EVENT_TYPES, SHOPIFY_INVENTORY_EVENT_TYPE } from "@/utils/shopifyInventoryEventTypes";
 
 /** A cycle count resolves through one call to `varianceDecisions`, so it is the cheapest probe. */
 const countLookup = (eventReferenceId = "PI_1") => ({
-  eventTypeId: "CYCLE_COUNT",
+  eventTypeId: SHOPIFY_INVENTORY_EVENT_TYPE.CYCLE_COUNT,
   eventReferenceId,
   productId: "P1",
   facilityIds: ["FAC_1"],
@@ -36,7 +37,7 @@ const countLookup = (eventReferenceId = "PI_1") => ({
 
 /** A receipt needs the facility walk, which is what the cold-cache case turns on. */
 const receiptLookup = (facilityIds: string[]) => ({
-  eventTypeId: "RECEIPT",
+  eventTypeId: SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT,
   eventReferenceId: "R_1",
   productId: "P1",
   facilityIds,
@@ -60,7 +61,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     const calls = harness.api.mock.calls.length;
     await resolve([countLookup()]);
 
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
+    expect(sources.value.get(sourceKeyOf(SHOPIFY_INVENTORY_EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.label).toContain("Weekly count");
     expect(harness.api.mock.calls.length).toBe(calls);
   });
 
@@ -79,7 +80,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     // Three attempts, then the page stops asking — not one per tick for the life of the session.
     expect(harness.api.mock.calls.length).toBe(3);
     expect(harness.api.mock.calls.every(([args]: any[]) => String(args?.url).includes("varianceDecisions"))).toBe(true);
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.unresolved)
+    expect(sources.value.get(sourceKeyOf(SHOPIFY_INVENTORY_EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.unresolved)
       .toContain("no longer being retried");
   });
 
@@ -92,7 +93,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     await resolve([countLookup()]);
     await resolve([countLookup()]);
 
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
+    expect(sources.value.get(sourceKeyOf(SHOPIFY_INVENTORY_EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.label).toContain("Weekly count");
   });
 
   /**
@@ -101,7 +102,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
    */
   it("re-asks a cache-dependent answer once the cache it needed is warm", async () => {
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
-    const key = sourceKeyOf("RECEIPT", "R_1");
+    const key = sourceKeyOf(SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT, "R_1");
 
     await resolve([receiptLookup([])], { fanOut: true });
     expect(sources.value.get(key)?.unresolved).toContain("no cached member facilities");
@@ -111,6 +112,33 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     await resolve([receiptLookup(["FAC_1"])], { fanOut: true });
 
     expect(sources.value.get(key)?.label).toContain("SO-10042");
+  });
+
+  /**
+   * The trap the `SIE_` rename sets. The transfer pair is spelled `SIE_TRANSFER_RESERVATION_*`, so the
+   * prefix test this dispatch used to run -- `startsWith("RESERVATION_")`, and equally a naive
+   * `startsWith("SIE_RESERVATION_")` -- matches only the generic two and leaves a transfer-order
+   * reservation with NO resolver at all: no order on the row, and its reference rendered as one opaque
+   * colon-joined token. All four families read the same InventoryItemDetail row.
+   */
+  it("resolves every reservation family, the new transfer ones included", async () => {
+    harness.api.mockResolvedValue({
+      data: [{ orderId: "TO_1", orderName: "TO-55", orderTypeId: "TRANSFER_ORDER" }],
+    });
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve(RESERVATION_EVENT_TYPES.map((eventTypeId) => ({
+      eventTypeId,
+      eventReferenceId: "INV_1:00001",
+      productId: "P1",
+      facilityIds: ["FAC_1"],
+    })));
+
+    // Generic create/release plus transfer create/release — a shrunk list would make this vacuous.
+    expect(RESERVATION_EVENT_TYPES.length).toBe(4);
+    for(const eventTypeId of RESERVATION_EVENT_TYPES) {
+      expect(sources.value.get(sourceKeyOf(eventTypeId, "INV_1:00001"))?.label).toContain("TO-55");
+    }
   });
 
   it("does not re-queue keys a concurrent pass is already resolving", async () => {
