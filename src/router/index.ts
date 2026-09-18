@@ -39,6 +39,7 @@ const SalesChannel = () => import("@/views/SalesChannel.vue")
 const Departments = () => import("@/views/Departments.vue")
 const ShopifyConnectionDetails = () => import("@/views/ShopifyConnectionDetails.vue")
 const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
+const NotificationSubscriptions = () => import("@/views/NotificationSubscriptions.vue")
 const Klaviyo = () => import("@/views/Klaviyo.vue")
 const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.vue")
 const CloneProductStore = () => import("@/views/CloneProductStore.vue")
@@ -180,6 +181,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/shopify-connection-details/:id/transfer-sync", name: "ShopifyTransferSync", component: () => import("@/views/ShopifyTransferSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/fulfillment-sync", name: "ShopifyFulfillmentSync", component: () => import("@/views/ShopifyFulfillmentSync.vue"), props: true, beforeEnter: authGuard },
   { path: "/shopify-connection-details/:id/instance-details", name: "ShopifyInstanceDetails", component: () => import("@/views/ShopifyShopDetails.vue"), props: true, beforeEnter: authGuard },
+  { path: "/notifications", name: "NotificationSubscriptions", component: NotificationSubscriptions, beforeEnter: requirePermission(Actions.APP_NOTIFICATIONS_VIEW) },
   { path: "/klaviyo", name: "Klaviyo", component: Klaviyo, beforeEnter: authGuard },
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
   { path: "/netsuite", name: "NetSuite", component: NetSuite, beforeEnter: authGuard },
