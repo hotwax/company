@@ -307,7 +307,7 @@ import { closeOutline, informationCircleOutline, openOutline, saveOutline, searc
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { useDbSync } from "@/composables/useDbSync";
 import {
   useNetSuiteOrderPushBacklog,
   useNetSuiteRecentRuns,
@@ -332,7 +332,7 @@ const { groups: netSuiteRuleGroups } =
   useNetSuiteRuleGroups(() => netSuiteProductStore.value?.productStoreId);
 const { failed: failedRuns } =
   useNetSuiteRecentRuns(() => netSuiteRuleGroups.value.map((group: any) => group.ruleGroupId));
-const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
+const { start: startSyncDomains, stop: stopSyncDomains } = useDbSync();
 
 function netSuiteSyncDomains() {
   const productStoreId = netSuiteProductStore.value?.productStoreId;

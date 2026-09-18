@@ -573,7 +573,7 @@ import {
   updateShopifyRemote,
   useShopifyAccessScopes,
 } from "@/composables/useShopify";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { useProductStores } from "@/composables/useProductStores";
 import { useTypedEnums } from "@/composables/useSeed";
 
@@ -923,7 +923,7 @@ const activityGraphAriaLabel = computed(() => {
  * cached messages and imports, and without the worker filling those tables they are legitimately
  * empty — each card would report "never synced" for a shop with a long history.
  *
- * One session, not two, because every `useCacheSync()` owns its own worker. Product sync stays on
+ * One session, not two, because every `useDbSync()` owns its own worker. Product sync stays on
  * its idle cadence (this page only summarises it; the product sync screen asks for the fast one)
  * while order sync escalates to 10s on its own whenever a batch is moving.
  */

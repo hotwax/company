@@ -15,13 +15,14 @@
  *   6. Order sync schedule                                  — cron validation/preview (pure)
  *   7. Order sync session                                   — worker activation, not main-thread polling
  *
- * Everything reads from IndexedDB through `useCachedList`; the sync worker owns all cadence. The only
+ * Everything reads from IndexedDB through `useDb`; the sync worker owns all cadence. The only
  * live reads left are the ones that cannot be cached — Shopify GraphQL, webhook subscriptions, the
  * order-sync history projection, and landmark system properties.
  */
 
 
-import { api, commonUtil, logger, translate } from "@common";
+import { api, commonUtil, logger, translate, useDb } from "@common";
+import { companyDb } from "@/db/companyDb";
 import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import {
   type ComputedRef, type MaybeRefOrGetter, computed, onBeforeUnmount, reactive, ref, toRefs,
@@ -29,23 +30,8 @@ import {
 } from "vue";
 import Actions from "@/authorization/actions";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { parseDateTimeValue } from "@/utils";
-import {
-  dataManagerLogCache,
-  inventoryEventDocumentCache,
-  productStoreCache,
-  serviceJobCache,
-  shopifyBulkOperationCache,
-  shopifyCarrierShipmentCache,
-  shopifyLocationCache,
-  shopifyShopCache,
-  shopifyTypeMappingCache,
-  syncRunCache,
-  systemMessageCache,
-  systemMessageErrorCache,
-  systemMessageRemoteCache,
-} from "@/utils/cacheEntities";
 import {
   DATA_MANAGER_LOG_STATUS_IDS,
   logState as dataManagerLogState,
@@ -56,10 +42,9 @@ import {
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
 import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
-import type { ActiveDomain } from "@/workers/syncRegistry";
+import type { ActiveDomain } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
-import { useCachedList, useCachedRecord } from "./useCachedList";
-import { useCacheSync } from "./useCacheSync";
+import { useDbSync } from "./useDbSync";
 import { useDataManager } from "./useDataManager";
 import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
@@ -73,8 +58,9 @@ import { useSystemMessage } from "./useSystemMessage";
  * Shopify master entity — connections (shops) and everything scoped to a shop: inventory
  * locations, type mappings, and carrier/shipment mappings.
  *
- * Each of these tables holds EVERY shop's rows in one unscoped snapshot, so a page reads its
- * slice with a `shopId` scope instead of issuing a per-shop fetch.
+ * Reads come from the cache (`shopifyShops`, `shopifyLocations`, `shopifyTypeMappings`,
+ * `shopifyCarrierShipments`), so the connection pages open instantly with no request. Writes call
+ * the REST endpoints directly and then resync the affected domain so the UI updates.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -82,7 +68,7 @@ import { useSystemMessage } from "./useSystemMessage";
 // ---------------------------------------------------------------------------------------------
 
 export function useShopifyShops() {
-  const { records, hydrated } = useCachedList<any>(shopifyShopCache);
+  const { records, hydrated } = useDb<any>("shopifyShops");
 
   return { shops: records, records, hydrated };
 }
@@ -237,8 +223,8 @@ function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
  * the OMS returned.
  */
 export function useInventoryEventDocuments() {
-  const { records, hydrated } = useCachedList<any>(inventoryEventDocumentCache);
-  const documents = computed(() => toInventoryEventDocuments(records.value.map((row: any) => row?.raw ?? row)));
+  const { records, hydrated } = useDb<any>("inventoryEventDocuments");
+  const documents = computed(() => toInventoryEventDocuments(records.value));
 
   return { documents, hydrated };
 }
@@ -681,12 +667,17 @@ export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<str
  * only the param changes, so a view that reads this from a raw `props.id` stays pinned to the shop
  * it first mounted with while everything else on the page re-scopes.
  */
-export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) =>
-  useCachedRecord(shopifyShopCache, "shopId", computed(() => toValue(shopId)));
+export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) => {
+  const { first: record, hydrated } = useDb<any>("shopifyShops", () => {
+    const id = toValue(shopId);
+    return id ? { equals: { shopId: id } } : {};
+  });
+  return { record, hydrated };
+};
 
 export function useShopsForProductStore(productStoreId: string | undefined) {
-  const { records, hydrated } = useCachedList<any>(
-    shopifyShopCache,
+  const { records, hydrated } = useDb<any>(
+    "shopifyShops",
     productStoreId ? { scope: { field: "productStoreId", value: productStoreId } } : {},
   );
 
@@ -715,8 +706,8 @@ function stableByShop<T extends Record<string, any>>(rows: readonly T[]): T[] {
 }
 
 export function useShopifyLocations(shopId: string | undefined) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyLocationCache,
+  const { records: unordered, hydrated } = useDb<any>(
+    "shopifyLocations",
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
 
@@ -751,8 +742,8 @@ export function useShopifyLocations(shopId: string | undefined) {
 // ---------------------------------------------------------------------------------------------
 
 export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId: string) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyTypeMappingCache,
+  const { records: unordered, hydrated } = useDb<any>(
+    "shopifyTypeMappings",
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
 
@@ -773,8 +764,8 @@ export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId:
 }
 
 export function useShopifyCarrierShipments(shopId: string | undefined) {
-  const { records: unordered, hydrated } = useCachedList<any>(
-    shopifyCarrierShipmentCache,
+  const { records: unordered, hydrated } = useDb<any>(
+    "shopifyCarrierShipments",
     shopId ? { scope: { field: "shopId", value: shopId } } : {},
   );
 
@@ -826,11 +817,11 @@ export function useShopifyCarrierShipments(shopId: string | undefined) {
  * is a client-side join instead of a request: no new domain, no extra sync.
  */
 export function useShopifyFacilityMappings(facilityId: string | undefined) {
-  const { records: locations, hydrated } = useCachedList<any>(
-    shopifyLocationCache,
+  const { records: locations, hydrated } = useDb<any>(
+    "shopifyLocations",
     facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
   );
-  const { records: shops } = useCachedList<any>(shopifyShopCache);
+  const { records: shops } = useDb<any>("shopifyShops");
 
   const mappings = computed(() => {
     const shopById = shops.value.reduce((map: Record<string, any>, shop: any) => {
@@ -1677,9 +1668,9 @@ export interface ShopifySyncContext {
  * which remote a shop owns.
  */
 export function useShopifySyncContext(shopIdSource: ShopIdSource): ShopifySyncContext {
-  const { records: shops, hydrated: shopsHydrated } = useCachedList<any>(shopifyShopCache);
-  const { records: productStores, hydrated: storesHydrated } = useCachedList<any>(productStoreCache);
-  const { records: remotes, hydrated: remotesHydrated } = useCachedList<any>(systemMessageRemoteCache);
+  const { records: shops, hydrated: shopsHydrated } = useDb<any>("shopifyShops");
+  const { records: productStores, hydrated: storesHydrated } = useDb<any>("productStores");
+  const { records: remotes, hydrated: remotesHydrated } = useDb<any>("systemMessageRemotes");
 
   /**
    * Hydrated means EVERY table this context joins has emitted, not just the shop table.
@@ -1741,7 +1732,7 @@ export function useShopifySyncJob(
     error?: MaybeRefOrGetter<string | undefined>;
   } = {},
 ) {
-  const { records: jobs, hydrated } = useCachedList<any>(serviceJobCache);
+  const { records: jobs, hydrated } = useDb<any>("serviceJobs");
 
   const templateJob = computed<any>(() =>
     jobs.value.find((row: any) => String(row.jobName) === feature.templateJobName) ?? null);
@@ -1789,7 +1780,7 @@ export function useShopifySyncMessages(
   ctx: Pick<ShopifySyncContext, "remoteId"> & Partial<Pick<ShopifySyncContext, "remoteIds">>,
   options: { limit?: number; types?: readonly string[] } = {},
 ) {
-  const { records: messages, hydrated } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
+  const { records: messages, hydrated } = useDb<any>("systemMessages", { dateField: "initDate" });
 
   const wantedTypes = computed(() =>
     new Set((options.types?.length ? options.types : feature.messageTypeIds).map(String)));
@@ -1853,11 +1844,11 @@ export function useShopifySyncRuns(
   const { ensureSystemMessageById } = useSystemMessage();
   const { ensureDataManagerLog } = useDataManager();
 
-  // `rows`, not `records`: `shopId` is renamed from the document's `remoteInternalId` and so exists
+  // `records`, not `rows`: `shopId` is renamed from the document's `remoteInternalId` and so exists
   // only after projection. Filtering `records` by it compares against undefined and matches nothing.
-  const { rows: runRows, hydrated } = useCachedList<any>(syncRunCache, { dateField: "initDate" });
-  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
-  const { records: logs } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: runRows, hydrated } = useDb<any>("syncRuns", { dateField: "initDate" });
+  const { records: messages } = useDb<any>("systemMessages", { dateField: "initDate" });
+  const { records: logs } = useDb<any>("dataManagerLogs", { dateField: "createdDate" });
 
   const wantedTypes = computed(() => new Set(systemMessageTypeIds.map(String)));
 
@@ -1941,7 +1932,7 @@ function isFailedImport(log: any): boolean {
  * pass over the cached table is cheaper than N filters — the join key is `systemMessageId`.
  */
 export function useShopifySyncImports(feature: ShopifySyncFeature) {
-  const { records: logs, hydrated } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: logs, hydrated } = useDb<any>("dataManagerLogs", { dateField: "createdDate" });
 
   const wanted = new Set(feature.importConfigIds.map(String));
 
@@ -1975,8 +1966,8 @@ export const SHOPIFY_PAYMENT_METHOD_MAPPED_TYPE = "SHOPIFY_PAYMENT_TYPE";
  * carrier shipments for shipping), which is why this exists rather than each screen filtering twice.
  */
 export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
-  const { records: typeMappings } = useCachedList<any>(shopifyTypeMappingCache);
-  const { records: carrierShipments, hydrated } = useCachedList<any>(shopifyCarrierShipmentCache);
+  const { records: typeMappings } = useDb<any>("shopifyTypeMappings");
+  const { records: carrierShipments, hydrated } = useDb<any>("shopifyCarrierShipments");
 
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
   const forShop = (rows: any[]) => rows.filter((row: any) => String(row.shopId) === shopId.value);
@@ -2043,7 +2034,7 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
  * The class-A domains ONE sync feature needs — its messages and the imports they produce.
  *
  * Exported because a page can render more than one feature (connection details shows both product
- * sync and order sync) and every `useCacheSync()` call owns its own worker. Composing two features'
+ * sync and order sync) and every `useDbSync()` call owns its own worker. Composing two features'
  * domain lists into a single session is therefore the difference between one worker and two.
  *
  * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
@@ -2091,7 +2082,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop, syncNow, error: workerError, domainStatus } = useCacheSync();
+  const { start, stop, syncNow, error: workerError, domainStatus } = useDbSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -2184,7 +2175,7 @@ export function useShopifySyncSession(
 
   /**
    * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
-   * from "the worker has not fetched this shop yet" on its own. `useCachedList`'s `hydrated` answers
+   * from "the worker has not fetched this shop yet" on its own. `useDb`'s `hydrated` answers
    * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
    * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
    * result here instead.
@@ -2572,10 +2563,10 @@ export function useShopifyProductSyncRun() {
 
   // One live subscription per table. Whole-table reads because the lookup key is reactive, and
   // re-subscribing on every id change would churn subscriptions for no gain at these volumes.
-  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
-  const { records: bulkOperations } = useCachedList<any>(shopifyBulkOperationCache);
-  const { records: mdmLogs } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
-  const { records: messageErrors } = useCachedList<any>(systemMessageErrorCache, { dateField: "errorDate" });
+  const { records: messages } = useDb<any>("systemMessages", { dateField: "initDate" });
+  const { records: bulkOperations } = useDb<any>("shopifyBulkOperations");
+  const { records: mdmLogs } = useDb<any>("dataManagerLogs", { dateField: "createdDate" });
+  const { records: messageErrors } = useDb<any>("systemMessageErrors", { dateField: "errorDate" });
 
   /**
    * Status → colour, by string matching rather than a status-id map, because the three sources speak
@@ -5119,7 +5110,7 @@ export interface ConnectionSyncSessionOptions {
  * The Shopify connection details page's session — BOTH sync features on ONE worker.
  *
  * Why this exists instead of the page composing two separate sessions and
- * `useShopifyOrderSyncPolling` side by side: each `useCacheSync()` owns its own `SyncService`, so two
+ * `useShopifyOrderSyncPolling` side by side: each `useDbSync()` owns its own `SyncService`, so two
  * sessions spawn two workers with two independent timers, both polling on behalf of one screen. This
  * composes the two features' domain lists and hands them to a single session instead.
  *
@@ -5982,9 +5973,9 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
  */
 async function fetchShopRemoteCandidates(payload: any) {
   try {
-    const cached = await systemMessageRemoteCache.all();
+    const cached = await companyDb.entity("systemMessageRemotes").all();
     if(cached.length) {
-      const remotes = cached.map((row: any) => row.raw);
+      const remotes = cached;
 
       return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
     }
@@ -6217,16 +6208,16 @@ async function cachedSyncMessageHistory(query: {
   pageSize?: number;
 }): Promise<any[] | null> {
   try {
-    const remotes = (await systemMessageRemoteCache.all()).map((row: any) => row.raw ?? row);
+    const remotes = await companyDb.entity("systemMessageRemotes").all();
     const remoteIds = new Set(remotes
       .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
       .map((remote: any) => String(remote.systemMessageRemoteId)),);
     if(!remoteIds.size) {return null;}
 
-    const messages = (await systemMessageCache.all()).map((row: any) => row.raw ?? row);
+    const messages = await companyDb.entity("systemMessages").all();
     if(!messages.length) {return null;}
 
-    const logs = (await dataManagerLogCache.all()).map((row: any) => row.raw ?? row);
+    const logs = await companyDb.entity("dataManagerLogs").all();
     const logByMessageId = new Map<string, any>();
     for(const log of logs) {
       const key = String(log?.systemMessageId ?? "");

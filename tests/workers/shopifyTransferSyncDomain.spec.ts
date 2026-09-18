@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn(async ({ url, params }: any) => {
     state.fetched.push({ url, params });
 
@@ -17,26 +17,21 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   }),
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyTransferPendingCache: {
-    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
-      state.snapshots.push({ rows, scope });
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: () => ({
+      snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
+        state.snapshots.push({ rows, scope });
 
-      return { written: rows.length, pruned: 0 };
+        return { written: rows.length, pruned: 0 };
+      }),
     }),
   },
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { state.domains.push(domain); },
-}));
-
 async function loadDomain() {
-  vi.resetModules();
-  state.domains = [];
-  await import("@/workers/domains/shopifyTransferSyncDomain");
-
-  return state.domains.find((domain) => domain.name === "shopifyTransferSync");
+  const { shopifyTransferSyncDomain } = await import("@/workers/domains/shopifyTransferSyncDomain");
+  return shopifyTransferSyncDomain;
 }
 
 const CTX = { maargUrl: "https://example.test", token: "token" };

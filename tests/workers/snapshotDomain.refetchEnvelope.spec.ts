@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defineEntity } from "@common/db/defineEntity";
 
 /**
  * A write-through that stores NOTHING is the worst kind of cache bug: the mutation succeeds, the
@@ -24,12 +25,14 @@ const state = vi.hoisted(() => ({
   upserted: [] as any[],
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
   removed: [] as string[],
+  lastScope: undefined as any,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: vi.fn(async (options: any) => { state.pageAllParams = options.params; return state.pageAllResponse; }),
+  pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => state.getResponse),
-  // The real implementation: a `collectionKey` that is absent yields NO rows.
+  workerPost: vi.fn(async () => null),
   unwrapCollection: (resp: any, collectionKey?: string | null) => {
     if (Array.isArray(resp)) return resp;
     if (collectionKey && Array.isArray(resp?.[collectionKey])) return resp[collectionKey];
@@ -37,35 +40,43 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   },
 }));
 
-vi.mock("@/utils/appCacheDb", () => ({
-  appCacheDb: { table: () => ({ count: async () => 1 }) },
-  defineCachedEntity: () => ({
-    table: "serviceJobs",
-    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
-      state.snapshots.push({ rows, scope });
-      return { written: rows.length, pruned: 0 };
+const stubDb = () => ({
+  table: () => ({
+    count: async () => 1,
+    toArray: async () => [],
+    toCollection: () => ({ primaryKeys: async () => [], toArray: async () => [] }),
+    // Record the scope a prune was narrowed to; the refetchScope tests assert on it.
+    where: (field: string) => ({
+      equals: (value: unknown) => {
+        state.lastScope = { field, value };
+        return { toArray: async () => [] };
+      },
     }),
-    upsertMany: vi.fn(async (rows: any[]) => { state.upserted.push(...rows); return rows.length; }),
-    remove: vi.fn(async (key: string) => { state.removed.push(key); }),
+    put: async (record: any) => { state.upserted.push(record); },
+    bulkPut: async (rows: any[]) => {
+      state.upserted.push(...rows);
+      state.snapshots.push({ rows, scope: state.lastScope ?? null });
+      state.lastScope = undefined;
+    },
+    delete: async (key: string) => { state.removed.push(key); },
+    bulkDelete: async () => {},
   }),
-  hasSyncedThisLogin: vi.fn(async () => false),
-  markSyncedThisLogin: vi.fn(async () => undefined),
-}));
+  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
+  syncMeta: { get: async () => undefined, put: async () => {}, delete: async () => {} },
+}) as any;
 
 const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 async function register(config: any) {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
-  registerSnapshotDomain(config);
-  const { getSyncDomain } = await import("@/workers/syncRegistry");
-  return getSyncDomain(config.name)!;
+  const { registerSnapshotDomain } = await import("@common/db/sync/defineSnapshotDomain");
+  return registerSnapshotDomain(config, () => stubDb());
 }
 
 const JOB_CONFIG = {
   name: "serviceJobTest",
   table: "serviceJobs" as const,
-  projection: { keyField: "jobName", fields: { jobName: "text" as const } },
+  projection: defineEntity({ primaryKey: "jobName", fields: { jobName: "text" } }),
   listUrl: "admin/serviceJobs",
   collectionKey: "serviceJobList",
   byPk: (pk: any) => ({ url: `admin/serviceJobs/${pk.jobName}` }),
@@ -75,7 +86,7 @@ const JOB_CONFIG = {
 const REMOTE_CONFIG = {
   name: "systemMessageRemoteTest",
   table: "systemMessageRemotes" as const,
-  projection: { keyField: "systemMessageRemoteId", fields: { systemMessageRemoteId: "text" as const } },
+  projection: defineEntity({ primaryKey: "systemMessageRemoteId", fields: { systemMessageRemoteId: "text" } }),
   listUrl: "oms/systemMessageRemotes",
   collectionKey: "systemMessageRemoteList",
   refetchScope: (pk: any) => ({
@@ -91,6 +102,7 @@ beforeEach(() => {
   state.upserted = [];
   state.snapshots = [];
   state.removed = [];
+  state.lastScope = undefined;
 });
 
 describe("by-PK refresh through a single-record envelope", () => {
@@ -102,9 +114,9 @@ describe("by-PK refresh through a single-record envelope", () => {
     const written = await domain.refetchOne!(ctx as any, { jobName: job.jobName });
 
     expect(written).toBe(1);
-    expect(state.upserted).toEqual([job]);
-    // The regression: storing the envelope would key on `undefined` and silently drop the row.
-    expect(state.upserted[0].jobName).toBe(job.jobName);
+    expect(state.upserted).toHaveLength(1);
+    expect(state.upserted[0].jobName).toBe("queue_ShopifyOrderSync_99992");
+    expect(state.upserted[0]).toHaveProperty("syncedAt");
   });
 
   it("drops a row the server no longer returns, rather than keeping a ghost", async () => {
@@ -128,10 +140,9 @@ describe("scoped refresh for a domain with no by-PK route", () => {
 
     expect(written).toBe(1);
     expect(state.pageAllParams).toEqual({ systemMessageRemoteId: "99992_REMOTE" });
-    // Scoped so the prune cannot reach any other remote.
-    expect(state.snapshots).toEqual([
-      { rows: [remote], scope: { field: "systemMessageRemoteId", value: "99992_REMOTE" } },
-    ]);
+    expect(state.snapshots).toHaveLength(1);
+    expect(state.snapshots[0].rows[0]).toMatchObject({ systemMessageRemoteId: "99992_REMOTE" });
+    expect(state.snapshots[0].scope).toEqual({ field: "systemMessageRemoteId", value: "99992_REMOTE" });
   });
 
   it("refuses an unscoped prune when the mutation supplied no id", async () => {

@@ -123,7 +123,7 @@ import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { shouldPopHistoryOnBack } from "@/utils/navigation";
 import { useFacilities } from '@/composables/useFacilities';
 import { fetchLocationsFromShopify, useShopifyLocations, useShopifyShopMutations } from "@/composables/useShopify";
-import { refreshAfterMutation, resyncDomain } from '@/services/appCacheBootstrap';
+import { refreshAfterMutation, resyncDomain } from '@/services/appDbSync';
 
 const props = defineProps(['id']);
 const shopMutations = useShopifyShopMutations(props.id);

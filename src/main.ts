@@ -1,7 +1,8 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
-import { createDxpI18n, initialiseConfig, logger } from '@common'
+import { commonUtil, createDxpI18n, initialiseConfig, logger } from '@common'
+import { companyDb } from '@/db/companyDb'
 
 import { IonicVue } from '@ionic/vue'
 
@@ -43,6 +44,8 @@ const app = createApp(App)
   .use(i18n)
   .use(pinia)
   .use(router)
+
+companyDb.setOmsInstanceResolver(() => commonUtil.getOMSInstanceName())
 
 initialiseConfig({
   postLogin: useUserStore().postLogin,

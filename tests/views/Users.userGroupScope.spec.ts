@@ -41,7 +41,7 @@ vi.mock("@/composables/useSecurity", async (importOriginal) => ({
 
 vi.mock("@/store/user", () => ({ useUserStore: () => harness.userStore }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({ resyncDomain: vi.fn() }));
+vi.mock("@/services/appDbSync", () => ({ resyncDomain: vi.fn(), refreshAfterMutation: vi.fn() }));
 
 vi.mock("@/router", () => ({ default: { push: vi.fn(), replace: vi.fn() } }));
 

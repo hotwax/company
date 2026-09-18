@@ -2,8 +2,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ domain: null as any, rows: [] as any[], fail: false, snapshots: [] as any[] }));
-vi.mock("@/workers/syncRegistry", () => ({ registerSyncDomain: (domain: any) => { state.domain = domain; } }));
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageAll: async () => {
     if(state.fail) {throw new Error("incomplete");}
 
@@ -11,17 +10,22 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   },
   workerGet: async () => ({ summary: { backlogCount: 0 } }),
 }));
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyLocationInventoryAdjustmentDetailCache: { snapshotReplace: async (rows: any[], scope: any) => {
-    state.snapshots.push({ rows, scope });
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: () => ({
+      snapshotReplace: async (rows: any[], scope: any) => {
+        state.snapshots.push({ rows, scope });
 
-    return { written: rows.length };
-  } },
-  shopifyLocationInventorySummaryCache: { upsertMany: async () => 1 },
+        return { written: rows.length };
+      },
+      upsertMany: async () => 1,
+    }),
+  },
 }));
 beforeEach(async () => {
   state.rows = []; state.fail = false; state.snapshots = [];
-  vi.resetModules(); await import("@/workers/domains/shopifyLocationInventoryDomain");
+  const { shopifyLocationInventoryAdjustmentDetailDomain } = await import("@/workers/domains/shopifyLocationInventoryDomain");
+  state.domain = shopifyLocationInventoryAdjustmentDetailDomain;
 });
 it("replaces only the requested shop with a complete authoritative empty result", async () => {
   await state.domain.sync({}, { shopId: "A" });

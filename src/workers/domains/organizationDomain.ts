@@ -1,25 +1,20 @@
-import {
-  appCacheDb,
-  hasSyncedThisLogin,
-  markSyncedThisLogin,
-} from "@/utils/appCacheDb";
-import {
-  organizationCache,
-  organizationProjection,
-} from "@/utils/cacheEntities";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { pageAll, workerGet } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { SyncContext } from "@common/db/types";
+import { pageAll, workerGet } from "@common/core/workerRemoteApi";
+
+const organizationEntity = companyDb.entity("organizations");
 
 const INTERNAL_ORG_ROLE = "INTERNAL_ORGANIZATIO";
 const PARTY_GROUP = "PARTY_GROUP";
 
 function unwrapPartyDetail(response: any): Record<string, unknown> | undefined {
-  if(!response || typeof response !== "object" || Array.isArray(response)) {return undefined;}
+  if (!response || typeof response !== "object") { return undefined; }
 
-  const detail = response.partyNameDetail ??
-    response.partyDetail ??
-    response.party ??
-    response;
+  const detail = Array.isArray(response)
+    ? response[0]
+    : (response.partyNameDetail ?? response.partyDetail ?? response.party ?? response);
 
   return Array.isArray(detail) ? detail[0] : detail;
 }
@@ -30,7 +25,7 @@ export function mergeInternalOrganization(
   detailResponse: any,
 ): Record<string, unknown> | undefined {
   const detail = unwrapPartyDetail(detailResponse);
-  if(!detail || detail.partyTypeId !== PARTY_GROUP) {return undefined;}
+  if (!detail) { return undefined; }
 
   return { ...role, ...detail, roleTypeId: INTERNAL_ORG_ROLE };
 }
@@ -75,16 +70,19 @@ async function fetchOrganizations(
   return organizations;
 }
 
-registerSyncDomain({
+export const organizationDomain = defineSyncDomain({
   name: "organization",
+  table: "organizations",
+  label: "Organizations",
+  syncClass: "B",
 
   async sync(ctx, _args, options) {
-    if(!options?.force && (await hasSyncedThisLogin("organization"))) {return 0;}
+    if(!options?.force && (await hasSyncedThisLogin(companyDb.raw(), "organization"))) {return 0;}
 
     const roles = await fetchRoleRows(ctx);
     const organizations = await fetchOrganizations(ctx, roles);
 
-    const existing = await appCacheDb.organizations.count();
+    const existing = await (companyDb.raw() as any).organizations.count();
     if(!options?.force && organizations.length === 0 && existing > 0) {
       console.warn("[sync] organization: server returned no usable internal organizations while the cache " +
         "is populated; refusing to prune. Use a manual resync to clear it deliberately.",);
@@ -92,8 +90,8 @@ registerSyncDomain({
       return 0;
     }
 
-    const { written } = await organizationCache.snapshotReplace(organizations);
-    if(roles.length === 0 || written > 0) {await markSyncedThisLogin("organization");}
+    const { written } = await organizationEntity.snapshotReplace(organizations);
+    if (roles.length === 0 || written > 0) { await markSyncedThisLogin(companyDb.raw(), "organization"); }
 
     return written;
   },
@@ -106,20 +104,21 @@ registerSyncDomain({
     const role = roles.find((row) =>
       String(row.partyId) === partyId && row.roleTypeId === INTERNAL_ORG_ROLE);
     if(!role) {
-      await organizationCache.remove(partyId);
+      await organizationEntity.remove(partyId);
 
       return 0;
     }
 
     const organization = await fetchOrganization(ctx, role);
     if(!organization) {
-      await organizationCache.remove(partyId);
+      await organizationEntity.remove(partyId);
 
       return 0;
     }
 
-    return organizationCache.upsertMany([organization]);
+    return organizationEntity.upsertMany([organization]);
   },
 });
 
-export { INTERNAL_ORG_ROLE, PARTY_GROUP, organizationProjection };
+export { INTERNAL_ORG_ROLE, PARTY_GROUP };
+

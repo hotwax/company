@@ -135,11 +135,11 @@
 import { useShopifyCarrierShipments, useShopifyShop, useShopifyShopMutations } from "@/composables/useShopify";
 import { useShipmentMethodTypeMutations, useShipmentMethodTypes } from "@/composables/useSeed";
 import { useProductStoreMutations, useProductStoreShippingMethods } from "@/composables/useProductStores";
-import { resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appDbSync";
 import {
   CACHE_RECONCILIATION_ERROR_MESSAGE,
   isCacheReconciliationError,
-} from "@/utils/cacheReconciliationError";
+} from "@/utils/db/cacheReconciliationError";
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'

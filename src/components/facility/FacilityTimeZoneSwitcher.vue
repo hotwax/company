@@ -99,7 +99,7 @@ const props = defineProps({
 // `facilityStore.current`, which the detail page no longer populates.
 const mutations = useFacilityMutations(props.facilityId);
 const { record } = useFacilityRecord(props.facilityId);
-const currentFacility = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const currentFacility = computed<any>(() => record.value ?? {});
 const currentTimeZoneId = computed(() => currentFacility.value?.facilityTimeZone);
 const { timeZones, loadTimeZones } = useTimeZones();
 

@@ -69,7 +69,7 @@ const isLoading = ref(true);
 
 // Cached record; `updateShop` refreshes it, so no manual re-fetch after saving.
 const { record: shopRecord } = useShopifyShop(props.id);
-const shop = computed<any>(() => (shopRecord.value as any)?.raw ?? shopRecord.value ?? {});
+const shop = computed<any>(() => shopRecord.value ?? {});
 const shopDetails = ref({
   name: "",
   timezone: "",

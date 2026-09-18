@@ -20,10 +20,11 @@ vi.mock("@common", () => ({
   translate: (k: string) => k,
   buildAppUrl: (appId: string, path = "") =>
     (appId === "transfers" ? `https://transfers.example.test${path}` : null),
+  useDb: () => ({ records: ref([]), rows: ref([]), first: computed(() => undefined), count: computed(() => 0), hydrated: ref(true) }),
 }));
 
-// Mirrors useCachedRecord's unwrapping, so a view that passes a raw prop instead of a reactive
-// shopId genuinely fails the re-scope test below rather than being papered over by the mock.
+// Mirrors how `useShopifyShop` unwraps its argument, so a view that passes a raw prop instead of a
+// reactive shopId genuinely fails the re-scope test below rather than being papered over by the mock.
 vi.mock("@/composables/useShopify", () => ({
   useShopifyShop: (shopId: any) => ({
     record: computed(() => {
@@ -37,18 +38,14 @@ vi.mock("@/composables/useShopify", () => ({
   }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
+vi.mock("@/composables/useDbSync", () => ({
+  useDbSync: () => ({
     start: vi.fn(),
     stop: vi.fn(),
     error: ref(""),
     domainStatus: ref({ shopifyTransferSync: { at: 100 } }),
     syncNow: vi.fn(),
   }),
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
 vi.mock("@/composables/useServiceJobs", () => ({

@@ -1,6 +1,7 @@
-import { productUpdateHistoryCache } from "@/utils/cacheEntities";
-import { registerSyncDomain, type SyncContext } from "../syncRegistry";
-import { pageNewestFirst } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst } from "@common/core/workerRemoteApi";
 
 /**
  * ProductUpdateHistory — class A (live), PER SHOP, bounded window.
@@ -24,8 +25,10 @@ export interface ProductUpdateHistoryArgs {
   batchSize?: number;
 }
 
+const productUpdateHistoryEntity = companyDb.entity("productUpdateHistories");
+
 async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHistoryArgs): Promise<number> {
-  const cursor = await productUpdateHistoryCache.newestCursor("lastUpdatedStamp", {
+  const cursor = await productUpdateHistoryEntity.newestCursor("lastUpdatedStamp", {
     field: "shopId",
     value: shopId,
   });
@@ -44,11 +47,14 @@ async function syncShop(ctx: SyncContext, shopId: string, args: ProductUpdateHis
       : (page) => page.filter((row: any) => Number(row?.lastUpdatedStamp ?? 0) > cursor),
   });
 
-  return productUpdateHistoryCache.upsertMany(rows);
+  return productUpdateHistoryEntity.upsertMany(rows);
 }
 
-registerSyncDomain({
+export const productUpdateHistoryDomain = defineSyncDomain({
   name: "productUpdateHistory",
+  table: "productUpdateHistories",
+  label: "Product update history",
+  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: ProductUpdateHistoryArgs = {}) {
     const shopIds = [...new Set((args.shopIds ?? []).filter(Boolean))];

@@ -17,24 +17,11 @@ vi.mock("@common", () => ({
   logger: { error: vi.fn(), warn: mocks.loggerWarn, info: vi.fn() },
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: mocks.refreshAfterMutation,
   resyncDomain: mocks.resyncDomain,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  productStoreCache: {},
-  productStoreFacilityCache: {},
-  productStoreShipmentCountCache: {},
-  productStoreShippingMethodCache: {},
-  serviceJobCache: {},
-  serviceJobRunCache: {},
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ records: ref([]), hydrated: ref(true) }),
-  useCachedRecord: () => ({ record: ref(undefined), hydrated: ref(true) }),
-}));
 
 vi.mock("@/composables/useSeed", () => ({
   useOrganization: () => ({ loadOrganizationPartyId: vi.fn() }),

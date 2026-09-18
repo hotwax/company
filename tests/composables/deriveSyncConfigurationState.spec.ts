@@ -24,18 +24,13 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: () => false, showToast: vi.fn(), isMoqui: () => true },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
+  useDb: () => ({ rows: { value: [] }, records: { value: [] }, first: { value: undefined }, count: { value: 0 }, hydrated: { value: true } }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
   bootstrapState: { running: false },
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ rows: { value: [] }, records: { value: [] }, hydrated: { value: true } }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
 import { deriveSyncConfigurationState } from "@/composables/useShopify";

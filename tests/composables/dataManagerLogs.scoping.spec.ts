@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@common", () => ({ api: vi.fn(), logger: { error: vi.fn() } }));
-vi.mock("@/utils/cacheEntities", () => ({ dataManagerLogCache: {} }));
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: vi.fn(),
-  useCachedRecord: vi.fn(),
-}));
 vi.mock("@/utils/storage", () => ({
   clearStorage: vi.fn(),
   getErrorRecords: vi.fn(),
