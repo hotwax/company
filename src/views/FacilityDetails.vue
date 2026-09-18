@@ -853,7 +853,7 @@ const {
 } = useFacilityDetail(props.facilityId);
 const mutations = useFacilityMutations(props.facilityId);
 const { fetchPartyRoleDetails } = usePartyQueries();
-const { fetchFacilityOrderCountsHistory } = useFacilityOrderCounts();
+const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
 const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
@@ -1401,9 +1401,9 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const resp = await fetchFacilityOrderCountsHistory(props.facilityId, { orderByField: 'entryDate DESC', pageSize: 10 });
-    if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
-      facilityOrderCounts.value = resp.data.map((item: any) => ({
+    const data = await fetchFacilityOrderHistory(props.facilityId);
+    if (data.length > 0) {
+      facilityOrderCounts.value = data.map((item: any) => ({
         ...item,
         entryDate: DateTime.fromMillis(item.entryDate).toFormat('MMM dd yyyy')
       }));
