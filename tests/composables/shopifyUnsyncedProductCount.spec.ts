@@ -1,13 +1,13 @@
+// @vitest-environment jsdom
+
 import { effectScope, nextTick, ref } from "vue";
 import { describe, expect, it, vi } from "vitest";
-import { useShopifyUnsyncedProductCount } from "@/utils/shopifyUnsyncedProductCount";
+import { useShopifyUnsyncedProductCount } from "@/composables/useShopify";
 
 describe("useShopifyUnsyncedProductCount", () => {
   it("refreshes when the cached last-sync timestamp changes", async () => {
     const lastSyncedAt = ref("2026-09-10T17:02:00.000Z");
-    const load = vi.fn()
-      .mockResolvedValueOnce(101)
-      .mockResolvedValueOnce(6);
+    const load = vi.fn().mockResolvedValueOnce(101).mockResolvedValueOnce(6);
     const scope = effectScope();
     const state = scope.run(() => useShopifyUnsyncedProductCount({
       remoteId: "REMOTE",
@@ -27,9 +27,7 @@ describe("useShopifyUnsyncedProductCount", () => {
   });
 
   it("can refresh again when revisiting the summary without a timestamp change", async () => {
-    const load = vi.fn()
-      .mockResolvedValueOnce(6)
-      .mockResolvedValueOnce(4);
+    const load = vi.fn().mockResolvedValueOnce(6).mockResolvedValueOnce(4);
     const scope = effectScope();
     const state = scope.run(() => useShopifyUnsyncedProductCount({
       remoteId: "REMOTE",

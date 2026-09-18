@@ -551,7 +551,6 @@ import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
-import { useShopifyUnsyncedProductCount } from '@/utils/shopifyUnsyncedProductCount';
 import { DateTime } from "luxon";
 import { computed, defineProps, reactive, ref, watch } from "vue";
 import router from "@/router";
@@ -562,6 +561,7 @@ import {
 } from "@/composables/useShopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
+  useShopifyUnsyncedProductCount,
   useShopifyConnectionSyncSession,
   useShopifyOrderSyncCard,
   useShopifyProductSyncRun,
