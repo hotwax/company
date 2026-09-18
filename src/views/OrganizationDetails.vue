@@ -143,7 +143,7 @@
             :router-link="`/facility-details/${encodeURIComponent(facility.facilityId)}`"
           >
             <ion-label>
-              <h2>{{ facility.facilityName || facility.facilityId }}</h2>
+              {{ facility.facilityName || facility.facilityId }}
               <p>{{ facility.facilityId }}</p>
             </ion-label>
           </ion-item>

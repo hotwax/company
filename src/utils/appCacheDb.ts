@@ -88,9 +88,16 @@ class CompanyCacheDB extends Dexie {
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
   inventoryEventDocuments!: Table<CachedRow, string>;
+  /** Fulfillments Shopify holds per shop, from `sob/shopify/fulfillmentHistories`. */
+  shopifyPendingFulfillments!: Table<CachedRow, string>;
+  shopifyOrderSyncHistory!: Table<CachedRow, string>;
+  shopifyFulfillmentHealth!: Table<CachedRow, string>;
+  shopifyPendingFulfillmentStatus!: Table<CachedRow, string>;
+  shopifyFulfillmentHistories!: Table<CachedRow, string>;
+  /** One row per shop: does the fulfillment-history endpoint exist on this instance? */
+  shopifyFulfillmentHistorySupport!: Table<CachedRow, string>;
   /** Shopify inventory transfer sync — one row per (shopId, orderId). */
   shopifyTransferPending!: Table<CachedRow, string>;
-  /** Latest transfer webhook subscription health check, one row per shop. */
   syncMeta!: Table<Record<string, any>, string>;
 
   constructor() {
@@ -185,6 +192,21 @@ const CACHE_SCHEMA = {
    */
   shopifyInventoryAdjustmentDetails:
     "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+  /**
+   * ShopifyFulfillmentHistory — the "Synced" feed of the fulfillment sync screen. PK is composite
+   * (Shopify's numeric fulfillmentId is only unique per shop) → synthetic `fulfillmentKey`.
+   * `[shopId+lastUpdatedStamp]` serves both the per-shop incremental cursor and the screen's
+   * newest-first read; `shipmentId`/`omsOrderId` are indexed because they are the joins back to the
+   * OMS side (a queued message names a shipment, and the screen answers "did it land?").
+   */
+  shopifyPendingFulfillments: "pendingKey, shopId, shipmentId, statusDate",
+  shopifyPendingFulfillmentStatus: "shopId",
+  shopifyOrderSyncHistory: "historyKey,shopId,orderId",
+  shopifyFulfillmentHealth: "shopId",
+  shopifyFulfillmentHistories:
+    "fulfillmentKey, shopId, shopifyOrderId, fulfillmentId, shipmentId, omsOrderId, processedDate, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
+  // One row per shop, not an entity — see `shopifyFulfillmentHistorySupportProjection`.
+  shopifyFulfillmentHistorySupport: "shopId, checkedAt",
   /**
    * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time push ledger.
    * PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey`

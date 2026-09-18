@@ -30,7 +30,7 @@
       <template v-else>
         <ion-item v-if="hasDetailErrors" color="danger">
           <ion-label class="ion-text-wrap">
-            <h2>{{ translate("Unable to load the complete carrier details.") }}</h2>
+            {{ translate("Unable to load the complete carrier details.") }}
             <p v-for="message in detailErrorMessages" :key="message">
               {{ translateReferenceDataError(message) }}
             </p>

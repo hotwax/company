@@ -62,13 +62,13 @@
           </ion-list-header>
           <ion-item v-if="!rows.length" lines="none">
             <ion-label class="ion-text-wrap">
-              <h2>{{ translate("No matching activation records") }}</h2>
+              {{ translate("No matching activation records") }}
               <p>{{ translate("Try another status or clear the product and facility filters. Only current product/facility associations with a Shopify product mapping appear here.") }}</p>
             </ion-label>
           </ion-item>
           <ion-item v-for="row in rows" :key="activationKey(row)">
             <ion-label class="ion-text-wrap">
-              <h2>{{ row.productName || row.productId }}</h2>
+              {{ row.productName || row.productId }}
               <p>{{ translate("Product") }}: {{ row.productId }} / {{ translate("Facility") }}: {{ row.facilityName || row.facilityId }} ({{ row.facilityId }})</p>
               <p>{{ translate("Shopify inventory item") }}: {{ row.shopifyInventoryItemId || translate("Missing") }} / {{ translate("Shopify location") }}: {{ row.shopifyLocationId || translate("Missing") }}</p>
               <p v-if="row.activatedAt">{{ translate("Last confirmed") }}: {{ formatDateTime(row.activatedAt) }}</p>

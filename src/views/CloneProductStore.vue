@@ -252,7 +252,7 @@ main {
 }
 
 .warning-card {
-  margin: var(--spacer-md) 0;
+  margin: var(--spacer-base) 0;
 }
 
 .warning-icon {

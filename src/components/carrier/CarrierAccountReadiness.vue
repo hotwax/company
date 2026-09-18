@@ -3,7 +3,7 @@
     <ion-list>
       <ion-item lines="full">
         <ion-label class="ion-text-wrap">
-          <h2>{{ translate("Account readiness") }}</h2>
+          {{ translate("Account readiness") }}
           <p>
             {{ translate("Manage Unigate connection, carrier credentials, and store configurations for this carrier.") }}
           </p>
@@ -23,7 +23,7 @@
         :key="item.key"
       >
         <ion-label class="ion-text-wrap">
-          <h2>{{ translate(item.label) }}</h2>
+          {{ translate(item.label) }}
           <p v-if="item.key === 'tenant' && remote?.internalId">
             {{ translate("Tenant ID") }}: {{ remote.internalId }}
           </p>
@@ -57,7 +57,7 @@
       <ion-list v-else lines="inset">
         <ion-item v-for="auth in matchingAuths" :key="auth.shippingGatewayAuthId">
           <ion-label>
-            <h4>{{ auth.description || auth.shippingGatewayAuthId }}</h4>
+            {{ auth.description || auth.shippingGatewayAuthId }}
             <p>{{ translate("Auth ID") }}: {{ auth.shippingGatewayAuthId }} ({{ auth.shippingGatewayConfigId }})</p>
           </ion-label>
           <ion-chip slot="end" color="primary" outline>
@@ -84,7 +84,7 @@
       <ion-list v-else lines="inset">
         <ion-item v-for="cfg in carrierConfigs" :key="cfg.carrierConfigId">
           <ion-label>
-            <h4>{{ cfg.productStoreId }} <span v-if="cfg.facilityId">({{ translate("Facility") }}: {{ cfg.facilityId }})</span></h4>
+            {{ cfg.productStoreId }} <span v-if="cfg.facilityId">({{ translate("Facility") }}: {{ cfg.facilityId }})</span>
             <p>{{ translate("Gateway Auth") }}: {{ cfg.gatewayAuthId }} | {{ translate("Account #") }}: {{ cfg.carrierAccountId || translate("N/A") }}</p>
           </ion-label>
           <ion-chip slot="end" color="secondary" outline>

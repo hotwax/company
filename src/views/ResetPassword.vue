@@ -8,7 +8,7 @@
           <section v-if="!isLinkValid">
             <ion-item lines="none">
               <ion-icon slot="start" color="warning" :icon="warningOutline" />
-              <h4>{{ translate('Invalid reset password link') }}</h4>
+              <ion-label>{{ translate('Invalid reset password link') }}</ion-label>
             </ion-item>
             <p>{{ translate("This password reset link is invalid or incomplete. Please request a new password reset email.") }}</p>
           </section>
@@ -81,7 +81,7 @@ import { arrowForwardOutline, warningOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import Logo from "@common/components/Logo.vue";
 import router from "@/router";
-import { usePasswordReset } from "@/composables/usePasswordReset";
+import { useUserAccountActions } from "@/composables/useSecurity";
 
 const route = router.currentRoute.value;
 
@@ -98,7 +98,7 @@ const isSubmitting = ref(false);
 const newPasswordInput = ref<any>(null);
 const newPasswordVerifyInput = ref<any>(null);
 
-const { resetPassword: doResetPassword } = usePasswordReset();
+const { resetPassword: submitResetPassword } = useUserAccountActions();
 
 const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
@@ -142,17 +142,22 @@ const submit = async () => {
 
   isSubmitting.value = true;
   try {
-    await doResetPassword({
-      maarg,
+    const resp = await submitResetPassword({
       userId,
       username,
       oldPassword: resetPassword.value,
       newPassword: newPassword.value,
       newPasswordVerify: newPasswordVerify.value
-    });
+    }, maarg);
 
-    commonUtil.showToast(translate("Password reset successful. Please login with your new password."));
-    router.replace("/login");
+    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
+    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
+    if (!commonUtil.hasError(resp) && resp.data?.updateSuccessful) {
+      commonUtil.showToast(translate("Password reset successful. Please login with your new password."));
+      router.replace("/login");
+    } else {
+      throw resp.data;
+    }
   } catch (error) {
     commonUtil.showToast(translate("Failed to reset password. Please check your reset password and try again."));
     logger.error(error);

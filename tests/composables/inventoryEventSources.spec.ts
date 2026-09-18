@@ -31,15 +31,6 @@ const countLookup = (eventReferenceId = "PI_1") => ({
   eventTypeId: "CYCLE_COUNT",
   eventReferenceId,
   productId: "P1",
-  facilityIds: ["FAC_1"],
-});
-
-/** A receipt needs the facility walk, which is what the cold-cache case turns on. */
-const receiptLookup = (facilityIds: string[]) => ({
-  eventTypeId: "RECEIPT",
-  eventReferenceId: "R_1",
-  productId: "P1",
-  facilityIds,
 });
 
 const decisionRow = (workEffortName: string) => ({
@@ -62,6 +53,22 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
 
     expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
     expect(harness.api.mock.calls.length).toBe(calls);
+  });
+
+  it("records an explicit explanation for movement families without a reachable source path", async () => {
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve([
+      { eventTypeId: "RECEIPT", eventReferenceId: "R1", productId: "P1" },
+      { eventTypeId: "TRANSFER_RECEIPT", eventReferenceId: "R2", productId: "P1" },
+      { eventTypeId: "RETURN_RESTOCK", eventReferenceId: "R3", productId: "P1" },
+      { eventTypeId: "POS_ISSUANCE", eventReferenceId: "I1", productId: "P1" },
+    ]);
+
+    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain("receipt");
+    expect(sources.value.get(sourceKeyOf("TRANSFER_RECEIPT", "R2"))?.unresolved).toContain("transfer receipt");
+    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R3"))?.unresolved).toContain("return receipt");
+    expect(sources.value.get(sourceKeyOf("POS_ISSUANCE", "I1"))?.unresolved).toContain("POS sale");
   });
 
   /**
@@ -93,24 +100,6 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     await resolve([countLookup()]);
 
     expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
-  });
-
-  /**
-   * A row opened before the facility-group cache hydrates used to keep "no cached member facilities"
-   * for the rest of the session, because a RETURNED unresolved was never re-asked.
-   */
-  it("re-asks a cache-dependent answer once the cache it needed is warm", async () => {
-    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
-    const key = sourceKeyOf("RECEIPT", "R_1");
-
-    await resolve([receiptLookup([])], { fanOut: true });
-    expect(sources.value.get(key)?.unresolved).toContain("no cached member facilities");
-    expect(harness.api).not.toHaveBeenCalled();
-
-    harness.api.mockResolvedValue({ data: [{ orderId: "SO_1", orderName: "SO-10042" }] });
-    await resolve([receiptLookup(["FAC_1"])], { fanOut: true });
-
-    expect(sources.value.get(key)?.label).toContain("SO-10042");
   });
 
   it("does not re-queue keys a concurrent pass is already resolving", async () => {

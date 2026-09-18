@@ -33,14 +33,14 @@
       >
         <ion-icon slot="start" aria-hidden="true" :icon="alertCircleOutline" />
         <ion-label class="ion-text-wrap">
-          <h3>{{ translate("Sync status unavailable") }}</h3>
+          {{ translate("Sync status unavailable") }}
           <p>{{ translate(loadError) }}</p>
         </ion-label>
       </ion-item>
 
       <ion-item v-else-if="!hydrated" class="status-row" aria-busy="true">
         <ion-label class="ion-text-wrap">
-          <h3>{{ translate("Loading sync status") }}</h3>
+          {{ translate("Loading sync status") }}
           <ion-skeleton-text animated style="width: 70%" />
           <ion-skeleton-text animated style="width: 45%" />
         </ion-label>
@@ -56,7 +56,7 @@
       >
         <ion-icon slot="start" aria-hidden="true" :icon="alertCircleOutline" />
         <ion-label class="ion-text-wrap">
-          <h3>{{ translate("Latest refresh failed") }}</h3>
+          {{ translate("Latest refresh failed") }}
           <p>{{ translate(loadError) }}</p>
         </ion-label>
       </ion-item>
@@ -71,6 +71,7 @@
           />
           <ion-label class="ion-text-wrap">
             <div class="status-heading">
+              <!-- These headings preserve the responsive title-and-badge layout below. -->
               <h3>{{ translate("Configuration") }}</h3>
               <ion-badge :color="configurationPresentation.color">
                 {{ translate(configurationPresentation.label) }}
@@ -88,7 +89,7 @@
             :icon="checkPresentation(check.status).icon"
           />
           <ion-label class="ion-text-wrap">
-            <h3>{{ translate(check.label) }}</h3>
+            {{ translate(check.label) }}
             <p v-if="check.detail">
               {{ translate(check.detail) }}
             </p>
@@ -135,6 +136,7 @@
             />
             <ion-label class="ion-text-wrap">
               <div class="status-heading">
+                <!-- Preserve the stage heading's responsive flex behavior beside its state badge. -->
                 <h3>{{ translate(stage.label) }}</h3>
                 <ion-badge :color="runStatusPresentation(stage.status).color">
                   {{ translate(runStatusPresentation(stage.status).label) }}

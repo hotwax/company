@@ -352,7 +352,7 @@
 
               <ion-item v-for="store in userProductStores" :key="store.productStoreId" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_CREATE)">
                 <ion-label>
-                  <h2>{{ store.storeName || store.productStoreId }}</h2>
+                  {{ store.storeName || store.productStoreId }}
                   <p>{{ getRoleTypeDesc(store.roleTypeId) }}</p>
                 </ion-label>
                 <ion-button slot="end" size="default" fill="clear" color="medium" @click="openProductStoreActionsPopover($event, store)">
