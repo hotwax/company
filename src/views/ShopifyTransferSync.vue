@@ -586,10 +586,10 @@ import { useCacheSync } from "@/composables/useCacheSync";
 import { useCachedList } from "@/composables/useCachedList";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import {
   registerMissingTransferWebhook,
   useShopifyPendingCounts,
+  useShopifyTransferSyncEnrichment,
   useShopifyTransferSyncLaunch,
   useShopifyPendingSegment,
   useShopifySyncedSegment,
