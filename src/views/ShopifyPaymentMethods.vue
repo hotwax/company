@@ -322,11 +322,11 @@ async function createPaymentMethod() {
 }
 
 async function saveMapping(paymentMethodTypeId: string) {
-  const newMappedKey = localMappings.value[paymentMethodTypeId];
+  const newMappedKey = (localMappings.value[paymentMethodTypeId] || "").trim();
   const oldMappedKey = getShopifyMapping(paymentMethodTypeId);
 
-  if (!newMappedKey) {
-    commonUtil.showToast(translate("Please provide a Shopify payment method name"));
+  if (!newMappedKey && !oldMappedKey) {
+    editingItemId.value = "";
     return;
   }
 
@@ -339,19 +339,21 @@ async function saveMapping(paymentMethodTypeId: string) {
       }, { refresh: false });
     }
 
-    const resp = await shopMutations.saveTypeMapping({
-      mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-      mappedKey: newMappedKey,
-      mappedValue: paymentMethodTypeId
-    }, { refresh: false });
+    if (newMappedKey) {
+      const resp = await shopMutations.saveTypeMapping({
+        mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
+        mappedKey: newMappedKey,
+        mappedValue: paymentMethodTypeId
+      }, { refresh: false });
 
-    if (!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopMutations.refreshTypeMappings();
-      editingItemId.value = "";
-    } else {
-      throw resp.data;
+      if (commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
+
+    commonUtil.showToast(translate("Mapping updated successfully"));
+    await shopMutations.refreshTypeMappings();
+    editingItemId.value = "";
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update mapping"));
@@ -376,11 +378,13 @@ async function saveAllDirtyMappings() {
 
     await Promise.all(dirtyIds.map(async (id) => {
       const newMappedKey = localMappings.value[id];
-      await shopMutations.saveTypeMapping({
-        mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-        mappedKey: newMappedKey,
-        mappedValue: id
-      }, { refresh: false });
+      if (newMappedKey) {
+        await shopMutations.saveTypeMapping({
+          mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
+          mappedKey: newMappedKey,
+          mappedValue: id
+        }, { refresh: false });
+      }
     }));
 
     await shopMutations.refreshTypeMappings();
