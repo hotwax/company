@@ -28,9 +28,7 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
-import {
-  PHYSICAL_EVENT_TYPES, SHOPIFY_INVENTORY_EVENT_TYPE, isReservationEventType,
-} from "@/utils/shopifyInventoryEventTypes";
+import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
@@ -1167,12 +1165,6 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
   return `${eventTypeId}|${eventReferenceId}`;
 }
 
-const UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES: Record<string, string> = {
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT]: "The OMS does not expose the receipt behind this movement.",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.TRANSFER_RECEIPT]: "The OMS does not expose the transfer receipt behind this movement.",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RETURN_RESTOCK]: "The OMS does not expose the return receipt behind this movement.",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.POS_ISSUANCE]: "The OMS does not expose the POS sale behind this movement.",
-};
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
 /**
@@ -1393,11 +1385,9 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
  */
 type MovementFamily = "receipt" | "issuance";
 
-const MOVEMENT_FAMILIES: Record<string, MovementFamily> = {
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT]: "receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.TRANSFER_RECEIPT]: "receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RETURN_RESTOCK]: "receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.POS_ISSUANCE]: "issuance",
+const MOVEMENT_FAMILIES: Partial<Record<InventoryEventSourceRoot, MovementFamily>> = {
+  shipmentReceipts: "receipt",
+  itemIssuances: "issuance",
 };
 
 /**
@@ -1649,38 +1639,25 @@ async function readMovementDocuments(
   return answers;
 }
 
+/**
+ * The one-call-per-row resolvers. The movement roots are absent on purpose: they answer in bulk below,
+ * and `readMovementDocuments` returns an entry for every reference it is asked about, so a movement row
+ * never falls through to a per-row resolver. The configuration families have no root and no resolver.
+ */
 function eventSourceResolverFor(eventTypeId: string) {
-  if(isReservationEventType(eventTypeId)) {return resolveReservationSource;}
-  if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
-  if(eventTypeId === SHOPIFY_INVENTORY_EVENT_TYPE.EXTERNAL_RESET) {return resolveExternalResetSource;}
-
-  /*
-   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
-   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
-   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
-   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
-   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
-   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
-   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
-   * an unscoped read exists.
-   *
-   * The configuration families name no document at all. Their references decode locally to ids the app
-   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
-   * entity and its PK values, neither of which the ledger keeps.
-   */
-  const unresolvedMessage = UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES[eventTypeId];
-  if(unresolvedMessage) {
-    return async (): Promise<InventoryEventSource> => ({
-      label: "",
-      unresolved: translate(unresolvedMessage),
-    });
+  switch(sourceRootFor(eventTypeId)) {
+    case "inventoryItemDetails": return resolveReservationSource;
+    case "varianceDecisions": return resolvePhysicalSource;
+    case "externalInventoryResets": return resolveExternalResetSource;
+    default: return null;
   }
-  return null;
 }
 
 /** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
 function movementFamilyFor(eventTypeId: string): MovementFamily | null {
-  return MOVEMENT_FAMILIES[eventTypeId] ?? null;
+  const root = sourceRootFor(eventTypeId);
+
+  return (root && MOVEMENT_FAMILIES[root]) ?? null;
 }
 
 /**
@@ -1742,7 +1719,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
   const movementEntries = entries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId));
   const singleEntries = entries.filter(([, lookup]) => !movementFamilyFor(lookup.eventTypeId));
   for(const family of ["receipt", "issuance"] as MovementFamily[]) {
-    const familyEntries = movementEntries.filter(([, lookup]) => MOVEMENT_FAMILIES[lookup.eventTypeId] === family);
+    const familyEntries = movementEntries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId) === family);
     for(let index = 0; index < familyEntries.length; index += MOVEMENT_LOOKUP_CHUNK) {
       const chunk = familyEntries.slice(index, index + MOVEMENT_LOOKUP_CHUNK);
       // One reference can carry two event types (a receipt that is also a restock), so the ids are
@@ -1775,11 +1752,10 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
         }
         attempt.failures = 0;
         attempt.retryable = false;
-        const fallbackResolver = eventSourceResolverFor(lookup.eventTypeId);
+        // `readMovementDocuments` answers every reference it was given, on every path including its
+        // denials, so the `??` is a belt-and-braces guard rather than a second lookup strategy.
         next.set(key, answers.get(lookup.eventReferenceId)
-          ?? (fallbackResolver
-            ? await fallbackResolver(lookup)
-            : movementUnresolved(translate("The OMS has no inventory movement with this reference."))));
+          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
         changed = true;
       }
       if(changed) {eventSources.value = next;}

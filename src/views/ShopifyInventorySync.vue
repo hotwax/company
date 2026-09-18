@@ -1719,12 +1719,12 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import {
+  type InventoryEventSourceRoot, isReservationEventType, sourceRootFor,
+} from "@/utils/inventoryEventSourceRoots";
 import { parameterMap } from "@/utils/serviceJob";
 import { describeRunParameters, describeRunResult } from "@/utils/serviceJobRun";
 import { locationInventoryDeliveryErrorCount } from "@/utils/shopifyLocationInventory";
-import {
-  SHOPIFY_INVENTORY_EVENT_TYPE, SHOPIFY_INVENTORY_EVENT_TYPE_PREFIX, isReservationEventType,
-} from "@/utils/shopifyInventoryEventTypes";
 import type { PipelineSectionId } from "@/utils/shopifyInventoryPipeline";
 import {
   deliveryStatusOf,
@@ -2781,26 +2781,20 @@ function locationLabel(detail: any): string {
  * label. This ledger row deliberately carries no order, return or shipment id at all: "which sales
  * order was that" is answered by resolving the reference against the OMS, not by reading this label.
  */
-const SOURCE_RECORD_LABELS: Record<string, string> = {
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT]: "Shipment receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.TRANSFER_RECEIPT]: "Shipment receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RETURN_RESTOCK]: "Shipment receipt",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.POS_ISSUANCE]: "Item issuance",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.PHYSICAL_INVENTORY]: "Physical inventory",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.CYCLE_COUNT]: "Physical inventory",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.EXTERNAL_RESET]: "External inventory reset",
-  // Deliberately empty, all four: the reservation reference is spelled out below as "Inventory item X,
-  // detail Y", which already names the record, and prefixing it would repeat the words. The transfer
-  // pair is new in this release and reads exactly the same way, so it gets the same treatment.
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RESERVATION_CREATE]: "",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.RESERVATION_RELEASE]: "",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.TRANSFER_RESERVATION_CREATE]: "",
-  [SHOPIFY_INVENTORY_EVENT_TYPE.TRANSFER_RESERVATION_RELEASE]: "",
+const SOURCE_RECORD_LABELS: Record<InventoryEventSourceRoot, string> = {
+  shipmentReceipts: "Shipment receipt",
+  itemIssuances: "Item issuance",
+  varianceDecisions: "Physical inventory",
+  externalInventoryResets: "External inventory reset",
+  // Deliberately empty: the reservation reference is spelled out below as "Inventory item X, detail Y",
+  // which already names the record, and prefixing it would repeat the words.
+  inventoryItemDetails: "",
 };
 
-/** The table holds catalog keys; an unrecognised type stays empty rather than becoming a wrong label. */
+/** An event no root resolves stays empty rather than becoming a confident, wrong label. */
 function sourceRecordLabel(eventTypeId: string): string {
-  const key = SOURCE_RECORD_LABELS[eventTypeId] ?? "";
+  const root = sourceRootFor(eventTypeId);
+  const key = root ? SOURCE_RECORD_LABELS[root] : "";
 
   return key ? translate(key) : "";
 }
@@ -3059,25 +3053,14 @@ const inFlightBatches = computed(() => batches.value
   .filter((batch: any) => sectionOfBatch(batch.statusId) === "inFlight"));
 
 /**
- * The server owns this label. `eventTypeDescription` is joined from the `ShopifyInventoryEventType`
- * enumeration -- the closed vocabulary the ledger's EVENT_TYPE_ID is foreign-keyed to -- so it is
- * always present and always in step with the types the connector actually emits. The fallback only
- * prettifies the id, and exists for a row whose enumeration row was somehow not joined; it is not a
- * mapping table, because a client-side copy of that vocabulary is exactly what drifts.
- *
- * The `SIE_` family prefix comes off first. It is there to keep `Enumeration.enumId` globally unique,
- * carries no meaning for a reader, and prettifies into a literal "Sie cycle count".
+ * The server owns this label, with no client-side mapping table behind it — a copy of that vocabulary
+ * is exactly what drifts. Both ledger views INNER-join `moqui.basic.Enumeration` and alias
+ * `eventTypeDescription` from it, and every seeded row has a description, so a row that reaches this
+ * app always carries its own label; one whose enumeration row is missing is not returned at all. The id
+ * stands in only so a stubbed row cannot render an empty cell.
  */
 function eventTypeLabel(detail: any): string {
-  const description = String(detail?.eventTypeDescription ?? "").trim();
-  if(description) {return description;}
-
-  const eventTypeId = String(detail?.eventTypeId ?? "");
-  const bare = eventTypeId.startsWith(SHOPIFY_INVENTORY_EVENT_TYPE_PREFIX)
-    ? eventTypeId.slice(SHOPIFY_INVENTORY_EVENT_TYPE_PREFIX.length)
-    : eventTypeId;
-
-  return bare.toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
+  return String(detail?.eventTypeDescription ?? "").trim() || String(detail?.eventTypeId ?? "");
 }
 
 const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.map((detail: any) => {

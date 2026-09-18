@@ -12,13 +12,12 @@ import {
   toMillis,
   toText,
 } from "@/utils/cacheProjection";
-import { SHOPIFY_INVENTORY_EVENT_TYPE } from "@/utils/shopifyInventoryEventTypes";
 
 const NOW = 1_700_000_000_000;
 
 describe("location inventory ledger identity", () => {
   const source = {
-    eventTypeId: SHOPIFY_INVENTORY_EVENT_TYPE.RECEIPT,
+    eventTypeId: "SIE_RECEIPT",
     eventReferenceId: "R1",
     shopId: "S1",
     shopifyLocationId: "L1",
