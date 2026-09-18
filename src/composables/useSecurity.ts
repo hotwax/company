@@ -70,6 +70,7 @@ onSessionCleared(clearUserCreationDraft);
 export function useUserAccountActions() {
   const userStore = useUserStore();
   const sendResetPasswordEmail = (userLoginId: string) => userStore.sendResetPasswordEmail({ userLoginId });
+
   const getBaseURL = (maarg: string) => {
     if (maarg.startsWith("http")) {
       const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
@@ -77,17 +78,21 @@ export function useUserAccountActions() {
     }
     return `https://${maarg}.hotwax.io/rest/s1/`;
   };
-  const resetPassword = async (payload: any, maarg: string) => client({
-    baseURL: getBaseURL(maarg),
-    url: `admin/users/${payload.userId}/changePassword`,
-    method: "post",
-    data: {
-      username: payload.username,
-      oldPassword: payload.oldPassword,
-      newPassword: payload.newPassword,
-      newPasswordVerify: payload.newPasswordVerify,
-    },
-  });
+
+  const resetPassword = async (payload: any, maarg: string) => {
+    return client({
+      baseURL: getBaseURL(maarg),
+      url: `admin/users/${payload.userId}/changePassword`,
+      method: "post",
+      data: {
+        username: payload.username,
+        oldPassword: payload.oldPassword,
+        newPassword: payload.newPassword,
+        newPasswordVerify: payload.newPasswordVerify
+      }
+    });
+  };
+
   const setUserCreationDraftFromSearch = (search: string) => {
     const name = search.trim();
     const [firstName = "", ...lastName] = name ? name.split(/\s+/) : [];

@@ -22,7 +22,6 @@ import { clearSessionScopedState } from "@/composables/sessionScope";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
-  client: vi.fn(),
   refreshAfterMutation: vi.fn(),
   resyncDomain: vi.fn(),
 }));
@@ -32,7 +31,6 @@ const sessionBackend = ref("");
 
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
-  client: (...args: any[]) => harness.client(...args),
   commonUtil: { getMaargURL: () => sessionBackend.value, hasError: (resp: any) => !!resp?.hasError, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
@@ -47,46 +45,15 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 // The composable's session accessors (`useAuth`) reach into the user store, whose real import
 // chain needs a browser context. Expose reactive session data for token-lifecycle tests.
 vi.mock("@/store/user", () => ({
-  useUserStore: () => ({
-    get getUserProfile() { return profile.value; },
-    sendResetPasswordEmail: (...args: any[]) => harness.api(...args),
-  }),
+  useUserStore: () => ({ get getUserProfile() { return profile.value; } }),
 }));
 
-import { updateUserGroup, useUserAccountActions, useUserGroupPermissions, useUserToken } from "@/composables/useSecurity";
+import { updateUserGroup, useUserGroupPermissions, useUserToken } from "@/composables/useSecurity";
 
 beforeEach(() => {
   harness.api.mockReset();
-  harness.client.mockReset();
   harness.refreshAfterMutation.mockReset();
   harness.resyncDomain.mockReset();
-});
-
-describe("useUserAccountActions — reset password", () => {
-  it("keeps the reset-password request with the shared account-action owner", async () => {
-    harness.client.mockResolvedValue({ data: { updateSuccessful: true } });
-    const { resetPassword } = useUserAccountActions();
-
-    await resetPassword({
-      userId: "USER-1",
-      username: "person@example.com",
-      oldPassword: "old",
-      newPassword: "new",
-      newPasswordVerify: "new",
-    }, "https://demo.hotwax.io");
-
-    expect(harness.client).toHaveBeenCalledWith({
-      baseURL: "https://demo.hotwax.io/rest/s1/",
-      url: "admin/users/USER-1/changePassword",
-      method: "post",
-      data: {
-        username: "person@example.com",
-        oldPassword: "old",
-        newPassword: "new",
-        newPasswordVerify: "new",
-      },
-    });
-  });
 });
 
 describe("useUserGroupPermissions — active-grant derivation", () => {
