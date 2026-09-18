@@ -6949,3 +6949,20 @@ export async function fetchProductFacilityActivations(shopId: string, params: {
   const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
   return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
 }
+
+// Shopify is the owning composable for all Shopify-facing screen APIs. The fulfillment reader
+// implementation remains split into a focused submodule, but callers import it through this owner
+// so a screen does not assemble Shopify state from unrelated composable entry points.
+export {
+  useFulfillmentSyncHealth,
+  useOmsShipmentContext,
+  usePendingFulfillments,
+  useQueuedFulfillments,
+  useShopifyFulfillmentDetails,
+  useSyncedFulfillments,
+} from "./useShopifyFulfillment";
+export type {
+  OmsShipmentContext,
+  QueuedFulfillmentRow,
+  SyncedFulfillmentRow,
+} from "./useShopifyFulfillment";
