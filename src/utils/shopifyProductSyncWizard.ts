@@ -173,9 +173,16 @@ export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot
     if(logStatusId === "DmlsCancelled" || systemMessageState === "SmsgCancelled") {return "cancelled";}
     if(importState === "failed" || systemMessageState === "SmsgError") {return "error";}
 
-    const failedRecordCount = Math.max(Number(progress.failedRecordCount || 0), 0);
-    const successRecordCount = Math.max(Number(progress.successRecordCount || 0), 0);
-    const totalRecordCount = Math.max(Number(progress.totalRecordCount || 0), 0);
+    const failedRecordCount = Number(progress.failedRecordCount) || 0;
+    const totalRecordCount = Number(progress.totalRecordCount) || 0;
+    // ABSENT, not falsy. An import reporting zero successes alongside failures really did fail
+    // outright; one that has not reported the field yet has to be inferred from total - failed, the
+    // same derivation `normalizeLogOutcome` applies. Conflating the two read "2 of 462 failed" as a
+    // total failure -- which is the state the shop-scoped spine is in before its DataManager log
+    // arrives, and the shape of every backend payload that never sends a success count at all.
+    const successRecordCount = progress.successRecordCount === undefined || progress.successRecordCount === null
+      ? Math.max(totalRecordCount - failedRecordCount, 0)
+      : Number(progress.successRecordCount) || 0;
     if (failedRecordCount > 0) {
       if (successRecordCount === 0 || (totalRecordCount > 0 && failedRecordCount >= totalRecordCount)) {
         return "error";

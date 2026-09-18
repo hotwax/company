@@ -69,9 +69,9 @@
               <template v-if="postalAddress?.address1">
                 <ion-item lines="full">
                   <ion-label>
-                    <h3>{{ postalAddress.toName }}</h3>
-                    <h3>{{ postalAddress.address1 }}</h3>
-                    <h3>{{ postalAddress.address2 }}</h3>
+                    {{ postalAddress.toName }}
+                    {{ postalAddress.address1 }}
+                    {{ postalAddress.address2 }}
                     <p class="ion-text-wrap">{{ postalAddress.postalCode ? `${postalAddress.city}, ${postalAddress.postalCode}` : postalAddress.city }}</p>
                     <p class="ion-text-wrap">{{ postalAddress.countryGeoName ? `${postalAddress.stateGeoName}, ${postalAddress.countryGeoName}` : postalAddress.stateGeoName }}</p>
                     <p class="ion-text-wrap" v-if="contactDetails?.telecomNumber?.contactNumber">{{ [contactDetails.telecomNumber.countryCode, contactDetails.telecomNumber.contactNumber].filter(Boolean).join('-') }}</p>
@@ -840,7 +840,6 @@ import FacilityMappingModal from '@/components/facility/FacilityMappingModal.vue
 import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMappingModal.vue';
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
-
 
 import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
 import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';

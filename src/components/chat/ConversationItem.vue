@@ -1,8 +1,8 @@
 <template>
   <ion-item button :detail="false" lines="full" class="conversation-item">
     <ion-label class="ion-text-wrap">
-      <h2 class="conversation-item__agent">{{ agentName }}</h2>
-      <h3 class="conversation-item__name">{{ conversationName }}</h3>
+      {{ agentName }}
+      {{ conversationName }}
       <p v-if="pendingRequest" class="conversation-item__pending">{{ pendingRequest }}</p>
     </ion-label>
 

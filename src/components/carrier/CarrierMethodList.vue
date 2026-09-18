@@ -14,7 +14,7 @@
 
       <ion-item lines="full">
         <ion-label class="ion-text-wrap">
-          <h2>{{ translate("Carrier shipment methods") }}</h2>
+          {{ translate("Carrier shipment methods") }}
           <p>
             {{ translate("Enable global shipment method types for this carrier, then configure their carrier fields.") }}
           </p>
@@ -34,7 +34,7 @@
         :key="method.shipmentMethodTypeId"
       >
         <ion-label class="ion-text-wrap">
-          <h2>{{ method.description || method.shipmentMethodTypeId }}</h2>
+          {{ method.description || method.shipmentMethodTypeId }}
           <p>{{ method.shipmentMethodTypeId }}</p>
           <p v-if="method.isConfigured">
             {{ translate("Carrier service code") }}:

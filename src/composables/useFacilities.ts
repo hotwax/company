@@ -564,6 +564,33 @@ export function useFacilityIdentificationTypes() {
 }
 
 /**
+ * Standalone facility queries extracted from views.
+ */
+export function useFacilityQueries() {
+  return {
+    async getPartyRoleAndPartyDetails(payload: Record<string, any>) {
+      const { roleTypeId, ...params } = payload;
+      return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+    },
+
+    async fetchGeocodeData(payload: Record<string, any>) {
+      return (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
+    },
+
+    async fetchFacilityOrderCounts(facilityId: string) {
+      const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
+      if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
+        return resp.data.map((item: any) => ({
+          ...item,
+          entryDate: DateTime.fromMillis(item.entryDate).toFormat('MMM dd yyyy')
+        }));
+      }
+      return [];
+    }
+  };
+}
+
+/**
  * Facility operating-hours calendars.
  *
  * Two halves with different maturity:

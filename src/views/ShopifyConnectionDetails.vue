@@ -3,7 +3,7 @@
     <ion-header>
       <ion-toolbar>
         <ion-back-button slot="start" default-href="/shopify"/>
-        <ion-title v-if="isLoading"><ion-skeleton-text animated style="width: 100px" /></ion-title>
+        <ion-title v-if="isLoading"><ion-skeleton-text animated class="skeleton-title" /></ion-title>
         <ion-title v-else>{{ shop.name || id }}</ion-title>
         <ion-buttons slot="end" v-if="!isLoading">
           <ion-button @click="openCloneSettingsModal()">
@@ -17,12 +17,12 @@
     <ion-content class="ion-padding-horizontal">
       <div v-if="isLoading">
         <section class="ion-margin-top" v-for="i in 3" :key="i">
-          <ion-skeleton-text animated style="width: 150px; height: 32px;" class="ion-margin-bottom" />
+          <ion-skeleton-text animated class="skeleton-heading ion-margin-bottom" />
           <div class="grid-container">
             <ion-item v-for="j in (i === 1 ? 2 : (i === 2 ? 2 : 4))" :key="j" class="item-box" lines="none">
               <ion-label>
-                <ion-skeleton-text animated style="width: 70%" />
-                <p><ion-skeleton-text animated style="width: 50%" /></p>
+                <ion-skeleton-text animated class="skeleton-line" />
+                <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
               </ion-label>
             </ion-item>
           </div>
@@ -73,7 +73,7 @@
                    the reader gets the card's structure while only the figures are still pending. -->
               <ion-card-header>
                 <ion-card-title>{{ translate("Product sync") }}</ion-card-title>
-                <ion-card-subtitle><ion-skeleton-text animated style="width: 70%" /></ion-card-subtitle>
+                <ion-card-subtitle><ion-skeleton-text animated class="skeleton-line" /></ion-card-subtitle>
               </ion-card-header>
               <div class="product-sync-activity-graph">
                 <div class="product-sync-activity-canvas">
@@ -85,19 +85,19 @@
                   <ion-item lines="full">
                     <ion-label>
                       {{ translate("Records processed in last sync") }}
-                      <p><ion-skeleton-text animated style="width: 55%" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
                     </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
                   </ion-item>
                   <ion-item lines="full">
                     <ion-label>
                       {{ translate("Unsynced events") }}
                       <!-- Two lines: this row's explanation wraps in the loaded card, and a one-line
                            stand-in left the shell ~20px short of it. -->
-                      <p><ion-skeleton-text animated style="width: 92%" /></p>
-                      <p><ion-skeleton-text animated style="width: 45%" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-long" /></p>
+                      <p><ion-skeleton-text animated class="skeleton-line-short" /></p>
                     </ion-label>
-                    <ion-label slot="end"><ion-skeleton-text animated style="width: 48px" /></ion-label>
+                    <ion-label slot="end"><ion-skeleton-text animated class="skeleton-count" /></ion-label>
                   </ion-item>
                 </ion-list>
               </div>
@@ -247,6 +247,12 @@
             @open="openOrderSyncEntry()"
           />
           <section>
+            <ion-item detail class="item-box" lines="none" button @click="openFulfillmentSync()">
+              <ion-label>
+                {{ translate("Fulfillment sync") }}
+                <p>{{ translate("See which fulfillments Shopify has not confirmed, and how late each one is") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
             </ion-item>
@@ -561,6 +567,7 @@ import {
 } from "@/composables/useShopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
+  useShopifyUnsyncedProductCount,
   useShopifyConnectionSyncSession,
   useShopifyOrderSyncCard,
   useShopifyProductSyncRun,
@@ -612,7 +619,15 @@ const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.v
 
 const productSyncRecordsProcessed = computed(() =>
   Number(productSyncRunState.value.latestConsumedSystemMessage?.totalRecordCount || 0));
-const productSyncUnsyncedCount = ref(0);
+const {
+  count: productSyncUnsyncedCount,
+  refresh: refreshProductSyncUnsyncedCount,
+} = useShopifyUnsyncedProductCount({
+  remoteId: productSyncRemoteId,
+  lastSyncedAt: () => productSyncRunState.value.lastSyncedAt,
+  load: fetchUnsyncedProductUpdateCount,
+  onError: (error) => logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error),
+});
 const hasProductSyncSummaryError = ref(false);
 const productSyncMigrationEligibility = ref({
   componentRelease: "",
@@ -979,6 +994,12 @@ watch(selectedShopId, async (shopId: string) => {
   }
 }, { immediate: true });
 
+// Ionic keeps this page mounted while the product-sync page runs. Refresh remote truth whenever the
+// retained summary becomes visible again, even if the last-sync timestamp has not changed.
+onIonViewWillEnter(() => {
+  void refreshProductSyncUnsyncedCount().catch(() => undefined);
+});
+
 async function loadConnectionSummaries(shopId = selectedShopId.value) {
   if (!shopId) {
     selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
@@ -1019,7 +1040,6 @@ async function loadProductsInventorySummary() {
   };
   // Nothing to reset for the run state or the record count — both are cached projections that
   // re-derive from whichever shop is selected.
-  productSyncUnsyncedCount.value = 0;
   clearSyncRun();
 
   if (!props.id) {
@@ -1055,37 +1075,11 @@ async function loadProductsInventorySummary() {
     logger.warn("Failed to inspect legacy product sync state", legacyTeardownStateResult.reason);
   }
 
-  /**
-   * The remote is resolved from the CACHE — it is a join of two cached tables, never a request.
-   * `fetchShopSystemMessageRemoteId` used to be the fourth leg of the batch above.
-   */
-  const systemMessageRemoteId = productSyncRemoteId.value || null;
-
-  try {
-    /**
-     * `unsyncedUpdates` is the only part of the old dashboard summary this page still asks for: it
-     * counts products changed in Shopify since the last sync, which only Shopify knows.
-     *
-     * Everything else the summary returned — the run state, the pending-request count — is now the
-     * reactive `productSyncRunState` above, derived from cached messages and imports. The old call
-     * fetched five things and this page read two of them.
-     */
-    productSyncUnsyncedCount.value = await loadUnsyncedProductUpdateCount(systemMessageRemoteId);
-  } catch (error) {
-    logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error);
-    productSyncUnsyncedCount.value = 0;
-  }
+  // `useShopifyUnsyncedProductCount` also refreshes when the retained page observes a new sync
+  // cursor. Await the first load so the summary skeleton does not briefly show an old count.
+  await refreshProductSyncUnsyncedCount().catch(() => undefined);
 
   isSyncSummaryLoading.value = false;
-}
-
-/** Shopify-only: how many products changed since the last completed sync. */
-async function loadUnsyncedProductUpdateCount(systemMessageRemoteId: string | null): Promise<number> {
-  if (!systemMessageRemoteId) return 0;
-  return fetchUnsyncedProductUpdateCount(
-    systemMessageRemoteId,
-    productSyncRunState.value.lastSyncedAt || undefined,
-  );
 }
 
 /**
@@ -1508,6 +1502,10 @@ function openInventorySync() {
   router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
 }
 
+function openFulfillmentSync() {
+  router.push(`/shopify-connection-details/${props.id}/fulfillment-sync`);
+}
+
 function openTransferSync() {
   router.push(`/shopify-connection-details/${props.id}/transfer-sync`);
 }
@@ -1653,6 +1651,34 @@ ion-item[data-sync-state="teardown-needed"]::part(native) {
   border-color: var(--ion-color-danger);
 }
 
+/* Stand-in widths belong here, not in the markup: the template says WHAT is pending and the
+   stylesheet decides how wide to draw it. Three line lengths rather than seven bespoke percentages --
+   the variation is visual rhythm, and a scale reads better than a number per element. */
+.skeleton-title {
+  inline-size: 100px;
+}
+
+.skeleton-heading {
+  inline-size: 150px;
+  block-size: 32px;
+}
+
+.skeleton-count {
+  inline-size: 48px;
+}
+
+.skeleton-line {
+  inline-size: 70%;
+}
+
+.skeleton-line-short {
+  inline-size: 50%;
+}
+
+.skeleton-line-long {
+  inline-size: 92%;
+}
+
 /* `ion-skeleton-text` inherits its height from the line it replaces, so a skeleton standing in for a
    value that is not there yet has nothing to inherit from and collapses to zero -- measured before
    this rule: header 0, graph 0, list 0, whole card 0. `1lh` is the line box of whatever it sits in,
@@ -1688,7 +1714,7 @@ main {
 }
 
 .warning-card {
-  margin-top: var(--spacer-md);
+  margin-top: var(--spacer-base);
 }
 
 .warning-icon {

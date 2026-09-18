@@ -33,6 +33,37 @@ describe("normalizeProductSyncStatus", () => {
         })).toBe("partial");
       });
 
+      it("infers the successes a finished import did not report", () => {
+        // The shop-scoped spine carries total and failed before its DataManager log arrives with an
+        // explicit success count, and some backend payloads never send one. Coercing the absent
+        // field to zero reported 2 of 462 failed as a total failure.
+        expect(normalizeProductSyncStatus({
+          logId: "123",
+          logStatusId: "DmlsFinished",
+          totalRecordCount: 462,
+          failedRecordCount: 2,
+        })).toBe("partial");
+      });
+
+      it("still reports a total failure when the import reports zero successes outright", () => {
+        // An explicit 0 is an answer, not an absent field, even where total exceeds failed.
+        expect(normalizeProductSyncStatus({
+          logId: "123",
+          logStatusId: "DmlsFinished",
+          totalRecordCount: 462,
+          successRecordCount: 0,
+          failedRecordCount: 2,
+        })).toBe("error");
+      });
+
+      it("reports a total failure when nothing succeeded and no total was recorded", () => {
+        expect(normalizeProductSyncStatus({
+          logId: "123",
+          logStatusId: "DmlsFinished",
+          failedRecordCount: 5,
+        })).toBe("error");
+      });
+
       it("returns error when logStatusId is DmlsFailed", () => {
         expect(normalizeProductSyncStatus({ logId: "123", logStatusId: "DmlsFailed" })).toBe("error");
       });
