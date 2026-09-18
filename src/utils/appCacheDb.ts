@@ -742,19 +742,14 @@ const IDENTITY_KEY = "identity";
 /**
  * THE SHAPE OF THE DATA, as distinct from the shape of the database.
  *
- * `schemaDrift()` compares STORE SETS, so it is blind to a release that changes what cached rows
- * MEAN while leaving every table and key field identical. Those rows survive the release and are
- * then read under rules that no longer fit them -- and because the class-A ledgers are append-mostly
- * with no snapshot prune, nothing ever overwrites or removes them.
+ * `schemaDrift()` compares STORE SETS, so it cannot see a release that changes what cached rows MEAN
+ * while every table and key field stays identical. Both inventory ledger caches are written with
+ * `upsertMany` and never `snapshotReplace`, so nothing removes a row the server no longer has.
  *
- * Bump this in the same commit as such a change. Adding it is itself a bump, so every existing
- * installation wipes once on the next load; that is intended, not a side effect.
+ * Bump this in the same commit as such a change; the bump itself wipes each installation once.
  *
- * 1 — Shopify inventory event ids moved onto `moqui.basic.Enumeration` and every `eventTypeId`
- *     gained an `SIE_` prefix (mantle-shopify-connector#777). Both inventory ledger caches build
- *     their primary key from `eventTypeId`, so rows cached before that release would sit beside
- *     their prefixed twins indefinitely, each one showing no source label and resolving no source
- *     record, because the vocabulary no longer contains its id.
+ * 1 — every `eventTypeId` gained an `SIE_` prefix (mantle-shopify-connector#777), and both ledger
+ *     caches key on it, so pre-release rows would linger forever resolving nothing.
  */
 const CACHE_CONTRACT_VERSION = 1;
 
