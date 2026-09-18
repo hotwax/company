@@ -702,7 +702,7 @@ export function useFacilityOrderCounts() {
     });
   }
 
-  return { fetchOrderCounts, fetchFacilityOrderCountsHistory };
+  return { fetchFacilityOrderHistory, fetchOrderCounts, fetchFacilityOrderCountsHistory };
 }
 
 export function useFacilityDetail(facilityId: string) {

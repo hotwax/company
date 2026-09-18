@@ -842,8 +842,7 @@ import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdMod
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
 import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
-import { useGeocoding } from '@/composables/useGeocoding';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -855,7 +854,7 @@ const {
 const mutations = useFacilityMutations(props.facilityId);
 const { fetchPartyRoleDetails } = usePartyQueries();
 const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
-const { geocode } = useGeocoding();
+const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
 const { facilityTypes } = useFacilityTypes();
