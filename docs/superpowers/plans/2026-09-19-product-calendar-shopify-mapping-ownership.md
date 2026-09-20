@@ -272,15 +272,22 @@ git commit -m "fix: align calendar condition action"
 - Uses the existing app registry: Routing → Products → Company.
 - Keeps the Company Product Sync route shop-scoped and opens it in a new tab.
 
-- [ ] **Step 1: Start current local frontend servers without restarting Moqui**
+- [x] **Step 1: Start current local frontend servers without restarting Moqui**
 
 Use separate localhost ports and the current local OMS configuration. Do not print credentials or alter the backend process.
 
-- [ ] **Step 2: Browser UAT the no-write path**
+- [x] **Step 2: Browser UAT the no-write path**
 
 In the in-app browser, verify the Routing rule action, follow the Products calendar link, confirm the Products count and Company action, and open the Company Product Sync card for the selected shop. Do not save a mapping without the user providing a safe test shop and selector.
 
-- [ ] **Step 3: Record completed checks and commit the plan update**
+**2026-09-19 local UAT (no writes):**
+
+- Verified the existing Routing and Products servers, then started the Company frontend on its configured local port (`8100`); Moqui was not restarted.
+- Routing’s direct **Add condition** action added a second local draft row, then removed it without saving the rule.
+- Products for `SANDBOX_STORE` showed **1 active calendar mappings** and generated the management path for the first stable linked shop (`10000`). Its local environment intentionally falls back to the configured Company URL; the matching local Company route was opened directly for verification.
+- Company rendered all four native Product calendar mapping inputs and the existing Release date mapping (`HC_PREORDER.PROMISE_DATE`). The unrelated Product Sync request reported its pre-existing backend `400`, but the mapping card loaded independently. No mapping was changed or saved.
+
+- [x] **Step 3: Record completed checks and commit the plan update**
 
 ```bash
 git add docs/superpowers/plans/2026-09-19-product-calendar-shopify-mapping-ownership.md
