@@ -14,6 +14,7 @@
 
     <ShopifyProductMappingsModal :product="mappingReviewProduct" :system-message-remote-id="productsPickerSystemMessageRemoteId" :product-store-id="draft.selectedProductStoreId" @close="mappingReviewProduct = null" />
     <ion-content>
+      <ProductCalendarMappingsCard :key="id" :shop-id="id" />
       <ion-card v-if="selectedProductSyncFeedback" role="status">
         <ion-card-header>
           <ion-card-title>{{ translate("Selected product sync") }}</ion-card-title>
@@ -707,6 +708,7 @@ import cronstrue from "cronstrue";
 import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/shopify-product-sync/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncWizardView from "@/components/shopify-product-sync/ShopifyProductSyncWizardView.vue";
+import ProductCalendarMappingsCard from "@/components/shopify-product-sync/ProductCalendarMappingsCard.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
