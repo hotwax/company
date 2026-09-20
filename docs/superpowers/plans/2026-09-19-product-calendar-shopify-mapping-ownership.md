@@ -294,7 +294,7 @@ git add docs/superpowers/plans/2026-09-19-product-calendar-shopify-mapping-owner
 git commit -m "docs: record calendar mapping verification"
 ```
 
-- [ ] **Step 4: Inspect each push destination before pushing**
+- [x] **Step 4: Inspect each push destination before pushing**
 
 ```bash
 git rev-parse --show-toplevel
