@@ -944,6 +944,18 @@ export function useFacilityMutations(facilityId: string) {
       return resp;
     },
 
+    async addFacilityAddress(payload: Record<string, any>) {
+      return post("oms/facilityContactMechs/facilityAddress", { ...payload, facilityId, contactMechPurposeTypeId: "PRIMARY_LOCATION" });
+    },
+
+    async addFacilityPhone(payload: Record<string, any>) {
+      return post("oms/facilityContactMechs/facilityPhone", { ...payload, facilityId, contactMechPurposeTypeId: "PRIMARY_PHONE" });
+    },
+
+    async addFacilityEmail(payload: Record<string, any>) {
+      return post("oms/facilityContactMechs/facilityEmail", { ...payload, facilityId, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
+    },
+
     // ------------------------------------------------- groups (CACHED: groupFacilities)
     async addToGroup(payload: Record<string, any>) {
       const resp = await post(`oms/facilities/${encodeURIComponent(facilityId)}/groups`, { ...payload, facilityId });
