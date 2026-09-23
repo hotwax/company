@@ -81,6 +81,7 @@ import { arrowForwardOutline, warningOutline } from "ionicons/icons";
 import { client, commonUtil, logger, translate } from "@common";
 import Logo from "@common/components/Logo.vue";
 import router from "@/router";
+import { useUserAccountActions } from "@/composables/useSecurity";
 
 const route = router.currentRoute.value;
 
@@ -150,17 +151,17 @@ const submit = async () => {
 
   isSubmitting.value = true;
   try {
-    const resp = await client({
-      baseURL: getBaseURL(),
-      url: `admin/users/${userId}/changePassword`,
-      method: "post",
-      data: {
+    const { resetPasswordWithLink } = useUserAccountActions();
+    const resp = await resetPasswordWithLink(
+      getBaseURL(),
+      userId,
+      {
         username,
         oldPassword: resetPassword.value,
         newPassword: newPassword.value,
         newPasswordVerify: newPasswordVerify.value
       }
-    });
+    );
 
     // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
     // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
