@@ -145,6 +145,29 @@ export function useShopifyLocations(shopId: string | undefined) {
 // Type mappings — one table backs every mapping page, sliced by shop + mappedTypeId
 // ---------------------------------------------------------------------------------------------
 
+export function useShopifyTypeMappingsLive() {
+  const fetchTypeMappingsForShop = async (shopId: string, mappedTypeId: string) => {
+    let mappings: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "get",
+        params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        mappings = [...mappings, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return mappings;
+  };
+  return { fetchTypeMappingsForShop };
+}
+
 export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId: string) {
   const { records: unordered, hydrated } = useCachedList<any>(
     shopifyTypeMappingCache,
@@ -164,6 +187,29 @@ export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId:
     }, {}));
 
   return { mappings, keyByValue, hydrated };
+}
+
+export function useShopifyCarrierShipmentsLive() {
+  const fetchCarrierShipmentsForShop = async (shopId: string) => {
+    let shipments: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "get",
+        params: { shopId, pageSize: 100, pageIndex }
+      });
+      if (!commonUtil.hasError(resp) && resp.data) {
+        shipments = [...shipments, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while (resp.data && resp.data.length >= 100);
+    return shipments;
+  };
+  return { fetchCarrierShipmentsForShop };
 }
 
 export function useShopifyCarrierShipments(shopId: string | undefined) {

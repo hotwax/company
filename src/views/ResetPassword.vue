@@ -81,6 +81,7 @@ import { arrowForwardOutline, warningOutline } from "ionicons/icons";
 import { client, commonUtil, logger, translate } from "@common";
 import Logo from "@common/components/Logo.vue";
 import router from "@/router";
+import { useMaargURL } from "@/composables/useSeed";
 
 const route = router.currentRoute.value;
 
@@ -100,13 +101,7 @@ const newPasswordVerifyInput = ref<any>(null);
 // The emailed link only carries an API host reference (maarg), never a session -
 // requests here must not depend on cookies/auth state, so we build an explicit
 // baseURL and use the unauthenticated `client` instead of the app-wide `api()` helper.
-const getBaseURL = () => {
-  if (maarg.startsWith("http")) {
-    const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
-    return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
-  }
-  return `https://${maarg}.hotwax.io/rest/s1/`;
-};
+const { getBaseURL } = useMaargURL();
 
 const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
@@ -151,7 +146,7 @@ const submit = async () => {
   isSubmitting.value = true;
   try {
     const resp = await client({
-      baseURL: getBaseURL(),
+      baseURL: getBaseURL(maarg),
       url: `admin/users/${userId}/changePassword`,
       method: "post",
       data: {

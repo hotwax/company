@@ -1043,6 +1043,27 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
       return resp;
     },
 
+    /** Used by wizard/setup flows to idempotently create FEATURING groups. */
+    async ensureFacilityGroupExists(shopifyShopId: string, storeName: string) {
+      try {
+        const checkResp = await api({ url: `oms/facilityGroups/${shopifyShopId}`, method: "get" });
+        if (commonUtil.hasError(checkResp) || !(checkResp as any).data?.facilityGroupId) {
+          await api({
+            url: "oms/facilityGroups",
+            method: "post",
+            data: {
+              facilityGroupId: shopifyShopId,
+              facilityGroupTypeId: "FEATURING",
+              facilityGroupName: storeName
+            }
+          });
+          await refreshAfterMutation("facilityGroup", {});
+        }
+      } catch (error) {
+        logger.error("Failed to ensure facility group exists", error);
+      }
+    },
+
     async updateGroup(payload: Record<string, any>) {
       const resp: any = await api({
         url: `admin/facilityGroups/${groupId()}`,

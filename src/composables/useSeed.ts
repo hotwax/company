@@ -554,3 +554,14 @@ export function useMaargConfig() {
     clear,
   };
 }
+
+export function useMaargURL() {
+  const getBaseURL = (maarg: string) => {
+    if (maarg.startsWith("http")) {
+      const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+      return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+    }
+    return `https://${maarg}.hotwax.io/rest/s1/`;
+  };
+  return { getBaseURL };
+}
