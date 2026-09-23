@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger } from "@common";
+import { api, client, commonUtil, logger } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appCacheBootstrap";
 import { permissionCache, userGroupCache } from "@/utils/cacheEntities";
@@ -227,5 +227,30 @@ export async function updateUserGroup(payload: { userGroupId: string; descriptio
     data: payload,
   });
   if (!commonUtil.hasError(resp)) await resyncDomain("userGroup");
+  return resp;
+}
+
+
+export async function resetPassword(payload: any) {
+  const getBaseURL = () => {
+    if (payload.maarg.startsWith("http")) {
+      const cleanMaarg = payload.maarg.endsWith("/") ? payload.maarg.slice(0, -1) : payload.maarg;
+      return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+    }
+    return `https://${payload.maarg}.hotwax.io/rest/s1/`;
+  };
+
+  const resp = await client({
+    baseURL: getBaseURL(),
+    url: `admin/users/${payload.userId}/changePassword`,
+    method: "post",
+    data: {
+      username: payload.username,
+      oldPassword: payload.resetPassword,
+      newPassword: payload.newPassword,
+      newPasswordVerify: payload.newPasswordVerify
+    }
+  });
+
   return resp;
 }

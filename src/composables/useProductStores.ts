@@ -405,3 +405,17 @@ export function useProductStoreCreation() {
     }) as Promise<any>,
   };
 }
+
+
+export async function fetchProductStoreDetails(productStoreId: string): Promise<Record<string, any>> {
+  const resp: any = await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("Failed to fetch product store details");
+  }
+  return resp?.data && typeof resp.data === "object" ? resp.data : {};
+}
+
+export async function fetchProductStoreSettings(productStoreId: string): Promise<any[]> {
+  const resp: any = await api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`, method: "get" });
+  return !commonUtil.hasError(resp) && Array.isArray(resp?.data) ? resp.data : [];
+}

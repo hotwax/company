@@ -158,6 +158,7 @@ import { computed, ref } from "vue";
 import { colorWandOutline, locationOutline } from "ionicons/icons";
 import { api, commonUtil, logger, translate } from "@common";
 import { useGeocode, useGeos } from "@/composables/useSeed";
+import { useFacilityMutations } from "@/composables/useFacilities";
 import router from "@/router";
 
 const props = defineProps<{ facilityId: string }>();
@@ -183,6 +184,7 @@ const emailAddress = ref("");
 // entry. (`fetchOperatingCountries` was, despite the name, an unfiltered GEOT_COUNTRY list.)
 const { countries, statesOf, hydrated: geosReady } = useGeos();
 const { latLongForPostalCode } = useGeocode();
+const facilityMutations = useFacilityMutations(props.facilityId);
 const statesForCountry = computed(() => statesOf(formData.value.countryGeoId));
 
 function inputValidation(event: any) {
@@ -221,14 +223,9 @@ async function addAddress() {
   }
 
   try {
-    const resp = await api({
-      url: "oms/facilityContactMechs/facilityAddress",
-      method: "post",
-      data: {
-        facilityId: props.facilityId,
-        contactMechPurposeTypeId: "PRIMARY_LOCATION",
-        ...formData.value
-      }
+    const resp = await facilityMutations.createPostalAddress({
+      contactMechPurposeTypeId: "PRIMARY_LOCATION",
+      ...formData.value
     });
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Facility address created successfully."));
@@ -243,15 +240,10 @@ async function addAddress() {
 
   if (contactNumber.value) {
     try {
-      await api({
-        url: "oms/facilityContactMechs/facilityPhone",
-        method: "post",
-        data: {
-          facilityId: props.facilityId,
-          contactMechPurposeTypeId: "PRIMARY_PHONE",
-          contactNumber: contactNumber.value.trim(),
-          countryCode: countryCode.value.replace("+", "")
-        }
+      await facilityMutations.createTelecomNumber({
+        contactMechPurposeTypeId: "PRIMARY_PHONE",
+        contactNumber: contactNumber.value.trim(),
+        countryCode: countryCode.value.replace("+", "")
       });
     } catch (err) {
       // The address already toasted success and we navigate on regardless, so without this the
@@ -263,14 +255,9 @@ async function addAddress() {
 
   if (emailAddress.value) {
     try {
-      await api({
-        url: "oms/facilityContactMechs/facilityEmail",
-        method: "post",
-        data: {
-          facilityId: props.facilityId,
-          contactMechPurposeTypeId: "PRIMARY_EMAIL",
-          infoString: emailAddress.value
-        }
+      await facilityMutations.createEmailAddress({
+        contactMechPurposeTypeId: "PRIMARY_EMAIL",
+        infoString: emailAddress.value
       });
     } catch (err) {
       commonUtil.showToast(translate("Facility address saved, but the email address could not be saved."));

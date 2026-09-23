@@ -1292,3 +1292,13 @@ export function useFacilityArchive() {
     },
   };
 }
+
+
+export async function fetchPartyRoles(payload: Record<string, any>) {
+  const { roleTypeId, ...params } = payload;
+  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+}
+
+export async function fetchFacilityOrderCount(facilityId: string) {
+  return api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
+}

@@ -193,8 +193,8 @@ async function makeProductStorePrimary() {
   // ensure the FEATURING facility group exists
   let facilityGroupId = shopifyShopId;
   try {
-    const checkResp = await api({ url: `oms/facilityGroups/${shopifyShopId}`, method: "get" });
-    if (commonUtil.hasError(checkResp) || !checkResp.data?.facilityGroupId) {
+    const existingGroupId = await groupMutations.findGroup(shopifyShopId);
+    if (!existingGroupId) {
       const storeName = selectedProductStores.value.find((productStore: any) => productStore.productStoreId === primaryProductStoreId.value)?.storeName || primaryProductStoreId.value;
       await groupMutations.createGroup({
         facilityGroupId: shopifyShopId,

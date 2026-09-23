@@ -943,10 +943,7 @@ function getParentFacilityTypeId(typeId: string): string {
 }
 
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
-async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
-  const { roleTypeId, ...params } = payload;
-  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
-}
+
 
 function getFacilityTypesByParentTypeId() {
   facilityTypeIdOptions.value = parentFacilityTypeId.value ? Object.keys(facilityTypesById.value).reduce((acc: any, fId: string) => {
@@ -1218,7 +1215,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
+    const resp = (await geocode(payload) as any);
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1399,7 +1396,7 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId: props.facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
+    const resp = await fetchFacilityOrderCount(props.facilityId);
     if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
       facilityOrderCounts.value = resp.data.map((item: any) => ({
         ...item,
@@ -2012,7 +2009,7 @@ async function generateLatLong() {
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { params: { q: `postcode: ${query}` } } } }) as any).data;
+    const resp = (await geocode({ json: { params: { q: `postcode: ${query}` } } }) as any);
 
     if (resp.response.docs.length > 0) {
       const result = resp.response.docs[0];
@@ -2083,7 +2080,7 @@ async function findParties() {
   emitter.emit('presentLoader');
   parties.value = [];
   try {
-    const resp = await getPartyRoleAndPartyDetails({
+    const resp = await fetchPartyRoles({
       roleTypeId: 'APPLICATION_USER',
       keyword: staffQueryString.value || undefined,
       pageSize: import.meta.env.VITE_VIEW_SIZE || 20,
