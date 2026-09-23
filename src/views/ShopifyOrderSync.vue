@@ -28,7 +28,7 @@
 
       <main class="order-sync-content">
         <template v-if="isInitialLoading">
-          <section class="dashboard-grid" :aria-label="translate('Loading Order Sync monitoring')">
+          <section class="sync-summary" :aria-label="translate('Loading Order Sync monitoring')">
             <ion-card v-for="card in 2" :key="card">
               <ion-card-header>
                 <ion-card-title>
@@ -240,7 +240,7 @@
           <section class="sync-monitor" aria-labelledby="sync-monitor-heading">
             <ion-item lines="none">
               <ion-label>
-                <h2 id="sync-monitor-heading">{{ translate("Sync monitor") }}</h2>
+                {{ translate("Sync monitor") }}
                 <p>{{ translate("Review the jobs and pipeline that move orders from Shopify into HotWax") }}</p>
               </ion-label>
             </ion-item>
@@ -354,7 +354,7 @@
             <div class="stat-header">
               <ion-item class="stat-title" lines="none">
                 <ion-label>
-                  <h2 id="recent-orders-heading">{{ translate("Recent order sync history") }}</h2>
+                  {{ translate("Recent order sync history") }}
                   <p>{{ translate("Latest 100 records stitched from Shopify order history models, newest first") }}</p>
                 </ion-label>
                 <ion-badge slot="end" color="medium">{{ orderSync.recentOrders.length }}</ion-badge>
@@ -434,7 +434,7 @@
             <div class="stat-header">
               <ion-item class="stat-title" lines="none">
                 <ion-label>
-                  <h2 id="failed-import-logs-heading">{{ translate("Failed DataManager runs") }}</h2>
+                  {{ translate("Failed DataManager runs") }}
                   <p>{{ translate("Latest Order Sync imports with one or more error records, newest first") }}</p>
                 </ion-label>
                 <ion-badge slot="end" :color="failedImportLogs.length ? 'danger' : 'medium'">
@@ -567,7 +567,7 @@
         <ion-list lines="full">
           <ion-item lines="none">
             <ion-label class="ion-text-wrap">
-              <h2>{{ translate("Replay orders from a date range") }}</h2>
+              {{ translate("Replay orders from a date range") }}
               <p>{{ translate("Re-import Shopify orders through the standard import path. The run covers every order updated since the From date; the date range previews the orders it targets.") }}</p>
             </ion-label>
           </ion-item>
@@ -642,7 +642,7 @@
           </ion-item>
           <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
             <ion-label>
-              <h2>{{ order.name }}</h2>
+              {{ order.name }}
               <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
               <p>{{ order.customerName || translate("No customer") }} · {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
               <p>{{ formatOrderDate(order.createdAt) }}</p>
@@ -1479,20 +1479,6 @@ ion-card-subtitle {
 
 ion-buttons {
   grid-area: actions;
-}
-
-.sync-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  align-items: flex-start;
-}
-
-.summary {
-  grid-column: 1 / 2;
-}
-
-.progress {
-  grid-column: -1 / -2;
 }
 
 .sync-monitor {

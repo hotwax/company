@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { DateTime, Settings } from "luxon"
-import { api, commonUtil, emitter, logger, translate } from "@common"
+import { api, commonUtil, cookieHelper, emitter, logger, translate } from "@common"
 import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
@@ -260,6 +260,7 @@ export const useUserStore = defineStore("user", {
 
       let users = JSON.parse(JSON.stringify(this.users.list))
       let total = this.users.total
+      let succeeded = false
 
       try {
         const resp = await useSolrSearch().runSolrQuery(solrPayload)
@@ -268,6 +269,7 @@ export const useUserStore = defineStore("user", {
           const docs: any[] = resp.data?.response?.docs || []
           users = payload.pageIndex > 0 ? users.concat(docs) : docs
           total = resp.data?.response?.numFound || 0
+          succeeded = true
         } else {
           throw resp.data
         }
@@ -282,6 +284,7 @@ export const useUserStore = defineStore("user", {
       this.users.list = users
       this.users.total = total
       emitter.emit("dismissLoader")
+      return succeeded
     },
 
     addPartyToFacility(payload: { partyId: string; facilityId: string; roleTypeId: string; fromDate?: any }): Promise<any> {
@@ -301,7 +304,7 @@ export const useUserStore = defineStore("user", {
       })
     },
 
-    createUser(payload: { partyTypeId: string; person?: { firstName: string; lastName: string }; partyGroup?: { groupName: string }; externalId?: string }): Promise<any> {
+    createUser(payload: { partyTypeId: string; createdByUserLogin: string; person?: { firstName: string; lastName: string }; partyGroup?: { groupName: string }; externalId?: string }): Promise<any> {
       return api({
         url: "oms/parties",
         method: "post",
@@ -907,6 +910,10 @@ export const useUserStore = defineStore("user", {
 
     // Called by @common's initialiseConfig after successful login
     async postLogin() {
+      const cookieOms = (cookieHelper().get("oms") as string) || ""
+      if (cookieOms) {
+        this.oms = cookieOms
+      }
       try {
         await this.fetchUserProfile()
         await this.fetchPermissions()

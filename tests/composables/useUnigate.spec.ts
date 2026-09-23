@@ -171,4 +171,29 @@ describe("useUnigate composable", () => {
     expect(addressValidationStatus.value).toBe("ready");
     expect(matchingAuths.value.length).toBe(1);
   });
+  it("registers its reset with sessionScope so logout clears Unigate state", async () => {
+    apiMock.mockResolvedValueOnce({
+      data: {
+        systemMessageRemoteList: [
+          { systemMessageRemoteId: "UNIGATE_CONFIG", internalId: "STORE", sendUrl: "https://unigate-uat.hotwax.io/rest/s1/unigate" },
+        ],
+      },
+    });
+
+    const { fetchUnigateRemoteConfig, useUnigate } = await import("@/composables/useUnigate");
+    const { clearSessionScopedState } = await import("@/composables/sessionScope");
+
+    await fetchUnigateRemoteConfig(true);
+    const { isConfigured, unigateConfig, status } = useUnigate();
+    expect(isConfigured.value).toBe(true);
+    expect(status.value.config).toBe("success");
+
+    // The user store's postLogout() runs exactly this sweep. A wrong-arity registration
+    // (`onSessionCleared("useUnigate", fn)`) silently dropped the reset and leaked state.
+    clearSessionScopedState();
+
+    expect(unigateConfig.value).toBeNull();
+    expect(isConfigured.value).toBe(false);
+    expect(status.value.config).toBe("none");
+  });
 });

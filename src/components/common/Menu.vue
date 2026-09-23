@@ -75,28 +75,18 @@
     <!-- Which instance this app is pointed at, and the timezone its dates are rendered in. The clock
          appears ONLY when that timezone is not the browser's: when they agree the time on screen is
          the time on the wall, and repeating it would be noise. Mirrors order-manager's footer. -->
-    <ion-footer v-if="isAuthenticated">
-      <ion-toolbar>
-        <ion-item lines="none">
-          <ion-label class="ion-text-wrap">
-            <p class="overline">{{ omsInstanceLabel }}</p>
-          </ion-label>
-          <ion-note v-if="currentTimeZone" slot="end" class="ion-text-end" :color="isTimeZoneMismatched ? 'danger' : ''">
-            {{ currentTimeZone }}
-            <p v-if="isTimeZoneMismatched">{{ selectedZoneTime }}</p>
-          </ion-note>
-        </ion-item>
-      </ion-toolbar>
-    </ion-footer>
+    <DxpOmsInstanceFooter
+      v-if="isAuthenticated"
+      :instance-label="omsInstanceLabel()"
+    />
   </ion-menu>
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate } from "@common";
+import { commonUtil, DxpOmsInstanceFooter, translate } from "@common";
 import { useAuth } from "@common/composables/useAuth";
 import {
   IonContent,
-  IonFooter,
   IonHeader,
   IonIcon,
   IonItem,
@@ -105,12 +95,11 @@ import {
   IonList,
   IonMenu,
   IonMenuToggle,
-  IonNote,
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
 import { useUserStore } from "@/store/user";
@@ -124,49 +113,33 @@ const { instanceInfo, load: loadMaargConfig } = useMaargConfig();
 const HOTWAX_HOST_SUFFIX = ".hotwax.io";
 
 /**
- * The instance this app is talking to. Company is Maarg-backed, so the config's own instanceName is
- * the authoritative label ("rails-uat") and beats parsing it out of a URL; the host is only a fallback
- * for a config that has not loaded yet.
- *
- * Called from the template rather than memoised, for the same reason order-manager does: getMaargURL()
- * reads a cookie, so a computed would cache the pre-login empty value for the life of the session.
+ * Local databases can retain a remote instance name. Show the connected loopback host and port
+ * first so operators can distinguish local development from that remote tenant.
+ * Read the cookie-backed URL on render instead of caching a pre-login value in a computed.
  */
-let omsInstanceLabel = computed(() => {
+function omsInstanceLabel() {
+  const url = commonUtil.getMaargURL();
+  let host = "";
+  if (url) {
+    try {
+      const connection = new URL(url);
+      host = connection.host;
+      if (connection.hostname === "localhost" || connection.hostname.endsWith(".localhost") ||
+          /^127\.\d+\.\d+\.\d+$/.test(connection.hostname) || connection.hostname === "[::1]") {
+        return host;
+      }
+    } catch {
+      // Preserve the configured label when a connection URL cannot be parsed.
+    }
+  }
+
   const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
   if (instanceName) return instanceName;
-
-  const url = commonUtil.getMaargURL();
-  if (!url) return "";
-  const host = url.replace(/^https?:\/\//, "").split("/")[0];
   return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
-})
-
-// Mirrors order-manager: resolve the same way the Settings page does so the two never disagree.
-const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const currentTimeZone = computed(() =>
-  userStore.getUserTimeZone || userStore.getUserProfile?.timeZone || browserTimeZone);
-const isTimeZoneMismatched = computed(() =>
-  !!currentTimeZone.value && currentTimeZone.value !== browserTimeZone);
-
-// The menu stays mounted for the whole session, so the clock is driven by a timer rather than frozen
-// at whatever the last render happened to be.
-const selectedZoneTime = ref("");
-let clockTimer: ReturnType<typeof setInterval> | undefined;
-
-function refreshSelectedZoneTime() {
-  selectedZoneTime.value = commonUtil.getCurrentTime(currentTimeZone.value, "t");
 }
-
-watch(currentTimeZone, refreshSelectedZoneTime);
 
 onMounted(() => {
   void loadMaargConfig();
-  refreshSelectedZoneTime();
-  clockTimer = setInterval(refreshSelectedZoneTime, 30000);
-});
-
-onUnmounted(() => {
-  clearInterval(clockTimer);
 });
 const { hasPermission } = useAppAuth();
 const appPages = [
@@ -252,6 +225,13 @@ const userPages = [
     mdIcon: keyOutline,
   },
   {
+    title: "Push Notifications",
+    url: "/notifications",
+    permission: Actions.APP_NOTIFICATIONS_VIEW,
+    iosIcon: notificationsOutline,
+    mdIcon: notificationsOutline,
+  },
+  {
     title: "App Permissions",
     url: "/app-permissions",
     permission: Actions.APP_APP_PERMISSIONS_VIEW,
@@ -262,7 +242,7 @@ const userPages = [
 
 const facilitiesPages = [
   {
-    title: "Find",
+    title: "Facilities",
     url: "/facilities/find",
     iosIcon: storefrontOutline,
     mdIcon: storefrontOutline,
@@ -284,6 +264,12 @@ const facilitiesPages = [
 const visibleUserPages = computed(() => userPages.filter((screen) => hasPermission(screen.permission)))
 
 const agentPages = [
+  {
+    title: "MCP setup",
+    url: "/mcp-setup",
+    iosIcon: linkOutline,
+    mdIcon: linkOutline,
+  },
   {
     title: "Composer",
     url: "/composer",

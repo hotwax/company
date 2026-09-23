@@ -1,4 +1,5 @@
 import { defineCachedEntity } from "./appCacheDb";
+import { locationInventoryAdjustmentKey } from "./shopifyLocationInventory";
 
 /**
  * Cached entity definitions — the shared contract between the worker (which writes) and views /
@@ -29,7 +30,7 @@ export const dataManagerLogCache = defineCachedEntity("dataManagerLogs", {
 });
 
 /** SystemMessage — class A (live, append-mostly). Cursor: `initDate`. */
-export const systemMessageCache = defineCachedEntity("systemMessages", {
+export const systemMessageProjection = {
   keyField: "systemMessageId",
   fields: {
     systemMessageId: "text",
@@ -39,6 +40,14 @@ export const systemMessageCache = defineCachedEntity("systemMessages", {
     initDate: "date",
     processedDate: "date",
     lastAttemptDate: "date",
+    /**
+     * Delivery attempts so far. The fulfillment sync screen renders it ("failCount reached N and
+     * the sweep stopped retrying"), and SmsgError only means anything next to it — the sweep sets
+     * that status when failCount reaches the retry limit, while a retrying message stays
+     * SmsgProduced with a rising count. Projected as a count so the string the server may send
+     * ("3") never leaks into arithmetic.
+     */
+    failCount: "count",
     // ⚠️ The response does NOT carry `lastUpdatedStamp` (verified live) — it stays declared because
     // the table indexes it, but expect `undefined`. `initDate` is the usable cursor.
     lastUpdatedStamp: "date",
@@ -59,7 +68,9 @@ export const systemMessageCache = defineCachedEntity("systemMessages", {
      */
     messageText: "text",
   },
-});
+} as const;
+
+export const systemMessageCache = defineCachedEntity("systemMessages", systemMessageProjection);
 
 // --- class B: reference/config. Field sets and PKs VERIFIED live 2026-07-26 (§6.1 probe). ---
 
@@ -260,7 +271,8 @@ export const groupFacilityProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     const group = raw?.facilityGroupId;
     const facility = raw?.facilityId;
-    if (!group || !facility) return undefined;
+    if(!group || !facility) {return undefined;}
+
     return `${group}|${facility}|${raw?.fromDate ?? ""}`;
   },
 } as const;
@@ -396,7 +408,8 @@ export const shopifyLocationProjection = {
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId || !raw?.shopifyLocationId) return undefined;
+    if(!raw?.shopId || !raw?.shopifyLocationId) {return undefined;}
+
     return `${raw.shopId}|${raw.shopifyLocationId}`;
   },
 } as const;
@@ -471,6 +484,13 @@ export const shopifyInventoryAdjustmentDetailProjection = {
     lastUpdatedStamp: "date",
     facilityGroupId: "text",
     inventoryChannelDescription: "text",
+    // Aliased onto the view from the channel, so a row carries its own target location without
+    // depending on the channel cache being warm.
+    shopifyLocationId: "text",
+    // Normally null. Set only on a delta written to drain a location the channel has stopped pointing
+    // at, and dropping it here made that row indistinguishable from an ordinary one on screen -- while
+    // the publisher still sends it to the OLD location. This is the field a retarget turns on.
+    publishShopifyLocationId: "text",
     systemMessageStatusId: "text",
     systemMessageInitDate: "date",
     systemMessageProcessedDate: "date",
@@ -498,10 +518,43 @@ export const shopifyInventoryAdjustmentDetailProjection = {
       raw?.inventoryChannelId,
       raw?.shopifyInventoryItemId,
     ];
-    if (identity.some((value) => value === undefined || value === null || value === "")) return undefined;
+    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
     return JSON.stringify(identity.map(String));
   },
 } as const;
+
+/**
+ * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time inventory push
+ * ledger. Distinct from `shopifyInventoryAdjustmentDetailProjection` (the AGGREGATE channel
+ * ledger): this row carries `shopId`/`shopifyLocationId` directly rather than resolving them
+ * through a channel, because real-time location push targets one Shopify location per mapped
+ * facility rather than a facility-group aggregate. PK is eventTypeId + eventReferenceId + shopId +
+ * shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey` is the synthetic cache key for that.
+ */
+export const shopifyLocationInventoryAdjustmentDetailProjection = {
+  keyField: "locationAdjustmentKey",
+  fields: {
+    locationAdjustmentKey: "text",
+    eventTypeId: "text",
+    eventReferenceId: "text",
+    eventTypeDescription: "text",
+    shopId: "text",
+    shopifyLocationId: "text",
+    shopifyInventoryItemId: "text",
+    computedInventoryChange: "count",
+    decisionComment: "text",
+    systemMessageId: "text",
+    createdDate: "date",
+    lastUpdatedStamp: "date",
+  },
+  buildKey: locationInventoryAdjustmentKey,
+} as const;
+
+export const shopifyLocationInventoryAdjustmentDetailCache = defineCachedEntity(
+  "shopifyLocationInventoryAdjustmentDetails",
+  shopifyLocationInventoryAdjustmentDetailProjection,
+);
 
 export const shopifyTypeMappingProjection = {
   keyField: "typeMappingKey",
@@ -514,7 +567,8 @@ export const shopifyTypeMappingProjection = {
     lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId || !raw?.mappedTypeId) return undefined;
+    if(!raw?.shopId || !raw?.mappedTypeId) {return undefined;}
+
     return `${raw.shopId}|${raw.mappedTypeId}|${raw.mappedKey ?? ""}`;
   },
 } as const;
@@ -540,7 +594,8 @@ export const inventoryEventDocumentProjection = {
   },
   buildKey: (raw: Record<string, unknown>) => {
     const dataDocumentId = raw?.dataDocumentId;
-    if (!dataDocumentId) return undefined;
+    if(!dataDocumentId) {return undefined;}
+
     return `${String(dataDocumentId)}|${raw?.dataFeedId ? String(raw.dataFeedId) : ""}`;
   },
 } as const;
@@ -592,7 +647,8 @@ export const carrierShipmentMethodProjection = {
     deliveryDays: "count",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) return undefined;
+    if(!raw?.partyId || !raw?.roleTypeId || !raw?.shipmentMethodTypeId) {return undefined;}
+
     return `${raw.partyId}|${raw.roleTypeId}|${raw.shipmentMethodTypeId}`;
   },
 } as const;
@@ -611,7 +667,8 @@ export const carrierFacilityProjection = {
     thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) return undefined;
+    if(!raw?.partyId || !raw?.facilityId || !raw?.roleTypeId) {return undefined;}
+
     return `${raw.partyId}|${raw.facilityId}|${raw.roleTypeId}|${raw.fromDate ?? ""}`;
   },
 } as const;
@@ -631,7 +688,8 @@ export const shopifyCarrierShipmentProjection = {
     shipmentMethodTypeId: "text", shopifyShippingMethod: "text", lastUpdatedStamp: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.shopId) return undefined;
+    if(!raw?.shopId) {return undefined;}
+
     return `${raw.shopId}|${raw.carrierPartyId ?? ""}|${raw.shipmentMethodTypeId ?? ""}`;
   },
 } as const;
@@ -658,7 +716,8 @@ export const enumGroupMemberProjection = {
     description: "text", fromDate: "date", thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.enumId) return undefined;
+    if(!raw?.enumId) {return undefined;}
+
     return `${raw.enumerationGroupId ?? "NETSUITE_IIV_REASON"}|${raw.enumId}`;
   },
 } as const;
@@ -675,7 +734,8 @@ export const facilityIdentificationProjection = {
     // survivable while only that type was cached — now that every type is, defaulting would make
     // two different identifications on one facility collide and silently overwrite each other.
     // Returning undefined drops the row loudly instead (see `isUnkeyableFetch`).
-    if (!raw?.facilityId || !raw?.facilityIdenTypeId) return undefined;
+    if(!raw?.facilityId || !raw?.facilityIdenTypeId) {return undefined;}
+
     return `${raw.facilityId}|${raw.facilityIdenTypeId}`;
   },
 } as const;
@@ -701,7 +761,8 @@ export const geoAssocProjection = {
   // The server field is `toGeoId` (verified live). An earlier `geoIdTo` guess made buildKey
   // return undefined for every row, so all 1225 associations were silently dropped.
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.geoId || !raw?.toGeoId) return undefined;
+    if(!raw?.geoId || !raw?.toGeoId) {return undefined;}
+
     return `${raw.geoId}|${raw.toGeoId}`;
   },
 } as const;
@@ -720,7 +781,8 @@ export const productStoreFacilityProjection = {
     facilityName: "text", facilityTypeId: "text", sequenceNum: "count", fromDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.productStoreId || !raw?.facilityId) return undefined;
+    if(!raw?.productStoreId || !raw?.facilityId) {return undefined;}
+
     return `${raw.productStoreId}|${raw.facilityId}`;
   },
 } as const;
@@ -782,7 +844,8 @@ export const systemMessageErrorProjection = {
   },
   buildKey: (raw: Record<string, unknown>) => {
     const message = raw?.systemMessageId;
-    if (!message) return undefined;
+    if(!message) {return undefined;}
+
     return `${message}|${raw?.errorDate ?? ""}`;
   },
 } as const;
@@ -816,7 +879,8 @@ export const productUpdateHistoryProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     const product = raw?.productId;
     const shop = raw?.shopId;
-    if (!product || !shop) return undefined;
+    if(!product || !shop) {return undefined;}
+
     return `${shop}|${product}`;
   },
 } as const;
@@ -861,7 +925,8 @@ export const facilityGroupProductStoreProjection = {
     sequenceNumber: "count", fromDate: "date", thruDate: "date",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.facilityGroupId || !raw?.productStoreId) return undefined;
+    if(!raw?.facilityGroupId || !raw?.productStoreId) {return undefined;}
+
     return `${raw.facilityGroupId}|${raw.productStoreId}|${raw.fromDate ?? ""}`;
   },
 } as const;
@@ -899,7 +964,8 @@ export const appVersionProjection = {
     enumDesc: "text",
   },
   buildKey: (raw: Record<string, unknown>) => {
-    if (!raw?.appId || !raw?.environmentTypeId) return undefined;
+    if(!raw?.appId || !raw?.environmentTypeId) {return undefined;}
+
     return `${raw.appId}|${raw.environmentTypeId}`;
   },
 } as const;
@@ -1009,3 +1075,176 @@ export const netSuiteRuleGroupCache = defineCachedEntity("netSuiteRuleGroups", n
 export const netSuiteDecisionRuleCache = defineCachedEntity("netSuiteDecisionRules", netSuiteDecisionRuleProjection);
 export const netSuiteRuleGroupRunCache = defineCachedEntity("netSuiteRuleGroupRuns", netSuiteRuleGroupRunProjection);
 export const netSuiteOrderPushBacklogCache = defineCachedEntity("netSuiteOrderPushBacklog", netSuiteOrderPushBacklogProjection);
+
+// =============================================================================================
+// Shopify fulfillment sync — the "Synced" half of the fulfillment sync screen.
+//
+// The queued half is plain SystemMessages (type CreateShopifyFulfillment) and needs nothing new.
+// The synced half reads `sob/shopify/fulfillmentHistories`, a Moqui entity-list endpoint over
+// ShopifyFulfillmentHistory added by a connector release that is rolling out IN PARALLEL with this
+// screen — an instance that has not taken it answers 404, which is a "cannot know", not an error.
+// =============================================================================================
+
+/**
+ * The stable message the fulfillment-history domain raises when the endpoint 404s.
+ *
+ * Shared here — the worker/view contract seam — because both sides must agree on it verbatim: the
+ * worker domain throws it (so `useCacheSync().error` reads
+ * `shopifyFulfillmentHistory: <this message>`), and the screen matches on it to render "endpoint
+ * not available" instead of a generic sync failure. Durable state lives in
+ * `shopifyFulfillmentHistorySupport` below; this string is only the error-channel face of it.
+ */
+export const FULFILLMENT_HISTORY_ENDPOINT_MISSING = "fulfillmentHistories endpoint not available (404)";
+
+/**
+ * ShopifyFulfillmentHistory — one fulfillment the OMS knows Shopify holds, per shop.
+ *
+ * The natural key is COMPOSITE: `fulfillmentId` is Shopify's legacy numeric id, which is only
+ * unique WITHIN a shop, so two shops can legitimately hold the same number. The synthetic key is
+ * `${shopId}:${fulfillmentId}` — the same key format the expand-time GraphQL detail cache uses, so
+ * a cached row and its Shopify enrichment address each other directly.
+ *
+ * `processedDate` is null on rows the OMS itself pushed (the connector only stamps it on rows it
+ * ingested), so its absence is a meaning, not a gap. Cursor/order on `lastUpdatedStamp`.
+ */
+export const shopifyFulfillmentHistoryProjection = {
+  keyField: "fulfillmentKey",
+  fields: {
+    fulfillmentKey: "text",
+    shopId: "text",
+    shopifyOrderId: "text",
+    fulfillmentId: "text",
+    processedDate: "date",
+    lastUpdatedStamp: "date",
+    omsOrderId: "text",
+    orderDate: "date",
+    shipmentId: "text",
+    originFacilityId: "text",
+    shippedDate: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    if(!raw?.shopId || !raw?.fulfillmentId) {return undefined;}
+
+    return `${raw.shopId}:${raw.fulfillmentId}`;
+  },
+} as const;
+
+/**
+ * Whether `sob/shopify/fulfillmentHistories` exists on this instance, per shop.
+ *
+ * Same shape of answer as `netSuiteOrderPushBacklog.isSupported` and for the same reason: the
+ * endpoint ships in a connector release deployed independently of this app, and "the OMS cannot
+ * tell me" must render differently from "no fulfillments have synced". A cache row (not a worker
+ * module flag) because the worker and the screen are different realms — the row is how the 404
+ * verdict crosses to `useSyncedFulfillments().endpointMissing` reactively.
+ */
+export const shopifyFulfillmentHistorySupportProjection = {
+  keyField: "shopId",
+  fields: {
+    shopId: "text",
+    /** "Y" / "N". Absent means never probed this login. */
+    isSupported: "text",
+    /** When the verdict last CHANGED — the domain skips the write while the answer holds. */
+    checkedAt: "date",
+  },
+} as const;
+
+export const shopifyFulfillmentHistoryCache = defineCachedEntity(
+  "shopifyFulfillmentHistories",
+  shopifyFulfillmentHistoryProjection,
+);
+export const shopifyFulfillmentHistorySupportCache = defineCachedEntity(
+  "shopifyFulfillmentHistorySupport",
+  shopifyFulfillmentHistorySupportProjection,
+);
+
+export const shopifyPendingFulfillmentCache = defineCachedEntity("shopifyPendingFulfillments", {
+  keyField: "pendingKey",
+  fields: { pendingKey: "text", shopId: "text", shipmentId: "text", orderId: "text", orderName: "text", orderDate: "date", statusDate: "date", facilityName: "text", originFacilityId: "text" },
+  buildKey: (raw: Record<string, unknown>) => raw.shopId && raw.shipmentId ? `${raw.shopId}:${raw.shipmentId}` : undefined,
+});
+export const shopifyPendingFulfillmentStatusCache = defineCachedEntity("shopifyPendingFulfillmentStatus", {
+  keyField: "shopId",
+  fields: { shopId: "text", state: "text", error: "text", hasMore: "text", checkedAt: "date" },
+});
+
+export const shopifyFulfillmentHealthCache = defineCachedEntity("shopifyFulfillmentHealth", {
+  keyField: "shopId",
+  fields: { shopId: "text", state: "text", checkedAt: "date", shippedSince: "date", syncedSince: "date", shippedCount: "count", syncedCount: "count", unsyncedErrorCount: "count", pendingCount: "count", sendingCount: "count", syncedLastHourCount: "count" },
+});
+
+export const shopifyOrderSyncHistoryCache = defineCachedEntity("shopifyOrderSyncHistory", {
+  keyField: "historyKey",
+  fields: { historyKey: "text", shopId: "text", orderId: "text", state: "text", checkedAt: "date" },
+});
+
+// =============================================================================================
+// Shopify transfer sync monitoring (sob/shopify/transferSync/pending*)
+// =============================================================================================
+
+/**
+ * Outstanding transfer work — one row per artifact Shopify has not been told about yet.
+ *
+ * Five server resources feed this one table, discriminated by `segment`, because they answer the
+ * same question at different grains and the page shows them as tabs. Each server view already
+ * encodes "not synced" as a join against the provenance ledger, so a row being here IS the
+ * outstanding state; there is no client-side derivation and no status field to interpret.
+ *
+ * `occurredAt` is the artifact's own timestamp, normalised across segments so one sort works for
+ * every tab. Numbers are projected as text: the cache layer stores text, date and boolean only.
+ */
+export const shopifyTransferPendingProjection = {
+  keyField: "pendingKey",
+  fields: {
+    pendingKey: "text",
+    segment: "text",
+    shopId: "text",
+    orderId: "text",
+    shopifyInventoryTransferId: "text",
+    orderItemSeqId: "text",
+    productId: "text",
+    quantity: "text",
+    // Exactly one of these identifies the artifact, according to `segment`.
+    shipmentId: "text",
+    shipmentStatusId: "text",
+    receiptId: "text",
+    orderStatusId: "text",
+    orderItemChangeId: "text",
+    occurredAt: "date",
+    lastUpdatedStamp: "date",
+  },
+  buildKey: (raw: Record<string, unknown>) => {
+    const segment = String(raw?.segment ?? "");
+    const shopId = String(raw?.shopId ?? "");
+    const orderId = String(raw?.orderId ?? "");
+    if(!segment || !shopId || !orderId) {return undefined;}
+    // The artifact PK per segment; the create segment has no artifact of its own, so its identity
+    // is the order item that has not been pushed.
+    const artifactId = String(
+      raw?.shipmentStatusId ?? raw?.receiptId ?? raw?.orderStatusId ??
+      raw?.orderItemChangeId ?? raw?.orderItemSeqId ?? "",
+    );
+    if(!artifactId) {return undefined;}
+
+    return `${segment}|${shopId}|${orderId}|${artifactId}`;
+  },
+} as const;
+
+export const shopifyTransferPendingCache = defineCachedEntity("shopifyTransferPending", shopifyTransferPendingProjection);
+
+/** Server-computed location inventory KPI totals, one authoritative summary per shop. */
+export const shopifyLocationInventorySummaryProjection = {
+  keyField: "shopId",
+  fields: {
+    shopId: "text",
+    backlogCount: "count",
+    oldestBacklogDate: "date",
+    errorLinkedCount: "count",
+    noOpOrQuarantinedCount: "count",
+  },
+} as const;
+
+export const shopifyLocationInventorySummaryCache = defineCachedEntity(
+  "shopifyLocationInventorySummaries",
+  shopifyLocationInventorySummaryProjection,
+);

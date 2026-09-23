@@ -76,7 +76,7 @@
           <ion-item v-for="auth in shippingGatewayAuths" :key="auth.shippingGatewayAuthId">
             <ion-label class="ion-text-wrap">
               <div class="item-title-row">
-                <h3>{{ auth.description || auth.shippingGatewayAuthId }}</h3>
+                {{ auth.description || auth.shippingGatewayAuthId }}
                 <ion-chip color="primary" outline>
                   <ion-label>{{ auth.shippingGatewayConfigId }}</ion-label>
                 </ion-chip>
@@ -127,7 +127,7 @@
           <ion-item v-for="cfg in shippingCarrierConfigs" :key="cfg.carrierConfigId">
             <ion-label class="ion-text-wrap">
               <div class="item-title-row">
-                <h3>{{ cfg.carrierPartyId }} &rarr; {{ cfg.productStoreId }}</h3>
+                {{ cfg.carrierPartyId }} &rarr; {{ cfg.productStoreId }}
                 <ion-chip color="secondary" outline>
                   <ion-label>{{ cfg.gatewayAuthId }}</ion-label>
                 </ion-chip>
@@ -183,7 +183,7 @@
           <ion-item v-for="b in shippingCarrierBillingConfigs" :key="b.carrierBillingConfigId">
             <ion-label class="ion-text-wrap">
               <div class="item-title-row">
-                <h3>{{ b.carrierPartyId }} &rarr; {{ b.productStoreId }}</h3>
+                {{ b.carrierPartyId }} &rarr; {{ b.productStoreId }}
                 <ion-chip v-if="b.salesChannelEnumId" color="tertiary" outline>
                   <ion-label>{{ b.salesChannelEnumId }}</ion-label>
                 </ion-chip>
@@ -214,19 +214,19 @@
             <ion-list lines="full">
               <ion-item>
                 <ion-label>
-                  <h3>{{ translate("Tenant ID") }}</h3>
+                  {{ translate("Tenant ID") }}
                   <p>{{ tenantId || translate("Not configured") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label>
-                  <h3>{{ translate("Unigate Base URL") }}</h3>
+                  {{ translate("Unigate Base URL") }}
                   <p>{{ sendUrl || translate("Not configured") }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
                 <ion-label>
-                  <h3>{{ translate("API Key / Token") }}</h3>
+                  {{ translate("API Key / Token") }}
                   <p>{{ hasKey ? translate("Configured (Secret stored)") : translate("Not configured") }}</p>
                 </ion-label>
               </ion-item>

@@ -1,3 +1,4 @@
+import "./domains/shopifyOrderSyncHistoryDomain";
 /**
  * The app's single sync worker.
  *
@@ -12,6 +13,11 @@ import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
+import "./domains/shopifyLocationInventoryDomain";
+import "./domains/shopifyTransferSyncDomain";
+import "./domains/shopifyFulfillmentHistoryDomain";
+import "./domains/shopifyPendingFulfillmentDomain";
+import "./domains/shopifyFulfillmentHealthDomain";
 import "./domains/netSuiteOrderPushDomain";
 import "./domains/referenceDomains";
 

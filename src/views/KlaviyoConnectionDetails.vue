@@ -67,7 +67,7 @@
         <ion-list inset>
           <ion-item>
             <ion-label>
-              <h2>{{ translate("Choose which emails Klaviyo sends") }}</h2>
+              {{ translate("Choose which emails Klaviyo sends") }}
               <p>{{ translate("Each email event below corresponds to a moment in your customer's journey. Turn one on to send it through {connection} for the selected store.", { connection: connection?.description || translate("this connection") }) }}</p>
             </ion-label>
           </ion-item>
@@ -173,7 +173,7 @@
           </ion-item>
           <ion-item v-if="eventsForThisConnection.length">
             <ion-label>
-              <h3>{{ translate("Type DELETE below to confirm:") }}</h3>
+              {{ translate("Type DELETE below to confirm:") }}
             </ion-label>
           </ion-item>
           <ion-item v-if="eventsForThisConnection.length">
