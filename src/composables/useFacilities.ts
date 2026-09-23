@@ -652,6 +652,15 @@ export function usePartyQueries() {
   return { fetchPartyRoleDetails };
 }
 
+export function useGeocoding() {
+  const fetchGeocode = async (payload: any) => {
+    const response = await api({ url: 'api/geocode', method: 'POST', data: payload }) as any;
+    return response.data;
+  };
+
+  return { fetchGeocode };
+}
+
 export function useFacilityOrderCounts() {
   async function fetchOrderCounts(facilityIds: string[]): Promise<Record<string, number>> {
     const counts: Record<string, number> = {};
