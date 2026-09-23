@@ -82,18 +82,18 @@
 <script setup lang="ts">
 import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonPage, IonProgressBar, IonSelect, IonSelectOption, IonSegment, IonSegmentButton, IonTitle, IonToggle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, logger, translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
 import { useProductStores } from "@/composables/useProductStores";
 import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
-import { useProductStoreMutations } from "@/composables/useProductStores";
+import { useProductStoreDetail, useProductStoreMutations } from "@/composables/useProductStores";
 
 const { productStores: cachedProductStores } = useProductStores();
 
 const props = defineProps(["productStoreId"]);
 
-const productStore = ref({}) as any;
+const { current: productStore, load: loadProductStore } = useProductStoreDetail(props.productStoreId);
 const configMode = ref("manual");
 const selectedSourceStoreId = ref("");
 const formData = ref({
@@ -143,24 +143,15 @@ const { values: productIdentifiers, hydrated: identifiersReady } = useTypedEnums
 const productStores = computed(() => cachedProductStores.value.filter((s: any) => s.productStoreId !== props.productStoreId))
 
 onIonViewWillEnter(async () => {
-  fetchProductStore();
+  await loadProductStore();
+  if (productStore.value) {
+    formData.value.autoApproveOrder = productStore.value.autoApproveOrder === 'Y';
+    formData.value.orderNumberPrefix = productStore.value.orderNumberPrefix || "";
+    formData.value.productIdentifierEnumId = productStore.value.productIdentifierEnumId || "SHOPIFY_PRODUCT_SKU";
+  }
 })
 
-async function fetchProductStore() {
-  try {
-    const resp = await api({
-      url: `admin/productStores/${props.productStoreId}`,
-      method: "get"
-    })
-    if(!commonUtil.hasError(resp)) {
-      productStore.value = (resp as any).data;
-    } else {
-      throw (resp as any).data;
-    }
-  } catch(error: any) {
-    logger.error("Failed to fetch product store details.")
-  }
-}
+
 
 async function setupProductStore() {
   emitter.emit("presentLoader");
@@ -173,65 +164,7 @@ async function setupProductStore() {
         return;
       }
 
-      // Fetch source store details and settings
-      const [detailsResp, settingsResp] = await Promise.all([
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}`, method: "get" }),
-        api({ url: `admin/productStores/${selectedSourceStoreId.value}/settings`, method: "get" })
-      ]);
-
-      if (commonUtil.hasError(detailsResp)) {
-        throw new Error("Failed to fetch source store details");
-      }
-
-      const sourceStoreDetails = (detailsResp as any).data;
-      const sourceStoreSettings = !commonUtil.hasError(settingsResp) ? (settingsResp as any).data : [];
-
-      // Build target payload by copying direct fields for selected categories
-      let targetPayload = { ...productStore.value };
-
-      Object.keys(categories.value).forEach((key: string) => {
-        if (categories.value[key].selected) {
-          const mapping = CATEGORY_MAP[key];
-          mapping.fields.forEach((field: string) => {
-            if (sourceStoreDetails[field] !== undefined) {
-              targetPayload[field] = sourceStoreDetails[field];
-            }
-          });
-        }
-      });
-
-      // Update target store details
-      const updateDetailsResp = await useProductStoreMutations(targetPayload.productStoreId).updateStore(targetPayload);
-      if (commonUtil.hasError(updateDetailsResp)) {
-        throw updateDetailsResp.data;
-      }
-
-      // Update settings for selected categories
-      const settingsPromises: Promise<any>[] = [];
-      const activeSourceSettings = sourceStoreSettings.filter((s: any) => !s.thruDate && s.settingValue);
-
-      Object.keys(categories.value).forEach((key: string) => {
-        if (categories.value[key].selected) {
-          const mapping = CATEGORY_MAP[key];
-          const settingsToClone = activeSourceSettings.filter((s: any) => mapping.settings.includes(s.settingTypeEnumId));
-          
-          settingsToClone.forEach((setting: any) => {
-            settingsPromises.push(
-              useProductStoreMutations(props.productStoreId).saveSettings({
-                fromDate: Date.now(),
-                productStoreId: props.productStoreId,
-                settingTypeEnumId: setting.settingTypeEnumId,
-                settingValue: setting.settingValue
-              })
-            );
-          });
-        }
-      });
-
-      if (settingsPromises.length > 0) {
-        await Promise.allSettled(settingsPromises);
-      }
-
+      await useProductStoreMutations(props.productStoreId).cloneStoreSettings(selectedSourceStoreId.value, categories.value);
       commonUtil.showToast(translate("Product store configurations cloned successfully."));
     } else {
       // Manual flow

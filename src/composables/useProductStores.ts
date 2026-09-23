@@ -374,6 +374,102 @@ export function useProductStoreMutations(productStoreId: string) {
 
     expireShipmentMethod: (productStoreShipMethId: string, thruDate = Date.now()) =>
       expireProductStoreShipmentMethod(productStoreId, productStoreShipMethId, thruDate),
+
+    async cloneStoreSettings(sourceStoreId: string, categories: any) {
+      const CATEGORY_MAP: Record<string, { fields: string[], settings: string[] }> = {
+        order: {
+          fields: ["autoApproveOrder", "orderNumberPrefix"],
+          settings: ["SAVE_BILL_TO_INF", "RETURN_DEADLINE_DAYS"]
+        },
+        brokering: {
+          fields: ["enableBrokering", "allowSplit"],
+          settings: ["PRE_SLCTD_FAC_TAG", "ORD_ITM_SHIP_FAC"]
+        },
+        fulfillment: {
+          fields: ["daysToCancelNonPay"],
+          settings: ["FULFILL_NOTIF", "BOPIS_PART_ODR_REJ"]
+        },
+        inventory: {
+          fields: ["reserveInventory"],
+          settings: ["HOLD_PRORD_PHYCL_INV", "PRE_ORDER_GROUP_ID"]
+        },
+        product: {
+          fields: ["productIdentifierEnumId"],
+          settings: ["PRDT_IDEN_PREF"]
+        },
+        permissions: {
+          fields: [],
+          settings: ["CUST_DLVRMTHD_UPDATE", "RF_SHIPPING_METHOD", "CUST_DLVRADR_UPDATE", "CUST_PCKUP_UPDATE", "CUST_ALLOW_CNCL"]
+        }
+      };
+
+      const [sourceDetailsResp, sourceSettingsResp, targetDetailsResp] = await Promise.all([
+        api({ url: `admin/productStores/${encodeURIComponent(sourceStoreId)}`, method: "get" }),
+        api({ url: `admin/productStores/${encodeURIComponent(sourceStoreId)}/settings`, method: "get" }),
+        api({ url: `admin/productStores/${encodeURIComponent(productStoreId)}`, method: "get" })
+      ]);
+
+      if (commonUtil.hasError(sourceDetailsResp) || commonUtil.hasError(targetDetailsResp)) {
+        throw new Error("Failed to fetch product store details");
+      }
+
+      const sourceDetails = (sourceDetailsResp as any).data;
+      const sourceSettings = !commonUtil.hasError(sourceSettingsResp) ? (sourceSettingsResp as any).data : [];
+      const targetDetails = (targetDetailsResp as any).data;
+
+      const targetPayload = { ...targetDetails, productStoreId };
+
+      Object.keys(categories).forEach((key: string) => {
+        if (categories[key].selected) {
+          const mapping = CATEGORY_MAP[key];
+          mapping.fields.forEach((field: string) => {
+            if (sourceDetails[field] !== undefined) {
+              targetPayload[field] = sourceDetails[field];
+            }
+          });
+        }
+      });
+
+      const detailsUpdateResp = await api({
+        url: `admin/productStores/${encodeURIComponent(productStoreId)}`,
+        method: "put",
+        data: targetPayload,
+      });
+
+      if (commonUtil.hasError(detailsUpdateResp)) {
+        throw detailsUpdateResp.data;
+      }
+      await refreshAfterMutation("productStore", { productStoreId });
+
+      const settingsPromises: Promise<any>[] = [];
+      const activeSourceSettings = sourceSettings.filter((s: any) => !s.thruDate && s.settingValue);
+
+      Object.keys(categories).forEach((key: string) => {
+        if (categories[key].selected) {
+          const mapping = CATEGORY_MAP[key];
+          const settingsToClone = activeSourceSettings.filter((s: any) => mapping.settings.includes(s.settingTypeEnumId));
+
+          settingsToClone.forEach((setting: any) => {
+            settingsPromises.push(
+              api({
+                url: `admin/productStores/${encodeURIComponent(productStoreId)}/settings`,
+                method: "post",
+                data: {
+                  fromDate: Date.now(),
+                  productStoreId,
+                  settingTypeEnumId: setting.settingTypeEnumId,
+                  settingValue: setting.settingValue
+                },
+              })
+            );
+          });
+        }
+      });
+
+      if (settingsPromises.length > 0) {
+        await Promise.allSettled(settingsPromises);
+      }
+    }
   };
 }
 
