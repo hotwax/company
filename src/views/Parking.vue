@@ -171,7 +171,7 @@ import VirtualFacilityActionsPopover from '@/components/facility/VirtualFacility
 const { virtualFacilities: cachedVirtualFacilities } = useFacilityPartitions();
 const { archivedFacilities } = useArchivedFacilities();
 const { createVirtualFacility: createVirtualFacilityRecord } = useFacilityCreation();
-const { unarchive, archive } = useFacilityArchive();
+const { unarchive } = useFacilityArchive();
 const { fetchOrderCounts } = useFacilityOrderCounts();
 const { organizationPartyId, loadOrganizationPartyId } = useOrganization();
 
@@ -307,31 +307,17 @@ async function openVirtualFacilityActionsPopover(event: Event, facility: any) {
   popover.present();
 
   const result = await popover.onDidDismiss();
-  if (result.data) {
-    if (result.data.action === "rename" && result.data.name !== facility.facilityName) {
-      try {
-        const resp = await useFacilityMutations(facility.facilityId).updateFacility({ facilityName: result.data.name });
-        if (!commonUtil.hasError(resp)) {
-          commonUtil.showToast(translate('Parking renamed successfully.'));
-        } else {
-          throw resp.data;
-        }
-      } catch (error) {
-        commonUtil.showToast(translate('Failed to rename parking.'));
-        logger.error('Failed to rename parking.', error);
+  if (result.data && result.data !== facility.facilityName) {
+    try {
+      const resp = await useFacilityMutations(facility.facilityId).updateFacility({ facilityName: result.data });
+      if (!commonUtil.hasError(resp)) {
+        commonUtil.showToast(translate('Parking renamed successfully.'));
+      } else {
+        throw resp.data;
       }
-    } else if (result.data.action === "archive") {
-      try {
-        const resp = await archive(facility.facilityId);
-        if (!commonUtil.hasError(resp)) {
-          commonUtil.showToast(translate("Parking archived successfully."));
-        } else {
-          throw resp.data;
-        }
-      } catch (error) {
-        commonUtil.showToast(translate('Failed to archive parking.'));
-        logger.error('Failed to archive parking.', error);
-      }
+    } catch (error) {
+      commonUtil.showToast(translate('Failed to rename parking.'));
+      logger.error('Failed to rename parking.', error);
     }
   }
 }

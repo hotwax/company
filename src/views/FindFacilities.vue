@@ -282,9 +282,6 @@ watch(filteredFacilities, (updatedFacilities: any[]) => {
 });
 
 onIonViewWillEnter(async () => {
-  if(router.currentRoute.value.query?.productStoreId) {
-    setQuery({ productStoreId: router.currentRoute.value.query?.productStoreId as string });
-  }
   // Nothing to fetch but the volatile order counts — every list and lookup is already cached.
   await updateGroupFilter();
 });

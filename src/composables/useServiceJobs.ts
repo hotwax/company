@@ -2,7 +2,6 @@ import { computed, reactive, toRefs } from "vue";
 import { api, logger } from "@common";
 import cronstrue from "cronstrue";
 import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
@@ -335,15 +334,7 @@ export function useServiceJob() {
     });
   };
 
-  /**
-   * `fromServer` skips the cache-first branch below.
-   *
-   * That branch returns as soon as the cache holds ANY row for the job, and the domain filling it is
-   * activated with a small `total` (5 on the inventory screen). So a caller wanting a full history
-   * got five rows with no sign there were more, and raising `pageSize` alone changed nothing -
-   * silently. A history view has to ask the server, and to page it.
-   */
-  const fetchJobRuns = async (jobName: string, payload: any, options: { fromServer?: boolean } = {}) => {
+  const fetchJobRuns = async (jobName: string, payload: any) => {
     const params = {
       pageSize: 250,
       pageIndex: 0,
@@ -354,7 +345,7 @@ export function useServiceJob() {
 
     // CACHE-FIRST: the `serviceJobRun` domain keeps the newest runs per job, which is what every
     // caller here asks for (`pageSize: 1` or a handful, ordered by -startTime).
-    if (!options.fromServer) try {
+    try {
       const cached = (await serviceJobRunCache.all())
         .filter((row: any) => row.jobName === jobName)
         .sort((a: any, b: any) => (Number(b.startTime ?? 0) - Number(a.startTime ?? 0)));
@@ -399,31 +390,19 @@ export function useServiceJob() {
     return getEntityAuditLogs(resp?.data);
   };
 
-  /**
-   * The PUT answers with a message, not the updated row, and the LIST screens read the cached
-   * definition rather than this response - so without the write-through a job stayed "Paused / No
-   * active schedule" on the page that had just activated it, right through a full reload, until the
-   * next login sync. The `serviceJob` domain is configured for exactly this (`byPk` +
-   * `byPkRecordKey`); it just was not being called.
-   */
   const updateJob = async (payload: any) => {
-    const resp = await api({
+    return await api({
       url: `admin/serviceJobs/${payload.jobName}`,
       method: "PUT",
       data: payload,
     });
-    await refreshAfterMutation("serviceJob", { jobName: payload.jobName });
-    return resp;
   };
 
-  /** Run state (last run, next run) lives on the job row too, so the cache needs the same nudge. */
   const runNow = async (jobName: string) => {
-    const resp = await api({
+    return await api({
       url: `admin/serviceJobs/${jobName}/runNow`,
       method: "POST"
     });
-    await refreshAfterMutation("serviceJob", { jobName });
-    return resp;
   };
 
   return {

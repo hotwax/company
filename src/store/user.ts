@@ -38,8 +38,6 @@ export const useUserStore = defineStore("user", {
   getters: {
     isAuthenticated: () => useAuth().isAuthenticated.value,
     getUserProfile: (state) => state.current,
-    /** Named to match order-manager's store so shared UI reads the same getter in both apps. */
-    getUserTimeZone: (state) => state.current?.timeZone,
     getTimeZones: (state) => state.availableTimeZones,
     getUserPermissions: (state) => state.permissions,
     getAppVersion: (state) => state.appVersion,

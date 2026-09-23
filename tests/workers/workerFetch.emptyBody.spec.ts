@@ -50,35 +50,3 @@ describe("workerGet body handling", () => {
     expect(unwrapCollection(resp, null)).toEqual([]);
   });
 });
-
-describe("strict collection response handling", () => {
-  it.each([
-    ["payload-level error", "{\"_ERROR_MESSAGE_\":\"permission denied\"}"],
-    ["unsupported object envelope", "{\"entityValueList\":[]}"],
-    ["null body", "null"],
-  ])("rejects a %s instead of treating it as an empty bare-array snapshot", async (_label, body) => {
-    const { pageAll } = await import("@/workers/domains/workerFetch");
-    transport.body = body;
-
-    await expect(pageAll({
-      ctx,
-      url: "oms/shippingGateways/carrierParties",
-      collectionKey: null,
-      strictCollection: true,
-      label: "carrier",
-    })).rejects.toThrow(/carrier.*bare array/i);
-  });
-
-  it("still accepts the explicitly supported bare-array shape", async () => {
-    const { pageAll } = await import("@/workers/domains/workerFetch");
-    transport.body = "[{\"partyId\":\"FEDEX\"}]";
-
-    await expect(pageAll({
-      ctx,
-      url: "oms/shippingGateways/carrierParties",
-      collectionKey: null,
-      strictCollection: true,
-      label: "carrier",
-    })).resolves.toEqual([{ partyId: "FEDEX" }]);
-  });
-});

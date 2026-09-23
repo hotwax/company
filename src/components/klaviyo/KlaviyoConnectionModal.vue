@@ -51,7 +51,9 @@
           :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
           autocomplete="off"
           :spellcheck="false"
-        />
+        >
+          <ion-input-password-toggle slot="end" />
+        </ion-input>
       </ion-item>
       <ion-item>
         <ion-label>
@@ -88,7 +90,9 @@
             :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
             autocomplete="off"
             :spellcheck="false"
-          />
+          >
+            <ion-input-password-toggle slot="end" />
+          </ion-input>
         </ion-item>
         <ion-item>
           <ion-checkbox
@@ -140,6 +144,7 @@ import {
   IonHeader,
   IonIcon,
   IonInput,
+  IonInputPasswordToggle,
   IonItem,
   IonLabel,
   IonList,
