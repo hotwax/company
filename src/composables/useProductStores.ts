@@ -435,31 +435,78 @@ export function useProductStoreMutations(productStoreId: string) {
  * Separate from `useProductStoreMutations` because there is no store id to scope to yet.
  */
 export function useProductStoreCreation() {
-  return {
-    async createStore(payload: Record<string, any>) {
-      const resp: any = await api({ url: "admin/productStores", method: "post", data: payload });
-      if (commonUtil.hasError(resp)) return resp;
-      // The list pages read stores from the cache, so a create must land there or the new store is
-      // invisible until the next login sync. Prefer the echoed PK, fall back to the payload.
-      const newId = resp?.data?.productStoreId || payload.productStoreId;
-      if (newId) await refreshAfterMutation("productStore", { productStoreId: newId });
-      return resp;
-    },
+  async function createStore(payload: Record<string, any>) {
+    const resp: any = await api({ url: "admin/productStores", method: "post", data: payload });
+    if (commonUtil.hasError(resp)) return resp;
+    // The list pages read stores from the cache, so a create must land there or the new store is
+    // invisible until the next login sync. Prefer the echoed PK, fall back to the payload.
+    const newId = resp?.data?.productStoreId || payload.productStoreId;
+    if (newId) await refreshAfterMutation("productStore", { productStoreId: newId });
+    return resp;
+  }
 
-    /** Operating countries are geo ASSOCIATIONS, cached as their own snapshot. */
-    async addDbicCountries(payload: Record<string, any>) {
-      const resp: any = await api({ url: "admin/geos/assocs", method: "post", data: payload });
-      if (!commonUtil.hasError(resp)) await resyncDomain("geoAssoc");
-      return resp;
-    },
+  /** Operating countries are geo ASSOCIATIONS, cached as their own snapshot. */
+  async function addDbicCountries(payload: Record<string, any>) {
+    const resp: any = await api({ url: "admin/geos/assocs", method: "post", data: payload });
+    if (!commonUtil.hasError(resp)) await resyncDomain("geoAssoc");
+    return resp;
+  }
 
-    /** The owning organization. Not cached — no refresh. */
-    updateCompany: (payload: Record<string, any> & { partyId: string }) => api({
-      url: `admin/organizations/${encodeURIComponent(payload.partyId)}`,
-      method: "post",
-      data: payload,
-    }) as Promise<any>,
-  };
+  /** The owning organization. Not cached — no refresh. */
+  const updateCompany = (payload: Record<string, any> & { partyId: string }) => api({
+    url: `admin/organizations/${encodeURIComponent(payload.partyId)}`,
+    method: "post",
+    data: payload,
+  }) as Promise<any>;
+
+  async function setupNewStore(
+    payload: Record<string, any>,
+    isFirstStore: boolean,
+    hasDbicCountries: boolean,
+    selectedCountries: any[],
+    companyName: string,
+    organizationPartyId: string,
+    company: Record<string, any>,
+    clearCompany: () => void
+  ) {
+    const resp: any = await createStore(payload);
+    if (commonUtil.hasError(resp)) {
+      throw resp.data || { response: resp };
+    }
+
+    const productStoreId = resp.data.productStoreId || payload.productStoreId;
+
+    if (!hasDbicCountries) {
+      const responses = await Promise.allSettled(
+        selectedCountries.map((country: any) =>
+          addDbicCountries({
+            geoId: country.geoId,
+            toGeoId: "DBIC",
+            geoAssocTypeEnumId: "GROUP_MEMBER",
+          })
+        )
+      );
+
+      const hasFailedResponse = responses.some((response: any) => response.status === "rejected");
+      if (hasFailedResponse) {
+        logger.error("Failed to associate update some DBIC countries.");
+      }
+    }
+
+    if (isFirstStore && companyName) {
+      const updateResp = await updateCompany({ ...company, partyId: organizationPartyId, groupName: companyName });
+
+      if (!commonUtil.hasError(updateResp)) {
+        clearCompany(); // the memo now holds the old name
+      } else {
+        throw updateResp.data || { response: updateResp };
+      }
+    }
+
+    return { productStoreId };
+  }
+
+  return { createStore, addDbicCountries, updateCompany, setupNewStore };
 }
 
 

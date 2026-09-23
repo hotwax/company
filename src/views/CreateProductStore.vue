@@ -101,7 +101,7 @@ import { computed, ref } from "vue";
 import { generateInternalId } from '@/utils';
 import { useProductStoreCreation, useProductStores } from "@/composables/useProductStores";
 
-const { addDbicCountries, createStore, updateCompany } = useProductStoreCreation();
+const { setupNewStore } = useProductStoreCreation();
 
 const formData = ref({
   companyName: "",
@@ -159,54 +159,34 @@ async function manageConfigurations() {
   emitter.emit("presentLoader");
 
   try {
+    const isFirstStore = !productStores.value.length;
     const payload = {
       storeName: formData.value.storeName,
       productStoreId: formData.value.productStoreId,
-      companyName: company.value.companyName,
+      companyName: isFirstStore ? formData.value.companyName : company.value.companyName,
       payToPartyId: organizationPartyId.value,
       defaultCurrencyUomId: formData.value.defaultCurrencyUomId
     } as any;
 
-    if(!productStores.value.length) {
-      payload["companyName"] = formData.value.companyName
-    }
+    const { productStoreId } = await setupNewStore(
+      payload,
+      isFirstStore,
+      !!dbicCountriesCount.value,
+      selectedCountries.value,
+      formData.value.companyName,
+      organizationPartyId.value,
+      company.value,
+      clearCompany
+    );
 
-    resp = await createStore(payload);
-
-    if(!commonUtil.hasError(resp)) {
-      const productStoreId = resp.data.productStoreId;
-      
-      if(!dbicCountriesCount.value) {
-        const responses = await Promise.allSettled(selectedCountries.value.map((country: any) => addDbicCountries({
-            geoId: country.geoId,
-            toGeoId: "DBIC",
-            geoAssocTypeEnumId: "GROUP_MEMBER"
-          }))
-        )
-        
-        const hasFailedResponse = responses.some((response: any) => response.status === 'rejected')
-        if(hasFailedResponse) {
-          logger.error("Failed to associate update some DBIC countries.")
-        }
-      }
-      
-      if(!productStores.value.length && formData.value.companyName) {
-        await updateCompany({ ...company.value, partyId: organizationPartyId.value, groupName: formData.value.companyName });
-        clearCompany(); // the memo now holds the old name
-      }
-
-      commonUtil.showToast(translate("Product store created successfully."))
-      emitter.emit("dismissLoader");
-      router.replace(`/product-store-onboarding/${productStoreId}`);
-    } else {
-      throw resp.data;
-    }
+    commonUtil.showToast(translate("Product store created successfully."))
+    emitter.emit("dismissLoader");
+    router.replace(`/product-store-onboarding/${productStoreId}`);
   } catch(error: any) {
     commonUtil.showToast(translate(error.response?.data?.errors ? error.response.data.errors : "Failed to create product store."))
     logger.error(error);
+    emitter.emit("dismissLoader");
   } 
-
-  emitter.emit("dismissLoader");
 }
 
 function openSelectOperatingCountriesModal() {
