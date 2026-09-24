@@ -638,7 +638,7 @@
               {{ translate("Select all") }}
               <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
             </ion-label>
-            <ion-checkbox slot="end" :checked="allSelected" @click.stop="toggleAll" />
+            <ion-checkbox slot="end" :checked="allSelected" style="pointer-events: none" />
           </ion-item>
           <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
             <ion-label>
@@ -648,7 +648,7 @@
               <p>{{ formatOrderDate(order.createdAt) }}</p>
             </ion-label>
             <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
-            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" @click.stop="toggleOrder(order)" />
+            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" style="pointer-events: none" />
           </ion-item>
         </ion-list>
         <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>

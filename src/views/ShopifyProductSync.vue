@@ -504,7 +504,7 @@
                     :checked="areAllVisibleProductsSelected"
                     :indeterminate="areSomeVisibleProductsSelected"
                     data-testid="product-sync-products-select-all-checkbox"
-                    @click.stop="toggleAllVisibleProducts"
+                    style="pointer-events: none"
                   />
                 </ion-item>
 
@@ -529,7 +529,7 @@
                     slot="end"
                     :checked="isProductSelected(product.id)"
                     :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
-                    @click.stop="toggleProduct(product)"
+                    style="pointer-events: none"
                   />
                 </ion-item>
               </ion-list>
