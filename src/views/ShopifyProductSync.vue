@@ -494,18 +494,19 @@
                   <ion-label>{{ translate("Recently updated products from Shopify") }}</ion-label>
                 </ion-list-header>
 
-                <ion-item button data-testid="product-sync-products-select-all-row" @click="toggleAllVisibleProducts">
-                  <ion-label>
-                    {{ translate("Select all") }}
-                    <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
-                  </ion-label>
+                <ion-item data-testid="product-sync-products-select-all-row">
                   <ion-checkbox
-                    slot="end"
+                    justify="space-between"
                     :checked="areAllVisibleProductsSelected"
                     :indeterminate="areSomeVisibleProductsSelected"
                     data-testid="product-sync-products-select-all-checkbox"
-                    style="pointer-events: none"
-                  />
+                    @ion-change="toggleAllVisibleProducts"
+                  >
+                    <ion-label>
+                      {{ translate("Select all") }}
+                      <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
+                    </ion-label>
+                  </ion-checkbox>
                 </ion-item>
 
                 <ion-item v-for="product in productsPickerProducts" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
@@ -529,7 +530,6 @@
                     slot="end"
                     :checked="isProductSelected(product.id)"
                     :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
-                    style="pointer-events: none"
                   />
                 </ion-item>
               </ion-list>

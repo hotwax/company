@@ -633,12 +633,13 @@
           <ion-list-header v-if="!queryString.trim()">
             <ion-label>{{ translate("Recently created orders from Shopify") }}</ion-label>
           </ion-list-header>
-          <ion-item button @click="toggleAll">
-            <ion-label>
-              {{ translate("Select all") }}
-              <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
-            </ion-label>
-            <ion-checkbox slot="end" :checked="allSelected" style="pointer-events: none" />
+          <ion-item>
+            <ion-checkbox justify="space-between" :checked="allSelected" @ion-change="toggleAll">
+              <ion-label>
+                {{ translate("Select all") }}
+                <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
+              </ion-label>
+            </ion-checkbox>
           </ion-item>
           <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
             <ion-label>
@@ -648,7 +649,7 @@
               <p>{{ formatOrderDate(order.createdAt) }}</p>
             </ion-label>
             <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
-            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" style="pointer-events: none" />
+            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" />
           </ion-item>
         </ion-list>
         <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>
