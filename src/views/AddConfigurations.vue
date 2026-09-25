@@ -84,7 +84,7 @@ import { IonBackButton, IonButton, IonButtons, IonCheckbox, IonContent, IonHeade
 import { arrowForwardOutline, copyOutline, informationCircleOutline, shirtOutline } from "ionicons/icons";
 import { api, commonUtil, emitter, logger, translate } from '@common'
 import router from "@/router";
-import { useProductStores, fetchProductStoreDetails, fetchProductStoreSettings } from "@/composables/useProductStores";
+import { useProductStores } from "@/composables/useProductStores";
 import { useTypedEnums } from '@/composables/useSeed';
 import { computed, defineProps, ref } from "vue";
 import { useProductStoreMutations } from "@/composables/useProductStores";
@@ -148,7 +148,15 @@ onIonViewWillEnter(async () => {
 
 async function fetchProductStore() {
   try {
-    productStore.value = await fetchProductStoreDetails(props.productStoreId);
+    const resp = await api({
+      url: `admin/productStores/${props.productStoreId}`,
+      method: "get"
+    })
+    if(!commonUtil.hasError(resp)) {
+      productStore.value = (resp as any).data;
+    } else {
+      throw (resp as any).data;
+    }
   } catch(error: any) {
     logger.error("Failed to fetch product store details.")
   }
@@ -166,10 +174,17 @@ async function setupProductStore() {
       }
 
       // Fetch source store details and settings
-      const [sourceStoreDetails, sourceStoreSettings] = await Promise.all([
-        fetchProductStoreDetails(selectedSourceStoreId.value),
-        fetchProductStoreSettings(selectedSourceStoreId.value)
+      const [detailsResp, settingsResp] = await Promise.all([
+        api({ url: `admin/productStores/${selectedSourceStoreId.value}`, method: "get" }),
+        api({ url: `admin/productStores/${selectedSourceStoreId.value}/settings`, method: "get" })
       ]);
+
+      if (commonUtil.hasError(detailsResp)) {
+        throw new Error("Failed to fetch source store details");
+      }
+
+      const sourceStoreDetails = (detailsResp as any).data;
+      const sourceStoreSettings = !commonUtil.hasError(settingsResp) ? (settingsResp as any).data : [];
 
       // Build target payload by copying direct fields for selected categories
       let targetPayload = { ...productStore.value };

@@ -78,10 +78,9 @@
 import { computed, ref } from "vue";
 import { IonButton, IonContent, IonIcon, IonInput, IonItem, IonPage, IonSpinner } from "@ionic/vue";
 import { arrowForwardOutline, warningOutline } from "ionicons/icons";
-import { commonUtil, logger, translate } from "@common";
+import { client, commonUtil, logger, translate } from "@common";
 import Logo from "@common/components/Logo.vue";
 import router from "@/router";
-import { resetPassword as resetPasswordApi } from "@/composables/useSecurity";
 
 const route = router.currentRoute.value;
 
@@ -97,6 +96,17 @@ const newPasswordVerify = ref("");
 const isSubmitting = ref(false);
 const newPasswordInput = ref<any>(null);
 const newPasswordVerifyInput = ref<any>(null);
+
+// The emailed link only carries an API host reference (maarg), never a session -
+// requests here must not depend on cookies/auth state, so we build an explicit
+// baseURL and use the unauthenticated `client` instead of the app-wide `api()` helper.
+const getBaseURL = () => {
+  if (maarg.startsWith("http")) {
+    const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+    return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+  }
+  return `https://${maarg}.hotwax.io/rest/s1/`;
+};
 
 const inputElement = (inputRef: any) => inputRef.value?.$el || inputRef.value;
 
@@ -140,13 +150,16 @@ const submit = async () => {
 
   isSubmitting.value = true;
   try {
-    const resp = await resetPasswordApi({
-      maarg,
-      userId,
-      username,
-      resetPassword: resetPassword.value,
-      newPassword: newPassword.value,
-      newPasswordVerify: newPasswordVerify.value
+    const resp = await client({
+      baseURL: getBaseURL(),
+      url: `admin/users/${userId}/changePassword`,
+      method: "post",
+      data: {
+        username,
+        oldPassword: resetPassword.value,
+        newPassword: newPassword.value,
+        newPasswordVerify: newPasswordVerify.value
+      }
     });
 
     // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
