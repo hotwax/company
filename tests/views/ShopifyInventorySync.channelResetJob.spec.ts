@@ -550,7 +550,7 @@ describe("ShopifyInventorySync - the event table never claims empty over unreada
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
     }];
     cachedAdjustmentDetails.value = [{
-      eventTypeId: "RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
+      eventTypeId: "SIE_RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
       shopifyInventoryItemId: "ITEM_1", detailStatusId: "DETAIL_ASSIGNED",
       systemMessageId: "BATCH_REJECTED", systemMessageStatusId: "SmsgRejected",
       computedInventoryChange: 1, createdDate: 1000,
@@ -571,7 +571,7 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     systemMessageId: "",
     inventoryChannelId: "IC_1001",
     shopifyInventoryItemId: "ITEM_1",
-    eventTypeId: "RECEIPT",
+    eventTypeId: "SIE_RECEIPT",
     computedInventoryChange: 1,
     createdDate: 1000,
     ...over,
@@ -640,7 +640,8 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     cachedAdjustmentDetails.value = [
       pendingRow({
         eventReferenceId: "R_VARIANT",
-        decisionComment: "Event RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
+        decisionComment:
+          "Event SIE_RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
       }),
       pendingRow({ eventReferenceId: "R_OTHER" }),
     ];

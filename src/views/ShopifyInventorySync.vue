@@ -829,8 +829,8 @@
                     @ion-change="locationFilterEventType = $event.detail.value || ''"
                   >
                     <ion-select-option value="">{{ translate("All") }}</ion-select-option>
-                    <ion-select-option v-for="option in locationEventTypeOptions" :key="option" :value="option">
-                      {{ option }}
+                    <ion-select-option v-for="option in locationEventTypeOptions" :key="option.id" :value="option.id">
+                      {{ option.label }}
                     </ion-select-option>
                   </ion-select>
                   <ion-button v-if="locationFilterEventType" fill="clear" class="clear-filter-button" :aria-label="translate('Clear event type filter')" @click.stop="locationFilterEventType = ''">
@@ -895,7 +895,7 @@
               <ion-list slot="content">
                 <ion-item v-if="batch.id !== 'unassigned'"><ion-button fill="clear" @click="openMessage(locationBatches.find(entry => entry.id === batch.id)!)">{{ translate("Message text") }}</ion-button></ion-item>
                 <ion-item v-for="row in batch.rows" :key="row.rowKey" button @click="selectedLocationDetail = row">
-                  <ion-label>{{ row.eventTypeDescription || row.eventTypeId }}<p>{{ translate("Reference") }} {{ row.eventReferenceId }}</p><p>{{ translate("Shopify location") }} {{ row.shopifyLocationId }}</p><p>{{ translate("Inventory item") }} {{ row.shopifyInventoryItemId }}</p><p>{{ formatDateTime(row.createdDate) }}</p></ion-label>
+                  <ion-label>{{ eventTypeLabel(row) }}<p>{{ translate("Reference") }} {{ row.eventReferenceId }}</p><p>{{ translate("Shopify location") }} {{ row.shopifyLocationId }}</p><p>{{ translate("Inventory item") }} {{ row.shopifyInventoryItemId }}</p><p>{{ formatDateTime(row.createdDate) }}</p></ion-label>
                   <ion-note slot="end">{{ row.computedInventoryChange }}</ion-note>
                 </ion-item>
               </ion-list>
@@ -914,7 +914,7 @@
               @click="selectedLocationDetail = row"
             >
               <ion-label class="ion-text-wrap">
-                {{ row.eventTypeDescription || row.eventTypeId }}
+                {{ eventTypeLabel(row) }}
                 <p>{{ row.eventReferenceId }}</p>
               </ion-label>
               <ion-label slot="end">
@@ -1526,7 +1526,7 @@
         <ion-list lines="full">
           <ion-item>
             <ion-label>{{ translate("Event type") }}</ion-label>
-            <ion-note slot="end">{{ selectedLocationDetail.eventTypeDescription || selectedLocationDetail.eventTypeId }}</ion-note>
+            <ion-note slot="end">{{ eventTypeLabel(selectedLocationDetail) }}</ion-note>
           </ion-item>
           <ion-item>
             <ion-label>{{ translate("Delivery state") }}</ion-label>
@@ -1596,7 +1596,7 @@
             @click="selectedLocationDetail = event"
           >
             <ion-label class="ion-text-wrap">
-              {{ event.eventTypeDescription || event.eventTypeId }}
+              {{ eventTypeLabel(event) }}
               <p>{{ event.eventReferenceId }}</p>
             </ion-label>
             <ion-label slot="end">
@@ -1719,6 +1719,9 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { isEffectiveNow } from "@/utils/cacheProjection";
+import {
+  type InventoryEventSourceRoot, isReservationEventType, sourceRootFor,
+} from "@/utils/inventoryEventSourceRoots";
 import { parameterMap } from "@/utils/serviceJob";
 import { describeRunParameters, describeRunResult } from "@/utils/serviceJobRun";
 import { locationInventoryDeliveryErrorCount } from "@/utils/shopifyLocationInventory";
@@ -2764,13 +2767,13 @@ function locationLabel(detail: any): string {
  * WHICH OMS RECORD THE EVENT CAME FROM. eventReferenceId is the source row's natural key, and its shape
  * is decided per family in post#ShopifyInventoryChannelEvent:
  *
- *   RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK   ShipmentReceipt.receiptId
- *   POS_ISSUANCE                                  ItemIssuance.itemIssuanceId
- *   PHYSICAL_INVENTORY / CYCLE_COUNT              PhysicalInventory.physicalInventoryId
- *   EXTERNAL_RESET                                ExternalInventoryReset.resetItemId
- *   RESERVATION_CREATE / RESERVATION_RELEASE      inventoryItemId:inventoryItemDetailSeqId
- *   the configuration families                    the source row's composite key, and for the
- *                                                 effective-date ones a trailing :OLD or :NEW phase
+ *   the receipt families        ShipmentReceipt.receiptId
+ *   SIE_POS_ISSUANCE            ItemIssuance.itemIssuanceId
+ *   the physical families       PhysicalInventory.physicalInventoryId
+ *   SIE_EXTERNAL_RESET          ExternalInventoryReset.resetItemId
+ *   the reservation families    inventoryItemId:inventoryItemDetailSeqId
+ *   the configuration families  the source row's composite key, and for the effective-date ones a
+ *                               trailing :OLD or :NEW phase
  *
  * A bare number tells an operator nothing about where to look, so this names the record type. It is a
  * DISPLAY LABEL ONLY and the raw reference is always shown beside it, so an unrecognised type -- a new
@@ -2778,23 +2781,20 @@ function locationLabel(detail: any): string {
  * label. This ledger row deliberately carries no order, return or shipment id at all: "which sales
  * order was that" is answered by resolving the reference against the OMS, not by reading this label.
  */
-const SOURCE_RECORD_LABELS: Record<string, string> = {
-  RECEIPT: "Shipment receipt",
-  TRANSFER_RECEIPT: "Shipment receipt",
-  RETURN_RESTOCK: "Shipment receipt",
-  POS_ISSUANCE: "Item issuance",
-  PHYSICAL_INVENTORY: "Physical inventory",
-  CYCLE_COUNT: "Physical inventory",
-  EXTERNAL_RESET: "External inventory reset",
-  // Deliberately absent: the reservation reference is spelled out below as "Inventory item X, detail Y",
+const SOURCE_RECORD_LABELS: Record<InventoryEventSourceRoot, string> = {
+  shipmentReceipts: "Shipment receipt",
+  itemIssuances: "Item issuance",
+  varianceDecisions: "Physical inventory",
+  externalInventoryResets: "External inventory reset",
+  // Deliberately empty: the reservation reference is spelled out below as "Inventory item X, detail Y",
   // which already names the record, and prefixing it would repeat the words.
-  RESERVATION_CREATE: "",
-  RESERVATION_RELEASE: "",
+  inventoryItemDetails: "",
 };
 
-/** The table holds catalog keys; an unrecognised type stays empty rather than becoming a wrong label. */
+/** An event no root resolves stays empty rather than becoming a confident, wrong label. */
 function sourceRecordLabel(eventTypeId: string): string {
-  const key = SOURCE_RECORD_LABELS[eventTypeId] ?? "";
+  const root = sourceRootFor(eventTypeId);
+  const key = root ? SOURCE_RECORD_LABELS[root] : "";
 
   return key ? translate(key) : "";
 }
@@ -2817,7 +2817,7 @@ function sourceOf(detail: any): EventSource {
 
   // The reservation families are one inventory item plus one detail sequence, which reads as two
   // things rather than one opaque colon-joined token.
-  if(eventTypeId.startsWith("RESERVATION_") && body.includes(":")) {
+  if(isReservationEventType(eventTypeId) && body.includes(":")) {
     const [inventoryItemId, detailSeqId] = body.split(":");
 
     return {
@@ -2930,7 +2930,7 @@ function reasonOf(detail: any): { reason: string; mapped: boolean } {
 
 /**
  * THE DECISION LOGIC, minus the identity it restates. A comment reads
- * "Event RETURN_RESTOCK:107319: product 140876 publishable ATP 40.0 -> 41.0." and the first clause is
+ * "Event SIE_RETURN_RESTOCK:107319: product 140876 publishable ATP 40.0 -> 41.0." and the first clause is
  * the row's own event type and reference, already shown two lines above it. Stripping exactly that
  * prefix -- rebuilt from the row's own fields, so this is an equality test and not a pattern guess --
  * leaves the part that exists nowhere else on the screen: which OMS product's publishable ATP moved,
@@ -3060,18 +3060,14 @@ const inFlightBatches = computed(() => batches.value
   .filter((batch: any) => sectionOfBatch(batch.statusId) === "inFlight"));
 
 /**
- * The server owns this label. `eventTypeDescription` is joined from ShopifyInventoryEventType --
- * the closed vocabulary the ledger's EVENT_TYPE_ID is foreign-keyed to -- so it is always present
- * and always in step with the types the connector actually emits. The fallback only prettifies the
- * id, and exists for a row whose type row was somehow not joined; it is not a mapping table,
- * because a client-side copy of that vocabulary is exactly what drifts.
+ * The server owns this label, with no client-side mapping table behind it — a copy of that vocabulary
+ * is exactly what drifts. Both ledger views INNER-join `moqui.basic.Enumeration` and alias
+ * `eventTypeDescription` from it, and every seeded row has a description, so a row that reaches this
+ * app always carries its own label; one whose enumeration row is missing is not returned at all. The id
+ * stands in only so a stubbed row cannot render an empty cell.
  */
 function eventTypeLabel(detail: any): string {
-  const description = String(detail?.eventTypeDescription ?? "").trim();
-  if(description) {return description;}
-
-  return String(detail?.eventTypeId ?? "")
-    .toLowerCase().replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
+  return String(detail?.eventTypeDescription ?? "").trim() || String(detail?.eventTypeId ?? "");
 }
 
 const inventoryEvents = computed<InventoryEvent[]>(() => inventoryDetails.value.map((detail: any) => {
@@ -3528,8 +3524,23 @@ const locationFilterFrom = ref<string | null>(null);
 const locationFilterTo = ref<string | null>(null);
 const locationLocationOptions = computed(() =>
   [...new Set(locationDetailRows.value.map((row) => row.shopifyLocationId).filter(Boolean))]);
-const locationEventTypeOptions = computed(() =>
-  [...new Set(locationDetailRows.value.map((row) => row.eventTypeId).filter(Boolean))]);
+/**
+ * The event-type filter's options, labelled the way the rows themselves are.
+ *
+ * The VALUE stays the real `eventTypeId` -- it is what the row filter compares and what the `eventType`
+ * URL query carries, so a bookmarked filter keeps working. Only the text changes: printing the id raw
+ * put the `SIE_` prefix in front of an operator, which names nothing they can act on.
+ */
+const locationEventTypeOptions = computed(() => {
+  const labelById = new Map<string, string>();
+  for(const row of locationDetailRows.value) {
+    const id = String(row.eventTypeId ?? "");
+    if(!id || labelById.has(id)) {continue;}
+    labelById.set(id, eventTypeLabel(row));
+  }
+
+  return [...labelById].map(([id, label]) => ({ id, label }));
+});
 const locationStateOptions = computed(() => [
   { id: "pending", label: translate("Pending delivery") },
   { id: "unassigned", label: translate("Unassigned (publishable)") },
