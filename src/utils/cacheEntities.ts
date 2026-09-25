@@ -708,7 +708,7 @@ export const productStoreShippingMethodProjection = {
 export const shopifyCarrierShipmentCache = defineCachedEntity("shopifyCarrierShipments", shopifyCarrierShipmentProjection);
 export const productStoreShippingMethodCache = defineCachedEntity("productStoreShippingMethods", productStoreShippingMethodProjection);
 
-/** EnumerationGroupMember rows for a NetSuite reason group. */
+/** EnumerationGroupMember rows for a NetSuite reason group. PK UNVERIFIED (empty on this instance). */
 export const enumGroupMemberProjection = {
   keyField: "enumGroupMemberKey",
   fields: {
@@ -718,7 +718,7 @@ export const enumGroupMemberProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     if(!raw?.enumId) {return undefined;}
 
-    return `${raw.enumerationGroupId ?? "IA_VAR_NETSUITE"}|${raw.enumId}`;
+    return `${raw.enumerationGroupId ?? "NETSUITE_IIV_REASON"}|${raw.enumId}`;
   },
 } as const;
 

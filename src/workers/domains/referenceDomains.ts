@@ -357,9 +357,9 @@ registerSnapshotDomain({
   name: "enumGroupMember",
   table: "enumGroupMembers",
   projection: enumGroupMemberProjection,
-  listUrl: "admin/enumGroups/IA_VAR_NETSUITE/members",
+  listUrl: "admin/enumGroups/NETSUITE_IIV_REASON/members",
   collectionKey: null,
-  listParams: { enumerationGroupId: "IA_VAR_NETSUITE" },
+  listParams: { enumerationGroupId: "NETSUITE_IIV_REASON" },
 });
 
 /**

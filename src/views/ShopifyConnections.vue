@@ -2,11 +2,14 @@
   <ion-page>
     <ShopifyConnectionFilters content-id="filter-content" />
 
-    <ion-header>
+    <ion-header :translucent="true">
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title>{{ translate("Shopify connections") }}</ion-title>
         <ion-buttons slot="end">
+          <ion-button slot="icon-only">
+            <ion-icon :icon="informationCircleOutline" />
+          </ion-button>
           <ion-menu-button menu="end" class="mobile-only">
             <ion-icon :icon="filterOutline" />
           </ion-menu-button>

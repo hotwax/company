@@ -494,24 +494,23 @@
                   <ion-label>{{ translate("Recently updated products from Shopify") }}</ion-label>
                 </ion-list-header>
 
-                <ion-item data-testid="product-sync-products-select-all-row">
+                <ion-item button data-testid="product-sync-products-select-all-row" @click="toggleAllVisibleProducts">
+                  <ion-label>
+                    {{ translate("Select all") }}
+                    <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
+                  </ion-label>
                   <ion-checkbox
-                    justify="space-between"
+                    slot="end"
                     :checked="areAllVisibleProductsSelected"
                     :indeterminate="areSomeVisibleProductsSelected"
                     data-testid="product-sync-products-select-all-checkbox"
-                    @ion-change="toggleAllVisibleProducts"
-                  >
-                    <ion-label>
-                      {{ translate("Select all") }}
-                      <p>{{ selectedProducts.length }} {{ translate("selected") }}</p>
-                    </ion-label>
-                  </ion-checkbox>
+                    @click.stop="toggleAllVisibleProducts"
+                  />
                 </ion-item>
 
                 <ion-item v-for="product in productsPickerProducts" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
-                  <ion-thumbnail slot="start">
-                    <DxpShopifyImg :src="product.imageUrl" size="small" :alt="product.imageAltText || product.title" />
+                  <ion-thumbnail v-if="product.imageUrl" slot="start">
+                    <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
                   </ion-thumbnail>
                   <ion-label>
                     {{ product.title }}
@@ -530,6 +529,7 @@
                     slot="end"
                     :checked="isProductSelected(product.id)"
                     :data-testid="`product-sync-products-checkbox-${getProductId(product)}`"
+                    @click.stop="toggleProduct(product)"
                   />
                 </ion-item>
               </ion-list>
@@ -606,6 +606,7 @@ import {
   IonFooter,
   IonHeader,
   IonIcon,
+  IonImg,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
   IonInput,
@@ -633,7 +634,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import ShopifyProductMappingsModal from '@/components/ShopifyProductMappingsModal.vue';
-import { DxpShopifyImg, commonUtil, logger, translate } from "@common";
+import { commonUtil, logger, translate } from "@common";
 import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useUserStore } from "@/store/user";
 

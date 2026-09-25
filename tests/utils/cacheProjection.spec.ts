@@ -16,12 +16,7 @@ import {
 const NOW = 1_700_000_000_000;
 
 describe("location inventory ledger identity", () => {
-  const source = {
-    eventTypeId: "SIE_RECEIPT",
-    eventReferenceId: "R1",
-    shopId: "S1",
-    shopifyLocationId: "L1",
-  };
+  const source = { eventTypeId: "RECEIPT", eventReferenceId: "R1", shopId: "S1", shopifyLocationId: "L1" };
   it("does not overwrite one inventory item with another from the same source event", () => {
     const first = projectRow({ ...source, shopifyInventoryItemId: "I1", computedInventoryChange: 2 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;
     const second = projectRow({ ...source, shopifyInventoryItemId: "I2", computedInventoryChange: 3 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;

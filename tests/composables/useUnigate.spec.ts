@@ -72,7 +72,7 @@ describe("useUnigate composable", () => {
 
     expect(apiMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: "oms/shipping/gatewayAuths",
+        url: "oms/shippingGatewayAuths",
         method: "post",
       })
     );
@@ -83,7 +83,7 @@ describe("useUnigate composable", () => {
     await deleteShippingGatewayAuth("FEDEX_AUTH");
     expect(apiMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: "oms/shipping/gatewayAuths/FEDEX_AUTH",
+        url: "oms/shippingGatewayAuths/FEDEX_AUTH",
         method: "delete",
       })
     );
@@ -111,7 +111,7 @@ describe("useUnigate composable", () => {
 
     expect(apiMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: "oms/shipping/carrierConfigs",
+        url: "oms/shippingCarrierConfigs",
         method: "post",
       })
     );
@@ -122,7 +122,7 @@ describe("useUnigate composable", () => {
     await deleteShippingCarrierConfig("M100");
     expect(apiMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: "oms/shipping/carrierConfigs/M100",
+        url: "oms/shippingCarrierConfigs/M100",
         method: "delete",
       })
     );

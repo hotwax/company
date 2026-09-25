@@ -28,7 +28,6 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
-import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
@@ -1165,6 +1164,15 @@ function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string):
   return `${eventTypeId}|${eventReferenceId}`;
 }
 
+const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
+
+const UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES: Record<string, string> = {
+  RECEIPT: "The OMS does not expose the receipt behind this movement.",
+  TRANSFER_RECEIPT: "The OMS does not expose the transfer receipt behind this movement.",
+  RETURN_RESTOCK: "The OMS does not expose the return receipt behind this movement.",
+  POS_ISSUANCE: "The OMS does not expose the POS sale behind this movement.",
+};
+
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
 /**
@@ -1282,7 +1290,7 @@ async function eventSourceActorName(userLoginId: string): Promise<string> {
 }
 
 /**
- * The four reservation families -- generic and transfer, create and release -- one call, no scan.
+ * RESERVATION_CREATE / RESERVATION_RELEASE -- one call, no scan.
  *
  * The reference is `inventoryItemId:inventoryItemDetailSeqId`, which is exactly the path id plus the
  * filter this mount takes, so the row it describes is addressable directly. The only family where that
@@ -1306,13 +1314,13 @@ async function resolveReservationSource(lookup: InventoryEventSourceLookup): Pro
 }
 
 /**
- * SIE_PHYSICAL_INVENTORY / SIE_CYCLE_COUNT -- who, and which count.
+ * PHYSICAL_INVENTORY / CYCLE_COUNT -- who, and which count.
  *
  * `varianceDecisions` is the one enrichment resource on this OMS that needs no path scope: it takes the
  * physicalInventoryId straight off the ledger reference. Its own contract describes it as bridging a
  * cycle-count variance to the decision that produced it, which is precisely the question here.
  *
- * A SIE_PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
+ * A PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
  * is the expected answer for half this family rather than a failure. The fallback -- the manual-variance
  * audit trail on inventoryItem/{id}/variances -- needs an inventoryItemId that only the decision would
  * have supplied, so a manual variance stops here and says so.
@@ -1345,7 +1353,7 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
   };
 }
 
-/** SIE_EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
+/** EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
 async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
   const reset = await readEventSource(`poorti/externalInventoryResets/${encodeURIComponent(lookup.eventReferenceId)}`);
   if(!reset?.resetItemId) {
@@ -1361,9 +1369,9 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
   };
 }
 
-/**
- * SIE_RECEIPT / SIE_TRANSFER_RECEIPT / SIE_RETURN_RESTOCK / SIE_POS_ISSUANCE -- the families that need a scan.
- * The document behind a movement is resolved in one GraphQL call for a whole page.
+/*
+ * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE -- the document behind a movement, in ONE
+ * call for a whole page.
  *
  * These four are the families the REST catalog could not reach from what the ledger carries.
  * `InventoryItemDetailAndOrder` holds the order behind each of them, but both of its mounts are scoped
@@ -1385,9 +1393,11 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
  */
 type MovementFamily = "receipt" | "issuance";
 
-const MOVEMENT_FAMILIES: Partial<Record<InventoryEventSourceRoot, MovementFamily>> = {
-  shipmentReceipts: "receipt",
-  itemIssuances: "issuance",
+const MOVEMENT_FAMILIES: Record<string, MovementFamily> = {
+  RECEIPT: "receipt",
+  TRANSFER_RECEIPT: "receipt",
+  RETURN_RESTOCK: "receipt",
+  POS_ISSUANCE: "issuance",
 };
 
 /**
@@ -1639,25 +1649,38 @@ async function readMovementDocuments(
   return answers;
 }
 
-/**
- * The one-call-per-row resolvers. The movement roots are absent on purpose: they answer in bulk below,
- * and `readMovementDocuments` returns an entry for every reference it is asked about, so a movement row
- * never falls through to a per-row resolver. The configuration families have no root and no resolver.
- */
 function eventSourceResolverFor(eventTypeId: string) {
-  switch(sourceRootFor(eventTypeId)) {
-    case "inventoryItemDetails": return resolveReservationSource;
-    case "varianceDecisions": return resolvePhysicalSource;
-    case "externalInventoryResets": return resolveExternalResetSource;
-    default: return null;
+  if(eventTypeId.startsWith("RESERVATION_")) {return resolveReservationSource;}
+  if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
+  if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
+
+  /*
+   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
+   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
+   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
+   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
+   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
+   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
+   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
+   * an unscoped read exists.
+   *
+   * The configuration families name no document at all. Their references decode locally to ids the app
+   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
+   * entity and its PK values, neither of which the ledger keeps.
+   */
+  const unresolvedMessage = UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES[eventTypeId];
+  if(unresolvedMessage) {
+    return async (): Promise<InventoryEventSource> => ({
+      label: "",
+      unresolved: translate(unresolvedMessage),
+    });
   }
+  return null;
 }
 
 /** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
 function movementFamilyFor(eventTypeId: string): MovementFamily | null {
-  const root = sourceRootFor(eventTypeId);
-
-  return (root && MOVEMENT_FAMILIES[root]) ?? null;
+  return MOVEMENT_FAMILIES[eventTypeId] ?? null;
 }
 
 /**
@@ -1719,7 +1742,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
   const movementEntries = entries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId));
   const singleEntries = entries.filter(([, lookup]) => !movementFamilyFor(lookup.eventTypeId));
   for(const family of ["receipt", "issuance"] as MovementFamily[]) {
-    const familyEntries = movementEntries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId) === family);
+    const familyEntries = movementEntries.filter(([, lookup]) => MOVEMENT_FAMILIES[lookup.eventTypeId] === family);
     for(let index = 0; index < familyEntries.length; index += MOVEMENT_LOOKUP_CHUNK) {
       const chunk = familyEntries.slice(index, index + MOVEMENT_LOOKUP_CHUNK);
       // One reference can carry two event types (a receipt that is also a restock), so the ids are
@@ -1752,10 +1775,11 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
         }
         attempt.failures = 0;
         attempt.retryable = false;
-        // `readMovementDocuments` answers every reference it was given, on every path including its
-        // denials, so the `??` is a belt-and-braces guard rather than a second lookup strategy.
+        const fallbackResolver = eventSourceResolverFor(lookup.eventTypeId);
         next.set(key, answers.get(lookup.eventReferenceId)
-          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
+          ?? (fallbackResolver
+            ? await fallbackResolver(lookup)
+            : movementUnresolved(translate("The OMS has no inventory movement with this reference."))));
         changed = true;
       }
       if(changed) {eventSources.value = next;}

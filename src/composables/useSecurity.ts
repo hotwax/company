@@ -112,18 +112,18 @@ export function useUserAccountActions() {
     contactNumber?: string
   ) => {
     const resp = await userStore.createUser(payload);
-    if(resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
+    if (resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
       const partyId = resp.data.partyId;
 
       await userStore.ensurePartyRole({ partyId, roleTypeId: "APPLICATION_USER" });
 
-      if(partyTypeId === "PARTY_GROUP" && facilityId) {
+      if (partyTypeId === "PARTY_GROUP" && facilityId) {
         await userStore.addPartyToFacility({ partyId, facilityId, roleTypeId: "WAREHOUSE_PICKER" });
       }
-      if(emailAddress) {
+      if (emailAddress) {
         await userStore.createUpdatePartyEmailAddress({ partyId, emailAddress, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
       }
-      if(contactNumber) {
+      if (contactNumber) {
         await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
       }
 
