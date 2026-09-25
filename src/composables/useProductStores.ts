@@ -430,7 +430,7 @@ export function useProductStoreMutations(productStoreId: string) {
 }
 
 /**
- * Creating a product store, plus the two writes that only ever happen alongside a create.
+ * Creating a product store.
  *
  * Separate from `useProductStoreMutations` because there is no store id to scope to yet.
  */
@@ -445,20 +445,6 @@ export function useProductStoreCreation() {
       if (newId) await refreshAfterMutation("productStore", { productStoreId: newId });
       return resp;
     },
-
-    /** Operating countries are geo ASSOCIATIONS, cached as their own snapshot. */
-    async addDbicCountries(payload: Record<string, any>) {
-      const resp: any = await api({ url: "admin/geos/assocs", method: "post", data: payload });
-      if (!commonUtil.hasError(resp)) await resyncDomain("geoAssoc");
-      return resp;
-    },
-
-    /** The owning organization. Not cached — no refresh. */
-    updateCompany: (payload: Record<string, any> & { partyId: string }) => api({
-      url: `admin/organizations/${encodeURIComponent(payload.partyId)}`,
-      method: "post",
-      data: payload,
-    }) as Promise<any>,
   };
 }
 
