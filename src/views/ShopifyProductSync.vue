@@ -510,8 +510,8 @@
                 </ion-item>
 
                 <ion-item v-for="product in productsPickerProducts" :key="product.id" :data-testid="`product-sync-products-row-${getProductId(product)}`" lines="none" button @click="toggleProduct(product)">
-                  <ion-thumbnail v-if="product.imageUrl" slot="start">
-                    <ion-img :src="product.imageUrl" :alt="product.imageAltText || product.title" />
+                  <ion-thumbnail slot="start">
+                    <DxpShopifyImg :src="product.imageUrl" size="small" :alt="product.imageAltText || product.title" />
                   </ion-thumbnail>
                   <ion-label>
                     {{ product.title }}
@@ -606,7 +606,6 @@ import {
   IonFooter,
   IonHeader,
   IonIcon,
-  IonImg,
   IonInfiniteScroll,
   IonInfiniteScrollContent,
   IonInput,
@@ -634,7 +633,7 @@ import {
 } from "@ionic/vue";
 import { closeOutline, refreshOutline, saveOutline } from "ionicons/icons";
 import ShopifyProductMappingsModal from '@/components/ShopifyProductMappingsModal.vue';
-import { commonUtil, logger, translate } from "@common";
+import { DxpShopifyImg, commonUtil, logger, translate } from "@common";
 import { computed, defineProps, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useUserStore } from "@/store/user";
 
