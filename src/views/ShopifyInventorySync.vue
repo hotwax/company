@@ -599,7 +599,7 @@
             </ion-button>
           </div>
           <div class="run-carousel" :aria-label="translate('Channel inventory event batches')">
-            <ion-card v-for="batch in batches" :key="batch.id">
+            <ion-card v-for="batch in recentBatches" :key="batch.id">
               <ion-card-header>
                 <ion-card-title>{{ batch.id }}</ion-card-title>
                 <ion-badge :color="batch.badgeColor">
@@ -670,7 +670,7 @@
             </ion-button>
           </div>
           <div class="run-carousel" :aria-label="translate('Physical location event batches')">
-            <ion-card v-for="batch in locationBatches" :key="batch.id">
+            <ion-card v-for="batch in recentLocationBatches" :key="batch.id">
               <ion-card-header>
                 <ion-card-title>{{ batch.id }}</ion-card-title>
                 <ion-badge :color="batch.badgeColor">
@@ -2875,6 +2875,13 @@ const batches = computed<Batch[]>(() => {
 });
 
 /**
+ * The monitor carousels preview only the newest batches; Event history lists the rest. Rendering every
+ * cached batch put 2,000+ cards in this one component, and each cache write re-rendered all of them.
+ */
+const CAROUSEL_BATCH_LIMIT = 20;
+const recentBatches = computed(() => batches.value.slice(0, CAROUSEL_BATCH_LIMIT));
+
+/**
  * THE LEDGER'S OWN LIFECYCLE, and nothing else. DETAIL_PENDING / ASSIGNED / NOOP / ERROR is a closed
  * vocabulary seeded by the connector; SystemMessage delivery is a separate state machine that lives on
  * the batch. This page used to return the batch's delivery status here whenever a row was assigned,
@@ -3484,7 +3491,7 @@ function locationDeliveryState(row: any): { label: string; color: string } {
       ? { label: translate("Unassigned (publishable)"), color: "warning" }
       : { label: translate("No-op"), color: "medium" };
   }
-  const message = cachedSystemMessages.value.find((m: any) => String(m.systemMessageId) === messageId);
+  const message = messageById.value.get(messageId);
   const statusId = row.systemMessageStatusId || message?.statusId;
   const label = statusDescriptionFor(statusId) || statusId || translate("Not available");
   const errorish = /error|fail/i.test(String(statusId ?? ""));
@@ -3648,7 +3655,8 @@ const locationBatches = computed<Batch[]>(() => {
   for (const detail of locationDetailRows.value) {
     const id = String(detail.systemMessageId ?? "");
     if (!id) continue;
-    grouped.set(id, [...(grouped.get(id) ?? []), detail]);
+    const bucket = grouped.get(id);
+    if(bucket) {bucket.push(detail);} else {grouped.set(id, [detail]);}
   }
 
   return [...grouped.entries()].map(([id, details]) => {
@@ -3672,6 +3680,7 @@ const locationBatches = computed<Batch[]>(() => {
     };
   }).sort((a, b) => b.createdAt - a.createdAt);
 });
+const recentLocationBatches = computed(() => locationBatches.value.slice(0, CAROUSEL_BATCH_LIMIT));
 
 const eventsForSelectedLocationBatch = computed(() => selectedLocationBatch.value
   ? locationDetailRows.value.filter((row) => row.systemMessageId === selectedLocationBatch.value?.id) : []);
