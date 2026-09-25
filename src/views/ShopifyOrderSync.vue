@@ -633,22 +633,24 @@
           <ion-list-header v-if="!queryString.trim()">
             <ion-label>{{ translate("Recently created orders from Shopify") }}</ion-label>
           </ion-list-header>
-          <ion-item button @click="toggleAll">
-            <ion-label>
-              {{ translate("Select all") }}
-              <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
-            </ion-label>
-            <ion-checkbox slot="end" :checked="allSelected" @click.stop="toggleAll" />
+          <ion-item>
+            <ion-checkbox justify="space-between" :checked="allSelected" @ion-change="toggleAll">
+              <ion-label>
+                {{ translate("Select all") }}
+                <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
+              </ion-label>
+            </ion-checkbox>
           </ion-item>
-          <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
-            <ion-label>
-              {{ order.name }}
-              <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
-              <p>{{ order.customerName || translate("No customer") }} · {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
-              <p>{{ formatOrderDate(order.createdAt) }}</p>
-            </ion-label>
-            <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
-            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" @click.stop="toggleOrder(order)" />
+          <ion-item v-for="order in orders" :key="order.legacyResourceId">
+            <ion-checkbox justify="space-between" :checked="isSelected(order.legacyResourceId)" @ion-change="toggleOrder(order)">
+              <ion-label>
+                {{ order.name }}
+                <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
+                <p>{{ order.customerName || translate("No customer") }}, {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
+                <p>{{ formatOrderDate(order.createdAt) }}</p>
+              </ion-label>
+              <ion-note>{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
+            </ion-checkbox>
           </ion-item>
         </ion-list>
         <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>
