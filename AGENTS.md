@@ -183,6 +183,14 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
   accepted `version(2)` but silently did not create the added store, so writes failed while fetches
   kept succeeding. Just edit `CACHE_SCHEMA`; `ensureCacheReady()` compares declared tables to the
   database's real `objectStoreNames` and rebuilds on mismatch. Never add `version(2)`.
+- **Changing what cached rows mean needs a contract bump.** The schema check above compares store
+  sets only, so a release that keeps every table and key field but changes what stored rows mean
+  (ids renamed or re-prefixed, a key field re-derived) passes it untouched. Domains written with
+  `upsertMany` never prune a row the server no longer has, so such rows linger and resolve nothing.
+  In the same commit as that change, increment `CACHE_CONTRACT_VERSION` in
+  [`appCacheDb.ts`](src/utils/appCacheDb.ts) and add a line to its changelog comment.
+  `ensureCacheIdentity` stamps the version into the cache identity, so every installation wipes and
+  re-seeds once on its next cache bootstrap. Never decrement or reuse a number.
 - **Worker query params must expand arrays into repeated keys.** `workerRemoteApi` builds its query
   with `URLSearchParams`, which comma-joins arrays (`id=A%2CB`); Moqui reads that as one literal
   value and returns an empty list — a **silent** zero-row failure. Use `workerGet`'s serializer in

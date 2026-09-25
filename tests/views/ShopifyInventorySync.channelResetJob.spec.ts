@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
 const cachedJobs = ref<any[]>([]);
@@ -9,6 +9,7 @@ const cachedShops = ref<any[]>([]);
 const cachedDataFeeds = ref<any[]>([]);
 const cachedAdjustmentDetails = ref<any[]>([]);
 const cachedLocationSummaries = ref<any[]>([]);
+const cachedLocationDetails = ref<any[]>([]);
 const cachedMessages = ref<any[]>([]);
 const cachedGroupFacilities = ref<any[]>([]);
 const cachedInventoryEventDocuments = ref<any[]>([]);
@@ -105,6 +106,9 @@ vi.mock("@/composables/useCachedList", () => ({
     }
     if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
       return { records: cachedAdjustmentDetails, rows: cachedAdjustmentDetails, hydrated: detailsHydrated };
+    }
+    if(table.includes("shopifyLocationInventoryAdjustmentDetail") || table.includes("ShopifyLocationInventoryAdjustmentDetail")) {
+      return { records: cachedLocationDetails, rows: cachedLocationDetails, hydrated: ref(true) };
     }
     if(table.includes("shopifyLocationInventorySummar") || table.includes("ShopifyLocationInventorySummar")) {
       return { records: cachedLocationSummaries, rows: cachedLocationSummaries, hydrated: ref(true) };
@@ -546,7 +550,7 @@ describe("ShopifyInventorySync - the event table never claims empty over unreada
       facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
     }];
     cachedAdjustmentDetails.value = [{
-      eventTypeId: "RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
+      eventTypeId: "SIE_RECEIPT", eventReferenceId: "R1", inventoryChannelId: "IC_1001",
       shopifyInventoryItemId: "ITEM_1", detailStatusId: "DETAIL_ASSIGNED",
       systemMessageId: "BATCH_REJECTED", systemMessageStatusId: "SmsgRejected",
       computedInventoryChange: 1, createdDate: 1000,
@@ -567,7 +571,7 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     systemMessageId: "",
     inventoryChannelId: "IC_1001",
     shopifyInventoryItemId: "ITEM_1",
-    eventTypeId: "RECEIPT",
+    eventTypeId: "SIE_RECEIPT",
     computedInventoryChange: 1,
     createdDate: 1000,
     ...over,
@@ -636,7 +640,8 @@ describe("ShopifyInventorySync - the event table shows one row per event", () =>
     cachedAdjustmentDetails.value = [
       pendingRow({
         eventReferenceId: "R_VARIANT",
-        decisionComment: "Event RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
+        decisionComment:
+          "Event SIE_RECEIPT:R_VARIANT: product 140876 publishable ATP 40.0 -> 41.0.",
       }),
       pendingRow({ eventReferenceId: "R_OTHER" }),
     ];
@@ -1106,5 +1111,69 @@ describe("ShopifyInventorySync - channel facilities", () => {
 
     wrapper.unmount();
     createModal.mockRestore();
+  });
+});
+
+describe("ShopifyInventorySync - monitor batch carousels", () => {
+  const BATCH_COUNT = 25;
+
+  beforeEach(() => {
+    vi.resetModules();
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedChannels.value = [{
+      inventoryChannelId: "IC_1001", shopId: "100002", facilityGroupId: "FG_1",
+      facilityGroupName: "Retail Channel", shopifyLocationId: "LOC_1", fromDate: 1000,
+    }];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store", inventoryFeedType: "manual" }];
+    cachedMessages.value = [];
+    cachedLocationSummaries.value = [];
+    // One batch per row, createdDate ascending, so the newest batch is the last one built.
+    cachedAdjustmentDetails.value = Array.from({ length: BATCH_COUNT }, (_, index) => ({
+      eventTypeId: "RECEIPT", eventReferenceId: `R${index + 1}`, inventoryChannelId: "IC_1001",
+      shopifyInventoryItemId: "ITEM_1", detailStatusId: "DETAIL_ASSIGNED",
+      systemMessageId: `CH_${index + 1}`, systemMessageStatusId: "SmsgConfirmed",
+      computedInventoryChange: 1, createdDate: 1000 + index,
+    }));
+    cachedLocationDetails.value = Array.from({ length: BATCH_COUNT }, (_, index) => ({
+      locationAdjustmentKey: `LOC_ROW_${index + 1}`, shopId: "100002", shopifyLocationId: "LOC_1",
+      eventTypeId: "RECEIPT", eventReferenceId: `R${index + 1}`, shopifyInventoryItemId: "ITEM_1",
+      systemMessageId: `PL_${index + 1}`, systemMessageStatusId: "SmsgConfirmed",
+      computedInventoryChange: 1, createdDate: 1000 + index,
+    }));
+  });
+
+  afterEach(() => {
+    cachedAdjustmentDetails.value = [];
+    cachedLocationDetails.value = [];
+  });
+
+  it.each([
+    { label: "Channel inventory event batches", prefix: "CH_" },
+    { label: "Physical location event batches", prefix: "PL_" },
+  ])("renders only the 20 newest batches in the $label carousel", async ({ label, prefix }) => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: {
+        stubs: {
+          IonModal: true,
+          ServiceJobDetailsModal: true,
+          EditInventoryChannelModal: true,
+          SetupInventoryChannelModal: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    const titles = wrapper.find(`.run-carousel[aria-label="${label}"]`)
+      .findAll("ion-card-title").map((title) => title.text().trim());
+
+    expect(titles).toHaveLength(20);
+    expect(titles[0]).toBe(`${prefix}${BATCH_COUNT}`);
+    expect(titles.at(-1)).toBe(`${prefix}${BATCH_COUNT - 19}`);
+    wrapper.unmount();
   });
 });
