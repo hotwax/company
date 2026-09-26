@@ -19,7 +19,7 @@
           <ion-label>{{ translate("Integrations") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle v-for="(p, i) in integrationPages" :key="'integration-' + i" :auto-hide="false">
+        <ion-menu-toggle v-for="(p, i) in visibleIntegrationPages" :key="'integration-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedIntegrationIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -30,7 +30,7 @@
           <ion-label>{{ translate("Facilities") }}</ion-label>
         </ion-item-divider>
 
-        <ion-menu-toggle :auto-hide="false" v-for="(p, i) in facilitiesPages" :key="'facilities-' + i">
+        <ion-menu-toggle v-for="(p, i) in facilitiesPages" :key="'facilities-' + i" :auto-hide="false">
           <ion-item button router-direction="root" :router-link="p.url" class="hydrated" :class="{ selected: selectedFacilitiesIndex === i }">
             <ion-icon slot="start" :ios="p.iosIcon" :md="p.mdIcon" />
             <ion-label>{{ translate(p.title) }}</ion-label>
@@ -71,11 +71,19 @@
         </ion-menu-toggle>
       </ion-list>
     </ion-content>
+
+    <!-- Which instance this app is pointed at, and the timezone its dates are rendered in. The clock
+         appears ONLY when that timezone is not the browser's: when they agree the time on screen is
+         the time on the wall, and repeating it would be noise. Mirrors order-manager's footer. -->
+    <DxpOmsInstanceFooter
+      v-if="isAuthenticated"
+      :instance-label="omsInstanceLabel()"
+    />
   </ion-menu>
 </template>
 
 <script setup lang="ts">
-import { translate } from "@common";
+import { commonUtil, DxpOmsInstanceFooter, translate } from "@common";
 import { useAuth } from "@common/composables/useAuth";
 import {
   IonContent,
@@ -90,13 +98,49 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, mailOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
-import { computed } from "vue";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
+import { useMaargConfig } from "@/composables/useSeed";
+import { useUserStore } from "@/store/user";
 import router from "@/router";
 import Actions from "@/authorization/actions";
 
 const { isAuthenticated } = useAuth();
+const userStore = useUserStore();
+const { instanceInfo, load: loadMaargConfig } = useMaargConfig();
+
+const HOTWAX_HOST_SUFFIX = ".hotwax.io";
+
+/**
+ * Local databases can retain a remote instance name. Show the connected loopback host and port
+ * first so operators can distinguish local development from that remote tenant.
+ * Read the cookie-backed URL on render instead of caching a pre-login value in a computed.
+ */
+function omsInstanceLabel() {
+  const url = commonUtil.getMaargURL();
+  let host = "";
+  if (url) {
+    try {
+      const connection = new URL(url);
+      host = connection.host;
+      if (connection.hostname === "localhost" || connection.hostname.endsWith(".localhost") ||
+          /^127\.\d+\.\d+\.\d+$/.test(connection.hostname) || connection.hostname === "[::1]") {
+        return host;
+      }
+    } catch {
+      // Preserve the configured label when a connection URL cannot be parsed.
+    }
+  }
+
+  const instanceName = String(instanceInfo.value?.instanceName ?? "").trim();
+  if (instanceName) return instanceName;
+  return host.endsWith(HOTWAX_HOST_SUFFIX) ? host.slice(0, -HOTWAX_HOST_SUFFIX.length) : host;
+}
+
+onMounted(() => {
+  void loadMaargConfig();
+});
 const { hasPermission } = useAppAuth();
 const appPages = [
   {
@@ -121,6 +165,22 @@ const visibleAppPages = computed(() =>
 
 const integrationPages = [
   {
+    title: "Carriers",
+    url: "/carriers",
+    childRoutes: ["/carriers/", "/carrier-details/"],
+    permission: Actions.APP_CARRIERS_VIEW,
+    iosIcon: airplaneOutline,
+    mdIcon: airplaneOutline,
+  },
+  {
+    title: "Unigate",
+    url: "/unigate",
+    childRoutes: ["/unigate/"],
+    permission: Actions.APP_CARRIERS_VIEW,
+    iosIcon: layersOutline,
+    mdIcon: layersOutline,
+  },
+  {
     title: "Shopify",
     url: "/shopify",
     childRoutes: ["/shopify-connection-details"],
@@ -143,6 +203,10 @@ const integrationPages = [
   },
 ];
 
+const visibleIntegrationPages = computed(() =>
+  integrationPages.filter((screen) =>
+    !screen.permission || hasPermission(screen.permission)))
+
 const userPages = [
   {
     title: "Users",
@@ -161,6 +225,13 @@ const userPages = [
     mdIcon: keyOutline,
   },
   {
+    title: "Push Notifications",
+    url: "/notifications",
+    permission: Actions.APP_NOTIFICATIONS_VIEW,
+    iosIcon: notificationsOutline,
+    mdIcon: notificationsOutline,
+  },
+  {
     title: "App Permissions",
     url: "/app-permissions",
     permission: Actions.APP_APP_PERMISSIONS_VIEW,
@@ -171,7 +242,7 @@ const userPages = [
 
 const facilitiesPages = [
   {
-    title: "Find",
+    title: "Facilities",
     url: "/facilities/find",
     iosIcon: storefrontOutline,
     mdIcon: storefrontOutline,
@@ -193,6 +264,12 @@ const facilitiesPages = [
 const visibleUserPages = computed(() => userPages.filter((screen) => hasPermission(screen.permission)))
 
 const agentPages = [
+  {
+    title: "MCP setup",
+    url: "/mcp-setup",
+    iosIcon: linkOutline,
+    mdIcon: linkOutline,
+  },
   {
     title: "Composer",
     url: "/composer",
@@ -243,7 +320,7 @@ const selectedAgentIndex = computed(() => {
 const selectedIntegrationIndex = computed(() => {
   const path = router.currentRoute.value.path
 
-  return integrationPages.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
+  return visibleIntegrationPages.value.findIndex((screen) => screen.url === path || screen.childRoutes?.includes(path) || screen.childRoutes?.some((route) => path.includes(route)))
 })
 
 const selectedUserIndex = computed(() => {

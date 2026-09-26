@@ -78,7 +78,7 @@
             </ion-item>
             <ion-item v-for="agent in workforce.activeAgents" :key="agent.agentId" button @click="startConversation(agent.agentId)">
               <ion-label>
-                <h2>{{ agent.agentName }}</h2>
+                {{ agent.agentName }}
                 <p>{{ agent.description }}</p>
               </ion-label>
             </ion-item>

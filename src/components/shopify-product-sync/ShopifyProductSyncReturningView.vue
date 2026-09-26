@@ -301,11 +301,10 @@
   </section>
 
   <section class="sync-stat">
-    <ion-progress-bar v-if="isRefreshing" type="indeterminate" />
     <div class="stat-header">
       <ion-item class="stat-title" lines="none">
         <ion-label>
-          <h2>{{ translate("Recently synced product updates") }}</h2>
+          {{ translate("Recently synced product updates") }}
           <p>{{ translate("Audit what products were recently updated and what exactly changed in them") }}</p>
         </ion-label>
       </ion-item>
@@ -383,7 +382,7 @@
                     <ion-list slot="content" lines="full">
                       <ion-item v-for="(detail, index) in item.details" :key="index">
                         <ion-label class="ion-text-wrap">
-                          <h3>{{ detail.label }}</h3>
+                          {{ detail.label }}
                           <p :class="detail.type === 'added' ? 'ion-text-success' : 'ion-text-danger'">
                             {{ getDetailActionLabel(detail.type) }}
                           </p>
@@ -418,11 +417,11 @@
 
 
   <section class="sync-stat">
-    <ion-progress-bar v-if="isRefreshing || isErrorLogsLoading" type="indeterminate" />
+    <ion-progress-bar v-if="isErrorLogsLoading" type="indeterminate" />
     <div class="stat-header">
         <ion-item class="stat-title" lines="none">
           <ion-label>
-            <h2>{{ translate("Parsed error details") }}</h2>
+            {{ translate("Parsed error details") }}
             <p>{{ failedRecords.length }} {{ translate("of") }} {{ totalDetailedErrorsCount }} {{ translate("failed objects") }}</p>
           </ion-label>
         </ion-item>
@@ -438,7 +437,7 @@
         <ion-card v-for="record in failedRecords" :key="record.id">
           <ion-item lines="full">
             <ion-label class="ion-text-wrap">
-              <h3>{{ record.title }}</h3>
+              {{ record.title }}
               <p v-if="record.handle">{{ record.handle }}</p>
             </ion-label>
           </ion-item>
@@ -555,7 +554,6 @@ const props = defineProps<{
   hasCurrentShopifyRequest?: boolean
   syncJobObj?: any
   isSecondaryLoading?: boolean
-  isRefreshing?: boolean
   isErrorLogsLoading?: boolean
   errorRecordCount: number | string
   failedRecords: Array<{ id: string, numericId?: string, logId?: string, title: string, vendor?: string, handle?: string, productType?: string, sku?: string, barcode?: string, error: string }>
@@ -706,20 +704,6 @@ ion-card-subtitle {
 
 ion-buttons {
   grid-area: actions;
-}
-
-.sync-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  align-items: flex-start;
-}
-
-.summary{
-  grid-column: 1 / 2;
-}
-
-.progress{
-  grid-column: -1 / -2;
 }
 
 .sync-monitor {

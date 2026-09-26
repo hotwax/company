@@ -25,17 +25,19 @@
 
       <!-- Cold cache after login: the seed sync is still running, so show placeholders rather
            than an empty list that reads as "there is nothing here". -->
-      <template v-if="!hydrated"><div class="list-item ion-padding-end" v-for="n in 4" :key="`sk-${n}`">
-        <ion-item lines="none">
-          <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
-        </ion-item>
-      </div></template>
+      <template v-if="!hydrated">
+        <div v-for="n in 4" :key="`sk-${n}`" class="list-item ion-padding-end">
+          <ion-item lines="none">
+            <ion-label><ion-skeleton-text animated style="width: 45%" /></ion-label>
+          </ion-item>
+        </div>
+      </template>
 
-      <div class="empty-state" v-else-if="!appVersions.length">
+      <div v-else-if="!appVersions.length" class="empty-state">
         {{ translate("Failed to load app version information, please contact administrator.") }}
       </div>
 
-      <div class="list-item ion-padding-end" v-for="app in appVersions" :key="`${app.appId}_${app.environmentTypeId}`">
+      <div v-for="app in appVersions" :key="`${app.appId}_${app.environmentTypeId}`" class="list-item ion-padding-end">
         <ion-item lines="none">
           <ion-icon slot="start" :icon="storefrontOutline" />
           <ion-label>
@@ -56,7 +58,7 @@
           </div>
         </template>
         <template v-else>
-          <ion-button size="small" fill="outline" @click="editAppVersion(app)">
+          <ion-button size="small" fill="outline" :disabled="!versionOptionsByAppEnv[`${app.appId}_${app.environmentTypeId}`]?.length" @click="editAppVersion(app)">
             <ion-icon slot="start" :icon="addOutline" />
             <ion-label>{{ translate("app version") }}</ion-label>
           </ion-button>
@@ -67,12 +69,14 @@
 </template>
 
 <script setup lang="ts">
+import { commonUtil, emitter, logger, translate } from "@common";
 import { IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar, alertController, modalController } from "@ionic/vue";
 import { addOutline, closeCircleOutline, shieldCheckmarkOutline, storefrontOutline } from "ionicons/icons";
-import { translate, commonUtil, emitter, logger } from "@common";
+import { computed } from "vue";
 import CreateAppVersionModal from "@/components/app-version/CreateAppVersionModal.vue";
 import type { AppVersionRecord } from "@/composables/useAppVersion";
-import { useAppVersions, useAppVersionMutations } from "@/composables/useAppVersion";
+import { useAppVersionMutations, useAppVersions } from "@/composables/useAppVersion";
+import { hostedVersionsFor } from "@/utils/appVersionOptions";
 
 const envColor: Record<string, string> = {
   AppEnvDev: "primary",
@@ -82,6 +86,22 @@ const envColor: Record<string, string> = {
 
 const { appVersions, hydrated } = useAppVersions();
 const { updateAppVersion: applyUpdate, removeAppVersion: applyRemove } = useAppVersionMutations();
+
+/**
+ * Hosted versions per row, keyed `${appId}_${environmentTypeId}` — the same composite key the list
+ * and `byAppEnv` use. Computed once per list rather than called from the template so the row markup
+ * does not re-derive it on every render.
+ */
+const versionOptionsByAppEnv = computed<Record<string, string[]>>(() =>
+  appVersions.value.reduce((map: Record<string, string[]>, row) => {
+    const key = `${row.appId}_${row.environmentTypeId}`;
+
+    if(!map[key]) {
+      map[key] = hostedVersionsFor(row.appId, row.environmentTypeId);
+    }
+
+    return map;
+  }, {}));
 
 async function removeAppVersion(app: AppVersionRecord) {
   emitter.emit("presentLoader");
@@ -107,22 +127,40 @@ async function updateAppVersion(app: AppVersionRecord, currentVersion: string) {
 
 async function editAppVersion(app: AppVersionRecord) {
   const version = app.currentVersion;
+  const options = versionOptionsByAppEnv.value[`${app.appId}_${app.environmentTypeId}`] ??
+    hostedVersionsFor(app.appId, app.environmentTypeId);
+
+  // Nothing hosted for this app in this environment. Reachable: the chip stays enabled so its
+  // close-circle can still clear the pin, so say why no picker opened rather than doing nothing.
+  if(!options.length) {
+    commonUtil.showToast(translate("No hosted versions for this app in this environment"));
+
+    return;
+  }
+
   const alert = await alertController.create({
-    header: translate("Add version"),
-    inputs: [{
-      name: "appVersion",
-      placeholder: translate("app version"),
-      value: version || "",
-    }],
+    header: version ? translate("Update version") : translate("Add version"),
+    // Radio inputs hand the SELECTED VALUE to the handler, not a `{ name: value }` object.
+    inputs: options.map((option) => ({
+      type: "radio" as const,
+      label: option,
+      value: option,
+      checked: option === version,
+    })),
     buttons: [
       { text: translate("Cancel"), role: "cancel" },
       {
         text: translate("Save"),
-        handler: async (data) => {
-          const appVersion = data.appVersion.trim();
+        handler: (appVersion: string) => {
+          if(!appVersion) {
+            commonUtil.showToast(translate("Please select an app version"));
 
-          if (appVersion && version === appVersion) {
+            return false;
+          }
+
+          if(version === appVersion) {
             commonUtil.showToast(translate("Please update the app version"));
+
             return false;
           }
 

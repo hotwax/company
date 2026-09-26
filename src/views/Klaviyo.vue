@@ -16,7 +16,7 @@
       <ion-list v-if="isInitialLoading" inset>
         <ion-item v-for="item in 3" :key="item">
           <ion-label>
-            <h2><ion-skeleton-text animated /></h2>
+            <ion-skeleton-text animated />
             <p><ion-skeleton-text animated /></p>
             <p><ion-skeleton-text animated /></p>
           </ion-label>
@@ -36,13 +36,13 @@
         <ion-list inset>
           <ion-item>
             <ion-label>
-              <h2>1. {{ translate("Provision a Unigate tenant") }}</h2>
+              1. {{ translate("Provision a Unigate tenant") }}
               <p>{{ translate("From OMS Admin, open Unigate → Communication Gateway, then click Setup Tenant. You'll need a Tenant ID, the Unigate base URL, and a Unigate API key.") }}</p>
             </ion-label>
           </ion-item>
           <ion-item>
             <ion-label>
-              <h2>2. {{ translate("Reload this page") }}</h2>
+              2. {{ translate("Reload this page") }}
               <p>{{ translate("Once UNIGATE_CONFIG exists on the OMS, refresh and you'll be able to add a Klaviyo connection here.") }}</p>
             </ion-label>
           </ion-item>
@@ -59,7 +59,7 @@
         <ion-list v-if="unigateConfigWarning" inset>
           <ion-item color="warning">
             <ion-label>
-              <h2>{{ translate("Check the Unigate tenant") }}</h2>
+              {{ translate("Check the Unigate tenant") }}
               <p>{{ unigateConfigWarning }}</p>
             </ion-label>
           </ion-item>
@@ -98,7 +98,7 @@
         <ion-list v-if="unigateConfigWarning" inset>
           <ion-item color="warning">
             <ion-label>
-              <h2>{{ translate("Check the Unigate tenant") }}</h2>
+              {{ translate("Check the Unigate tenant") }}
               <p>{{ unigateConfigWarning }}</p>
             </ion-label>
           </ion-item>
@@ -119,7 +119,7 @@
             @click="openConnection(conn)"
           >
             <ion-label>
-              <h2>{{ conn.description || translate("Untitled connection") }}</h2>
+              {{ conn.description || translate("Untitled connection") }}
               <p>{{ translate("Connection ID") }}: {{ conn.commGatewayAuthId }}</p>
               <p>{{ translate("API key") }}: {{ maskedKey(conn) }}</p>
               <p>{{ translate("Email events") }}: {{ eventCountLabel(conn) }}</p>
@@ -233,9 +233,7 @@
                   label-placement="stacked"
                   autocomplete="off"
                   :spellcheck="false"
-                >
-                  <ion-input-password-toggle slot="end" />
-                </ion-input>
+                />
               </ion-item>
               <ion-item>
                 <ion-checkbox
@@ -294,7 +292,6 @@ import {
   IonHeader,
   IonIcon,
   IonInput,
-  IonInputPasswordToggle,
   IonItem,
   IonLabel,
   IonList,

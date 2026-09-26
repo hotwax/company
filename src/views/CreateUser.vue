@@ -68,12 +68,14 @@
 import { ref } from "vue";
 import { IonBackButton, IonButton, IonContent, IonHeader, IonIcon, IonItem, IonPage, IonText, IonTitle, IonToolbar, IonToggle, IonInput, IonSelect, IonSelectOption, onIonViewWillEnter } from "@ionic/vue";
 import router from "@/router";
+import { useUserAccountActions } from "@/composables/useSecurity";
 import { useFacilities } from "@/composables/useFacilities";
 import { useUserStore } from "@/store/user";
 import { businessOutline, desktopOutline, arrowForwardOutline } from "ionicons/icons";
 import { commonUtil, translate, logger } from "@common";
 
 const userStore = useUserStore();
+const { consumeUserCreationDraft, createUserAccountAndSetup } = useUserAccountActions();
 
 const isFacilityLogin = ref(false);
 const formData = ref({
@@ -92,6 +94,10 @@ const { facilities } = useFacilities({ excludeVirtual: true });
 
 onIonViewWillEnter(() => {
   clearFormData();
+  isFacilityLogin.value = false;
+  const draft = consumeUserCreationDraft();
+  formData.value.firstName = draft.firstName;
+  formData.value.lastName = draft.lastName;
 });
 
 const clearFormData = () => {
@@ -152,7 +158,10 @@ const createUser = async () => {
       return;
     }
 
-    const payload: any = { partyTypeId };
+    const payload: any = {
+      partyTypeId,
+      createdByUserLogin: userStore.current.username
+    };
     if(partyTypeId === "PARTY_GROUP") {
       payload.partyGroup = { groupName: formData.value.groupName };
     } else {
@@ -162,29 +171,16 @@ const createUser = async () => {
       payload.externalId = formData.value.externalId;
     }
 
-    const resp = await userStore.createUser(payload);
-    if(resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
-      const partyId = resp.data.partyId;
+    const { partyId } = await createUserAccountAndSetup(
+      payload,
+      partyTypeId,
+      formData.value.facilityId,
+      formData.value.emailAddress,
+      formData.value.contactNumber
+    );
 
-      await userStore.ensurePartyRole({ partyId, roleTypeId: "APPLICATION_USER" });
-
-      if(partyTypeId === "PARTY_GROUP") {
-        await userStore.addPartyToFacility({ partyId, facilityId: formData.value.facilityId, roleTypeId: "WAREHOUSE_PICKER" });
-      }
-      if(formData.value.emailAddress) {
-        await userStore.createUpdatePartyEmailAddress({ partyId, emailAddress: formData.value.emailAddress, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
-      }
-      if(formData.value.contactNumber) {
-        await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber: formData.value.contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
-      }
-
-      await userStore.indexEmployee(partyId);
-
-      commonUtil.showToast(translate("User created successfully"));
-      router.replace({ path: `/user-confirmation/${partyId}` });
-    } else {
-      throw resp.data;
-    }
+    commonUtil.showToast(translate("User created successfully"));
+    router.replace({ path: `/user-confirmation/${partyId}` });
   } catch (err: any) {
     let errorMessage = translate("Failed to create user.");
     if(err?.response?.data?.error?.message) {

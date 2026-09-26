@@ -64,14 +64,15 @@ import {
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { translate, commonUtil, logger } from "@common";
 import { generateInternalId } from "@/utils";
-import { useFacilityGroupTypes, useFacilityGroupMutations } from '@/composables/useFacilities';
+import { useFacilityGroupTypeOptions, useFacilityGroupMutations } from '@/composables/useFacilities';
 import { ref, onMounted } from "vue";
 
 const props = defineProps(['selectedFacilityGroupTypeId']);
 
 // Was `utilStore.getFacilityGroupTypes`, a getter that does not exist on that store — the type
-// dropdown was always empty. The types are a cached login snapshot, so read them from there.
-const { facilityGroupTypes } = useFacilityGroupTypes();
+// dropdown was always empty. Assignable types, not just the ones already in use: a new group is
+// often the first of its type, so deriving from existing groups would hide the type being created.
+const { facilityGroupTypeOptions: facilityGroupTypes } = useFacilityGroupTypeOptions();
 const { createGroup } = useFacilityGroupMutations();
 
 const formData = ref({

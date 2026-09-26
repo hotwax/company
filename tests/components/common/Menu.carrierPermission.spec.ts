@@ -1,0 +1,127 @@
+// @vitest-environment jsdom
+import { config, flushPromises, mount } from "@vue/test-utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const harness = vi.hoisted(() => ({
+  initialAllowed: false,
+  maargUrl: "https://rails-uat.hotwax.io/rest/s1/",
+  allowed: undefined as any,
+  authenticated: { value: true },
+  currentRoute: { value: { path: "/product-store" } },
+  hasPermission: vi.fn(),
+}));
+
+vi.mock("@common", () => ({
+  translate: (key: string) => key,
+  commonUtil: {
+    getMaargURL: () => harness.maargUrl,
+    getCurrentTime: () => "12:00 PM",
+  },
+  // The footer is accxui's shared component; this spec only cares that the menu renders
+  // around it, so a stub keeps the mock's surface honest without pulling in Ionic.
+  DxpOmsInstanceFooter: { name: "DxpOmsInstanceFooter", props: ["instanceLabel"], template: '<footer>{{ instanceLabel }}</footer>' },
+}));
+
+// The footer reads the Maarg config for its instance label.
+vi.mock("@/composables/useSeed", async () => {
+  const { computed } = await vi.importActual<typeof import("vue")>("vue");
+
+  return {
+    useMaargConfig: () => ({
+      instanceInfo: computed(() => ({ instanceName: "rails-uat" })),
+      load: vi.fn(),
+    }),
+  };
+});
+
+vi.mock("@common/composables/useAuth", () => ({
+  useAuth: () => ({ isAuthenticated: harness.authenticated }),
+}));
+
+vi.mock("@/composables/useSecurity", async () => {
+  const { ref } = await vi.importActual<typeof import("vue")>("vue");
+  harness.allowed = ref(harness.initialAllowed);
+
+  return {
+    useAuth: () => ({
+      hasPermission: (...args: any[]) => harness.hasPermission(...args),
+    }),
+  };
+});
+
+vi.mock("@/router", () => ({
+  default: { currentRoute: harness.currentRoute },
+}));
+
+async function mountMenu() {
+  const { createPinia, setActivePinia } = await import("pinia");
+  const pinia = createPinia();
+  setActivePinia(pinia);
+
+  const Menu = (await import("@/components/common/Menu.vue")).default;
+  const wrapper = mount(Menu, { global: { plugins: [pinia] } });
+  await flushPromises();
+
+  return wrapper;
+}
+
+describe("carrier menu permission", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    config.global.renderStubDefaultSlot = true;
+    harness.initialAllowed = false;
+    harness.maargUrl = "https://rails-uat.hotwax.io/rest/s1/";
+    if(harness.allowed) {
+      harness.allowed.value = false;
+    }
+    harness.authenticated.value = true;
+    harness.currentRoute.value = { path: "/product-store" };
+    harness.hasPermission.mockReset().mockImplementation((permission: string | undefined) =>
+      !permission || (
+        permission === "CARRIER_SETUP_VIEW" &&
+        Boolean(harness.allowed?.value)
+      ));
+  });
+
+  it("hides the carrier integration entry without CARRIER_SETUP_VIEW", async () => {
+    const wrapper = await mountMenu();
+
+    expect(wrapper.text()).not.toContain("Carriers");
+    expect(harness.hasPermission).toHaveBeenCalledWith("CARRIER_SETUP_VIEW");
+  });
+
+  it("shows the entry when the carrier permission is available", async () => {
+    harness.initialAllowed = true;
+    if(harness.allowed) {
+      harness.allowed.value = true;
+    }
+    const wrapper = await mountMenu();
+
+    expect(wrapper.text()).toContain("Carriers");
+  });
+
+  it("reveals the entry reactively when permissions hydrate after mount", async () => {
+    const wrapper = await mountMenu();
+    expect(wrapper.text()).not.toContain("Carriers");
+
+    harness.allowed.value = true;
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Carriers");
+  });
+});
+
+describe("connected instance footer", () => {
+  it.each([
+    ["http://localhost:8080/rest/s1/", "localhost:8080"],
+    ["http://127.0.0.1:8080/rest/s1/", "127.0.0.1:8080"],
+    ["http://[::1]:8080/rest/s1/", "[::1]:8080"],
+    ["https://rails-uat.hotwax.io/rest/s1/", "rails-uat"],
+    ["https://localhost.example.com/rest/s1/", "rails-uat"],
+  ])("labels %s without confusing a local copy with its tenant", async (url, label) => {
+    harness.maargUrl = url;
+    const wrapper = await mountMenu();
+    expect(wrapper.find("footer").text()).toBe(label);
+    wrapper.unmount();
+  });
+});

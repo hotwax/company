@@ -386,6 +386,29 @@ ion-input.name {
   }
 }
 
+/* Two-card header layout for sync pages, justified apart on desktop */
+.sync-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  align-items: flex-start;
+}
+
+.sync-summary > .summary,
+.sync-summary > :first-child {
+  grid-column: 1 / 2;
+}
+
+.sync-summary > .progress,
+.sync-summary > :nth-child(2):last-child {
+  grid-column: -1 / -2;
+}
+
+@media screen and (max-width: 430px) {
+  .sync-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   ion-chip > ion-icon {
     color: var(--ion-color-dark);

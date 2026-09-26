@@ -272,8 +272,15 @@ describe("orderSyncSummary — a zero-order batch must not erase the last comple
   const REAL_COMPLETED = { systemMessageId: "M228520", statusId: "SmsgConsumed", initDate: 1_784_000_000_000 };
   const ZERO_ORDER = { systemMessageId: "M228622", statusId: "SmsgConsumed", initDate: 1_785_000_000_000 };
   const IMPORTS = {
-    M228520: [{ logId: "M101276", configId: "SYNC_SHOPIFY_ORDER", statusId: "DmlSuccess",
-                successRecordCount: 1, totalRecordCount: 1, failedRecordCount: 0, finishDateTime: 1_784_000_500_000 }],
+    M228520: [{
+      logId: "M101276",
+      configId: "SYNC_SHOPIFY_ORDER",
+      statusId: "DmlsFinished",
+      successRecordCount: 1,
+      totalRecordCount: 1,
+      failedRecordCount: 0,
+      finishDateTime: 1_784_000_500_000,
+    }],
   };
 
   it("keeps the older batch WITH an import as the last completed one", () => {

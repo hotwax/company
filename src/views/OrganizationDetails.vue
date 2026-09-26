@@ -110,7 +110,7 @@
             <ion-button
               slot="end"
               fill="clear"
-              :disabled="moving || Boolean(organizationAnomalies.length)"
+              :disabled="moving || !hierarchyHydrated || Boolean(organizationAnomalies.length)"
               @click="saveParent()"
             >
               {{ translate("Save") }}
@@ -143,7 +143,7 @@
             :router-link="`/facility-details/${encodeURIComponent(facility.facilityId)}`"
           >
             <ion-label>
-              <h2>{{ facility.facilityName || facility.facilityId }}</h2>
+              {{ facility.facilityName || facility.facilityId }}
               <p>{{ facility.facilityId }}</p>
             </ion-label>
           </ion-item>
@@ -209,9 +209,9 @@ import { getResponseErrorMessage } from "@/utils";
 import Actions from "@/authorization/actions";
 
 const props = defineProps<{ partyId: string }>();
-const { record: organization, hydrated: organizationHydrated } = useOrganizationRecord(props.partyId);
+const { record: organization, hydrated: organizationHydrated } = useOrganizationRecord(computed(() => props.partyId));
 const { organizations, relationships, forest, hydrated: hierarchyHydrated } = useOrganizations();
-const { facilities, hydrated: facilitiesHydrated } = useOrganizationFacilities(props.partyId);
+const { facilities, hydrated: facilitiesHydrated } = useOrganizationFacilities(computed(() => props.partyId));
 const { primaryOrganizationId, load: loadPrimaryOrganization } = usePrimaryOrganization();
 const { hasPermission } = useAuth();
 

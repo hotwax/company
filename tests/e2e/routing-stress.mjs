@@ -76,9 +76,9 @@ function devCredentials() {
   // and the server answers 400, which reads like a wrong password rather than a parsing slip.
   const pick = (key) => env.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1]?.trim()
     ?.replace(/^(['"])(.*)\1$/, "$2");
-  const username = pick("VITE_USERNAME");
-  const password = pick("VITE_PASSWORD");
-  if (!username || !password) throw new Error("VITE_USERNAME / VITE_PASSWORD missing from .env");
+  const username = pick("VITE_DEV_USERNAME");
+  const password = pick("VITE_DEV_PASSWORD");
+  if (!username || !password) throw new Error("VITE_DEV_USERNAME / VITE_PASSWORD missing from .env");
   return { username, password };
 }
 

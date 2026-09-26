@@ -1,3 +1,5 @@
+import { logState as dataManagerLogState } from "@/utils/dataManagerLog";
+
 export type ProductSyncWizardStep =
   | "home"
   | "product-store"
@@ -42,6 +44,9 @@ export interface ProductSyncProgressSnapshot {
   systemMessageState?: ProductSyncMessageState | string;
   logStatusId?: string;
   logId?: string;
+  totalRecordCount?: number | string;
+  successRecordCount?: number | string;
+  failedRecordCount?: number | string;
   completed?: boolean;
 }
 
@@ -147,23 +152,48 @@ export function normalizeProductSyncStatus(progress: ProductSyncProgressSnapshot
     return "error";
   }
 
+  if (progress.status === "partial") {
+    return "partial";
+  }
+
   const systemMessageState = progress.systemMessageState;
   const logStatusId = progress.logStatusId;
   const logId = progress.logId;
+  const importState = logId
+    ? dataManagerLogState(logStatusId, { total: 0, success: 0, failed: 0 })
+    : undefined;
 
   // A sync run is considered terminal (completed) if:
-  // 1. There is an MDM log AND it is finished or errored
+  // 1. There is an MDM log AND its canonical DataManager status is terminal
   // 2. There is NO MDM log AND the system message is consumed (handling empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "DmlsFinished" || logStatusId === "DmlsError")) ||
+  const isTerminal = (logId && (importState === "completed" || importState === "partial" || importState === "failed")) ||
                      (!logId && (systemMessageState === "SmsgConsumed" || systemMessageState === "SmsgError" || systemMessageState === "SmsgCancelled"));
 
   if (isTerminal) {
-    if (logStatusId === "DmlsError" || systemMessageState === "SmsgError") return "error";
-    if (systemMessageState === "SmsgCancelled") return "cancelled";
+    if(logStatusId === "DmlsCancelled" || systemMessageState === "SmsgCancelled") {return "cancelled";}
+    if(importState === "failed" || systemMessageState === "SmsgError") {return "error";}
+
+    const failedRecordCount = Number(progress.failedRecordCount) || 0;
+    const totalRecordCount = Number(progress.totalRecordCount) || 0;
+    // ABSENT, not falsy. An import reporting zero successes alongside failures really did fail
+    // outright; one that has not reported the field yet has to be inferred from total - failed, the
+    // same derivation `normalizeLogOutcome` applies. Conflating the two read "2 of 462 failed" as a
+    // total failure -- which is the state the shop-scoped spine is in before its DataManager log
+    // arrives, and the shape of every backend payload that never sends a success count at all.
+    const successRecordCount = progress.successRecordCount === undefined || progress.successRecordCount === null
+      ? Math.max(totalRecordCount - failedRecordCount, 0)
+      : Number(progress.successRecordCount) || 0;
+    if (failedRecordCount > 0) {
+      if (successRecordCount === 0 || (totalRecordCount > 0 && failedRecordCount >= totalRecordCount)) {
+        return "error";
+      }
+      return "partial";
+    }
+
     return "completed";
   }
 
-  if (logStatusId === "DmlsRunning" || logStatusId === "DmlsPending") {
+  if(logId && (importState === "active" || importState === "pending")) {
     return "importing";
   }
 

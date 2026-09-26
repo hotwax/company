@@ -21,17 +21,20 @@
  */
 
 
-import {
-  computed, onBeforeUnmount, reactive, ref, toRefs, toValue, watch,
-  type ComputedRef, type MaybeRefOrGetter,
-} from "vue";
-import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
 import { api, commonUtil, logger, translate } from "@common";
+import { onIonViewDidEnter, onIonViewDidLeave } from "@ionic/vue";
+import {
+  type ComputedRef, type MaybeRefOrGetter, computed, onBeforeUnmount, reactive, ref, toRefs,
+  toValue, watch,
+} from "vue";
+import Actions from "@/authorization/actions";
+import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
+import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { onSessionCleared } from "./sessionScope";
 import { parseDateTimeValue } from "@/utils";
 import {
   dataManagerLogCache,
+  inventoryEventDocumentCache,
   productStoreCache,
   serviceJobCache,
   shopifyBulkOperationCache,
@@ -39,23 +42,86 @@ import {
   shopifyLocationCache,
   shopifyShopCache,
   shopifyTypeMappingCache,
-  systemMessageCache,
   syncRunCache,
+  systemMessageCache,
   systemMessageErrorCache,
   systemMessageRemoteCache,
 } from "@/utils/cacheEntities";
 import {
+  DATA_MANAGER_LOG_STATUS_IDS,
+  logState as dataManagerLogState,
+  isTerminal as isDataManagerLogTerminal,
+} from "@/utils/dataManagerLog";
+import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
 } from "@/utils/shopifyBulkOperation";
-import { resolveShopRemoteIds, shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
+import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import type { ActiveDomain } from "@/workers/syncRegistry";
-import { useCacheSync } from "./useCacheSync";
+import { onSessionCleared } from "./sessionScope";
 import { useCachedList, useCachedRecord } from "./useCachedList";
+import { useCacheSync } from "./useCacheSync";
+import { useDataManager } from "./useDataManager";
 import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
-import { useDataManager } from "./useDataManager";
 import { useSystemMessage } from "./useSystemMessage";
+
+// The summary is retained while the Ionic view is cached, so the remote count must refresh both
+// when the cached sync cursor changes and when the operator re-enters the page. The sequence guard
+// prevents a slower Shopify response from replacing a newer count.
+export interface ShopifyUnsyncedProductCountOptions {
+  remoteId: MaybeRefOrGetter<string | null | undefined>;
+  lastSyncedAt: MaybeRefOrGetter<string | number | null | undefined>;
+  load: (remoteId: string, lastSyncedAt?: string | number) => Promise<number>;
+  onError?: (error: unknown) => void;
+}
+
+export function useShopifyUnsyncedProductCount(options: ShopifyUnsyncedProductCountOptions) {
+  const count = ref(0);
+  const isLoading = ref(false);
+  let requestSequence = 0;
+
+  const refresh = async (): Promise<number> => {
+    const sequence = ++requestSequence;
+    const remoteId = String(toValue(options.remoteId) ?? "").trim();
+    const lastSyncedAt = toValue(options.lastSyncedAt) || undefined;
+
+    if (!remoteId) {
+      if (sequence === requestSequence) {
+        count.value = 0;
+        isLoading.value = false;
+      }
+      return 0;
+    }
+
+    isLoading.value = true;
+    try {
+      const nextCount = await options.load(remoteId, lastSyncedAt);
+      const numericCount = Number(nextCount);
+      if (sequence === requestSequence) {
+        count.value = Number.isFinite(numericCount) ? numericCount : 0;
+      }
+      return Number.isFinite(numericCount) ? numericCount : 0;
+    } catch (error) {
+      if (sequence === requestSequence) {
+        count.value = 0;
+        options.onError?.(error);
+      }
+      throw error;
+    } finally {
+      if (sequence === requestSequence) {
+        isLoading.value = false;
+      }
+    }
+  };
+
+  watch(
+    () => [String(toValue(options.remoteId) ?? "").trim(), toValue(options.lastSyncedAt) ?? ""],
+    () => { void refresh().catch(() => undefined); },
+  );
+
+  return { count, isLoading, refresh };
+}
 
 // =============================================================================================
 // 1. Shops, locations, type mappings, carrier shipments
@@ -75,18 +141,613 @@ import { useSystemMessage } from "./useSystemMessage";
 
 export function useShopifyShops() {
   const { records, hydrated } = useCachedList<any>(shopifyShopCache);
+
   return { shops: records, records, hydrated };
 }
 
-/** One shop by shopId. Replaces the old `shopifyStore.getShopById` getter. */
-export const useShopifyShop = (shopId: string | undefined) =>
-  useCachedRecord(shopifyShopCache, "shopId", shopId);
+export const SHOPIFY_INVENTORY_EVENT_FEED_ID = "ShopifyInventoryChannelEventFeed";
+export const SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID = "ShopifyShopLocationInventoryEventFeed";
+export const SHOPIFY_INVENTORY_EVENT_FEED_MANUAL = "DTFDTP_MAN_PULL";
+export const SHOPIFY_INVENTORY_EVENT_FEED_PUSH = "DTFDTP_RT_PUSH";
+
+/**
+ * Switch the OMS-wide Shopify inventory event feed between manual and real-time push.
+ *
+ * This is intentionally global rather than shop-scoped: all ten Shopify inventory event
+ * DataDocuments currently belong to one Moqui DataFeed. The view makes that scope explicit before
+ * allowing the mutation.
+ */
+export async function updateShopifyInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  const allowedTypes = [SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH];
+  if(!allowedTypes.includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported Shopify inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: {
+      dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+      dataFeedTypeEnumId,
+    },
+  });
+  if(commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", {
+    dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID,
+  });
+}
+
+/**
+ * Switch the OMS-wide Shopify shop location inventory event feed between manual and real-time push.
+ */
+export async function updateShopifyLocationInventoryEventFeedType(dataFeedTypeEnumId: string): Promise<void> {
+  const allowedTypes = [SHOPIFY_INVENTORY_EVENT_FEED_MANUAL, SHOPIFY_INVENTORY_EVENT_FEED_PUSH];
+  if (!allowedTypes.includes(dataFeedTypeEnumId)) {
+    throw new Error(`Unsupported Shopify location inventory event feed type: ${dataFeedTypeEnumId}`);
+  }
+
+  const resp: any = await api({
+    url: `admin/dataFeeds/${SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID}`,
+    method: "put",
+    data: {
+      dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+      dataFeedTypeEnumId,
+    },
+  });
+  if (commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the location inventory event feed update.");
+  }
+  await refreshAfterMutation("shopifyInventoryEventFeed", {
+    dataFeedId: SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+  });
+}
+
+
+/**
+ * The DataDocuments this feature ships, in the order the pipeline reads best.
+ *
+ * Listed rather than discovered so a document that is NOT attached is visibly missing instead of
+ * simply absent - "why did no POS event fire?" is the question this screen exists to answer, and a
+ * discovered list answers it with silence. Mirrors data/DA_ExtSeed_ShopifyDocumentData.xml in the
+ * connector; a document added there needs adding here to become visible.
+ */
+export const SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS = [
+  "ShopifyShipmentReceiptEvent",
+  "ShopifyPosItemIssuanceEvent",
+  "ShopifyPhysicalInventoryEvent",
+  "ShopifyExternalInventoryResetEvent",
+  "ShopifyReservationCreatedEvent",
+  "ShopifyReservationReleaseEvent",
+  "ShopifyProductFacilityAuditEvent",
+  "ShopifyProductStoreFacilityAuditEvent",
+  "ShopifyFacilityGroupMemberEvent",
+  "ShopifyInventoryChannelAuditEvent",
+] as const;
+
+/**
+ * Physical-location inventory events are deliberately a smaller surface than the aggregate
+ * channel feed. The connector seeds these six documents on ShopifyShopLocationInventoryEventFeed;
+ * the audit and facility-configuration documents belong only to the aggregate feed.
+ */
+export const SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS = [
+  "ShopifyShipmentReceiptEvent",
+  "ShopifyPosItemIssuanceEvent",
+  "ShopifyPhysicalInventoryEvent",
+  "ShopifyExternalInventoryResetEvent",
+  "ShopifyReservationCreatedEvent",
+  "ShopifyReservationReleaseEvent",
+] as const;
+
+export interface InventoryEventDocument {
+  dataDocumentId: string;
+  documentName: string;
+  primaryEntityName: string;
+  /** Whether this document is attached to the OMS-wide aggregate/channel feed. */
+  channelAttached: boolean;
+  /** Whether this document is attached to the OMS-wide physical-location feed. */
+  locationAttached: boolean;
+  /** False for documents that are valid only for aggregate/channel inventory events. */
+  locationSupported: boolean;
+  /** true when the OMS has no DataDocument by this id at all - the seed data never loaded. */
+  missing: boolean;
+}
+
+/** Collapse (document, feed) rows into one entry per document this feature ships. */
+function toInventoryEventDocuments(rows: any[]): InventoryEventDocument[] {
+  const byId = new Map<string, { row: any; channelAttached: boolean; locationAttached: boolean }>();
+  for(const row of rows) {
+    const id = String(row?.dataDocumentId ?? "");
+    if(!id) {continue;}
+    const feedId = String(row?.dataFeedId ?? "");
+    const seen = byId.get(id);
+    // A document can appear once per feed it belongs to. Preserve both independent switches when
+    // the same document is attached to channel and physical-location feeds.
+    byId.set(id, {
+      row: seen?.row ?? row,
+      channelAttached: (seen?.channelAttached ?? false) || feedId === SHOPIFY_INVENTORY_EVENT_FEED_ID,
+      locationAttached: (seen?.locationAttached ?? false) || feedId === SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID,
+    });
+  }
+
+  return SHOPIFY_INVENTORY_EVENT_DOCUMENT_IDS.map((id) => {
+    const found = byId.get(id);
+
+    return {
+      dataDocumentId: id,
+      documentName: found?.row?.documentName || id,
+      primaryEntityName: found?.row?.primaryEntityName || "",
+      channelAttached: found?.channelAttached ?? false,
+      locationAttached: found?.locationAttached ?? false,
+      locationSupported: SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS.includes(id as typeof SHOPIFY_LOCATION_INVENTORY_EVENT_DOCUMENT_IDS[number]),
+      missing: !found,
+    };
+  });
+}
+
+/**
+ * Every inventory event document with its attachment state, from the cache.
+ *
+ * The cached table holds one row per (document, feed) because `DataDocumentAndFeed` left-joins:
+ * unattached documents arrive with no feed, and a document on two feeds arrives twice. Both shapes
+ * are collapsed here rather than in the projection, so the stored rows stay a faithful copy of what
+ * the OMS returned.
+ */
+export function useInventoryEventDocuments() {
+  const { records, hydrated } = useCachedList<any>(inventoryEventDocumentCache);
+  const documents = computed(() => toInventoryEventDocuments(records.value.map((row: any) => row?.raw ?? row)));
+
+  return { documents, hydrated };
+}
+
+/**
+ * Attach or detach one document from the inventory event feed.
+ *
+ * Not cosmetic: for a real-time feed Moqui derives which entity writes fire the feed from the
+ * documents attached to it, so detaching one stops that class of inventory event being recorded at
+ * all. The change lands when the entity cache behind that lookup expires, not immediately.
+ */
+export async function setInventoryEventDocumentAttachedForFeed(
+  dataFeedId: string,
+  dataDocumentId: string,
+  attached: boolean,
+): Promise<void> {
+  if (![SHOPIFY_INVENTORY_EVENT_FEED_ID, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID].includes(dataFeedId)) {
+    throw new Error("Unsupported Shopify inventory event feed.");
+  }
+  const base = `admin/dataFeeds/${dataFeedId}/documents`;
+  const resp: any = attached
+    ? await api({
+      url: base,
+      method: "post",
+      data: { dataFeedId, dataDocumentId },
+    })
+    : await api({ url: `${base}/${dataDocumentId}`, method: "delete" });
+  if(commonUtil.hasError(resp)) {
+    throw new Error(attached
+      ? "The OMS rejected attaching the document to the feed."
+      : "The OMS rejected detaching the document from the feed.");
+  }
+  // Write-through. The domain re-lists just this document and snapshot-replaces its slice, so the
+  // row for the feed it just left is pruned rather than left behind as a phantom attachment.
+  await refreshAfterMutation("inventoryEventDocument", { dataDocumentId });
+}
+
+/** Backwards-compatible shorthand for callers that control the aggregate/channel feed. */
+export async function setInventoryEventDocumentAttached(
+  dataDocumentId: string,
+  attached: boolean,
+): Promise<void> {
+  return setInventoryEventDocumentAttachedForFeed(
+    SHOPIFY_INVENTORY_EVENT_FEED_ID,
+    dataDocumentId,
+    attached,
+  );
+}
+
+/**
+ * Map one facility group to one Shopify location as an aggregate inventory channel.
+ */
+export async function createInventoryChannel(params: {
+  shopId: string;
+  facilityGroupId: string;
+  shopifyLocationId: string;
+  description?: string;
+  fromDate?: number | string;
+}): Promise<string | undefined> {
+  const resp: any = await api({
+    url: "sob/shopify/inventoryChannels",
+    method: "post",
+    data: {
+      shopId: params.shopId,
+      facilityGroupId: params.facilityGroupId,
+      shopifyLocationId: params.shopifyLocationId,
+      fromDate: params.fromDate ?? Date.now(),
+      ...(params.description ? { description: params.description } : {}),
+    },
+  });
+  if(commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel mapping.");
+  }
+  const inventoryChannelId = resp?.data?.inventoryChannelId;
+  if(inventoryChannelId) {await refreshAfterMutation("inventoryChannel", { inventoryChannelId });}
+
+  return inventoryChannelId;
+}
+
+/**
+ * Edit an existing channel: its description, the Shopify location it feeds, or its thruDate.
+ *
+ * shopId and facilityGroupId are deliberately not editable. Either one changing makes this a mapping
+ * between different things rather than an edit of this one, and the pending deltas already recorded
+ * against the channel were calculated for the old pair.
+ *
+ * Moving shopifyLocationId is a real inventory operation, not a label change: the OMS records a
+ * clearing delta against the location being left so it does not keep the stock forever, and the new
+ * location is seeded by a full aggregate ATP reset. Expiring a channel (thruDate) clears its location
+ * the same way.
+ */
+export async function updateInventoryChannel(params: {
+  inventoryChannelId: string;
+  description?: string;
+  shopifyLocationId?: string;
+  thruDate?: string | null;
+}): Promise<void> {
+  const { inventoryChannelId, ...changes } = params;
+  const resp: any = await api({
+    url: `sob/shopify/inventoryChannels/${inventoryChannelId}`,
+    method: "put",
+    data: { inventoryChannelId, ...changes },
+  });
+  if(commonUtil.hasError(resp)) {
+    throw new Error("The OMS rejected the inventory channel change.");
+  }
+  // The PUT returns nothing useful and the sync screen reads the cached row.
+  await refreshAfterMutation("inventoryChannel", { inventoryChannelId });
+}
+
+const EVENT_PUBLISHER_TEMPLATE_JOB = "publish_PendingShopifyInventoryAdjustments";
+/** Shared by every `queue_*` feed job on this OMS; the message type is what differentiates them. */
+export const FEED_SYSTEM_MESSAGE_SERVICE =
+  "co.hotwax.shopify.system.ShopifySystemMessageServices.queue#FeedSystemMessage";
+/** Must match the sync panel's physicalResetJob matcher. */
+export const PHYSICAL_RESET_MESSAGE_TYPE = "ResetInventoryQoh";
+export const ABSOLUTE_CHANNEL_RESET_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.generate#InventoryChannelInventoryFeed";
+
+/** Existence probe so both ensure* helpers are safe to call twice. */
+async function serviceJobExists(jobName: string): Promise<boolean> {
+  try {
+    const resp: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if(commonUtil.hasError(resp)) {return false;}
+
+    return !!(resp?.data?.jobDetail?.jobName ?? resp?.data?.jobName);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One event publisher per CHANNEL.
+ *
+ * `publish#PendingShopifyInventoryAdjustments` takes a required inventoryChannelId and holds its
+ * semaphore on that same value, so publishing is per channel, not per shop. The seeded
+ * `publish_PendingShopifyInventoryAdjustments` row is a TEMPLATE that must stay paused - it carries
+ * no inventoryChannelId, and unpausing it only produces failed runs. Each channel gets its own clone.
+ * Created paused: activation is a separate reviewed step, per the release runbook.
+ *
+ * This was previously keyed by shopId and passed a `shopId` parameter. The service no longer accepts
+ * that, so a clone provisioned the old way could never run - it failed on the missing required
+ * inventoryChannelId, and one publisher per shop could not serve two channels on the same shop.
+ */
+export async function ensureChannelEventPublisherJob(inventoryChannelId: string): Promise<string> {
+  const jobName = `${EVENT_PUBLISHER_TEMPLATE_JOB}_${inventoryChannelId}`;
+  if(await serviceJobExists(jobName)) {return jobName;}
+
+  await api({
+    url: `admin/serviceJobs/${EVENT_PUBLISHER_TEMPLATE_JOB}/clone`,
+    method: "POST",
+    data: { newJobName: jobName },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: inventoryChannelId },
+        { parameterName: "maxChangeCount", parameterValue: "100" },
+        { parameterName: "staleSendingMinutes", parameterValue: "60" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  return jobName;
+}
+
+export const DISCARD_PENDING_EVENTS_SERVICE =
+  "co.hotwax.sob.product.InventoryServices.cancel#PendingShopifyInventoryAdjustmentEvents";
+export const PRODUCED_SENDER_SERVICE =
+  "org.moqui.impl.SystemMessageServices.send#AllProducedSystemMessages";
+export const INVENTORY_ADJUSTMENT_MESSAGE_TYPE = "ShopifyInventoryAdjustment";
+const DISCARD_PENDING_EVENTS_JOB = "cancel_PendingShopifyInventoryAdjustmentEvents";
+const INVENTORY_ADJUSTMENT_SENDER_JOB = "send_ShopifyInventoryAdjustmentProducedSystemMessages";
+
+/**
+ * A MANUAL, run-on-demand handle on `cancel#PendingShopifyInventoryAdjustmentEvents`.
+ *
+ * The service takes the channel as a parameter, so ONE job serves every channel: the operator points
+ * it at a channel by editing `inventoryChannelId`, then runs it. That is why this is created with NO
+ * cron expression - a schedule would silently discard a channel's unbatched events every few minutes,
+ * which is the opposite of what a discard tool is for. Created paused as well, so the only way it ever
+ * runs is a deliberate Run now.
+ *
+ * `reason` is required by the service and lands verbatim in the cancelled System Message's messageText,
+ * so it seeds to something that names the app rather than an empty string.
+ */
+export async function ensureChannelEventDiscardJob(params: {
+  inventoryChannelId?: string;
+  reason?: string;
+} = {}): Promise<string> {
+  const jobName = DISCARD_PENDING_EVENTS_JOB;
+  if(await serviceJobExists(jobName)) {return jobName;}
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: DISCARD_PENDING_EVENTS_SERVICE,
+      description: "Discard unbatched aggregate inventory events for one inventory channel",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId ?? "" },
+        {
+          parameterName: "reason",
+          parameterValue: params.reason ||
+            "Discarded from the Company app inventory event history.",
+        },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  return jobName;
+}
+
+/**
+ * A sender dedicated to ShopifyInventoryAdjustment messages.
+ *
+ * The aggregate inventory flow deliberately leaves its batch at SmsgProduced and relies on a scheduled
+ * `send#AllProducedSystemMessages` to deliver it - see the comment in
+ * createShopifyInventoryAdjustmentSystemMessage.groovy. The seeded `send_AllProducedSystemMessages_frequent`
+ * is UNSCOPED, so inventory delivery shares a queue with every other outgoing message type on the OMS
+ * and is held up by whatever else is backed up or erroring. `systemMessageTypeIds` restricts this clone
+ * to inventory adjustments only, so this flow cannot get stuck behind another queue.
+ *
+ * `mode: sync` sends each message inline instead of dispatching it on a worker thread. That is the point
+ * for this type: Shopify rate-limits per shop, and a throttled adjustment mutation freezes its rejection
+ * into messageText and replays verbatim, so parallel sends risk storing a permanently wrong adjustment.
+ *
+ * Created paused: activating a sender is a deliberate step, per the release runbook.
+ */
+export async function ensureInventoryAdjustmentSenderJob(): Promise<string> {
+  const jobName = INVENTORY_ADJUSTMENT_SENDER_JOB;
+  if(await serviceJobExists(jobName)) {return jobName;}
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: PRODUCED_SENDER_SERVICE,
+      description: "Send produced Shopify inventory adjustment system messages",
+      // Matches the per-channel publisher cadence: delivery should keep pace with batching rather
+      // than lag it by the 15 minutes the unscoped seeded sender uses.
+      cronExpression: "0 0/5 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        // A plain comma-free string for a List parameter, the way the OMS's own
+        // send_BulkProductAndVariantsByIdQueryProducedSystemMessages job passes it.
+        { parameterName: "systemMessageTypeIds", parameterValue: INVENTORY_ADJUSTMENT_MESSAGE_TYPE },
+        { parameterName: "mode", parameterValue: "sync" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  return jobName;
+}
+
+/**
+ * One absolute reconciliation job per CHANNEL. No template ships for this one, so it is created
+ * outright. The sync panel finds it by serviceName plus the inventoryChannelId parameter, never by
+ * name, so the parameter is what makes it belong to the channel.
+ */
+export async function ensureChannelResetJob(params: {
+  inventoryChannelId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `reset_InventoryChannelInventory_${params.inventoryChannelId}`;
+  let existing: any;
+  if (await serviceJobExists(jobName)) {
+    const response: any = await api({ url: `admin/serviceJobs/${encodeURIComponent(jobName)}`, method: "get" });
+    if (commonUtil.hasError(response)) throw new Error(translate("Could not verify the existing reset job."));
+    existing = response?.data?.jobDetail ?? response?.data;
+    if (!existing?.jobName) throw new Error(translate("Could not verify the existing reset job."));
+  }
+  if (existing?.jobName) {
+    if (existing.serviceName === ABSOLUTE_CHANNEL_RESET_SERVICE) return jobName;
+    if (existing.serviceName !== "co.hotwax.sob.product.InventoryServices.post#InventoryChannelInventory") {
+      throw new Error(translate("The existing reset job uses an unexpected service. Review its configuration before changing it."));
+    }
+    // Repair only the retired service name. Keep the operator's cadence and channel parameters.
+    const response: any = await api({
+      url: `admin/serviceJobs/${jobName}`, method: "PUT",
+      data: { jobName, serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE, paused: "Y" },
+    });
+    if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset job repair."));
+    await refreshAfterMutation("serviceJob", { jobName });
+    return jobName;
+  }
+
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: ABSOLUTE_CHANNEL_RESET_SERVICE,
+      description: params.description || `Full aggregate ATP reset for ${params.inventoryChannelId}`,
+      cronExpression: "0 0 */4 * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "inventoryChannelId", parameterValue: params.inventoryChannelId },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  return jobName;
+}
+
+/**
+ * One physical-location QOH reset per SHOP REMOTE. No template ships, so it is created outright,
+ * mirroring the other `queue_*` feed jobs on this OMS (same service, same three parameters).
+ *
+ * The sync panel finds this job by parameter, never by name: systemMessageRemoteId must be the
+ * shop's remote, systemMessageTypeId must be ResetInventoryQoh, and runAsBatch must be "true".
+ * Miss any of the three and the panel reports "Not configured" - which is what it did before this
+ * existed, leaving a cold-start connection with no way to create the job from the UI at all.
+ */
+export async function ensureShopPhysicalInventoryResetJob(params: {
+  systemMessageRemoteId: string;
+  description?: string;
+}): Promise<string> {
+  const jobName = `queue_ResetInventoryQoh_${params.systemMessageRemoteId}`;
+  if(await serviceJobExists(jobName)) {return jobName;}
+
+  await api({
+    url: "admin/serviceJobs",
+    method: "POST",
+    data: {
+      jobName,
+      serviceName: FEED_SYSTEM_MESSAGE_SERVICE,
+      description: params.description ||
+        `Reset physical location QOH for ${params.systemMessageRemoteId}`,
+      cronExpression: "0 0 * * * ?",
+      paused: "Y",
+    },
+  });
+  await api({
+    url: `admin/serviceJobs/${jobName}`,
+    method: "PUT",
+    data: {
+      jobName,
+      paused: "Y",
+      serviceJobParameters: [
+        { parameterName: "systemMessageTypeId", parameterValue: PHYSICAL_RESET_MESSAGE_TYPE },
+        { parameterName: "systemMessageRemoteId", parameterValue: params.systemMessageRemoteId },
+        { parameterName: "runAsBatch", parameterValue: "true" },
+      ],
+    },
+  });
+  await refreshAfterMutation("serviceJob", { jobName });
+
+  return jobName;
+}
+
+export const PHYSICAL_ATP_RESET_SERVICE = "co.hotwax.sob.product.InventoryServices.generate#PhysicalLocationInventoryFeed";
+
+/** Provision paused; never confuse an unsuccessful lookup with an absent job. */
+export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<string> {
+  if (!shopId.trim()) throw new Error(translate("A Shopify connection is required."));
+  const jobName = `generate_PhysicalLocationInventoryFeed_${shopId}`;
+  const response: any = await api({ url: "admin/serviceJobs", method: "get", params: { jobName, pageSize: 2 } });
+  if (commonUtil.hasError(response) || !(Array.isArray(response?.data?.serviceJobList) || response?.data?.serviceJobCount === 0)) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  const jobs = response.data.serviceJobList || [];
+  if (jobs.some((job: any) => job.jobName !== jobName) || jobs.length > 1) {
+    throw new Error(translate("Could not verify the physical ATP reset job."));
+  }
+  if (jobs.length) {
+    const job = jobs[0];
+    const parameters = job.serviceJobParameters || [];
+    if (job.serviceName !== PHYSICAL_ATP_RESET_SERVICE || !parameters.some((parameter: any) => parameter.parameterName === "shopId" && parameter.parameterValue === shopId)) {
+      throw new Error(translate("The physical ATP reset job has a different scope. Review its configuration."));
+    }
+    return jobName;
+  }
+  let config: any;
+  try {
+    config = await api({ url: "admin/dataManager/RESET_PHYSICAL_LOC_INV", method: "get" });
+  } catch {
+    throw new Error(translate("Could not read physical ATP reset configuration. Check access and connector upgrade setup before retrying."));
+  }
+  if (commonUtil.hasError(config) || config?.data?.configId !== "RESET_PHYSICAL_LOC_INV" || config.data.importServiceName !== "co.hotwax.sob.product.InventoryServices.import#PhysicalLocationInventory") {
+    throw new Error(translate("Physical ATP reset setup is missing. Load the connector upgrade configuration before creating this job."));
+  }
+  const created: any = await api({ url: "admin/serviceJobs", method: "POST", data: {
+    jobName, serviceName: PHYSICAL_ATP_RESET_SERVICE,
+    description: `Physical location ATP reset for ${shopId}`, cronExpression: "0 0 * * * ?", paused: "Y",
+  } });
+  if (commonUtil.hasError(created)) throw new Error(translate("The OMS rejected the physical ATP reset job."));
+  try {
+    const configured: any = await api({ url: `admin/serviceJobs/${jobName}`, method: "PUT", data: {
+      jobName, paused: "Y", serviceJobParameters: [{ parameterName: "shopId", parameterValue: shopId }],
+    } });
+    if (commonUtil.hasError(configured)) throw new Error("configuration rejected");
+    await refreshAfterMutation("serviceJob", { jobName });
+  } catch {
+    throw new Error(translate("The physical ATP reset job was created paused, but its configuration could not be confirmed. Review the existing job before retrying setup."));
+  }
+  return jobName;
+}
+
+/**
+ * One shop by shopId. Replaces the old `shopifyStore.getShopById` getter.
+ *
+ * Takes a ref or getter as well as a plain string: `:id` routes reuse the component instance when
+ * only the param changes, so a view that reads this from a raw `props.id` stays pinned to the shop
+ * it first mounted with while everything else on the page re-scopes.
+ */
+export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) =>
+  useCachedRecord(shopifyShopCache, "shopId", computed(() => toValue(shopId)));
 
 export function useShopsForProductStore(productStoreId: string | undefined) {
   const { records, hydrated } = useCachedList<any>(
     shopifyShopCache,
     productStoreId ? { scope: { field: "productStoreId", value: productStoreId } } : {},
   );
+
   return { shops: records, hydrated };
 }
 
@@ -123,7 +784,8 @@ export function useShopifyLocations(shopId: string | undefined) {
   /** shopifyLocationId → facilityId, the shape mapping editors work in. */
   const facilityByLocation = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.shopifyLocationId) map[row.shopifyLocationId] = row.facilityId ?? "";
+      if(row.shopifyLocationId) {map[row.shopifyLocationId] = row.facilityId ?? "";}
+
       return map;
     }, {}));
 
@@ -134,7 +796,8 @@ export function useShopifyLocations(shopId: string | undefined) {
    */
   const locationByFacility = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.facilityId) map[row.facilityId] = row.shopifyLocationId ?? "";
+      if(row.facilityId) {map[row.facilityId] = row.shopifyLocationId ?? "";}
+
       return map;
     }, {}));
 
@@ -159,7 +822,8 @@ export function useShopifyTypeMappings(shopId: string | undefined, mappedTypeId:
   /** OMS value → Shopify key, the direction mapping editors read. */
   const keyByValue = computed<Record<string, string>>(() =>
     mappings.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.mappedValue) map[row.mappedValue] = row.mappedKey ?? "";
+      if(row.mappedValue) {map[row.mappedValue] = row.mappedKey ?? "";}
+
       return map;
     }, {}));
 
@@ -184,9 +848,10 @@ export function useShopifyCarrierShipments(shopId: string | undefined) {
    */
   const byCarrierAndMethod = computed<Record<string, any>>(() =>
     records.value.reduce((map: Record<string, any>, row: any) => {
-      if (row.carrierPartyId && row.shipmentMethodTypeId) {
+      if(row.carrierPartyId && row.shipmentMethodTypeId) {
         map[`${row.carrierPartyId}_${row.shipmentMethodTypeId}`] = row;
       }
+
       return map;
     }, {}));
 
@@ -200,9 +865,10 @@ export function useShopifyCarrierShipments(shopId: string | undefined) {
    */
   const allByCarrierAndMethod = computed<Record<string, any[]>>(() =>
     records.value.reduce((map: Record<string, any[]>, row: any) => {
-      if (row.carrierPartyId && row.shipmentMethodTypeId) {
+      if(row.carrierPartyId && row.shipmentMethodTypeId) {
         (map[`${row.carrierPartyId}_${row.shipmentMethodTypeId}`] ||= []).push(row);
       }
+
       return map;
     }, {}));
 
@@ -227,8 +893,10 @@ export function useShopifyFacilityMappings(facilityId: string | undefined) {
   const mappings = computed(() => {
     const shopById = shops.value.reduce((map: Record<string, any>, shop: any) => {
       map[shop.shopId] = shop;
+
       return map;
     }, {});
+
     return locations.value.map((location: any) => ({
       ...(shopById[location.shopId] ?? {}),
       ...location,
@@ -254,6 +922,7 @@ export async function fetchLocationsFromShopify(shopId: string): Promise<any[]> 
     url: `shopify/shops/${encodeURIComponent(shopId)}/shopify-locations`,
     method: "get",
   });
+
   return (resp?.data?.locations?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean);
 }
 
@@ -290,7 +959,57 @@ export function useShopifyShopIdForProductStore() {
   const { shops } = useShopifyShops();
   const shopifyShopIdFor = (productStoreId: string) =>
     shops.value.find((shop: any) => shop.productStoreId === productStoreId)?.shopifyShopId ?? "";
+
   return { shopifyShopIdFor };
+}
+
+export function useShopifyShopQueries(shopId: string) {
+  const fetchTypeMappingsForShop = async (mappedTypeId: string) => {
+    let mappings: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/typeMappings",
+        method: "get",
+        params: { shopId, mappedTypeId, pageSize: 100, pageIndex }
+      });
+      if(!commonUtil.hasError(resp) && resp.data) {
+        mappings = [...mappings, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while(resp.data && resp.data.length >= 100);
+
+    return mappings;
+  };
+
+  const fetchCarrierShipmentsForShop = async () => {
+    let shipments: any[] = [];
+    let pageIndex = 0;
+    let resp: any;
+    do {
+      resp = await api({
+        url: "oms/shopifyShops/carrierShipments",
+        method: "get",
+        params: { shopId, pageSize: 100, pageIndex }
+      });
+      if(!commonUtil.hasError(resp) && resp.data) {
+        shipments = [...shipments, ...resp.data];
+      } else {
+        break;
+      }
+      pageIndex++;
+    } while(resp.data && resp.data.length >= 100);
+
+    return shipments;
+  };
+
+  return {
+    fetchTypeMappingsForShop,
+    fetchCarrierShipmentsForShop
+  };
 }
 
 export function useShopifyShopMutations(shopId: string) {
@@ -319,7 +1038,8 @@ export function useShopifyShopMutations(shopId: string) {
         method: "put",
         data: { ...payload, shopId },
       });
-      if (!commonUtil.hasError(resp) && wants(options)) await refreshAfterMutation("shopifyShop", { shopId });
+      if(!commonUtil.hasError(resp) && wants(options)) {await refreshAfterMutation("shopifyShop", { shopId });}
+
       return resp;
     },
 
@@ -337,7 +1057,8 @@ export function useShopifyShopMutations(shopId: string) {
         method: "post",
         data: { ...payload, shopId },
       });
-      if (!commonUtil.hasError(resp) && wants(options)) await refreshTypeMappings();
+      if(!commonUtil.hasError(resp) && wants(options)) {await refreshTypeMappings();}
+
       return resp;
     },
 
@@ -362,7 +1083,8 @@ export function useShopifyShopMutations(shopId: string) {
         method: "post",
         data: { ...payload, shopId, mappedValue: "" },
       });
-      if (!commonUtil.hasError(resp) && wants(options)) await refreshTypeMappings();
+      if(!commonUtil.hasError(resp) && wants(options)) {await refreshTypeMappings();}
+
       return resp;
     },
 
@@ -372,7 +1094,8 @@ export function useShopifyShopMutations(shopId: string) {
         method: "post",
         data: { ...payload, shopId },
       });
-      if (!commonUtil.hasError(resp) && wants(options)) await refreshCarrierShipments();
+      if(!commonUtil.hasError(resp) && wants(options)) {await refreshCarrierShipments();}
+
       return resp;
     },
 
@@ -383,10 +1106,715 @@ export function useShopifyShopMutations(shopId: string) {
         method: "post",
         data: { ...payload, shopId },
       });
-      if (!commonUtil.hasError(resp) && wants(options)) await refreshLocations();
+      if(!commonUtil.hasError(resp) && wants(options)) {await refreshLocations();}
+
       return resp;
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// 1.5 Inventory event sources — the artifact behind a ShopifyInventoryAdjustmentDetail row
+// ---------------------------------------------------------------------------------------------
+/**
+ * Turns an inventory event's `eventReferenceId` into the artifact a person recognises: the order it
+ * came from, the operator who logged a variance, the name of the cycle count that produced it.
+ *
+ * The ledger row carries none of this. `ShopifyInventoryAdjustmentDetail` names a remote Shopify target
+ * and a delta, and the reference is the SOURCE ROW'S natural key -- a receiptId, an itemIssuanceId, an
+ * inventoryItemId plus a detail sequence. Which lookup resolves it therefore depends on the event type,
+ * and there is no single endpoint that covers all of them. One resolver per family, dispatched on
+ * eventTypeId, is the shape the data forces.
+ *
+ * Every path here was read from the live Swagger catalogs on this OMS
+ * (rest/service.swagger/{oms,poorti,inventory-cycle-count}). Where a family has no path, it is recorded
+ * as unresolved with the reason rather than left blank -- an operator asking "which order was that"
+ * deserves "the OMS does not expose it" over silence.
+ */
+
+/** What a caller knows about one row before any lookup. */
+export interface InventoryEventSourceLookup {
+  eventTypeId: string;
+  eventReferenceId: string;
+}
+
+export interface InventoryEventSource {
+  /** The artifact, named. "Sales order SO-10042", "Weekly cycle count 42". */
+  label: string;
+  /** The person, where one is knowable. */
+  actor?: string;
+  /** One more fact worth a line: a reason, an outcome, a source system. */
+  note?: string;
+  /** Set instead of `label` when the OMS exposes no path. Explains why, never blank. */
+  unresolved?: string;
+  /**
+   * This answer depended on something that was not loaded yet (a cold cache), not on a fact about the
+   * data. Stored like any other answer so the row says something now, but re-asked on a later pass.
+   * Without it, a row opened in the first second after view entry kept "no cached member facilities"
+   * for the rest of the session.
+   */
+  retryable?: boolean;
+}
+
+/**
+ * Results are keyed by type plus reference, not by ledger row: one receipt or one cycle count fans out
+ * to a row per inventory item, and they all resolve to the same artifact. Keying on the row would make
+ * the same call once per fan-out branch.
+ */
+function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string): string {
+  return `${eventTypeId}|${eventReferenceId}`;
+}
+
+const eventSources = ref(new Map<string, InventoryEventSource>());
+
+/**
+ * What has been asked, and how it went.
+ *
+ * A bare "already requested" set was not enough to be both quiet and correct. A THROWN failure has to
+ * be retried (a blip must not mark a row permanently unresolvable), but retrying it forever is a
+ * request storm: the caller re-fires on every cache tick, so an endpoint this OMS does not expose was
+ * re-asked every ten seconds for as long as the page stayed open. And a RETURNED soft answer has to be
+ * re-asked too, but only until the cache it depended on is warm.
+ *
+ * So each key carries its attempt count and its in-flight promise instead.
+ */
+interface InventoryEventSourceAttempt {
+  /** A pass is resolving this key right now, so a concurrent pass must not queue it again. */
+  pending: boolean;
+  /** Thrown failures so far. At the cap the key is answered with the failure and left alone. */
+  failures: number;
+  /** The stored answer was cache-dependent; ask again on a later pass. */
+  retryable: boolean;
+}
+
+const eventSourceAttempts = new Map<string, InventoryEventSourceAttempt>();
+/**
+ * Bumped by the logout sweep. A lookup already awaiting `api()` when the session is cleared captures
+ * this first and drops its answer if it moved, so the previous tenant's orders and operator names can
+ * never land in the next session's maps.
+ */
+let eventSourceGeneration = 0;
+/** How many times a thrown lookup is retried before the page stops asking. */
+const MAX_SOURCE_LOOKUP_FAILURES = 3;
+/** Independent lookups run together, but not unboundedly: this is a shared OMS. */
+const SOURCE_LOOKUP_CONCURRENCY = 6;
+
+/** Names per userLoginId. Only a SUCCESSFUL lookup is cached, and the in-flight promise is shared. */
+const eventSourceActors = new Map<string, string>();
+const eventSourceActorRequests = new Map<string, Promise<string>>();
+
+// Module state survives an SPA logout: without this, user B reads user A's resolved artifacts.
+onSessionCleared(() => {
+  eventSourceGeneration += 1;
+  eventSources.value = new Map();
+  eventSourceAttempts.clear();
+  eventSourceActors.clear();
+  eventSourceActorRequests.clear();
+  // Re-probed per session: the next tenant may be on an OMS that does have the movement root.
+  movementRootAvailable = null;
+  movementRootProbe = null;
+  movementOrders.clear();
+});
+
+async function readEventSource(url: string, params?: Record<string, unknown>): Promise<any> {
+  const response: any = await api({ url, method: "get", params });
+  if(commonUtil.hasError(response)) {throw response;}
+
+  return response?.data;
+}
+
+/** Entity-list mounts on this OMS return a bare array, which is why the domain unwraps with a null key. */
+function asEventSourceRows(data: unknown): any[] {
+  return Array.isArray(data) ? data : [];
+}
+
+/** The order as a person cites it, falling back to the id when the header carries no name. */
+function eventSourceOrderLabel(row: any): string {
+  const name = String(row?.orderName ?? "").trim();
+  const orderId = String(row?.orderId ?? "").trim();
+  if(!name && !orderId) {return "";}
+  const order = name || orderId;
+  if(row?.orderTypeId === "TRANSFER_ORDER") {return translate("Transfer order {order}", { order });}
+  if(row?.orderTypeId === "PURCHASE_ORDER") {return translate("Purchase order {order}", { order });}
+
+  return translate("Sales order {order}", { order });
+}
+
+/**
+ * The person behind a login id, resolved once per session.
+ *
+ * Only a successful answer is cached. Caching the fallback would let ONE failed `oms/users` call
+ * pin the raw login id as that operator's name for every later row that shares it, with no retry --
+ * the row is displayed as "recorded by mfadmin" forever because of a single blip. The in-flight
+ * promise is shared so two concurrent resolvers do not both ask for the same person.
+ */
+async function eventSourceActorName(userLoginId: string): Promise<string> {
+  const id = String(userLoginId ?? "").trim();
+  if(!id) {return "";}
+  if(eventSourceActors.has(id)) {return eventSourceActors.get(id) as string;}
+
+  const existing = eventSourceActorRequests.get(id);
+  if(existing) {return existing;}
+
+  const requestGeneration = eventSourceGeneration;
+  const request = (async () => {
+    try {
+      const row = asEventSourceRows(await readEventSource("oms/users", { userLoginId: id, pageSize: 1 }))[0];
+      const full = [row?.firstName, row?.lastName].filter(Boolean).join(" ").trim();
+      const name = full || String(row?.groupName ?? "").trim() || id;
+      // A logout landed while this was in flight: the name belongs to the previous session.
+      if(requestGeneration === eventSourceGeneration) {eventSourceActors.set(id, name);}
+
+      return name;
+    } catch (error) {
+      // Fall back to the id for THIS row, but do not remember it: the next row retries.
+      logger.warn(`User [${id}] - Could not resolve a name for the login`, error);
+
+      return id;
+    } finally {
+      eventSourceActorRequests.delete(id);
+    }
+  })();
+
+  eventSourceActorRequests.set(id, request);
+
+  return request;
+}
+
+/**
+ * The four reservation families -- generic and transfer, create and release -- one call, no scan.
+ *
+ * The reference is `inventoryItemId:inventoryItemDetailSeqId`, which is exactly the path id plus the
+ * filter this mount takes, so the row it describes is addressable directly. The only family where that
+ * is true.
+ */
+async function resolveReservationSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
+  const [inventoryItemId, detailSeqId] = lookup.eventReferenceId.split(":");
+  if(!inventoryItemId || !detailSeqId) {
+    return { label: "", unresolved: translate("The reference is not an inventory item plus a detail sequence.") };
+  }
+  const row = asEventSourceRows(await readEventSource(
+    `oms/inventoryItem/${encodeURIComponent(inventoryItemId)}/detail`,
+    { inventoryItemDetailSeqId: detailSeqId, pageSize: 1 }
+  ))[0];
+  const label = eventSourceOrderLabel(row);
+  if(!label) {
+    return { label: "", unresolved: translate("This reservation movement carries no order.") };
+  }
+
+  return { label, note: row?.orderStatusId ? translate("Order status {status}", { status: row.orderStatusId }) : undefined };
+}
+
+/**
+ * SIE_PHYSICAL_INVENTORY / SIE_CYCLE_COUNT -- who, and which count.
+ *
+ * `varianceDecisions` is the one enrichment resource on this OMS that needs no path scope: it takes the
+ * physicalInventoryId straight off the ledger reference. Its own contract describes it as bridging a
+ * cycle-count variance to the decision that produced it, which is precisely the question here.
+ *
+ * A SIE_PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
+ * is the expected answer for half this family rather than a failure. The fallback -- the manual-variance
+ * audit trail on inventoryItem/{id}/variances -- needs an inventoryItemId that only the decision would
+ * have supplied, so a manual variance stops here and says so.
+ */
+async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
+  const decision = asEventSourceRows(await readEventSource(
+    "inventory-cycle-count/varianceDecisions",
+    { physicalInventoryId: lookup.eventReferenceId, pageSize: 1 }
+  ))[0];
+
+  if(!decision) {
+    return {
+      label: "",
+      unresolved: translate("No cycle count decision recorded, so this is a manual variance. Naming its operator needs the inventory item, which only a count decision carries."),
+    };
+  }
+
+  const countName = String(decision.workEffortName ?? "").trim();
+  const actor = decision.decidedByUserLoginId ? await eventSourceActorName(String(decision.decidedByUserLoginId)) : "";
+  const counted = decision.countedQuantity;
+  const system = decision.systemQuantity;
+  const note = counted !== undefined && counted !== null && system !== undefined && system !== null
+    ? translate("Counted {counted} against a system quantity of {system}", { counted, system })
+    : String(decision.reasonEnumName ?? decision.outcomeEnumName ?? "").trim() || undefined;
+
+  return {
+    label: translate("Cycle count {name}", { name: countName || decision.workEffortId || "" }).trim(),
+    actor: actor || undefined,
+    note,
+  };
+}
+
+/** SIE_EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
+async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
+  const reset = await readEventSource(`poorti/externalInventoryResets/${encodeURIComponent(lookup.eventReferenceId)}`);
+  if(!reset?.resetItemId) {
+    return { label: "", unresolved: translate("The OMS has no external reset with this id.") };
+  }
+  const source = String(reset.sourceSystemMessageRemoteId ?? "").trim();
+  const external = String(reset.externalFacilityId ?? "").trim();
+
+  return {
+    label: translate("External reset {id}", { id: reset.resetItemId }),
+    note: [source && translate("from {source}", { source }), external && translate("external facility {facility}", { facility: external })]
+      .filter(Boolean).join(", ") || undefined,
+  };
+}
+
+/**
+ * SIE_RECEIPT / SIE_TRANSFER_RECEIPT / SIE_RETURN_RESTOCK / SIE_POS_ISSUANCE -- the families that need a scan.
+ * The document behind a movement is resolved in one GraphQL call for a whole page.
+ *
+ * These four are the families the REST catalog could not reach from what the ledger carries.
+ * `InventoryItemDetailAndOrder` holds the order behind each of them, but both of its mounts are scoped
+ * by a path -- product + facility, or inventory item -- and the ledger carries neither, because the
+ * event is aggregate over a facility GROUP. Walking the group's member facilities one call at a time
+ * was the old workaround and cost a request per facility per row: fine on a two-store channel, fifteen
+ * per row on `RetailAggregate`.
+ *
+ * The OMS GraphQL layer now exposes the movement rows with no path scope at all, filtered on the
+ * movement id itself (hotwax/moqui-gql#101). That turns the walk inside out: instead of N facilities x
+ * M rows requests, a page of rows is ONE request, because `receiptId:` takes a comma list. The ledger's
+ * reference and the column filtered on are the same value by construction -- the connector creates the
+ * event by querying InventoryItemDetail on that very column (resolveShopifyInventoryEventContext.groovy,
+ * `detailRowsFor`) -- so a hit is exact, never a heuristic match.
+ *
+ * The configuration families still name no document at all. Their references decode locally to ids the
+ * app already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the
+ * changed entity and its PK values, neither of which the ledger keeps.
+ */
+type MovementFamily = "receipt" | "issuance";
+
+const MOVEMENT_FAMILIES: Partial<Record<InventoryEventSourceRoot, MovementFamily>> = {
+  shipmentReceipts: "receipt",
+  itemIssuances: "issuance",
+};
+
+/**
+ * Which root answers each family, and on which key.
+ *
+ * ShipmentReceipt and ItemIssuance are the AUTHORITATIVE sources: both are 1:1 on their primary key,
+ * so one id names exactly one document. The `receiptId` column on the movement ledger looks like it
+ * would do the same job and does not -- it is a denormalised stamp, and on a real OMS 70 of 1,278
+ * receipt ids had ledger rows disagreeing about the order, one id carrying both a return-item receipt
+ * and an unrelated shipment receipt. Reading the document from the ledger would pick between them at
+ * random; reading it from the receipt cannot.
+ */
+const MOVEMENT_ROOTS: Record<MovementFamily, { root: string; searchKey: string }> = {
+  receipt: { root: "shipmentReceipts", searchKey: "receiptId" },
+  issuance: { root: "itemIssuances", searchKey: "itemIssuanceId" },
+};
+
+/**
+ * How many ids go into one query.
+ *
+ * These roots are 1:1 on their PK, so `first` is simply the number of ids asked about -- no headroom,
+ * and nothing to truncate. The chunk is sized against the COST GOVERNOR rather than the page: measured
+ * on a live instance the charge is 4 per row, against a 1000 bucket that refills at 50/s, so 25 rows
+ * costs 100 and a scroll cannot outrun the bucket. Naming the order through a nested `order` edge
+ * instead would cost 9 per row -- `first: 100` came back at 900, a single call for nine tenths of the
+ * budget -- which is why the order is fetched separately and cached below.
+ */
+const MOVEMENT_LOOKUP_CHUNK = 25;
+
+const MOVEMENT_DOCUMENT_QUERIES: Record<MovementFamily, string> = {
+  receipt: `query MovementDocuments($q: String!, $first: Int!) {
+  shipmentReceipts(query: $q, first: $first) {
+    edges { node { receiptId orderId returnId } }
+    pageInfo { hasNextPage }
+  }
+}`,
+  issuance: `query MovementDocuments($q: String!, $first: Int!) {
+  itemIssuances(query: $q, first: $first) {
+    edges { node { itemIssuanceId orderId } }
+    pageInfo { hasNextPage }
+  }
+}`,
+};
+
+const MOVEMENT_ORDER_QUERY = `query MovementOrders($q: String!, $first: Int!) {
+  orders(query: $q, first: $first) {
+    edges { node { orderId orderName orderTypeId statusId } }
+  }
+}`;
+
+/**
+ * Orders already named, for the session.
+ *
+ * Movements share documents heavily -- on a real transfer, 91 receipts resolved to ONE order -- so
+ * after the first chunk this is usually a full hit and the second call disappears entirely.
+ */
+const movementOrders = new Map<string, any>();
+
+/** Name the orders these movement rows point at, reusing anything already known. */
+async function loadMovementOrders(orderIds: string[]): Promise<void> {
+  const wanted = [...new Set(orderIds.filter((id) => id && !movementOrders.has(id)))];
+  if(!wanted.length) {return;}
+
+  const response: any = await api({
+    url: "graphql",
+    method: "post",
+    data: {
+      query: MOVEMENT_ORDER_QUERY,
+      variables: { q: `orderId:${wanted.join(",")}`, first: wanted.length },
+      operationName: "MovementOrders",
+    },
+  });
+  const errors: any[] = Array.isArray(response?.data?.errors) ? response.data.errors : [];
+  if(errors.length) {throw response;}
+
+  const edges: any[] = response?.data?.data?.orders?.edges ?? [];
+  for(const edge of edges) {
+    const orderId = String(edge?.node?.orderId ?? "").trim();
+    if(orderId) {movementOrders.set(orderId, edge.node);}
+  }
+  // Remember the misses too, so a deleted or out-of-scope order is not re-asked on every chunk.
+  for(const id of wanted) {if(!movementOrders.has(id)) {movementOrders.set(id, null);}}
+}
+
+/**
+ * Whether this deployment can answer a movement lookup at all.
+ *
+ * `null` until the first query comes back. Three things make the answer a permanent NO for the
+ * session, and all three are about the deployment rather than the data, so re-asking is pure waste:
+ *
+ *  - the OMS predates moqui-gql#101 and rejects the query at VALIDATION time, naming the undefined
+ *    field -- the remote schema is fixed at startup, so it will not appear mid-session;
+ *  - `/graphql` is not mounted at all (404), because the component is not deployed there;
+ *  - the signed-in user is not authorized for it (401/403). The component seeds `/graphql` for the
+ *    ADMIN group only (GqlSetupData.xml), so an app user gets
+ *    "User <id> is not authorized for Create on REST Path /graphql" until a deployment grants it.
+ *
+ * Latched to false, every movement row falls back to the bare reference -- exactly what this page
+ * showed before the root existed -- at a cost of ONE request for the session instead of one per row
+ * per retry. Getting this wrong is not a cosmetic bug: the caller re-fires on every cache tick and on
+ * every scroll, so an un-latched permanent failure is a request storm.
+ */
+let movementRootAvailable: boolean | null = null;
+
+/**
+ * The first movement query of the session, shared.
+ *
+ * Passes overlap -- the watch re-fires as rows scroll in, well before the first answer lands -- and
+ * each pass holds keys the others have not claimed, so without this every pass in flight would issue
+ * its own query and only then learn the deployment cannot answer any of them. Gating only while the
+ * answer is still unknown costs the happy path nothing: once the flag is set, queries run in parallel
+ * again, which is the whole point of asking for fifty ids at a time.
+ */
+let movementRootProbe: Promise<unknown> | null = null;
+
+/** A validation error naming our field means the schema lacks it, not that the data is missing. */
+function isMovementRootUndefined(errors: any[]): boolean {
+  return errors.some((error: any) => {
+    const message = String(error?.message ?? "");
+    if(!message.includes("Validation error") && !message.includes("FieldUndefined")) {return false;}
+
+    return message.includes("shipmentReceipts") || message.includes("itemIssuances")
+      || message.includes("ShipmentReceipt") || message.includes("ItemIssuance")
+      || message.includes("orderTypeId");
+  });
+}
+
+/** Not mounted, or not ours to call. Either way it will not start working later in this session. */
+function movementRootDenialOf(error: any): string {
+  const status = Number(error?.response?.status ?? error?.status ?? 0);
+  if(status === 403) {
+    return translate("This app is not authorized to read inventory movements from the OMS.");
+  }
+  if(status === 404) {
+    return translate("This OMS does not expose the document behind a movement.");
+  }
+
+  return "";
+}
+
+/** The reason a row shows its bare reference instead of a document. Never blank. */
+function movementUnresolved(reason: string): InventoryEventSource {
+  return { label: "", unresolved: reason };
+}
+
+/**
+ * One GraphQL call for one family's ids. Returns an answer for every id asked about, so a caller never
+ * has to guess whether a missing key means "no document" or "never asked".
+ */
+async function readMovementDocuments(
+  family: MovementFamily, references: string[]
+): Promise<Map<string, InventoryEventSource>> {
+  const requestGeneration = eventSourceGeneration;
+  const answers = new Map<string, InventoryEventSource>();
+  const { root, searchKey } = MOVEMENT_ROOTS[family];
+  // Still unknown, and someone is already finding out: wait for them rather than asking in parallel.
+  if(movementRootAvailable === null && movementRootProbe) {
+    await movementRootProbe.catch(() => undefined);
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
+  }
+  if(movementRootAvailable === false) {
+    for(const reference of references) {
+      answers.set(reference, movementUnresolved(
+        translate("This OMS does not expose the document behind a movement.")));
+    }
+
+    return answers;
+  }
+  let response: any;
+  try {
+    const request = api({
+      url: "graphql",
+      method: "post",
+      data: {
+        query: MOVEMENT_DOCUMENT_QUERIES[family],
+        variables: { q: `${searchKey}:${references.join(",")}`, first: references.length },
+        operationName: "MovementDocuments",
+      },
+    });
+    if(movementRootAvailable === null) {movementRootProbe = request;}
+    response = await request;
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
+  } catch (error) {
+    if(requestGeneration !== eventSourceGeneration) {return answers;}
+    // A 401/403/404 is about the deployment, not this request: retrying it per row is the storm.
+    const denial = movementRootDenialOf(error);
+    if(!denial) {throw error;}
+    movementRootAvailable = false;
+    logger.info(`Inventory event sources - movement lookups are unavailable on this OMS: ${denial}`);
+    for(const reference of references) {answers.set(reference, movementUnresolved(denial));}
+
+    return answers;
+  }
+
+  // GraphQL answers 200 with an `errors` array, so the transport-level check cannot see a rejection.
+  const errors: any[] = Array.isArray(response?.data?.errors) ? response.data.errors : [];
+  if(errors.length) {
+    if(isMovementRootUndefined(errors)) {
+      movementRootAvailable = false;
+      logger.info("Inventory event sources - this OMS has no unscoped movement lookup; rows will show their reference");
+      for(const reference of references) {
+        answers.set(reference, movementUnresolved(
+          translate("This OMS does not expose the document behind a movement.")));
+      }
+
+      return answers;
+    }
+    // A real failure: let the caller's retry budget see it rather than storing a wrong answer.
+    throw response;
+  }
+
+  movementRootAvailable = true;
+  const connection = response?.data?.data?.[root];
+  const rows: any[] = Array.isArray(connection?.edges) ? connection.edges.map((edge: any) => edge?.node) : [];
+  // Second half of the two-step: name the orders these rows point at, minus the ones already known.
+  await loadMovementOrders(rows.map((row: any) => String(row?.orderId ?? "").trim()));
+
+  for(const row of rows) {
+    const reference = String(row?.[searchKey] ?? "").trim();
+    if(!reference || answers.has(reference)) {continue;}
+    const order = movementOrders.get(String(row?.orderId ?? "").trim());
+    const label = eventSourceOrderLabel(order);
+    if(label) {
+      answers.set(reference, { label,
+        note: order?.statusId ? translate("Order status {status}", { status: order.statusId }) : undefined });
+      continue;
+    }
+    // A return receipt belongs to a return, not an order, and naming it is a better answer than
+    // "carries no order" -- which is the truth only for a receipt that belongs to neither.
+    const returnId = String(row?.returnId ?? "").trim();
+    answers.set(reference, returnId
+      ? { label: translate("Return {id}", { id: returnId }) }
+      : movementUnresolved(translate("This movement carries no order.")));
+  }
+
+  // Anything not in the page: either the OMS holds no such movement, or the page truncated. Both are
+  // worth saying out loud on the row instead of leaving it blank.
+  const truncated = Boolean(connection?.pageInfo?.hasNextPage);
+  for(const reference of references) {
+    if(answers.has(reference)) {continue;}
+    answers.set(reference, movementUnresolved(truncated
+      ? translate("Too many movements came back at once to name this one.")
+      : translate("The OMS has no inventory movement with this reference.")));
+  }
+  if(truncated) {
+    logger.warn(`Inventory event sources - a ${family} lookup filled its page; some rows could not be named`);
+  }
+
+  return answers;
+}
+
+/**
+ * The one-call-per-row resolvers. The movement roots are absent on purpose: they answer in bulk below,
+ * and `readMovementDocuments` returns an entry for every reference it is asked about, so a movement row
+ * never falls through to a per-row resolver. The configuration families have no root and no resolver.
+ */
+function eventSourceResolverFor(eventTypeId: string) {
+  switch(sourceRootFor(eventTypeId)) {
+    case "inventoryItemDetails": return resolveReservationSource;
+    case "varianceDecisions": return resolvePhysicalSource;
+    case "externalInventoryResets": return resolveExternalResetSource;
+    default: return null;
+  }
+}
+
+/** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
+function movementFamilyFor(eventTypeId: string): MovementFamily | null {
+  const root = sourceRootFor(eventTypeId);
+
+  return (root && MOVEMENT_FAMILIES[root]) ?? null;
+}
+
+/**
+ * Resolve what is not already known. Safe to call on every render: it filters against `eventSourcesRequested` first,
+ * so a stable set of rows is one round of calls and a background cache sync is none.
+ */
+/** Has this key been answered in a way that does not need asking again? */
+function isEventSourceSettled(key: string): boolean {
+  const attempt = eventSourceAttempts.get(key);
+  if(!attempt) {return false;}
+  // Being resolved right now: claimed, not yet answered. Queuing it again would duplicate the work.
+  if(attempt.pending) {return true;}
+  // Out of attempts: the row carries the failure and the page stops asking.
+  if(attempt.failures >= MAX_SOURCE_LOOKUP_FAILURES) {return true;}
+  // A cache-dependent answer, or a failure with attempts left: worth asking again.
+  if(attempt.retryable) {return false;}
+
+  return eventSources.value.has(key);
+}
+
+/**
+ * Resolve what is not already known. Safe to call on every render and on every cache tick.
+ *
+ * Three things this has to get right, each of which was wrong when the lookups lived inline:
+ *
+ * - Keys are claimed SYNCHRONOUSLY, before the first await. Claiming them one at a time inside the
+ *   loop let a second call (a scroll, or the ten-second cache tick) re-queue every key the first pass
+ *   had not reached yet, and a duplicate is a duplicate request.
+ * - A thrown failure is retried, but only up to a cap. Un-marking it unconditionally turned an
+ *   endpoint this OMS does not expose into a permanent request storm, once per tick, forever.
+ * - Independent lookups run concurrently in bounded batches, and the ref is reassigned ONCE per batch.
+ *   Reassigning per result re-rendered every row on the page for each artifact resolved.
+ */
+async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promise<void> {
+  const pending = new Map<string, InventoryEventSourceLookup>();
+  for(const lookup of lookups) {
+    const key = inventoryEventSourceKey(lookup.eventTypeId, lookup.eventReferenceId);
+    if(pending.has(key) || isEventSourceSettled(key)) {continue;}
+    if(!eventSourceResolverFor(lookup.eventTypeId) && !movementFamilyFor(lookup.eventTypeId)) {continue;}
+    pending.set(key, lookup);
+  }
+  if(!pending.size) {return;}
+
+  const entries = [...pending.entries()];
+  const requestGeneration = eventSourceGeneration;
+  // Claimed up front: nothing below this line can be re-queued by a concurrent caller.
+  for(const [key] of entries) {
+    const attempt = eventSourceAttempts.get(key) ?? { pending: false, failures: 0, retryable: false };
+    attempt.pending = true;
+    attempt.retryable = false;
+    eventSourceAttempts.set(key, attempt);
+  }
+
+  /*
+   * The movement families go first and go in bulk. Everything below this loop is one call per key; a
+   * whole page of receipts or POS sales is one call per FIFTY keys, which is the entire point of the
+   * unscoped root. Their keys were claimed with the rest, so a concurrent pass cannot duplicate them.
+   */
+  const movementEntries = entries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId));
+  const singleEntries = entries.filter(([, lookup]) => !movementFamilyFor(lookup.eventTypeId));
+  for(const family of ["receipt", "issuance"] as MovementFamily[]) {
+    const familyEntries = movementEntries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId) === family);
+    for(let index = 0; index < familyEntries.length; index += MOVEMENT_LOOKUP_CHUNK) {
+      const chunk = familyEntries.slice(index, index + MOVEMENT_LOOKUP_CHUNK);
+      // One reference can carry two event types (a receipt that is also a restock), so the ids are
+      // de-duplicated for the query while every claimed KEY still gets its own answer back.
+      const references = [...new Set(chunk.map(([, lookup]) => lookup.eventReferenceId))];
+      let answers = new Map<string, InventoryEventSource>();
+      let failure: unknown = null;
+      try {
+        answers = await readMovementDocuments(family, references);
+      } catch (error) {
+        failure = error;
+        logger.warn(`Inventory event sources - a ${family} document lookup failed`, error);
+      }
+
+      if(requestGeneration !== eventSourceGeneration) {return;}
+
+      const next = new Map(eventSources.value);
+      let changed = false;
+      for(const [key, lookup] of chunk) {
+        const attempt = eventSourceAttempts.get(key) as InventoryEventSourceAttempt;
+        attempt.pending = false;
+        if(failure) {
+          attempt.failures += 1;
+          // Attempts left: store nothing and let a later pass re-ask, same budget as a single lookup.
+          if(attempt.failures < MAX_SOURCE_LOOKUP_FAILURES) {continue;}
+          next.set(key, movementUnresolved(
+            translate("This lookup failed repeatedly and is no longer being retried.")));
+          changed = true;
+          continue;
+        }
+        attempt.failures = 0;
+        attempt.retryable = false;
+        // `readMovementDocuments` answers every reference it was given, on every path including its
+        // denials, so the `??` is a belt-and-braces guard rather than a second lookup strategy.
+        next.set(key, answers.get(lookup.eventReferenceId)
+          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
+        changed = true;
+      }
+      if(changed) {eventSources.value = next;}
+    }
+  }
+
+  for(let index = 0; index < singleEntries.length; index += SOURCE_LOOKUP_CONCURRENCY) {
+    const batch = singleEntries.slice(index, index + SOURCE_LOOKUP_CONCURRENCY);
+    const resolved = await Promise.all(batch.map(async ([key, lookup]) => {
+      const attempt = eventSourceAttempts.get(key) as InventoryEventSourceAttempt;
+      const resolver = eventSourceResolverFor(lookup.eventTypeId);
+      if(!resolver) {
+        eventSourceAttempts.delete(key);
+
+        return null;
+      }
+
+      try {
+        const source = await resolver(lookup);
+        attempt.pending = false;
+        attempt.failures = 0;
+        attempt.retryable = !!source.retryable;
+
+        return [key, source] as const;
+      } catch (error) {
+        attempt.pending = false;
+        attempt.failures += 1;
+        logger.warn(`Inventory event source [${key}] - Could not resolve the source artifact`, error);
+        if(attempt.failures < MAX_SOURCE_LOOKUP_FAILURES) {
+          // Attempts left: store no answer, and leave the count behind so the cap can be reached.
+          // Deleting the attempt here is what made the cap unreachable and the retries unbounded.
+          return null;
+        }
+
+        // Out of attempts. Say so on the row rather than retrying this endpoint for the session.
+        return [key, {
+          label: "",
+          unresolved: translate("This lookup failed repeatedly and is no longer being retried."),
+        }] as const;
+      }
+    }));
+
+    // A logout landed mid-batch: these answers describe the previous session's data.
+    if(requestGeneration !== eventSourceGeneration) {return;}
+
+    const next = new Map(eventSources.value);
+    let changed = false;
+    for(const entry of resolved) {
+      if(!entry) {continue;}
+      next.set(entry[0], entry[1]);
+      changed = true;
+    }
+    // One reassignment per batch: every row's source line depends on this ref.
+    if(changed) {eventSources.value = next;}
+  }
+}
+
+export function useInventoryEventSources() {
+  return { sources: eventSources, resolve: resolveEventSources, sourceKeyOf: inventoryEventSourceKey };
 }
 
 // =============================================================================================
@@ -468,12 +1896,12 @@ export const PRODUCT_SYNC_FEATURE: ShopifySyncFeature = {
 /** Is this job a clone of the feature's template (and not the template itself)? */
 function isFeatureJobClone(job: ServiceJobLike, feature: ShopifySyncFeature): boolean {
   const jobName = valueText(job?.jobName);
-  if (!jobName || jobName === feature.templateJobName) return false;
+  if(!jobName || jobName === feature.templateJobName) {return false;}
 
   const declaredTemplate = firstText(job, [
     "parentJobName", "templateJobName", "sourceJobName", "clonedFromJobName",
   ]);
-  if (declaredTemplate) return declaredTemplate === feature.templateJobName;
+  if(declaredTemplate) {return declaredTemplate === feature.templateJobName;}
 
   // Clones predating persisted provenance are named `<template>_<something>`.
   return jobName.startsWith(`${feature.templateJobName}_`);
@@ -490,17 +1918,18 @@ export function isSuitableSyncJob(
   feature: ShopifySyncFeature,
   expected: { remoteId?: string; shopId?: string },
 ): job is ServiceJobLike {
-  if (!job || !isFeatureJobClone(job, feature)) return false;
+  if(!job || !isFeatureJobClone(job, feature)) {return false;}
 
   const wanted = feature.jobMatch.matchOn === "remoteId" ? expected.remoteId : expected.shopId;
-  if (!wanted) return false;
-  if (parameterText(job, feature.jobMatch.parameterKeys) !== String(wanted)) return false;
+  if(!wanted) {return false;}
+  if(parameterText(job, feature.jobMatch.parameterKeys) !== String(wanted)) {return false;}
 
-  for (const rule of feature.jobMatch.requiredParameters ?? []) {
+  for(const rule of feature.jobMatch.requiredParameters ?? []) {
     const actual = parameterText(job, rule.keys);
-    if (rule.equals !== undefined && normalizeToken(actual) !== normalizeToken(rule.equals)) return false;
-    if (rule.truthy && !isTruthy(actual)) return false;
+    if(rule.equals !== undefined && normalizeToken(actual) !== normalizeToken(rule.equals)) {return false;}
+    if(rule.truthy && !isTruthy(actual)) {return false;}
   }
+
   return true;
 }
 
@@ -590,6 +2019,7 @@ export function useShopifySyncContext(shopIdSource: ShopIdSource): ShopifySyncCo
 
   const productStore = computed<any>(() => {
     const id = shop.value?.productStoreId;
+
     return id
       ? productStores.value.find((row: any) => String(row.productStoreId) === String(id)) ?? null
       : null;
@@ -603,10 +2033,11 @@ export function useShopifySyncContext(shopIdSource: ShopIdSource): ShopifySyncCo
 
   const remoteIds = computed<string[]>(() => {
     const seen = new Set<string>();
-    for (const row of candidates.value) {
+    for(const row of candidates.value) {
       const id = String(row?.systemMessageRemoteId ?? "").trim();
-      if (id) seen.add(id);
+      if(id) {seen.add(id);}
     }
+
     return [...seen];
   });
 
@@ -645,6 +2076,7 @@ export function useShopifySyncJob(
   /** Helper jobs the feature depends on but does not own — pollers, message producers. */
   const auxJobs = computed<any[]>(() => {
     const wanted = new Set(feature.auxJobNames ?? []);
+
     return wanted.size ? jobs.value.filter((row: any) => wanted.has(String(row.jobName))) : [];
   });
 
@@ -693,22 +2125,25 @@ export function useShopifySyncMessages(
   const scopedRemoteIds = computed<Set<string>>(() => {
     const all = ctx.remoteIds?.value ?? [];
     const ids = all.length ? all : [ctx.remoteId.value];
+
     return new Set(ids.filter(Boolean).map(String));
   });
 
   const records = computed<any[]>(() => {
     const remoteIds = scopedRemoteIds.value;
-    if (!remoteIds.size) return [];
+    if(!remoteIds.size) {return [];}
     const types = wantedTypes.value;
     const rows = messages.value.filter((row: any) =>
       remoteIds.has(String(row.systemMessageRemoteId)) && types.has(String(row.systemMessageTypeId)));
+
     return options.limit ? rows.slice(0, options.limit) : rows;
   });
 
   /** Same rows, split by type — for a screen that renders more than one of the feature's types. */
   const byType = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
-    for (const row of records.value) (grouped[String(row.systemMessageTypeId)] ||= []).push(row);
+    for(const row of records.value) {(grouped[String(row.systemMessageTypeId)] ||= []).push(row);}
+
     return grouped;
   });
 
@@ -750,22 +2185,25 @@ export function useShopifySyncRuns(
   /** Membership: this shop's runs of these types, newest first. */
   const spine = computed<any[]>(() => {
     const shopId = ctx.shopId.value;
-    if (!shopId) return [];
+    if(!shopId) {return [];}
     const types = wantedTypes.value;
     const matched = runRows.value.filter((row: any) =>
       String(row.shopId) === shopId && types.has(String(row.systemMessageTypeId)));
+
     return options.limit ? matched.slice(0, options.limit) : matched;
   });
 
   const messagesById = computed(() => {
     const byId: Record<string, any> = {};
-    for (const row of messages.value) byId[String(row?.systemMessageId ?? "")] = row;
+    for(const row of messages.value) {byId[String(row?.systemMessageId ?? "")] = row;}
+
     return byId;
   });
 
   const logsById = computed(() => {
     const byId: Record<string, any> = {};
-    for (const row of logs.value) byId[String(row?.logId ?? "")] = row;
+    for(const row of logs.value) {byId[String(row?.logId ?? "")] = row;}
+
     return byId;
   });
 
@@ -787,18 +2225,18 @@ export function useShopifySyncRuns(
     const limit = options.hydrateMax ?? 5;
     let budget = limit;
 
-    for (const run of current) {
-      if (budget <= 0) break;
+    for(const run of current) {
+      if(budget <= 0) {break;}
 
       const messageId = String(run.systemMessageId ?? "");
-      if (messageId && !run.systemMessage && !attempted.has(`m:${messageId}`)) {
+      if(messageId && !run.systemMessage && !attempted.has(`m:${messageId}`)) {
         attempted.add(`m:${messageId}`);
         budget -= 1;
         void ensureSystemMessageById(messageId);
       }
 
       const logId = String(run.logId ?? "");
-      if (logId && !run.mdmLog && !attempted.has(`l:${logId}`)) {
+      if(logId && !run.mdmLog && !attempted.has(`l:${logId}`)) {
         attempted.add(`l:${logId}`);
         budget -= 1;
         void ensureDataManagerLog(logId);
@@ -812,6 +2250,7 @@ export function useShopifySyncRuns(
 /** An import failed if its own status says so, or if any record inside it did. */
 function isFailedImport(log: any): boolean {
   const status = String(log?.statusId ?? "").toLowerCase();
+
   return status.includes("fail") || status.includes("crash") || status.includes("cancel") ||
     Number(log?.failedRecordCount ?? 0) > 0;
 }
@@ -832,11 +2271,12 @@ export function useShopifySyncImports(feature: ShopifySyncFeature) {
 
   const bySystemMessageId = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
-    for (const log of records.value) {
+    for(const log of records.value) {
       const id = String(log?.systemMessageId ?? "");
-      if (!id) continue;
+      if(!id) {continue;}
       (grouped[id] ||= []).push(log);
     }
+
     return grouped;
   });
 
@@ -908,9 +2348,16 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
   active: () => boolean;
   /** Reload the pieces that genuinely cannot be cached. Omit if the feature has none. */
   refresh?: () => Promise<void>;
+  /** Force the active worker domains during manual refresh. */
+  refreshWorker?: boolean;
   onError?: (error: unknown) => void;
   /** Worker domains this feature needs beyond its messages and imports (job runs, and so on). */
   extraDomains?: (intervalMs: number) => ActiveDomain[];
+  /**
+   * Exact message remotes for a selected-shop view. When supplied but unresolved, the session
+   * activates no domains rather than falling back to every Shopify remote in the cache.
+   */
+  systemMessageRemoteIds?: () => string[];
 }
 
 /**
@@ -965,7 +2412,7 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop } = useCacheSync();
+  const { start, stop, syncNow, error: workerError, domainStatus } = useCacheSync();
 
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
@@ -985,14 +2432,25 @@ export function useShopifySyncSession(
    */
   const activeDomainSet = computed<ActiveDomain[]>(() => {
     const intervalMs = syncFeatureInterval(feature, options.active());
+    const exactRemoteIds = options.systemMessageRemoteIds?.().map(String).filter(Boolean);
+    if(options.systemMessageRemoteIds && !exactRemoteIds?.length) {return [];}
+
     return [
-      ...syncFeatureDomains(feature, intervalMs, options),
+      ...syncFeatureDomains(feature, intervalMs, options).map((domain) =>
+        domain.name === "systemMessage" && exactRemoteIds?.length
+          ? { ...domain, args: { ...domain.args, systemMessageRemoteIds: exactRemoteIds } }
+          : domain),
       ...(options.extraDomains?.(intervalMs) ?? []),
     ];
   });
 
   async function activate() {
     isPageActive.value = true;
+    if(!activeDomainSet.value.length) {
+      stop();
+
+      return;
+    }
     try {
       await start(activeDomainSet.value);
     } catch (error) {
@@ -1008,17 +2466,26 @@ export function useShopifySyncSession(
 
   /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
   watch(activeDomainSet, (domains) => {
-    if (!isPageActive.value) return;
+    if(!isPageActive.value) {return;}
+    if(!domains.length) {
+      stop();
+
+      return;
+    }
     void start(domains).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
 
   async function manualRefresh(): Promise<void> {
-    if (!options.refresh || isRefreshing.value) return;
+    if((!options.refresh && !options.refreshWorker) || isRefreshing.value) {return;}
     isRefreshing.value = true;
     try {
-      await options.refresh();
+      if(options.refreshWorker) {
+        await syncNow();
+        if(workerError.value) {throw new Error(workerError.value);}
+      }
+      if(options.refresh) {await options.refresh();}
     } catch (error) {
       options.onError?.(error);
     } finally {
@@ -1036,7 +2503,21 @@ export function useShopifySyncSession(
   onIonViewDidLeave(() => deactivate());
   onBeforeUnmount(() => deactivate());
 
-  return { isPageActive, isRefreshing, manualRefresh, activate, deactivate };
+  /**
+   * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
+   * from "the worker has not fetched this shop yet" on its own. `useCachedList`'s `hydrated` answers
+   * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
+   * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
+   * result here instead.
+   *
+   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
+   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
+   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
+   */
+  return {
+    isPageActive, isRefreshing, manualRefresh, activate, deactivate,
+    domainStatus, workerError,
+  };
 }
 
 // =============================================================================================
@@ -1090,8 +2571,7 @@ export function useShopifyProductSyncRunState(shopIdSource: ShopIdSource) {
    * Depth is `PRODUCT_SYNC_RUN_WINDOW`, the same constant the worker fetches with, so the read can
    * never be shallower than the cache.
    */
-  const { records: runs, hydrated: runsHydrated } = useShopifySyncRuns(
-    ctx, [PRODUCT_SYNC_REQUEST_MESSAGE_TYPE], { limit: PRODUCT_SYNC_RUN_WINDOW });
+  const { records: runs, hydrated: runsHydrated } = useShopifySyncRuns(ctx, [PRODUCT_SYNC_REQUEST_MESSAGE_TYPE], { limit: PRODUCT_SYNC_RUN_WINDOW });
 
   /**
    * Flattened to the shape the summary reads.
@@ -1178,12 +2658,13 @@ export function useShopifyProductSyncRunState(shopIdSource: ShopIdSource) {
  * unparseable returns "" so the caller omits the filter rather than sending a malformed query.
  */
 function toShopifyTimestamp(value: string | number | undefined | null): string {
-  if (value === undefined || value === null || value === "") return "";
+  if(value === undefined || value === null || value === "") {return "";}
 
   const millis = typeof value === "number" ? value : Number(value);
-  if (Number.isFinite(millis) && millis > 0) return new Date(millis).toISOString();
+  if(Number.isFinite(millis) && millis > 0) {return new Date(millis).toISOString();}
 
   const parsed = new Date(String(value).replace(" ", "T"));
+
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
 }
 
@@ -1205,7 +2686,7 @@ export async function fetchUnsyncedProductUpdateCount(
   systemMessageRemoteId: string,
   lastSyncedAt?: string | number,
 ): Promise<number> {
-  if (!systemMessageRemoteId) return 0;
+  if(!systemMessageRemoteId) {return 0;}
 
   /**
    * ⚠️ Shopify needs an ISO 8601 timestamp here, NOT epoch millis.
@@ -1232,9 +2713,10 @@ export async function fetchUnsyncedProductUpdateCount(
   const errors = resp?.data?.errors ?? payload?.errors;
   // Reported, not swallowed: a failed count is indistinguishable from a genuine zero otherwise, which
   // is how a 400 sat unnoticed behind "Unsynced events 0".
-  if (errors) throw new Error(`Shopify unsynced product count failed: ${JSON.stringify(errors)}`);
+  if(errors) {throw new Error(`Shopify unsynced product count failed: ${JSON.stringify(errors)}`);}
 
   const count = payload?.data?.productsCount?.count ?? payload?.productsCount?.count;
+
   return Number(count ?? 0) || 0;
 }
 
@@ -1268,7 +2750,7 @@ export interface ConfigureProductSyncJobInput {
  */
 export async function configureProductSyncJob(input: ConfigureProductSyncJobInput) {
   const { shopId, productStoreId, productIdentifierEnumId } = input;
-  if (!shopId) throw new Error("A shop is required to configure the product sync job.");
+  if(!shopId) {throw new Error("A shop is required to configure the product sync job.");}
 
   const jobName = `${PRODUCT_SYNC_FEATURE.templateJobName}_${shopId}`;
 
@@ -1281,10 +2763,10 @@ export async function configureProductSyncJob(input: ConfigureProductSyncJobInpu
   const serviceJobParameters: Array<{ parameterName: string; parameterValue: string }> = [
     { parameterName: "shopId", parameterValue: shopId },
   ];
-  if (productStoreId) {
+  if(productStoreId) {
     serviceJobParameters.push({ parameterName: "productStoreIds", parameterValue: productStoreId });
   }
-  if (productIdentifierEnumId) {
+  if(productIdentifierEnumId) {
     serviceJobParameters.push({
       parameterName: "shopifyProductIdentifier",
       parameterValue: productIdentifierEnumId,
@@ -1300,6 +2782,7 @@ export async function configureProductSyncJob(input: ConfigureProductSyncJobInpu
   await refreshAfterMutation("serviceJob", { jobName });
 
   const body = resp?.data?.jobDetail ?? resp?.data ?? {};
+
   return { shopId, jobName, paused: "Y", serviceJobParameters, ...body };
 }
 
@@ -1321,8 +2804,8 @@ export async function configureProductSyncJob(input: ConfigureProductSyncJobInpu
  */
 export async function configureOrderSyncJob(input: { shopId: string; systemMessageRemoteId: string }) {
   const { shopId, systemMessageRemoteId } = input;
-  if (!shopId) throw new Error("A shop is required to configure the Order Sync job.");
-  if (!systemMessageRemoteId) {
+  if(!shopId) {throw new Error("A shop is required to configure the Order Sync job.");}
+  if(!systemMessageRemoteId) {
     throw new Error("The shop's SystemMessageRemote must exist before Order Sync can be configured.");
   }
 
@@ -1350,11 +2833,13 @@ export async function configureOrderSyncJob(input: { shopId: string; systemMessa
   await refreshAfterMutation("serviceJob", { jobName });
 
   const body = resp?.data?.jobDetail ?? resp?.data ?? {};
+
   return { shopId, jobName, paused: "Y", serviceJobParameters, ...body };
 }
 
 export function productSyncExtraDomains(intervalMs: number, jobNames: readonly string[] = []): ActiveDomain[] {
   const names = jobNames.filter(Boolean);
+
   return [
     /**
      * The shop-scoped cursor. It decides WHICH runs this shop has and enriches the message and log
@@ -1398,20 +2883,20 @@ export function productSyncExtraDomains(intervalMs: number, jobNames: readonly s
  * through to the cache, after which they are read reactively like everything else.
  */
 export function useShopifyProductSyncRun() {
-  const { ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
+  const { ensureSystemMessageById, ensureSystemMessageErrors, fetchShopifyBulkOperation } = useSystemMessage();
   const { labelFor } = useStatuses();
 
   /** Which run is displayed. Set by `fetchSyncRun`; everything below derives from it. */
-  const targetMessageId = ref('');
+  const targetMessageId = ref("");
   /** True only while the two on-demand primes are in flight — never for observing progress. */
   const loading = ref(false);
 
   // One live subscription per table. Whole-table reads because the lookup key is reactive, and
   // re-subscribing on every id change would churn subscriptions for no gain at these volumes.
-  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: 'initDate' });
+  const { records: messages } = useCachedList<any>(systemMessageCache, { dateField: "initDate" });
   const { records: bulkOperations } = useCachedList<any>(shopifyBulkOperationCache);
-  const { records: mdmLogs } = useCachedList<any>(dataManagerLogCache, { dateField: 'createdDate' });
-  const { records: messageErrors } = useCachedList<any>(systemMessageErrorCache, { dateField: 'errorDate' });
+  const { records: mdmLogs } = useCachedList<any>(dataManagerLogCache, { dateField: "createdDate" });
+  const { records: messageErrors } = useCachedList<any>(systemMessageErrorCache, { dateField: "errorDate" });
 
   /**
    * Status → colour, by string matching rather than a status-id map, because the three sources speak
@@ -1419,28 +2904,30 @@ export function useShopifyProductSyncRun() {
    * bulk operation uses its own GraphQL enum (COMPLETED / FAILED / CANCELED).
    */
   const getStatusColor = (status: string) => {
-    if (!status) return 'medium';
+    if(!status) {return "medium";}
     const s = status.toLowerCase();
-    if (s.includes('success') || s.includes('completed') || s.includes('consumed') || s.includes('confirmed') || s.includes('finished') || s === 'dmlsuccess') return 'success';
-    if (s.includes('error') || s.includes('failed') || s.includes('rejected') || s === 'dmlerror') return 'danger';
-    if (s.includes('running') || s.includes('sent') || s.includes('produced') || s.includes('smsg')) return 'primary';
-    if (s === 'skipped') return 'warning';
-    return 'medium';
+    if(s.includes("success") || s.includes("completed") || s.includes("consumed") || s.includes("confirmed") || s.includes("finished") || s === "dmlsuccess") {return "success";}
+    if(s.includes("error") || s.includes("failed") || s.includes("rejected") || s === "dmlerror") {return "danger";}
+    if(s.includes("running") || s.includes("sent") || s.includes("produced") || s.includes("smsg")) {return "primary";}
+    if(s === "skipped") {return "warning";}
+
+    return "medium";
   };
 
   /** Label from the CACHED status catalog, falling back to the vocabularies above. */
   const getStatusLabel = (status: string) => {
-    if (!status) return translate('Pending');
+    if(!status) {return translate("Pending");}
 
     const cached = labelFor(status);
-    if (cached && cached !== status) return cached;
+    if(cached && cached !== status) {return cached;}
 
     const s = status.toLowerCase();
-    if (s === 'running') return translate('Running');
-    if (s === 'completed') return translate('Complete');
-    if (s === 'failed') return translate('Error');
-    if (s === 'canceled' || s === 'cancelled') return translate('Canceled');
-    if (s === 'skipped') return translate('Skipped');
+    if(s === "running") {return translate("Running");}
+    if(s === "completed") {return translate("Complete");}
+    if(s === "failed") {return translate("Error");}
+    if(s === "canceled" || s === "cancelled") {return translate("Canceled");}
+    if(s === "skipped") {return translate("Skipped");}
+
     return status;
   };
 
@@ -1455,14 +2942,15 @@ export function useShopifyProductSyncRun() {
       : []);
 
   const errorText = computed<string>(() => {
-    for (const error of systemMessageErrors.value) {
-      const text = String(error?.errorText ?? '').trim();
-      if (text) return text;
+    for(const error of systemMessageErrors.value) {
+      const text = String(error?.errorText ?? "").trim();
+      if(text) {return text;}
     }
-    return '';
+
+    return "";
   });
 
-  const bulkOperationId = computed<string>(() => getSystemMessageBulkOperationId(systemMessage.value) || '');
+  const bulkOperationId = computed<string>(() => getSystemMessageBulkOperationId(systemMessage.value) || "");
 
   const bulkOperation = computed<any>(() =>
     bulkOperationId.value
@@ -1474,9 +2962,10 @@ export function useShopifyProductSyncRun() {
    * the referenced ids are tried too — the same rule the imperative version used.
    */
   const mdmLog = computed<any>(() => {
-    if (!targetMessageId.value) return undefined;
+    if(!targetMessageId.value) {return undefined;}
     const referenced = getReferencedBulkOperationSystemMessageIds(systemMessage.value) ?? [];
     const candidates = new Set([targetMessageId.value, ...referenced].filter(Boolean).map(String));
+
     return mdmLogs.value.find((row: any) => candidates.has(String(row.systemMessageId)));
   });
 
@@ -1487,23 +2976,23 @@ export function useShopifyProductSyncRun() {
    * the run would sit on "pending" forever with nothing to wait for.
    */
   const skippedEmptyImport = computed<boolean>(() =>
-    String(bulkOperation.value?.status ?? '').toUpperCase() === 'COMPLETED' &&
+    String(bulkOperation.value?.status ?? "").toUpperCase() === "COMPLETED" &&
     Number(bulkOperation.value?.objectCount ?? 0) === 0);
 
   const effectiveStatus = computed<string>(() =>
     mdmLog.value?.statusId ||
-    (skippedEmptyImport.value ? 'skipped' : bulkOperation.value?.status) ||
+    (skippedEmptyImport.value ? "skipped" : bulkOperation.value?.status) ||
     systemMessage.value?.statusId ||
-    '');
+    "");
 
   /** The run view model — the contract the views already bind to, now fully derived. */
   const currentSyncRun = computed(() => {
-    if (!targetMessageId.value) return {} as Record<string, any>;
+    if(!targetMessageId.value) {return {} as Record<string, any>;}
 
     const message = systemMessage.value ?? {};
     const operation = bulkOperation.value;
     const log = mdmLog.value;
-    const mdmStatus = log?.statusId || (skippedEmptyImport.value ? 'skipped' : undefined);
+    const mdmStatus = log?.statusId || (skippedEmptyImport.value ? "skipped" : undefined);
 
     return {
       systemMessageId: targetMessageId.value,
@@ -1511,7 +3000,7 @@ export function useShopifyProductSyncRun() {
         ...message,
         systemMessageErrors: systemMessageErrors.value,
         errorText: errorText.value,
-        messageText: String(message?.messageText ?? '').trim(),
+        messageText: String(message?.messageText ?? "").trim(),
         statusLabel: getStatusLabel(message?.statusId),
         statusColor: getStatusColor(message?.statusId),
       },
@@ -1548,9 +3037,7 @@ export function useShopifyProductSyncRun() {
       },
       status: getStatusLabel(effectiveStatus.value),
       statusColor: getStatusColor(effectiveStatus.value),
-      completed: log?.statusId === 'DmlSuccess' ||
-        log?.statusId === 'DmlError' ||
-        skippedEmptyImport.value,
+      completed: isDataManagerLogTerminal(log) || skippedEmptyImport.value,
     } as Record<string, any>;
   });
 
@@ -1562,23 +3049,30 @@ export function useShopifyProductSyncRun() {
    * working, but the returned object is a snapshot of a computed value, not the live source.
    */
   const fetchSyncRun = async (systemMessageId: string, systemMessageData?: any) => {
-    const id = String(systemMessageId || systemMessageData?.systemMessageId || '');
-    if (!id) return null;
+    const id = String(systemMessageId || systemMessageData?.systemMessageId || "");
+    if(!id) {return null;}
 
     targetMessageId.value = id;
     loading.value = true;
     try {
+      // An exact deep link can target a run outside the current shop spine window. Hydrate that one
+      // message by id before joining its bulk operation and import; this is cache-first and uses the
+      // same existing SystemMessage read contract as spine enrichment.
+      const ensuredMessage = systemMessage.value ?? systemMessageData ??
+        await ensureSystemMessageById(id).catch(() => null);
+
       // Cached after the first look, so this is a no-op on revisit.
       await ensureSystemMessageErrors(id);
 
       // Cache-first inside `fetchShopifyBulkOperation`, which short-circuits once the operation is
       // terminal (immutable), so a finished run never hits Shopify again.
-      const message = systemMessage.value ?? systemMessageData;
+      const message = systemMessage.value ?? ensuredMessage;
       const operationId = getSystemMessageBulkOperationId(message);
       const remoteId = message?.systemMessageRemoteId;
-      if (operationId && remoteId && !bulkOperation.value) {
+      if(operationId && remoteId && !bulkOperation.value) {
         await fetchShopifyBulkOperation(operationId, remoteId).catch(() => undefined);
       }
+
       return currentSyncRun.value;
     } finally {
       loading.value = false;
@@ -1590,7 +3084,7 @@ export function useShopifyProductSyncRun() {
    *
    * `currentSyncRun` is derived, so it cannot be assigned to — clearing means pointing at nothing.
    */
-  const clearSyncRun = () => { targetMessageId.value = ''; };
+  const clearSyncRun = () => { targetMessageId.value = ""; };
 
   return { currentSyncRun, loading, fetchSyncRun, clearSyncRun, systemMessage, bulkOperation, mdmLog };
 }
@@ -1637,11 +3131,12 @@ function valueText(value: unknown): string {
 }
 
 function firstValue(source: ValueSource, keys: readonly string[]): unknown {
-  if (!source) return undefined;
-  for (const key of keys) {
+  if(!source) {return undefined;}
+  for(const key of keys) {
     const value = source[key];
-    if (value !== undefined && value !== null && valueText(value)) return value;
+    if(value !== undefined && value !== null && valueText(value)) {return value;}
   }
+
   return undefined;
 }
 
@@ -1654,25 +3149,28 @@ function normalizeToken(value: unknown): string {
 }
 
 function isTruthy(value: unknown): boolean {
-  if (value === true) return true;
+  if(value === true) {return true;}
+
   return ["true", "y", "yes", "1"].includes(valueText(value).toLowerCase());
 }
 
 function numberValue(source: ValueSource, keys: readonly string[]): number {
   const value = Number(firstValue(source, keys));
+
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function timestampValue(value: unknown): number {
-  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : 0;
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if(value instanceof Date) {return Number.isFinite(value.getTime()) ? value.getTime() : 0;}
+  if(typeof value === "number" && Number.isFinite(value)) {
     return value > 0 && value < 100_000_000_000 ? value * 1000 : value;
   }
 
   const text = valueText(value);
-  if (!text) return 0;
-  if (/^\d+(\.\d+)?$/.test(text)) return timestampValue(Number(text));
+  if(!text) {return 0;}
+  if(/^\d+(\.\d+)?$/.test(text)) {return timestampValue(Number(text));}
   const parsed = Date.parse(text);
+
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -1682,12 +3180,14 @@ function timestampFrom(source: ValueSource, keys: readonly string[]): number {
 
 function originalTimestamp(source: ValueSource, keys: readonly string[]): string | number | undefined {
   const value = firstValue(source, keys);
+
   return typeof value === "string" || typeof value === "number" ? value : undefined;
 }
 
 function boundedLimit(limit: unknown): number {
   const parsed = Math.trunc(Number(limit));
-  if (!Number.isFinite(parsed) || parsed < 1) return SHOPIFY_ORDER_SYNC_RESULT_LIMIT;
+  if(!Number.isFinite(parsed) || parsed < 1) {return SHOPIFY_ORDER_SYNC_RESULT_LIMIT;}
+
   return Math.min(parsed, SHOPIFY_ORDER_SYNC_RESULT_LIMIT);
 }
 
@@ -1729,9 +3229,9 @@ export interface SystemMessageRemoteLike {
 
 export function getServiceJobParameterMap(job: ServiceJobLike | null | undefined): Record<string, unknown> {
   const parameters: Record<string, unknown> = {};
-  if (!job) return parameters;
+  if(!job) {return parameters;}
 
-  if (isRecord(job.parameters)) Object.assign(parameters, job.parameters);
+  if(isRecord(job.parameters)) {Object.assign(parameters, job.parameters);}
 
   const parameterRows = [
     ...(Array.isArray(job.parameters) ? job.parameters : []),
@@ -1739,22 +3239,24 @@ export function getServiceJobParameterMap(job: ServiceJobLike | null | undefined
   ];
   parameterRows.forEach((parameter) => {
     const name = firstText(parameter, ["parameterName", "name"]);
-    if (name) parameters[name] = firstValue(parameter, ["parameterValue", "value"]);
+    if(name) {parameters[name] = firstValue(parameter, ["parameterValue", "value"]);}
   });
+
   return parameters;
 }
 
 function parameterText(job: ServiceJobLike, aliases: readonly string[]): string {
   const parameters = getServiceJobParameterMap(job);
+
   return firstText(parameters, aliases) || firstText(job, aliases);
 }
 
 export type SyncConfigurationStateKind =
-  | "loading"
-  | "error"
-  | "missing"
-  | "configured-paused"
-  | "configured-active";
+  | "loading" |
+  "error" |
+  "missing" |
+  "configured-paused" |
+  "configured-active";
 
 export interface SyncConfigurationState {
   kind: SyncConfigurationStateKind;
@@ -1764,9 +3266,10 @@ export interface SyncConfigurationState {
 }
 
 export function isServiceJobPaused(job: ServiceJobLike): boolean {
-  if (job.isPaused !== undefined) return isTruthy(job.isPaused);
-  if (job.paused !== undefined) return isTruthy(job.paused);
-  if (job.isActive !== undefined) return !isTruthy(job.isActive);
+  if(job.isPaused !== undefined) {return isTruthy(job.isPaused);}
+  if(job.paused !== undefined) {return isTruthy(job.paused);}
+  if(job.isActive !== undefined) {return !isTruthy(job.isActive);}
+
   return false;
 }
 
@@ -1786,15 +3289,16 @@ export function deriveSyncConfigurationState(input: {
    * review were dead code, and a fully configured active shop rendered as "Waiting for setup".
    * Found by QA driving the page live; one caller had been masking it locally with `|| undefined`.
    */
-  const hasError = input.error !== undefined && input.error !== null
-    && !(typeof input.error === "string" && input.error.trim() === "");
-  if (hasError) {
+  const hasError = input.error !== undefined && input.error !== null &&
+    !(typeof input.error === "string" && input.error.trim() === "");
+  if(hasError) {
     return { kind: "error", configured: false, paused: null, error: input.error };
   }
-  if (input.loading) return { kind: "loading", configured: false, paused: null, error: null };
-  if (!input.job) return { kind: "missing", configured: false, paused: null, error: null };
+  if(input.loading) {return { kind: "loading", configured: false, paused: null, error: null };}
+  if(!input.job) {return { kind: "missing", configured: false, paused: null, error: null };}
 
   const paused = isServiceJobPaused(input.job);
+
   return {
     kind: paused ? "configured-paused" : "configured-active",
     configured: true,
@@ -1838,14 +3342,16 @@ export interface OrderSyncMappingInput {
 
 function selectedShopRecords(records: readonly UnknownRecord[], selectedShopId?: string): UnknownRecord[] {
   const shopId = valueText(selectedShopId);
-  if (!shopId) return [...records];
+  if(!shopId) {return [...records];}
+
   return records.filter((record) => firstText(record, ["shopId", "internalId", "shopifyShopId"]) === shopId);
 }
 
 function readinessCount(value: readonly unknown[] | number | boolean | undefined): number {
-  if (Array.isArray(value)) return value.length;
-  if (value === true) return 1;
+  if(Array.isArray(value)) {return value.length;}
+  if(value === true) {return 1;}
   const count = Number(value);
+
   return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
@@ -1937,11 +3443,12 @@ function tokenIncludes(token: string, fragments: readonly string[]): boolean {
 }
 
 function systemMessageProgressState(message: SystemMessageLike | null | undefined): SyncProgressState {
-  if (!message) return "pending";
+  if(!message) {return "pending";}
   const status = normalizeToken(firstValue(message, ["statusId", "status", "messageStatusId"]));
-  if (tokenIncludes(status, FAILURE_TOKENS)) return "failed";
-  if (SYSTEM_MESSAGE_COMPLETE.has(status) || tokenIncludes(status, ["consumed", "confirmed"])) return "completed";
-  if (tokenIncludes(status, ACTIVE_TOKENS)) return "active";
+  if(tokenIncludes(status, FAILURE_TOKENS)) {return "failed";}
+  if(SYSTEM_MESSAGE_COMPLETE.has(status) || tokenIncludes(status, ["consumed", "confirmed"])) {return "completed";}
+  if(tokenIncludes(status, ACTIVE_TOKENS)) {return "active";}
+
   return "pending";
 }
 
@@ -1965,11 +3472,7 @@ function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
   const hasFinish = Boolean(firstValue(log, ["finishDateTime", "finishedDateTime", "completedDate", "processedDate"]));
   let state: SyncProgressState;
 
-  if (tokenIncludes(status, FAILURE_TOKENS)) state = successful > 0 ? "partial" : "failed";
-  else if (failed > 0) state = successful > 0 ? "partial" : "failed";
-  else if (tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) state = "completed";
-  else if (tokenIncludes(status, ACTIVE_TOKENS) || total > 0) state = "active";
-  else state = "pending";
+  if(tokenIncludes(status, FAILURE_TOKENS)) {state = successful > 0 ? "partial" : "failed";} else if(failed > 0) {state = successful > 0 ? "partial" : "failed";} else if(tokenIncludes(status, COMPLETE_TOKENS) || hasFinish) {state = "completed";} else if(tokenIncludes(status, ACTIVE_TOKENS) || total > 0) {state = "active";} else {state = "pending";}
 
   return {
     key: logId || [
@@ -1990,10 +3493,11 @@ function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
 }
 
 function progressLabel(state: SyncProgressState, successful: number, failed: number): string {
-  if (state === "completed") return `Completed · ${successful} ${successful === 1 ? "order" : "orders"}`;
-  if (state === "partial") return `Partially completed · ${successful} processed · ${failed} failed`;
-  if (state === "failed") return failed ? `Failed · ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";
-  if (state === "active") return "In progress";
+  if(state === "completed") {return `Completed · ${successful} ${successful === 1 ? "order" : "orders"}`;}
+  if(state === "partial") {return `Partially completed · ${successful} processed · ${failed} failed`;}
+  if(state === "failed") {return failed ? `Failed · ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";}
+  if(state === "active") {return "In progress";}
+
   return "Waiting";
 }
 
@@ -2006,8 +3510,9 @@ export function deriveSyncProgress(
   const normalizedLogs = logs
     .map(normalizeLogOutcome)
     .filter((log) => {
-      if (seenLogs.has(log.key)) return false;
+      if(seenLogs.has(log.key)) {return false;}
       seenLogs.add(log.key);
+
       return true;
     });
 
@@ -2018,7 +3523,7 @@ export function deriveSyncProgress(
   }), { total: 0, successful: 0, failed: 0 });
 
   let importState: SyncProgressState;
-  if (!normalizedLogs.length) {
+  if(!normalizedLogs.length) {
     importState = batchState === "completed" ? "completed" : batchState === "failed" ? "failed" : "pending";
   } else {
     const states = normalizedLogs.map((log) => log.state);
@@ -2026,10 +3531,7 @@ export function deriveSyncProgress(
     const hasActive = states.some((state) => state === "active" || state === "pending");
     const hasCompleted = states.some((state) => state === "completed" || state === "partial");
 
-    if (hasActive) importState = "active";
-    else if (hasFailed && (hasCompleted || totals.successful > 0)) importState = "partial";
-    else if (hasFailed) importState = "failed";
-    else importState = "completed";
+    if(hasActive) {importState = "active";} else if(hasFailed && (hasCompleted || totals.successful > 0)) {importState = "partial";} else if(hasFailed) {importState = "failed";} else {importState = "completed";}
   }
 
   const batchRow: SyncProgressRow = {
@@ -2062,11 +3564,12 @@ export function deriveSyncOverallState(
   batchRow: Pick<SyncProgressRow, "state">,
   importRow: Pick<SyncProgressRow, "state">
 ): SyncProgressState {
-  if (batchRow.state === "active" || batchRow.state === "pending") return batchRow.state;
-  if (importRow.state === "active" || importRow.state === "pending") return "active";
-  if (batchRow.state === "failed") {
+  if(batchRow.state === "active" || batchRow.state === "pending") {return batchRow.state;}
+  if(importRow.state === "active" || importRow.state === "pending") {return "active";}
+  if(batchRow.state === "failed") {
     return importRow.state === "completed" || importRow.state === "partial" ? "partial" : "failed";
   }
+
   return importRow.state;
 }
 
@@ -2091,8 +3594,9 @@ export interface RecentProcessedOrder {
 
 function auditOutcome(row: ValueSource): RecentProcessedOrder["outcome"] | null {
   const configId = valueText(row?.configId);
-  if (configId !== "SYNC_SHOPIFY_ORDER" && configId !== "UPDATE_SHOPIFY_ORDER") return null;
+  if(configId !== "SYNC_SHOPIFY_ORDER" && configId !== "UPDATE_SHOPIFY_ORDER") {return null;}
   const declaredOutcome = valueText(row?.outcome);
+
   return declaredOutcome === "Created" || declaredOutcome === "Updated" ? declaredOutcome : null;
 }
 
@@ -2101,7 +3605,7 @@ export function normalizeRecentProcessedOrders(
   options: { limit?: number; shopId?: string } = {}
 ): RecentProcessedOrder[] {
   const selectedShopId = valueText(options.shopId);
-  if (!selectedShopId) return [];
+  if(!selectedShopId) {return [];}
 
   const normalized = rows.flatMap((row, index): RecentProcessedOrder[] => {
     const shopId = valueText(row.shopId);
@@ -2110,14 +3614,14 @@ export function normalizeRecentProcessedOrders(
     const logId = firstText(row, ["logId", "dataManagerLogId"]);
     const outcome = auditOutcome(row);
     const shopifyFetchVerified = row.shopifyFetchVerified;
-    if (
-      shopId !== selectedShopId
-      || !systemMessageId
-      || !configId
-      || !logId
-      || !outcome
-      || typeof shopifyFetchVerified !== "boolean"
-    ) return [];
+    if(
+      shopId !== selectedShopId ||
+      !systemMessageId ||
+      !configId ||
+      !logId ||
+      !outcome ||
+      typeof shopifyFetchVerified !== "boolean"
+    ) {return [];}
 
     const shopifyOrderId = valueText(row.shopifyOrderId);
     const processedAtMillis = timestampFrom(row, AUDIT_TIMESTAMPS);
@@ -2142,9 +3646,11 @@ export function normalizeRecentProcessedOrders(
 
   normalized.sort((a, b) => b.processedAtMillis - a.processedAtMillis || a.id.localeCompare(b.id));
   const seen = new Set<string>();
+
   return normalized.filter((row) => {
-    if (seen.has(row.id)) return false;
+    if(seen.has(row.id)) {return false;}
     seen.add(row.id);
+
     return true;
   }).slice(0, boundedLimit(options.limit));
 }
@@ -2183,21 +3689,23 @@ export interface RecentOrderError {
 
 function errorText(row: ValueSource): string {
   const value = firstValue(row, ["errorText", "errorMessage", "message", "errors", "error"]);
-  if (Array.isArray(value)) return value.map(valueText).filter(Boolean).join(", ");
-  if (isRecord(value)) {
+  if(Array.isArray(value)) {return value.map(valueText).filter(Boolean).join(", ");}
+  if(isRecord(value)) {
     try {
       return JSON.stringify(value);
     } catch (_error) {
       return valueText(value);
     }
   }
+
   return valueText(value);
 }
 
 function childRecords(source: OrderErrorSourceLike): readonly UnknownRecord[] | null {
-  if (Array.isArray(source.records)) return source.records;
-  if (Array.isArray(source.errorRecords)) return source.errorRecords;
-  if (Array.isArray(source.rows)) return source.rows;
+  if(Array.isArray(source.records)) {return source.records;}
+  if(Array.isArray(source.errorRecords)) {return source.errorRecords;}
+  if(Array.isArray(source.rows)) {return source.rows;}
+
   return null;
 }
 
@@ -2212,6 +3720,7 @@ function explicitShopifyOrderId(record: ValueSource): string {
 
 function isResolvableShopifyOrderId(value: string): boolean {
   const match = /^(?:gid:\/\/shopify\/Order\/)?(\d{1,30})$/.exec(value);
+
   return Boolean(match && !/^0+$/.test(match[1]));
 }
 
@@ -2230,7 +3739,7 @@ export function normalizeRecentOrderErrors(
     const records = childRecords(source) || [source];
     records.forEach((record, recordIndex) => {
       const shopId = firstText(record, ["shopId", "shopifyShopId", "internalId"]) || firstText(source, ["shopId", "shopifyShopId", "internalId"]);
-      if (selectedShopId && shopId !== selectedShopId) return;
+      if(selectedShopId && shopId !== selectedShopId) {return;}
 
       const configId = firstText(record, ["configId", "dataManagerConfigId"]) || firstText(source, ["configId", "dataManagerConfigId"]);
       const logId = firstText(record, ["logId", "dataManagerLogId"]) || firstText(source, ["logId", "dataManagerLogId"]);
@@ -2273,16 +3782,19 @@ export function normalizeRecentOrderErrors(
 
   normalized.sort((a, b) => b.occurredAtMillis - a.occurredAtMillis || a.id.localeCompare(b.id));
   const seen = new Set<string>();
+
   return normalized.filter((row) => {
-    if (seen.has(row.id)) return false;
+    if(seen.has(row.id)) {return false;}
     seen.add(row.id);
+
     return true;
   }).slice(0, boundedLimit(options.limit));
 }
 
 function matchesQuery(values: readonly unknown[], query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return true;
+  if(!needle) {return true;}
+
   return values.some((value) => valueText(value).toLocaleLowerCase().includes(needle));
 }
 
@@ -2306,20 +3818,21 @@ export function searchLoadedOrderErrors(rows: readonly RecentOrderError[], query
 }
 
 export type PermissionInput =
-  | readonly string[]
-  | ReadonlySet<string>
-  | { permissions?: readonly string[] | ReadonlySet<string>; hasPermission?: (permissionId: string) => boolean }
-  | null
-  | undefined;
+  | readonly string[] |
+  ReadonlySet<string> |
+  { permissions?: readonly string[] | ReadonlySet<string>; hasPermission?: (permissionId: string) => boolean } |
+  null |
+  undefined;
 
 function hasPermission(input: PermissionInput, permissionId: string): boolean {
-  if (!input) return false;
-  if (Array.isArray(input)) return input.some((permission) => permission === permissionId);
-  if (input instanceof Set) return input.has(permissionId);
-  if (typeof input === "object" && "hasPermission" in input && typeof input.hasPermission === "function") {
+  if(!input) {return false;}
+  if(Array.isArray(input)) {return input.some((permission) => permission === permissionId);}
+  if(input instanceof Set) {return input.has(permissionId);}
+  if(typeof input === "object" && "hasPermission" in input && typeof input.hasPermission === "function") {
     return input.hasPermission(permissionId);
   }
-  if (typeof input === "object" && "permissions" in input) return hasPermission(input.permissions, permissionId);
+  if(typeof input === "object" && "permissions" in input) {return hasPermission(input.permissions, permissionId);}
+
   return false;
 }
 
@@ -2342,6 +3855,7 @@ export function getSyncCapabilities(
   feature: ShopifySyncFeature = ORDER_SYNC_FEATURE,
 ): SyncCapabilities {
   const isAdmin = hasPermission(permissions, feature.adminPermission);
+
   return {
     canMonitor: true,
     canConfigure: isAdmin,
@@ -2425,6 +3939,7 @@ export function orderSyncSummary(
   // batch is still work in flight from the operator's point of view.
   const pendingBatchRequests = ordered.filter((batch) => {
     const [batchHalf, importHalf] = deriveSyncProgress(batch, logsFor(batch));
+
     return !(TERMINAL_STATES.has(batchHalf.state) && TERMINAL_STATES.has(importHalf.state));
   }).length;
 
@@ -2441,8 +3956,9 @@ export function orderSyncSummary(
      * moment a queued run returned zero orders. "Last completed batch" means "last batch that
      * actually imported", which is also what the retired store computed.
      */
-    if (!logs.length) return false;
+    if(!logs.length) {return false;}
     const [batchHalf, importHalf] = deriveSyncProgress(batch, logs);
+
     return TERMINAL_STATES.has(batchHalf.state) && importHalf.state === "completed";
   });
 
@@ -2473,8 +3989,8 @@ export function orderSyncSummary(
     lastCompletedAt,
     nextRunTime: job?.cronExpression
       ? getNextSyncRun(job.cronExpression, {
-          timeZone: productStore?.defaultTimeZone || productStore?.timeZone,
-        })
+        timeZone: productStore?.defaultTimeZone || productStore?.timeZone,
+      })
       : null,
   };
 }
@@ -2492,8 +4008,9 @@ export function isOrderSyncBatchActive(summary: OrderSyncSummary | null | undefi
    * has not yet used order sync. It also made "Run now" report "a batch request is already in
    * progress" when none existed.
    */
-  if (!summary?.latestBatch) return false;
+  if(!summary?.latestBatch) {return false;}
   const state = summary.overallStatus;
+
   return state === "active" || state === "pending";
 }
 
@@ -2507,10 +4024,12 @@ export function canRunOrderSyncNow(
   job: ServiceJobLike | null | undefined,
   batches: readonly OrderSyncBatchLike[] | null | undefined,
 ): boolean {
-  if (!job?.jobName) return false;
-  if (isServiceJobPaused(job)) return false;
+  if(!job?.jobName) {return false;}
+  if(isServiceJobPaused(job)) {return false;}
+
   return !(batches ?? []).some((batch) => {
     const status = String(batch?.statusId ?? "").toLowerCase();
+
     return status.includes("produced") || status.includes("sending") || status.includes("triggered");
   });
 }
@@ -2521,10 +4040,11 @@ export function orderSyncRunNowDisabledReason(
   job: ServiceJobLike | null | undefined,
   summary: OrderSyncSummary | null | undefined,
 ): string {
-  if (!capabilities?.canRunNow) return "You do not have permission to run Order Sync.";
-  if (!job?.jobName) return "Order Sync is not configured yet.";
-  if (isServiceJobPaused(job)) return "Order Sync is paused.";
-  if (isOrderSyncBatchActive(summary)) return "A batch request is already in progress.";
+  if(!capabilities?.canRunNow) {return "You do not have permission to run Order Sync.";}
+  if(!job?.jobName) {return "Order Sync is not configured yet.";}
+  if(isServiceJobPaused(job)) {return "Order Sync is paused.";}
+  if(isOrderSyncBatchActive(summary)) {return "A batch request is already in progress.";}
+
   return "";
 }
 
@@ -2805,13 +4325,13 @@ async function fetchLandmarkDates(): Promise<void> {
     // One pass, grouped by the shop the row belongs to. Every shop's dates land in one request, which
     // is why switching shops never costs another.
     const byShopId: Record<string, { launchDate: string; historyLastSyncDate: string }> = {};
-    for (const row of rows) {
+    for(const row of rows) {
       const shopId = String(row?.systemResourceId ?? "").trim();
-      if (!shopId) continue;
+      if(!shopId) {continue;}
       const bucket = (byShopId[shopId] ||= { launchDate: "", historyLastSyncDate: "" });
       const value = String(row?.systemPropertyValue ?? "");
-      if (row?.systemPropertyId === ORDER_SYNC_LANDMARK_PROPERTY_IDS.launchDate) bucket.launchDate = value;
-      if (row?.systemPropertyId === ORDER_SYNC_LANDMARK_PROPERTY_IDS.historyLastSyncDate) bucket.historyLastSyncDate = value;
+      if(row?.systemPropertyId === ORDER_SYNC_LANDMARK_PROPERTY_IDS.launchDate) {bucket.launchDate = value;}
+      if(row?.systemPropertyId === ORDER_SYNC_LANDMARK_PROPERTY_IDS.historyLastSyncDate) {bucket.historyLastSyncDate = value;}
     }
 
     landmarkState.byShopId = byShopId;
@@ -2828,7 +4348,24 @@ async function fetchLandmarkDates(): Promise<void> {
 /** Idempotent: the first caller fetches, everyone after reuses the resolved state. */
 function ensureLandmarkDates(): Promise<void> {
   landmarkDatesRequest ||= fetchLandmarkDates().catch(() => undefined);
+
   return landmarkDatesRequest;
+}
+
+/** Fold a write performed by another Shopify setup surface into the shared session state. */
+function recordLandmarkDates(
+  shopId: string,
+  dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>,
+): void {
+  if(!shopId) {return;}
+  if(!landmarkState.byShopId[shopId]) {
+    landmarkState.byShopId[shopId] = { launchDate: "", historyLastSyncDate: "" };
+  }
+  const bucket = landmarkState.byShopId[shopId];
+  if(dates.launchDate !== undefined) {bucket.launchDate = dates.launchDate;}
+  if(dates.historyLastSyncDate !== undefined) {bucket.historyLastSyncDate = dates.historyLastSyncDate;}
+  landmarkState.status = "ready";
+  landmarkState.error = null;
 }
 
 /**
@@ -2840,8 +4377,8 @@ function ensureLandmarkDates(): Promise<void> {
  */
 async function saveLandmarkDate(shopId: string, key: LandmarkDateKey, value: string): Promise<void> {
   const systemPropertyId = ORDER_SYNC_LANDMARK_PROPERTY_IDS[key];
-  if (!systemPropertyId) throw new Error("Unknown landmark date.");
-  if (!shopId) throw new Error("Select a Shopify shop before setting a landmark date.");
+  if(!systemPropertyId) {throw new Error("Unknown landmark date.");}
+  if(!shopId) {throw new Error("Select a Shopify shop before setting a landmark date.");}
 
   await api({
     url: "admin/systemProperties",
@@ -2866,6 +4403,7 @@ export function useOrderSyncLandmarkDates(shopIdSource: ShopIdSource) {
 
   const landmarkDates = computed<ShopLandmarkDates>(() => {
     const dates = landmarkState.byShopId[shopId.value];
+
     return {
       status: landmarkState.status,
       error: landmarkState.error,
@@ -2879,6 +4417,8 @@ export function useOrderSyncLandmarkDates(shopIdSource: ShopIdSource) {
     /** Load once for the whole session. Safe to call on every view entry. */
     load: () => ensureLandmarkDates(),
     save: (key: LandmarkDateKey, value: string) => saveLandmarkDate(shopId.value, key, value),
+    record: (dates: Partial<Pick<ShopLandmarkDates, "launchDate" | "historyLastSyncDate">>) =>
+      recordLandmarkDates(shopId.value, dates),
     EMPTY_LANDMARK_DATES,
   };
 }
@@ -2991,7 +4531,7 @@ export function useShopifyOrderSync() {
    * cache immediately, which is why no skeleton is needed on a revisit.
    */
   async function loadMonitoring(shopId: string) {
-    if (state.selectedShopId !== shopId) resetForShop(shopId);
+    if(state.selectedShopId !== shopId) {resetForShop(shopId);}
     state.loading = !state.monitoringLoadedAt;
     state.monitoringRefreshing = true;
     try {
@@ -3009,7 +4549,7 @@ export function useShopifyOrderSync() {
 
   /** Configuration needs no fetch: job, template, remote and mappings are all cached. */
   async function loadConfiguration(shopId: string) {
-    if (state.selectedShopId !== shopId) resetForShop(shopId);
+    if(state.selectedShopId !== shopId) {resetForShop(shopId);}
     await loadLandmarkDates();
   }
 
@@ -3037,7 +4577,7 @@ export function useShopifyOrderSync() {
   }
 
   async function refresh() {
-    if (state.selectedShopId) await loadMonitoring(state.selectedShopId);
+    if(state.selectedShopId) {await loadMonitoring(state.selectedShopId);}
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -3045,7 +4585,7 @@ export function useShopifyOrderSync() {
   // ---------------------------------------------------------------------------------------------
 
   async function withMutation<T>(kind: string, run: () => Promise<T>): Promise<T> {
-    if (state.activeMutation) throw new Error("Another Order Sync change is already in progress.");
+    if(state.activeMutation) {throw new Error("Another Order Sync change is already in progress.");}
     state.activeMutation = kind;
     state.error = "";
     try {
@@ -3071,11 +4611,12 @@ export function useShopifyOrderSync() {
     // one for a shop other than the bound session's would need that shop's remote resolved too —
     // and getting it wrong means writing a cron or a pause to another shop's job. Callers pass their
     // captured target id precisely to detect this race, so surfacing it is the intended outcome.
-    if (shopId && shopId !== state.selectedShopId) {
+    if(shopId && shopId !== state.selectedShopId) {
       throw new Error("The selected Shopify shop changed before the Order Sync change completed.");
     }
     const jobName = job.value?.jobName;
-    if (!jobName) throw new Error("Configure the selected shop's Order Sync job first.");
+    if(!jobName) {throw new Error("Configure the selected shop's Order Sync job first.");}
+
     return String(jobName);
   }
 
@@ -3092,6 +4633,7 @@ export function useShopifyOrderSync() {
   function jobResultFrom(resp: any, jobName: string, applied: Record<string, unknown>) {
     const payload = resp?.data ?? {};
     const body = payload?.jobDetail ?? payload;
+
     return { shopId: state.selectedShopId, jobName, ...body, ...applied };
   }
 
@@ -3106,9 +4648,10 @@ export function useShopifyOrderSync() {
   const updateSchedule = (cronExpression: string, shopId?: string) => withMutation("schedule", async () => {
     const jobName = resolveJobName(shopId);
     const cron = cronExpression.trim();
-    if (!cron) throw new Error("A cron expression is required.");
+    if(!cron) {throw new Error("A cron expression is required.");}
     const resp = await updateJob({ jobName, cronExpression: cron });
     await refreshAfterMutation("serviceJob", { jobName });
+
     return jobResultFrom(resp, jobName, { cronExpression: cron });
   });
 
@@ -3117,6 +4660,7 @@ export function useShopifyOrderSync() {
     const jobName = resolveJobName(shopId);
     const resp = await updateJob({ jobName, paused: paused ? "Y" : "N" });
     await refreshAfterMutation("serviceJob", { jobName });
+
     // `paused` is echoed as the BOOLEAN the caller passed, not Moqui's "Y"/"N" — the activation guard
     // tests `updatedJob?.paused !== false`, which "N" (truthy) would fail.
     return jobResultFrom(resp, jobName, { paused });
@@ -3130,6 +4674,7 @@ export function useShopifyOrderSync() {
     // off this to link the queued run, and both live under `data`.
     const result = { jobName, ...(resp?.data ?? {}) };
     state.lastRunResult = result;
+
     return result;
   });
 
@@ -3137,12 +4682,13 @@ export function useShopifyOrderSync() {
   const setLandmarkDate = (input: { key: LandmarkDateKey; value: string; shopId?: string }) =>
     withMutation("landmark", () => {
       assertShop(input.shopId);
+
       return saveLandmark(input.key, input.value);
     });
 
   /** Same shop-race check the job mutations make, for the reads and writes that are not job-scoped. */
   function assertShop(shopId?: string) {
-    if (shopId && shopId !== state.selectedShopId) {
+    if(shopId && shopId !== state.selectedShopId) {
       throw new Error("The selected Shopify shop changed before the Order Sync request completed.");
     }
   }
@@ -3154,12 +4700,10 @@ export function useShopifyOrderSync() {
    * straight off the returned object to drive their paging loop, and nesting them only under
    * `pageInfo` left both undefined — a search silently stopped after its first page.
    */
-  async function searchShopifyOrders(
-    input: { queryString: string; after?: string; pageSize?: number; shopId?: string },
-  ) {
+  async function searchShopifyOrders(input: { queryString: string; after?: string; pageSize?: number; shopId?: string },) {
     assertShop(input.shopId);
     const systemMessageRemoteId = remoteId.value;
-    if (!systemMessageRemoteId) throw new Error("The selected Shopify shop remote is unavailable.");
+    if(!systemMessageRemoteId) {throw new Error("The selected Shopify shop remote is unavailable.");}
     const resp: any = await api({
       url: "shopify/graphql",
       method: "post",
@@ -3176,6 +4720,7 @@ export function useShopifyOrderSync() {
     const payload = resp?.data?.response ?? resp?.data?.data ?? resp?.data ?? {};
     const edges = payload?.orders?.edges ?? [];
     const pageInfo = payload?.orders?.pageInfo ?? null;
+
     return {
       orders: edges.map((edge: any) => edge?.node).filter(Boolean) as any[],
       pageInfo,
@@ -3203,7 +4748,8 @@ export function useShopifyOrderSync() {
    * errored live: `Timestamp format must be yyyy-mm-dd hh:mm:ss[.fffffffff]`, run M2399238). */
   function toJobTimestamp(iso: string): string {
     const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) throw new Error("A valid from date is required to replay orders.");
+    if(Number.isNaN(date.getTime())) {throw new Error("A valid from date is required to replay orders.");}
+
     return date.toISOString().slice(0, 19).replace("T", " ");
   }
 
@@ -3229,10 +4775,10 @@ export function useShopifyOrderSync() {
     }));
     // REFUSE on a parameter-less row rather than PUT a lone `fromDate`: if the PUT replaces the whole
     // set, that write would strip the remote/type parameters and orphan the job from its shop.
-    if (!baseline.some((parameter) => parameter.parameterName === "systemMessageRemoteId" && parameter.parameterValue)) {
+    if(!baseline.some((parameter) => parameter.parameterName === "systemMessageRemoteId" && parameter.parameterValue)) {
       throw new Error("The Order Sync job's parameters are unavailable. Refresh and try again.");
     }
-    if (!baseline.some((parameter) => parameter.parameterName === "fromDate")) {
+    if(!baseline.some((parameter) => parameter.parameterName === "fromDate")) {
       baseline.push({ parameterName: "fromDate", parameterValue: null });
     }
     const swapped = baseline.map((parameter) =>
@@ -3244,6 +4790,7 @@ export function useShopifyOrderSync() {
       const resp: any = await runJobNow(jobName);
       const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
       state.lastRunResult = result;
+
       return result;
     } finally {
       await updateJob({ jobName, serviceJobParameters: baseline });
@@ -3262,15 +4809,16 @@ export function useShopifyOrderSync() {
     withMutation("request-orders", async () => {
       assertShop(input.shopId);
       const orders = (input.orders ?? []).filter((order) => order.legacyResourceId || order.id);
-      if (!orders.length) throw new Error("Select at least one Shopify order to request.");
+      if(!orders.length) {throw new Error("Select at least one Shopify order to request.");}
       const stamps = orders
         .map((order) => Date.parse(order.updatedAt || order.createdAt || ""))
         .filter((stamp) => !Number.isNaN(stamp));
-      if (!stamps.length) {
+      if(!stamps.length) {
         throw new Error("The selected Shopify orders are missing their update dates. Search again and retry.");
       }
       // One minute of cushion so a subsecond-truncated `updatedAt` cannot fall outside the window.
       const run = await replayWindow(new Date(Math.min(...stamps) - 60_000).toISOString(), input.shopId);
+
       return {
         queued: orders.map((order) => ({
           shopifyOrderId: String(order.legacyResourceId || order.id),
@@ -3290,17 +4838,16 @@ export function useShopifyOrderSync() {
         pageSize: 5,
         shopId: input.shopId,
       });
-      const order = search.orders.find(
-        (candidate: any) => String(candidate.legacyResourceId ?? "") === String(input.shopifyOrderId),
-      ) ?? search.orders[0];
-      if (!order) {
+      const order = search.orders.find((candidate: any) => String(candidate.legacyResourceId ?? "") === String(input.shopifyOrderId),) ?? search.orders[0];
+      if(!order) {
         throw new Error(`Shopify order ${input.shopifyOrderId} was not found on the connected shop.`);
       }
       const basis = Date.parse(order.updatedAt || order.createdAt || "");
-      if (Number.isNaN(basis)) {
+      if(Number.isNaN(basis)) {
         throw new Error(`Shopify order ${input.shopifyOrderId} is missing its update date.`);
       }
       const run = await replayWindow(new Date(basis - 60_000).toISOString(), input.shopId);
+
       return { shopifyOrderId: input.shopifyOrderId, ...run };
     });
 
@@ -3308,6 +4855,7 @@ export function useShopifyOrderSync() {
   const configure = (input: { shopId?: string } = {}) => withMutation("configure", async () => {
     assertShop(input.shopId);
     const shopId = state.selectedShopId;
+
     // Generic clone + parameters — the bespoke `POST shopify/order-sync/{id}/job` is broken on the
     // backend (400, verified live). See `configureOrderSyncJob` for the full story.
     return configureOrderSyncJob({ shopId, systemMessageRemoteId: remoteId.value });
@@ -3373,7 +4921,6 @@ const ORDER_SEARCH_QUERY = `
  */
 import { CronExpressionParser } from "cron-parser";
 import cronstrue from "cronstrue";
-import Actions from "@/authorization/actions";
 
 export const SYNC_SCHEDULE_PRESETS = [
   { id: "every-15-minutes", label: "Every 15 minutes", expression: "0 */15 * ? * *" },
@@ -3385,10 +4932,10 @@ export const SYNC_SCHEDULE_PRESETS = [
 export type SyncSchedulePreset = typeof SYNC_SCHEDULE_PRESETS[number];
 
 export type SyncCronValidationCode =
-  | "required"
-  | "field-count"
-  | "invalid-time-zone"
-  | "invalid-expression";
+  | "required" |
+  "field-count" |
+  "invalid-time-zone" |
+  "invalid-expression";
 
 export interface SyncCronOptions {
   timeZone?: string;
@@ -3473,6 +5020,7 @@ function getTimeZone(timeZone?: string): string {
 function isValidTimeZone(timeZone: string): boolean {
   try {
     Intl.DateTimeFormat("en-US", { timeZone }).format(new Date(0));
+
     return true;
   } catch (_error) {
     return false;
@@ -3481,33 +5029,35 @@ function isValidTimeZone(timeZone: string): boolean {
 
 function parseQuartzFieldValue(value: string, definition: QuartzFieldDefinition): number | null {
   const alias = definition.aliases?.[value.toUpperCase()];
-  if (alias !== undefined) return alias;
-  if (!/^\d+$/.test(value)) return null;
+  if(alias !== undefined) {return alias;}
+  if(!/^\d+$/.test(value)) {return null;}
 
   const numericValue = Number(value);
-  return Number.isSafeInteger(numericValue)
-    && numericValue >= definition.min
-    && numericValue <= definition.max
+
+  return Number.isSafeInteger(numericValue) &&
+    numericValue >= definition.min &&
+    numericValue <= definition.max
     ? numericValue
     : null;
 }
 
 function isValidQuartzStep(value: string, definition: QuartzFieldDefinition): boolean {
-  if (!/^\d+$/.test(value)) return false;
+  if(!/^\d+$/.test(value)) {return false;}
 
   const step = Number(value);
   // Mirrors cron-utils FieldConstraints.isPeriodInRange().
   const maxStep = Math.min(definition.max, definition.max - definition.min + 1);
+
   return Number.isSafeInteger(step) && step > 0 && step <= maxStep;
 }
 
 function isValidQuartzRange(value: string, definition: QuartzFieldDefinition): boolean {
   const rangeParts = value.split("-");
-  if (rangeParts.length !== 2) return false;
+  if(rangeParts.length !== 2) {return false;}
 
   const start = parseQuartzFieldValue(rangeParts[0], definition);
   const end = parseQuartzFieldValue(rangeParts[1], definition);
-  if (start === null || end === null) return false;
+  if(start === null || end === null) {return false;}
 
   // cron-utils configures a strict range only for the optional Quartz year.
   return !definition.strictRangeOrder || start <= end;
@@ -3515,31 +5065,31 @@ function isValidQuartzRange(value: string, definition: QuartzFieldDefinition): b
 
 function isValidStandardQuartzListItem(value: string, definition: QuartzFieldDefinition): boolean {
   const stepParts = value.split("/");
-  if (stepParts.length > 2 || !stepParts[0]) return false;
+  if(stepParts.length > 2 || !stepParts[0]) {return false;}
 
   const base = stepParts[0];
-  if (stepParts.length === 2 && !isValidQuartzStep(stepParts[1], definition)) return false;
+  if(stepParts.length === 2 && !isValidQuartzStep(stepParts[1], definition)) {return false;}
 
-  return base === "*"
-    || parseQuartzFieldValue(base, definition) !== null
-    || isValidQuartzRange(base, definition);
+  return base === "*" ||
+    parseQuartzFieldValue(base, definition) !== null ||
+    isValidQuartzRange(base, definition);
 }
 
 function isValidDayOfMonthListItem(value: string): boolean {
   const definition = QUARTZ_FIELD_DEFINITIONS[3];
   const normalized = value.toUpperCase();
 
-  if (normalized === "L" || normalized === "LW") return true;
+  if(normalized === "L" || normalized === "LW") {return true;}
 
   const lastOffsetMatch = normalized.match(/^L-(\d+)$/);
-  if (lastOffsetMatch) return parseQuartzFieldValue(lastOffsetMatch[1], definition) !== null;
+  if(lastOffsetMatch) {return parseQuartzFieldValue(lastOffsetMatch[1], definition) !== null;}
 
   const nearestWeekdayMatch = normalized.match(/^(\d+)W$/);
-  if (nearestWeekdayMatch) return parseQuartzFieldValue(nearestWeekdayMatch[1], definition) !== null;
+  if(nearestWeekdayMatch) {return parseQuartzFieldValue(nearestWeekdayMatch[1], definition) !== null;}
 
   // cron-utils accepts a numeric value before L for this field as well.
   const lastMatch = normalized.match(/^(\d+)L$/);
-  if (lastMatch) return parseQuartzFieldValue(lastMatch[1], definition) !== null;
+  if(lastMatch) {return parseQuartzFieldValue(lastMatch[1], definition) !== null;}
 
   return isValidStandardQuartzListItem(value, definition);
 }
@@ -3548,24 +5098,25 @@ function isValidDayOfWeekListItem(value: string): boolean {
   const definition = QUARTZ_FIELD_DEFINITIONS[5];
   const normalized = value.toUpperCase();
 
-  if (normalized === "L") return true;
+  if(normalized === "L") {return true;}
 
   const lastOffsetMatch = normalized.match(/^L-(\d+)$/);
-  if (lastOffsetMatch) return parseQuartzFieldValue(lastOffsetMatch[1], definition) !== null;
+  if(lastOffsetMatch) {return parseQuartzFieldValue(lastOffsetMatch[1], definition) !== null;}
 
   const lastMatch = normalized.match(/^([A-Z]+|\d+)L$/);
-  if (lastMatch) return parseQuartzFieldValue(lastMatch[1], definition) !== null;
+  if(lastMatch) {return parseQuartzFieldValue(lastMatch[1], definition) !== null;}
 
   const nthMatch = normalized.match(/^([A-Z]+|\d+)#(\d+)$/);
-  if (nthMatch) {
+  if(nthMatch) {
     const occurrence = Number(nthMatch[2]);
-    return parseQuartzFieldValue(nthMatch[1], definition) !== null
+
+    return parseQuartzFieldValue(nthMatch[1], definition) !== null &&
       // Quartz defines the nth weekday occurrence as 1-5. cron-utils 9.2.1
       // accidentally reuses the day-of-week 1-7 range here, which can create
       // schedules that never have a matching date.
-      && Number.isSafeInteger(occurrence)
-      && occurrence >= 1
-      && occurrence <= 5;
+      Number.isSafeInteger(occurrence) &&
+      occurrence >= 1 &&
+      occurrence <= 5;
   }
 
   return isValidStandardQuartzListItem(value, definition);
@@ -3576,6 +5127,7 @@ function isValidQuartzFieldList(
   validateItem: (item: string) => boolean
 ): boolean {
   const items = value.split(",");
+
   return items.length > 0 && items.every((item) => item.length > 0 && validateItem(item));
 }
 
@@ -3587,34 +5139,35 @@ function isValidQuartzFieldList(
 function isStructurallyValidQuartzExpression(fields: string[]): boolean {
   const [seconds, minutes, hours, dayOfMonth, month, dayOfWeek, year] = fields;
 
-  if (!isValidQuartzFieldList(seconds, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[0]))) {
+  if(!isValidQuartzFieldList(seconds, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[0]))) {
     return false;
   }
-  if (!isValidQuartzFieldList(minutes, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[1]))) {
+  if(!isValidQuartzFieldList(minutes, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[1]))) {
     return false;
   }
-  if (!isValidQuartzFieldList(hours, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[2]))) {
+  if(!isValidQuartzFieldList(hours, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[2]))) {
     return false;
   }
-  if (!isValidQuartzFieldList(month, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[4]))) {
+  if(!isValidQuartzFieldList(month, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[4]))) {
     return false;
   }
-  if (year !== undefined
-      && !isValidQuartzFieldList(year, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[6]))) {
+  if(year !== undefined &&
+      !isValidQuartzFieldList(year, (item) => isValidStandardQuartzListItem(item, QUARTZ_FIELD_DEFINITIONS[6]))) {
     return false;
   }
 
   const dayOfMonthUnspecified = dayOfMonth === "?";
   const dayOfWeekUnspecified = dayOfWeek === "?";
-  if (dayOfMonthUnspecified === dayOfWeekUnspecified) return false;
+  if(dayOfMonthUnspecified === dayOfWeekUnspecified) {return false;}
 
-  return (dayOfMonthUnspecified || isValidQuartzFieldList(dayOfMonth, isValidDayOfMonthListItem))
-    && (dayOfWeekUnspecified || isValidQuartzFieldList(dayOfWeek, isValidDayOfWeekListItem));
+  return (dayOfMonthUnspecified || isValidQuartzFieldList(dayOfMonth, isValidDayOfMonthListItem)) &&
+    (dayOfWeekUnspecified || isValidQuartzFieldList(dayOfWeek, isValidDayOfWeekListItem));
 }
 
 function supportsLocalCronPreview(expression: string, timeZone: string): boolean {
   try {
     CronExpressionParser.parse(expression, { tz: timeZone });
+
     return true;
   } catch (_error) {
     return false;
@@ -3652,7 +5205,7 @@ export function validateSyncCronExpression(
   const normalizedExpression = normalizeSyncCronExpression(value);
   const timeZone = getTimeZone(options.timeZone);
 
-  if (!normalizedExpression) {
+  if(!normalizedExpression) {
     return {
       valid: false,
       normalizedExpression,
@@ -3664,7 +5217,7 @@ export function validateSyncCronExpression(
   }
 
   const fields = normalizedExpression.split(/\s+/);
-  if (fields.length < QUARTZ_CRON_MIN_FIELD_COUNT || fields.length > QUARTZ_CRON_MAX_FIELD_COUNT) {
+  if(fields.length < QUARTZ_CRON_MIN_FIELD_COUNT || fields.length > QUARTZ_CRON_MAX_FIELD_COUNT) {
     return {
       valid: false,
       normalizedExpression,
@@ -3675,7 +5228,7 @@ export function validateSyncCronExpression(
     };
   }
 
-  if (!isValidTimeZone(timeZone)) {
+  if(!isValidTimeZone(timeZone)) {
     return {
       valid: false,
       normalizedExpression,
@@ -3686,7 +5239,7 @@ export function validateSyncCronExpression(
     };
   }
 
-  if (isStructurallyValidQuartzExpression(fields)) {
+  if(isStructurallyValidQuartzExpression(fields)) {
     return {
       valid: true,
       normalizedExpression,
@@ -3719,7 +5272,7 @@ export function describeSyncCronExpression(
   options: SyncCronOptions = {}
 ): string | null {
   const validation = validateSyncCronExpression(value, options);
-  if (!validation.valid) return null;
+  if(!validation.valid) {return null;}
 
   try {
     return cronstrue.toString(validation.normalizedExpression);
@@ -3733,13 +5286,14 @@ export function getNextSyncRun(
   options: SyncNextRunOptions = {}
 ): Date | null {
   const validation = validateSyncCronExpression(value, options);
-  if (!validation.valid || !validation.previewSupported) return null;
+  if(!validation.valid || !validation.previewSupported) {return null;}
 
   try {
     const interval = CronExpressionParser.parse(validation.normalizedExpression, {
       tz: validation.timeZone,
       ...(options.currentDate ? { currentDate: options.currentDate } : {})
     });
+
     return interval.next().toDate();
   } catch (_error) {
     return null;
@@ -3750,9 +5304,9 @@ export function isSyncScheduleDirty(
   original: SyncScheduleState,
   draft: SyncScheduleState
 ): boolean {
-  return normalizeSyncCronExpression(original.cronExpression)
-      !== normalizeSyncCronExpression(draft.cronExpression)
-    || original.active !== draft.active;
+  return normalizeSyncCronExpression(original.cronExpression) !==
+      normalizeSyncCronExpression(draft.cronExpression) ||
+    original.active !== draft.active;
 }
 
 // =============================================================================================
@@ -3793,6 +5347,84 @@ export function useShopifyOrderSyncPolling(options: OrderSyncSessionOptions) {
     active: options.batchActive,
     refresh: options.refresh,
     onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+  });
+}
+
+/** The one-off import contract used by Product Store onboarding's Order history load. */
+export const SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE = "BulkOrderHistoryQuery";
+export const SHOPIFY_ORDER_HISTORY_CONFIG_ID = "BULK_ORDER_HISTORY";
+export const ORDER_HISTORY_SYNC_FEATURE: ShopifySyncFeature = {
+  ...ORDER_SYNC_FEATURE,
+  messageTypeIds: [SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE],
+  importConfigIds: [SHOPIFY_ORDER_HISTORY_CONFIG_ID],
+  templateJobName: "sync_ShopifyOrderHistory",
+};
+
+/**
+ * History can be opened from regular Order Sync or from Product Store onboarding. Keep both message
+ * contracts live on one worker, scoped to this shop's exact remotes. An unresolved shop context
+ * activates nothing, so this can never degrade into an unscoped tenant-wide poll.
+ */
+export function useShopifyOrderSyncHistorySession(options: {
+  remoteIds: () => string[];
+  jobName?: () => string;
+  refresh?: () => Promise<void>;
+  onError?: (error: unknown) => void;
+}) {
+  return useShopifySyncSession(ORDER_SYNC_FEATURE, {
+    active: () => true,
+    refresh: options.refresh,
+    refreshWorker: true,
+    onError: options.onError,
+    systemMessageRemoteIds: options.remoteIds,
+    messageTotal: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+    importTotal: 300,
+    extraDomains: (intervalMs) => [
+      {
+        name: "systemMessage",
+        intervalMs,
+        args: {
+          systemMessageRemoteIds: options.remoteIds(),
+          types: [{
+            systemMessageTypeId: SHOPIFY_ORDER_HISTORY_MESSAGE_TYPE,
+            total: SHOPIFY_ORDER_SYNC_RESULT_LIMIT,
+          }],
+        },
+      },
+      {
+        name: "dataManagerLog",
+        intervalMs,
+        args: { configId: SHOPIFY_ORDER_HISTORY_CONFIG_ID, total: 100 },
+      },
+      ...(options.jobName?.() ? [{
+        name: "serviceJobRun",
+        intervalMs,
+        args: { jobNames: [options.jobName()], total: 25 },
+      }] : []),
+    ],
+  });
+}
+
+/** Merge regular Order Sync and onboarding-history rows without duplicating one SystemMessage. */
+// eslint-disable-next-line no-restricted-syntax -- pure collection helper, not a Vue composable
+export function mergeOrderSyncHistoryBatches(
+  regularBatches: readonly ShopifyOrderSyncBatch[],
+  onboardingBatches: readonly ShopifyOrderSyncBatch[],
+): ShopifyOrderSyncBatch[] {
+  const seen = new Set<string>();
+
+  return [...onboardingBatches, ...regularBatches].filter((batch) => {
+    const id = String(batch.systemMessageId || "");
+    if(!id || seen.has(id)) {return false;}
+    seen.add(id);
+
+    return true;
+  }).sort((left, right) => {
+    const leftTime = parseDateTimeValue(left.initDate)?.toMillis() ?? 0;
+    const rightTime = parseDateTimeValue(right.initDate)?.toMillis() ?? 0;
+
+    return rightTime - leftTime;
   });
 }
 
@@ -3903,25 +5535,69 @@ export function useShopifyAccessScopes() {
       url: `sob/shop/remote/${systemMessageRemoteId}/accessScopes`,
       method: "post",
     });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     const scopes: string[] = resp.data?.accessScopes ?? [];
     accessScopesState.byRemoteId = {
       ...accessScopesState.byRemoteId,
       [systemMessageRemoteId]: { scopes, lastRefreshed: Date.now() },
     };
     localStorage.setItem(ACCESS_SCOPES_STORAGE_KEY, JSON.stringify(accessScopesState.byRemoteId));
+
     return scopes;
   };
 
-  return { scopesFor, refreshAccessScopes };
+  /**
+   * Set the connection's read/write scope — `SystemMessageRemote.accessScopeEnumId`, an enum of type
+   * `ShopifyShopAccessScope`.
+   *
+   * NOT the same thing as the Shopify OAuth scopes above, despite the shared name: those are what
+   * Shopify granted the app, this is the OMS-side master shutoff that decides whether this OMS is
+   * allowed to write back at all. Services gate on it directly - `post#InventoryChannelInventory`
+   * refuses with "Shop [x] has no write-capable Shopify remote connection" unless it reads
+   * SHOP_RW_ACCESS - and nothing in this app could set it, so a shop could be fully configured for
+   * inventory sync and still fail every push with no field anywhere to explain why.
+   */
+  const setConnectionAccessScope = async (
+    systemMessageRemoteId: string,
+    accessScopeEnumId: string,
+  ): Promise<void> => {
+    const resp: any = await api({
+      url: `oms/systemMessageRemotes/${systemMessageRemoteId}`,
+      method: "put",
+      data: { systemMessageRemoteId, accessScopeEnumId },
+    });
+    if(commonUtil.hasError(resp)) {throw resp;}
+    // The PUT echoes nothing useful, and the screens read the cached remote row.
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  };
+
+  return { scopesFor, refreshAccessScopes, setConnectionAccessScope };
 }
 
 /**
- * Create a Shopify connection: the SystemMessageRemote (credentials + linkage) and the ShopifyShop.
+ * Create a Shopify connection: the ShopifyShop, then its credentials via the OMS's own install service.
  *
- * Moved verbatim from the store except the ending: the store pushed the new shop into its own array,
- * which no cached read ever saw — a freshly created connection was invisible on every converted page
- * until the next login snapshot. Write-through refreshes both cached sides instead.
+ * Two rows are not enough. Every publishing service resolves a shop's credentials through
+ * `ShopifyHelper.getShopRemote(shopId, 'SsctShopifyDefaultApp')`, which reads `ShopifyShopRemote` — a
+ * third, link row. This function used to create the `SystemMessageRemote` with a raw entity POST and
+ * never that link, so the app showed a healthy, fully-credentialed connection while the publisher
+ * resolved nothing: the absolute inventory reset failed with "no write-capable Shopify remote
+ * connection" and the real-time event fan-out recorded nothing at all.
+ *
+ * So the credential half is no longer ours to assemble. `POST sob/shop` (`store#ShopifyShop`) is the
+ * same entry point Keychain calls when a merchant installs the app, and it owns creating the remote,
+ * the link row and the purpose in one transaction. Manual creation now takes the automatic path, which
+ * is what stops the two from drifting apart again.
+ *
+ * The shop is created FIRST, and deliberately by us: given no existing shop for the domain,
+ * `store#ShopifyShop` runs its first-install branch, which assigns its own sequenced `shopId` and has
+ * nowhere to put `productStoreId`. Creating the shop up front means the caller's chosen id and product
+ * store survive, and the service takes its "shop exists, no remote yet" branch instead — which creates
+ * exactly the remote and link row that were missing.
+ *
+ * Write-through refreshes both cached sides: the store used to push the new shop into its own array,
+ * which no cached read ever saw, so a freshly created connection was invisible on every converted page
+ * until the next login snapshot.
  */
 export async function createShopifyConnection(payload: {
   shopId: string;
@@ -3933,27 +5609,7 @@ export async function createShopifyConnection(payload: {
   name?: string;
   productStoreId?: string;
 }) {
-  // Predictable remote id so the remote↔shop linkage is self-describing.
-  const systemMessageRemoteId = `${payload.shopId}_REMOTE`;
-  const remoteResp: any = await api({
-    url: "oms/systemMessageRemotes",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      sendUrl: payload.myshopifyDomain,
-      remoteAppCode: payload.clientId,
-      sharedSecret: payload.clientSecret,
-      sendSharedSecret: payload.shopAccessToken,
-      password: payload.shopAccessToken,
-      remoteId: payload.shopifyShopId,
-      remoteIdType: "SHOPIFY_SHOP_ID",
-      internalId: payload.shopId,
-      internalIdType: "HOTWAX_SHOP_ID",
-      authHeaderName: "X-Shopify-Access-Token",
-      description: payload.name || payload.myshopifyDomain,
-    },
-  });
-  if (commonUtil.hasError(remoteResp)) throw remoteResp;
+  const name = payload.name || payload.myshopifyDomain.split(".")[0];
 
   const shopResp: any = await api({
     url: "oms/shopifyShops/shops",
@@ -3962,38 +5618,69 @@ export async function createShopifyConnection(payload: {
       shopId: payload.shopId,
       shopifyShopId: payload.shopifyShopId,
       myshopifyDomain: payload.myshopifyDomain,
-      name: payload.name || payload.myshopifyDomain.split(".")[0],
+      name,
       productStoreId: payload.productStoreId || undefined,
       isEnabled: "Y",
     },
   });
-  if (commonUtil.hasError(shopResp)) throw shopResp;
+  if(commonUtil.hasError(shopResp)) {throw shopResp;}
 
-  await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  // Creates the SystemMessageRemote, the ShopifyShopRemote link for SsctShopifyDefaultApp, and syncs
+  // live shop metadata (currency, timezone, primaryLocationId) that the inventory-channel setup reads.
+  // It is idempotent: re-running with the same credentials updates in place rather than duplicating,
+  // which also makes it the repair path for a connection left without a link row.
+  const remoteResp: any = await api({
+    url: "sob/shop",
+    method: "post",
+    data: {
+      name,
+      shopifyShopId: payload.shopifyShopId,
+      myshopifyDomain: payload.myshopifyDomain,
+      clientId: payload.clientId,
+      clientSecret: payload.clientSecret,
+      shopAccessToken: payload.shopAccessToken,
+      accessScope: "SHOP_READ_WRITE",
+    },
+  });
+  if(commonUtil.hasError(remoteResp)) {
+    // The shop row is committed but has no usable credentials. Say so, because the failure the caller
+    // must act on is a rejected token, not a missing shop — and re-submitting the same form completes it.
+    logger.error("createShopifyConnection: shop created but credentials were rejected", remoteResp);
+    throw remoteResp;
+  }
+
+  const systemMessageRemoteId = remoteResp?.data?.systemMessageRemoteId;
+  if(systemMessageRemoteId) {
+    await refreshAfterMutation("systemMessageRemote", { systemMessageRemoteId });
+  }
   await refreshAfterMutation("shopifyShop", { shopId: payload.shopId });
 
   return {
     shopId: payload.shopId,
     shopifyShopId: payload.shopifyShopId,
     myshopifyDomain: payload.myshopifyDomain,
-    name: payload.name || payload.myshopifyDomain.split(".")[0],
+    name,
     productStoreId: payload.productStoreId || null,
     isEnabled: "Y",
+    systemMessageRemoteId: systemMessageRemoteId || null,
   };
 }
 
 /** Rotate/replace a shop remote's Shopify credentials. Returns the server's response data. */
 export async function updateShopifyRemote(payload: {
-  myShopifydomain: string;
+  myshopifyDomain: string;
   shopifyShopId: string;
   shopAccessToken: string;
   clientId: string;
   clientSecret: string;
   oldClientSecret?: string;
   name?: string;
-  hotwaxShopId?: string;
 }) {
-  const resp: any = await api({ url: "sob/shop/remote", method: "post", data: payload });
+  const resp: any = await api({
+    url: "sob/shop",
+    method: "post",
+    data: { ...payload, accessScope: "SHOP_READ_WRITE" },
+  });
   if (commonUtil.hasError(resp)) throw resp;
   return resp.data;
 }
@@ -4011,7 +5698,8 @@ export async function fetchShopifyShopLocations(shopId: string, pageSize = 100):
     method: "get",
     params: { shopId, pageSize },
   });
-  if (commonUtil.hasError(resp)) throw resp;
+  if(commonUtil.hasError(resp)) {throw resp;}
+
   return Array.isArray(resp.data) ? resp.data : [];
 }
 
@@ -4034,11 +5722,12 @@ export async function fetchShopifyTypeMappings(shopId: string, mappedTypeId: str
       method: "get",
       params: { shopId, mappedTypeId, pageSize: 100, pageIndex },
     });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     page = Array.isArray(resp.data) ? resp.data : [];
     rows.push(...page);
     pageIndex += 1;
-  } while (page.length >= 100);
+  } while(page.length >= 100);
+
   return rows;
 }
 
@@ -4053,11 +5742,12 @@ export async function fetchShopifyCarrierShipments(shopId: string): Promise<any[
       method: "get",
       params: { shopId, pageSize: 100, pageIndex },
     });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     page = Array.isArray(resp.data) ? resp.data : [];
     rows.push(...page);
     pageIndex += 1;
-  } while (page.length >= 100);
+  } while(page.length >= 100);
+
   return rows;
 }
 
@@ -4071,8 +5761,9 @@ export async function importShopifyFacilities(shopId: string, locations: any[]):
     method: "post",
     data: locations,
   });
-  if (commonUtil.hasError(resp)) throw resp;
+  if(commonUtil.hasError(resp)) {throw resp;}
   await refreshAfterMutation("shopifyLocation", { shopId });
+
   return resp;
 }
 
@@ -4152,19 +5843,6 @@ export interface ShopifyProductUpdateSyncRunState {
   lastSyncedAt?: string;
   systemMessageRemoteId: string;
   systemMessages?: any[];
-}
-
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
 }
 
 export interface ShopifyRunningBulkOperation {
@@ -4260,125 +5938,6 @@ export interface ShopifyProductSyncHistoryRun {
 
 export type { ShopifyProductSyncRun } from "@/types/shopifyProductSync";
 
-
-export interface ShopifyShopProductCount {
-  count: number;
-  lastSyncedAt?: string;
-}
-
-export interface ShopifyProductUpdateSyncRunState {
-  latestSystemMessage?: any;
-  latestConfirmedSystemMessage?: any;
-  latestConsumedSystemMessage?: any;
-  lastSyncedAt?: string;
-  systemMessageRemoteId: string;
-  systemMessages?: any[];
-}
-
-export interface ShopifyPendingProductUpdateRequestsState {
-  count: number;
-  latestSystemMessage?: any;
-}
-
-export interface ShopifyProductSyncDashboardSummary {
-  syncRunState: ShopifyProductUpdateSyncRunState;
-  pendingRequests: ShopifyPendingProductUpdateRequestsState;
-  runningOperation: ShopifyRunningBulkOperation | null;
-  unsyncedUpdates: ShopifyShopProductCount;
-  updateFilesToProcess: number;
-}
-
-export interface ShopifyRunningBulkOperation {
-  id: string;
-  status: string;
-  type: string;
-  createdAt: string;
-  objectCount: number;
-}
-
-export interface ShopifyUnsyncedProductUpdate {
-  id: string;
-  legacyResourceId?: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-}
-
-export interface ShopifyProductSyncProductSearchResult {
-  id: string;
-  legacyResourceId: string;
-  title: string;
-  handle: string;
-  updatedAt: string;
-  vendor: string;
-  productType: string;
-  status: string;
-  totalInventory?: number;
-  imageUrl?: string;
-  imageAltText?: string;
-  variantsCount: number;
-  cursor: string;
-}
-
-export interface ShopifyProductSyncProductSearchState {
-  products: ShopifyProductSyncProductSearchResult[];
-  hasNextPage: boolean;
-  endCursor: string;
-}
-
-export interface ShopifyProductSyncOnDemandResult {
-  systemMessageId?: string;
-  syncedProductId?: string[];
-  missingProductId?: string[];
-  failedProductId?: string[];
-  rejectedProductId?: string[];
-  acceptedCount?: number;
-  syncedCount?: number;
-  failedCount?: number;
-  rejectedCount?: number;
-}
-
-export interface ShopifyProductSyncActionResult {
-  jobOutput?: string;
-  message?: string;
-  systemMessageId?: string;
-}
-
-export interface ShopifyProductSyncHistoryOperation {
-  id: string;
-  title: string;
-  subtitle: string;
-  status: string;
-  statusLabel: string;
-  metricValue?: number | string;
-  metricLabel?: string;
-  actionLabel?: string;
-  detailType: string;
-}
-
-export interface ShopifyProductSyncHistoryRun {
-  id: string;
-  systemMessageId: string;
-  createdTime: string;
-  bulkOperationStatus: string;
-  bulkOperationStatusLabel: string;
-  mdmStatus: string;
-  mdmStatusLabel: string;
-  bulkOperationId: string;
-  objectCount: number;
-  mdmImportId: string;
-  totalRecordCount: number;
-  failedRecordCount: number;
-  operations: ShopifyProductSyncHistoryOperation[];
-}
-
 export interface ShopifyProductSyncHistoryState {
   runs: ShopifyProductSyncHistoryRun[];
 }
@@ -4404,6 +5963,11 @@ const SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID = "SHOP_NO_ACCESS";
 // deprecated full-form enum and requires updating (it is being phased out / force-replaced).
 const SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_READ_WRITE_ACCESS";
 const SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID = "SHOP_RW_ACCESS";
+const TERMINAL_DATA_MANAGER_LOG_STATUS_IDS = DATA_MANAGER_LOG_STATUS_IDS.filter((statusId) => {
+  const state = dataManagerLogState(statusId, { total: 0, success: 0, failed: 0 });
+
+  return state === "completed" || state === "partial" || state === "failed";
+});
 const LIVE_CATALOG_COUNTS_QUERY = `
 query WizardLiveCatalogCounts {
   productsCount {
@@ -4438,6 +6002,7 @@ function buildProductUpdatesCountQuery(fromDate?: string | number) {
   // on its own path.
   const iso = toShopifyTimestamp(fromDate);
   const filterQuery = iso ? `(query: "updated_at:>'${escapeGraphqlString(iso)}'")` : "";
+
   return `
 query UnsyncedProductUpdatesCount {
   productsCount${filterQuery} {
@@ -4453,6 +6018,7 @@ function buildProductUpdatesListQuery(fromDate?: string | number, first = 100) {
   // Same millis→ISO normalisation as the count query above.
   const iso = toShopifyTimestamp(fromDate);
   const filterQuery = iso ? `, query: "updated_at:>'${escapeGraphqlString(iso)}'"` : "";
+
   return `
 query UnsyncedProductUpdates {
   products(first: ${pageSize}${filterQuery}, sortKey: UPDATED_AT, reverse: true) {
@@ -4486,6 +6052,7 @@ query UnsyncedProductUpdates {
 function buildProductSearchQuery(queryString: string, first = 20, after?: string) {
   const pageSize = Math.min(Math.max(Number(first) || 20, 1), 50);
   const afterQuery = after ? `, after: "${escapeGraphqlString(after)}"` : "";
+
   return `
 query ProductSyncProductSearch {
   products(first: ${pageSize}, query: "${escapeGraphqlString(queryString)}", sortKey: TITLE${afterQuery}) {
@@ -4554,12 +6121,13 @@ query ProductSyncProductById {
 
 function getExactShopifyProductGid(queryString: string) {
   const normalizedQuery = queryString.trim();
-  if (/^gid:\/\/shopify\/Product\/\d+$/.test(normalizedQuery)) {
+  if(/^gid:\/\/shopify\/Product\/\d+$/.test(normalizedQuery)) {
     return normalizedQuery;
   }
-  if (/^\d{8,}$/.test(normalizedQuery)) {
+  if(/^\d{8,}$/.test(normalizedQuery)) {
     return `gid://shopify/Product/${normalizedQuery}`;
   }
+
   return "";
 }
 
@@ -4588,9 +6156,10 @@ function mapShopifyProductNode(product: any, cursor = ""): ShopifyProductSyncPro
 async function requestBackend<T>(request: any, context = "Shopify product sync backend request"): Promise<T> {
   try {
     const resp = await api(request) as any;
-    if (typeof resp?.data === "undefined" || resp.data === null) {
+    if(typeof resp?.data === "undefined" || resp.data === null) {
       throw new Error(`${context} returned no response data.`);
     }
+
     return resp.data as T;
   } catch (error) {
     const details = getApiErrorDetails(error);
@@ -4602,30 +6171,25 @@ function getApiErrorDetails(error: any): string {
   const status = error?.response?.status;
   const responseMessage = error?.response?.data?.message || error?.response?.data?.error;
   const message = responseMessage || error?.message || "";
+
   return [status ? `status ${status}` : "", message].filter(Boolean).join(": ");
 }
 
 function assertPlainObject(value: any, context: string): asserts value is Record<string, any> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if(!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${context} returned an invalid response shape.`);
   }
 }
 
 function assertBooleanField(value: any, fieldName: string, context: string) {
-  if (typeof value !== "boolean") {
+  if(typeof value !== "boolean") {
     throw new Error(`${context} response must include boolean ${fieldName}.`);
   }
 }
 
 function assertStringField(value: any, fieldName: string, context: string) {
-  if (typeof value !== "string") {
+  if(typeof value !== "string") {
     throw new Error(`${context} response must include string ${fieldName}.`);
-  }
-}
-
-function assertArrayField(value: any, fieldName: string, context: string) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${context} response must include array ${fieldName}.`);
   }
 }
 
@@ -4637,8 +6201,9 @@ function validateSetupState(response: any): ShopifyProductSyncSetupState {
   assertBooleanField(response.identifierLocked, "identifierLocked", context);
   assertStringField(response.selectedProductStoreId, "selectedProductStoreId", context);
   assertStringField(response.selectedIdentifierEnumId, "selectedIdentifierEnumId", context);
-  if (typeof response.syncJobId !== "undefined") assertStringField(response.syncJobId, "syncJobId", context);
-  if (typeof response.completed !== "undefined") assertBooleanField(response.completed, "completed", context);
+  if(typeof response.syncJobId !== "undefined") {assertStringField(response.syncJobId, "syncJobId", context);}
+  if(typeof response.completed !== "undefined") {assertBooleanField(response.completed, "completed", context);}
+
   return response as ShopifyProductSyncSetupState;
 }
 
@@ -4646,14 +6211,15 @@ function validateSetupState(response: any): ShopifyProductSyncSetupState {
 
 function getRequiredCount(payload: any, key: string, context: string): number {
   const value = payload?.[key]?.count ?? payload?.response?.[key]?.count ?? payload?.data?.[key]?.count;
-  if (typeof value === "undefined" || value === null || Number.isNaN(Number(value))) {
+  if(typeof value === "undefined" || value === null || Number.isNaN(Number(value))) {
     throw new Error(`${context} response is missing ${key}.count.`);
   }
+
   return Number(value);
 }
 
 function escapeGraphqlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
 function getTimestampValue(value: any): number {
@@ -4665,13 +6231,14 @@ function getTimestampDate(value: any): string | undefined {
 }
 
 function getEntityValueList(response: any, context: string): any[] {
-  if (Array.isArray(response?.entityValueList)) return response.entityValueList;
-  if (Number(response?.entityValueListCount || 0) === 0) return [];
+  if(Array.isArray(response?.entityValueList)) {return response.entityValueList;}
+  if(Number(response?.entityValueListCount || 0) === 0) {return [];}
   throw new Error(`${context} response must include array entityValueList.`);
 }
 
 function resolveSystemMessageRemoteId(payload: any): string {
-  if (typeof payload === "string") return payload;
+  if(typeof payload === "string") {return payload;}
+
   return payload.systemMessageRemoteId ||
     payload.shop?.systemMessageRemoteId ||
     payload.shopId ||
@@ -4694,6 +6261,7 @@ const sortShopRemoteCandidates = (candidates: any[]) => sortRemotesByAccess(cand
 
 function hasShopifyWriteAccess(accessScopeEnumId: string) {
   const normalizedScope = String(accessScopeEnumId || "").trim().toUpperCase();
+
   return normalizedScope === SHOPIFY_READ_WRITE_ACCESS_SCOPE_ENUM_ID;
 }
 
@@ -4701,7 +6269,7 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
   const accessScopeEnumId = String(candidate?.accessScopeEnumId || "").trim();
   const hasWriteAccess = hasShopifyWriteAccess(accessScopeEnumId);
 
-  if (!candidate?.systemMessageRemoteId) {
+  if(!candidate?.systemMessageRemoteId) {
     return {
       systemMessageRemoteId: "",
       accessScopeEnumId: "",
@@ -4716,12 +6284,12 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
     accessScopeEnumId,
     hasWriteAccess,
     status: hasWriteAccess ? "write" : (
-      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "update-required" :
-        accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "unavailable" : "read-only"
+      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "update-required"
+        : accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "unavailable" : "read-only"
     ),
     label: hasWriteAccess ? "Write access" : (
-      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "Update required" :
-        accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "Unavailable" : "Read only"
+      accessScopeEnumId === SHOPIFY_LEGACY_READ_WRITE_ACCESS_SCOPE_ENUM_ID ? "Update required"
+        : accessScopeEnumId === SHOPIFY_NO_ACCESS_SCOPE_ENUM_ID ? "Unavailable" : "Read only"
     )
   };
 }
@@ -4736,8 +6304,9 @@ function getShopifyAccessStateFromCandidate(candidate: any): ShopifyProductSyncA
 async function fetchShopRemoteCandidates(payload: any) {
   try {
     const cached = await systemMessageRemoteCache.all();
-    if (cached.length) {
+    if(cached.length) {
       const remotes = cached.map((row: any) => row.raw);
+
       return sortShopRemoteCandidates(getShopRemoteCandidates(remotes, payload));
     }
   } catch (error) {
@@ -4754,16 +6323,16 @@ async function fetchShopRemoteCandidates(payload: any) {
 
 export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
-  if (!shopifyShopId) {
+  if(!shopifyShopId) {
     throw new Error("Shopify shop id is required to resolve SystemMessageRemote.remoteId.");
   }
 
   const candidates = await fetchShopRemoteCandidates(payload);
-  if (!candidates.length) {
+  if(!candidates.length) {
     throw new Error(`No SystemMessageRemote found with remoteId ${shopifyShopId}.`);
   }
 
-  if (payload.returnAllSystemMessageRemoteIds) {
+  if(payload.returnAllSystemMessageRemoteIds) {
     return candidates
       .map((candidate: any) => String(candidate.systemMessageRemoteId || "").trim())
       .filter((systemMessageRemoteId: string, index: number, list: string[]) => {
@@ -4776,42 +6345,46 @@ export const fetchShopSystemMessageRemoteId = async (payload: any): Promise<any>
     .map((candidate: any) => candidate.systemMessageRemoteId)
     .filter((id: string, index: number, self: any[]) => id && self.indexOf(id) === index);
 
-  if (!remoteIds.length) return candidates[0]?.systemMessageRemoteId;
+  if(!remoteIds.length) {return candidates[0]?.systemMessageRemoteId;}
 
-  try {
-    const response = await requestBackend<SystemMessagesResponse>({
-      url: "admin/systemMessages",
-      method: "get",
-      params: {
-        systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
-        systemMessageRemoteId: remoteIds,
-        systemMessageRemoteId_op: "in",
-        pageSize: remoteIds.length
-      }
-    });
+  const remoteChecks = await Promise.all(remoteIds.map(async (systemMessageRemoteId: string) => {
+    try {
+      const response = await requestBackend<SystemMessagesResponse>({
+        url: "admin/systemMessages",
+        method: "get",
+        params: {
+          systemMessageTypeId: PRODUCT_UPDATE_SYNC_MESSAGE_TYPE_ID,
+          systemMessageRemoteId,
+          pageSize: 1
+        }
+      });
 
-    const validRemoteIds = new Set(response?.systemMessages?.map((msg: any) => msg.systemMessageRemoteId));
-    // Pick the first remoteId from the original candidates list that is valid
-    const firstValid = remoteIds.find(id => validRemoteIds.has(id));
+      const matchesRemote = response?.systemMessages?.some((message: any) =>
+        String(message?.systemMessageRemoteId || "") === systemMessageRemoteId);
 
-    if (firstValid) {
-      return firstValid;
+      return matchesRemote ? systemMessageRemoteId : "";
+    } catch (error) {
+      logger.warn(`Failed to check product-sync history for remote ${systemMessageRemoteId}`, error);
+
+      return "";
     }
-  } catch (e) {
-    logger.error("Failed to resolve system message remote IDs in bulk", e);
-  }
+  }));
+
+  // `Promise.all` preserves candidate order, so access-priority remains deterministic.
+  const firstValid = remoteChecks.find(Boolean);
+  if(firstValid) {return firstValid;}
 
   return candidates[0].systemMessageRemoteId;
 };
 
 export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProductSyncAccessState> => {
   const shopifyShopId = payload.shopifyShopId || payload.shop?.shopifyShopId;
-  if (!shopifyShopId) {
+  if(!shopifyShopId) {
     throw new Error("Shopify shop id is required to resolve Shopify access scope.");
   }
 
   const candidates = await fetchShopRemoteCandidates(payload);
-  if (!candidates.length) {
+  if(!candidates.length) {
     return {
       systemMessageRemoteId: "",
       accessScopeEnumId: "",
@@ -4827,25 +6400,32 @@ export const fetchShopifyAccessState = async (payload: any): Promise<ShopifyProd
 
 const getSystemMessageRank = (systemMessage: any) => {
   const statusId = String(systemMessage?.statusId || "").toLowerCase();
-  const logStatusId = String(systemMessage?.logStatusId || "").toLowerCase();
+  const logStatusId = String(systemMessage?.logStatusId || "");
   const logId = systemMessage?.logId;
+  const logState = logId
+    ? dataManagerLogState(logStatusId, {
+      total: Number(systemMessage?.totalRecordCount || 0),
+      success: Number(systemMessage?.successRecordCount || 0),
+      failed: Number(systemMessage?.failedRecordCount || 0),
+    })
+    : undefined;
 
   // Terminal status:
-  // 1. mdm logId is present AND its statusId is DmlsFinished or DmlsError
+  // 1. mdm logId is present AND its canonical DataManager status is terminal
   // 2. mdm logId is NOT present AND statusId is SmsgConsumed (handles empty Shopify runs)
-  const isTerminal = (logId && (logStatusId === "dmlsfinished" || logStatusId === "dmlserror")) ||
+  const isTerminal = (logId && (logState === "completed" || logState === "partial" || logState === "failed")) ||
                      (!logId && (statusId === "smsgconsumed" || statusId === "consumed"));
 
-  if (isTerminal) {
+  if(isTerminal) {
     return 1;
   }
 
   // Any other case is considered "In Progress" and gets a higher rank (>= 2)
-  if (logStatusId === "dmlsrunning") return 5;
-  if (logStatusId === "dmlspending" || statusId === "smsgconsumed" || statusId === "consumed") return 4.5;
-  if (statusId === "smsgreceived") return 3.5;
-  if (statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") return 3;
-  if (statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") return 2.5;
+  if(logState === "active") {return 5;}
+  if(logState === "pending" || statusId === "smsgconsumed" || statusId === "consumed") {return 4.5;}
+  if(statusId === "smsgreceived") {return 3.5;}
+  if(statusId === "msgsent" || statusId === "smsgsent" || statusId === "sent") {return 3;}
+  if(statusId === "msgproduced" || statusId === "smsgproduced" || statusId === "produced") {return 2.5;}
 
   // Default for any unknown in-progress status
   return 0;
@@ -4853,24 +6433,25 @@ const getSystemMessageRank = (systemMessage: any) => {
 
 function getLatestSystemMessage(systemMessages: any[]) {
   return systemMessages.reduce((latest: any, current: any) => {
-    if (!latest) return current;
+    if(!latest) {return current;}
 
     const latestRank = getSystemMessageRank(latest);
     const currentRank = getSystemMessageRank(current);
 
-    if (currentRank > latestRank) {
+    if(currentRank > latestRank) {
       return current;
     }
-    if (currentRank < latestRank) {
+    if(currentRank < latestRank) {
       return latest;
     }
 
     const currentTimestamp = getTimestampValue(current.lastUpdatedStamp);
     const latestTimestamp = getTimestampValue(latest.lastUpdatedStamp);
 
-    if (currentTimestamp > latestTimestamp) {
+    if(currentTimestamp > latestTimestamp) {
       return current;
     }
+
     return latest;
   }, undefined);
 }
@@ -4878,7 +6459,7 @@ function getLatestSystemMessage(systemMessages: any[]) {
 export const fetchProductUpdateSyncRunState = async (payload: any): Promise<ShopifyProductUpdateSyncRunState> => {
   const systemMessageRemoteId = typeof payload === "string" ? payload : resolveSystemMessageRemoteId(payload);
   const shopId = payload.shopId || payload.shop?.shopId;
-  if (!shopId) {
+  if(!shopId) {
     throw new Error("Shop ID is required to find product update sync system messages.");
   }
 
@@ -4918,6 +6499,7 @@ export const fetchProductUpdateSyncRunState = async (payload: any): Promise<Shop
   const consumedMessages = systemMessages.filter((systemMessage: any) => {
     const statusId = String(systemMessage.statusId || "").toLowerCase();
     const isConsumed = statusId === "smsgconsumed" || statusId === "consumed" || statusId === "smsgconfirmed" || statusId === "confirmed";
+
     return isConsumed && systemMessage.logId;
   });
   const latestConfirmedSystemMessage = getLatestSystemMessage(confirmedMessages);
@@ -4957,21 +6539,19 @@ async function cachedSyncMessageHistory(query: {
 }): Promise<any[] | null> {
   try {
     const remotes = (await systemMessageRemoteCache.all()).map((row: any) => row.raw ?? row);
-    const remoteIds = new Set(
-      remotes
-        .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
-        .map((remote: any) => String(remote.systemMessageRemoteId)),
-    );
-    if (!remoteIds.size) return null;
+    const remoteIds = new Set(remotes
+      .filter((remote: any) => String(remote?.internalId ?? "") === String(query.shopId))
+      .map((remote: any) => String(remote.systemMessageRemoteId)),);
+    if(!remoteIds.size) {return null;}
 
     const messages = (await systemMessageCache.all()).map((row: any) => row.raw ?? row);
-    if (!messages.length) return null;
+    if(!messages.length) {return null;}
 
     const logs = (await dataManagerLogCache.all()).map((row: any) => row.raw ?? row);
     const logByMessageId = new Map<string, any>();
-    for (const log of logs) {
+    for(const log of logs) {
       const key = String(log?.systemMessageId ?? "");
-      if (key && !logByMessageId.has(key)) logByMessageId.set(key, log);
+      if(key && !logByMessageId.has(key)) {logByMessageId.set(key, log);}
     }
 
     let rows = messages.filter((message: any) =>
@@ -4989,12 +6569,12 @@ async function cachedSyncMessageHistory(query: {
      * hydration race. Deferring to the server document costs one request only for shops that
      * genuinely have no runs (the real wizard case), and is correct for everyone else.
      */
-    if (!rows.length) return null;
+    if(!rows.length) {return null;}
 
-    if (query.systemMessageId) {
+    if(query.systemMessageId) {
       rows = rows.filter((message: any) => String(message.systemMessageId) === String(query.systemMessageId));
     }
-    if (query.statusId) {
+    if(query.statusId) {
       rows = rows.filter((message: any) => String(message.statusId) === query.statusId);
     }
 
@@ -5006,7 +6586,8 @@ async function cachedSyncMessageHistory(query: {
     // `logId` is the field callers test to decide whether a message actually imported anything.
     const joined = rows.map((message: any) => {
       const log = logByMessageId.get(String(message.systemMessageId));
-      if (!log) return { ...message };
+      if(!log) {return { ...message };}
+
       return {
         ...message,
         logId: log.logId,
@@ -5020,52 +6601,14 @@ async function cachedSyncMessageHistory(query: {
     return query.pageSize ? joined.slice(0, query.pageSize) : joined;
   } catch (error) {
     logger.warn("Cached sync message history unavailable; falling back to the server", error);
+
     return null;
   }
 }
 
-export const fetchPendingProductUpdateRequests = async (payload: any): Promise<ShopifyPendingProductUpdateRequestsState> => {
-  const shopId = payload.shopId || payload.shop?.shopId;
-  if (!shopId) {
-    throw new Error("Shop ID is required to count pending product update requests.");
-  }
-
-  // CACHE-FIRST: the same document, narrowed to messages still awaiting processing.
-  const cachedPending = await cachedSyncMessageHistory({
-    shopId,
-    systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-    statusId: "SmsgProduced",
-  });
-  if (cachedPending) {
-    return { count: cachedPending.length, latestSystemMessage: cachedPending[0] };
-  }
-
-  const response = await requestBackend<any>({
-    url: "oms/dataDocumentView",
-    method: "post",
-    data: {
-      dataDocumentId: "SYSTEM_MESSAGE_DATA_MANAGER_LOG",
-      customParametersMap: {
-        systemMessageTypeId: "BulkQueryShopifyProductUpdates",
-        remoteInternalId: shopId,
-        remoteInternalIdType: "HOTWAX_SHOP_ID",
-        statusId: "SmsgProduced"
-      },
-      pageSize: payload.pageSize || 1,
-      pageIndex: 0,
-      orderByField: "-initDate"
-    }
-  }, "Pending product update requests");
-
-  return {
-    count: Number(response?.entityValueListCount || 0),
-    latestSystemMessage: response?.entityValueList?.[0]
-  };
-};
-
 export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProductSyncReviewStats> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to fetch live catalog counts.");
   }
 
@@ -5079,7 +6622,7 @@ export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProdu
   });
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify live catalog count query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
 
@@ -5093,7 +6636,7 @@ export const fetchLiveCatalogCounts = async (payload: any): Promise<ShopifyProdu
 
 export const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRunningBulkOperation | null> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to fetch running bulk operations.");
   }
 
@@ -5107,12 +6650,12 @@ export const fetchRunningBulkOperation = async (payload: any): Promise<ShopifyRu
   });
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify running bulk operation query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
 
   const runningOperation = graphQlPayload?.bulkOperations?.nodes?.[0];
-  if (!runningOperation) return null;
+  if(!runningOperation) {return null;}
 
   return {
     id: runningOperation.id,
@@ -5149,7 +6692,7 @@ export const fetchSetupState = async (payload: any): Promise<ShopifyProductSyncS
 
 export const fetchShopifyShopProductCount = async (payload: any): Promise<ShopifyShopProductCount> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product update counts.");
   }
 
@@ -5165,7 +6708,7 @@ export const fetchShopifyShopProductCount = async (payload: any): Promise<Shopif
   });
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify unsynced product update count query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
 
@@ -5177,7 +6720,7 @@ export const fetchShopifyShopProductCount = async (payload: any): Promise<Shopif
 
 export const fetchUnsyncedProductUpdates = async (payload: any): Promise<ShopifyUnsyncedProductUpdate[]> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to fetch unsynced product updates.");
   }
 
@@ -5193,10 +6736,10 @@ export const fetchUnsyncedProductUpdates = async (payload: any): Promise<Shopify
   });
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify unsynced product update list query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
-  if (!Array.isArray(graphQlPayload?.products?.nodes)) {
+  if(!Array.isArray(graphQlPayload?.products?.nodes)) {
     throw new Error("Shopify unsynced product update list query response is missing products.nodes.");
   }
 
@@ -5218,7 +6761,7 @@ export const fetchUnsyncedProductUpdates = async (payload: any): Promise<Shopify
 
 export const fetchRecentlyUpdatedShopifyProducts = async (payload: any): Promise<ShopifyProductSyncProductSearchState> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to fetch recently updated products.");
   }
 
@@ -5232,10 +6775,10 @@ export const fetchRecentlyUpdatedShopifyProducts = async (payload: any): Promise
   }, "Shopify recently updated products query");
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify recently updated products query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
-  if (!Array.isArray(graphQlPayload?.products?.nodes)) {
+  if(!Array.isArray(graphQlPayload?.products?.nodes)) {
     throw new Error("Shopify recently updated products query response is missing products.nodes.");
   }
 
@@ -5248,12 +6791,12 @@ export const fetchRecentlyUpdatedShopifyProducts = async (payload: any): Promise
 
 export const searchShopifyProducts = async (payload: any): Promise<ShopifyProductSyncProductSearchState> => {
   const systemMessageRemoteId = resolveSystemMessageRemoteId(payload);
-  if (!systemMessageRemoteId) {
+  if(!systemMessageRemoteId) {
     throw new Error("Shopify systemMessageRemoteId is required to search products.");
   }
 
   const queryString = String(payload.queryString || "").trim();
-  if (!queryString) {
+  if(!queryString) {
     return {
       products: [],
       hasNextPage: false,
@@ -5262,7 +6805,7 @@ export const searchShopifyProducts = async (payload: any): Promise<ShopifyProduc
   }
 
   const exactProductGid = !payload.after ? getExactShopifyProductGid(queryString) : "";
-  if (exactProductGid) {
+  if(exactProductGid) {
     const response = await requestBackend<ShopifyGraphqlResponse>({
       url: "shopify/graphql",
       method: "post",
@@ -5273,11 +6816,11 @@ export const searchShopifyProducts = async (payload: any): Promise<ShopifyProduc
     }, "Shopify product ID lookup query");
 
     const graphQlPayload = response?.response || response?.data || response;
-    if (response?.errors?.length || graphQlPayload?.errors?.length) {
+    if(response?.errors?.length || graphQlPayload?.errors?.length) {
       throw new Error(`Shopify product ID lookup query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
     }
     const productNode = graphQlPayload?.product || graphQlPayload?.data?.product || graphQlPayload?.response?.product || graphQlPayload?.response?.data?.product;
-    if (productNode) {
+    if(productNode) {
       return {
         products: [mapShopifyProductNode(productNode)],
         hasNextPage: false,
@@ -5297,10 +6840,10 @@ export const searchShopifyProducts = async (payload: any): Promise<ShopifyProduc
   }, "Shopify product search query");
 
   const graphQlPayload = response?.response || response?.data || response;
-  if (response?.errors?.length || graphQlPayload?.errors?.length) {
+  if(response?.errors?.length || graphQlPayload?.errors?.length) {
     throw new Error(`Shopify product search query returned errors: ${JSON.stringify(response?.errors || graphQlPayload.errors)}`);
   }
-  if (!Array.isArray(graphQlPayload?.products?.edges)) {
+  if(!Array.isArray(graphQlPayload?.products?.edges)) {
     throw new Error("Shopify product search query response is missing products.edges.");
   }
 
@@ -5314,10 +6857,10 @@ export const searchShopifyProducts = async (payload: any): Promise<ShopifyProduc
 };
 
 export const syncShopifyProductsOnDemand = async (payload: any): Promise<ShopifyProductSyncOnDemandResult> => {
-  if (!payload.shopId) {
+  if(!payload.shopId) {
     throw new Error("Shopify shop id is required to sync products on demand.");
   }
-  if (!payload.shopifyProductId) {
+  if(!payload.shopifyProductId) {
     throw new Error("Shopify product id is required to sync products on demand.");
   }
 
@@ -5325,8 +6868,8 @@ export const syncShopifyProductsOnDemand = async (payload: any): Promise<Shopify
     shopId: payload.shopId,
     shopifyProductId: payload.shopifyProductId
   };
-  if (payload.namespace) data.namespace = payload.namespace;
-  if (payload.additionalParameters) data.additionalParameters = payload.additionalParameters;
+  if(payload.namespace) {data.namespace = payload.namespace;}
+  if(payload.additionalParameters) {data.additionalParameters = payload.additionalParameters;}
 
   return requestBackend<ShopifyProductSyncOnDemandResult>({
     url: "sob/shopify/syncShopifyProductsOnDemand",
@@ -5336,7 +6879,7 @@ export const syncShopifyProductsOnDemand = async (payload: any): Promise<Shopify
 };
 
 export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductSyncOnDemandResult> => {
-  if (!payload.shopId) {
+  if(!payload.shopId) {
     throw new Error("Shopify shop id is required to sync products.");
   }
 
@@ -5345,10 +6888,10 @@ export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductS
     includeAll: payload.includeAll || false
   };
 
-  if (payload.fromDate) data.fromDate = payload.fromDate;
-  if (payload.thruDate) data.thruDate = payload.thruDate;
-  if (payload.namespace) data.namespace = payload.namespace;
-  if (payload.filterQuery) data.filterQuery = payload.filterQuery;
+  if(payload.fromDate) {data.fromDate = payload.fromDate;}
+  if(payload.thruDate) {data.thruDate = payload.thruDate;}
+  if(payload.namespace) {data.namespace = payload.namespace;}
+  if(payload.filterQuery) {data.filterQuery = payload.filterQuery;}
 
   return requestBackend<ShopifyProductSyncOnDemandResult>({
     url: "shopify/products/sync",
@@ -5357,44 +6900,8 @@ export const syncShopifyProducts = async (payload: any): Promise<ShopifyProductS
   }, "Shopify product sync endpoint");
 };
 
-const sendShopifyBulkQueryMessage = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const systemMessageRemoteId = String(payload?.systemMessageRemoteId || "").trim();
-  const queryText = String(payload?.queryText || "").trim();
-
-  if (!systemMessageRemoteId) {
-    throw new Error("System message remote id is required to send a Shopify bulk query message.");
-  }
-  if (!queryText) {
-    throw new Error("Query text is required to send a Shopify bulk query message.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/graphql",
-    method: "post",
-    data: {
-      systemMessageRemoteId,
-      queryText
-    }
-  }, "Shopify GraphQL send endpoint");
-};
-
-const pollBulkOperationResult = async (payload: any): Promise<ShopifyProductSyncActionResult> => {
-  const parentSystemMessageTypeId = String(payload?.parentSystemMessageTypeId || "").trim();
-  if (!parentSystemMessageTypeId) {
-    throw new Error("Parent system message type id is required to poll a Shopify bulk operation result.");
-  }
-
-  return requestBackend<ShopifyProductSyncActionResult>({
-    url: "shopify/bulk/result/poll",
-    method: "post",
-    data: {
-      parentSystemMessageTypeId
-    }
-  }, "Shopify bulk result poll endpoint");
-};
-
 export const cancelSystemMessage = async (systemMessageId: string): Promise<ShopifyProductSyncActionResult> => {
-  if (!String(systemMessageId || "").trim()) {
+  if(!String(systemMessageId || "").trim()) {
     throw new Error("System message id is required to cancel a Shopify product sync message.");
   }
 
@@ -5481,7 +6988,7 @@ export const fetchPreflight = async (payload: any): Promise<any[]> => {
 
     const graphQlPayload = shopifyResp?.data;
     const shopifyVariants = graphQlPayload?.response?.productVariants?.nodes || [];
-    if (shopifyVariants.length === 0) return [];
+    if(shopifyVariants.length === 0) {return [];}
 
     const shopifyVariantIds = shopifyVariants.map((v: any) => v.legacyResourceId);
 
@@ -5551,7 +7058,7 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
     }) as any;
 
     const entityValueList = resp?.data?.entityValueList || [];
-    if (entityValueList.length > 0) {
+    if(entityValueList.length > 0) {
       return { isConfigured: true, jobName: entityValueList[0].jobName };
     }
   } catch (error) {
@@ -5567,36 +7074,6 @@ export const fetchSyncJobConfig = async (payload: any): Promise<{ isConfigured: 
 // did not — without that the new job stays invisible to every cached read until the next login.
 
 
-const fetchErrorRecordCount = async (payload: any): Promise<number> => {
-  const { shopId, configId } = payload;
-  const finishDateTimeFrom = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago in ms
-
-  try {
-    const response = await requestBackend<any>({
-      url: "oms/dataDocumentView",
-      method: "post",
-      data: {
-        dataDocumentId: "DATA_MANAGER_LOG_AND_PARAMETER",
-        customParametersMap: {
-          configId: configId || "SYNC_SHOPIFY_PRODUCT",
-          parameterName: "shopId",
-          parameterValue: shopId,
-          failedRecordCount: 0,
-          failedRecordCount_op: "equals",
-          failedRecordCount_not: "true",
-          finishDateTime_from: finishDateTimeFrom.toString()
-        },
-        fieldsToSelect: "failedRecordCount"
-      }
-    });
-
-    return Number(response?.entityValueList?.[0]?.failedRecordCount || 0);
-  } catch (error) {
-    logger.warn("Failed to fetch error record count using dataDocumentView", error);
-    return 0;
-  }
-};
-
 export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<number> => {
   const { shopId, configId } = payload;
   try {
@@ -5611,7 +7088,7 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
           configId: configId || "SYNC_SHOPIFY_PRODUCT",
           parameterName: "shopId",
           parameterValue: shopId,
-          statusId: ["DmlSuccess", "DmlError", "DmlCancelled"],
+          statusId: TERMINAL_DATA_MANAGER_LOG_STATUS_IDS,
           statusId_not: "true"
         }
       }
@@ -5620,38 +7097,9 @@ export const fetchUpdateFilesToProcessCount = async (payload: any): Promise<numb
     return Number(response?.entityValueListCount || 0);
   } catch (error: any) {
     logger.warn("Failed to fetch update files to process count using dataDocumentView", error);
+
     return 0;
   }
-};
-
-export const fetchDashboardSummary = async (payload: any): Promise<ShopifyProductSyncDashboardSummary> => {
-  const { systemMessageRemoteId } = payload;
-
-  const [syncRunState, pendingRequests, runningOperation, updateFilesToProcess] = await Promise.all([
-    fetchProductUpdateSyncRunState(payload).catch(e => { logger.error("Failed to fetch product update sync run state", e); return { systemMessages: [], lastSyncedAt: "" } as any }),
-    fetchPendingProductUpdateRequests(payload).catch(e => { logger.error("Failed to fetch pending product update requests", e); return { count: 0 } as any }),
-    fetchRunningBulkOperation(payload).catch(e => { logger.warn("Failed to fetch running bulk operation (likely GraphQL error)", e); return null }),
-    fetchUpdateFilesToProcessCount(payload).catch(e => { logger.error("Failed to fetch update files to process count", e); return 0 })
-  ]);
-
-  let unsyncedUpdates = { count: 0, products: [] } as any;
-  try {
-    unsyncedUpdates = await fetchShopifyShopProductCount({
-      ...payload,
-      systemMessageRemoteId,
-      syncRunState
-    });
-  } catch (error) {
-    logger.warn("Failed to fetch unsynced product updates (likely GraphQL error)", error);
-  }
-
-  return {
-    syncRunState,
-    pendingRequests,
-    runningOperation,
-    unsyncedUpdates,
-    updateFilesToProcess
-  };
 };
 
 export const fetchWebhookSubscriptions = async (payload: any): Promise<any> => {
@@ -5690,3 +7138,152 @@ export const unsubscribeWebhook = async (payload: any): Promise<any> => {
     }
   });
 };
+
+/** Explicit live check for one item at its exact Shopify location. */
+export async function fetchCurrentShopifyInventory(payload: {systemMessageRemoteId: string; inventoryItemId: string; locationId: string}) {
+  if (!payload.systemMessageRemoteId) throw new Error("Shopify connection is unavailable.");
+  const itemId = inventoryGid(payload.inventoryItemId, "InventoryItem");
+  const locationId = inventoryGid(payload.locationId, "Location");
+  const response = await requestBackend<any>({url: "shopify/graphql", method: "post", data: {
+    systemMessageRemoteId: payload.systemMessageRemoteId,
+    queryText: INVENTORY_AT_LOCATION_QUERY, variables: {itemId, locationId},
+  }});
+  return parseInventorySnapshot(response, itemId, locationId);
+}
+
+/** Rebuild one mapped OMS product's local search document; does not write Shopify. */
+export async function refreshMappedProductSearchIndex(productId: string) {
+  if (!productId?.trim()) throw new Error(translate('OMS product ID is required'));
+  const response: any = await api({url: 'oms/search/index/product', method: 'post', data: {productId, indexVariants: false}});
+  if (!response || response.data == null || commonUtil.hasError(response)) {
+    throw new Error(translate('Search index refresh was not confirmed'));
+  }
+}
+
+/** Read every variant and its existing OMS mapping without re-running an import. */
+export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
+  const productId = getExactShopifyProductGid(payload.productId);
+  if (!productId || !payload.systemMessageRemoteId || !payload.productStoreId) throw new Error('Product, Shopify connection and product store are required.');
+  const result: any[] = [];
+  let after: string | null = null;
+  const cursors = new Set<string>();
+  do {
+    const response: any = await requestBackend<any>({url: 'shopify/graphql', method: 'post', data: {
+      systemMessageRemoteId: payload.systemMessageRemoteId,
+      queryText: `query ProductMappings($id: ID!, $after: String) { product(id: $id) { variants(first: 100, after: $after) { nodes { id legacyResourceId title sku inventoryItem { id tracked } } pageInfo { hasNextPage endCursor } } } }`,
+      variables: {id: productId, after}
+    }});
+    const data: any = response?.response || response?.data || response;
+    if (response?.errors?.length || data?.errors?.length) throw new Error('Shopify could not return product mappings.');
+    const variants: any = data?.product?.variants;
+    if (!Array.isArray(variants?.nodes)) throw new Error('Shopify product variants were not returned.');
+    const ids = variants.nodes.map((v: any) => String(v.legacyResourceId));
+    let mappings: any[] = [];
+    if (ids.length) {
+      let pageIndex = 0;
+      let page: any[];
+      do {
+        const response: any = await requestBackend<any>({url: 'oms/dataDocumentView', method: 'post', data: {
+          dataDocumentId: 'PRODUCT_STORE_PRODUCT', pageIndex, pageSize: 100,
+          customParametersMap: {productStoreId: payload.productStoreId, shopifyProductId: ids},
+          fieldsToSelect: 'productId,shopifyProductId,internalName'
+        }});
+        if (!Array.isArray(response?.entityValueList)) throw new Error('HotWax product mappings were not returned.');
+        page = response.entityValueList;
+        mappings.push(...page);
+        pageIndex++;
+      } while (page.length === 100);
+    }
+    result.push(...variants.nodes.map((v: any) => ({id: String(v.legacyResourceId), title: v.title, sku: v.sku,
+      inventoryItemId: v.inventoryItem?.id?.split('/').pop(), tracked: v.inventoryItem?.tracked === true,
+      mappings: mappings.filter(m => String(m.shopifyProductId) === String(v.legacyResourceId))
+    })));
+    if (!variants.pageInfo?.hasNextPage) break;
+    after = variants.pageInfo.endCursor;
+    if (!after || cursors.has(after)) throw new Error('Shopify variant pagination did not advance.');
+    cursors.add(after);
+  } while (after);
+  return result;
+}
+
+
+/** Repair the retired reset importer only; never requeue an existing import. */
+export async function repairInventoryResetImportConfig(): Promise<void> {
+  const configId = "RESET_INV_CHANNEL";
+  const expected = "co.hotwax.sob.product.InventoryServices.push#InventoryChannelInventory";
+  const legacy = "co.hotwax.sob.product.InventoryServices.import#InventoryChannelInventory";
+  const read = async () => {
+    const response: any = await api({ url: `admin/dataManager/${configId}`, method: "GET" });
+    if (commonUtil.hasError(response) || response?.data?.configId !== configId) {
+      throw new Error(translate("Could not verify the reset import configuration."));
+    }
+    return response.data;
+  };
+  const current = await read();
+  if (current.importServiceName === expected) return;
+  if (current.importServiceName !== legacy) {
+    throw new Error(translate("The reset importer has an unexpected configuration. Review it before changing it."));
+  }
+  const response: any = await api({
+    url: `admin/dataManager/${configId}`, method: "PUT",
+    data: { configId, importServiceName: expected },
+  });
+  if (commonUtil.hasError(response)) throw new Error(translate("The OMS rejected the reset importer update."));
+  try {
+    if ((await read()).importServiceName !== expected) throw new Error("not updated");
+  } catch {
+    throw new Error(translate("The update was submitted, but its saved value could not be verified. Check again before making another change."));
+  }
+}
+
+
+/** Paged live history projection: current activation confirmations are not an append-only cache.
+ * Fetch only on entry, filtering, pagination or explicit refresh; no competing polling loop.
+ *
+ * An entity resource, like the transfer-sync segments: rows come back as a bare array and the
+ * unpaged total in `x-total-count`. `activationStatus` is a real column on the OMS view, so it is
+ * both the filter value sent up and the status read back per row.
+ */
+export async function fetchProductFacilityActivations(shopId: string, params: {
+  activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
+}): Promise<{
+  activations: import("@/utils/shopifyActivation").ProductFacilityActivation[];
+  totalCount: number;
+}> {
+  if (!shopId) throw new Error("A Shopify connection is required.");
+  const { activationStatus, ...rest } = params;
+  const response: any = await api({
+    url: "sob/shopify/productFacilityActivations",
+    method: "get",
+    params: {
+      ...rest,
+      shopId,
+      // Paging is only stable under an explicit order; this is the order the OMS activation
+      // query itself uses.
+      orderByField: "productId,facilityId,shopifyProductId",
+      // "all" is the page's own idea of no filter; the resource has no such value.
+      ...(activationStatus === "all" ? {} : { activationStatus }),
+    },
+  });
+  if (commonUtil.hasError(response)) throw new Error("The OMS could not read product activation records.");
+  const activations = Array.isArray(response?.data) ? response.data : [];
+  const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
+  return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
+}
+
+// Shopify is the owning composable for all Shopify-facing screen APIs. The fulfillment reader
+// implementation remains split into a focused submodule, but callers import it through this owner
+// so a screen does not assemble Shopify state from unrelated composable entry points.
+export {
+  useFulfillmentSyncHealth,
+  useOmsShipmentContext,
+  usePendingFulfillments,
+  useQueuedFulfillments,
+  useShopifyFulfillmentDetails,
+  useSyncedFulfillments,
+} from "./useShopifyFulfillment";
+export type {
+  OmsShipmentContext,
+  QueuedFulfillmentRow,
+  SyncedFulfillmentRow,
+} from "./useShopifyFulfillment";

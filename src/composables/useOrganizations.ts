@@ -196,15 +196,17 @@ export function useOrganizations() {
   };
 }
 
-export const useOrganizationRecord = (partyId: string | undefined) =>
+export const useOrganizationRecord = (partyId: string | Ref<string | undefined> | undefined) =>
   useCachedRecord<Organization>(organizationCache, "partyId", partyId);
 
-export function useOrganizationFacilities(partyId: string | undefined) {
-  const { records, hydrated } = useCachedList<any>(facilityCache, {
-    ...(partyId ? { scope: { field: "ownerPartyId", value: partyId } } : {}),
+export function useOrganizationFacilities(partyId: string | Ref<string | undefined> | undefined) {
+  const { records, hydrated } = useCachedList<any>(facilityCache);
+  const facilities = computed(() => {
+    const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
+    return targetId ? records.value.filter((row: any) => row.ownerPartyId === targetId) : records.value;
   });
 
-  return { facilities: computed(() => records.value), hydrated };
+  return { facilities, hydrated };
 }
 
 const primaryOrganizationId = ref("");

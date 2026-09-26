@@ -28,6 +28,13 @@ export interface SnapshotDomainConfig {
    * Verified per endpoint — see `unwrapCollection`.
    */
   collectionKey?: string | null;
+  /**
+   * Reject any response that does not match `collectionKey` exactly.
+   *
+   * Use for mutation-sensitive snapshots where an error object or unsupported envelope must not
+   * be interpreted as an authoritative empty set.
+   */
+  strictCollection?: boolean;
   /** Extra filter/order params for the full-set fetch. Paging params are supplied by `pageAll`. */
   listParams?: Record<string, unknown>;
   /** Page size for the full-set walk (default 250). */
@@ -160,13 +167,15 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
             ctx,
             url: urlFor(String(parentId)),
             collectionKey: config.collectionKey,
+            strictCollection: config.strictCollection,
             params: config.listParams,
             batchSize: config.batchSize,
-            keyOf: (record) => keyOfRecord(record, config),
+            keyOf: (record) =>
+              keyOfRecord({ ...record, [parentKeyField]: parentId }, config),
             label: `${config.name}:${parentId}`,
           });
-          // Stamp the parent id — child rows do not always echo it.
-          all.push(...page.map((row: any) => ({ [parentKeyField]: parentId, ...row })));
+          // The request scope is authoritative: child rows may omit or incorrectly echo the parent.
+          all.push(...page.map((row: any) => ({ ...row, [parentKeyField]: parentId })));
         }
         if (wouldWipePopulatedTable(all.length, await appCacheDb.table(config.table).count(), !!options?.force)) {
           console.warn(
@@ -186,6 +195,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
         ctx,
         url: config.listUrl,
         collectionKey: config.collectionKey,
+        strictCollection: config.strictCollection,
         params: config.listParams,
         batchSize: config.batchSize,
         keyOf: (record) => keyOfRecord(record, config),
@@ -222,13 +232,15 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           ctx,
           url: urlFor(String(parentId)),
           collectionKey: config.collectionKey,
+          strictCollection: config.strictCollection,
           params: config.listParams,
           batchSize: config.batchSize,
-          keyOf: (record) => keyOfRecord(record, config),
+          keyOf: (record) =>
+            keyOfRecord({ ...record, [parentKeyField]: parentId }, config),
           label: `${config.name}:refetch:${parentId}`,
         });
-        // Child rows do not always echo the parent id — stamp it, as the fan-out sync does.
-        const stamped = fetched.map((row: any) => ({ [parentKeyField]: parentId, ...row }));
+        // The request scope is authoritative: child rows may omit or incorrectly echo the parent.
+        const stamped = fetched.map((row: any) => ({ ...row, [parentKeyField]: parentId }));
         const rows = keyableRows(config.name, stamped, config);
         if (rows === null) return 0;
         const { written } = await cache.snapshotReplace(rows, { field: parentKeyField, value: parentId });
@@ -251,6 +263,7 @@ export function registerSnapshotDomain(config: SnapshotDomainConfig) {
           ctx,
           url: config.listUrl,
           collectionKey: config.collectionKey,
+          strictCollection: config.strictCollection,
           params: { ...config.listParams, ...params },
           batchSize: config.batchSize,
           keyOf: (record) => keyOfRecord(record, config),

@@ -9,11 +9,18 @@
       <ion-title>{{ translate("Select facilities") }}</ion-title>
     </ion-toolbar>
     <ion-toolbar>
-      <ion-searchbar v-model="queryString" :placeholder="translate('Search facilities')" @keyup.enter="search()" />
+      <ion-searchbar v-model="queryString" :placeholder="translate('Search facilities')" />
     </ion-toolbar>
   </ion-header>
 
   <ion-content>
+    <ion-item v-if="bannerMessage" class="context-banner" :color="bannerColor" lines="none" role="status">
+      <ion-label class="ion-text-wrap">
+        <strong v-if="bannerTitle">{{ bannerTitle }}</strong>
+        <p>{{ bannerMessage }}</p>
+      </ion-label>
+    </ion-item>
+
     <template v-if="filteredFacilities.length">
       <ion-list v-if="!isFacilityLogin">
         <ion-item v-for="facility in filteredFacilities" :key="facility.facilityId">
@@ -53,7 +60,7 @@
 
 <script setup lang="ts">
 import { IonButton, IonButtons, IonCheckbox, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonRadio, IonRadioGroup, IonSearchbar, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import type { PropType } from "vue";
 import { translate } from "@common";
@@ -69,35 +76,29 @@ const props = defineProps({
   isFacilityLogin: {
     type: Boolean,
     default: false
-  }
+  },
+  bannerTitle: { type: String, default: "" },
+  bannerMessage: { type: String, default: "" },
+  bannerColor: { type: String, default: "medium" },
 });
 
 
 const queryString = ref("");
-const filteredFacilities = ref<any[]>([]);
 const selectedFacilityValues = ref<any[]>(JSON.parse(JSON.stringify(props.selectedFacilities)));
 
-// Cached at login; `watch` covers the case where the cache emits after mount.
-const { facilities } = useFacilities();
+// The selector and facility groups both use the local facility cache; search filters it live.
+const { facilities } = useFacilities({ excludeVirtual: true });
+const filteredFacilities = computed<any[]>(() => {
+  const query = queryString.value.trim().toLowerCase();
+  if(!query) {return facilities.value;}
 
-onMounted(() => {
-  filteredFacilities.value = facilities.value;
-});
-
-// The cached list arrives asynchronously from IndexedDB, so seed the filtered list on each emit
-// until the user has typed a query.
-watch(facilities, (next: any[]) => {
-  if (!queryString.value) filteredFacilities.value = next;
+  return facilities.value.filter((facility: any) =>
+    String(facility.facilityId ?? "").toLowerCase().includes(query) ||
+    String(facility.facilityName ?? "").toLowerCase().includes(query));
 });
 
 const closeModal = () => {
   modalController.dismiss({ dismissed: true });
-};
-
-const search = () => {
-  filteredFacilities.value = facilities.value.filter((facility: any) =>
-    facility.facilityId.toLowerCase().includes(queryString.value.toLowerCase()) ||
-    (facility.facilityName && facility.facilityName.toLowerCase().includes(queryString.value.toLowerCase())));
 };
 
 const saveFacilities = () => {
@@ -134,5 +135,9 @@ const updateSelectedFacility = (event: CustomEvent) => {
 <style scoped>
 ion-content {
   --padding-bottom: 80px;
+}
+
+.context-banner {
+  margin: var(--spacer-sm);
 }
 </style>

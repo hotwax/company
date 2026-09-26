@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { locationInventoryAdjustmentKey } from "@/utils/shopifyLocationInventory";
 
 /**
  * A response body that fails to parse must NOT be reported as "no records".
@@ -49,4 +50,70 @@ describe("workerGet body handling", () => {
     const resp = await workerGet(ctx, "admin/productStores", {});
     expect(unwrapCollection(resp, null)).toEqual([]);
   });
+});
+
+describe("strict collection response handling", () => {
+  it.each([
+    ["payload-level error", "{\"_ERROR_MESSAGE_\":\"permission denied\"}"],
+    ["unsupported object envelope", "{\"entityValueList\":[]}"],
+    ["null body", "null"],
+  ])("rejects a %s instead of treating it as an empty bare-array snapshot", async (_label, body) => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = body;
+
+    await expect(pageAll({
+      ctx,
+      url: "oms/shippingGateways/carrierParties",
+      collectionKey: null,
+      strictCollection: true,
+      label: "carrier",
+    })).rejects.toThrow(/carrier.*bare array/i);
+  });
+
+  it("still accepts the explicitly supported bare-array shape", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = "[{\"partyId\":\"FEDEX\"}]";
+
+    await expect(pageAll({
+      ctx,
+      url: "oms/shippingGateways/carrierParties",
+      collectionKey: null,
+      strictCollection: true,
+      label: "carrier",
+    })).resolves.toEqual([{ partyId: "FEDEX" }]);
+  });
+});
+
+
+describe("complete snapshot pagination", () => {
+  it("retains separate inventory items from the same location source event", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    const source = { eventTypeId: "SHIPMENT_RECEIPT", eventReferenceId: "receipt-1", shopId: "shop-1", shopifyLocationId: "location-1" };
+    const details = [
+      { ...source, shopifyInventoryItemId: "item-1", computedInventoryChange: 2 },
+      { ...source, shopifyInventoryItemId: "item-2", computedInventoryChange: 3 },
+    ];
+    transport.body = JSON.stringify({ details, detailCount: 2, hasMore: false });
+    await expect(pageAll({ ctx, url: "rows", collectionKey: "details", requireComplete: true,
+      strictCollection: true, keyOf: locationInventoryAdjustmentKey })).resolves.toEqual(details);
+  });
+  it("rejects repeated pages rather than returning a partial snapshot", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = '[{"id":"A"}]';
+    await expect(pageAll({ ctx, url: "rows", batchSize: 1, requireComplete: true,
+      strictCollection: true })).rejects.toThrow(/no progress/);
+  });
+  it("rejects a pagination backstop rather than returning a partial snapshot", async () => {
+    const { pageAll } = await import("@/workers/domains/workerFetch");
+    transport.body = '[{"id":"A"}]';
+    await expect(pageAll({ ctx, url: "rows", batchSize: 1, maxPages: 1,
+      requireComplete: true, strictCollection: true })).rejects.toThrow(/page limit/);
+  });
+});
+
+it("rejects a short page that still claims more snapshot rows", async () => {
+  const { pageAll } = await import("@/workers/domains/workerFetch");
+  transport.body = '{"details":[{"id":"A"}],"hasMore":true,"detailCount":2}';
+  await expect(pageAll({ ctx, url: "rows", collectionKey: "details", requireComplete: true,
+    strictCollection: true })).rejects.toThrow(/count mismatch/);
 });

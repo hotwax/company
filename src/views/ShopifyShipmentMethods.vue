@@ -135,30 +135,42 @@
 import { useShopifyCarrierShipments, useShopifyShop, useShopifyShopMutations } from "@/composables/useShopify";
 import { useShipmentMethodTypeMutations, useShipmentMethodTypes } from "@/composables/useSeed";
 import { useProductStoreMutations, useProductStoreShippingMethods } from "@/composables/useProductStores";
-import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { resyncDomain } from "@/services/appCacheBootstrap";
+import {
+  CACHE_RECONCILIATION_ERROR_MESSAGE,
+  isCacheReconciliationError,
+} from "@/utils/cacheReconciliationError";
 import { alertController, IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonModal, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSkeletonText, IonText, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { addOutline, airplaneOutline, arrowBackOutline, closeOutline, saveOutline, shieldCheckmarkOutline } from 'ionicons/icons'
 import { commonUtil, emitter, logger, translate } from '@common'
-import { computed, defineProps, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { shouldPopHistoryOnBack } from "@/utils/navigation";
 
 const props = defineProps(['id']);
 const shopMutations = useShopifyShopMutations(props.id);
 const { createShipmentMethodType } = useShipmentMethodTypeMutations();
-// Skeleton only until the cache emits; on a warm cache that is immediate.
-const isLoading = computed(() => !hydrated.value);
 const editingItemKey = ref("");
 // Keys the user has actually started editing. Everything else is safe to reseed from the cache.
 const userEditedKeys = ref<Set<string>>(new Set());
 const localMappings = ref<any>({});
-const { record: shopRecord } = useShopifyShop(props.id);
+const { record: shopRecord, hydrated: shopHydrated } = useShopifyShop(props.id);
 const shop = computed<any>(() => shopRecord.value ?? {});
+const productStoreId = computed<string | undefined>(() => shop.value.productStoreId);
 const selectedCarrierPartyId = ref("");
 
 const { shipmentMethodTypes } = useShipmentMethodTypes();
-const { shippingMethods: productStoreShipmentMethods } = useProductStoreShippingMethods();
-const { byCarrierAndMethod: shopifyShopsCarrierShipments, hydrated } = useShopifyCarrierShipments(props.id);
+const {
+  shippingMethods: productStoreShipmentMethods,
+  hydrated: shipmentMethodsHydrated,
+} = useProductStoreShippingMethods(productStoreId);
+const {
+  byCarrierAndMethod: shopifyShopsCarrierShipments,
+  hydrated: carrierMappingsHydrated,
+} = useShopifyCarrierShipments(props.id);
+// Skeleton only until every cache needed to resolve and render this shop emits.
+const isLoading = computed(() =>
+  !shopHydrated.value || !shipmentMethodsHydrated.value || !carrierMappingsHydrated.value);
 const backHref = computed(() => {
   const returnTo = new URLSearchParams(window.location.search).get("returnTo")
   return returnTo || `/shopify-connection-details/${props.id}`
@@ -375,6 +387,11 @@ const showCreateShipmentMethodModal = ref(false);
 const description = ref("");
 const shopifyShippingMethod = ref("");
 const createShipmentCarrierPartyId = ref("");
+// A later stage may fail after an earlier POST already committed. Retain those exact identities
+// across modal retries so retrying resumes the pipeline instead of replaying a create.
+const committedShipmentMethodTypeIds = new Set<string>();
+const committedProductStoreAssociations = new Set<string>();
+const pendingCreateReconciliationDomains = new Set<string>();
 
 // Auto-derive the shipment method type id from the description (uppercase, non-alphanumeric -> underscore).
 const derivedId = computed(() => description.value
@@ -402,64 +419,112 @@ function closeCreateShipmentMethodModal() {
   showCreateShipmentMethodModal.value = false;
 }
 
+function rememberReconciliationFailure(error: unknown, fallbackDomains: string[]): boolean {
+  if(!isCacheReconciliationError(error)) {return false;}
+
+  const reportedDomains = Array.isArray(error.failedDomains) && error.failedDomains.length
+    ? error.failedDomains
+    : (error.domain ? [error.domain] : fallbackDomains);
+  reportedDomains.forEach((domain) => pendingCreateReconciliationDomains.add(domain));
+
+  return true;
+}
+
+async function runCommittedCreateStage(
+  action: () => Promise<unknown>,
+  markCommitted: () => void,
+  reconciliationDomains: string[],
+) {
+  try {
+    await action();
+  } catch (error) {
+    if(!rememberReconciliationFailure(error, reconciliationDomains)) {throw error;}
+  }
+
+  markCommitted();
+}
+
+async function retryPendingCreateReconciliation() {
+  const domains = [...pendingCreateReconciliationDomains];
+  const results = await Promise.allSettled(domains.map((domain) => resyncDomain(domain)));
+  results.forEach((result, index) => {
+    if(result.status === "fulfilled") {
+      pendingCreateReconciliationDomains.delete(domains[index]);
+    }
+  });
+}
+
 async function createShipmentMethod() {
   if(!canSave.value) {return;}
 
   const shipmentMethodTypeId = derivedId.value;
+  const resolvedProductStoreId = String(shop.value.productStoreId ?? "").trim();
+  const associationKey =
+    `${resolvedProductStoreId}\u0000${createShipmentCarrierPartyId.value}\u0000${shipmentMethodTypeId}`;
   emitter.emit("presentLoader");
 
   try {
     // 1. Create the shipment method type if it does not already exist.
     const typeExists = shipmentMethodTypes.value.some((type: any) => type.shipmentMethodTypeId === shipmentMethodTypeId);
-    if(!typeExists) {
-      // Resyncs the shipmentMethodType cache itself.
-      await createShipmentMethodType({ shipmentMethodTypeId, description: description.value.trim() });
+    if(!typeExists && !committedShipmentMethodTypeIds.has(shipmentMethodTypeId)) {
+      await runCommittedCreateStage(
+        // Resyncs the shipmentMethodType cache itself.
+        () => createShipmentMethodType({
+          shipmentMethodTypeId,
+          description: description.value.trim(),
+        }),
+        () => committedShipmentMethodTypeIds.add(shipmentMethodTypeId),
+        ["shipmentMethodType"],
+      );
     }
 
     // 2. Associate the shipment method type with the product store + carrier so it appears as a row.
-    const assocResp = await useProductStoreMutations(shop.value.productStoreId).addShipmentMethod({
-      shipmentMethodTypeId,
-      partyId: createShipmentCarrierPartyId.value,
-      roleTypeId: "CARRIER"
-    });
-    if(commonUtil.hasError(assocResp)) {
-      throw assocResp.data;
+    if(!committedProductStoreAssociations.has(associationKey)) {
+      await runCommittedCreateStage(
+        () => useProductStoreMutations(resolvedProductStoreId).addShipmentMethod({
+          shipmentMethodTypeId,
+          partyId: createShipmentCarrierPartyId.value,
+          roleTypeId: "CARRIER",
+        }),
+        () => committedProductStoreAssociations.add(associationKey),
+        ["productStoreShippingMethod", "productStoreShipmentCount"],
+      );
     }
 
     // 3. Create the Shopify carrier-shipment mapping (the identification).
-    const mappingResp = await shopMutations.saveCarrierShipment({
-      shipmentMethodTypeId,
-      shopifyShippingMethod: shopifyShippingMethod.value.trim(),
-      carrierPartyId: createShipmentCarrierPartyId.value
-    }, { refresh: false });
-    if(commonUtil.hasError(mappingResp)) {
-      throw mappingResp.data;
+    try {
+      // Use the mutation's own refresh so a committed mapping whose refetch fails is stage-aware.
+      const mappingResp = await shopMutations.saveCarrierShipment({
+        shipmentMethodTypeId,
+        shopifyShippingMethod: shopifyShippingMethod.value.trim(),
+        carrierPartyId: createShipmentCarrierPartyId.value,
+      });
+      if(commonUtil.hasError(mappingResp)) {
+        throw mappingResp.data;
+      }
+    } catch (error) {
+      if(!rememberReconciliationFailure(error, ["shopifyCarrierShipment"])) {throw error;}
     }
 
-    commonUtil.showToast(translate("Shipment method created successfully"));
     showCreateShipmentMethodModal.value = false;
+    if(createShipmentCarrierPartyId.value) {
+      selectedCarrierPartyId.value = createShipmentCarrierPartyId.value;
+    }
+    await retryPendingCreateReconciliation();
+    initializeLocalMappings();
+    const resultMessage = pendingCreateReconciliationDomains.size
+      ? CACHE_RECONCILIATION_ERROR_MESSAGE
+      : "Shipment method created successfully";
+
+    commonUtil.showToast(translate(resultMessage));
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to create shipment method"));
     // Keep the modal open so the user can correct and retry.
+
     return;
   } finally {
     emitter.emit("dismissLoader");
-  }
-
-  // Refresh data and reflect the created method (formerly handled in modal.onDidDismiss).
-  // Isolated from the create try/catch so a refresh failure can't report the
-  // already-successful creation as failed or keep the modal open.
-  try {
-    if (createShipmentCarrierPartyId.value) selectedCarrierPartyId.value = createShipmentCarrierPartyId.value;
-    // Both lists render from the cache, so refreshing means re-snapshotting those domains.
-    await Promise.all([
-      resyncDomain("productStoreShippingMethod"),
-      resyncDomain("shopifyCarrierShipment"),
-    ]);
-    initializeLocalMappings();
-  } catch (refreshError) {
-    logger.error(refreshError);
   }
 }
 </script>

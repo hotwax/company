@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dataFeedProjection, shopifyTransferPendingProjection, shopifyLocationInventoryAdjustmentDetailProjection } from "@/utils/cacheEntities";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -13,6 +14,25 @@ import {
 } from "@/utils/cacheProjection";
 
 const NOW = 1_700_000_000_000;
+
+describe("location inventory ledger identity", () => {
+  const source = {
+    eventTypeId: "SIE_RECEIPT",
+    eventReferenceId: "R1",
+    shopId: "S1",
+    shopifyLocationId: "L1",
+  };
+  it("does not overwrite one inventory item with another from the same source event", () => {
+    const first = projectRow({ ...source, shopifyInventoryItemId: "I1", computedInventoryChange: 2 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;
+    const second = projectRow({ ...source, shopifyInventoryItemId: "I2", computedInventoryChange: 3 }, shopifyLocationInventoryAdjustmentDetailProjection, NOW)!;
+    expect(first.locationAdjustmentKey).not.toEqual(second.locationAdjustmentKey);
+    expect(first.computedInventoryChange).toBe(2);
+    expect(second.computedInventoryChange).toBe(3);
+  });
+  it("rejects a location event without an inventory item identity", () => {
+    expect(projectRow(source, shopifyLocationInventoryAdjustmentDetailProjection, NOW)).toBeNull();
+  });
+});
 
 const logProjection = {
   keyField: "logId",
@@ -106,6 +126,38 @@ describe("projectRow", () => {
   it("projectRows drops keyless records rather than throwing", () => {
     const rows = projectRows([{ logId: "A" }, { configId: "no key" }, { logId: "B" }], logProjection, NOW);
     expect(rows.map((row) => row.logId)).toEqual(["A", "B"]);
+  });
+
+  it("keeps the inventory event feed mode as a first-class cached field", () => {
+    const row = projectRow({
+      dataFeedId: "ShopifyInventoryChannelEventFeed",
+      dataFeedTypeEnumId: "DTFDTP_RT_PUSH",
+      feedName: "Shopify Inventory Channel Event Feed",
+    }, dataFeedProjection, NOW)!;
+
+    expect(row.dataFeedId).toBe("ShopifyInventoryChannelEventFeed");
+    expect(row.dataFeedTypeEnumId).toBe("DTFDTP_RT_PUSH");
+    expect(row.feedName).toBe("Shopify Inventory Channel Event Feed");
+  });
+
+  it("keys a pending row by segment and artifact, so two segments never collide", () => {
+    const shipment = projectRow({
+      segment: "shipment",
+      shopId: "10000",
+      orderId: "ORDER-1",
+      shipmentStatusId: "STATUS-1",
+    }, shopifyTransferPendingProjection, NOW)!;
+    const receipt = projectRow({
+      segment: "receipt",
+      shopId: "10000",
+      orderId: "ORDER-1",
+      receiptId: "RECEIPT-1",
+    }, shopifyTransferPendingProjection, NOW)!;
+
+    expect(shipment.pendingKey).toBe("shipment|10000|ORDER-1|STATUS-1");
+    expect(receipt.pendingKey).toBe("receipt|10000|ORDER-1|RECEIPT-1");
+    // Same shop and order, different segments and artifacts: one row must never overwrite the other.
+    expect(shipment.pendingKey).not.toBe(receipt.pendingKey);
   });
 });
 

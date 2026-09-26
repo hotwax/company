@@ -69,9 +69,9 @@
               <template v-if="postalAddress?.address1">
                 <ion-item lines="full">
                   <ion-label>
-                    <h3>{{ postalAddress.toName }}</h3>
-                    <h3>{{ postalAddress.address1 }}</h3>
-                    <h3>{{ postalAddress.address2 }}</h3>
+                    {{ postalAddress.toName }}
+                    {{ postalAddress.address1 }}
+                    {{ postalAddress.address2 }}
                     <p class="ion-text-wrap">{{ postalAddress.postalCode ? `${postalAddress.city}, ${postalAddress.postalCode}` : postalAddress.city }}</p>
                     <p class="ion-text-wrap">{{ postalAddress.countryGeoName ? `${postalAddress.stateGeoName}, ${postalAddress.countryGeoName}` : postalAddress.stateGeoName }}</p>
                     <p class="ion-text-wrap" v-if="contactDetails?.telecomNumber?.contactNumber">{{ [contactDetails.telecomNumber.countryCode, contactDetails.telecomNumber.contactNumber].filter(Boolean).join('-') }}</p>
@@ -655,7 +655,7 @@
           <form @keyup.enter="saveGeoPoint">
             <ion-item class="ion-margin-bottom">
               <ion-input aria-label="zipcode" :placeholder="translate('Zipcode')" v-model="geoPoint.postalCode" @keydown="validateZipCode($event)" @ionInput="postalCodeUpdate"/>
-              <ion-button slot="end" fill="outline" :disabled="!isPostalCodeChanged" @click="generateLatLong">
+              <ion-button slot="end" fill="outline" @click="generateLatLong">
                 {{ translate("Generate") }}
                 <ion-icon v-if="!isGeneratingLatLong" slot="end" :icon="colorWandOutline" />
                 <ion-spinner v-else data-spinner-size="small"/>
@@ -841,9 +841,8 @@ import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMa
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
-import { api } from '@common';
-import { useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -853,6 +852,9 @@ const {
   calendarOptions, load, reloadAssociations, refreshVolatile,
 } = useFacilityDetail(props.facilityId);
 const mutations = useFacilityMutations(props.facilityId);
+const { fetchPartyRoleDetails } = usePartyQueries();
+const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
+const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
 const { facilityTypes } = useFacilityTypes();
@@ -875,7 +877,7 @@ const facilityCalendar = computed(() => current.value.calendar || {});
 const facilityProductStores = computed(() => current.value.productStores || []);
 const facilityParties = computed(() => current.value.parties || []);
 const facilityLogins = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId === 'FAC_LOGIN'));
-const staffParties = computed(() => facilityParties.value.filter((party: any) => party.roleTypeId !== 'FAC_LOGIN'));
+const staffParties = computed(() => facilityParties.value.filter(isFacilityStaffParty));
 const calendars = calendarOptions;
 // Inventory channels are facility groups of the channel type — a filter, not a fetch.
 const inventoryGroups = computed(() => allFacilityGroups.value.filter((g: any) => g.facilityGroupTypeId === 'CHANNEL_FAC_GROUP'));
@@ -945,7 +947,7 @@ function getParentFacilityTypeId(typeId: string): string {
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
 async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
   const { roleTypeId, ...params } = payload;
-  return api({ url: `oms/parties/roles/${roleTypeId}`, method: "get", params });
+  return fetchPartyRoleDetails(roleTypeId, params);
 }
 
 function getFacilityTypesByParentTypeId() {
@@ -1218,7 +1220,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: payload }) as any).data;
+    const resp = await geocode(payload);
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1399,9 +1401,9 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    const resp = await api({ url: 'oms/facilities/facilityOrderCounts', method: 'get', params: { facilityId: props.facilityId, orderByField: 'entryDate DESC', pageSize: 10 } });
-    if (!commonUtil.hasError(resp) && resp.data?.length > 0) {
-      facilityOrderCounts.value = resp.data.map((item: any) => ({
+    const data = await fetchFacilityOrderHistory(props.facilityId);
+    if (data.length > 0) {
+      facilityOrderCounts.value = data.map((item: any) => ({
         ...item,
         entryDate: DateTime.fromMillis(item.entryDate).toFormat('MMM dd yyyy')
       }));
@@ -2012,10 +2014,10 @@ async function generateLatLong() {
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = (await api({ url: 'api/geocode', method: 'POST', data: { json: { params: { q: `postcode: ${query}` } } } }) as any).data;
+    const resp = await geocode({ json: { query: `postcode: ${query}` } });
 
-    if (resp.response.docs.length > 0) {
-      const result = resp.response.docs[0];
+    if (resp.docs.length > 0) {
+      const result = resp.docs[0];
       geoPoint.value.latitude = result.latitude;
       geoPoint.value.longitude = result.longitude;
     } else {
