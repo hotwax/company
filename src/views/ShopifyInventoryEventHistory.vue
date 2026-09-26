@@ -18,51 +18,16 @@
 
     <ion-content class="ion-padding-horizontal">
       <main class="history-page">
-        <!-- Scored over the rows the filters leave, not over the whole window, so narrowing to one
-             location or event type re-measures for that slice. -->
         <div class="kpi-grid">
-          <ion-card class="kpi-card">
+          <ion-card v-for="card in kpiCards" :key="card.label" class="kpi-card" :button="!!card.state" @click="card.state && toggleState(card.state)">
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Events") }}</ion-card-subtitle>
-              <ion-card-title><AnimatedNumber :value="summary.total" /></ion-card-title>
-            </ion-card-header>
-          </ion-card>
-          <ion-card class="kpi-card" button @click="setDeliveryState('waiting')">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Waiting to batch") }}</ion-card-subtitle>
-              <ion-card-title :color="summary.waiting ? 'warning' : undefined">
-                {{ summary.waiting }}
+              <ion-card-subtitle>{{ card.label }}</ion-card-subtitle>
+              <ion-card-title :color="card.tone">
+                {{ card.value }}
               </ion-card-title>
-              <ion-note v-if="summary.oldestWaitingAt">
-                {{ translate("Oldest recorded {age}", { age: formatAge(summary.oldestWaitingAt, now) }) }}
+              <ion-note v-if="card.note">
+                {{ card.note }}
               </ion-note>
-            </ion-card-header>
-          </ion-card>
-          <ion-card class="kpi-card" button @click="setDeliveryState('error')">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Delivery errors") }}</ion-card-subtitle>
-              <ion-card-title :color="summary.errors ? 'danger' : undefined">
-                {{ summary.errors }}
-              </ion-card-title>
-            </ion-card-header>
-          </ion-card>
-          <ion-card class="kpi-card">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Typically reaches Shopify in") }}</ion-card-subtitle>
-              <ion-card-title>{{ summary.lag ? formatLag(summary.lag.median) : translate("No data") }}</ion-card-title>
-              <ion-note v-if="summary.lag">
-                {{ translate("Median of {count} delivered, slowest {slowest}", { count: summary.lag.count, slowest: formatLag(summary.lag.slowest) }) }}
-              </ion-note>
-            </ion-card-header>
-          </ion-card>
-          <!-- The one figure that says how stale Shopify is RIGHT NOW; the lag above describes
-               deliveries that already happened. -->
-          <ion-card class="kpi-card">
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Oldest still owed to Shopify") }}</ion-card-subtitle>
-              <ion-card-title :color="summary.oldestOwedAt ? 'warning' : undefined">
-                {{ summary.oldestOwedAt ? formatAge(summary.oldestOwedAt, now) : translate("Nothing waiting") }}
-              </ion-card-title>
             </ion-card-header>
           </ion-card>
         </div>
@@ -77,74 +42,29 @@
             />
 
             <div class="filter-grid">
-              <div class="filter-item">
+              <div v-for="select in selectFilters" :key="select.key" class="filter-item">
                 <ion-select
-                  :value="filters.state"
-                  :label="translate('Delivery state')"
+                  :value="filters[select.key]"
+                  :label="select.label"
                   label-placement="stacked"
                   fill="outline"
                   interface="popover"
                   :placeholder="translate('All')"
-                  @ion-change="filters.state = $event.detail.value || ''"
+                  @ion-change="filters[select.key] = $event.detail.value || ''"
                 >
                   <ion-select-option value="">
                     {{ translate("All") }}
                   </ion-select-option>
-                  <ion-select-option v-for="option in deliveryStateOptions" :key="option.id" :value="option.id">
+                  <ion-select-option v-for="option in select.options" :key="option.id" :value="option.id">
                     {{ option.label }}
                   </ion-select-option>
                 </ion-select>
-                <ion-button v-if="filters.state" fill="clear" class="clear-filter-button" :aria-label="translate('Clear delivery state filter')" @click.stop="filters.state = ''">
+                <ion-button v-if="filters[select.key]" fill="clear" class="clear-filter-button" :aria-label="select.clearLabel" @click.stop="filters[select.key] = ''">
                   <ion-icon slot="icon-only" :icon="closeCircleOutline" />
                 </ion-button>
               </div>
 
-              <div class="filter-item">
-                <ion-select
-                  :value="filters.eventType"
-                  :label="translate('Event type')"
-                  label-placement="stacked"
-                  fill="outline"
-                  interface="popover"
-                  :placeholder="translate('All')"
-                  @ion-change="filters.eventType = $event.detail.value || ''"
-                >
-                  <ion-select-option value="">
-                    {{ translate("All") }}
-                  </ion-select-option>
-                  <ion-select-option v-for="option in eventTypeOptions" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </ion-select-option>
-                </ion-select>
-                <ion-button v-if="filters.eventType" fill="clear" class="clear-filter-button" :aria-label="translate('Clear event type filter')" @click.stop="filters.eventType = ''">
-                  <ion-icon slot="icon-only" :icon="closeCircleOutline" />
-                </ion-button>
-              </div>
-
-              <div class="filter-item">
-                <ion-select
-                  :value="filters.location"
-                  :label="translate('Shopify location')"
-                  label-placement="stacked"
-                  fill="outline"
-                  interface="popover"
-                  :placeholder="translate('All')"
-                  @ion-change="filters.location = $event.detail.value || ''"
-                >
-                  <ion-select-option value="">
-                    {{ translate("All") }}
-                  </ion-select-option>
-                  <ion-select-option v-for="option in locationOptions" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </ion-select-option>
-                </ion-select>
-                <ion-button v-if="filters.location" fill="clear" class="clear-filter-button" :aria-label="translate('Clear location filter')" @click.stop="filters.location = ''">
-                  <ion-icon slot="icon-only" :icon="closeCircleOutline" />
-                </ion-button>
-              </div>
-
-              <!-- Native Ionic date pickers. The input only shows the choice and opens its picker; a
-                   datetime button would print today's date for an unset bound, which reads as a filter. -->
+              <!-- An input, not a datetime button, which would print today's date for an unset bound. -->
               <div v-for="bound in dateBounds" :key="bound.key" class="filter-item">
                 <ion-input
                   :id="`${pickerId}-${bound.key}`"
@@ -199,7 +119,6 @@
               <p v-if="liveUpdates">
                 {{ translate("The newest 500 events for this connection, kept current with every event and batch that has changed since. Settled events are purged after five days, so this is a working window rather than a full history.") }}
               </p>
-              <!-- Same element either way, so the switch does not move the page. -->
               <p v-else>
                 {{ translate("Live updates are off: this OMS does not report when an inventory event changes. Showing the newest 500 events as read at {at}; refresh to read them again.", { at: formatDateTime(loadedAt) }) }}
               </p>
@@ -232,8 +151,7 @@
               <ion-label class="ion-text-wrap">
                 <span class="one-line">{{ event.productName || translate("Item {id}", { id: event.inventoryItemId }) }}</span>
                 <p>{{ productSecondaryLine(event) }}</p>
-                <!-- Below 991px the grid keeps only this cell and the status, so the columns that
-                     disappear have to say their piece here or the row stops being readable. -->
+                <!-- Below 991px only this cell and the status remain, so this line carries the rest. -->
                 <p class="row-summary">
                   {{ translate("{change} at {location}, {source}", { change: event.change, location: event.locationLabel, source: sourceLine(event) }) }}
                 </p>
@@ -241,7 +159,6 @@
             </ion-item>
 
             <ion-label>
-              <!-- Direction is the first thing read off an adjustment row, so colour carries it as well as the sign. -->
               <ion-text :color="event.delta > 0 ? 'success' : event.delta < 0 ? 'danger' : undefined">
                 {{ event.change }}
               </ion-text>
@@ -278,8 +195,7 @@
           <div class="event-spacer" :style="{ '--event-spacer-size': `${eventBottomSpacer}px` }" aria-hidden="true" />
         </div>
 
-        <!-- "Nothing here" is a claim about the data, so it may only be made once the cache is readable.
-             Before that, say it has not loaded rather than that the history is empty. -->
+        <!-- "Nothing here" is only claimed once the cache is readable. -->
         <ion-card v-else-if="hydrated">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="timeOutline" />
@@ -325,7 +241,6 @@ import { closeCircleOutline, refreshOutline, timeOutline } from "ionicons/icons"
 import { DateTime } from "luxon";
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import AnimatedNumber from "@/components/common/AnimatedNumber.vue";
 import SyncStatusButton from "@/components/common/SyncStatusButton.vue";
 import InventoryEventBatchModal from "@/components/shopify/InventoryEventBatchModal.vue";
 import InventoryEventDetailModal from "@/components/shopify/InventoryEventDetailModal.vue";
@@ -344,11 +259,7 @@ import {
 } from "@/utils/inventoryEvents";
 import { formatAge, formatLag } from "@/utils/inventoryEventTime";
 
-/**
- * ONE HISTORY FOR BOTH SHOPIFY INVENTORY LEDGERS. The channel route and the location route mount this
- * same page with a different `kind`; everything it shows comes from `useInventoryEvents`, which maps
- * either ledger into one row, so the two histories cannot drift apart again.
- */
+/** Both ledgers' history: the channel and location routes mount this page with a different `kind`. */
 const props = defineProps<{ id: string; kind: InventoryEventKind }>();
 
 const route = useRoute();
@@ -360,55 +271,53 @@ const {
 } = useInventoryEvents(props.id, props.kind);
 
 /** This page's own ledger first: its failure is the one that explains an empty or stale list. */
-const SYNC_PRIORITY = props.kind === "channel"
-  ? [INVENTORY_EVENT_DOMAINS.channelRows, INVENTORY_EVENT_DOMAINS.channelMessages, INVENTORY_EVENT_DOMAINS.systemMessages, INVENTORY_EVENT_DOMAINS.products]
-  : [INVENTORY_EVENT_DOMAINS.locationRows, INVENTORY_EVENT_DOMAINS.locationMessages, INVENTORY_EVENT_DOMAINS.systemMessages, INVENTORY_EVENT_DOMAINS.products];
+const SYNC_PRIORITY = [`${props.kind}Rows`, `${props.kind}Messages`, "systemMessages", "products"]
+  .map((key) => INVENTORY_EVENT_DOMAINS[key as keyof typeof INVENTORY_EVENT_DOMAINS]);
 
-/** Ages are relative to now, so they tick without waiting for a cache write. */
 const now = ref(Date.now());
 const clock = setInterval(() => { now.value = Date.now(); }, 30_000);
 onBeforeUnmount(() => clearInterval(clock));
 
-// ---- Filters, mirrored into the URL so a filtered history is linkable and survives a reload ----
+// Filters live in the URL, so a filtered history is linkable, survives a reload, and the monitor can
+// link here with one chosen.
+const FILTER_KEYS = ["search", "state", "eventType", "location", "from", "to", "sort"] as const;
+type FilterKey = typeof FILTER_KEYS[number];
 
-type FilterKey = "search" | "state" | "eventType" | "location" | "from" | "to" | "sort";
-const FILTER_KEYS: FilterKey[] = ["search", "state", "eventType", "location", "from", "to", "sort"];
-
-function queryValue(key: FilterKey): string {
+function fromQuery(key: FilterKey): string {
   const value = route.query[key];
 
-  return typeof value === "string" ? value : "";
+  return typeof value === "string" && value ? value : key === "sort" ? "newest" : "";
 }
 
-const filters = reactive<Record<FilterKey, string>>(Object.fromEntries(FILTER_KEYS.map((key) => [key, key === "sort" ? queryValue(key) || "newest" : queryValue(key)]),) as Record<FilterKey, string>);
+const filters = reactive(Object.fromEntries(FILTER_KEYS.map((key) => [key, fromQuery(key)])) as Record<FilterKey, string>);
 
 watch(() => ({ ...filters }), (next) => {
-  const query: Record<string, string> = {};
-  for(const key of FILTER_KEYS) {
-    if(next[key] && !(key === "sort" && next[key] === "newest")) {query[key] = next[key];}
-  }
-  void router.replace({ query });
+  // The inputs, not the list: the list is rebuilt on every poll, which would lose the reader's place.
+  scrollEventsToTop();
+  void router.replace({ query: Object.fromEntries(Object.entries(next).filter(([key, value]) => value && !(key === "sort" && value === "newest"))) });
 });
 
-// The monitor links here with a filter already chosen; a re-entry must adopt the new one.
 watch(() => route.query, () => {
   for(const key of FILTER_KEYS) {
-    const value = key === "sort" ? queryValue(key) || "newest" : queryValue(key);
-    if(filters[key] !== value) {filters[key] = value;}
+    if(filters[key] !== fromQuery(key)) {filters[key] = fromQuery(key);}
   }
 });
 
-function setDeliveryState(state: DeliveryStateId) {
+function toggleState(state: DeliveryStateId) {
   filters.state = filters.state === state ? "" : state;
 }
 
-const deliveryStateOptions = computed<Array<{ id: DeliveryStateId; label: string }>>(() => [
-  { id: "waiting", label: translate("Waiting") },
-  { id: "noChange", label: translate("No change") },
-  { id: "inFlight", label: translate("In flight") },
-  { id: "error", label: translate("Delivery error") },
-  { id: "sent", label: translate("Sent") },
-  { id: "cancelled", label: translate("Cancelled") },
+const selectFilters = computed(() => [
+  {
+    key: "state" as const, label: translate("Delivery state"), clearLabel: translate("Clear delivery state filter"),
+    options: [
+      { id: "waiting", label: translate("Waiting") }, { id: "noChange", label: translate("No change") },
+      { id: "inFlight", label: translate("In flight") }, { id: "error", label: translate("Delivery error") },
+      { id: "sent", label: translate("Sent") }, { id: "cancelled", label: translate("Cancelled") },
+    ],
+  },
+  { key: "eventType" as const, label: translate("Event type"), clearLabel: translate("Clear event type filter"), options: eventTypeOptions.value },
+  { key: "location" as const, label: translate("Shopify location"), clearLabel: translate("Clear location filter"), options: locationOptions.value },
 ]);
 
 const pickerId = `inventory-history-${Math.random().toString(36).slice(2, 8)}`;
@@ -420,9 +329,7 @@ const dateBounds = [
 
 /** ion-datetime hands back an ISO string, an array for multiple selection, or nothing on clear. */
 function dateOnly(value: unknown): string {
-  const text = Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
-
-  return text ? text.slice(0, 10) : "";
+  return String((Array.isArray(value) ? value[0] : value) ?? "").slice(0, 10);
 }
 
 function formatDate(isoDate: string): string {
@@ -452,12 +359,32 @@ const visibleEvents = computed(() => {
   return filters.sort === "oldest" ? [...filtered].reverse() : filtered;
 });
 
-const summary = computed(() => summarizeInventoryEvents(visibleEvents.value));
+/** Scored over the filtered rows, so narrowing to a slice re-measures for it. */
+const kpiCards = computed(() => {
+  const { total, waiting, errors, lag, oldestWaitingAt, oldestOwedAt } = summarizeInventoryEvents(visibleEvents.value);
 
-// ---- Rows ----
+  return [
+    { label: translate("Events"), value: total },
+    {
+      label: translate("Waiting to batch"), value: waiting, tone: waiting ? "warning" : undefined, state: "waiting" as const,
+      note: oldestWaitingAt ? translate("Oldest recorded {age}", { age: formatAge(oldestWaitingAt, now.value) }) : "",
+    },
+    { label: translate("Delivery errors"), value: errors, tone: errors ? "danger" : undefined, state: "error" as const },
+    {
+      label: translate("Typically reaches Shopify in"), value: lag ? formatLag(lag.median) : translate("No data"),
+      note: lag ? translate("Median of {count} delivered, slowest {slowest}", { count: lag.count, slowest: formatLag(lag.slowest) }) : "",
+    },
+    // How stale Shopify is right now; the lag above describes deliveries that already happened.
+    {
+      label: translate("Oldest still owed to Shopify"), tone: oldestOwedAt ? "warning" : undefined,
+      value: oldestOwedAt ? formatAge(oldestOwedAt, now.value) : translate("Nothing waiting"),
+    },
+  ];
+});
 
+
+/** The resolved document replaces the bare record; the detail keeps both. */
 function sourceLine(event: InventoryEventRow): string {
-  // The resolved document replaces the bare record rather than sitting beside it; the detail keeps both.
   return sourceArtifactFor(event)?.label || event.sourceLabel;
 }
 
@@ -465,10 +392,7 @@ function productSecondaryLine(event: InventoryEventRow): string {
   return [event.productSku, event.productVariant].filter(Boolean).join(", ") || event.inventoryItemId;
 }
 
-/**
- * Only the rows near the viewport get DOM nodes. 67px is what a rendered row measures at desktop width;
- * every cell is clamped to a fixed line count so they all land on it.
- */
+/** 67px is a rendered desktop row; every cell is clamped to a fixed line count so all rows land on it. */
 const {
   containerRef: eventScrollerRef,
   visibleItems: virtualEvents,
@@ -479,28 +403,20 @@ const {
 } = useVirtualRows(visibleEvents, { estimatedRowHeight: 67 });
 
 /**
- * Source documents for the rows on screen, not the whole list. Keyed on WHICH rows are visible, not on
- * the row array: the search text reads the resolved sources, so every answer rebuilds the array, and a
- * watcher on the array re-asked for the same rows after each answer -- a request loop that fired
- * hundreds of lookups in seconds whenever a source came back retryable.
+ * Keyed on WHICH rows are visible, not the row array: every resolved source rebuilds the array, and a
+ * watcher on it re-asked for the same rows after each answer, a request loop.
  */
 watch(
   () => virtualEvents.value.map((event) => `${event.eventTypeId}|${event.eventReferenceId}`).join(","),
   () => resolveSources(virtualEvents.value), { immediate: true }
 );
 
-// A narrower filter starts the reader at the top. Watch the inputs, not the list: the list is rebuilt
-// whenever a poll lands, which would otherwise throw away the reader's place.
-watch(() => ({ ...filters }), () => scrollEventsToTop());
-
-// ---- Detail and batch ----
-
 const selectedEvent = ref<InventoryEventRow | null>(null);
 const selectedBatchId = ref("");
 
 watch(selectedEvent, (event) => { if(event) {resolveSources([event]);} });
 
-/** Built from the live rows, so an open batch follows its delivery status as polls land. */
+/** From the live rows, so an open batch follows its delivery as polls land. */
 const selectedBatch = computed(() => selectedBatchId.value
   ? groupInventoryEventBatches(events.value.filter((event) => event.messageId === selectedBatchId.value))[0] ?? null
   : null);
@@ -517,7 +433,6 @@ function openEventFromBatch(event: InventoryEventRow) {
 </script>
 
 <style scoped>
-/* The page owns the vertical rhythm, so the cards need no margins of their own between them. */
 .history-page {
   display: flex;
   flex-direction: column;
@@ -529,7 +444,6 @@ function openEventFromBatch(event: InventoryEventRow) {
   margin-block: 0;
 }
 
-/* Job Manager's find pages score a page this way, so the shape is theirs. */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -589,12 +503,10 @@ function openEventFromBatch(event: InventoryEventRow) {
   width: var(--spacer-3xl);
 }
 
-/* The rows outside the window, as height rather than DOM; the size is per-render geometry. */
 .event-spacer {
   block-size: var(--event-spacer-size);
 }
 
-/* The virtualised rows scroll inside this box so the window maths has a viewport to measure. */
 .event-scroller {
   max-block-size: 70vh;
   overflow-y: auto;
@@ -602,9 +514,7 @@ function openEventFromBatch(event: InventoryEventRow) {
   overscroll-behavior: contain;
 }
 
-/* Five cells over six tracks: product, change, event (two), timing, status. The row opens the detail.
-   The grid, and the rule that keeps only the first and last cell below 991px, is `.list-item` in the
-   theme. */
+/* Five cells over six tracks: product, change, event (two), timing, status; the grid is the theme's. */
 .list-item {
   --columns-desktop: 6;
   padding-inline-end: var(--spacer-sm);
@@ -629,7 +539,7 @@ function openEventFromBatch(event: InventoryEventRow) {
   min-width: 0;
 }
 
-/* Stretch cells onto their tracks so `.one-line` can clip; the theme's centring sizes them to content. */
+/* Stretched onto their tracks so `.one-line` can clip. */
 .list-item > ion-label {
   justify-self: stretch;
   width: 100%;
@@ -643,7 +553,7 @@ function openEventFromBatch(event: InventoryEventRow) {
   --size: 48px;
 }
 
-/* One line on every free-form cell: useVirtualRows measures one row and sizes every spacer from it. */
+/* Fixed line counts keep every row the height useVirtualRows sizes its spacers from. */
 .one-line,
 .list-item p {
   display: block;
@@ -653,7 +563,6 @@ function openEventFromBatch(event: InventoryEventRow) {
   min-width: 0;
 }
 
-/* Two lines, fixed, so the row stays uniform for the virtualiser. */
 .list-item .row-summary {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -669,7 +578,6 @@ function openEventFromBatch(event: InventoryEventRow) {
       minmax(0, 1.2fr);
   }
 
-  /* The event carries the longest text on the row, so it gets two tracks. */
   .list-item > .event-cell {
     grid-column: span 2;
   }

@@ -38,14 +38,8 @@ const INVENTORY_EVENT_SOURCE_ROOTS: Record<string, InventoryEventSourceRoot> = {
 };
 
 /**
- * The `SIE_` form of an event type id.
- *
- * The event types became Moqui Enumerations, and the rows an OMS writes carry whichever spelling its
- * connector seeded: the enumeration release names them `SIE_POS_ISSUANCE`, while an OMS still on the
- * earlier seed writes `POS_ISSUANCE` for the same family (verified on rails-oms, where every ledger row
- * is unprefixed and the view still resolves its description). Keyed on the raw id, this table matched
- * nothing there, so every row lost its source record and a reservation reference rendered as one
- * opaque `inventoryItemId:detailSeqId` token. Both spellings name one family, so both resolve here.
+ * The `SIE_` form of an event type id. An OMS on the connector's pre-enumeration seed writes
+ * `POS_ISSUANCE` where newer ones write `SIE_POS_ISSUANCE` (rails-oms is unprefixed); both are one family.
  */
 export function canonicalEventTypeId(eventTypeId: string): string {
   const id = String(eventTypeId ?? "").trim();

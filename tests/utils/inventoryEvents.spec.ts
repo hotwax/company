@@ -48,36 +48,21 @@ describe("deliveryStateOf — one rule for both ledgers, no status column", () =
     expect(deliveryStateOf(undefined, 0.1 + 0.2 - 0.3).id).toBe("noChange");
   });
 
-  it("settles on every success status, not only SmsgSent", () => {
-    for(const statusId of ["SmsgSent", "SmsgConsumed", "SmsgConfirmed"]) {
-      expect(deliveryStateOf("B", 1, statusId)).toEqual({ id: "sent", statusId });
-    }
-  });
-
-  it("keeps a retrying failure apart from the markers nothing retries", () => {
-    expect(deliveryStateOf("B", 1, "SmsgError").id).toBe("error");
-    expect(deliveryStateOf("B", 1, "SmsgCancelled").id).toBe("cancelled");
-    expect(deliveryStateOf("B", 1, "SmsgRejected").id).toBe("cancelled");
-    expect(deliveryStateOf("B", 1, "SmsgSomethingNew").id).toBe("inFlight");
-  });
-
-  it("keeps polling a message only while the pipeline has not finished with it", () => {
-    expect(isUnsettledMessage("SmsgProduced")).toBe(true);
-    expect(isUnsettledMessage("SmsgSending")).toBe(true);
-    expect(isUnsettledMessage("SmsgError")).toBe(true);
-    expect(isUnsettledMessage("SmsgSent")).toBe(false);
-    expect(isUnsettledMessage("SmsgCancelled")).toBe(false);
+  it.each([
+    ["SmsgSent", "sent", false], ["SmsgConsumed", "sent", false], ["SmsgConfirmed", "sent", false],
+    ["SmsgError", "error", true], ["SmsgCancelled", "cancelled", false], ["SmsgRejected", "cancelled", false],
+    ["SmsgProduced", "inFlight", true], ["SmsgSending", "inFlight", true], ["SmsgSomethingNew", "inFlight", true],
+  ])("reads a batched row's %s as %s, and keeps polling it: %s", (statusId, state, unsettled) => {
+    expect(deliveryStateOf("B", 1, statusId as string).id).toBe(state);
+    expect(isUnsettledMessage(statusId as string)).toBe(unsettled);
   });
 });
 
 describe("effectiveMessageOf — the fresher of the two cached reads wins", () => {
   const raw = { systemMessageId: "B", systemMessageStatusId: "SmsgProduced", systemMessageProcessedDate: 5 };
 
-  it("uses the row's joined message when the message was cached earlier", () => {
+  it("uses whichever read landed later", () => {
     expect(effectiveMessageOf(raw, 200, { statusId: "SmsgError", cachedAt: 100 })?.statusId).toBe("SmsgProduced");
-  });
-
-  it("uses the message poller's read when it landed after the row", () => {
     expect(effectiveMessageOf(raw, 100, { statusId: "SmsgSent", cachedAt: 200 })?.statusId).toBe("SmsgSent");
   });
 
@@ -206,16 +191,10 @@ describe("figures, batches and filters", () => {
 });
 
 describe("delta arithmetic", () => {
-  it("settles float noise as no change instead of previewing it as a publish", () => {
+  it("settles float noise as no change, quarantines a real fraction, and never yields -0", () => {
     expect(sumDelta([0.1, 0.2, -0.3])).toBe(0);
     expect(deltaOutcome(0.1 + 0.2 - 0.3)).toBe("noChange");
-  });
-
-  it("still quarantines a genuinely fractional delta", () => {
     expect(deltaOutcome(1.5)).toBe("quarantine");
-  });
-
-  it("never yields negative zero, which reads as a decrease that is not one", () => {
     expect(Object.is(roundDelta(-0), 0)).toBe(true);
   });
 

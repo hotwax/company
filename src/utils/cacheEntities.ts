@@ -458,101 +458,52 @@ export const dataFeedProjection = {
 } as const;
 
 /**
- * The fields both inventory ledger views return and the history model reads. Kept as ONE list so the
- * two projections cannot drift: the model treats a row of either ledger the same way.
- *
- * `detailStatusId` is deliberately absent. The aggregate view still returns it, but delivery state is
- * derived from the message link and the delta for both ledgers (see `src/utils/inventoryEvents.ts`),
- * and the column is being retired server-side.
+ * The top-level columns both ledgers index on; the model reads everything else from `raw`. Never
+ * `detailStatusId`: delivery is derived from the message link and the delta (`src/utils/inventoryEvents.ts`).
  */
 const INVENTORY_LEDGER_FIELDS = {
-  eventTypeId: "text",
-  eventReferenceId: "text",
-  eventTypeDescription: "text",
-  shopifyReason: "text",
   shopId: "text",
-  shopifyLocationId: "text",
   shopifyInventoryItemId: "text",
   computedInventoryChange: "count",
-  decisionComment: "text",
   systemMessageId: "text",
   createdDate: "date",
-  systemMessageStatusId: "text",
-  systemMessageInitDate: "date",
-  systemMessageProcessedDate: "date",
-  systemMessageLastAttemptDate: "date",
-  // The two update cursors. The ledger row's own stamp moves when the publisher claims it into a
-  // batch; the joined System Message's moves on every delivery status change and is null until then.
   detailLastUpdatedStamp: "date",
   systemMessageLastUpdatedStamp: "date",
 } as const;
 
 /**
- * ShopifyInventoryAdjustmentDetail — the aggregate ledger: one OMS event's delta for one Shopify
- * inventory item at one inventory channel. The view aliases `shopId` and `shopifyLocationId` from the
- * channel, so rows are scoped by shop exactly like the physical ledger's.
- *
- * `publishShopifyLocationId` is normally null. It is set only on a delta written to drain a location the
- * channel has stopped pointing at, and the publisher sends that row to the OLD location — which is the
- * location the model reports for it.
+ * A ledger row's key from its real primary key. A missing part drops the row, so if rows ever stop
+ * caching while the request returns 200, the identity has drifted from the server: the connector once
+ * split a packed `eventKey` into these two columns, and the cache silently stayed empty.
  */
+function ledgerKey(...fields: string[]) {
+  return (raw: Record<string, unknown>): string | undefined => {
+    const identity = fields.map((field) => raw?.[field]);
+    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
+    return JSON.stringify(identity.map(String));
+  };
+}
+
+export const locationInventoryAdjustmentKey = ledgerKey("eventTypeId", "eventReferenceId", "shopId", "shopifyLocationId", "shopifyInventoryItemId");
+
+/** The aggregate ledger; its view aliases `shopId` and `shopifyLocationId` from the channel. */
 export const shopifyInventoryAdjustmentDetailProjection = {
   keyField: "adjustmentKey",
   fields: {
     adjustmentKey: "text",
     ...INVENTORY_LEDGER_FIELDS,
     inventoryChannelId: "text",
-    facilityGroupId: "text",
-    inventoryChannelDescription: "text",
-    publishShopifyLocationId: "text",
   },
-  /**
-   * The ledger's real primary key: (eventTypeId, eventReferenceId, inventoryChannelId,
-   * shopifyInventoryItemId). The type says WHAT KIND of source event a row came from, the
-   * reference says WHICH occurrence of it.
-   *
-   * This used to key on a single packed `eventKey`. The connector split that into two columns and
-   * `eventKey` no longer exists on the view or the endpoint, so every row hit the
-   * `undefined`-on-missing-field guard below and was dropped - silently, because the request still
-   * returned 200 with a correct payload. The cache stayed empty forever, and the page reported
-   * "0 aggregate events pending batching" and "No inventory events match this view" while the
-   * ledger held real pending rows.
-   *
-   * If this guard ever starts returning undefined again, the identity has drifted from the server
-   * - check the endpoint's field names before assuming there is no data.
-   */
-  buildKey: (raw: Record<string, unknown>) => {
-    const identity = [
-      raw?.eventTypeId,
-      raw?.eventReferenceId,
-      raw?.inventoryChannelId,
-      raw?.shopifyInventoryItemId,
-    ];
-    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
-
-    return JSON.stringify(identity.map(String));
-  },
+  buildKey: ledgerKey("eventTypeId", "eventReferenceId", "inventoryChannelId", "shopifyInventoryItemId"),
 } as const;
 
-/** The physical ledger's full remote-target primary key, including the inventory item. */
-export function locationInventoryAdjustmentKey(raw: Record<string, unknown>): string | undefined {
-  const identity = [raw?.eventTypeId, raw?.eventReferenceId, raw?.shopId, raw?.shopifyLocationId, raw?.shopifyInventoryItemId];
-  if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
-
-  return JSON.stringify(identity.map(String));
-}
-
-/**
- * ShopifyLocationInventoryAdjustmentDetail — the physical ledger: one source event applied to one
- * Shopify inventory level. PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId +
- * shopifyInventoryItemId, keyed here as `locationAdjustmentKey`.
- */
+/** The physical ledger: one source event applied to one Shopify inventory level. */
 export const shopifyLocationInventoryAdjustmentDetailProjection = {
   keyField: "locationAdjustmentKey",
   fields: {
     locationAdjustmentKey: "text",
     ...INVENTORY_LEDGER_FIELDS,
-    systemMessageTypeId: "text",
   },
   buildKey: locationInventoryAdjustmentKey,
 } as const;
@@ -1243,13 +1194,7 @@ export function shopifyInventoryItemKey(shopId: unknown, shopifyInventoryItemId:
   return `${String(shopId ?? "")}|${String(shopifyInventoryItemId ?? "")}`;
 }
 
-/**
- * ShopifyInventoryItem — an inventory item the inventory ledgers name, as Shopify describes it: its SKU,
- * its variant and that variant's product. Read from Shopify itself (`shopify/graphql`), not from the
- * OMS's product mapping, and written only by the inventory event product domain. The `shopify*Id`s are
- * Shopify's numeric ids (the tail of the `gid://shopify/...` global id), never HotWax product ids;
- * `imageUrl` is the variant's own image, else the product's featured image.
- */
+/** An inventory item as Shopify describes it (`shopify/graphql`); the ids are Shopify's numeric ones. */
 export const shopifyInventoryItemProjection = {
   keyField: "itemKey",
   fields: {
@@ -1259,7 +1204,6 @@ export const shopifyInventoryItemProjection = {
     sku: "text",
     shopifyVariantId: "text",
     variantTitle: "text",
-    variantDisplayName: "text",
     shopifyProductId: "text",
     productTitle: "text",
     imageUrl: "text",

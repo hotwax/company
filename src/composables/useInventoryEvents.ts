@@ -19,53 +19,34 @@ import {
   type InventoryEventKind,
   type InventoryEventMessage,
   effectiveMessageOf,
-  eventFamilyOf,
   toInventoryEvent,
 } from "@/utils/inventoryEvents";
-import type { InventoryEventSourceRoot } from "@/utils/inventoryEventSourceRoots";
+import { type InventoryEventSourceRoot, canonicalEventTypeId } from "@/utils/inventoryEventSourceRoots";
 
 /**
- * THE VIEW LAYER'S INVENTORY EVENTS — both Shopify inventory ledgers, read from IndexedDB and mapped
- * into one row shape, so one history screen and one monitor serve channel and location events alike.
- *
- * Nothing here fetches. The inventory sync area's worker keeps both ledgers, their batches' messages
- * and, read from Shopify, the variant and product behind each inventory item current
- * (`src/workers/domains/inventoryEventDomains.ts`); this reads those tables through `useCachedList`, so
- * every open list re-renders the moment a poll lands.
- * Every label is derived from a cached table too:
- *
- *   location   the facilities mapped to that Shopify location (`shopifyLocations` ⋈ `facilities`), or,
- *              for an aggregate location that no facility stands behind, the channel mapped to it. An
- *              aggregate location is recorded against the `_NA_` facility, which is named "Brokering
- *              Queue" and would be a confident, wrong label.
- *   product    the `shopifyInventoryItems` row for this shop's inventory item: Shopify's own SKU, variant
- *              and product title, never the OMS's product record.
- *   delivery   the System Message status's own description.
+ * Both Shopify inventory ledgers, read from IndexedDB into one row shape. Nothing here fetches: the
+ * inventory sync area's worker keeps the tables current, and every label comes from a cached table.
+ * Location is the facilities mapped to it (never `_NA_`, which is named "Brokering Queue"), else the
+ * channel mapped to it; product is Shopify's own inventory item read.
  */
-
 export interface InventoryEventRow extends InventoryEvent {
   locationLabel: string;
-  /** Shopify's numeric product and variant ids; empty until the item is read from Shopify. */
+  /** The Shopify product fields are empty until the item is read from Shopify. */
   shopifyProductId: string;
   shopifyVariantId: string;
-  /** The Shopify product title; empty until the item is read from Shopify. */
   productName: string;
   productSku: string;
-  /** The variant's own title, kept only when it says something the product title does not ("S"). */
+  /** Only when it says something the product title does not ("S"). */
   productVariant: string;
   productImageUrl: string;
-  /** "+3" / "-1" / "0". */
   change: string;
   deliveryLabel: string;
   deliveryColor: string;
-  /** The OMS record the reference names, spelled out, e.g. "Shipment receipt 107319". */
+  /** e.g. "Shipment receipt 107319". */
   sourceLabel: string;
 }
 
-export interface InventoryEventOption { id: string; label: string }
-
-/** A delivery state's colour. The labels are StatusItem descriptions wherever a message is involved. */
-export const DELIVERY_STATE_COLORS: Record<DeliveryStateId, string> = {
+const DELIVERY_STATE_COLORS: Record<DeliveryStateId, string> = {
   waiting: "warning",
   noChange: "medium",
   inFlight: "primary",
@@ -74,17 +55,13 @@ export const DELIVERY_STATE_COLORS: Record<DeliveryStateId, string> = {
   cancelled: "medium",
 };
 
-/**
- * The record type a reference names, per app fetch path. Display only: an event type no path claims
- * shows its bare reference instead of a confident, wrong record name.
- */
+/** An event type no fetch path claims shows its bare reference rather than a wrong record name. */
 const SOURCE_RECORD_LABELS: Record<InventoryEventSourceRoot, string> = {
   shipmentReceipts: "Shipment receipt",
   itemIssuances: "Item issuance",
   varianceDecisions: "Physical inventory",
   externalInventoryResets: "External inventory reset",
-  // The reservation reference is spelled out as "Inventory item X, detail Y", which already names the
-  // record; prefixing it would repeat the words.
+  // Spelled out as "Inventory item X, detail Y", which already names the record.
   inventoryItemDetails: "",
 };
 
@@ -93,19 +70,11 @@ const LEDGER_CACHES = {
   location: shopifyLocationInventoryAdjustmentDetailCache,
 } as const;
 
-function formatChange(delta: number): string {
-  return `${delta > 0 ? "+" : ""}${delta}`;
-}
-
-/** What Shopify titles the only variant of a product that has no options. */
-const SHOPIFY_DEFAULT_VARIANT_TITLE = "Default Title";
-
-/** The variant title, unless it is Shopify's placeholder or just repeats the product title. */
+/** "Default Title" is what Shopify names the only variant of a product with no options. */
 function variantLabelOf(variantTitle: string, productTitle: string): string {
-  return variantTitle && variantTitle !== SHOPIFY_DEFAULT_VARIANT_TITLE && variantTitle !== productTitle ? variantTitle : "";
+  return variantTitle && variantTitle !== "Default Title" && variantTitle !== productTitle ? variantTitle : "";
 }
 
-/** The unbatched states have their own words; a batched one is its message status, described. */
 function deliveryLabelOf(event: Pick<InventoryEvent, "delivery">, statusLabel: (statusId?: string) => string): string {
   if(event.delivery.id === "waiting") {return translate("Waiting");}
   if(event.delivery.id === "noChange") {return translate("No change");}
@@ -139,12 +108,10 @@ export function useInventoryEvents(shopId: string, kind: InventoryEventKind) {
   const facilityNames = computed(() => new Map(facilities.value
     .map((facility: any) => [String(facility.facilityId), String(facility.facilityName || facility.facilityId)])));
 
-  /** shopifyLocationId → its label, built once per cache change rather than once per row. */
   const locationLabels = computed(() => {
     const facilityIdsByLocation = new Map<string, string[]>();
     for(const mapping of shopLocations.value) {
       const facilityId = String(mapping.facilityId ?? "");
-      // `_NA_` is the sentinel an aggregate location is recorded against, not a facility.
       if(!facilityId || facilityId === "_NA_") {continue;}
       const locationId = String(mapping.shopifyLocationId ?? "");
       facilityIdsByLocation.set(locationId, [...(facilityIdsByLocation.get(locationId) ?? []), facilityId]);
@@ -168,7 +135,6 @@ export function useInventoryEvents(shopId: string, kind: InventoryEventKind) {
     return locationLabels.value.get(locationId) ?? translate("Location {id}", { id: locationId });
   }
 
-  /** `shopId|shopifyInventoryItemId` → the item as Shopify describes it. */
   const inventoryItemsByKey = computed(() => new Map(inventoryItemRows.value
     .map((row) => [String(row.itemKey ?? ""), row.raw as Record<string, any>])));
 
@@ -198,55 +164,45 @@ export function useInventoryEvents(shopId: string, kind: InventoryEventKind) {
       productSku: String(item?.sku ?? ""),
       productVariant: variantLabelOf(String(item?.variantTitle ?? ""), productName),
       productImageUrl: String(item?.imageUrl ?? ""),
-      change: formatChange(event.delta),
+      change: `${event.delta > 0 ? "+" : ""}${event.delta}`,
       deliveryLabel: deliveryLabelOf(event, statusLabel),
       deliveryColor: DELIVERY_STATE_COLORS[event.delivery.id],
       sourceLabel: sourceLabelOf(event),
     };
   }));
 
-  /** Only the Shopify locations the rows actually target, labelled as the rows are. */
-  const locationOptions = computed<InventoryEventOption[]>(() => {
+  const locationOptions = computed(() => {
     const ids = [...new Set(events.value.map((event) => event.locationId).filter(Boolean))];
 
     return ids.map((id) => ({ id, label: locationLabelFor(id) })).sort((a, b) => a.label.localeCompare(b.label));
   });
 
   /** One option per event family, whichever spelling of its id the rows carry. */
-  const eventTypeOptions = computed<InventoryEventOption[]>(() => {
+  const eventTypeOptions = computed(() => {
     const labels = new Map<string, string>();
     for(const event of events.value) {
-      const family = eventFamilyOf(event);
+      const family = canonicalEventTypeId(event.eventTypeId);
       if(!labels.has(family)) {labels.set(family, event.eventTypeLabel);}
     }
 
     return [...labels].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
   });
 
-  /**
-   * Whether this ledger is being kept current. An OMS whose ledger view has no update cursor still
-   * delivers the recent window, which is stored and shown, but nothing after it arrives on its own: the
-   * rows say so by carrying no `detailLastUpdatedStamp` at all.
-   */
+  /** A ledger view without an update cursor still stores the recent window, but nothing after it arrives. */
   const liveUpdates = computed(() => !ledgerRows.value.length ||
-    ledgerRows.value.some((row) => (row.raw as Record<string, any>)?.detailLastUpdatedStamp !== undefined &&
-      (row.raw as Record<string, any>)?.detailLastUpdatedStamp !== null));
+    ledgerRows.value.some((row) => (row.raw as Record<string, any>)?.detailLastUpdatedStamp != null));
 
-  /** When the rows on screen were last read from the OMS. */
   const loadedAt = computed(() => ledgerRows.value.reduce((newest, row) => Math.max(newest, Number(row.cachedAt) || 0), 0) || undefined);
 
-  function lookupFor(event: InventoryEvent): InventoryEventSourceLookup {
-    return { eventTypeId: event.eventTypeId, eventReferenceId: event.eventReferenceId };
-  }
-
-  /** The source document behind a row, once `resolveSources` has named it. */
   function sourceArtifactFor(event: InventoryEvent) {
     return sources.value.get(sourceKeyOf(event.eventTypeId, event.eventReferenceId));
   }
 
   /** Name the source documents of the rows on screen. Safe per render: resolved keys are skipped. */
   function resolveSources(visible: readonly InventoryEvent[]) {
-    if(visible.length) {void resolveSourceArtifacts(visible.map(lookupFor));}
+    if(visible.length) {
+      void resolveSourceArtifacts(visible.map(({ eventTypeId, eventReferenceId }): InventoryEventSourceLookup => ({ eventTypeId, eventReferenceId })));
+    }
   }
 
   return {

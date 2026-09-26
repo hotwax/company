@@ -17,8 +17,9 @@
             {{ translate("Shopify target") }}
             <p>{{ targetLabel }}</p>
           </ion-label>
-          <ion-badge slot="end" :color="batchRow?.deliveryColor">
-            {{ batchRow?.deliveryLabel }}
+          <!-- Every row of one batch shares its delivery. -->
+          <ion-badge slot="end" :color="batch.events[0]?.deliveryColor">
+            {{ batch.events[0]?.deliveryLabel }}
           </ion-badge>
         </ion-item>
         <ion-item>
@@ -31,7 +32,7 @@
           </ion-badge>
         </ion-item>
 
-        <!-- What the mutation carried: the events below, summed per (inventory item, location). -->
+        <!-- The events below, summed per (inventory item, location). -->
         <ion-list-header>
           <ion-label>{{ translate("Change entries") }}</ion-label>
         </ion-list-header>
@@ -45,7 +46,7 @@
             <p>{{ translate("{count} events summed", { count: entry.eventCount }) }}</p>
           </ion-label>
           <ion-note slot="end">
-            {{ formatChange(entry.delta) }}
+            {{ `${entry.delta > 0 ? "+" : ""}${entry.delta}` }}
           </ion-note>
         </ion-item>
 
@@ -148,32 +149,18 @@ const loadingErrors = ref(false);
 const resending = ref(false);
 const messageText = ref("");
 
-/** Every row of one batch shares its delivery, so the first row speaks for the batch. */
-const batchRow = computed(() => props.batch?.events[0]);
-
-const targetLabel = computed(() => {
-  const labels = new Map<string, string>();
-  for(const event of props.batch?.events ?? []) {labels.set(event.locationId, event.locationLabel);}
-
-  return [...labels.values()].join(", ");
-});
+const targetLabel = computed(() => [...new Set(props.batch?.events.map((event) => event.locationLabel))].join(", "));
 
 const payload = computed(() => {
   if(!messageText.value) {return translate("The message payload has not loaded.");}
   try { return JSON.stringify(JSON.parse(messageText.value), null, 2); } catch { return messageText.value; }
 });
 
-function formatChange(delta: number): string {
-  return `${delta > 0 ? "+" : ""}${delta}`;
-}
-
-/** Every open starts at the top, not wherever the previous batch was scrolled to. */
 function resetScroll() {
   void content.value?.$el?.scrollToTop?.(0);
 }
 
-// Errors are class C, and only failed messages have any, so they are fetched when a batch opens. The
-// payload is read the same way: the message poller caches only the messages still in flight.
+// Errors and payload are class C, fetched when a batch opens: the poller caches only in-flight messages.
 watch(() => props.batch?.id, async (systemMessageId) => {
   errors.value = [];
   messageText.value = "";
@@ -200,8 +187,7 @@ async function resend() {
   try {
     await resendSystemMessage(systemMessageId);
     commonUtil.showToast(translate("Batch queued for another delivery attempt."));
-    // Re-read the message so the badge reflects the new attempt, then its errors: a failed retry
-    // appends a new SystemMessageError rather than replacing the old one.
+    // A failed retry appends a new SystemMessageError rather than replacing the old one.
     await afterMutation("systemMessage", { systemMessageId });
     errors.value = await ensureSystemMessageErrors(systemMessageId);
   } catch (error: any) {

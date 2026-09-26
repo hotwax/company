@@ -33,22 +33,15 @@ import { warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
 import { CACHE_DOMAIN_CATALOG } from "@/utils/cacheDomainCatalog";
 
-// Two root nodes (the button and its popover), so there is no single element to inherit attributes.
+// Two root nodes, so there is no single element to inherit attributes.
 defineOptions({ inheritAttrs: false });
 
-/**
- * Sync failures as a toolbar control rather than a banner. A banner inserted above the content moved
- * the whole page whenever it appeared or went, and a failure that recurs every tick made it do so
- * constantly; a button in the toolbar's end slot takes no content space. It lists every failing domain,
- * in the caller's priority order, so a secondary failure can no longer hide the one that explains an
- * empty page.
- */
+/** Sync failures in the toolbar rather than a banner, which shifted the page every time one recurred. */
 const props = defineProps<{
-  /** Domain → its latest failure message (`useCacheSync().failingDomains` or the inventory area's). */
+  /** Domain → its latest failure message. */
   failures: Record<string, string>;
-  /** Domains to list first, most important first; the rest follow in name order. */
+  /** Domains to list first; the rest follow in name order. */
   priority?: string[];
-  /** One line of context for this page, shown above the list. */
   note?: string;
 }>();
 
@@ -76,7 +69,7 @@ function readable(message: string): string {
     const text = Array.isArray(body?.errors) ? body.errors.join(" ") : body?.errors ?? body?.message;
     if(typeof text === "string" && text.trim()) {return text.trim();}
   } catch {
-    // Not JSON: the message is already text.
+    // Already text.
   }
 
   return message;

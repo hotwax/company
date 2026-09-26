@@ -21,8 +21,6 @@
             {{ event.deliveryLabel }}
           </ion-badge>
         </ion-item>
-        <!-- The reference is the source row's natural key, and for the effective-date families it also
-             carries the lifecycle boundary the row crossed. -->
         <ion-item>
           <ion-label class="ion-text-wrap">
             {{ translate("Source record") }}
@@ -35,17 +33,8 @@
         <ion-item v-if="artifact">
           <ion-label class="ion-text-wrap">
             {{ translate("Came from") }}
-            <p v-if="artifact.label">
-              {{ artifact.label }}
-            </p>
-            <p v-if="artifact.actor">
-              {{ translate("Recorded by {actor}", { actor: artifact.actor }) }}
-            </p>
-            <p v-if="artifact.note">
-              {{ artifact.note }}
-            </p>
-            <p v-if="artifact.unresolved">
-              {{ artifact.unresolved }}
+            <p v-for="line in [artifact.label, artifact.actor && translate('Recorded by {actor}', { actor: artifact.actor }), artifact.note, artifact.unresolved].filter(Boolean)" :key="line">
+              {{ line }}
             </p>
           </ion-label>
         </ion-item>
@@ -110,16 +99,10 @@
             </p>
           </ion-label>
         </ion-item>
-        <ion-item v-if="event.messageId" button detail @click="emit('openBatch', event.messageId)">
+        <ion-item :button="!!event.messageId" :detail="!!event.messageId" @click="event.messageId && emit('openBatch', event.messageId)">
           <ion-label>
             {{ translate("Batch") }}
-            <p>{{ event.messageId }}</p>
-          </ion-label>
-        </ion-item>
-        <ion-item v-else>
-          <ion-label>
-            {{ translate("Batch") }}
-            <p>{{ translate("Not batched") }}</p>
+            <p>{{ event.messageId || translate("Not batched") }}</p>
           </ion-label>
         </ion-item>
         <ion-item lines="none">
@@ -166,7 +149,6 @@ const emit = defineEmits<{
 
 const content = ref();
 
-/** Every open starts at the top, not wherever the previous event was scrolled to. */
 function resetScroll() {
   void content.value?.$el?.scrollToTop?.(0);
 }

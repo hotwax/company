@@ -1,9 +1,6 @@
 import { translate } from "@common";
 
-/**
- * Durations and ages as the inventory event screens print them, in the largest unit that stays
- * readable. Shared by the monitor, the history and their modals so a lag reads the same everywhere.
- */
+/** Durations and ages for the inventory event screens, so a lag reads the same everywhere. */
 
 /** A duration: "45s", "8.4 min", "3.2h", "2d". Empty for a negative or non-finite span. */
 export function formatLag(ms: number): string {

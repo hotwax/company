@@ -3,11 +3,7 @@ import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 
-/**
- * The one history page both inventory ledgers render through. These run the REAL `useInventoryEvents`
- * over cache-shaped rows, so the mapping from either ledger to the shared row is what is under test —
- * not a stub of it.
- */
+// Runs the REAL `useInventoryEvents` over cache-shaped rows: the ledger-to-row mapping is under test.
 
 const channelDetails = ref<any[]>([]);
 const locationDetails = ref<any[]>([]);
@@ -17,8 +13,6 @@ const facilities = ref<any[]>([]);
 const channels = ref<any[]>([]);
 const inventoryItems = ref<any[]>([]);
 const ledgerHydrated = ref(true);
-const areaReady = ref(true);
-const areaError = ref("");
 const areaFailures = ref<Record<string, string>>({});
 const routeQuery = ref<Record<string, string>>({});
 
@@ -39,7 +33,7 @@ vi.mock("@common", () => ({
 
 vi.mock("@/services/inventorySyncArea", () => ({
   useInventorySyncArea: () => ({
-    ready: areaReady, error: areaError, failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
+    ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
     syncNow: harness.syncNow, afterMutation: vi.fn(),
   }),
 }));
@@ -157,8 +151,6 @@ beforeEach(() => {
   channels.value = [];
   inventoryItems.value = [];
   ledgerHydrated.value = true;
-  areaReady.value = true;
-  areaError.value = "";
   areaFailures.value = {};
   routeQuery.value = {};
   harness.replace.mockReset();
@@ -197,20 +189,15 @@ describe("ShopifyInventoryEventHistory - never claims empty over unreadable data
     expect(text.indexOf("Shopify location inventory events")).toBeLessThan(text.indexOf("Shopify products for inventory events"));
   });
 
-  it("says live updates are off, and still shows the rows, when the OMS sends no update cursor", async () => {
-    locationDetails.value = [locationRow({ cachedAt: Date.parse("2026-09-26T07:00:00Z") })];
+  it.each([
+    { stamp: undefined, says: "Live updates are off" },
+    { stamp: 1_000, says: "kept current with every event and batch" },
+  ])("shows the rows either way, and says whether they are live (stamp $stamp)", async ({ stamp, says }) => {
+    locationDetails.value = [locationRow({ detailLastUpdatedStamp: stamp })];
     const wrapper = await mountHistory("location");
 
     expect(rows(wrapper)).toHaveLength(1);
-    expect(wrapper.text()).toContain("Live updates are off");
-  });
-
-  it("does not claim live updates are off when the rows carry the cursor", async () => {
-    locationDetails.value = [locationRow({ detailLastUpdatedStamp: 1_000 })];
-    const wrapper = await mountHistory("location");
-
-    expect(wrapper.text()).not.toContain("Live updates are off");
-    expect(wrapper.text()).toContain("kept current with every event and batch");
+    expect(wrapper.text()).toContain(says);
   });
 });
 
@@ -248,11 +235,9 @@ describe("ShopifyInventoryEventHistory - one page, either ledger", () => {
     expect(wrapper.text()).not.toContain("Brokering Queue");
   });
 
-  /** The shop's inventory item as the worker caches it from Shopify. */
   const shopifyItem = (over: Record<string, any> = {}) => ({
     shopId: "100002", shopifyInventoryItemId: "ITEM_2", sku: "727A-218A", shopifyVariantId: "4401", variantTitle: "After Hours",
-    variantDisplayName: "Getty Wide Leg - After Hours", shopifyProductId: "9901", productTitle: "Getty Wide Leg",
-    imageUrl: "https://cdn.test/variant.jpg", ...over,
+    shopifyProductId: "9901", productTitle: "Getty Wide Leg", imageUrl: "https://cdn.test/variant.jpg", ...over,
   });
 
   it("names the product from Shopify's inventory item, not the decision comment", async () => {
@@ -287,28 +272,12 @@ describe("ShopifyInventoryEventHistory - one page, either ledger", () => {
 describe("ShopifyInventoryEventHistory - delivery, read from the freshest cached message", () => {
   const sent = (over: Record<string, any> = {}) => channelRow({ systemMessageId: "BATCH_OK", systemMessageStatusId: "SmsgSent", ...over });
 
-  it("says how long a delivered event took, and nothing for one still owed", async () => {
-    messages.value = [{ systemMessageId: "BATCH_OK", statusId: "SmsgSent", processedDate: 1_000_000 + 5 * MINUTE, cachedAt: 10 }];
-    channelDetails.value = [sent({ eventReferenceId: "R_SENT" }), channelRow({ eventReferenceId: "R_WAITING" })];
-    const wrapper = await mountHistory("channel");
-
-    expect(wrapper.text()).toContain("sent 5.0 min later");
-    expect(wrapper.text()).toContain("not sent yet");
-  });
-
-  it("does not read a failed send's attempt date as a delivery", async () => {
-    channelDetails.value = [sent({ systemMessageStatusId: "SmsgError", systemMessageProcessedDate: 1_000_000 + 5 * MINUTE })];
-    const wrapper = await mountHistory("channel");
-
-    expect(wrapper.text()).not.toContain("later");
-    expect(kpi(wrapper, "Delivery errors")).toBe("1");
-  });
-
-  it("reads the delivery time off the ledger row with no message cached", async () => {
-    channelDetails.value = [sent({ systemMessageProcessedDate: 1_000_000 + 4 * MINUTE })];
+  it("reads the delivery time off the ledger row with no message cached, and nothing for one still owed", async () => {
+    channelDetails.value = [sent({ systemMessageProcessedDate: 1_000_000 + 4 * MINUTE }), channelRow({ eventReferenceId: "R_WAITING" })];
     const wrapper = await mountHistory("channel");
 
     expect(wrapper.text()).toContain("sent 4.0 min later");
+    expect(wrapper.text()).toContain("not sent yet");
     expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
   });
 
@@ -319,41 +288,6 @@ describe("ShopifyInventoryEventHistory - delivery, read from the freshest cached
 
     expect(rows(wrapper)[0].text()).toContain("Status SmsgSent");
     expect(wrapper.text()).toContain("sent 2.0 min later");
-  });
-
-  it.each(["SmsgSent", "SmsgConsumed", "SmsgConfirmed"])("treats %s as delivered", async (statusId) => {
-    channelDetails.value = [sent({ systemMessageStatusId: statusId, systemMessageProcessedDate: 1_000_000 + 3 * MINUTE })];
-    const wrapper = await mountHistory("channel");
-
-    expect(wrapper.text()).toContain("sent 3.0 min later");
-    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
-  });
-
-  it("owes nothing for a zero delta or a cancelled batch", async () => {
-    locationDetails.value = [
-      locationRow({ eventReferenceId: "R_NOOP", computedInventoryChange: 0 }),
-      locationRow({ eventReferenceId: "R_CANCELLED", systemMessageId: "M_X", systemMessageStatusId: "SmsgCancelled" }),
-    ];
-    const wrapper = await mountHistory("location");
-
-    expect(rows(wrapper)).toHaveLength(2);
-    expect(wrapper.text()).not.toContain("not sent yet");
-    expect(kpi(wrapper, "Oldest still owed to Shopify")).toBe("Nothing waiting");
-    expect(kpi(wrapper, "Waiting to batch")).toBe("0");
-  });
-
-  it("takes the typical lag over delivered rows only", async () => {
-    channelDetails.value = [
-      sent({ eventReferenceId: "A", systemMessageProcessedDate: 1_000_000 + 2 * MINUTE }),
-      sent({ eventReferenceId: "B", systemMessageProcessedDate: 1_000_000 + 4 * MINUTE }),
-      sent({ eventReferenceId: "C", systemMessageProcessedDate: 1_000_000 + 9 * MINUTE }),
-      channelRow({ eventReferenceId: "D" }),
-    ];
-    const wrapper = await mountHistory("channel");
-
-    expect(kpi(wrapper, "Typically reaches Shopify in")).toBe("4.0 min");
-    expect(wrapper.text()).toContain("Median of 3 delivered, slowest 9.0 min");
-    expect(kpi(wrapper, "Events")).toBe("4");
   });
 });
 

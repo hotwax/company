@@ -1,11 +1,6 @@
 /* eslint-disable require-await -- mocked async boundaries intentionally match worker/cache contracts */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * The inventory event area's pollers, over in-memory caches. What matters here is what each poller asks
- * the OMS for — the cold first window, then one update cursor per field — and what it writes back.
- */
-
 const state = vi.hoisted(() => ({
   domains: [] as any[],
   tables: {} as Record<string, Map<string, any>>,
@@ -247,7 +242,7 @@ describe("the product resolver", () => {
     id: `${GID}${itemId}`,
     sku: `SKU-${itemId}`,
     variant: {
-      id: `gid://shopify/ProductVariant/7${itemId}`, title: "Large", displayName: "Getty Wide Leg - Large", image: null,
+      id: `gid://shopify/ProductVariant/7${itemId}`, title: "Large", image: null,
       product: { id: `gid://shopify/Product/9${itemId}`, title: "Getty Wide Leg", featuredMedia: { preview: { image: { url: "https://cdn.test/product.jpg" } } } },
       ...variant,
     },
@@ -296,7 +291,6 @@ describe("the product resolver", () => {
       sku: "SKU-45457490215081",
       shopifyVariantId: "745457490215081",
       variantTitle: "O/S",
-      variantDisplayName: "Getty Wide Leg - Large",
       shopifyProductId: "945457490215081",
       productTitle: "Getty Wide Leg",
       imageUrl: "https://cdn.test/variant.jpg",

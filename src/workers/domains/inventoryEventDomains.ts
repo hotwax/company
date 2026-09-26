@@ -15,53 +15,24 @@ import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet, workerPost } from "./workerFetch";
 
 /**
- * THE INVENTORY EVENT AREA — class A, activated for as long as the user is anywhere in a shop's
- * inventory sync pages (see `src/services/inventorySyncArea.ts`), not per view.
- *
- * Both Shopify inventory ledgers are read by the SAME pollers, because their read views are the same
- * shape: scoped by `shopId`, entity-list resources with SQL offset/limit, and two update cursors.
- *
- *   rows poller     first visit: the shop's newest 500 by createdDate. After that: every row whose own
- *                   `detailLastUpdatedStamp` moved since the newest one cached — new rows, and rows the
- *                   publisher has since claimed into a batch.
- *   message poller  every row whose joined `systemMessageLastUpdatedStamp` moved since the newest one
- *                   cached — the batch it is in reached Shopify, failed, or was retried. Neither poller
- *                   sees the other's change, which is why there are two.
- *
- * Plus two helpers over what the pollers cached: `inventoryEventSystemMessage` re-reads the System
- * Messages that are not yet settled (for their payload and the freshest status), and
- * `inventoryEventProduct` asks Shopify which variant and product each inventory item the ledgers carry
- * belongs to.
- *
- * AN OMS WITHOUT THE CURSORS STILL GETS ITS DATA, just not live. A connector older than the cursor
- * aliases returns rows with no `detailLastUpdatedStamp`: the rows poller stores that window as usual and
- * then stops re-polling the ledger for the rest of this worker's life, because without a cursor every
- * further read could only be the same window again. A manual refresh re-reads it. The page tells the
- * reader live updates are off (it can see the stamps are missing on the rows), rather than this being
- * a sync error. The same connector serves the location ledger through a service that wraps its rows in
- * `details`, which is read the same way.
+ * Class A for as long as the user is in a shop's inventory sync pages (`src/services/inventorySyncArea.ts`).
+ * Both ledgers share the pollers: the rows poller reads the newest 500, then rows whose
+ * `detailLastUpdatedStamp` moved; the message poller reads rows whose joined
+ * `systemMessageLastUpdatedStamp` moved. An OMS without the cursor aliases still gets its window stored,
+ * just not re-polled until a manual refresh; the page says live updates are off.
  */
 
 const RECENT_WINDOW = 500;
 const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
-/**
- * The cursor is re-read with this much overlap. A row committed just after a read, by a transaction
- * that started before it, carries a stamp older than rows the read already returned; without the
- * overlap it would fall behind the cursor and never be seen.
- */
+/** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
-/** Settled rows older than the connector's own purge window leave the cache too. */
+/** The connector's own purge window. */
 const RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 10 * 60 * 1000;
-/** Unsettled messages re-read per tick. The set is normally the handful of batches in flight. */
 const MESSAGE_REFRESH_MAX = 25;
-/** Inventory items per Shopify `nodes` request. Shopify accepts 250; this keeps each query's cost modest. */
+/** Two requests of 100 items per tick, so a cold page does not burst the quota the OMS's own jobs share. */
 const INVENTORY_ITEM_BATCH_SIZE = 100;
-/**
- * Shopify requests per tick. A cold page for a shop with a thousand items converges over a few ticks
- * instead of bursting the shop's Shopify API quota, which the OMS's own sync jobs draw on too.
- */
 const INVENTORY_ITEM_REQUESTS_PER_TICK = 2;
 
 interface LedgerDefinition {
@@ -98,33 +69,17 @@ function shopOf(args: ShopArgs | undefined): string {
   return String(args?.shopId ?? "").trim();
 }
 
-/**
- * A ledger read's rows: the entity-list resource answers with a bare array, the older location service
- * with `{ details: [...] }`. Anything else is a real failure and must not be read as "no rows".
- */
+/** The entity list answers with an array, the older location service with `{ details }`. */
 function ledgerRowsOf(response: any, label: string): Array<Record<string, any>> {
   if(Array.isArray(response)) {return response;}
   if(Array.isArray(response?.details)) {return response.details;}
   throw new Error(`[sync] ${label}: unexpected response shape.`);
 }
 
-/** `lastUpdatedStamp` is set on every create, so a window with no stamp at all is an OMS without the cursors. */
-function carriesUpdateCursor(rows: Array<Record<string, any>>): boolean {
-  return rows.some((row) => toMillis(row?.detailLastUpdatedStamp) !== undefined);
-}
-
-/**
- * `kind|shopId` pairs whose OMS returned a window with no update cursor. Their window is already stored,
- * and re-reading it every tick would be polling in all but name, so the rows poller rests until a manual
- * refresh or a new worker (leaving and re-entering the inventory pages).
- */
+/** `kind|shopId` whose window came back with no update stamps: re-read only on a manual refresh. */
 const windowOnlyLedgers = new Set<string>();
 
-/**
- * Only rows that differ from the cached copy are written. The cursor read is inclusive and overlapped,
- * so every quiet tick returns rows already cached; rewriting them would re-render every open list for
- * nothing.
- */
+/** An overlapped cursor read returns cached rows every quiet tick; rewriting them re-renders every list. */
 async function changedRows(ledger: LedgerDefinition, rows: Array<Record<string, any>>): Promise<Array<Record<string, any>>> {
   const keyed = rows.map((row) => ({ row, key: ledger.keyOf(row) })).filter((entry): entry is { row: Record<string, any>; key: string } => !!entry.key);
   const cached = await ledger.cache.getMany(keyed.map((entry) => entry.key));
@@ -146,10 +101,7 @@ async function scopedRows(cache: CachedEntity, shopId: string) {
 
 const lastPruneAt = new Map<string, number>();
 
-/**
- * Drop settled rows past the connector's retention window. Upserts never remove anything, so without
- * this the cache would keep every row it ever saw while the server purges them after five days.
- */
+/** Upserts never remove, so settled rows past the server's purge window are dropped here. */
 async function pruneSettled(ledger: LedgerDefinition, shopId: string, now: number): Promise<void> {
   const pruneKey = `${ledger.kind}|${shopId}`;
   if(now - (lastPruneAt.get(pruneKey) ?? 0) < PRUNE_EVERY_MS) {return;}
@@ -190,8 +142,7 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
     intervalMs: POLL_INTERVAL_MS,
     async sync(ctx, args: ShopArgs = {}, options) {
       const shopId = shopOf(args);
-      // No shop means nothing to read, NOT "read everything": an unscoped list would pull every
-      // shop's ledger into this shop's cache.
+      // An unscoped list would pull every shop's ledger into this shop's cache.
       if(!shopId) {return 0;}
       const windowKey = `${ledger.kind}|${shopId}`;
       if(windowOnlyLedgers.has(windowKey) && !options?.force) {return 0;}
@@ -203,10 +154,9 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
         const rows = ledgerRowsOf(await workerGet(ctx, ledger.endpoint, {
           shopId, orderByField: "-createdDate", pageSize: RECENT_WINDOW, pageIndex: 0,
         }), ledger.endpoint);
-        if(rows.length && !carriesUpdateCursor(rows)) {windowOnlyLedgers.add(windowKey);} else {windowOnlyLedgers.delete(windowKey);}
-        // A window read is rare (first visit, manual refresh) and is written whole. Skipping rows whose
-        // server fields are unchanged would also skip rows the cache holds in an older projection -- a
-        // row written by a previous build keeps its old shape forever, invisible to this build's indexes.
+        const stamped = rows.some((row) => toMillis(row?.detailLastUpdatedStamp) !== undefined);
+        if(rows.length && !stamped) {windowOnlyLedgers.add(windowKey);} else {windowOnlyLedgers.delete(windowKey);}
+        // Written whole, so a row cached by an older build's projection is rewritten in this one's shape.
         changed = rows;
       } else {
         changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "detailLastUpdatedStamp", cursor));
@@ -225,8 +175,7 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
       const shopId = shopOf(args);
       if(!shopId) {return 0;}
       const cursor = await ledger.cache.newestCursor("systemMessageLastUpdatedStamp", { field: "shopId", value: shopId });
-      // Nothing cached is batched yet. The rows poller is what brings the first message stamp in, when
-      // the publisher claims a row.
+      // Nothing is batched yet; the rows poller brings the first message stamp in.
       if(cursor === undefined) {return 0;}
       const changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "systemMessageLastUpdatedStamp", cursor));
 
@@ -235,13 +184,7 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
   });
 }
 
-/**
- * Re-read the System Messages behind this shop's batched rows that are not settled yet, one by id.
- *
- * One request per message because `admin/systemMessages` honours no `_op` (verified live: five known
- * ids with `systemMessageId_op=in` returned zero rows). The set is the batches currently in flight, so
- * it is small, and it is capped per tick.
- */
+/** Unsettled batches' messages, one request each: `admin/systemMessages` ignores `_op=in` (verified live). */
 registerSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.systemMessages,
   intervalMs: POLL_INTERVAL_MS,
@@ -280,20 +223,12 @@ registerSyncDomain({
   },
 });
 
-/**
- * Verified live against a production OMS: 250 inventory items resolved in one request of about 600ms.
- * A node is `null` for an item Shopify no longer has, and a node's `variant` can be `null` too.
- */
-const INVENTORY_ITEMS_QUERY = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on InventoryItem { id sku variant { id title displayName image { url } product { id title featuredMedia { preview { image { url } } } } } } } }";
+/** A node is `null` for an item Shopify no longer has, and its `variant` can be `null` too. */
+const INVENTORY_ITEMS_QUERY = "query($ids: [ID!]!) { nodes(ids: $ids) { ... on InventoryItem { id sku variant { id title image { url } product { id title featuredMedia { preview { image { url } } } } } } } }";
 
-/** `shopId|inventoryItemId`s Shopify has no variant for, so a gap costs one request, not one per tick. */
+/** Items Shopify has no variant for: one request per gap, not one per tick. */
 const unknownInventoryItems = new Set<string>();
-/**
- * Shops whose Shopify lookup cannot work this session: an OMS without the `shopify/graphql` resource
- * (404), an OMS user not permitted to call it (403), or a shop whose Shopify access token Shopify
- * refuses. Products then stay unnamed on screen — the rows still show their inventory item — rather than
- * the page reporting a sync failure every tick for access that will not appear mid-session.
- */
+/** Shops the lookup cannot work for this session (no resource, no permission, refused token): left unnamed. */
 const shopifyLookupUnavailable = new Set<string>();
 
 /** `gid://shopify/ProductVariant/123` → `123`. */
@@ -303,26 +238,12 @@ function gidTail(gid: unknown): string {
   return text.slice(text.lastIndexOf("/") + 1);
 }
 
-/**
- * A refusal from the OMS itself that this session will not outgrow. A 401 is NOT one: that is an expired
- * OMS session, which the harness answers by re-authenticating, so it is rethrown untouched.
- */
-function isUnavailableOnOms(error: any): boolean {
-  const status = Number(error?.errorCode ?? error?.status ?? error?.statusCode);
-
-  return status === 404 || status === 403;
-}
-
-/** Access errors are matched on wording as well as code, because Shopify spells them several ways. */
+/** Shopify spells access errors several ways. */
 const SHOPIFY_ACCESS_ERROR = /access denied|unauthori[sz]ed|not authorized|invalid api key|access token/i;
 
 type InventoryItemLookup = { nodes: any[] } | "unavailable" | "throttled";
 
-/**
- * Read `shopify/graphql`'s envelope, `{ cost, response, statusCode }`, where `response` is Shopify's
- * GraphQL payload and `statusCode` Shopify's HTTP status. Errors are checked on both levels. Anything not
- * recognisably a refusal or a throttle throws, so the sync status shows it and the batch is retried.
- */
+/** `shopify/graphql` answers `{ cost, response, statusCode }`; anything not a refusal or throttle throws. */
 function readInventoryItemLookup(envelope: any): InventoryItemLookup {
   const payload = envelope?.response ?? envelope?.data ?? envelope;
   const errors = [...new Set([envelope?.errors, payload?.errors])].flatMap((entry) => (entry ? [entry].flat() : []));
@@ -340,10 +261,7 @@ function readInventoryItemLookup(envelope: any): InventoryItemLookup {
   return { nodes };
 }
 
-/**
- * Whether the shop's Shopify query budget is below half after this request. The budget is shared with the
- * OMS's own Shopify jobs, so the rest of this pass waits for the next tick rather than draining it.
- */
+/** Below half the shop's Shopify budget, the rest of the pass waits for the next tick. */
 function budgetRunningLow(envelope: any): boolean {
   const throttle = envelope?.cost?.throttleStatus ?? envelope?.response?.extensions?.cost?.throttleStatus;
   const available = Number(throttle?.currentlyAvailable);
@@ -362,17 +280,13 @@ function inventoryItemRowOf(shopId: string, shopifyInventoryItemId: string, node
     sku: String(node.sku ?? ""),
     shopifyVariantId: gidTail(variant.id),
     variantTitle: String(variant.title ?? ""),
-    variantDisplayName: String(variant.displayName ?? ""),
     shopifyProductId: gidTail(product.id),
     productTitle: String(product.title ?? ""),
     imageUrl: String(variant.image?.url || product.featuredMedia?.preview?.image?.url || ""),
   };
 }
 
-/**
- * The inventory items this shop's cached rows carry that have no cached Shopify item yet, newest row
- * first so the top of the history names its products before the tail does.
- */
+/** Uncached inventory items, newest row first so the top of the history is named before the tail. */
 async function unresolvedInventoryItems(shopId: string): Promise<string[]> {
   const rows = (await Promise.all(Object.values(INVENTORY_LEDGERS).map((ledger) => scopedRows(ledger.cache, shopId)))).flat()
     .sort((a, b) => (toMillis(b.raw?.createdDate) ?? 0) - (toMillis(a.raw?.createdDate) ?? 0));
@@ -390,15 +304,7 @@ async function unresolvedInventoryItems(shopId: string): Promise<string[]> {
   return candidates.filter((_, index) => !cached[index]);
 }
 
-/**
- * Name the products behind the inventory items this shop's cached rows carry, from Shopify itself.
- *
- * The ledgers identify a Shopify inventory item and no product, so each item is looked up with Shopify's
- * `nodes` query (through the OMS's `shopify/graphql`, by `shopId`) and its SKU, variant, product and image
- * are cached under `shopId|shopifyInventoryItemId`, which is how a view finds a row's product without
- * asking anything. At most `INVENTORY_ITEM_REQUESTS_PER_TICK` requests of `INVENTORY_ITEM_BATCH_SIZE`
- * items go out per tick, fewer when Shopify reports the shop's budget running low or throttles.
- */
+/** The ledgers name an inventory item, not a product, so Shopify's `nodes` query names it. */
 registerSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.products,
   intervalMs: POLL_INTERVAL_MS,
@@ -418,11 +324,10 @@ registerSyncDomain({
           queryText: INVENTORY_ITEMS_QUERY,
           variables: { ids: ids.map((id) => `gid://shopify/InventoryItem/${id}`) },
         });
-      } catch (error) {
-        if(!isUnavailableOnOms(error)) {throw error;}
-        shopifyLookupUnavailable.add(shopId);
-
-        return written;
+      } catch (error: any) {
+        // A 401 is an expired OMS session, which the harness answers by re-authenticating.
+        if(![403, 404].includes(Number(error?.errorCode ?? error?.status ?? error?.statusCode))) {throw error;}
+        envelope = { statusCode: 404 };
       }
       const lookup = readInventoryItemLookup(envelope);
       if(lookup === "unavailable") {
@@ -430,7 +335,6 @@ registerSyncDomain({
 
         return written;
       }
-      // Throttled is Shopify asking for patience, not a failure: the next tick asks again.
       if(lookup === "throttled") {break;}
 
       const nodesById = new Map<string, any>();
