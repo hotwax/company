@@ -3992,5 +3992,11 @@
   "All users": "All users",
   "No subscription matches the current filters. There are subscriptions for this app, they are just filtered out.": "No subscription matches the current filters. There are subscriptions for this app, they are just filtered out.",
   "Push Notifications": "Push Notifications",
-  "Search topic, event, facility or user": "Search topic, event, facility or user"
+  "Search topic, event, facility or user": "Search topic, event, facility or user",
+  "Introduction date": "Introduction date",
+  "Map Shopify product metafields to lifecycle calendar dates.": "Map Shopify product metafields to lifecycle calendar dates.",
+  "Product calendar mappings": "Product calendar mappings",
+  "Release date": "Release date",
+  "Sales discontinuation date": "Sales discontinuation date",
+  "Support discontinuation date": "Support discontinuation date"
 }
