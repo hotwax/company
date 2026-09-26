@@ -62,4 +62,29 @@ describe("useCacheSync error scoping", () => {
 
     expect(sync.error.value).toBe("");
   });
+
+  /**
+   * `error` is retired at every cycle start, which is right for "the most recent attempt" and wrong for
+   * anything rendered from it: a domain that fails every tick blinked out and back in each cycle.
+   * `failingDomains` holds each domain's latest outcome instead.
+   */
+  it("keeps a failing domain steady across cycle boundaries until it succeeds", async () => {
+    const sync = useCacheSync();
+    await sync.start([{ name: "inventoryEventProduct" }, { name: "shopifyInventoryAdjustmentDetail" }]);
+
+    harness.options.onStatus({ type: "sync-cycle-start" });
+    harness.options.onStatus({ type: "sync-error", domain: "inventoryEventProduct", message: "404" });
+    harness.options.onStatus({ type: "sync-cycle-end", at: 1 });
+    const settled = sync.failingDomains.value;
+
+    harness.options.onStatus({ type: "sync-cycle-start" });
+    expect(sync.error.value).toBe("");
+    expect(sync.failingDomains.value).toEqual({ inventoryEventProduct: "404" });
+    harness.options.onStatus({ type: "sync-error", domain: "inventoryEventProduct", message: "404" });
+    // The same failure again is not a change, so nothing rendered from it re-renders.
+    expect(sync.failingDomains.value).toBe(settled);
+
+    harness.options.onStatus({ type: "sync-end", domain: "inventoryEventProduct", written: 0, at: 2 });
+    expect(sync.failingDomains.value).toEqual({});
+  });
 });

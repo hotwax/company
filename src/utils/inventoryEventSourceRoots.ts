@@ -37,9 +37,19 @@ const INVENTORY_EVENT_SOURCE_ROOTS: Record<string, InventoryEventSourceRoot> = {
   SIE_TRANSFER_RESERVATION_RELEASE: "inventoryItemDetails",
 };
 
+/**
+ * The `SIE_` form of an event type id. An OMS on the connector's pre-enumeration seed writes
+ * `POS_ISSUANCE` where newer ones write `SIE_POS_ISSUANCE` (rails-oms is unprefixed); both are one family.
+ */
+export function canonicalEventTypeId(eventTypeId: string): string {
+  const id = String(eventTypeId ?? "").trim();
+
+  return !id || id.startsWith("SIE_") ? id : `SIE_${id}`;
+}
+
 /** Undefined when no app fetch path can name this event's document. */
 export function sourceRootFor(eventTypeId: string): InventoryEventSourceRoot | undefined {
-  return INVENTORY_EVENT_SOURCE_ROOTS[eventTypeId];
+  return INVENTORY_EVENT_SOURCE_ROOTS[canonicalEventTypeId(eventTypeId)];
 }
 
 /**
@@ -49,5 +59,5 @@ export function sourceRootFor(eventTypeId: string): InventoryEventSourceRoot | u
  * `inventoryItemId:inventoryItemDetailSeqId` reference as one opaque token.
  */
 export function isReservationEventType(eventTypeId: string): boolean {
-  return INVENTORY_EVENT_SOURCE_ROOTS[eventTypeId] === "inventoryItemDetails";
+  return sourceRootFor(eventTypeId) === "inventoryItemDetails";
 }

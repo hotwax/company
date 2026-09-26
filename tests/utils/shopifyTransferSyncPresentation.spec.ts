@@ -41,7 +41,7 @@ describe("buildTransferSyncPresentation", () => {
         key: "create:M200103",
         orderId: "M200103",
         title: "Downtown replenishment",
-        detail: "From Downtown to SoHo · 248 item lines · 612 units",
+        detail: "From Downtown to SoHo, 248 item lines, 612 units",
         status: "Outstanding",
       }),
     ]);
@@ -103,7 +103,7 @@ describe("buildTransferSyncPresentation", () => {
         key: "receipt:M200103:S100:2026-08-31T13:42:00Z:JANE",
         omsShipmentId: "S100",
         title: "Downtown replenishment",
-        detail: "From Downtown to SoHo · Received by Jane Doe · 84 accepted · 2 rejected · 2 lines",
+        detail: "From Downtown to SoHo, Received by Jane Doe, 84 accepted, 2 rejected, 2 lines",
         status: "Outstanding",
       }),
     ]);
@@ -133,7 +133,7 @@ describe("buildTransferSyncPresentation", () => {
     });
 
     expect(rows).toEqual([expect.objectContaining({
-      detail: "Received by Jane Doe · 425 accepted · 0 rejected · 85 lines",
+      detail: "Received by Jane Doe, 425 accepted, 0 rejected, 85 lines",
     })]);
   });
 
@@ -201,7 +201,7 @@ describe("buildTransferSyncPresentation", () => {
     expect(rows).toEqual(expect.arrayContaining([
       expect.objectContaining({ title: "Downtown replenishment", detail: "From Downtown to SoHo" }),
       expect.objectContaining({ title: "Downtown replenishment", detail: "From Downtown to SoHo" }),
-      expect.objectContaining({ title: "Downtown replenishment", detail: "From Downtown to SoHo · Blue crewneck · 2 units cancelled" }),
+      expect.objectContaining({ title: "Downtown replenishment", detail: "From Downtown to SoHo, Blue crewneck, 2 units cancelled" }),
     ]));
     expect(rows.every((row) => !("action" in row))).toBe(true);
   });
@@ -215,7 +215,7 @@ describe("buildTransferSyncPresentation", () => {
     expect(rows).toEqual([
       expect.objectContaining({
         title: "Transfer M200103",
-        detail: "2 item lines · 7 units",
+        detail: "2 item lines, 7 units",
       }),
     ]);
   });

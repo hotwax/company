@@ -87,7 +87,7 @@ function transferRoute(order: TransferSyncOrder | undefined, facilityNamesById: 
 }
 
 function joinDetail(...parts: Array<string | undefined>): string {
-  return parts.filter(Boolean).join(" · ");
+  return parts.filter(Boolean).join(", ");
 }
 
 function shopifyTransferId(row: Record<string, unknown>): string | undefined {
@@ -120,7 +120,7 @@ function creationSummary(
     title: transferName(orderId, order),
     detail: joinDetail(
       transferRoute(order, enrichment.facilityNamesById),
-      `${items.length} item lines · ${totalQuantity} units`,
+      `${items.length} item lines, ${totalQuantity} units`,
     ),
     status: direction === "pending" ? "Outstanding" : "Synced",
     ...syncTiming(enrichment.creationOccurredAtByOrderId[orderId] ?? "", latestSyncedAt),
@@ -153,7 +153,7 @@ function receiptSummary(
     detail: joinDetail(
       transferRoute(enrichment.ordersById[orderId], enrichment.facilityNamesById),
       `Received by ${receiverName}`,
-      `${accepted} accepted · ${rejected} rejected · ${lineCount} lines`,
+      `${accepted} accepted, ${rejected} rejected, ${lineCount} lines`,
     ),
     status: direction === "pending" ? "Outstanding" : "Synced",
     ...syncTiming(occurredAt, syncedAt),

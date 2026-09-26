@@ -114,7 +114,7 @@
 
             <!-- Local cache (IndexedDB): live row counts straight from the database. -->
             <ion-item-divider>
-              <ion-label>{{ translate("Local cache") }} · {{ totalRows }} {{ translate("records") }}</ion-label>
+              <ion-label>{{ translate("Local cache") }}: {{ totalRows }} {{ translate("records") }}</ion-label>
             </ion-item-divider>
             <ion-item v-for="domain in domains" :key="domain.name">
               <ion-icon slot="start" :icon="getStatusIcon(domain.status)" :color="getStatusColor(domain.status)" />
@@ -122,9 +122,9 @@
                 {{ translate(domain.label) }}
                 <p>
                   {{ domain.count }} {{ translate("records") }}
-                  <template v-if="domain.syncedAt"> · {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
-                  <template v-else-if="domain.syncClass === 'A'"> · {{ translate("live while in use") }}</template>
-                  <template v-else> · {{ translate("not synced yet") }}</template>
+                  <template v-if="domain.syncedAt">, {{ translate("synced") }} {{ formatSyncTime(domain.syncedAt) }}</template>
+                  <template v-else-if="domain.syncClass === 'A'">, {{ translate("live while in use") }}</template>
+                  <template v-else>, {{ translate("not synced yet") }}</template>
                 </p>
               </ion-label>
               <ion-button slot="end" fill="clear" :disabled="!!refreshing" @click="refreshDomain(domain.name)">
@@ -188,7 +188,7 @@ const cacheSubtitle = computed(() => {
   if (oldestSyncedAt.value && oldestSyncedAt.value !== lastSyncedAt.value) {
     parts.push(`${translate("oldest:")} ${formatSyncTime(oldestSyncedAt.value)}`);
   }
-  return parts.join(" · ");
+  return parts.join(", ");
 });
 
 // Session-scoped data (auth/profile) is NOT in the local cache, so it keeps its store-based status.

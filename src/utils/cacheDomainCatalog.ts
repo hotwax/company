@@ -79,12 +79,13 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   // --- class A: live, view-scoped (shown for visibility; not synced at login) ---
   { name: "dataManagerLog", table: "dataManagerLogs", label: "Data manager logs", syncClass: "A" },
   { name: "systemMessage", table: "systemMessages", label: "System messages", syncClass: "A" },
-  {
-    name: "shopifyInventoryAdjustmentDetail",
-    table: "shopifyInventoryAdjustmentDetails",
-    label: "Shopify aggregate inventory events",
-    syncClass: "A",
-  },
+  // The inventory sync area's pollers: two per ledger, one per update cursor (see inventoryEventDomains).
+  { name: "shopifyInventoryAdjustmentDetail", table: "shopifyInventoryAdjustmentDetails", label: "Shopify channel inventory events", syncClass: "A" },
+  { name: "shopifyInventoryAdjustmentDetailMessage", table: "shopifyInventoryAdjustmentDetails", label: "Shopify channel inventory event deliveries", syncClass: "A" },
+  { name: "shopifyLocationInventoryAdjustmentDetail", table: "shopifyLocationInventoryAdjustmentDetails", label: "Shopify location inventory events", syncClass: "A" },
+  { name: "shopifyLocationInventoryAdjustmentDetailMessage", table: "shopifyLocationInventoryAdjustmentDetails", label: "Shopify location inventory event deliveries", syncClass: "A" },
+  { name: "inventoryEventSystemMessage", table: "systemMessages", label: "Unsettled inventory event batches", syncClass: "A" },
+  { name: "inventoryEventProduct", table: "shopifyInventoryItems", label: "Shopify products for inventory events", syncClass: "C" },
   { name: "shopifyBulkOperation", table: "shopifyBulkOperations", label: "Shopify bulk operations", syncClass: "C" },
 ];
 

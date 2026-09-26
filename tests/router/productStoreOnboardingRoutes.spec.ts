@@ -23,9 +23,11 @@ vi.mock("@ionic/vue-router", () => ({
   createRouter: vi.fn((options: { routes: RouteRecordRaw[] }) => {
     routerHarness.routes = options.routes
 
-    return { beforeEach: routerHarness.beforeEach }
+    return { beforeEach: routerHarness.beforeEach, afterEach: vi.fn() }
   }),
 }))
+
+vi.mock("@/services/inventorySyncArea", () => ({ followInventorySyncArea: vi.fn() }))
 
 vi.mock("@common/composables/useAuth", () => ({
   useAuth: () => ({

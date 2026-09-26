@@ -13,7 +13,7 @@ import "./domains/syncRunDomain";
 import "./domains/productUpdateHistoryDomain";
 import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
-import "./domains/shopifyLocationInventoryDomain";
+import "./domains/inventoryEventDomains";
 import "./domains/shopifyTransferSyncDomain";
 import "./domains/shopifyFulfillmentHistoryDomain";
 import "./domains/shopifyPendingFulfillmentDomain";
