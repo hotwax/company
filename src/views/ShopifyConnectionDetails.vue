@@ -487,7 +487,7 @@
           <ion-button
             class="ion-margin"
             expand="block"
-            :disabled="!accessScopesRemoteId"
+            :disabled="!accessScopesRemoteId || isFetchingScopes"
             @click="refresh()"
           >
             <ion-icon slot="start" :icon="refreshOutline" />
