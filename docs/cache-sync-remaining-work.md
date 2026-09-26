@@ -85,7 +85,7 @@ Status key — ✅ done · 🟢 next · 🟡 to migrate · 🔵 delete (no endpo
 | Store member | Endpoint / DataDocument | → | Destination | IDB entity |
 | --- | --- | --- | --- | --- |
 | `fetchProductUpdateSyncRunState` | `SYSTEM_MESSAGE_DATA_MANAGER_LOG` | ✅ | `useShopifyProductSyncRunState` | `syncRuns` spine + `systemMessages` + `dataManagerLogs` |
-| `fetchPendingProductUpdateRequests` | same doc, `statusId=SmsgProduced` | ✅ | `pendingRequests` on the same composable | `syncRuns` |
+| `fetchPendingProductUpdateRequests` | same doc, `statusId=SmsgProduced` | ✅ | legacy fetch deleted; `pendingRequests` is derived from `syncRuns` | `syncRuns` |
 | `fetchShopSystemMessageRemoteId` | `admin/systemMessages` | ✅ | `useShopifySyncContext.remoteId` / `.remoteIds` | `systemMessageRemotes` ⋈ `shopifyShops` |
 | `fetchSyncJobConfig` | `SERVICE_JOB_PARAMETER` | ✅ | `useShopifySyncJob` + `findSuitableSyncJob` | `serviceJobs` (params projected) |
 | `fetchUnsyncedProductUpdates` | `shopify/graphql` | ✅ | `fetchUnsyncedProductUpdateCount` | 🔴 live — Shopify truth |
@@ -96,7 +96,7 @@ Status key — ✅ done · 🟢 next · 🟡 to migrate · 🔵 delete (no endpo
 | `migrationStore.fetchEligibility` | `admin/dataManager/{configId}` + `admin/systemMessages/types` | 🟡 | `systemMessageTypes` is **already a cache table** | `systemMessageTypes` |
 | `migrationStore.fetchLegacyTeardownState` | `admin/systemMessages/types/{id}` + doc | 🟡 | partly cacheable; Upgrade Assistant concern | `systemMessageTypes` |
 | `fetchSetupState` | composes run-state + access-state | ✅ | composable assembly, no fetch of its own | derived |
-| `fetchDashboardSummary` | composes 5; the page reads 2 | ✅ | composable assembly | derived |
+| `fetchDashboardSummary` | composes 5; the page reads 2 | ✅ | legacy fan-out deleted; the dashboard assembles reactive cached reads | derived |
 | `fetchProductStoreContext` | **none** — filtered `payload.shops` | ✅ | store fn + helpers deleted; `relatedShops` is a computed over the cached shop list | — |
 | `fetchRunningBulkOperation` | `shopify/graphql` | ✅ | class-C write-through (exists for terminal ops) | `shopifyBulkOperations` |
 | `fetchWebhookSubscriptions` | `shopify/webhook-subscription` | 🔴 | move into `useShopify`, stays live | — |
@@ -104,7 +104,7 @@ Status key — ✅ done · 🟢 next · 🟡 to migrate · 🔵 delete (no endpo
 | `searchShopifyProducts` | `shopify/graphql` | 🔴 | move into `useShopify`, stays live | — |
 | `fetchLiveCatalogCounts` | `shopify/graphql` | 🔴 | move into `useShopify`, stays live | — |
 | `fetchReviewStats`, `fetchPreflight` | `PRODUCT_STORE_PRODUCT` | 🔴 | **stay live by decision** — no product-store caching | — |
-| `fetchErrorRecordCount` | `DATA_MANAGER_LOG_AND_PARAMETER` | ⚫ | still to delete (zero refs, confirmed) | — |
+| `fetchErrorRecordCount` | `DATA_MANAGER_LOG_AND_PARAMETER` | ⚫ | deleted (zero refs) | — |
 
 ### Writes
 
@@ -118,7 +118,7 @@ Status key — ✅ done · 🟢 next · 🟡 to migrate · 🔵 delete (no endpo
 | `shopifyStore.updateShopifyRemote` | remote PUT | ✅ | `systemMessageRemotes` via `refreshAfterMutation` |
 | `shopifyStore.refreshAccessScopes` | `POST sob/shop/remote/{id}/accessScopes` | 🔴 | live, but the result must persist (see `getAccessScopes`) |
 | `productStoreStore.updateCurrent` | **none** — local state | ✅ | call removed from ProductSync; store kept for onboarding |
-| `pollBulkOperationResult`, `sendShopifyBulkQueryMessage` | — | ⚫ | delete |
+| `pollBulkOperationResult`, `sendShopifyBulkQueryMessage` | — | ⚫ | deleted |
 
 **Tally:** every product-sync and order-sync store member has moved. `store/shopifyProductSync.ts`
 (1,698 lines) is **deleted**. The 🔴 rows are still permanently live calls — they just live in

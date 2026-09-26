@@ -21,7 +21,7 @@
                   {{ getUserGroupTypeDescription(currentUserGroup.groupTypeEnumId) }}
                 </p>
               </ion-label>
-              <ion-button slot="end" fill="outline" :disabled="!userStore.hasPermission('SECURITY_UPDATE OR SECURITY_ADMIN')" @click="editUserGroup()">
+              <ion-button slot="end" fill="outline" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_UPDATE)" @click="editUserGroup()">
                 {{ translate("Edit") }}
               </ion-button>
             </ion-item>
@@ -51,7 +51,7 @@
                   <ion-spinner v-if="updatingPermissionIds[permission.userPermissionId]" name="crescent" data-spinner-size="medium" />
                   <ion-checkbox
                     v-else
-                    :disabled="permission.isChecked ? !userStore.hasPermission('SECURITY_UPDATE OR SECURITY_ADMIN') : !userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN')"
+                    :disabled="permission.isChecked ? !userStore.hasPermission(Actions.APP_SECURITY_UPDATE) : !userStore.hasPermission(Actions.APP_SECURITY_CREATE)"
                     :checked="permission.isChecked"
                   />
                 </ion-card-header>
@@ -65,7 +65,7 @@
 
         <template v-else>
           <ion-item>
-            <ion-button slot="end" :disabled="!userStore.hasPermission('SECURITY_CREATE OR SECURITY_ADMIN')" @click="openAddAuthorization()">
+            <ion-button slot="end" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_CREATE)" @click="openAddAuthorization()">
               <ion-icon slot="start" :icon="addOutline" />
               {{ translate("Add") }}
             </ion-button>
@@ -106,11 +106,11 @@
               </ion-list>
 
               <div class="card-actions">
-                <ion-button fill="outline" color="medium" expand="block" :disabled="!userStore.hasPermission('SECURITY_UPDATE OR SECURITY_ADMIN')" @click="openEditAuthorization(authorization)">
+                <ion-button fill="outline" color="medium" expand="block" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_UPDATE)" @click="openEditAuthorization(authorization)">
                   <ion-icon slot="start" :icon="pencilOutline" />
                   {{ translate("Edit") }}
                 </ion-button>
-                <ion-button fill="outline" color="medium" expand="block" :disabled="!userStore.hasPermission('SECURITY_UPDATE OR SECURITY_ADMIN')" @click="confirmRemoveAuthorization(authorization)">
+                <ion-button fill="outline" color="medium" expand="block" :disabled="!userStore.hasPermission(Actions.APP_SECURITY_UPDATE)" @click="confirmRemoveAuthorization(authorization)">
                   <ion-icon slot="start" :icon="trashOutline" />
                   {{ translate("Remove") }}
                 </ion-button>
@@ -222,6 +222,7 @@ import {
 } from "@/composables/useSecurity";
 import { useTypedEnums } from "@/composables/useSeed";
 import { useUserStore } from "@/store/user";
+import Actions from "@/authorization/actions";
 
 const props = defineProps({
   userGroupId: {

@@ -1,8 +1,7 @@
-import { computed } from "vue";
 import { api, commonUtil } from "@common";
-import { translate } from "@/i18n";
-import { appCache, appVersionCache } from "@/utils/cacheEntities";
+import { computed } from "vue";
 import { resyncDomain } from "@/services/appCacheBootstrap";
+import { appCache, appVersionCache } from "@/utils/cacheEntities";
 import { useCachedList } from "./useCachedList";
 import { useTypedEnums } from "./useSeed";
 
@@ -46,6 +45,7 @@ export function useAppVersions() {
   const byAppEnv = computed<Record<string, AppVersionRecord>>(() =>
     records.value.reduce((map: Record<string, AppVersionRecord>, row) => {
       map[`${row.appId}_${row.environmentTypeId}`] = row;
+
       return map;
     }, {}));
 
@@ -55,12 +55,14 @@ export function useAppVersions() {
 /** The app catalog (`admin/apps`) the create modal picks from. */
 export function useApps() {
   const { records, hydrated } = useCachedList<{ appId: string; appName: string }>(appCache);
+
   return { apps: records, hydrated };
 }
 
 /** The `AppEnvironment` enum values, from the cached enum domain. */
 export function useAppEnvironments() {
   const { values, hydrated } = useTypedEnums(APP_ENVIRONMENT_ENUM_TYPE_ID);
+
   return { appEnvironments: values, hydrated };
 }
 
@@ -78,37 +80,27 @@ export function useAppVersionMutations() {
 
   async function createAppVersion(payload: { appId: string; environmentTypeId: string; currentVersion: string }) {
     const resp: any = await api({ url: versionsUrl(payload.appId), method: "post", data: payload });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     await refreshAppVersions();
+
     return resp;
   }
 
   async function updateAppVersion(payload: { appId: string; environmentTypeId: string; currentVersion: string }) {
     const resp: any = await api({ url: versionsUrl(payload.appId), method: "put", data: payload });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     await refreshAppVersions();
+
     return resp;
   }
 
   async function removeAppVersion(payload: { appId: string; environmentTypeId: string }) {
     const resp: any = await api({ url: versionsUrl(payload.appId), method: "delete", data: payload });
-    if (commonUtil.hasError(resp)) throw resp;
+    if(commonUtil.hasError(resp)) {throw resp;}
     await refreshAppVersions();
+
     return resp;
   }
 
   return { createAppVersion, updateAppVersion, removeAppVersion, refreshAppVersions };
-}
-
-/**
- * Validate a version string. Preserves the old app's rule verbatim: it must start with `v` and have
- * at least three dot-separated, non-empty segments (e.g. `v1.0.0`).
- */
-export function appVersionError(version: string): string {
-  const trimmed = version.trim();
-  const segmentsFilled = trimmed.split(".").every((segment) => segment);
-  if (!segmentsFilled || !trimmed.startsWith("v") || trimmed.split(".").length < 3) {
-    return translate("Enter a valid version number, it should be in format v1.0.0");
-  }
-  return "";
 }

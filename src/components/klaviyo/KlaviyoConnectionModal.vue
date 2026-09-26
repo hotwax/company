@@ -34,7 +34,7 @@
       </ion-item>
       <ion-item>
         <ion-label>
-          <h3>{{ translate("Connection ID") }}</h3>
+          {{ translate("Connection ID") }}
           <p>{{ isEdit ? form.commGatewayAuthId : previewAuthId }}</p>
           <p v-if="!isEdit">{{ translate("Generated automatically from the connection name. Cannot be changed later.") }}</p>
         </ion-label>
@@ -51,9 +51,7 @@
           :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
           autocomplete="off"
           :spellcheck="false"
-        >
-          <ion-input-password-toggle slot="end" />
-        </ion-input>
+        />
       </ion-item>
       <ion-item>
         <ion-label>
@@ -65,7 +63,7 @@
     <ion-list v-else inset>
       <ion-item>
         <ion-label>
-          <h3>{{ translate("Klaviyo private API key") }}</h3>
+          {{ translate("Klaviyo private API key") }}
           <p>{{ maskedExistingKey }}</p>
           <p>{{ translate("API keys are write-only. The full value is never displayed once saved.") }}</p>
         </ion-label>
@@ -77,7 +75,7 @@
       <template v-if="isReplacingKey">
         <ion-item color="danger">
           <ion-label>
-            <h3>{{ translate("This will stop your current key from working") }}</h3>
+            {{ translate("This will stop your current key from working") }}
             <p>{{ translate("As soon as you save, every email this connection handles will start using the new key. If the new key is wrong or missing, customers will stop receiving emails until you fix it.") }}</p>
           </ion-label>
         </ion-item>
@@ -90,9 +88,7 @@
             :placeholder="'pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'"
             autocomplete="off"
             :spellcheck="false"
-          >
-            <ion-input-password-toggle slot="end" />
-          </ion-input>
+          />
         </ion-item>
         <ion-item>
           <ion-checkbox
@@ -112,7 +108,7 @@
     <ion-list inset>
       <ion-item>
         <ion-label>
-          <h3>{{ translate("Endpoint") }}</h3>
+          {{ translate("Endpoint") }}
           <p>{{ form.baseUrl }}</p>
           <p>{{ translate("Klaviyo API base URL — pre-filled and not editable.") }}</p>
         </ion-label>
@@ -144,7 +140,6 @@ import {
   IonHeader,
   IonIcon,
   IonInput,
-  IonInputPasswordToggle,
   IonItem,
   IonLabel,
   IonList,

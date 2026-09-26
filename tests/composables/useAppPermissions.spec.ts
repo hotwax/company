@@ -79,9 +79,10 @@ async function freshModule() {
   vi.resetModules();
   api.mockReset();
   const security: any = await import("@/composables/useSecurity");
-  const { useAppPermissions } = await import("@/composables/useAppPermissions");
+  const { clearSessionScopedState } = await import("@/composables/sessionScope");
+  const { loadGroupPermissionRecords, useAppPermissions } = await import("@/composables/useAppPermissions");
 
-  return { security, useAppPermissions };
+  return { clearSessionScopedState, loadGroupPermissionRecords, security, useAppPermissions };
 }
 
 describe("useAppPermissions — catalogs come from the cache", () => {
@@ -291,5 +292,94 @@ describe("useAppPermissions — savePermissionGroups", () => {
     await expect(composable.savePermissionGroups("P1", [{ groupId: "GROUP_0" }], []))
       .rejects.toThrow(/Invalid permission assignment start date/);
     expect(calls().filter((config: any) => config.method === "put")).toHaveLength(0);
+  });
+});
+
+describe("useAppPermissions — session boundaries", () => {
+  beforeEach(() => { api.mockReset(); });
+
+  it("clears memoized assignments and users so the next session fetches its own data", async () => {
+    const { clearSessionScopedState, security, useAppPermissions } = await freshModule();
+    const past = Date.now() - 100_000;
+    mockBackend({
+      groupPermissions: { GROUP_0: [{ userPermissionId: "P1", fromDate: past }] },
+      groupUsers: { GROUP_0: [{ userId: "user.a" }] },
+    });
+    security.__setUserGroups(accessGroups(1));
+    security.__setPermissions([{ userPermissionId: "P1", description: "P one" }]);
+    const composable = useAppPermissions();
+
+    await composable.loadAssignments();
+    await composable.loadGroupUsers("GROUP_0");
+    expect(composable.activeGroupsByPermission("P1")).toHaveLength(1);
+    expect(composable.usersForGroup("GROUP_0")).toEqual([{ userId: "user.a" }]);
+
+    clearSessionScopedState();
+
+    expect(composable.activeGroupsByPermission("P1")).toEqual([]);
+    expect(composable.usersForGroup("GROUP_0")).toBeUndefined();
+    await composable.loadAssignments();
+    await composable.loadGroupUsers("GROUP_0");
+    expect(groupPermissionRequests()).toHaveLength(2);
+    expect(groupUserRequests()).toHaveLength(2);
+  });
+
+  it("does not let late permission responses from the previous session repopulate state", async () => {
+    const { clearSessionScopedState, loadGroupPermissionRecords, security, useAppPermissions } = await freshModule();
+    security.__setUserGroups(accessGroups(1));
+    security.__setPermissions([{ userPermissionId: "P1", description: "P one" }]);
+    const composable = useAppPermissions();
+    let resolveOld!: (value: any) => void;
+    let resolveNew!: (value: any) => void;
+    const oldResponse = new Promise((resolve) => { resolveOld = resolve; });
+    const newResponse = new Promise((resolve) => { resolveNew = resolve; });
+    api
+      .mockReturnValueOnce(oldResponse)
+      .mockReturnValueOnce(newResponse);
+
+    const oldLoad = loadGroupPermissionRecords("GROUP_0");
+    clearSessionScopedState();
+    const newLoad = loadGroupPermissionRecords("GROUP_0");
+
+    resolveOld({ data: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] });
+    await oldLoad;
+    expect(composable.activeGroupsByPermission("P1")).toEqual([]);
+
+    resolveNew({ data: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] });
+    await newLoad;
+    expect(composable.activeGroupsByPermission("P1")).toHaveLength(1);
+  });
+
+  it("keeps a new session request memoized when the previous session's request finishes late", async () => {
+    const { clearSessionScopedState, security, useAppPermissions } = await freshModule();
+    security.__setUserGroups(accessGroups(1));
+    security.__setPermissions([]);
+    const composable = useAppPermissions();
+    let resolveOld!: (value: any) => void;
+    let resolveNew!: (value: any) => void;
+    const oldResponse = new Promise((resolve) => { resolveOld = resolve; });
+    const newResponse = new Promise((resolve) => { resolveNew = resolve; });
+    api
+      .mockReturnValueOnce(oldResponse)
+      .mockReturnValueOnce(newResponse);
+
+    const oldLoad = composable.loadGroupUsers("GROUP_0");
+    clearSessionScopedState();
+    const newLoad = composable.loadGroupUsers("GROUP_0");
+
+    resolveOld({ data: [{ userId: "old.user" }] });
+    await oldLoad;
+    expect(composable.usersForGroup("GROUP_0")).toBeUndefined();
+
+    // The old request's finally block must not remove the new request from the in-flight map.
+    const joinedNewLoad = composable.loadGroupUsers("GROUP_0");
+    expect(groupUserRequests()).toHaveLength(2);
+
+    resolveNew({ data: [{ userId: "new.user" }] });
+    await expect(Promise.all([newLoad, joinedNewLoad])).resolves.toEqual([
+      [{ userId: "new.user" }],
+      [{ userId: "new.user" }],
+    ]);
+    expect(composable.usersForGroup("GROUP_0")).toEqual([{ userId: "new.user" }]);
   });
 });

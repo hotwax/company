@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { effectScope, ref } from "vue";
+import { clearSessionScopedState } from "@/composables/sessionScope";
 
 /**
  * L1 unit — the security composable that absorbed `src/store/authorization.ts`.
@@ -24,9 +26,12 @@ const harness = vi.hoisted(() => ({
   resyncDomain: vi.fn(),
 }));
 
+const profile = ref({ username: "test-user" });
+const sessionBackend = ref("");
+
 vi.mock("@common", () => ({
   api: (...args: any[]) => harness.api(...args),
-  commonUtil: { hasError: (resp: any) => !!resp?.hasError, showToast: vi.fn() },
+  commonUtil: { getMaargURL: () => sessionBackend.value, hasError: (resp: any) => !!resp?.hasError, showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
 }));
@@ -38,10 +43,12 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 }));
 
 // The composable's session accessors (`useAuth`) reach into the user store, whose real import
-// chain needs a browser context; none of that is under test here.
-vi.mock("@/store/user", () => ({ useUserStore: () => ({}) }));
+// chain needs a browser context. Expose reactive session data for token-lifecycle tests.
+vi.mock("@/store/user", () => ({
+  useUserStore: () => ({ get getUserProfile() { return profile.value; } }),
+}));
 
-import { updateUserGroup, useUserGroupPermissions } from "@/composables/useSecurity";
+import { updateUserGroup, useUserGroupPermissions, useUserToken } from "@/composables/useSecurity";
 
 beforeEach(() => {
   harness.api.mockReset();
@@ -110,5 +117,187 @@ describe("updateUserGroup — mutation shape and write-through", () => {
     await updateUserGroup({ userGroupId: "SGRP", description: "nope" });
 
     expect(harness.resyncDomain).not.toHaveBeenCalled();
+  });
+});
+
+describe("useUserToken — issuance and credential lifecycle", () => {
+  // Client contract/lifecycle tests only; these do not establish live token issuance.
+  let scope: ReturnType<typeof effectScope>;
+  let expectedBackend: ReturnType<typeof ref<string>>;
+  let state: ReturnType<typeof useUserToken>;
+  const issued = () => ({ data: { token: "test-only-token", expirationTime: Date.now() + 60_000 } });
+
+  beforeEach(() => {
+    harness.api.mockReset();
+    sessionBackend.value = "https://example.hotwax.io/moqui/rest/s1/";
+    profile.value = { username: "test-user" };
+    expectedBackend = ref("https://example.hotwax.io/moqui/rest/s1/");
+    scope = effectScope();
+    state = scope.run(() => useUserToken(() => expectedBackend.value))!;
+  });
+  afterEach(() => scope.stop());
+
+  it("accepts a purpose and expiry supplied by a consumer other than MCP", async () => {
+    harness.api.mockResolvedValueOnce(issued());
+    await state.generate({ purpose: "Reporting", expireDays: 14 });
+    expect(harness.api).toHaveBeenCalledWith(expect.objectContaining({
+      data: { username: "test-user", purpose: "Reporting", expireDays: 14 },
+    }));
+    expect(state.token.value).toBe("test-only-token");
+  });
+
+  it.each([
+    { purpose: " ", expireDays: 30 },
+    { purpose: "MCP", expireDays: -1 },
+    { purpose: "MCP", expireDays: 1.5 },
+    { purpose: "MCP", expireDays: NaN },
+    { purpose: "MCP", expireDays: Infinity },
+  ])("rejects invalid token options without making a request: %o", async (options) => {
+    await state.generate(options);
+    expect(harness.api).not.toHaveBeenCalled();
+    expect(state.error.value).toContain("positive whole number");
+  });
+
+  it.each([
+    "", "http://example.com/rest/s1/", "https://user:secret@example.com/rest/s1/",
+    "https://example.com/rest/s1/?token=secret", "https://example.com/rest/s1/#secret",
+    "https://example.com/mcp/json",
+  ])("rejects an invalid authenticated backend without making a request: %s", async (backend) => {
+    sessionBackend.value = backend;
+    expectedBackend.value = backend;
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(harness.api).not.toHaveBeenCalled();
+    expect(state.error.value).toContain("signed-in OMS instance");
+  });
+
+  it("clears a displayed token when the authenticated backend changes", async () => {
+    harness.api.mockResolvedValueOnce(issued());
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    sessionBackend.value = "https://another.example.com/rest/s1/";
+    expect(state.token.value).toBe("");
+    expect(state.expirationTime.value).toBeUndefined();
+  });
+
+  it("keeps generated credentials local to each consumer", async () => {
+    const otherScope = effectScope();
+    try {
+      const other = otherScope.run(() => useUserToken(() => expectedBackend.value))!;
+      harness.api.mockResolvedValueOnce(issued());
+      await state.generate({ purpose: "MCP", expireDays: 30 });
+      expect(other.token.value).toBe("");
+      other.clear();
+      expect(state.token.value).toBe("test-only-token");
+    } finally {
+      otherScope.stop();
+    }
+  });
+
+  it.each([7, 90, 180, 365])("uses the signed-in account and context root with a %i-day expiry", async (expireDays) => {
+    harness.api.mockResolvedValueOnce(issued());
+    await state.generate({ purpose: "MCP", expireDays });
+    expect(harness.api).toHaveBeenCalledWith({
+      baseURL: "https://example.hotwax.io/moqui/rest/s1/",
+      url: "admin/user/jwtToken",
+      method: "post",
+      data: { username: "test-user", purpose: "MCP", expireDays },
+    });
+    expect(state.token.value).toBe("test-only-token");
+    expect(state.expirationTime.value).toBeGreaterThan(Date.now());
+    expect(state.pending.value).toBe(false);
+  });
+
+  it("never sends an authenticated request to the backend that differs from the signed-in instance", async () => {
+    expectedBackend.value = "https://another.example.com/rest/s1/";
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(harness.api).not.toHaveBeenCalled();
+    expect(state.error.value).toContain("signed-in OMS instance");
+  });
+
+  it("requires a loaded user and positive integer expiry before issuing a request", async () => {
+    profile.value = { username: "" };
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    profile.value = { username: "test-user" };
+    await state.generate({ purpose: "MCP", expireDays: 0 });
+    expect(harness.api).not.toHaveBeenCalled();
+    expect(state.error.value).toContain("positive whole number");
+  });
+
+  it("blocks duplicate requests while pending and while a generated token is displayed", async () => {
+    let complete!: (value: ReturnType<typeof issued>) => void;
+    harness.api.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const request = state.generate({ purpose: "MCP", expireDays: 30 });
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(state.pending.value).toBe(true);
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    complete(issued());
+    await request;
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(harness.api).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["leave", "logout", "user change", "instance change", "dispose"])("clears credentials and discards pending responses on %s", async (event) => {
+    const invalidate = () => {
+      if (event === "leave") state.clear();
+      if (event === "logout") clearSessionScopedState();
+      if (event === "user change") profile.value = { username: "another-user" };
+      if (event === "instance change") expectedBackend.value = "https://another.example.com/rest/s1/";
+      if (event === "dispose") scope.stop();
+    };
+    let complete!: (value: ReturnType<typeof issued>) => void;
+    harness.api.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const request = state.generate({ purpose: "MCP", expireDays: 30 });
+    invalidate();
+    complete(issued());
+    await request;
+    expect(state.token.value).toBe("");
+    expect(state.expirationTime.value).toBeUndefined();
+    expect(state.pending.value).toBe(false);
+  });
+
+  it("clears an already displayed credential on logout", async () => {
+    harness.api.mockResolvedValueOnce(issued());
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    clearSessionScopedState();
+    expect(state.token.value).toBe("");
+    expect(state.expirationTime.value).toBeUndefined();
+  });
+
+  it("discards a response if the authenticated backend changed while awaiting it", async () => {
+    let complete!: (value: ReturnType<typeof issued>) => void;
+    harness.api.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const request = state.generate({ purpose: "MCP", expireDays: 30 });
+    sessionBackend.value = "https://another.example.com/rest/s1/";
+    complete(issued());
+    await request;
+    expect(state.token.value).toBe("");
+  });
+
+  it.each([
+    { data: { errorCode: 403, errors: "server-internal-data" } },
+    { data: { token: "test-only-token", expirationTime: 0 } },
+    { data: {} },
+  ])("does not display unusable or failed responses", async (response) => {
+    harness.api.mockResolvedValueOnce(response);
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(state.token.value).toBe("");
+    expect(state.error.value).not.toBe("");
+    expect(state.error.value).not.toContain("server-internal-data");
+  });
+
+  it.each([404, 405])("explains that an absent REST route (%i) needs a backend update without retrying via RPC", async (status) => {
+    harness.api.mockRejectedValueOnce({ response: { status } });
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(state.error.value).toContain("backend update");
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(state.token.value).toBe("");
+  });
+
+  it("reports permission failures without exposing transport error details or retrying", async () => {
+    harness.api.mockRejectedValueOnce({ response: { status: 403, data: { message: "server-internal-data" } } });
+    await state.generate({ purpose: "MCP", expireDays: 30 });
+    expect(state.error.value).toContain("through Company");
+    expect(state.error.value).not.toContain("server-internal-data");
+    expect(state.pending.value).toBe(false);
+    expect(harness.api).toHaveBeenCalledTimes(1);
   });
 });

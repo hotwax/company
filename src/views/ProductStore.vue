@@ -53,24 +53,25 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonPage, IonMenuButton, IonSkeletonText, IonTitle, IonToolbar } from "@ionic/vue";
+import { translate } from "@common";
+import { IonButton, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonMenuButton, IonPage, IonSkeletonText, IonTitle, IonToolbar } from "@ionic/vue";
 import { addOutline, copyOutline, openOutline, storefrontOutline } from "ionicons/icons";
-import { translate, commonUtil } from '@common';
-import router from "@/router";
-import { useAuth } from '@common/composables/useAuth'
+import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard";
 import { useProductStores } from "@/composables/useProductStores";
+import router from "@/router";
 
-const { isAuthenticated } = useAuth();
+const onboardingWizard = useProductStoreOnboardingWizard();
 
 // No store: the list (with its shipment-method counts folded in) comes from the cache.
 const { productStores, hydrated } = useProductStores();
 
 
-async function viewProductStoreDetails(productStoreId: string) {
+function viewProductStoreDetails(productStoreId: string) {
   router.push({ path: `/product-store-details/${productStoreId}` })
 }
 
 function createStore() {
+  onboardingWizard.startNewSetup()
   router.push("/product-store-onboarding")
 }
 
@@ -79,13 +80,7 @@ function cloneStoreSettings() {
 }
 
 function viewFacilities(productStoreId: string) {
-  // Pass OMS + auth context so the external Facilities app lands in the right
-  // authenticated instance (parity with the pre-migration deep link).
-  const oms = commonUtil.getMaargURL()
-  const token = commonUtil.getToken()
-  const expirationTime = commonUtil.getTokenExpiration()
-  const facilitiesListUrl = `${import.meta.env.VITE_FACILITIES_LOGIN_URL}?oms=${oms}&token=${token}&expirationTime=${expirationTime}&productStoreId=${productStoreId}`
-  window.open(facilitiesListUrl, "_blank")
+  router.push(`/facilities/find?productStoreId=${productStoreId}`)
 }
 </script>
 

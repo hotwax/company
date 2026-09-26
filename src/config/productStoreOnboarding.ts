@@ -1,14 +1,26 @@
-export type ProductStoreOnboardingStepGroup = "setup" | "workflows" | "review"
-export type ProductStoreOnboardingCapability = "preview" | "existing-api" | "backend-gap"
+export type ProductStoreOnboardingStepGroup = "setup" | "review"
+
+export type ProductStoreOnboardingStepId =
+  | "name" |
+  "shopify" |
+  "products" |
+  "facilities" |
+  "locations" |
+  "inventory" |
+  "orders" |
+  "readiness"
+
+export type ProductStoreOnboardingStepStatus =
+  | "not-started" |
+  "in-progress" |
+  "complete" |
+  "attention"
 
 export interface ProductStoreOnboardingStep {
-  id: string
+  id: ProductStoreOnboardingStepId
   group: ProductStoreOnboardingStepGroup
   label: string
   summary: string
-  capability: ProductStoreOnboardingCapability
-  questions: string[]
-  outputs: string[]
 }
 
 export interface ProductStoreOnboardingGroup {
@@ -18,7 +30,6 @@ export interface ProductStoreOnboardingGroup {
 
 export const PRODUCT_STORE_ONBOARDING_GROUPS: ProductStoreOnboardingGroup[] = [
   { id: "setup", label: "Setup" },
-  { id: "workflows", label: "Workflows" },
   { id: "review", label: "Review" }
 ]
 
@@ -26,172 +37,59 @@ export const PRODUCT_STORE_ONBOARDING_STEPS: ProductStoreOnboardingStep[] = [
   {
     id: "name",
     group: "setup",
-    label: "Name",
-    summary: "Create the ProductStore identity that every later setup area depends on.",
-    capability: "existing-api",
-    questions: [
-      "What is the retail brand or storefront name?",
-      "Which ID should HotWax use for this Product Store?",
-      "Which currency, locale, and timezone should this store use?"
-    ],
-    outputs: ["ProductStore", "Organization link", "Currency and locale defaults"]
-  },
-  {
-    id: "general",
-    group: "setup",
-    label: "General",
-    summary: "Capture the operating defaults that should exist before solution-specific setup starts.",
-    capability: "existing-api",
-    questions: [
-      "Should imported orders auto-approve?",
-      "What sales order prefix should this store use?",
-      "Should billing information be saved on imported orders?"
-    ],
-    outputs: ["Order number prefix", "Approval policy", "Billing preference"]
+    label: "Store",
+    summary: "Create the Product Store and save its operating defaults."
   },
   {
     id: "shopify",
     group: "setup",
     label: "Shopify",
-    summary: "Connect or reserve the Shopify shop that will feed products, orders, inventory, and locations.",
-    capability: "existing-api",
-    questions: [
-      "Is this Product Store connected to an existing Shopify shop?",
-      "Which myshopify domain should this setup use?",
-      "Should the user install the HotWax Shopify app now or later?"
-    ],
-    outputs: ["ShopifyShop", "SystemMessageRemote", "Shopify app install token"]
+    summary: "Associate an existing Shopify shop with this Product Store."
   },
   {
     id: "products",
     group: "setup",
     label: "Products",
-    summary: "Choose the product identifier and import direction before inventory or order sync is enabled.",
-    capability: "existing-api",
-    questions: [
-      "What identifier matches Shopify and HotWax products most reliably?",
-      "Should products import from Shopify, ERP, or an existing catalog?",
-      "Are variants identified by SKU, UPC, barcode, or Shopify variant ID?"
-    ],
-    outputs: ["Product identifier", "Identifier preference", "Product import readiness"]
+    summary: "Choose product identifiers and load the catalog."
   },
   {
     id: "facilities",
     group: "setup",
     label: "Facilities",
-    summary: "Create or import the physical places that can hold, ship, receive, or stage inventory.",
-    capability: "existing-api",
-    questions: [
-      "How many stores, warehouses, hubs, and pickup locations are in scope?",
-      "Should a one-store retailer start with an automatic facility?",
-      "Which facilities should be associated with this Product Store?"
-    ],
-    outputs: ["Facilities", "Facility groups", "ProductStoreFacility associations"]
+    summary: "Create or import facilities for this Product Store."
   },
   {
     id: "locations",
     group: "setup",
     label: "Location mapping",
-    summary: "Map Shopify inventory locations to HotWax facilities before inventory and fulfillment sync starts.",
-    capability: "existing-api",
-    questions: [
-      "Which Shopify location maps to each HotWax facility?",
-      "Are any Shopify locations fulfillment-service locations instead of stores?",
-      "Which mapped locations should be allowed to fulfill, receive, or offer pickup?"
-    ],
-    outputs: ["ShopifyShopLocation", "Facility mapping audit", "Inventory location readiness"]
+    summary: "Map Shopify locations to HotWax facilities."
   },
   {
     id: "inventory",
     group: "setup",
     label: "Inventory",
-    summary: "Decide the source of truth and first load path before fulfillment workflows are turned on.",
-    capability: "existing-api",
-    questions: [
-      "Which system owns available inventory?",
-      "Should HotWax reserve inventory for online orders?",
-      "Should initial QOH load from Shopify, ERP, WMS, or a file?"
-    ],
-    outputs: ["Reservation policy", "Inventory count visibility", "Preorder inventory pool"]
+    summary: "Save inventory preferences and load initial inventory."
   },
   {
     id: "orders",
     group: "setup",
     label: "Orders",
-    summary: "Prepare order import, order updates, and realtime Shopify order flow before activation.",
-    capability: "existing-api",
-    questions: [
-      "Should orders import in realtime, scheduled batches, or both?",
-      "Which tags or order types should be included?",
-      "Should fallback order sync jobs be active?"
-    ],
-    outputs: ["Order import jobs", "Webhook/SQS readiness", "Fallback sync jobs"]
-  },
-  {
-    id: "routing",
-    group: "workflows",
-    label: "Order routing and fulfillment",
-    summary: "Decide whether HotWax should broker, split, reserve, and route online orders.",
-    capability: "existing-api",
-    questions: [
-      "Which locations can fulfill online orders?",
-      "Can orders split across locations?",
-      "What should happen when a facility rejects an order?"
-    ],
-    outputs: ["Brokering policy", "Split policy", "Fulfillment notifications", "Cancellation threshold"]
-  },
-  {
-    id: "pickup",
-    group: "workflows",
-    label: "In store pickup",
-    summary: "Model pickup promises, pickup facility mapping, and customer-facing pickup changes.",
-    capability: "existing-api",
-    questions: [
-      "Which stores allow pickup?",
-      "How should pickup orders be identified?",
-      "Can customers change pickup location before fulfillment?"
-    ],
-    outputs: ["BOPIS rejection policy", "Customer edit permissions", "Reroute shipment method"]
-  },
-  {
-    id: "storeInventory",
-    group: "workflows",
-    label: "Store inventory management",
-    summary: "Prepare counts, receiving, transfer receiving, adjustments, and scanner expectations.",
-    capability: "preview",
-    questions: [
-      "Which store inventory workflows are in scope?",
-      "What do store teams scan?",
-      "Who can approve adjustments and discrepancies?"
-    ],
-    outputs: ["Inventory app role package", "Barcode preference", "Receiving/count setup task"]
-  },
-  {
-    id: "preorders",
-    group: "workflows",
-    label: "Pre-orders",
-    summary: "Capture preorder eligibility, inventory pools, release behavior, and routing groups.",
-    capability: "preview",
-    questions: [
-      "How are preorder products identified?",
-      "Where should preorder inventory live?",
-      "Should preorder orders split from in-stock items?"
-    ],
-    outputs: ["Preorder setup task", "Preorder facility group", "Release routing task"]
+    summary: "Save the order import window and load order history."
   },
   {
     id: "readiness",
     group: "review",
     label: "Readiness review",
-    summary: "Review complete, skipped, and blocked setup areas before the retailer starts using the Product Store.",
-    capability: "existing-api",
-    questions: [
-      "Which setup areas are ready for a cold-start Shopify retailer?",
-      "Which areas are blocked by backend gaps, missing data, or skipped choices?",
-      "What should the user do next before running imports and enabling operations?"
-    ],
-    outputs: ["Setup readiness", "Blocked tasks", "Next actions"]
+    summary: "Review the setup outcomes before using the Product Store."
   }
 ]
 
-export const PRODUCT_STORE_ONBOARDING_STEP_IDS = PRODUCT_STORE_ONBOARDING_STEPS.map((step) => step.id)
+export const PRODUCT_STORE_ONBOARDING_STEP_IDS: ProductStoreOnboardingStepId[] =
+  PRODUCT_STORE_ONBOARDING_STEPS.map((step) => step.id)
+
+export const PRODUCT_STORE_ONBOARDING_SETUP_STEP_IDS: ProductStoreOnboardingStepId[] =
+  PRODUCT_STORE_ONBOARDING_STEP_IDS.filter((stepId) => stepId !== "readiness")
+
+export function isProductStoreOnboardingStepId(value: unknown): value is ProductStoreOnboardingStepId {
+  return typeof value === "string" && PRODUCT_STORE_ONBOARDING_STEP_IDS.includes(value as ProductStoreOnboardingStepId)
+}
