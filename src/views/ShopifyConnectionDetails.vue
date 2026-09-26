@@ -1414,9 +1414,9 @@ async function refresh(isAutoFetch = false) {
     }
   } catch (error: any) {
     logger.error('refreshAccessScopes', error);
-    if(!isAutoFetch) {
-      commonUtil.showToast(translate('Failed to refresh access scopes'));
-    }
+    // Report a failure either way: opening the modal is a user action too, and an empty list alone
+    // reads as "no scopes granted" rather than "could not reach Shopify".
+    commonUtil.showToast(translate('Failed to refresh access scopes'));
   } finally {
     isFetchingScopes.value = false;
     if(!isAutoFetch) {emitter.emit('dismissLoader');}
