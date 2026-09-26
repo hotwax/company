@@ -151,10 +151,10 @@ async function saveMapping(salesChannelEnumId: string) {
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopMutations.retireTypeMapping({
-        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-        mappedKey: oldMappedKey
-      }, { refresh: false });
+      const resp = await shopMutations.deleteTypeMapping({ mappedKey: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
 
     if (newMappedKey) {
@@ -181,27 +181,27 @@ async function saveMapping(salesChannelEnumId: string) {
 
 async function saveAllDirtyMappings() {
   emitter.emit("presentLoader");
-  const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== getShopifyMappingId(id));
+  const changes = Object.keys(localMappings.value)
+    .map(id => ({ id, newMappedKey: (localMappings.value[id] || "").trim(), oldMappedKey: getShopifyMappingId(id) }))
+    .filter(({ newMappedKey, oldMappedKey }) => newMappedKey !== oldMappedKey);
 
   try {
-    await Promise.all(dirtyIds.map(async (id) => {
-      const oldMappedKey = getShopifyMappingId(id);
-      if (oldMappedKey) {
-        await shopMutations.retireTypeMapping({
-          mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-          mappedKey: oldMappedKey
-        }, { refresh: false });
+    // Every delete lands before any save, so swapping keys between two rows cannot delete a key a save just wrote.
+    await Promise.all(changes.filter(({ oldMappedKey }) => oldMappedKey).map(async ({ oldMappedKey }) => {
+      const resp = await shopMutations.deleteTypeMapping({ mappedKey: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
       }
     }));
 
-    await Promise.all(dirtyIds.map(async (id) => {
-      const newMappedKey = localMappings.value[id];
-      if (newMappedKey) {
-        await shopMutations.saveTypeMapping({
-          mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-          mappedKey: newMappedKey,
-          mappedValue: id
-        }, { refresh: false });
+    await Promise.all(changes.filter(({ newMappedKey }) => newMappedKey).map(async ({ id, newMappedKey }) => {
+      const resp = await shopMutations.saveTypeMapping({
+        mappedTypeId: "SHOPIFY_ORDER_SOURCE",
+        mappedKey: newMappedKey,
+        mappedValue: id
+      }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
       }
     }));
 

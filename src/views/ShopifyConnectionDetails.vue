@@ -1168,8 +1168,7 @@ async function cloneTypeMappings(mappedTypeId: string) {
   // 2. Delete existing mappings in target
   if (targetMappings.length > 0) {
     const deletePromises = targetMappings.map((mapping: any) =>
-      useShopifyShopMutations(targetShopId).retireTypeMapping({
-        mappedTypeId,
+      useShopifyShopMutations(targetShopId).deleteTypeMapping({
         mappedKey: mapping.mappedKey
       }, { refresh: false })
     );

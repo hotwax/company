@@ -201,10 +201,9 @@ async function saveMapping(facilityId: string) {
 
   emitter.emit("presentLoader");
   try {
-    const resp = await shopMutations.saveLocation({
-      facilityId,
-      shopifyLocationId
-    }, { refresh: false });
+    const resp = shopifyLocationId
+      ? await shopMutations.saveLocation({ facilityId, shopifyLocationId }, { refresh: false })
+      : await shopMutations.deleteLocation({ facilityId }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
@@ -222,15 +221,17 @@ async function saveMapping(facilityId: string) {
 
 async function saveAllDirtyMappings() {
   emitter.emit("presentLoader");
-  const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== (getShopifyLocationId(id) || ""));
+  const dirtyIds = Object.keys(localMappings.value).filter(id => (localMappings.value[id] || "").trim() !== (getShopifyLocationId(id) || ""));
 
   try {
     for (const id of dirtyIds) {
       const shopifyLocationId = (localMappings.value[id] || "").trim();
-      await shopMutations.saveLocation({
-        facilityId: id,
-        shopifyLocationId
-      }, { refresh: false });
+      const resp = shopifyLocationId
+        ? await shopMutations.saveLocation({ facilityId: id, shopifyLocationId }, { refresh: false })
+        : await shopMutations.deleteLocation({ facilityId: id }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
     await shopMutations.refreshLocations();
     commonUtil.showToast(translate("All mappings saved successfully"));

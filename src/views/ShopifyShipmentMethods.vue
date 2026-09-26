@@ -278,28 +278,41 @@ async function editItem(carrierPartyId: string, shipmentMethodTypeId: string) {
 
 async function saveMapping(shipmentMethodTypeId: string) {
   const key = `${selectedCarrierPartyId.value}_${shipmentMethodTypeId}`;
-  const newMappedKey = (localMappings.value[key]?.shopifyShippingMethod || "").trim();
-  const oldMappedKey = getShopifyMapping(shipmentMethodTypeId);
+  const mapping = localMappings.value[key];
+  const newMappedKey = (mapping.shopifyShippingMethod || "").trim();
+  const oldMappedKey = getShopifyMapping(shipmentMethodTypeId)?.shopifyShippingMethod || "";
+  mapping.shopifyShippingMethod = newMappedKey;
 
-  if (!newMappedKey && !oldMappedKey) {
+  if(newMappedKey === oldMappedKey) {
     editingItemKey.value = "";
     return;
   }
 
   emitter.emit("presentLoader");
   try {
-    const resp = await shopMutations.saveCarrierShipment({
-      shipmentMethodTypeId,
-      shopifyShippingMethod: newMappedKey
-    }, { refresh: false });
-
-    if (!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopMutations.refreshCarrierShipments();
-      editingItemKey.value = "";
-    } else {
-      throw resp.data;
+    // The PK is (shopId, shopifyShippingMethod) and the POST is `create`, so a rename or a clear
+    // deletes the old name rather than updating its row.
+    if(oldMappedKey) {
+      const resp = await shopMutations.deleteCarrierShipment({ shopifyShippingMethod: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
+
+    if(newMappedKey) {
+      const resp = await shopMutations.saveCarrierShipment({
+        shipmentMethodTypeId,
+        shopifyShippingMethod: newMappedKey,
+        carrierPartyId: mapping.carrierPartyId
+      }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
+    }
+
+    commonUtil.showToast(translate("Mapping updated successfully"));
+    await shopMutations.refreshCarrierShipments();
+    editingItemKey.value = "";
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update mapping"));
@@ -309,23 +322,35 @@ async function saveMapping(shipmentMethodTypeId: string) {
 
 async function saveAllDirtyMappings() {
   emitter.emit("presentLoader");
-  const dirtyKeys = Object.keys(localMappings.value).filter(key => {
-    const local = localMappings.value[key];
-    const original = shopifyShopsCarrierShipments.value[key];
-    const originalShopifyName = original ? original.shopifyShippingMethod : "";
-    return local.shopifyShippingMethod !== originalShopifyName;
-  });
+  const changes = Object.keys(localMappings.value)
+    .map(key => ({
+      mapping: localMappings.value[key],
+      newMappedKey: (localMappings.value[key].shopifyShippingMethod || "").trim(),
+      oldMappedKey: shopifyShopsCarrierShipments.value[key]?.shopifyShippingMethod || ""
+    }))
+    .filter(({ newMappedKey, oldMappedKey }) => newMappedKey !== oldMappedKey);
 
   try {
-    await Promise.all(dirtyKeys.map(async (key) => {
-      const mapping = localMappings.value[key];
-      const newMappedKey = (mapping.shopifyShippingMethod || "").trim();
-      
-      await shopMutations.saveCarrierShipment({
-        shipmentMethodTypeId: mapping.shipmentMethodTypeId,
-        shopifyShippingMethod: newMappedKey
-      }, { refresh: false });
+    // Every delete lands before any create, so moving a name from one method to another cannot collide
+    // with the name's own row.
+    await Promise.all(changes.filter(({ oldMappedKey }) => oldMappedKey).map(async ({ oldMappedKey }) => {
+      const resp = await shopMutations.deleteCarrierShipment({ shopifyShippingMethod: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }));
+
+    await Promise.all(changes.filter(({ newMappedKey }) => newMappedKey).map(async ({ mapping, newMappedKey }) => {
+      const resp = await shopMutations.saveCarrierShipment({
+        shipmentMethodTypeId: mapping.shipmentMethodTypeId,
+        shopifyShippingMethod: newMappedKey,
+        carrierPartyId: mapping.carrierPartyId
+      }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
+    }));
+    changes.forEach(({ mapping, newMappedKey }) => { mapping.shopifyShippingMethod = newMappedKey; });
     await shopMutations.refreshCarrierShipments();
     commonUtil.showToast(translate("All mappings saved successfully"));
   } catch (error) {

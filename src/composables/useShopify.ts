@@ -1027,6 +1027,19 @@ export function useShopifyShopMutations(shopId: string) {
   const refreshLocations = () => refreshAfterMutation("shopifyLocation", { shopId });
   const refreshCarrierShipments = () => refreshAfterMutation("shopifyCarrierShipment", { shopId });
 
+  /**
+   * DELETE one mapping row by its full PK. Moqui's entity-auto delete reads a PK value of `*` as a
+   * wildcard and deletes every matching row, so a key of `*` would wipe the shop's whole table —
+   * refuse it, and an empty key, before the request goes out.
+   */
+  const deleteMapping = async (url: string, pk: Record<string, string>, refresh: () => Promise<unknown>, options?: WriteOptions) => {
+    if(Object.values(pk).some((value) => !value || value === "*")) {throw new Error(`Refusing to delete ${url} without an exact key`);}
+    const resp: any = await api({ url, method: "delete", data: { ...pk, shopId } });
+    if(!commonUtil.hasError(resp) && wants(options)) {await refresh();}
+
+    return resp;
+  };
+
   return {
     refreshTypeMappings,
     refreshLocations,
@@ -1046,7 +1059,7 @@ export function useShopifyShopMutations(shopId: string) {
     /**
      * Upsert a type mapping. The endpoint is `store`, and the entity PK is
      * (shopId, mappedKey) — so re-saving the same key overwrites its value, while a NEW key inserts
-     * a new row and leaves the old key behind (see `removeTypeMapping`).
+     * a new row and leaves the old key behind (see `deleteTypeMapping`).
      */
     async saveTypeMapping(
       payload: { mappedTypeId: string; mappedKey: string; mappedValue?: string },
@@ -1063,29 +1076,15 @@ export function useShopifyShopMutations(shopId: string) {
     },
 
     /**
-     * Retire a mapping key by CLEARING its value — the alternate to a delete route that does not
-     * exist.
+     * Delete a mapping key. The PK is (shopId, mappedKey), so this is how a RENAME drops its old key
+     * and how clearing an input unmaps a row.
      *
-     * `oms.rest.xml` defines `shopifyShops/typeMappings` with `get` and `post` only; there are zero
-     * delete methods anywhere under `oms/shopifyShops`, and `DELETE` answers 405. Path-scoped and
-     * `admin/`-prefixed variants 404 (probed live 2026-07-27). This used to issue that DELETE, which
-     * meant every RENAME of an existing mapping died on the 405 before its replacement `POST` ran —
-     * the edit wrote nothing at all, and the sales-channel screen showed no error while doing it.
-     *
-     * The endpoint is `store` and the PK is (shopId, mappedKey), so re-posting the old key with an
-     * empty `mappedValue` unmaps it in place: the row survives as a key with no value, which is
-     * exactly what the reader treats as unmapped (`keyByValue` skips value-less rows). Verified
-     * live: the read-back row keeps `mappedKey` and no longer carries `mappedValue`.
+     * `DELETE oms/shopifyShops/typeMappings` exists from oms v3.1.0. Before that it answered 405 and
+     * clearing re-posted the key with an empty `mappedValue`, so databases still hold value-less rows
+     * from that workaround — which is why every reader keeps skipping them.
      */
-    async retireTypeMapping(payload: { mappedTypeId: string; mappedKey: string }, options?: WriteOptions) {
-      const resp: any = await api({
-        url: "oms/shopifyShops/typeMappings",
-        method: "post",
-        data: { ...payload, shopId, mappedValue: "" },
-      });
-      if(!commonUtil.hasError(resp) && wants(options)) {await refreshTypeMappings();}
-
-      return resp;
+    deleteTypeMapping(payload: { mappedKey: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/typeMappings", { mappedKey: payload.mappedKey }, refreshTypeMappings, options);
     },
 
     async saveCarrierShipment(payload: Record<string, any>, options?: WriteOptions) {
@@ -1099,6 +1098,15 @@ export function useShopifyShopMutations(shopId: string) {
       return resp;
     },
 
+    /**
+     * Delete a carrier-shipment mapping. The PK is (shopId, shopifyShippingMethod) and the POST is
+     * `create`, so neither a rename nor a clear can update the row in place: both delete it. Posting an
+     * empty name instead makes Moqui generate a sequenced key and insert a junk row.
+     */
+    deleteCarrierShipment(payload: { shopifyShippingMethod: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/carrierShipments", { shopifyShippingMethod: payload.shopifyShippingMethod }, refreshCarrierShipments, options);
+    },
+
     /** Upsert a location↔facility mapping (`ShopifyShopLocation` `store`). */
     async saveLocation(payload: Record<string, any>, options?: WriteOptions) {
       const resp: any = await api({
@@ -1109,6 +1117,11 @@ export function useShopifyShopMutations(shopId: string) {
       if(!commonUtil.hasError(resp) && wants(options)) {await refreshLocations();}
 
       return resp;
+    },
+
+    /** Unmap a facility from this shop — deletes its `ShopifyShopLocation` row, PK (shopId, facilityId). */
+    deleteLocation(payload: { facilityId: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/locations", { facilityId: payload.facilityId }, refreshLocations, options);
     },
   };
 }
@@ -2303,9 +2316,9 @@ export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
   const forShop = (rows: any[]) => rows.filter((row: any) => String(row.shopId) === shopId.value);
 
   /**
-   * A row with no `mappedValue` is a RETIRED key, not a mapping — retiring is a value-clearing write
-   * because the endpoint has no delete (see `retireTypeMapping`). Counting those rows would report a
-   * family as ready after its only mapping was cleared.
+   * A row with no `mappedValue` is a RETIRED key, not a mapping — left by the value-clearing write that
+   * stood in for a delete before oms v3.1.0 (see `deleteTypeMapping`). Counting those rows would report
+   * a family as ready after its only mapping was cleared.
    */
   const isMapped = (row: any) => Boolean(row?.mappedValue);
   const salesChannelMappings = computed(() =>
@@ -3357,7 +3370,7 @@ function readinessCount(value: readonly unknown[] | number | boolean | undefined
 
 export function deriveOrderSyncMappingReadiness(input: OrderSyncMappingInput): OrderSyncMappingReadiness {
   const typeMappings = selectedShopRecords(input.typeMappings || [], input.selectedShopId);
-  // A value-less row is a retired key, not a mapping — see `retireTypeMapping`.
+  // A value-less row is a retired key, not a mapping — see `deleteTypeMapping`.
   const mappedRowsOfType = (mappedTypeId: string) => typeMappings.filter((record) =>
     firstText(record, ["mappedTypeId", "mappingTypeId"]) === mappedTypeId && Boolean(firstText(record, ["mappedValue"])));
   const salesCount = input.salesChannelMappings === undefined
