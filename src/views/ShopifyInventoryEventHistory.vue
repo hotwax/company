@@ -268,7 +268,7 @@ const syncContext = useShopifySyncContext(() => props.id);
 const { failingDomains, manualRefreshing, syncNow } = useInventorySyncArea();
 const {
   events, hydrated, liveUpdates, loadedAt, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
-} = useInventoryEvents(props.id, props.kind);
+} = useInventoryEvents(() => props.id, props.kind);
 
 /** This page's own ledger first: its failure is the one that explains an empty or stale list. */
 const SYNC_PRIORITY = [`${props.kind}Rows`, `${props.kind}Messages`, "systemMessages", "products"]

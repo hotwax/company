@@ -1,5 +1,5 @@
 import { translate } from "@common";
-import { computed } from "vue";
+import { type MaybeRefOrGetter, computed, toValue } from "vue";
 import { useCachedList } from "@/composables/useCachedList";
 import { useStatuses } from "@/composables/useSeed";
 import { type InventoryEventSourceLookup, useInventoryEventSources } from "@/composables/useShopify";
@@ -82,14 +82,15 @@ function deliveryLabelOf(event: Pick<InventoryEvent, "delivery">, statusLabel: (
   return statusLabel(event.delivery.statusId) || translate("Batched");
 }
 
-export function useInventoryEvents(shopId: string, kind: InventoryEventKind) {
-  const scope = { field: "shopId", value: String(shopId ?? "") };
-  const { rows: ledgerRows, hydrated } = useCachedList(LEDGER_CACHES[kind], { scope, dateField: "createdDate" });
+/** `shopId` is reactive so a reused view follows its route from one shop to another. */
+export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: InventoryEventKind) {
+  const scoped = () => ({ scope: { field: "shopId", value: String(toValue(shopId) ?? "") } });
+  const { rows: ledgerRows, hydrated } = useCachedList(LEDGER_CACHES[kind], () => ({ ...scoped(), dateField: "createdDate" }));
   const { rows: messageRows } = useCachedList(systemMessageCache);
-  const { records: shopLocations } = useCachedList<any>(shopifyLocationCache, { scope });
+  const { records: shopLocations } = useCachedList<any>(shopifyLocationCache, scoped);
   const { records: facilities } = useCachedList<any>(facilityCache);
-  const { records: channels } = useCachedList<any>(inventoryChannelCache, { scope });
-  const { rows: inventoryItemRows } = useCachedList(shopifyInventoryItemCache, { scope });
+  const { records: channels } = useCachedList<any>(inventoryChannelCache, scoped);
+  const { rows: inventoryItemRows } = useCachedList(shopifyInventoryItemCache, scoped);
   const { labelFor: statusLabel } = useStatuses();
   const { sources, resolve: resolveSourceArtifacts, sourceKeyOf } = useInventoryEventSources();
 

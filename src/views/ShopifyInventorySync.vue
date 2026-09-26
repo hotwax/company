@@ -721,8 +721,8 @@ const {
  * Both inventory ledgers, through the one model the history pages read. The inventory sync area keeps
  * them polled for as long as the user is on any of this shop's inventory pages, so this page only reads.
  */
-const channelInventory = useInventoryEvents(String(props.id ?? ""), "channel");
-const locationInventory = useInventoryEvents(String(props.id ?? ""), "location");
+const channelInventory = useInventoryEvents(() => String(props.id ?? ""), "channel");
+const locationInventory = useInventoryEvents(() => String(props.id ?? ""), "location");
 const { failingDomains: inventoryAreaFailures } = useInventorySyncArea();
 
 function inventoryFor(kind: InventoryEventKind) {

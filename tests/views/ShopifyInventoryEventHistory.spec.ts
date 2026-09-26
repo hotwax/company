@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { type VueWrapper, flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, ref, toValue } from "vue";
 
 // Runs the REAL `useInventoryEvents` over cache-shaped rows: the ledger-to-row mapping is under test.
 
@@ -16,7 +16,7 @@ const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
 const routeQuery = ref<Record<string, string>>({});
 
-const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn() }));
+const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), ledgerOptions: undefined as any }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({ replace: harness.replace, push: vi.fn() }),
@@ -48,8 +48,9 @@ function asCachedRows(records: { value: any[] }, keyField?: string, keyOf?: (raw
 }
 
 vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (cache: any) => {
+  useCachedList: (cache: any, options?: any) => {
     const table = String(cache?.table ?? "");
+    if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
     const list = (records: { value: any[] }, hydrated = ref(true), keyField?: string, keyOf?: (raw: any) => string) =>
       ({ records, rows: asCachedRows(records, keyField, keyOf), hydrated });
     if(table === "shopifyInventoryAdjustmentDetails") {
@@ -213,6 +214,15 @@ describe("ShopifyInventoryEventHistory - one page, either ledger", () => {
     expect(rows(wrapper)).toHaveLength(1);
     expect(rows(wrapper)[0].text()).toContain("Waiting");
     expect(rows(wrapper)[0].text()).toContain("Not batched");
+  });
+
+  it("scopes the ledger to the shop in the route, following it when a reused view changes shop", async () => {
+    const wrapper = await mountHistory("location");
+    expect(toValue(harness.ledgerOptions).scope).toEqual({ field: "shopId", value: "100002" });
+
+    await wrapper.setProps({ id: "100051" });
+
+    expect(toValue(harness.ledgerOptions).scope).toEqual({ field: "shopId", value: "100051" });
   });
 
   it("labels a physical location by the facilities mapped to it, from the cache", async () => {

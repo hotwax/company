@@ -73,7 +73,8 @@
             {{ translate("Resend this batch") }}
             <p>{{ translate("Re-sends the same frozen payload and idempotency key, so Shopify cannot double-apply it") }}</p>
           </ion-label>
-          <ion-button slot="end" fill="outline" :disabled="resending" @click="resend()">
+          <!-- Once a resend is committed it is not offered again for this open, even if the refresh fails. -->
+          <ion-button slot="end" fill="outline" :disabled="resending || resentId === batch.id" @click="resend()">
             <ion-spinner v-if="resending" name="crescent" />
             <template v-else>
               <ion-icon slot="start" :icon="refreshOutline" />
@@ -130,6 +131,8 @@ import { useStatuses } from "@/composables/useSeed";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useInventorySyncArea } from "@/services/inventorySyncArea";
 import { formatDateTime } from "@/utils";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { translateMutationError } from "@/utils/errorPresentation";
 import type { InventoryEventBatch } from "@/utils/inventoryEvents";
 
 const props = defineProps<{ batch: InventoryEventBatch<InventoryEventRow> | null }>();
@@ -140,13 +143,14 @@ const emit = defineEmits<{
 }>();
 
 const { labelFor: statusLabel } = useStatuses();
-const { ensureSystemMessageById, ensureSystemMessageErrors, resendSystemMessage } = useSystemMessage();
+const { ensureSystemMessageById, ensureSystemMessageErrors, fetchSystemMessageErrors, resendSystemMessage } = useSystemMessage();
 const { afterMutation } = useInventorySyncArea();
 
 const content = ref();
 const errors = ref<any[]>([]);
 const loadingErrors = ref(false);
 const resending = ref(false);
+const resentId = ref("");
 const messageText = ref("");
 
 const targetLabel = computed(() => [...new Set(props.batch?.events.map((event) => event.locationLabel))].join(", "));
@@ -160,17 +164,22 @@ function resetScroll() {
   void content.value?.$el?.scrollToTop?.(0);
 }
 
+/** A settled batch's errors are final; one that can still be retried gains a new error per attempt. */
+function errorsOf(systemMessageId: string) {
+  return ["sent", "cancelled"].includes(props.batch?.delivery.id ?? "")
+    ? ensureSystemMessageErrors(systemMessageId)
+    : fetchSystemMessageErrors(systemMessageId).catch(() => ensureSystemMessageErrors(systemMessageId));
+}
+
 // Errors and payload are class C, fetched when a batch opens: the poller caches only in-flight messages.
 watch(() => props.batch?.id, async (systemMessageId) => {
   errors.value = [];
   messageText.value = "";
+  resentId.value = "";
   if(!systemMessageId) {return;}
   loadingErrors.value = true;
   try {
-    const [message, messageErrors] = await Promise.all([
-      ensureSystemMessageById(systemMessageId),
-      ensureSystemMessageErrors(systemMessageId),
-    ]);
+    const [message, messageErrors] = await Promise.all([ensureSystemMessageById(systemMessageId), errorsOf(systemMessageId)]);
     messageText.value = String(message?.messageText ?? "");
     errors.value = messageErrors ?? [];
   } catch (error) {
@@ -186,13 +195,18 @@ async function resend() {
   resending.value = true;
   try {
     await resendSystemMessage(systemMessageId);
+    resentId.value = systemMessageId;
     commonUtil.showToast(translate("Batch queued for another delivery attempt."));
-    // A failed retry appends a new SystemMessageError rather than replacing the old one.
-    await afterMutation("systemMessage", { systemMessageId });
-    errors.value = await ensureSystemMessageErrors(systemMessageId);
+    try {
+      await afterMutation("systemMessage", { systemMessageId });
+      // Fresh, not cache-first: a failed retry appends a new SystemMessageError.
+      errors.value = await fetchSystemMessageErrors(systemMessageId);
+    } catch (cause) {
+      throw new CacheReconciliationError("systemMessage", { systemMessageId }, cause);
+    }
   } catch (error: any) {
     logger.error("Failed to resend batch", systemMessageId, error);
-    commonUtil.showToast(translate("Could not resend this batch."));
+    commonUtil.showToast(translateMutationError(error, "Could not resend this batch."));
   } finally {
     resending.value = false;
   }
