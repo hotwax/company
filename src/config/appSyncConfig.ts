@@ -112,3 +112,22 @@ export const appSyncConfig: AppSyncConfig = {
 export function liveScopeFor(domain: string): LiveDomainScope {
   return appSyncConfig.live[domain] ?? {};
 }
+
+/**
+ * The inventory sync area's class-A domains, named once for both sides: the worker registers them
+ * (`src/workers/domains/inventoryEventDomains.ts`) and the area service activates them. Two pollers per
+ * ledger, one per update cursor on its read view.
+ */
+export const INVENTORY_EVENT_DOMAINS = {
+  channelRows: "shopifyInventoryAdjustmentDetail",
+  channelMessages: "shopifyInventoryAdjustmentDetailMessage",
+  locationRows: "shopifyLocationInventoryAdjustmentDetail",
+  locationMessages: "shopifyLocationInventoryAdjustmentDetailMessage",
+  systemMessages: "inventoryEventSystemMessage",
+  products: "inventoryEventProduct",
+} as const;
+
+/** Everything the area polls for one shop. */
+export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {
+  return Object.values(INVENTORY_EVENT_DOMAINS).map((name) => ({ name, args: { shopId } }));
+}

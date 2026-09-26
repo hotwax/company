@@ -11,32 +11,7 @@ vi.mock("@common", () => ({
     (appId === "transfers" && fastTravel.transfersBase ? `${fastTravel.transfersBase}${path}` : null),
 }));
 
-import * as locationInventory from "@/utils/shopifyLocationInventory";
 import * as transferSync from "@/utils/shopifyTransferSync";
-
-describe("location inventory summary", () => {
-  it("preserves the backend-authoritative no-op/quarantine total", () => {
-    expect(locationInventory.normalizeLocationInventorySummary("10000", {
-      backlogCount: 4,
-      oldestBacklogDate: "1787700000000",
-      errorLinkedCount: 2,
-      noOpOrQuarantinedCount: 7,
-    })).toEqual({
-      shopId: "10000",
-      backlogCount: 4,
-      oldestBacklogDate: "1787700000000",
-      errorLinkedCount: 2,
-      noOpOrQuarantinedCount: 7,
-    });
-  });
-
-  it("uses the backend-authoritative linked-error total even when only some detail rows are enriched", () => {
-    const deliveryErrorCount = (locationInventory as any).locationInventoryDeliveryErrorCount;
-
-    expect(deliveryErrorCount({ errorLinkedCount: 47 })).toBe(47);
-    expect(deliveryErrorCount(undefined)).toBeUndefined();
-  });
-});
 
 describe("Shopify transfer monitoring readiness", () => {
   it("does not declare a cold empty cache loaded before the view domain completes", () => {

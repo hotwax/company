@@ -82,8 +82,8 @@ class CompanyCacheDB extends Dexie {
   shopifyInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify per-location real-time inventory push ledger, scoped by shop. */
   shopifyLocationInventoryAdjustmentDetails!: Table<CachedRow, string>;
-  /** Backend-authoritative location inventory KPI totals, one row per shop. */
-  shopifyLocationInventorySummaries!: Table<CachedRow, string>;
+  /** Shopify's own product/variant for each inventory item the inventory ledgers name, scoped by shop. */
+  shopifyInventoryItems!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
@@ -180,18 +180,19 @@ const CACHE_SCHEMA = {
    */
   productUpdateHistories: "updateKey, shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
   /**
-   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
-   * inventory item at one channel. Mirrors the server entity, whose PK is
-   * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey`
-   * is the synthetic cache key for that. The type says what kind of source event a row came from
-   * and the reference says which occurrence of it — they replaced a single packed `eventKey`, and
-   * both are indexed because the history screen filters on type alone.
-   * No shopId/shopifyLocationId and no product columns: the channel is the target identity, so
-   * shop-scoped reads resolve the shop's channels through `inventoryChannels` first.
-   * `lastUpdatedStamp` moves when a pending detail is assigned/no-op/error.
+   * The two Shopify inventory ledgers, cached side by side and read through one model
+   * (`src/utils/inventoryEvents.ts`). Both are scoped by `shopId` — the aggregate view aliases it from
+   * the row's channel — and indexed identically, because the same poller runs over each:
+   *   - `[shopId+createdDate]` is the newest-first read the history renders;
+   *   - `[shopId+detailLastUpdatedStamp]` and `[shopId+systemMessageLastUpdatedStamp]` are the two
+   *     update cursors, one per poller: the row being claimed into a batch moves the first, that
+   *     batch's delivery status changing moves only the second.
+   *
+   * ShopifyInventoryAdjustmentDetail's PK is eventTypeId + eventReferenceId + inventoryChannelId +
+   * shopifyInventoryItemId, keyed here as `adjustmentKey`.
    */
   shopifyInventoryAdjustmentDetails:
-    "adjustmentKey, eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+    "adjustmentKey, shopId, inventoryChannelId, systemMessageId, createdDate, [shopId+createdDate], [shopId+detailLastUpdatedStamp], [shopId+systemMessageLastUpdatedStamp]",
   /**
    * ShopifyFulfillmentHistory — the "Synced" feed of the fulfillment sync screen. PK is composite
    * (Shopify's numeric fulfillmentId is only unique per shop) → synthetic `fulfillmentKey`.
@@ -208,13 +209,19 @@ const CACHE_SCHEMA = {
   // One row per shop, not an entity — see `shopifyFulfillmentHistorySupportProjection`.
   shopifyFulfillmentHistorySupport: "shopId, checkedAt",
   /**
-   * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time push ledger.
-   * PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey`
-   * is the synthetic cache key. Indexed by shopId directly (unlike the aggregate ledger, this row
-   * carries its shop identity natively rather than through a channel indirection).
+   * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location push ledger, indexed exactly as
+   * the aggregate one above. PK is eventTypeId + eventReferenceId + shopId + shopifyLocationId +
+   * shopifyInventoryItemId, keyed here as `locationAdjustmentKey`.
    */
   shopifyLocationInventoryAdjustmentDetails:
-    "locationAdjustmentKey, eventTypeId, eventReferenceId, shopId, shopifyLocationId, systemMessageId, createdDate, lastUpdatedStamp, [shopId+createdDate], [shopId+systemMessageId]",
+    "locationAdjustmentKey, shopId, systemMessageId, createdDate, [shopId+createdDate], [shopId+detailLastUpdatedStamp], [shopId+systemMessageLastUpdatedStamp]",
+  /**
+   * Shopify inventory items, class C: read from Shopify (`shopify/graphql`, `nodes`) for the inventory
+   * items the two ledgers name, never listed whole. One row per `shopId|shopifyInventoryItemId` (an
+   * inventory item id is only unique per shop) carrying its SKU, variant and product as Shopify has
+   * them, so a ledger row — which names an inventory item and no product — finds its product by key.
+   */
+  shopifyInventoryItems: "itemKey, shopId",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",
@@ -297,8 +304,7 @@ const CACHE_SCHEMA = {
   shopifyTransferPending:
     "pendingKey, segment, shopId, orderId, occurredAt, [shopId+segment], [shopId+segment+occurredAt]",
   // Boolean values are not valid IndexedDB keys, so needsAttention stays a projected Boolean but
-  // is deliberately not indexed. This one-row-per-shop summary supplies authoritative KPI totals.
-  shopifyLocationInventorySummaries: "shopId",
+  // is deliberately not indexed.
   // Bookkeeping, not domain data: per-domain sync markers + the cache identity stamp.
   syncMeta: "key",
 } as const;
@@ -382,6 +388,10 @@ export interface CachedEntity {
   count(scope?: { field: string; value: unknown }, equals?: Record<string, unknown>): Promise<number>;
   /** Remove one row by primary key (used after a delete mutation). */
   remove(key: string): Promise<void>;
+  /** Remove several rows by primary key in one write — retention pruning. */
+  removeMany(keys: string[]): Promise<void>;
+  /** Rows by primary key, in the order asked; `undefined` where none is cached. */
+  getMany(keys: string[]): Promise<Array<CachedRow | undefined>>;
   /** Live, reactive view of the table, newest `dateField` first when given. */
   live(options?: LiveQueryOptions): Observable<CachedRow[]>;
   /** All rows, one shot. */
@@ -456,7 +466,17 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
       }
 
       if(scope) {
-        // Scoped: walk the scoped rows (small by construction) and take the max.
+        // `[scope+date]` declared: the newest row of the partition is one index seek.
+        const path = `[${scope.field}+${dateField}]`;
+        if((table.schema.indexes ?? []).some((index: any) => normalizeIndexName(index?.name ?? "") === path)) {
+          const newest = await table
+            .where(path)
+            .between([scope.value, -Infinity], [scope.value, Infinity])
+            .last();
+
+          return newest?.[dateField] as number | undefined;
+        }
+        // Otherwise walk the scoped rows (small by construction) and take the max.
         const rows = await table.where(scope.field).equals(scope.value as any).toArray();
 
         return newestValue(rows, dateField);
@@ -525,6 +545,14 @@ export function defineCachedEntity(table: CacheTableName, projection: EntityProj
 
     async remove(key) {
       await dexieTable().delete(key);
+    },
+
+    async removeMany(keys) {
+      if(keys.length) {await dexieTable().bulkDelete(keys);}
+    },
+
+    getMany(keys) {
+      return keys.length ? dexieTable().bulkGet(keys) : Promise.resolve([]);
     },
 
     live(options: LiveQueryOptions = {}) {
@@ -752,8 +780,11 @@ const IDENTITY_KEY = "identity";
  *     caches key on it, so pre-release rows would linger forever resolving nothing.
  * 2 — `shopifyLocations` re-keyed from `shopId|shopifyLocationId` to its PK `shopId|facilityId`, so
  *     facilities sharing a Shopify location stop collapsing into one row.
+ * 3 — both inventory ledgers are cursored on `detailLastUpdatedStamp` / `systemMessageLastUpdatedStamp`
+ *     and scoped by `shopId`. A row cached before carries neither stamp, so its shop's cursor would sit
+ *     on whatever newer rows happen to have one and the older rows would never converge.
  */
-const CACHE_CONTRACT_VERSION = 2;
+const CACHE_CONTRACT_VERSION = 3;
 
 /** Has this domain already synced for the current login? */
 export async function hasSyncedThisLogin(domain: string): Promise<boolean> {

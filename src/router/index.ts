@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from "@ionic/vue-router"
 import type { RouteLocationNormalized, RouteRecordRaw } from "vue-router"
 import Actions from "@/authorization/actions"
 import { useProductStoreOnboardingWizard } from "@/composables/useProductStoreOnboardingWizard"
+import { followInventorySyncArea } from "@/services/inventorySyncArea"
 import { useUserStore } from "@/store/user"
 
 const FindFacilities = () => import("@/views/FindFacilities.vue")
@@ -39,6 +40,7 @@ const SalesChannel = () => import("@/views/SalesChannel.vue")
 const Departments = () => import("@/views/Departments.vue")
 const ShopifyConnectionDetails = () => import("@/views/ShopifyConnectionDetails.vue")
 const ShopifyInventorySync = () => import("@/views/ShopifyInventorySync.vue")
+const ShopifyInventoryEventHistory = () => import("@/views/ShopifyInventoryEventHistory.vue")
 const NotificationSubscriptions = () => import("@/views/NotificationSubscriptions.vue")
 const Klaviyo = () => import("@/views/Klaviyo.vue")
 const KlaviyoConnectionDetails = () => import("@/views/KlaviyoConnectionDetails.vue")
@@ -130,7 +132,7 @@ const routes: Array<RouteRecordRaw> = [
     path: "/shopify-connection-details/:id/inventory-sync",
     name: "ShopifyInventorySync",
     component: ShopifyInventorySync,
-    props: (route) => ({ id: route.params.id, initialView: "monitor" }),
+    props: true,
     beforeEnter: authGuard,
   },
   {
@@ -140,26 +142,19 @@ const routes: Array<RouteRecordRaw> = [
     props: true,
     beforeEnter: authGuard,
   },
+  // One history page for both inventory ledgers; `kind` picks which ledger it reads.
   {
     path: "/shopify-connection-details/:id/inventory-sync/history",
     name: "ShopifyInventorySyncHistory",
-    component: ShopifyInventorySync,
-    props: (route) => ({
-      id: route.params.id,
-      initialView: "history",
-      initialHistoryMode: route.query.mode === "batches" ? "batches" : "events",
-    }),
+    component: ShopifyInventoryEventHistory,
+    props: (route) => ({ id: route.params.id, kind: "channel" }),
     beforeEnter: authGuard,
   },
   {
     path: "/shopify-connection-details/:id/inventory-sync/location-history",
     name: "ShopifyInventorySyncLocationHistory",
-    component: ShopifyInventorySync,
-    props: (route) => ({
-      id: route.params.id,
-      initialView: "location-history",
-      initialHistoryMode: typeof route.query.mode === "string" ? route.query.mode : "events",
-    }),
+    component: ShopifyInventoryEventHistory,
+    props: (route) => ({ id: route.params.id, kind: "location" }),
     beforeEnter: authGuard,
   },
   {
@@ -236,6 +231,11 @@ router.beforeEach(() => {
   if(useAuth().checkAppVersionRedirect()) {
     return false
   }
+})
+
+// Entering a shop's inventory sync pages starts that area's pollers; leaving them stops the worker.
+router.afterEach((to) => {
+  void followInventorySyncArea(to)
 })
 
 export default router

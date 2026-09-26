@@ -114,7 +114,7 @@
                     <p>{{ translate("Shop ID") }}: {{ id }}</p>
                   </ion-label>
                   <ion-note slot="end">
-                    {{ shopName }} · {{ shopifyShopId || translate("Not available") }}
+                    {{ shopName }}, {{ shopifyShopId || translate("Not available") }}
                   </ion-note>
                 </ion-item>
                 <ion-item>
@@ -206,11 +206,11 @@
 
                     <template v-if="row.id === 'batch-request'">
                       <p v-if="latestBatch?.systemMessageId">
-                        {{ translate("SystemMessage") }} · {{ latestBatch.systemMessageId }}
+                        {{ translate("SystemMessage") }}: {{ latestBatch.systemMessageId }}
                       </p>
                       <p v-else>{{ translate("SystemMessage not created yet") }}</p>
-                      <p>{{ translate("Requested") }} · {{ batchRequestedLabel }}</p>
-                      <p>{{ translate("Job run") }} · {{ latestBatch?.createdByJobRunId || translate("Not available") }}</p>
+                      <p>{{ translate("Requested") }}: {{ batchRequestedLabel }}</p>
+                      <p>{{ translate("Job run") }}: {{ latestBatch?.createdByJobRunId || translate("Not available") }}</p>
                     </template>
 
                     <template v-else>
@@ -223,7 +223,7 @@
                       <template v-else>
                         <p v-for="log in progressImports" :key="log.logId || log.configId">
                           <ion-button class="progress-fact-button" fill="clear" size="small" @click.stop="openMdmLogDetails(log.logId)">
-                            {{ importLabel(log.configId) }} · {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }} · {{ log.totalRecordCount }} {{ translate("records") }}
+                            {{ importLabel(log.configId) }}, {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }}, {{ log.totalRecordCount }} {{ translate("records") }}
                           </ion-button>
                         </p>
                       </template>
@@ -375,7 +375,7 @@
                       <ion-label class="ion-text-wrap">
                         {{ order.orderName || order.shopifyOrderId }}
                         <p>{{ translate("Shopify order") }} {{ order.shopifyOrderId || translate("Not available") }}</p>
-                        <p>{{ translate("Processed") }} · {{ formatDate(order.processedAt) }}</p>
+                        <p>{{ translate("Processed") }}: {{ formatDate(order.processedAt) }}</p>
                       </ion-label>
                       <ion-badge slot="end" :color="order.outcome === 'Created' ? 'success' : 'primary'">
                         {{ translate(order.outcome) }}
@@ -466,7 +466,7 @@
                     <ion-item>
                       <ion-label>{{ translate("Records") }}</ion-label>
                       <ion-note slot="end">
-                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }} ·
+                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }},
                         {{ log.failedRecordCount }} {{ translate(log.failedRecordCount === 1 ? "error record" : "error records") }}
                       </ion-note>
                     </ion-item>
@@ -1010,19 +1010,19 @@ function progressDetailLabel(row: SyncProgressRow): string {
   }
   if (row.state === "completed") {
     return row.successfulRecords === 1
-      ? translate("Completed · {count} order", { count: row.successfulRecords })
-      : translate("Completed · {count} orders", { count: row.successfulRecords });
+      ? translate("Completed, {count} order", { count: row.successfulRecords })
+      : translate("Completed, {count} orders", { count: row.successfulRecords });
   }
   if (row.state === "partial") {
-    return translate("Partially completed · {processed} processed · {failed} failed", {
+    return translate("Partially completed, {processed} processed, {failed} failed", {
       processed: row.successfulRecords,
       failed: row.failedRecords,
     });
   }
   if (row.state === "failed" && row.failedRecords) {
     return row.failedRecords === 1
-      ? translate("Failed · {count} record", { count: row.failedRecords })
-      : translate("Failed · {count} records", { count: row.failedRecords });
+      ? translate("Failed, {count} record", { count: row.failedRecords })
+      : translate("Failed, {count} records", { count: row.failedRecords });
   }
   return progressStateLabel(row.state);
 }
@@ -1067,7 +1067,7 @@ function historyObjectLabel(objectType: string, count: number): string {
     FulfillmentLocation: ["Fulfillment location", "Fulfillment locations"],
   };
   const [singular, plural] = labels[objectType] || [objectType, objectType];
-  return `${translate(count === 1 ? singular : plural)} · ${count}`;
+  return `${translate(count === 1 ? singular : plural)}: ${count}`;
 }
 
 function openSystemMessageDetails(systemMessageId: unknown) {

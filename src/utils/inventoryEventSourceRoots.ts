@@ -37,9 +37,25 @@ const INVENTORY_EVENT_SOURCE_ROOTS: Record<string, InventoryEventSourceRoot> = {
   SIE_TRANSFER_RESERVATION_RELEASE: "inventoryItemDetails",
 };
 
+/**
+ * The `SIE_` form of an event type id.
+ *
+ * The event types became Moqui Enumerations, and the rows an OMS writes carry whichever spelling its
+ * connector seeded: the enumeration release names them `SIE_POS_ISSUANCE`, while an OMS still on the
+ * earlier seed writes `POS_ISSUANCE` for the same family (verified on rails-oms, where every ledger row
+ * is unprefixed and the view still resolves its description). Keyed on the raw id, this table matched
+ * nothing there, so every row lost its source record and a reservation reference rendered as one
+ * opaque `inventoryItemId:detailSeqId` token. Both spellings name one family, so both resolve here.
+ */
+export function canonicalEventTypeId(eventTypeId: string): string {
+  const id = String(eventTypeId ?? "").trim();
+
+  return !id || id.startsWith("SIE_") ? id : `SIE_${id}`;
+}
+
 /** Undefined when no app fetch path can name this event's document. */
 export function sourceRootFor(eventTypeId: string): InventoryEventSourceRoot | undefined {
-  return INVENTORY_EVENT_SOURCE_ROOTS[eventTypeId];
+  return INVENTORY_EVENT_SOURCE_ROOTS[canonicalEventTypeId(eventTypeId)];
 }
 
 /**
@@ -49,5 +65,5 @@ export function sourceRootFor(eventTypeId: string): InventoryEventSourceRoot | u
  * `inventoryItemId:inventoryItemDetailSeqId` reference as one opaque token.
  */
 export function isReservationEventType(eventTypeId: string): boolean {
-  return INVENTORY_EVENT_SOURCE_ROOTS[eventTypeId] === "inventoryItemDetails";
+  return sourceRootFor(eventTypeId) === "inventoryItemDetails";
 }

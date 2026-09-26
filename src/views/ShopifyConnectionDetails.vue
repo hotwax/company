@@ -928,7 +928,7 @@ const activityGraphCaption = computed(() => {
     return `${translate("No sync activity recorded in the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}.`;
   }
 
-  return `${activityGraphTotalCount.value} ${translate("sync runs")} · ${activityGraphActiveHourCount.value} ${translate("active hours")}`;
+  return `${activityGraphTotalCount.value} ${translate("sync runs")}, ${activityGraphActiveHourCount.value} ${translate("active hours")}`;
 });
 const activityGraphAriaLabel = computed(() => {
   return `${translate("Product sync activity over the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}. ${activityGraphCaption.value}. ${translate("Peak")} ${activityGraphPeakCount.value}/${translate("hour")}.`;

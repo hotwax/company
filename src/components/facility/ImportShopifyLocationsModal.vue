@@ -61,7 +61,7 @@
               {{ translate("Already in OMS") }}
             </ion-note>
             <ion-note v-else-if="loc.mappedFacilityId" color="warning">
-              {{ translate("Already in OMS") }} · {{ translate("Retry") }}
+              {{ translate("Already in OMS") }}, {{ translate("Retry") }}
             </ion-note>
             <ion-note v-else-if="loc.alreadyInOms" color="medium">
               {{ translate("Already in OMS") }}

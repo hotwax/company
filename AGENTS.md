@@ -67,7 +67,10 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
   and redirects to `/product-store` when the permission expression fails.
 - i18n: `createDxpI18n(localeMessages)` over [`src/locales/en.json`](src/locales/en.json); use
   `translate()` from `@common` in code and `$t` in templates. **Every new user-facing string goes in
-  `en.json`.**
+  `en.json`.** The `local/i18n-check-keys` lint rule visits `<script>` code only, so a
+  `translate("…")` inside a template is never checked — and an unregistered key renders its
+  `{placeholders}` raw. Register template keys by hand. `en.json` also carries duplicate keys, so
+  edit it as text; a JSON round-trip silently drops entries.
 - Theme: [`src/theme/variables.css`](src/theme/variables.css) plus `@common/css/{settings,theme}.css`.
 
 ## 4. The data layer — read this before touching screen data
@@ -107,13 +110,36 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
 | **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
-| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage` |
-| **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation` |
+| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers |
+| **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation`, `shopifyInventoryItems` (inventory event products, from Shopify) |
 
 Class B runs in an **app-lifetime** worker started by `appCacheBootstrap`; class A runs in a
 **view-scoped** worker started by `useCacheSync`. Two workers is a known, bounded deviation from the
 one-worker principle (their lifecycles differ); consolidating them is a candidate cleanup, not a bug
 to "fix" incidentally.
+
+**The inventory sync area** is the one class-A lifecycle that is route-scoped rather than
+view-scoped. [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts), driven by
+`router.afterEach`, starts a worker when the user enters any page under
+`/shopify-connection-details/:id/inventory-sync` and stops it when they leave the area, so the
+monitor, both histories, job runs and activations share one warm cache instead of restarting a
+poller per page. Its domains live in
+[`inventoryEventDomains.ts`](src/workers/domains/inventoryEventDomains.ts): per ledger, a **rows**
+poller (cold: the shop's newest 500 by `createdDate`; then `detailLastUpdatedStamp_from`) and a
+**message** poller (`systemMessageLastUpdatedStamp_from`), plus a re-read of unsettled batch
+messages by id (`admin/systemMessages` honours no `_op`) and the product resolver. The resolver asks
+Shopify, not the OMS: for inventory items with no cached `shopifyInventoryItems` row it posts a `nodes`
+query to `shopify/graphql` (`{ shopId, queryText, variables }`; the payload is under the envelope's
+`response`), at most two requests of 100 items per tick and fewer when Shopify reports the shop's
+budget below half or throttles, so a cold shop converges over a few ticks without draining a quota the
+OMS's own jobs share. Items Shopify has no variant for are asked once per worker; a 404/403 from the OMS
+or an access refusal from Shopify leaves products unnamed for the worker's life rather than failing
+every tick. The pollers need the shopify-connector release that aliases those two cursor fields and
+mounts the location ledger as an entity list for live updates. On an older connector the rows poller
+still stores the recent window (bare array or the old `{ details }` envelope), then rests until a
+manual refresh, and the history says live updates are off. Sync failures render through `SyncStatusButton` (a toolbar control fed by
+`createCacheSync().failingDomains`, which holds each domain's latest outcome and is not cleared at
+cycle boundaries), never as a banner above the content.
 
 ### 4.3 Layer map
 
@@ -129,9 +155,11 @@ to "fix" incidentally.
 | [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — importing a domain module registers it; the harness must be imported **last** |
 | [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
 | [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
-| [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `workerFetch` |
+| [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `inventoryEventDomains`, `workerFetch` |
 | [`src/composables/useCachedList.ts`](src/composables/useCachedList.ts) | The read seam for views |
-| [`src/composables/useCacheSync.ts`](src/composables/useCacheSync.ts) | View-scoped class-A lifecycle (`start`/`stop`/`syncNow`) |
+| [`src/services/cacheSync.ts`](src/services/cacheSync.ts) | The class-A lifecycle with no component attached (`createCacheSync`) |
+| [`src/composables/useCacheSync.ts`](src/composables/useCacheSync.ts) | View-scoped class-A lifecycle: `createCacheSync` bound to a view's unmount |
+| [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts) | Route-scoped class-A lifecycle for a shop's inventory sync pages (see §4.2) |
 | [`src/composables/useCacheStatus.ts`](src/composables/useCacheStatus.ts) | Live row counts / last-sync times for the Settings diagnostics card |
 
 `pollingService`, `pollingWorkerHarness`, and `syncRegistry` are **framework-shaped, app-local**:
@@ -283,6 +311,7 @@ concept is the smell this rule prevents.
 | [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
+| [`useInventoryEvents.ts`](src/composables/useInventoryEvents.ts) | Both Shopify inventory ledgers as one row model (`src/utils/inventoryEvents.ts`) for the monitor and the single `ShopifyInventoryEventHistory` view. Reads IndexedDB only: location labels from `shopifyLocations` ⋈ `facilities` (the channel description for an aggregate `_NA_` location), products from `shopifyInventoryItems` (Shopify's own SKU, variant and product title and image, keyed `shopId\|shopifyInventoryItemId`), delivery from the fresher of the row's joined message and the cached message. Never reads `detailStatusId` |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
 | `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
 | [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |

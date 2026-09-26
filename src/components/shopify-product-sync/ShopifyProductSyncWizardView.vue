@@ -330,7 +330,7 @@
               <p>{{ translate("Next step") }}</p>
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
               <p v-if="systemMessageFsmState.nextJob">
-                {{ systemMessageFsmState.nextJob.label }} · {{ systemMessageFsmState.nextJob.nextRunLabel }}
+                {{ systemMessageFsmState.nextJob.label }}, {{ systemMessageFsmState.nextJob.nextRunLabel }}
               </p>
             </ion-label>
             <ion-buttons slot="end">
