@@ -466,7 +466,7 @@
           </ion-item>
 
           <div v-if="isFetchingScopes" class="ion-text-center ion-padding ion-margin-top">
-            <ion-spinner name="crescent"></ion-spinner>
+            <ion-spinner name="crescent" />
           </div>
           <div v-else-if="scopes.length" class="ion-margin-horizontal">
             <ion-chip v-for="scope in scopes" :key="scope" outline>
@@ -1369,7 +1369,7 @@ async function openAccessScopesModal() {
   accessScopesRemoteId.value = productSyncRemoteId.value;
   if (!accessScopesRemoteId.value) {
     commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
-  } else if (!scopeInfo.value) {
+  } else if(!scopeInfo.value) {
     await refresh(true);
   }
 }
@@ -1405,21 +1405,21 @@ async function onConnectionAccessScopeChange(accessScopeEnumId: string) {
 async function refresh(isAutoFetch = false) {
   if (!accessScopesRemoteId.value) return;
 
-  if (!isAutoFetch) emitter.emit('presentLoader');
+  if(!isAutoFetch) {emitter.emit('presentLoader');}
   isFetchingScopes.value = true;
   try {
     const granted = await refreshAccessScopes(accessScopesRemoteId.value);
-    if (!isAutoFetch) {
+    if(!isAutoFetch) {
       commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
     }
   } catch (error: any) {
     logger.error('refreshAccessScopes', error);
-    if (!isAutoFetch) {
+    if(!isAutoFetch) {
       commonUtil.showToast(translate('Failed to refresh access scopes'));
     }
   } finally {
     isFetchingScopes.value = false;
-    if (!isAutoFetch) emitter.emit('dismissLoader');
+    if(!isAutoFetch) {emitter.emit('dismissLoader');}
   }
 }
 
