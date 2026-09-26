@@ -781,18 +781,14 @@ export function useShopifyLocations(shopId: string | undefined) {
   // Stable order so an unscoped read's `find`/`reduce` winner does not vary — see `stableByShop`.
   const records = computed(() => stableByShop(unordered.value));
 
-  /** shopifyLocationId → facilityId, the shape mapping editors work in. */
-  const facilityByLocation = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      if(row.shopifyLocationId) {map[row.shopifyLocationId] = row.facilityId ?? "";}
-
-      return map;
-    }, {}));
-
   /**
-   * facilityId → shopifyLocationId — the INVERSE, for screens that list facilities and show each
-   * one's mapped Shopify id. Provided as a map because callers otherwise index the records array
-   * by facilityId, which silently yields undefined and renders every row as unmapped.
+   * facilityId → shopifyLocationId, for screens that list facilities and show each one's mapped
+   * Shopify id. Provided as a map because callers otherwise index the records array by facilityId,
+   * which silently yields undefined and renders every row as unmapped.
+   *
+   * There is deliberately no single-valued inverse: several facilities may share one Shopify
+   * location, so a location → facility map would silently keep only one of them. A caller that needs
+   * the reverse lookup should group into `Record<string, string[]>`.
    */
   const locationByFacility = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
@@ -801,7 +797,7 @@ export function useShopifyLocations(shopId: string | undefined) {
       return map;
     }, {}));
 
-  return { locations: records, facilityByLocation, locationByFacility, records, hydrated };
+  return { locations: records, locationByFacility, records, hydrated };
 }
 
 // ---------------------------------------------------------------------------------------------
