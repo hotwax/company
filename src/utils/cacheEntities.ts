@@ -407,10 +407,16 @@ export const shopifyLocationProjection = {
     shopifyLocationId: "text",
     lastUpdatedStamp: "date",
   },
+  /**
+   * The entity PK, (shopId, facilityId). Several facilities may map to ONE Shopify location, and
+   * keying on `shopifyLocationId` collapsed them into a single row, so all but one read as unmapped.
+   * A row with no `shopifyLocationId` is a leftover of clearing by value, not a mapping, and stays
+   * out of the cache.
+   */
   buildKey: (raw: Record<string, unknown>) => {
-    if(!raw?.shopId || !raw?.shopifyLocationId) {return undefined;}
+    if(!raw?.shopId || !raw?.facilityId || !raw?.shopifyLocationId) {return undefined;}
 
-    return `${raw.shopId}|${raw.shopifyLocationId}`;
+    return `${raw.shopId}|${raw.facilityId}`;
   },
 } as const;
 

@@ -322,36 +322,38 @@ async function createPaymentMethod() {
 }
 
 async function saveMapping(paymentMethodTypeId: string) {
-  const newMappedKey = localMappings.value[paymentMethodTypeId];
+  const newMappedKey = (localMappings.value[paymentMethodTypeId] || "").trim();
   const oldMappedKey = getShopifyMapping(paymentMethodTypeId);
 
-  if (!newMappedKey) {
-    commonUtil.showToast(translate("Please provide a Shopify payment method name"));
+  if (!newMappedKey && !oldMappedKey) {
+    editingItemId.value = "";
     return;
   }
 
   emitter.emit("presentLoader");
   try {
     if (oldMappedKey && oldMappedKey !== newMappedKey) {
-      await shopMutations.retireTypeMapping({
+      const resp = await shopMutations.deleteTypeMapping({ mappedKey: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
+    }
+
+    if (newMappedKey) {
+      const resp = await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-        mappedKey: oldMappedKey
+        mappedKey: newMappedKey,
+        mappedValue: paymentMethodTypeId
       }, { refresh: false });
+
+      if (commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
 
-    const resp = await shopMutations.saveTypeMapping({
-      mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-      mappedKey: newMappedKey,
-      mappedValue: paymentMethodTypeId
-    }, { refresh: false });
-
-    if (!commonUtil.hasError(resp)) {
-      commonUtil.showToast(translate("Mapping updated successfully"));
-      await shopMutations.refreshTypeMappings();
-      editingItemId.value = "";
-    } else {
-      throw resp.data;
-    }
+    commonUtil.showToast(translate("Mapping updated successfully"));
+    await shopMutations.refreshTypeMappings();
+    editingItemId.value = "";
   } catch (error) {
     logger.error(error);
     commonUtil.showToast(translate("Failed to update mapping"));
@@ -361,26 +363,28 @@ async function saveMapping(paymentMethodTypeId: string) {
 
 async function saveAllDirtyMappings() {
   emitter.emit("presentLoader");
-  const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== getShopifyMapping(id));
+  const changes = Object.keys(localMappings.value)
+    .map(id => ({ id, newMappedKey: (localMappings.value[id] || "").trim(), oldMappedKey: getShopifyMapping(id) }))
+    .filter(({ newMappedKey, oldMappedKey }) => newMappedKey !== oldMappedKey);
 
   try {
-    await Promise.all(dirtyIds.map(async (id) => {
-      const oldMappedKey = getShopifyMapping(id);
-      if (oldMappedKey) {
-        await shopMutations.retireTypeMapping({
-          mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
-          mappedKey: oldMappedKey
-        }, { refresh: false });
+    // Every delete lands before any save, so swapping keys between two rows cannot delete a key a save just wrote.
+    await Promise.all(changes.filter(({ oldMappedKey }) => oldMappedKey).map(async ({ oldMappedKey }) => {
+      const resp = await shopMutations.deleteTypeMapping({ mappedKey: oldMappedKey }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
       }
     }));
 
-    await Promise.all(dirtyIds.map(async (id) => {
-      const newMappedKey = localMappings.value[id];
-      await shopMutations.saveTypeMapping({
+    await Promise.all(changes.filter(({ newMappedKey }) => newMappedKey).map(async ({ id, newMappedKey }) => {
+      const resp = await shopMutations.saveTypeMapping({
         mappedTypeId: "SHOPIFY_PAYMENT_TYPE",
         mappedKey: newMappedKey,
         mappedValue: id
       }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }));
 
     await shopMutations.refreshTypeMappings();

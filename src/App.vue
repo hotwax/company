@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { IonApp, IonRouterOutlet, IonSplitPane, loadingController } from '@ionic/vue'
 import Menu from '@/components/common/Menu.vue'
 import { emitter, FastTravel, translate } from '@common'
@@ -22,34 +22,46 @@ import router from "@/router"
 
 const userStore = useUserStore()
 
-const loader = ref(null) as any
+// The global loader is held as the PROMISE of its overlay, not the overlay. `create()` is async, and a
+// dismiss that landed while it was pending used to find nothing to dismiss: the overlay then presented
+// with nothing left to close it, and its backdrop blocked every click until a reload. Fast saves hit
+// that on every loader after the first. Holding the promise lets a dismiss reach an overlay that does
+// not exist yet.
+let loader: ReturnType<typeof loadingController.create> | null = null
+// Bumped by every dismiss, so a present still waiting on `create()` knows it was cancelled.
+let dismissCount = 0
 
 // Payload arrives from the untyped event bus, so the parameter cannot be narrower than `any`.
+function createLoader(options: any = { message: '', backdropDismiss: false }) {
+  return loadingController.create({
+    message: options.message ? translate(options.message) : (options.backdropDismiss ? translate('Click the backdrop to dismiss.') : translate('Loading...')),
+    translucent: true,
+    backdropDismiss: options.backdropDismiss || false
+  })
+}
+
 async function presentLoader(options: any = { message: '', backdropDismiss: false }) {
-  if (options.message && loader.value) dismissLoader()
-  if (!loader.value) {
-    loader.value = await loadingController.create({
-      message: options.message ? translate(options.message) : (options.backdropDismiss ? translate('Click the backdrop to dismiss.') : translate('Loading...')),
-      translucent: true,
-      backdropDismiss: options.backdropDismiss || false
-    })
-  }
-  loader.value.present()
+  if(options.message && loader) {dismissLoader()}
+  const dismissesBefore = dismissCount
+  loader ??= createLoader(options)
+  const overlay = await loader
+  if(dismissCount === dismissesBefore) {overlay.present()}
 }
 
 function dismissLoader() {
-  if (loader.value) {
-    loader.value.dismiss()
-    loader.value = null as any
-  }
+  if(!loader) {return}
+  const pending = loader
+  loader = null
+  dismissCount++
+  // Ionic's dismiss waits for an in-flight present, but for an overlay that never presented it returns
+  // false and leaves the element in the DOM, so remove that one by hand.
+  void pending.then(async (overlay) => {
+    if(!(await overlay.dismiss())) {overlay.remove()}
+  })
 }
 
-onMounted(async () => {
-  loader.value = await loadingController.create({
-    message: translate('Loading...'),
-    translucent: true,
-    backdropDismiss: false
-  })
+onMounted(() => {
+  loader = createLoader()
   emitter.on('presentLoader', presentLoader)
   emitter.on('dismissLoader', dismissLoader)
 

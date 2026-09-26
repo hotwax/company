@@ -191,19 +191,19 @@ async function editItem(id: string) {
 }
 
 async function saveMapping(facilityId: string) {
-  const shopifyLocationId = localMappings.value[facilityId];
+  const shopifyLocationId = (localMappings.value[facilityId] || "").trim();
+  const oldShopifyLocationId = getShopifyLocationId(facilityId) || "";
 
-  if (!shopifyLocationId) {
-    commonUtil.showToast(translate("Please provide a Shopify location ID"));
+  if (!shopifyLocationId && !oldShopifyLocationId) {
+    editingItemId.value = "";
     return;
   }
 
   emitter.emit("presentLoader");
   try {
-    const resp = await shopMutations.saveLocation({
-      facilityId,
-      shopifyLocationId
-    }, { refresh: false });
+    const resp = shopifyLocationId
+      ? await shopMutations.saveLocation({ facilityId, shopifyLocationId }, { refresh: false })
+      : await shopMutations.deleteLocation({ facilityId }, { refresh: false });
 
     if (!commonUtil.hasError(resp)) {
       commonUtil.showToast(translate("Mapping updated successfully"));
@@ -221,14 +221,17 @@ async function saveMapping(facilityId: string) {
 
 async function saveAllDirtyMappings() {
   emitter.emit("presentLoader");
-  const dirtyIds = Object.keys(localMappings.value).filter(id => localMappings.value[id] !== (getShopifyLocationId(id) || ""));
+  const dirtyIds = Object.keys(localMappings.value).filter(id => (localMappings.value[id] || "").trim() !== (getShopifyLocationId(id) || ""));
 
   try {
     for (const id of dirtyIds) {
-      await shopMutations.saveLocation({
-        facilityId: id,
-        shopifyLocationId: localMappings.value[id]
-      }, { refresh: false });
+      const shopifyLocationId = (localMappings.value[id] || "").trim();
+      const resp = shopifyLocationId
+        ? await shopMutations.saveLocation({ facilityId: id, shopifyLocationId }, { refresh: false })
+        : await shopMutations.deleteLocation({ facilityId: id }, { refresh: false });
+      if(commonUtil.hasError(resp)) {
+        throw resp.data;
+      }
     }
     await shopMutations.refreshLocations();
     commonUtil.showToast(translate("All mappings saved successfully"));

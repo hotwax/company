@@ -1,18 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * Retiring a Shopify type mapping — the write that replaced a delete route that does not exist.
+ * Deleting Shopify mappings — type mappings, carrier shipments and locations.
  *
- * `oms/shopifyShops/typeMappings` is defined with `get` and `post` only. `DELETE` answers 405, and
- * path-scoped / `admin/`-prefixed variants 404 (all probed live 2026-07-27). The editors used to
- * issue that DELETE before re-posting under the new key, so every RENAME of an existing mapping
- * died on the 405 *before* its replacement write ran — nothing was saved, and the sales-channel
- * screen surfaced no error while doing it (found by QA driving the page live).
+ * `oms/shopifyShops/{typeMappings,carrierShipments,locations}` gained `DELETE` in oms v3.1.0. Before
+ * that the route answered 405 (probed live 2026-07-27), so clearing a type mapping re-posted its key
+ * with an empty `mappedValue`. Carrier shipments had no such fallback: their POST is `create` with PK
+ * (shopId, shopifyShippingMethod), so posting an empty name made Moqui generate a sequenced key and
+ * insert a junk row, and a rename left the old name mapped.
  *
- * The replacement uses the one write verb that exists: the endpoint is `store` with PK
- * (shopId, mappedKey), so re-posting the old key with an empty `mappedValue` unmaps it in place.
- * These tests pin both halves of that contract — the write itself, and the readers agreeing that a
- * value-less row is NOT a mapping.
+ * These tests pin the delete contract — the exact PK goes out, and a wildcard never does — and the
+ * readers still treating a value-less row, left by the old workaround, as NOT a mapping.
  */
 
 const harness = vi.hoisted(() => ({ api: vi.fn(), refreshAfterMutation: vi.fn() }));
@@ -38,25 +36,30 @@ vi.mock("@/composables/useCachedList", () => ({
 
 import { deriveOrderSyncMappingReadiness, useShopifyShopMutations } from "@/composables/useShopify";
 
-describe("retireTypeMapping", () => {
-  it("clears the value under the SAME key with a POST — never a DELETE", async () => {
-    harness.api.mockResolvedValue({ data: {}, status: 200 });
+describe("mapping deletes", () => {
+  it.each([
+    ["deleteTypeMapping", { mappedKey: "qa-test-channel-7391" }, "oms/shopifyShops/typeMappings"],
+    ["deleteCarrierShipment", { shopifyShippingMethod: "Standard Rate" }, "oms/shopifyShops/carrierShipments"],
+    ["deleteLocation", { facilityId: "BROADWAY" }, "oms/shopifyShops/locations"],
+  ] as const)("%s sends a DELETE with the row's full PK", async (method, payload, url) => {
+    harness.api.mockReset().mockResolvedValue({ data: {}, status: 200 });
 
-    await useShopifyShopMutations("10010").retireTypeMapping(
-      { mappedTypeId: "SHOPIFY_ORDER_SOURCE", mappedKey: "qa-test-channel-7391" },
-      { refresh: false },
-    );
+    await (useShopifyShopMutations("10010")[method] as any)(payload, { refresh: false });
 
+    expect(harness.api).toHaveBeenCalledTimes(1);
     const [config] = harness.api.mock.calls[0];
-    expect(config.method).toBe("post");
-    expect(config.url).toBe("oms/shopifyShops/typeMappings");
-    // The key is preserved — clearing the value is what unmaps it; the row itself cannot be removed.
-    expect(config.data).toEqual({
-      shopId: "10010",
-      mappedTypeId: "SHOPIFY_ORDER_SOURCE",
-      mappedKey: "qa-test-channel-7391",
-      mappedValue: "",
-    });
+    expect(config.method).toBe("delete");
+    expect(config.url).toBe(url);
+    expect(config.data).toEqual({ ...payload, shopId: "10010" });
+  });
+
+  // Moqui's entity-auto delete reads `*` as a wildcard, so this key would delete every row for the shop.
+  it.each(["*", ""])("refuses to send a key of %j", async (key) => {
+    harness.api.mockReset();
+
+    await expect(useShopifyShopMutations("10010").deleteCarrierShipment({ shopifyShippingMethod: key }))
+      .rejects.toThrow("without an exact key");
+    expect(harness.api).not.toHaveBeenCalled();
   });
 });
 

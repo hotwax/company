@@ -750,8 +750,10 @@ const IDENTITY_KEY = "identity";
  *
  * 1 — every `eventTypeId` gained an `SIE_` prefix (mantle-shopify-connector#777), and both ledger
  *     caches key on it, so pre-release rows would linger forever resolving nothing.
+ * 2 — `shopifyLocations` re-keyed from `shopId|shopifyLocationId` to its PK `shopId|facilityId`, so
+ *     facilities sharing a Shopify location stop collapsing into one row.
  */
-const CACHE_CONTRACT_VERSION = 1;
+const CACHE_CONTRACT_VERSION = 2;
 
 /** Has this domain already synced for the current login? */
 export async function hasSyncedThisLogin(domain: string): Promise<boolean> {
