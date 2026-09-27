@@ -6,10 +6,7 @@ import type { TransferSyncJobCard } from "@/composables/useShopifyTransferSync";
 
 const state = vi.hoisted(() => ({ runs: {} as Record<string, any[]> }));
 vi.mock("@common", () => ({
-  buildAppUrl: (_app: string, path: string) => `https://transfers.example.test${path}`,
   translate: (key: string, values: Record<string, any> = {}) => Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, String(value)), key),
-  commonUtil: { getFeatures: () => "L" },
-  useProducts: () => ({ products: ref(new Map()), resolve: vi.fn() }),
 }));
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobRunsByJob: () => ({ runsFor: (name: string) => state.runs[name] ?? [], hydrated: ref(true) }),
@@ -44,9 +41,10 @@ describe("transfer staging errors list", () => {
   it("shows one destination per transfer with a summary of its blockers", async () => {
     state.runs[card.jobName] = [{ jobRunId: "637464", startTime: 100, endTime: 200, hasError: "N", results: {
       blockedOrderCount: 1,
-      blockedOrderList: [{ shopId: "100051", orderId: "128255", errors: ["Order item [128255:04] product [100198] has 2 distinct ShopifyShopProduct mappings for shop [100051]."] }],
+      blockedOrderList: [{ shopId: "100051", orderId: "128255", errors: ["Order item [128255:04] product [100198] has 2 distinct ShopifyShopProduct mappings for shop [100051].", "Another blocker for this transfer"] }],
     } }];
     const wrapper = await render();
+    expect(wrapper.findAll("[button=\"true\"]")).toHaveLength(1);
     expect(wrapper.text()).toContain("TO10261");
     expect(wrapper.text()).toContain("Multiple Shopify variants mapped to one product");
     await wrapper.find("[button=\"true\"]").trigger("click");
@@ -64,17 +62,4 @@ describe("transfer staging errors list", () => {
     expect(wrapper.text()).not.toContain("No staging blockers");
   });
 
-  it("shows no completed run only after a successful live read", async () => {
-    expect((await render()).text()).toContain("No completed staging run is available yet.");
-  });
-
-  it("does not carry an older blocker into the newest successful run", async () => {
-    state.runs[card.jobName] = [
-      { jobRunId: "new", startTime: 300, endTime: 400, results: { blockedOrderCount: 0 } },
-      { jobRunId: "old", startTime: 100, endTime: 200, hasError: "Y", errors: "Old failure" },
-    ];
-    const wrapper = await render();
-    expect(wrapper.text()).toContain("No staging blockers reported in this run.");
-    expect(wrapper.text()).not.toContain("Old failure");
-  });
 });

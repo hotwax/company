@@ -44,7 +44,7 @@
             <ion-radio-group v-model="selectedKey" :aria-label="translate('Transfer sync issues')">
               <ion-item v-for="entry in issueEntries" :key="entry.issue.key" :disabled="mappingBusy">
                 <ion-radio :value="entry.issue.key" :disabled="mappingBusy" label-placement="end" justify="start">
-                  <ion-label class="ion-text-wrap"><h2>{{ translate(issueTitle(entry.issue)) }}</h2><p>{{ itemLabel(entry.issue) || translate(entry.stage.card.definition.key === 'create' ? 'Creation' : 'Updates') }}</p></ion-label>
+                  <ion-label class="ion-text-wrap"><h2>{{ translate(resolvedIssue(entry.issue).title) }}</h2><p>{{ itemLabel(entry.issue) || translate(entry.stage.card.definition.key === 'create' ? 'Creation' : 'Updates') }}</p></ion-label>
                 </ion-radio>
               </ion-item>
             </ion-radio-group>
@@ -75,10 +75,6 @@
             :issue="resolutionIssue" :waiting-receipts="dependentReceipts(resolutionIssue, selectedEntry.stage.issues)"
             :result="checks[resolutionIssue.key]" :loading="checkLoading" :error="checkError" @recheck="recheckSelected" />
           <ion-item v-else><ion-label class="ion-text-wrap"><h2>{{ translate(resolutionIssue.title) }}</h2><p>{{ translate(resolutionIssue.action) }}</p></ion-label><ion-button fill="clear" :disabled="refreshing" @click="refresh">{{ translate('Recheck comparison') }}</ion-button></ion-item>
-          <template v-if="selectedEntry.stage.card.definition.key === 'create' && resolutionIssue.code !== 'delivery'">
-            <ion-item><ion-label class="ion-text-wrap">{{ translate(readyToRetry ? 'The product mapping is ready for another creation attempt.' : 'Resolve every creation blocker above before retrying.') }}</ion-label></ion-item>
-            <ion-item><ion-button :disabled="!readyToRetry || mappingBusy" @click="openJob(creationCard)">{{ translate('Review and run creation job') }}</ion-button></ion-item>
-          </template>
         </ion-list>
         <ion-accordion-group>
           <ion-accordion value="technical">
@@ -118,7 +114,7 @@ import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDeli
 import { formatDateTime } from "@/utils";
 import { facilityCache } from "@/utils/cacheEntities";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
-import { type TransferStager, type TransferStagingIssue, latestCompletedStagingRun, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
+import { type TransferStager, type TransferStagingIssue, latestCompletedStagingRun, resolveTransferStagingIssue, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
 import { shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
 
 const props = defineProps<{ id: string; orderId: string }>();
@@ -149,8 +145,6 @@ const selectedEntry = computed(() => issueEntries.value.find(entry => entry.issu
 watch(issueEntries, entries => {
   if(!entries.some(entry => entry.issue.key === selectedKey.value)) {selectedKey.value = entries[0]?.issue.key || "";}
 }, { immediate: true });
-const creationCard = computed(() => stagingCards.value.find(card => card.definition.key === "create"));
-const creationIssues = computed(() => stages.value.find(stage => stage.card.definition.key === "create")?.issues || []);
 const { enrichment, load, loading: orderLoading, error: orderError } = useShopifyTransferSyncEnrichment();
 const order = computed(() => enrichment.value.ordersById[props.orderId]);
 const { products, resolve } = useProducts();
@@ -201,41 +195,24 @@ const workingFacts = computed(() => {
   if(mappingReady.value[selectedKey.value]) {facts.push({ title: "One valid mapping remains" });}
   return facts;
 });
-function issueTitle(issue: TransferStagingIssue) {
-  if(mappingReady.value[issue.key] && isMappingConflict(issue)) {return "Mapping repaired; ready to stage";}
-  const result = checks.value[issue.key];
-  if(result?.choices.length && result.choices.length > 1) {return "Multiple Shopify variants mapped to one product";}
-  if(result?.choices.length === 1 && result.choices[0].available && !result.matches.length) {return "Item missing from Shopify transfer";}
-  return issue.title;
+function resolvedIssue(issue: TransferStagingIssue) {
+  const resolved = resolveTransferStagingIssue(issue, checks.value[issue.key]);
+  return mappingReady.value[issue.key] && isMappingConflict(resolved) ? { ...resolved, title: "Mapping repaired; ready to stage" } : resolved;
 }
-const resolutionIssue = computed<TransferStagingIssue>(() => {
-  const issue = selectedEntry.value?.issue;
-  if(!issue) {return {} as TransferStagingIssue;}
-  const result = currentCheck.value;
-  if(!result) {return issue;}
-  if(result.choices.length > 1) {return { ...issue, title: "Multiple Shopify variants mapped to one product", productId: result.item.productId };}
-  if(result.choices.length !== 1 || !result.choices[0].available) {
-    return { ...issue, code: "product-mapping", title: "The product mapping needs review", action: "Review the Shopify variant mapping for this OMS product. The comparison cannot identify the transfer line until exactly one valid mapping remains. Recheck after correcting it." };
-  }
-  if(!Number.isInteger(Number(result.item.quantity)) || Number(result.item.quantity) <= 0) {
-    return { ...issue, code: "quantity", title: "The shipped quantity needs review", action: "Shopify requires a whole positive shipped quantity. Review this shipment item in Transfers before retrying the update job." };
-  }
-  return issue;
-});
+const resolutionIssue = computed(() => resolvedIssue(selectedEntry.value!.issue));
 const mappingReady = ref<Record<string, boolean>>({});
 const busyByIssue = ref<Record<string, boolean>>({});
 const mappingBusy = computed(() => Object.values(busyByIssue.value).some(Boolean));
 const mappingVersion = ref(0);
-const readyToRetry = computed(() => checked.value && !syncError.value && creationIssues.value.length > 0 && creationIssues.value.every(issue => isMappingConflict(issue) && mappingReady.value[issue.key]));
 function setMappingBusy(key: string, value: boolean) {
   const wasBusy = busyByIssue.value[key]; busyByIssue.value[key] = value;
   if(wasBusy && !value && selectedEntry.value?.issue.code === "unmapped-shipped-item") {void recheckSelected();}
 }
-function isMappingConflict(issue: TransferStagingIssue) {return issue.title === "Multiple Shopify variants mapped to one product";}
+function isMappingConflict(issue: TransferStagingIssue) {return issue.code === "multiple-product-mappings";}
 function displayIssues(issues: TransferStagingIssue[]) {return issues.filter(issue => !(issue.waiting && issues.some(blocker => blocker.code === "unmapped-shipped-item" && blocker.shipmentId === issue.shipmentId)));}
 function dependentReceipts(issue: TransferStagingIssue, issues: TransferStagingIssue[]) {return issues.filter(row => row.waiting && row.shipmentId === issue.shipmentId && row.receiptId).map(row => row.receiptId!);}
 function itemLabel(issue: TransferStagingIssue) {
-  const item = checks.value[issue.key]?.item || order.value?.items?.find(item => item.orderItemSeqId === issue.orderItemSeqId);
+  const item = checks.value[issue.key]?.item || (!issue.shipmentId ? order.value?.items?.find(item => item.orderItemSeqId === issue.orderItemSeqId) : undefined);
   const productId = issue.productId || item?.productId;
   const product = products.value.get(productId || "");
   return [product?.sku || (productId ? translate("Product {id}", { id: productId }) : ""), product ? commonUtil.getFeatures(product.productFeatures) : "",

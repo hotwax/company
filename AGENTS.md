@@ -131,16 +131,6 @@ toolbar, never as a banner.
 
 ### 4.3 Layer map
 
-**Transfer sync delivery** uses the view-scoped class-A `shopifyTransferDelivery` domain (10 seconds)
-and the existing `dataManagerLogs` cache. It discovers logs through `DATA_MANAGER_LOG_AND_PARAMETER`,
-scoped by `transferShopId` and the creation/update config, then refreshes each exact log. Per-transfer
-status requires verified `shopId`/`orderId` membership from the source file's `csvData` envelope;
-files larger than 256 KB remain batch-scoped. A finished file with any failed records cannot label
-its transfers delivered. Staging-job diagnostics and processor delivery are separate facts; a
-successful staging run does not confirm Shopify delivery. `useShopifyTransferDelivery` exposes
-cached status; the explicit detail-page comparison in `useShopifyTransferUpdateCheck` is a live,
-read-only check of the exact shipment item, its product mapping, and the current Shopify lines.
-
 | File | Role |
 | --- | --- |
 | [`src/utils/appCacheDb.ts`](src/utils/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |

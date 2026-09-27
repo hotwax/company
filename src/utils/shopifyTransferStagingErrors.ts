@@ -1,3 +1,4 @@
+import type { TransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
 import { toMillis } from "./cacheProjection";
 
 export type TransferStager = "create" | "update";
@@ -62,6 +63,7 @@ function issue(message: string, code: string, key: string, orderId?: string): Tr
   };
 
   if(Number(message.match(/has (\d+) distinct ShopifyShopProduct mappings/)?.[1]) > 1) {
+    row.code = "multiple-product-mappings";
     row.title = "Multiple Shopify variants mapped to one product";
     row.action = "Ask your catalog administrator to keep only the correct Shopify variant mapping for this product in this shop, then run the creation stager again.";
   } else if(code === "unmapped-shipped-item") {
@@ -123,4 +125,16 @@ export function transferStagingIssues(run: any, shopId: string, stager: Transfer
   }
 
   return rows;
+}
+
+export function resolveTransferStagingIssue(issue: TransferStagingIssue, result?: TransferUpdateCheck): TransferStagingIssue {
+  if(!result) {return issue;}
+  if(result.choices.length > 1) {return { ...issue, code: "multiple-product-mappings", title: "Multiple Shopify variants mapped to one product", productId: result.item.productId };}
+  if(result.choices.length !== 1 || !result.choices[0].available) {
+    return { ...issue, code: "product-mapping", title: "The product mapping needs review", action: "Review the Shopify variant mapping for this OMS product. The comparison cannot identify the transfer line until exactly one valid mapping remains. Recheck after correcting it." };
+  }
+  if(!Number.isInteger(Number(result.item.quantity)) || Number(result.item.quantity) <= 0) {
+    return { ...issue, code: "quantity", title: "The shipped quantity needs review", action: "Shopify requires a whole positive shipped quantity. Review this shipment item in Transfers before retrying the update job." };
+  }
+  return { ...issue, title: result.matches.length ? "Transfer-line mapping needs repair" : "Item missing from Shopify transfer" };
 }

@@ -18,7 +18,7 @@ describe("transfer staging blockers", () => {
   it("reads record-level creation blockers on a successful job and identifies the product/item", () => {
     const rows = transferStagingIssues({ jobRunId: "637464", hasError: "N", results: JSON.stringify(creationResult) }, "100051", "create");
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ orderId: "128255", orderItemSeqId: "04", productId: "100198", waiting: false, title: "Multiple Shopify variants mapped to one product" });
+    expect(rows[0]).toMatchObject({ code: "multiple-product-mappings", orderId: "128255", orderItemSeqId: "04", productId: "100198", waiting: false, title: "Multiple Shopify variants mapped to one product" });
     expect(rows[0].action).toContain("correct Shopify variant mapping");
   });
 

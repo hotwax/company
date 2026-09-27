@@ -83,7 +83,7 @@ import {
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
 
-const { fetchChoices: fetchTransferMappingChoices, fetchMappings: fetchTransferProductMappings, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
 
 const SHOP_ID = "10000";
 const SHOPIFY_SHOP_ID = "6973849727";
@@ -235,7 +235,7 @@ describe("transfer product mapping resolution", () => {
 
   it("rejects a mapping read that includes another shop or product", async () => {
     harness.api.mockResolvedValueOnce({ data: [{ ...row("1"), shopId: "other-shop" }] });
-    await expect(fetchTransferProductMappings("100051", "100198")).rejects.toThrow("could not be verified");
+    await expect(fetchTransferMappingChoices("100051", "100198")).rejects.toThrow("could not be verified");
   });
 
   it("prevents a stale selection from deleting a newly changed mapping", async () => {

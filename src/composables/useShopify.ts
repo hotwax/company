@@ -7255,7 +7255,7 @@ const keepTransferProductMapping = async (shopId: string, productId: string, kee
 
 /** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
 export function useTransferMappingResolution() {
-  return { fetchMappings: fetchTransferProductMappings, fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
+  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
 }
 
 /** Read every variant and its existing OMS mapping without re-running an import. */

@@ -128,7 +128,9 @@
                     </p>
                   </ion-label>
                   <ion-skeleton-text v-if="webhooksLoading" slot="end" :animated="true" class="count-skeleton" />
-                  <ion-badge v-else-if="webhookSummary" slot="end" :color="webhookSummaryColor">{{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}</ion-badge>
+                  <ion-badge v-else-if="webhookSummary" slot="end" :color="webhookSummaryColor">
+                    {{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}
+                  </ion-badge>
                   <ion-note v-else slot="end" color="medium">
                     {{ translate("Not checked") }}
                   </ion-note>
@@ -146,9 +148,7 @@
                 >
                   <ion-label class="ion-text-wrap">
                     {{ translate(card.definition.label) }}
-                    <p class="message-type">
-                      {{ card.jobName }}
-                    </p>
+                    <p class="message-type">{{ card.jobName }}</p>
                     <p>{{ translate(card.definition.purpose) }}</p>
                     <p v-if="card.nextRun" class="overline">
                       {{ translate("Next run") }} {{ formatDateTime(card.nextRun) || translate("Not available") }}
@@ -156,7 +156,9 @@
                   </ion-label>
                   <ion-skeleton-text v-if="!jobsHydrated" slot="end" :animated="true" class="count-skeleton" />
                   <ion-spinner v-else-if="configuringJobKey === card.definition.key" slot="end" name="crescent" />
-                  <ion-badge v-else slot="end" :color="jobStatusColor(card.status)">{{ jobStatusLabel(card) }}</ion-badge>
+                  <ion-badge v-else slot="end" :color="jobStatusColor(card.status)">
+                    {{ jobStatusLabel(card) }}
+                  </ion-badge>
                 </ion-item>
               </ion-list>
             </ion-card>
@@ -567,7 +569,9 @@
               {{ row.receivedCount }}
               <p>{{ translate("Received") }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="webhookStatusColor(row.status)">{{ webhookStatusLabel(row.status) }}</ion-badge>
+            <ion-badge slot="end" :color="webhookStatusColor(row.status)">
+              {{ webhookStatusLabel(row.status) }}
+            </ion-badge>
           </ion-item>
         </ion-list>
       </ion-content>

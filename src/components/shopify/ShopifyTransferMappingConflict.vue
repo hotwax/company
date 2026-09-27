@@ -21,12 +21,12 @@
         <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
         <ion-label class="ion-text-wrap">
           {{ translate("One valid mapping remains") }}
-          <p>{{ translate("This mapping blocker is cleared. Creation still needs a new staging run.") }}</p>
+          <p>{{ translate("This mapping blocker is cleared. Run the appropriate staging job after resolving the remaining issues.") }}</p>
         </ion-label>
       </ion-item>
       <ion-item v-else-if="!choices.length">
         <ion-label class="ion-text-wrap">
-          {{ translate("No mapping remains for this product. Map it to the intended Shopify variant before retrying creation.") }}
+          {{ translate("No mapping remains for this product. Map it to the intended Shopify variant before retrying.") }}
         </ion-label>
       </ion-item>
       <ion-item v-if="duplicateSku">

@@ -8,7 +8,6 @@ export function useShopifyTransferDelivery(shopId: () => string) {
   const logs = computed(() => records.value.filter(log => log.transferShopId === shopId()));
 
   return {
-    logs,
     logsFor: (stage: keyof typeof TRANSFER_DELIVERY_CONFIGS, orderId?: string) => transferDeliveryLogs(logs.value, shopId(), stage, orderId),
   };
 }
