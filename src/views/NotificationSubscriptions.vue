@@ -131,9 +131,7 @@
             <h2>{{ topic.eventName }}</h2>
             <p class="topic-name">{{ topic.topic }}</p>
             <p>
-              {{ topic.facilityName || translate("unknown") }}
-              <span v-if="topic.facilityName !== topic.facilityId"> ({{ topic.facilityId }})</span>
-              &nbsp;&middot;&nbsp;
+              {{ topic.facilityName || translate("unknown") }}<span v-if="topic.facilityName !== topic.facilityId"> ({{ topic.facilityId }})</span>,
               {{ translate("Instance") }}: {{ topic.omsInstance || translate("unknown") }}
             </p>
             <p class="subscribers">{{ topic.userNames.join(", ") }}</p>

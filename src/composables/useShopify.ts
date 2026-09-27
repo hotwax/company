@@ -3502,9 +3502,9 @@ function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
 }
 
 function progressLabel(state: SyncProgressState, successful: number, failed: number): string {
-  if(state === "completed") {return `Completed · ${successful} ${successful === 1 ? "order" : "orders"}`;}
-  if(state === "partial") {return `Partially completed · ${successful} processed · ${failed} failed`;}
-  if(state === "failed") {return failed ? `Failed · ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";}
+  if(state === "completed") {return `Completed, ${successful} ${successful === 1 ? "order" : "orders"}`;}
+  if(state === "partial") {return `Partially completed, ${successful} processed, ${failed} failed`;}
+  if(state === "failed") {return failed ? `Failed, ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";}
   if(state === "active") {return "In progress";}
 
   return "Waiting";
@@ -4092,8 +4092,8 @@ export interface ShopifyOrderSyncCardSnapshot {
  * Badge text per progress state.
  *
  * NOT `SyncProgressRow.stateLabel`, which the deleted store used: that reads
- * `"Completed · 5 orders"` — too long for a badge, and it carries the ` · ` separator this app's UI
- * conventions prohibit. The counts belong on the detail line, which is where they already are.
+ * `"Completed, 5 orders"`, which is too long for a badge. The counts belong on the detail line, which is
+ * where they already are.
  *
  * The wording is also load-bearing for COLOUR: the card resolves a badge colour by matching this text
  * (`failed|error` → danger, `partial|paused` → warning, `completed|success` → success,

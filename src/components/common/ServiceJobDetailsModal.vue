@@ -312,7 +312,7 @@ const nextRunLabel = computed(() => {
   return formatDateTime(nextRun) || translate('Not scheduled');
 });
 const lastRunLabel = computed(() => recentRuns.value.length
-  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)} · ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
+  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)}, ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
   : translate('No recent runs'));
 const productLabel = computed(() => jobDetails.value.instanceOfProductId || translate('Unavailable'));
 const scheduleOptions = [

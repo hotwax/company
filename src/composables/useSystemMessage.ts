@@ -146,6 +146,8 @@ export function useSystemMessage() {
       // Bare array response (verified live: `[ ]` for a message with no errors).
       const errors: any[] = Array.isArray(response?.data) ? response.data : [];
       if (errors.length) {
+        // A retry appended an error, so an earlier "has no errors" answer is stale.
+        messagesKnownToHaveNoErrors.delete(systemMessageId);
         // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
         // otherwise the synthetic key cannot be built and the join has nothing to match on.
         void systemMessageErrorCache.upsertMany(errors.map((error) => ({ ...error, systemMessageId })));

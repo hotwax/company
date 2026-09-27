@@ -516,7 +516,7 @@
                   <ion-label>
                     {{ product.title }}
                     <p>{{ product.handle }}</p>
-                    <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }} · {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
+                    <p>{{ translate("Vendor") }}: {{ product.vendor || translate("No vendor") }}, {{ translate("Type") }}: {{ product.productType || translate("No type") }}</p>
                     <p>{{ translate("Updated") }} {{ formatShopifyDate(product.updatedAt) }}</p>
                     <p>{{ translate("Shopify ID") }}: {{ getProductId(product) }}</p>
                     <ion-button fill="clear" @click.stop="mappingReviewProduct = product">{{ translate('View mappings') }}</ion-button>
@@ -1211,7 +1211,7 @@ const mdmLogMetaLabel = computed(() => {
   const startedAtLabel = getRelativeOrAbsoluteLabel(getMdmLogStartedAt(currentSyncRun.value?.mdmLog));
 
   if (mdmLogId && startedAtLabel) {
-    return `${mdmLogId} · ${translate("Started")} ${startedAtLabel}`;
+    return `${mdmLogId}, ${translate("Started")} ${startedAtLabel}`;
   }
   if (mdmLogId) return mdmLogId;
   if (startedAtLabel) return `${translate("Started")} ${startedAtLabel}`;
@@ -1287,14 +1287,14 @@ const syncJobLastRunLabel = computed(() => {
   }
   if (syncJobRecentRuns.value.length) {
     const latestRun = syncJobRecentRuns.value[0];
-    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })} · ${getSyncJobRunStatus(latestRun)}`;
+    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
 });
 const syncJobDetailsLastRunLabel = computed(() => {
   if (syncJobDetailsRecentRuns.value.length) {
     const latestRun = syncJobDetailsRecentRuns.value[0];
-    return `${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })} · ${getSyncJobRunStatus(latestRun)}`;
+    return `${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
 });
@@ -1345,7 +1345,7 @@ const bulkOperationSendJobLastRunLabel = computed(() => {
   }
   if (bulkOperationSendJobRecentRuns.value.length) {
     const latestRun = bulkOperationSendJobRecentRuns.value[0];
-    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })} · ${getSyncJobRunStatus(latestRun)}`;
+    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
 });
@@ -1355,7 +1355,7 @@ const bulkOperationPollJobLastRunLabel = computed(() => {
   }
   if (bulkOperationPollJobRecentRuns.value.length) {
     const latestRun = bulkOperationPollJobRecentRuns.value[0];
-    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })} · ${getSyncJobRunStatus(latestRun)}`;
+    return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
 });
@@ -3649,7 +3649,7 @@ function getSyncJobAuditChangeLabel(auditLog: any) {
   const newValue = auditLog.newValueText ?? auditLog.newValue ?? "";
 
   if (oldValue !== "" && newValue !== "") {
-    return `${translate("Previous value")}: ${formatParameterValue(oldValue)} · ${translate("New value")}: ${formatParameterValue(newValue)}`;
+    return `${translate("Previous value")}: ${formatParameterValue(oldValue)}, ${translate("New value")}: ${formatParameterValue(newValue)}`;
   }
   if (newValue !== "") {
     return `${translate("New value")}: ${formatParameterValue(newValue)}`;

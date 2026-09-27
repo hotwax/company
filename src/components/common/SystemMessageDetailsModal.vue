@@ -25,7 +25,7 @@
         <ion-item>
           <ion-label class="ion-text-wrap">
             {{ translate("Shopify order request") }}
-            <p v-if="details.requestedAt">{{ translate("Requested") }} · {{ formatDate(details.requestedAt) }}</p>
+            <p v-if="details.requestedAt">{{ translate("Requested") }}: {{ formatDate(details.requestedAt) }}</p>
             <p>{{ translate(details.requestFailureText || "Shopify order request failed before import.") }}</p>
           </ion-label>
           <ion-badge slot="end" color="danger">{{ translate("Failed") }}</ion-badge>
@@ -89,7 +89,7 @@
               {{ translate("Next step") }}
               <p v-if="details.nextStepReason">{{ details.nextStepReason }}</p>
               <p v-if="details.nextJobLabel">
-                {{ details.nextJobLabel }}<template v-if="details.nextJobRunLabel"> · {{ details.nextJobRunLabel }}</template>
+                {{ details.nextJobLabel }}<template v-if="details.nextJobRunLabel">, {{ details.nextJobRunLabel }}</template>
               </p>
             </ion-label>
             <ion-buttons v-if="primaryAction || secondaryActions.length" slot="end">
