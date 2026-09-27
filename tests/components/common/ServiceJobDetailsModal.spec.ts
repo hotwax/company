@@ -169,6 +169,10 @@ describe('job modal title, identity parameters and committed writes', () => {
     ] });
     const wrapper = mountModal(); await flushPromises();
     expect(input(wrapper, 'daysToKeep').props('helperText')).toBe('Integer, default {value}, required');
+    // Outlined and outside ion-item, whose wrapper clips an outline label; a protected field says why it is disabled.
+    expect(input(wrapper, 'daysToKeep').props('fill')).toBe('outline');
+    expect(input(wrapper, 'daysToKeep').element.closest('ion-item')).toBeNull();
+    expect(input(wrapper, 'shopId').props('helperText')).toBe('read only');
     expect(wrapper.text()).toContain('Not set on this job');
     expect(wrapper.text()).toContain('purgeUnsynced');
     expect(wrapper.text()).not.toContain('_jobRunId');

@@ -2692,6 +2692,7 @@
   "Re-sync entire catalog": "Re-sync entire catalog",
   "Read and write": "Read and write",
   "Read only": "Read only",
+  "read only": "read only",
   "Readiness review": "Readiness review",
   "Reads the live subscription list from Shopify. Not loaded automatically because it calls the Shopify Admin API.": "Reads the live subscription list from Shopify. Not loaded automatically because it calls the Shopify Admin API.",
   "Ready": "Ready",

@@ -84,24 +84,33 @@
               </ion-label>
               <ion-note slot="end">{{ nextRunLabel }}</ion-note>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <ion-item>
-                <ion-input label-placement="stacked" :label="translate('Quartz cron expression')" v-model="draftCronExpression" :disabled="isSaving || !canEdit" />
-              </ion-item>
-              <ion-item>
-                <ion-label>
-                  <p class="overline">{{ translate('Schedule preview') }}</p>
-                  {{ isScheduleValid ? scheduleDescription : translate('Provide a valid cron expression') }}
-                </ion-label>
-                <ion-note slot="end">{{ nextRunLabel }}</ion-note>
-              </ion-item>
-              <ion-list-header>{{ translate('Schedule Options') }}</ion-list-header>
-              <ion-radio-group v-model="draftCronExpression">
-                <ion-item v-for="option in scheduleOptions" :key="option.expression">
-                  <ion-radio label-placement="end" justify="start" :value="option.expression" :disabled="isSaving || !canEdit">{{ translate(option.label) }}</ion-radio>
+            <div slot="content">
+              <!-- Outlined fields sit in padded content, not in an ion-item, whose wrapper clips the outline label. -->
+              <div class="ion-padding">
+                <ion-input
+                  v-model="draftCronExpression"
+                  fill="outline"
+                  label-placement="stacked"
+                  :label="translate('Quartz cron expression')"
+                  :disabled="isSaving || !canEdit"
+                />
+              </div>
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>
+                    <p class="overline">{{ translate('Schedule preview') }}</p>
+                    {{ isScheduleValid ? scheduleDescription : translate('Provide a valid cron expression') }}
+                  </ion-label>
+                  <ion-note slot="end">{{ nextRunLabel }}</ion-note>
                 </ion-item>
-              </ion-radio-group>
-            </ion-list>
+                <ion-list-header>{{ translate('Schedule Options') }}</ion-list-header>
+                <ion-radio-group v-model="draftCronExpression">
+                  <ion-item v-for="option in scheduleOptions" :key="option.expression">
+                    <ion-radio label-placement="end" justify="start" :value="option.expression" :disabled="isSaving || !canEdit">{{ translate(option.label) }}</ion-radio>
+                  </ion-item>
+                </ion-radio-group>
+              </ion-list>
+            </div>
           </ion-accordion>
 
           <ion-accordion value="parameters">
@@ -112,55 +121,62 @@
               </ion-label>
               <ion-note slot="end">{{ parameterCount }}</ion-note>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <!-- The job parameters are this job's stored values, so they are the editable ones.
-                   Saved through the same `serviceJobParameters` PUT that provisions a cloned job. -->
-              <ion-item v-for="parameter in jobParameters" :key="parameter.key">
-                <!-- A parameter whose valid values the host screen knows is chosen, not typed: an id
-                     typed by hand is a silent misconfiguration the job only reveals when it runs. -->
-                <ion-select
-                  v-if="parameter.options"
-                  label-placement="stacked"
-                  interface="popover"
-                  :label="parameter.label"
-                  :helper-text="parameter.signature"
-                  :value="draftParameters[parameter.name]"
-                  :disabled="isSaving || !canEdit || parameter.isProtected"
-                  @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
-                >
-                  <ion-select-option v-for="option in parameter.options" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </ion-select-option>
-                </ion-select>
-                <ion-input
-                  v-else
-                  label-placement="stacked"
-                  :label="parameter.label"
-                  :helper-text="parameter.signature"
-                  :value="draftParameters[parameter.name]"
-                  :disabled="isSaving || !canEdit || parameter.isProtected"
-                  @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
-                />
-                <ion-note v-if="parameter.isProtected" slot="end">{{ translate('Read only') }}</ion-note>
-              </ion-item>
+            <div slot="content">
+              <!-- The job parameters are this job's stored values, so they are the editable ones. Saved
+                   through the same `serviceJobParameters` PUT that provisions a cloned job. Outlined, in
+                   padded content rather than ion-items, whose wrapper clips the outline label. -->
+              <div v-if="jobParameters.length" class="ion-padding">
+                <template v-for="parameter in jobParameters" :key="parameter.key">
+                  <!-- A parameter whose valid values the host screen knows is chosen, not typed: an id
+                       typed by hand is a silent misconfiguration the job only reveals when it runs. -->
+                  <ion-select
+                    v-if="parameter.options"
+                    class="ion-margin-bottom"
+                    fill="outline"
+                    label-placement="stacked"
+                    interface="popover"
+                    :label="parameter.label"
+                    :helper-text="parameter.helperText"
+                    :value="draftParameters[parameter.name]"
+                    :disabled="isSaving || !canEdit || parameter.isProtected"
+                    @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                  >
+                    <ion-select-option v-for="option in parameter.options" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </ion-select-option>
+                  </ion-select>
+                  <ion-input
+                    v-else
+                    class="ion-margin-bottom"
+                    fill="outline"
+                    label-placement="stacked"
+                    :label="parameter.label"
+                    :helper-text="parameter.helperText"
+                    :value="draftParameters[parameter.name]"
+                    :disabled="isSaving || !canEdit || parameter.isProtected"
+                    @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                  />
+                </template>
+              </div>
 
               <!-- The service's other parameters: its SIGNATURE, not values stored against this job, so
                    there is nothing a save could write. A parameter the job sets shows its signature
                    as the helper text of its own field instead. -->
-              <template v-if="unsetServiceParameters.length">
-                <ion-list-header>{{ translate("Not set on this job") }}</ion-list-header>
-                <ion-item v-for="parameter in unsetServiceParameters" :key="parameter.name">
-                  <ion-label>
-                    {{ parameter.name }}
-                    <p v-if="parameter.signature">
-                      {{ parameter.signature }}
-                    </p>
-                  </ion-label>
-                </ion-item>
-              </template>
-
-              <ion-item v-if="!parameterCount"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
-            </ion-list>
+              <ion-list v-if="unsetServiceParameters.length || !parameterCount" lines="full">
+                <template v-if="unsetServiceParameters.length">
+                  <ion-list-header>{{ translate("Not set on this job") }}</ion-list-header>
+                  <ion-item v-for="parameter in unsetServiceParameters" :key="parameter.name">
+                    <ion-label>
+                      {{ parameter.name }}
+                      <p v-if="parameter.signature">
+                        {{ parameter.signature }}
+                      </p>
+                    </ion-label>
+                  </ion-item>
+                </template>
+                <ion-item v-if="!parameterCount"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
+              </ion-list>
+            </div>
           </ion-accordion>
 
           <ion-accordion value="recent-runs">
@@ -353,15 +369,21 @@ const jobParameters = computed(() =>
   (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
     .filter(parameterIsAllowed)
     .filter((parameter: any) => !!parameter?.parameterName)
-    .map((parameter: any) => ({
-      key: `job-${parameter.parameterName}`,
-      name: String(parameter.parameterName),
-      label: String(parameter.parameterName),
-      signature: serviceSignatures.value.get(String(parameter.parameterName)) || undefined,
-      isProtected: IDENTITY_PARAMETER_NAMES.includes(String(parameter.parameterName)) &&
-        !props.editableParameterNames.includes(String(parameter.parameterName)),
-      options: props.parameterOptions[String(parameter.parameterName)],
-    })));
+    .map((parameter: any) => {
+      const name = String(parameter.parameterName);
+      const isProtected = IDENTITY_PARAMETER_NAMES.includes(name) && !props.editableParameterNames.includes(name);
+
+      return {
+        key: `job-${name}`, name, label: name, isProtected,
+        helperText: helperTextOf({ name, isProtected }), options: props.parameterOptions[name],
+      };
+    }));
+
+/** The field's helper text: the service's signature for it, and why it is disabled when it is. */
+function helperTextOf(parameter: { name: string; isProtected: boolean }) {
+  return [serviceSignatures.value.get(parameter.name), parameter.isProtected ? translate("read only") : ""]
+    .filter(Boolean).join(", ") || undefined;
+}
 
 /** Service parameters the job does not set; a leading underscore marks one Moqui supplies itself (`_jobRunId`). */
 const unsetServiceParameters = computed(() => [...serviceSignatures.value]
