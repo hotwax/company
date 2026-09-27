@@ -6,6 +6,8 @@ import { ref } from "vue";
 const apiMock = vi.fn();
 let maargUrl = "https://oms.example.com/rest/s1/";
 
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 vi.mock("@common", () => ({
   api: (args: any) => apiMock(args),
   commonUtil: {
@@ -215,6 +217,26 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     await wrapper.vm.$nextTick();
 
     expect((wrapper.vm as any).webhookCallbackUrl).toContain("arn:aws:events:");
+  });
+
+  it("reloads the selected synced history when returning from Errors, without fetching an errors history resource", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, {
+      props: { id: "1000" },
+      global: { stubs: { ...STUBS, ShopifyTransferStagingErrors: { template: '<div class="staging-errors" />' } } },
+    });
+    const view = wrapper.vm as any;
+    view.direction = "synced";
+    view.activeTab = "errors";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".staging-errors").exists()).toBe(true);
+    expect(wrapper.find(".direction-toggle").exists()).toBe(false);
+    expect(view.loadSynced).not.toHaveBeenCalled();
+
+    view.activeTab = "create";
+    await wrapper.vm.$nextTick();
+    expect(view.loadSynced).toHaveBeenCalledWith("1000", "create");
+    expect(wrapper.find(".direction-toggle").exists()).toBe(true);
   });
 
   it("renders two summary cards: left with pending count and syncing from, right with webhooks and jobs", async () => {

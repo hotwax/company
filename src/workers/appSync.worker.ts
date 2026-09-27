@@ -15,6 +15,7 @@ import "./domains/organizationDomain";
 import "./domains/shopifyInventoryMonitoringDomain";
 import "./domains/inventoryEventDomains";
 import "./domains/shopifyTransferSyncDomain";
+import "./domains/shopifyTransferDeliveryDomain";
 import "./domains/shopifyFulfillmentHistoryDomain";
 import "./domains/shopifyPendingFulfillmentDomain";
 import "./domains/shopifyFulfillmentHealthDomain";

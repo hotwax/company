@@ -2,6 +2,7 @@ export type TransferSyncDirection = "pending" | "synced";
 
 export interface TransferSyncOrderItem {
   orderItemSeqId?: string;
+  productId?: string;
   quantity?: number;
   itemDescription?: string;
 }

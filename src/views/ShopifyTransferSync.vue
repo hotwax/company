@@ -128,9 +128,7 @@
                     </p>
                   </ion-label>
                   <ion-skeleton-text v-if="webhooksLoading" slot="end" :animated="true" class="count-skeleton" />
-                  <ion-badge v-else-if="webhookSummary" slot="end" :color="webhookSummaryColor">
-                    {{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}
-                  </ion-badge>
+                  <ion-badge v-else-if="webhookSummary" slot="end" :color="webhookSummaryColor">{{ webhookSummary.subscribedCount }} / {{ webhookSummary.requiredCount }}</ion-badge>
                   <ion-note v-else slot="end" color="medium">
                     {{ translate("Not checked") }}
                   </ion-note>
@@ -148,7 +146,9 @@
                 >
                   <ion-label class="ion-text-wrap">
                     {{ translate(card.definition.label) }}
-                    <p class="message-type">{{ card.jobName }}</p>
+                    <p class="message-type">
+                      {{ card.jobName }}
+                    </p>
                     <p>{{ translate(card.definition.purpose) }}</p>
                     <p v-if="card.nextRun" class="overline">
                       {{ translate("Next run") }} {{ formatDateTime(card.nextRun) || translate("Not available") }}
@@ -156,34 +156,34 @@
                   </ion-label>
                   <ion-skeleton-text v-if="!jobsHydrated" slot="end" :animated="true" class="count-skeleton" />
                   <ion-spinner v-else-if="configuringJobKey === card.definition.key" slot="end" name="crescent" />
-                  <ion-badge v-else slot="end" :color="jobStatusColor(card.status)">
-                    {{ jobStatusLabel(card) }}
-                  </ion-badge>
+                  <ion-badge v-else slot="end" :color="jobStatusColor(card.status)">{{ jobStatusLabel(card) }}</ion-badge>
                 </ion-item>
               </ion-list>
             </ion-card>
           </section>
 
-          <!-- Four tabs over five resources. Each row is one artifact the shop has not sent to
+          <!-- Four activity tabs over five resources, followed by the latest staging errors.
+               Each activity row is one artifact the shop has not sent to
                Shopify yet; the server view decides that from the provenance ledger, so there is no
                status to interpret here and nothing to re-derive. Cancellations and item reductions
                share a tab because they are the same operator concern at two different grains. -->
           <ion-segment
-            :value="segment"
+            :value="activeTab"
             scrollable
             class="segment-tabs"
-            @ion-change="segment = ($event.detail.value as PendingSegment) || 'create'"
+            @ion-change="activeTab = ($event.detail.value as TransferSyncTab) || 'create'"
           >
             <ion-segment-button v-for="tab in SEGMENT_TABS" :key="tab.key" :value="tab.key">
-              <ion-label>
-                {{ translate(tab.label) }}
-              </ion-label>
+              <ion-label>{{ translate(tab.label) }}</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="errors">
+              <ion-label>{{ translate("Errors") }}</ion-label>
             </ion-segment-button>
           </ion-segment>
 
           <!-- Outstanding vs synced are two different resources over two different views, not a
                filter over one. Outstanding is polled into the cache; synced is fetched on demand. -->
-          <ion-segment :value="direction" class="direction-toggle" @ion-change="setDirection($event.detail.value as SyncDirection)">
+          <ion-segment v-if="activeTab !== 'errors'" :value="direction" class="direction-toggle" @ion-change="setDirection($event.detail.value as SyncDirection)">
             <ion-segment-button value="pending">
               <ion-label>{{ translate("Outstanding") }}</ion-label>
             </ion-segment-button>
@@ -192,7 +192,21 @@
             </ion-segment-button>
           </ion-segment>
 
-          <template v-if="direction === 'synced'">
+          <ShopifyTransferDeliveryStatus v-if="activeTab === 'create'" :shop-id="shopId" stage="create" :direction="direction" :checked="deliveryChecked" :error="failingDomains?.shopifyTransferDelivery" />
+          <ShopifyTransferStagingErrors
+            v-if="activeTab === 'errors'"
+            :key="shopId"
+            :shop-id="shopId"
+            :cards="stagingJobCards"
+            :checked="stagingRunsChecked"
+            :read-error="failingDomains?.serviceJobRun"
+            :delivery-checked="deliveryChecked"
+            :delivery-error="failingDomains?.shopifyTransferDelivery"
+            @open-job="openJobModal"
+            @open-transfer="openTransfer"
+            @refresh="retry"
+          />
+          <template v-else-if="direction === 'synced'">
             <ion-card v-if="syncedError">
               <ion-card-content class="ion-text-wrap">
                 <ion-icon :icon="warningOutline" color="danger" /> {{ syncedError }}
@@ -251,8 +265,8 @@
                     <ion-label>{{ translate("Shopify confirmed") }}</ion-label>
                     <ion-label slot="end">{{ formatDateTime(row.syncedAt) || translate("Not available") }}</ion-label>
                   </ion-item>
-                  <ion-item>
-                    <ion-label>{{ translate("OMS transfer") }}</ion-label>
+                  <ion-item button detail @click="openTransfer(row.orderId)">
+                    <ion-label>{{ translate("View transfer sync details") }}</ion-label>
                     <ion-label slot="end">{{ row.orderId }}</ion-label>
                   </ion-item>
                   <ion-item v-if="row.shopifyTransferId">
@@ -303,6 +317,14 @@
             </ion-card-content>
           </ion-card>
 
+          <ion-list v-else-if="segment === 'create'" lines="full" class="ion-margin-top">
+            <ion-item v-for="row in presentationRows" :key="row.key" button detail @click="openTransfer(row.orderId)">
+              <ion-label class="ion-text-wrap">
+                <h2>{{ row.title }}</h2><p>{{ row.detail }}</p><p>{{ translate(creationDeliveryLabel(row.orderId)) }}</p><p>{{ translate("View sync issues and next steps") }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
           <ion-accordion-group v-else class="transfer-row-accordion" expand="inset">
             <ion-accordion v-for="row in presentationRows" :key="row.key" :value="row.key">
               <ion-item slot="header" lines="full" class="transfer-row-header">
@@ -346,8 +368,8 @@
                   <ion-label>{{ translate("OMS recorded") }}</ion-label>
                   <ion-label slot="end">{{ formatDateTime(row.occurredAt) || translate("Not available") }}</ion-label>
                 </ion-item>
-                <ion-item>
-                  <ion-label>{{ translate("OMS transfer") }}</ion-label>
+                <ion-item button detail @click="openTransfer(row.orderId)">
+                  <ion-label>{{ translate("View transfer sync details") }}</ion-label>
                   <ion-label slot="end">{{ row.orderId }}</ion-label>
                 </ion-item>
                 <ion-item v-if="row.shopifyTransferId">
@@ -545,9 +567,7 @@
               {{ row.receivedCount }}
               <p>{{ translate("Received") }}</p>
             </ion-label>
-            <ion-badge slot="end" :color="webhookStatusColor(row.status)">
-              {{ webhookStatusLabel(row.status) }}
-            </ion-badge>
+            <ion-badge slot="end" :color="webhookStatusColor(row.status)">{{ webhookStatusLabel(row.status) }}</ion-badge>
           </ion-item>
         </ion-list>
       </ion-content>
@@ -578,28 +598,36 @@ import {
 import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
+import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
-import { useCacheSync } from "@/composables/useCacheSync";
+import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
 import { useCachedList } from "@/composables/useCachedList";
+import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
+import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import {
   registerMissingTransferWebhook,
   useShopifyPendingCounts,
-  useShopifyTransferSyncLaunch,
   useShopifyPendingSegment,
   useShopifySyncedSegment,
   useShopifyTransferSyncJobs,
+  useShopifyTransferSyncLaunch,
   useShopifyWebhookReconciliation,
 } from "@/composables/useShopifyTransferSync";
+import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
 import { facilityCache } from "@/utils/cacheEntities";
+import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
+import { transferSyncIssuePath } from "@/utils/shopifyTransferStagingErrors";
 import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
 import { buildTransferSyncPresentation, formatSyncDuration } from "@/utils/shopifyTransferSyncPresentation";
 import type { PendingSegment, SyncDirection } from "@/workers/domains/shopifyTransferSyncDomain";
 
+const router = useRouter();
+const openTransfer = (orderId: string) => router.push(transferSyncIssuePath(shopId.value, orderId));
 const props = defineProps<{ id?: string }>();
 
 const retrying = ref(false);
@@ -631,7 +659,15 @@ const SEGMENT_TABS = [
   { key: "cancellation" as PendingSegment, label: "Cancellations", also: "itemChange" as PendingSegment | undefined },
 ] as const;
 
-const segment = ref<PendingSegment>("create");
+type TransferSyncTab = PendingSegment | "errors";
+const activeTab = ref<TransferSyncTab>("create");
+const { logsFor: deliveryLogsFor } = useShopifyTransferDelivery(() => shopId.value);
+function creationDeliveryLabel(orderId: string) {
+  const log = deliveryLogsFor("create", orderId)[0];
+
+  return log ? transferDeliveryState(log).label : "Waiting for Shopify confirmation";
+}
+const segment = computed<PendingSegment>(() => activeTab.value === "errors" ? "create" : activeTab.value);
 
 const { counts, creationOrderCount, total: pendingTotal, hydrated } = useShopifyPendingCounts(() => shopId.value);
 const { rows: primaryRows } = useShopifyPendingSegment(() => shopId.value, () => segment.value);
@@ -750,7 +786,7 @@ const {
 } = useShopifySyncedSegment();
 
 const rawTransferRows = computed<Record<string, unknown>[]>(() =>
-  direction.value === "synced" ? syncedRows.value : segmentRows.value);
+  activeTab.value === "errors" ? [] : direction.value === "synced" ? syncedRows.value : segmentRows.value);
 const { enrichment, load: loadEnrichment } = useShopifyTransferSyncEnrichment();
 // `adminUrl` is decorated here rather than inside buildTransferSyncPresentation: the shop domain is
 // view state, and the presentation helper stays pure and shop-agnostic.
@@ -774,12 +810,12 @@ watch(rawTransferRows, (rows) => {
  */
 function openOutstanding(next: PendingSegment) {
   direction.value = "pending";
-  segment.value = next;
+  activeTab.value = next;
 }
 
 function setDirection(next: SyncDirection) {
   direction.value = next || "pending";
-  if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+  if(activeTab.value !== "errors" && direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
 }
 
 function loadMoreSynced() {
@@ -787,8 +823,8 @@ function loadMoreSynced() {
 }
 
 // Switching tab while looking at history re-reads that tab's history, not the previous tab's.
-watch(segment, () => {
-  if(direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
+watch(activeTab, () => {
+  if(activeTab.value !== "errors" && direction.value === "synced") {void loadSynced(shopId.value, segment.value);}
 });
 
 // Shopify topic prefixes this flow owns. The vocabulary itself stays in the connector — these
@@ -861,6 +897,8 @@ function webhookStatusLabel(status: string) {
 
 const { jobs: cachedJobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards: jobCards, ensure: ensureJob } = useShopifyTransferSyncJobs(() => shopId.value, () => cachedJobs.value);
+const stagingJobCards = computed(() => jobCards.value.filter((card) => ["create", "update"].includes(card.definition.key)));
+const stagingJobNames = computed(() => stagingJobCards.value.filter((card) => card.job).map((card) => card.jobName));
 
 const showJobModal = ref(false);
 /**
@@ -1013,11 +1051,20 @@ function handleJobUpdated() {
 const {
   start: startSyncDomains,
   stop: stopSyncDomains,
-  error: transferSyncError,
+  error: syncError,
+  failingDomains,
   domainStatus,
   syncNow,
 } = useCacheSync();
+// Stager-read failures belong in the Errors tab; they do not make the activity ledger unavailable.
+const transferSyncError = computed(() => failingDomains?.value
+  ? failingDomains.value.shopifyTransferSync || failingDomains.value.auth || failingDomains.value.__start || ""
+  : syncError.value);
 const viewSyncBaselineAt = ref(0);
+const viewActive = ref(false);
+const stagingSyncBaselineAt = ref(0);
+const stagingRunsChecked = computed(() => Number(domainStatus.value.serviceJobRun?.at ?? 0) > stagingSyncBaselineAt.value);
+const deliveryChecked = computed(() => Number(domainStatus.value.shopifyTransferDelivery?.at ?? 0) > stagingSyncBaselineAt.value);
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
   cacheHydrated: hydrated.value,
@@ -1028,11 +1075,19 @@ const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
 
 function activeSyncDomains() {
   return shopId.value
-    ? [{ name: "shopifyTransferSync", args: { shopId: shopId.value } }]
+    ? [
+      { name: "shopifyTransferSync", args: { shopId: shopId.value } },
+      { name: "shopifyTransferDelivery", args: { shopId: shopId.value } },
+      ...(activeTab.value === "errors" && stagingJobNames.value.length
+        ? [{ name: "serviceJobRun", args: { jobNames: stagingJobNames.value, total: 5, batchSize: 5 } }]
+        : []),
+    ]
     : [];
 }
 
 function startTransferSyncDomains() {
+  viewActive.value = true;
+  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
   void loadLaunch(shopId.value, undefined, true);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
@@ -1051,9 +1106,14 @@ async function retry() {
 }
 
 watch(shopId, startTransferSyncDomains);
+watch(() => `${activeTab.value}|${stagingJobNames.value.join("|")}`, () => {
+  if(!viewActive.value) {return;}
+  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
+  void startSyncDomains(activeSyncDomains());
+});
 onIonViewWillEnter(startTransferSyncDomains);
 
-onIonViewDidLeave(() => { stopSyncDomains(); });
+onIonViewDidLeave(() => { viewActive.value = false; stopSyncDomains(); });
 </script>
 
 <style scoped>

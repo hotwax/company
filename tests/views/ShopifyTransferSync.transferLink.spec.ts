@@ -90,7 +90,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     saving: ref(false), error: ref(""), load: vi.fn(), save: vi.fn(),
   }),
   useShopifySyncedSegment: () => ({
-    rows: ref([]), total: ref(0), loading: ref(false), error: ref(""),
+    rows: ref([{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]), total: ref(1), loading: ref(false), error: ref(""),
     hasMore: ref(false), load: vi.fn(), loadMore: vi.fn(),
   }),
   useShopifyTransferSyncJobs: () => ({ cards: ref([]), ensure: vi.fn() }),
@@ -107,50 +107,57 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
 async function mountView() {
   const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
 
-  return mount(ShopifyTransferSync, {
+  const wrapper = mount(ShopifyTransferSync, {
     props: { id: "1000" },
     global: {
-        stubs: {
-          IonPage: { template: "<div><slot /></div>" },
-          IonHeader: { template: "<div><slot /></div>" },
-          IonToolbar: { template: "<div><slot /></div>" },
-          IonButtons: { template: "<div><slot /></div>" },
-          IonBackButton: { template: "<button />" },
-          IonTitle: { template: "<h1><slot /></h1>" },
-          IonContent: { template: "<div><slot /></div>" },
-          IonCard: { template: "<div class='ion-card'><slot /></div>" },
-          IonCardHeader: { template: "<div class='ion-card-header'><slot /></div>" },
-          IonCardTitle: { template: "<h2 class='ion-card-title'><slot /></h2>" },
-          IonCardSubtitle: { template: "<h3 class='ion-card-subtitle'><slot /></h3>" },
-          IonCardContent: { template: "<div class='ion-card-content'><slot /></div>" },
-          IonList: { template: "<div class='ion-list'><slot /></div>" },
-          IonItem: { template: "<div class='ion-item'><slot /></div>" },
-          IonItemDivider: { template: "<div class='ion-item-divider'><slot /></div>" },
-          IonLabel: { template: "<div class='ion-label'><slot /></div>" },
-          IonBadge: { template: "<span class='ion-badge'><slot /></span>" },
-          IonButton: { template: "<button><slot /></button>" },
-          IonIcon: { template: "<span />" },
-          IonSkeletonText: { template: "<span />" },
-          IonSpinner: { template: "<span />" },
-          IonNote: { template: "<span />" },
-          IonAccordionGroup: { template: "<div><slot /></div>" },
-          // Ionic distributes `slot="header"` natively; to Vue that is a plain attribute, so every
-          // child lands in the DEFAULT slot. A named-slot stub would render nothing.
-          IonAccordion: { template: "<div><slot /></div>" },
-          IonSegment: { template: "<div><slot /></div>" },
-          IonSegmentButton: { template: "<button><slot /></button>" },
-          IonModal: { template: "<div><slot /></div>" },
-          IonRadioGroup: { template: "<div><slot /></div>" },
-          IonRadio: { template: "<div><slot /></div>" },
-          IonDatetime: { template: "<div />" },
-          IonDatetimeButton: { template: "<button />" },
-          IonPopover: { template: "<div><slot /></div>" },
-          IonFab: { template: "<div class='ion-fab'><slot /></div>" },
-          IonFabButton: { template: "<button class='ion-fab-button'><slot /></button>" },
-          ServiceJobDetailsModal: { template: "<div />" },
-        },
+      stubs: {
+        IonPage: { template: "<div><slot /></div>" },
+        IonHeader: { template: "<div><slot /></div>" },
+        IonToolbar: { template: "<div><slot /></div>" },
+        IonButtons: { template: "<div><slot /></div>" },
+        IonBackButton: { template: "<button />" },
+        IonTitle: { template: "<h1><slot /></h1>" },
+        IonContent: { template: "<div><slot /></div>" },
+        IonCard: { template: "<div class='ion-card'><slot /></div>" },
+        IonCardHeader: { template: "<div class='ion-card-header'><slot /></div>" },
+        IonCardTitle: { template: "<h2 class='ion-card-title'><slot /></h2>" },
+        IonCardSubtitle: { template: "<h3 class='ion-card-subtitle'><slot /></h3>" },
+        IonCardContent: { template: "<div class='ion-card-content'><slot /></div>" },
+        IonList: { template: "<div class='ion-list'><slot /></div>" },
+        IonItem: { template: "<div class='ion-item'><slot /></div>" },
+        IonItemDivider: { template: "<div class='ion-item-divider'><slot /></div>" },
+        IonLabel: { template: "<div class='ion-label'><slot /></div>" },
+        IonBadge: { template: "<span class='ion-badge'><slot /></span>" },
+        IonButton: { template: "<button><slot /></button>" },
+        IonIcon: { template: "<span />" },
+        IonSkeletonText: { template: "<span />" },
+        IonSpinner: { template: "<span />" },
+        IonNote: { template: "<span />" },
+        IonAccordionGroup: { template: "<div><slot /></div>" },
+        // Ionic distributes `slot="header"` natively; to Vue that is a plain attribute, so every
+        // child lands in the DEFAULT slot. A named-slot stub would render nothing.
+        IonAccordion: { template: "<div><slot /></div>" },
+        IonSegment: { template: "<div><slot /></div>" },
+        IonSegmentButton: { template: "<button><slot /></button>" },
+        IonModal: { template: "<div><slot /></div>" },
+        IonRadioGroup: { template: "<div><slot /></div>" },
+        IonRadio: { template: "<div><slot /></div>" },
+        IonDatetime: { template: "<div />" },
+        IonDatetimeButton: { template: "<button />" },
+        IonPopover: { template: "<div><slot /></div>" },
+        IonFab: { template: "<div class='ion-fab'><slot /></div>" },
+        IonFabButton: { template: "<button class='ion-fab-button'><slot /></button>" },
+        ServiceJobDetailsModal: { template: "<div />" },
+        ShopifyTransferDeliveryStatus: true,
+      },
     },
   });
+  // Confirmed Shopify transfers belong in Synced. Outstanding creation rows open their detail
+  // page instead of carrying a remote link for a transfer that has not yet been created.
+  (wrapper.vm as any).direction = "synced";
+  await wrapper.vm.$nextTick();
+
+  return wrapper;
 }
 
 describe("ShopifyTransferSync - Shopify transfer link", () => {

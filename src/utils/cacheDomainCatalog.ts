@@ -78,6 +78,7 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   { name: "appVersion", table: "appVersions", label: "App versions", syncClass: "B" },
   // --- class A: live, view-scoped (shown for visibility; not synced at login) ---
   { name: "dataManagerLog", table: "dataManagerLogs", label: "Data manager logs", syncClass: "A" },
+  { name: "shopifyTransferDelivery", table: "dataManagerLogs", label: "Shopify transfer deliveries", syncClass: "A" },
   { name: "systemMessage", table: "systemMessages", label: "System messages", syncClass: "A" },
   // The inventory sync area's pollers: two per ledger, one per update cursor (see inventoryEventDomains).
   { name: "shopifyInventoryAdjustmentDetail", table: "shopifyInventoryAdjustmentDetails", label: "Shopify channel inventory events", syncClass: "A" },
