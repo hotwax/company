@@ -184,16 +184,26 @@
               <ion-label>{{ translate('Recent runs') }}<p>{{ translate('Last 5 executions for this service job.') }}</p></ion-label>
               <ion-note slot="end">{{ recentRuns.length }}</ion-note>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <ion-item v-for="run in recentRuns" :key="runKey(run)">
-                <ion-label>
-                  {{ statusLabel(serviceJobRunStatus(run)) }}
-                  <p>{{ formatDate(run.startTime || run.startedAt) }}</p>
-                  <p v-if="run.endTime || run.completedAt">{{ translate('Completed') }} {{ formatDate(run.endTime || run.completedAt) }}</p>
+            <!-- The status once, as the badge; the lines say when, how long, and what the run did. -->
+            <ion-list slot="content" inset lines="full">
+              <ion-item v-for="run in runRows" :key="run.key">
+                <ion-label class="ion-text-wrap">
+                  {{ run.startedAt }}
+                  <p v-if="run.duration">
+                    {{ run.duration }}
+                  </p>
+                  <p v-for="figure in run.figures" :key="figure">
+                    {{ figure }}
+                  </p>
+                  <p v-if="run.error">
+                    {{ run.error }}
+                  </p>
                 </ion-label>
-                <ion-badge slot="end" :color="statusColor(serviceJobRunStatus(run))">{{ statusLabel(serviceJobRunStatus(run)) }}</ion-badge>
+                <ion-badge slot="end" :color="run.statusColor">
+                  {{ run.statusLabel }}
+                </ion-badge>
               </ion-item>
-              <ion-item v-if="!recentRuns.length"><ion-label>{{ translate('No recent runs found') }}</ion-label></ion-item>
+              <ion-item v-if="!runRows.length"><ion-label>{{ translate('No recent runs found') }}</ion-label></ion-item>
             </ion-list>
           </ion-accordion>
 
@@ -247,7 +257,8 @@ import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
 import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";
-import { serviceJobRunStatus } from '@/utils/serviceJobRun';
+import { formatLag } from "@/utils/inventoryEventTime";
+import { describeRunResult, serviceJobRunStatus } from "@/utils/serviceJobRun";
 
 /**
  * Parameters that bind a job to what it serves - the ones a screen finds the job BY. Editing one
@@ -344,6 +355,28 @@ const nextRunLabel = computed(() => {
 const lastRunLabel = computed(() => recentRuns.value.length
   ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)}, ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
   : translate('No recent runs'));
+/**
+ * What each recent run did. Zero figures are dropped (a publisher pass that found an empty queue reads
+ * "Stopped because: the queue was empty", not five zeros), and `{}` results leave just the timing.
+ */
+const runRows = computed(() => recentRuns.value.map((run) => {
+  const status = serviceJobRunStatus(run);
+  const started = Number(run.startTime ?? run.startedAt);
+  const tookMs = Number(run.endTime ?? run.completedAt) - started;
+  const error = status === "Failed" ? String(run.errors ?? "").trim() : "";
+
+  return {
+    key: runKey(run),
+    startedAt: formatDate(run.startTime || run.startedAt),
+    duration: Number.isFinite(tookMs) && tookMs >= 0
+      ? translate("Took {duration}", { duration: tookMs < 1000 ? translate("{ms} ms", { ms: tookMs }) : formatLag(tookMs) })
+      : "",
+    figures: describeRunResult(run.results).filter((row) => row.value !== "0").map((row) => `${row.label}: ${row.value}`),
+    error: error.length > 200 ? `${error.slice(0, 200).trimEnd()}…` : error,
+    statusLabel: statusLabel(status),
+    statusColor: statusColor(status),
+  };
+}));
 const productLabel = computed(() => jobDetails.value.instanceOfProductId || translate('Unavailable'));
 const scheduleOptions = [
   { label: 'Every 15 minutes', expression: '0 */15 * ? * *' },

@@ -180,4 +180,23 @@ describe('job modal title, identity parameters and committed writes', () => {
     expect(wrapper.findAll('ion-label').some((label) => label.text().includes('daysToKeep'))).toBe(false);
     wrapper.unmount();
   });
+
+  it("shows each recent run's timing and what it did, with its status once", async () => {
+    api.runs.mockResolvedValue([
+      { jobRunId: 'R2', startTime: 10_000, endTime: 10_222, hasError: 'N',
+        results: JSON.stringify({ recordsRemoved: 20, terminalDetailRecordsRemoved: 19, ageOnlyDetailRecordsRemoved: 0 }) },
+      { jobRunId: 'R1', startTime: 1_000, endTime: 4_000, hasError: 'Y', results: '{}', errors: 'Lock wait timeout exceeded' },
+    ]);
+    const wrapper = mountModal(); await flushPromises();
+    const rows = wrapper.findAll('ion-item').map((row) => row.text()).filter((text) => text.includes('{duration}'));
+    expect(rows).toHaveLength(2);
+
+    expect(rows[0]).toContain('Took {duration}');
+    expect(rows[0]).toContain('Records removed: 20');
+    expect(rows[0]).not.toContain('Removed for age only');
+    expect(rows[0].split('Completed')).toHaveLength(2);
+    expect(rows[1]).toContain('Lock wait timeout exceeded');
+    expect(rows[1]).toContain('Failed');
+    wrapper.unmount();
+  });
 });
