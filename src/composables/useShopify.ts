@@ -7169,6 +7169,95 @@ export async function refreshMappedProductSearchIndex(productId: string) {
   }
 }
 
+export interface ShopifyProductMappingChoice {
+  productId: string;
+  variantId: string;
+  inventoryItemId: string;
+  title?: string;
+  variantTitle?: string;
+  sku?: string;
+  barcode?: string;
+  status?: string;
+  shopifyProductId?: string;
+  imageUrl?: string;
+  available: boolean;
+}
+
+/** Current shop-scoped mappings, independent of a historical staging diagnostic. */
+const fetchTransferProductMappings = async (shopId: string, productId: string): Promise<ShopifyProductMappingChoice[]> => {
+  if(!shopId || !productId) {throw new Error(translate("Shop and OMS product are required."));}
+  const mappings: ShopifyProductMappingChoice[] = [];
+  for(let pageIndex = 0; ; pageIndex++) {
+    const page = await requestBackend<any>({
+      url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "GET",
+      params: { shopId, pageIndex, pageSize: 100, fieldsToSelect: "shopId,productId,shopifyProductId,shopifyInventoryItemId" },
+    });
+    if(!Array.isArray(page) || page.some(row => String(row.shopId) !== shopId || String(row.productId) !== productId)) {
+      throw new Error(translate("Current product mappings could not be verified."));
+    }
+    mappings.push(...page.map(row => ({ productId, variantId: String(row.shopifyProductId), inventoryItemId: String(row.shopifyInventoryItemId || ""), available: false })));
+    if(page.length < 100) {break;}
+  }
+
+  return mappings;
+};
+
+/** Resolve the actual variants; Solr's OMS name cannot distinguish duplicate Shopify mappings. */
+const fetchTransferMappingChoices = async (shopId: string, productId: string): Promise<ShopifyProductMappingChoice[]> => {
+  const mappings = await fetchTransferProductMappings(shopId, productId);
+  for(let offset = 0; offset < mappings.length; offset += 100) {
+    const batch = mappings.slice(offset, offset + 100);
+    const result = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+      shopId,
+      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status } } } }",
+      variables: { ids: batch.map(row => `gid://shopify/ProductVariant/${row.variantId}`) },
+    } });
+    if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(result.response?.nodes)) {
+      throw new Error(translate("Shopify variants could not be loaded. Recheck before changing mappings."));
+    }
+    for(const row of batch) {
+      const variant = result.response.nodes.find((node: any) => node?.id === `gid://shopify/ProductVariant/${row.variantId}`);
+      if(!variant) {continue;}
+      Object.assign(row, { title: variant.product?.title, variantTitle: variant.title, sku: variant.sku, barcode: variant.barcode,
+        status: variant.product?.status, shopifyProductId: variant.product?.id?.split("/").pop(), imageUrl: variant.image?.url,
+        available: variant.inventoryItem?.id === `gid://shopify/InventoryItem/${row.inventoryItemId}` });
+    }
+  }
+
+  return mappings;
+};
+
+const mappingFingerprint = (rows: ShopifyProductMappingChoice[]): string => {
+  return rows.map(row => `${row.productId}:${row.variantId}:${row.inventoryItemId}`).sort().join("|");
+};
+
+/** Explicit catalog repair. Recheck before writing and verify the retained mapping after writing. */
+const keepTransferProductMapping = async (shopId: string, productId: string, keepVariantId: string, expected: ShopifyProductMappingChoice[]) => {
+  const current = await fetchTransferMappingChoices(shopId, productId);
+  if(mappingFingerprint(current) !== mappingFingerprint(expected) || !current.some(row => row.variantId === keepVariantId && row.available)) {
+    throw new Error(translate("Mappings changed since you opened this page. Recheck and choose again."));
+  }
+  try {
+    for(const row of current.filter(row => row.variantId !== keepVariantId)) {
+      const response: any = await api({ url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "DELETE",
+        params: { shopId, shopifyProductId: row.variantId } });
+      if(!response || response.data == null || commonUtil.hasError(response)) {throw new Error("Mapping removal was rejected");}
+    }
+    const remaining = await fetchTransferProductMappings(shopId, productId);
+    if(remaining.length !== 1 || remaining[0].variantId !== keepVariantId || remaining[0].inventoryItemId !== current.find(row => row.variantId === keepVariantId)?.inventoryItemId) {
+      throw new Error("Unverified mapping change");
+    }
+  } catch {
+    // A lost response may follow a committed delete; never invite blind replay of this action.
+    throw new Error(translate("The mapping change could not be fully verified. Some mappings may have changed. Recheck the current mappings before trying again."));
+  }
+};
+
+/** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
+export function useTransferMappingResolution() {
+  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
+}
+
 /** Read every variant and its existing OMS mapping without re-running an import. */
 export async function fetchProductMappings(payload: {productId: string; systemMessageRemoteId: string; productStoreId: string}) {
   const productId = getExactShopifyProductGid(payload.productId);

@@ -26,6 +26,22 @@ function assertReadable(response: any, message: string): any {
   return responseData(response);
 }
 
+/** Dates and the confirmed Shopify identity for the explicitly opened TO. */
+export async function fetchTransferSyncSummary(shopId: string, orderId: string) {
+  const [datesResponse, mappingsResponse]: any[] = await Promise.all([
+    api({ url: "oms/transferOrders", method: "GET", params: { orderId, fieldsToSelect: "orderId,orderDate,entryDate", limit: 1 } }),
+    api({ url: "sob/shopify/transferSync/syncedCreate", method: "GET", params: { shopId, orderId, pageSize: 100 } }),
+  ]);
+  const dates = assertReadable(datesResponse, "Transfer dates could not be loaded.")?.orders?.[0];
+  const mappings = assertReadable(mappingsResponse, "The Shopify transfer identity could not be loaded.");
+  if(!Array.isArray(mappings) || mappings.some(row => String(row.shopId) !== shopId || String(row.orderId) !== orderId)) {
+    throw new Error("Transfer ownership could not be verified.");
+  }
+  const ids = [...new Set<string>(mappings.map(row => String(row.shopifyInventoryTransferId || "")).filter(Boolean))];
+  if(ids.length > 1) {throw new Error("The Shopify transfer identity could not be verified.");}
+  return { orderDate: dates?.orderDate, entryDate: dates?.entryDate, transferId: ids[0] };
+}
+
 /** Adapter over the existing OMS/Poorti endpoints; no transfer-sync API payload is widened. */
 export function createTransferSyncEnrichmentClient(): TransferSyncEnrichmentClient {
   return {
@@ -129,13 +145,13 @@ export function useShopifyTransferSyncEnrichment() {
   const client = createTransferSyncEnrichmentClient();
   let latestRequest = 0;
 
-  async function load(rows: Record<string, unknown>[]) {
+  async function load(rows: Record<string, unknown>[], options: { refresh?: boolean } = {}) {
     const request = ++latestRequest;
     if(!rows.length) {return;}
     loading.value = true;
     error.value = "";
     try {
-      const loaded = await enrichTransferSyncRows(rows, enrichment.value, client);
+      const loaded = await enrichTransferSyncRows(rows, options.refresh ? emptyTransferSyncEnrichment() : enrichment.value, client);
       if(request === latestRequest) {enrichment.value = loaded;}
     } catch (err: any) {
       if(request === latestRequest) {error.value = err?.message || "Transfer details could not be loaded.";}
