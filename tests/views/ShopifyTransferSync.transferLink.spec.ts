@@ -78,15 +78,9 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
-    counts: ref({ create: 1 }), creationOrderCount: ref(1), total: ref(1), hydrated: ref(true),
+    counts: ref({ create: 0 }), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
-  useShopifyPendingSegment: (_shop: any, segment: any) => ({
-    rows: ref(typeof segment === "function" && segment() === "create"
-      ? [{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]
-      : []),
-    hydrated: ref(true),
-    count: ref(1),
-  }),
+  useShopifyPendingSegment: () => ({ rows: ref([]), hydrated: ref(true), count: ref(0) }),
   useShopifyTransferSyncLaunch: () => ({
     currentDate: ref("2026-09-01T00:00:00.000Z"), counts: ref({}), loading: ref(false),
     saving: ref(false), error: ref(""), load: vi.fn(), save: vi.fn(),
