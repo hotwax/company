@@ -331,7 +331,6 @@
         <ServiceJobDetailsModal
           :is-open="showSyncJobDetailsModal"
           :job-name="selectedSyncJobDetailsJob?.jobName || ''"
-          :title="syncJobDetailsTitle"
           @updated="handleRefresh"
           @close="handleSyncJobDetailsDidDismiss"
         />
@@ -697,7 +696,6 @@ import { useStatuses } from "@/composables/useSeed";
 
 
 
-import cronstrue from "cronstrue";
 
 
 
@@ -726,7 +724,6 @@ import AnimatedDuration from "@/components/common/AnimatedDuration.vue";
 const props = defineProps(["id"]);
 const userStore = useUserStore();
 const {
-  products,
   fetchJobDetail,
   fetchJobRuns,
   fetchJobAuditHistory,
@@ -811,8 +808,6 @@ const replaySyncFromDate = ref("");
 const isReplaySyncStarting = ref(false);
 const showSyncJobDetailsModal = ref(false);
 const showStepDetailsModal = ref(false);
-const isSyncJobDetailsLoading = ref(false);
-const isSyncJobDetailsSaving = ref(false);
 const isStepDetailsLoading = ref(false);
 const isSyncJobConfigLoaded = ref(false);
 const isSyncJobConfiguring = ref(false);
@@ -857,10 +852,6 @@ const pendingUpdateRequestsLastCreatedAt = computed(() =>
 const errorRecordCount = computed(() => {
   return recentMdmLogs.value.reduce((acc: number, log: any) => acc + Number(log.failedRecordCount || 0), 0);
 });
-const syncJobDetails = ref<any>({});
-const syncJobDraftCronExpression = ref("");
-const syncJobDraftActive = ref(true);
-const syncJobDetailsRecentRuns = computed(() => cachedRunsFor(selectedSyncJobDetailsJob.value?.jobName));
 const syncJobAuditHistory = ref<any[]>([]);
 const syncJobAuditUsers = ref<Record<string, any>>({});
 const latestPauseAuditByJobName = ref<Record<string, any>>({});
@@ -1261,26 +1252,6 @@ const latestSyncJobAuditLabel = computed(() => {
   const latest = syncJobAuditHistory.value[0];
   return `${getSyncJobAuditFieldLabel(latest)}: ${getSyncJobAuditChangeLabel(latest)}`;
 });
-const syncJobDetailsTitle = computed(() => {
-  const job = syncJobDetails.value?.jobName ? syncJobDetails.value : selectedSyncJobDetailsJob.value;
-  if (isSelectedShopProductSyncJob(job)) {
-    return translate("Queue update requests");
-  }
-  if (job?.jobName === BULK_OPERATION_SEND_JOB_NAME) {
-    return translate("Send update request");
-  }
-  if (job?.jobName === BULK_OPERATION_POLL_JOB_NAME) {
-    return translate("Import completed requests");
-  }
-  return job?.jobName || translate("Sync job details");
-});
-const syncJobProductLabel = computed(() => {
-  const productId = syncJobDetails.value?.instanceOfProductId;
-  if (!productId) return translate("Unavailable");
-
-  const product = products.value?.[productId];
-  return product?.productName || product?.internalName || productId;
-});
 const syncJobLastRunLabel = computed(() => {
   if (isSyncJobPaused.value) {
     return getPausedJobSummaryLabel(syncJobObj.value);
@@ -1290,48 +1261,6 @@ const syncJobLastRunLabel = computed(() => {
     return `${translate("Last run")}: ${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
   }
   return translate("No recent runs");
-});
-const syncJobDetailsLastRunLabel = computed(() => {
-  if (syncJobDetailsRecentRuns.value.length) {
-    const latestRun = syncJobDetailsRecentRuns.value[0];
-    return `${formatJobDateTimeLabel(getSyncJobRunStartedAt(latestRun), { sameDayTimeOnly: true })}, ${getSyncJobRunStatus(latestRun)}`;
-  }
-  return translate("No recent runs");
-});
-const syncJobDetailsDirty = computed(() => {
-  return syncJobDraftCronExpression.value !== getSyncJobOriginalCronExpression() ||
-    syncJobDraftActive.value !== getSyncJobOriginalActive();
-});
-const isSyncJobDraftScheduleValid = computed(() => {
-  if (!syncJobDraftCronExpression.value) return false;
-
-  try {
-    CronExpressionParser.parse(syncJobDraftCronExpression.value, {
-      tz: userProfile.value?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-    });
-    return true;
-  } catch (error) {
-    return false;
-  }
-});
-const syncJobDraftScheduleDescription = computed(() => {
-  return getCronDescription(syncJobDraftCronExpression.value);
-});
-const syncJobDraftNextRunRelativeLabel = computed(() => {
-  if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
-  const nextRun = getNextRunDateTime({ cronExpression: syncJobDraftCronExpression.value });
-  if (!nextRun) return translate("Not scheduled");
-  // `toRelative` returns null for an invalid base or target; treat that as unschedulable rather
-  // than calling `.replace` on null.
-  const relative = nextRun.toRelative({ base: DateTime.fromMillis(currentTimeMs.value), style: "long" });
-  if (!relative) return translate("Not scheduled");
-  return `${translate("next run in")} ${relative.replace("in ", "")}`;
-});
-const syncJobDraftNextRunTimeLabel = computed(() => {
-  if (!isSyncJobDraftScheduleValid.value) return translate("Invalid");
-  const nextRun = getNextRunDateTime({ cronExpression: syncJobDraftCronExpression.value });
-  if (!nextRun) return translate("Not scheduled");
-  return `${translate("next run at")} ${nextRun.toLocaleString(DateTime.DATETIME_SHORT)}`;
 });
 const isBulkOperationSendJobPaused = computed(() => {
   return isJobPaused(bulkOperationSendJob.value);
@@ -1375,21 +1304,6 @@ const currentShopifyRequestStatusLabel = computed(() => {
 });
 const currentShopifyRequestStatusColor = computed(() => {
   return getShopifyBulkOperationStatusColor(runningShopifyBulkOperation.value?.status);
-});
-const syncJobParameters = computed(() => {
-  const jobParameters = (syncJobDetails.value?.serviceJobParameters || []).map((parameter: any, index: number) => ({
-    key: `job-${parameter.parameterName || index}`,
-    label: parameter.parameterName || translate("Parameter"),
-    value: formatParameterValue(parameter.parameterValue),
-    source: translate("Job parameter")
-  }));
-  const serviceParameters = (syncJobDetails.value?.serviceInParameters || []).map((parameter: any, index: number) => ({
-    key: `service-${parameter.parameterName || parameter.name || index}`,
-    label: parameter.parameterName || parameter.name || translate("Parameter"),
-    value: formatParameterValue(parameter.defaultValue || parameter.parameterValue || parameter.type || parameter.mode),
-    source: translate("Service parameter")
-  }));
-  return [...jobParameters, ...serviceParameters];
 });
 const reviewReady = computed(() => {
   return !!reviewStats.value.loaded && !isReviewLoading.value;
@@ -2623,7 +2537,7 @@ async function executeRunSyncJob(job: any) {
   try {
     await runNow(job.jobName);
     commonUtil.showToast(translate("Job has been scheduled to run now"));
-    await refreshAfterRunNow(job);
+    await refreshAfterRunNow();
   } catch (err) {
     logger.error("Failed to run job now", err);
     commonUtil.showToast(translate("Failed to run job"));
@@ -2634,24 +2548,12 @@ async function executeRunSyncJob(job: any) {
   }
 }
 
-function isSyncJobRunNowLoading(job: any) {
-  return !!job?.jobName && syncJobRunNowJobName.value === job.jobName;
-}
-
-async function refreshAfterRunNow(job: any) {
+async function refreshAfterRunNow() {
   // No latest-run reload: `syncJobRecentRuns` is a cached projection and the worker is already
   // watching this job, so the new run appears on its own moments after it starts.
-  const refreshTasks: Array<Promise<any>> = [];
-
   if (activeExperienceMode.value === "returning") {
-    refreshTasks.push(loadSecondaryData({ silent: true }));
+    await loadSecondaryData({ silent: true });
   }
-
-  if (!syncJobDetailsDirty.value && selectedSyncJobDetailsJob.value?.jobName === job?.jobName) {
-    refreshTasks.push(refreshSyncJobDetails({ silent: true }));
-  }
-
-  await Promise.all(refreshTasks);
 }
 
 
@@ -2722,10 +2624,6 @@ async function updateSyncJob(payload: any, successMessage: string) {
       });
     }
 
-    if (showSyncJobDetailsModal.value) {
-      await refreshSyncJobDetails();
-    }
-
     if (activeExperienceMode.value === "returning") {
       await loadPausedJobAuditSummaries();
     }
@@ -2739,98 +2637,20 @@ async function updateSyncJob(payload: any, successMessage: string) {
   }
 }
 
-async function openSyncJobDetailsModal(job = syncJobObj.value) {
+/** The modal loads the job itself. */
+function openSyncJobDetailsModal(job = syncJobObj.value) {
   if (!job?.jobName) return;
   selectedSyncJobDetailsJob.value = job;
   showSyncJobDetailsModal.value = true;
-  await refreshSyncJobDetails();
-}
-
-async function requestCloseSyncJobDetailsModal() {
-  const shouldClose = await confirmDiscardSyncJobDetailsChanges();
-  if (!shouldClose) return;
-
-  resetSyncJobDetailsDraft();
-  showSyncJobDetailsModal.value = false;
 }
 
 function handleSyncJobDetailsDidDismiss() {
   showSyncJobDetailsModal.value = false;
-  resetSyncJobDetailsDraft();
   selectedSyncJobDetailsJob.value = null;
-  syncJobDetails.value = {};
-  syncJobAuditHistory.value = [];
-  syncJobAuditHistoryError.value = "";
-  isSyncJobAuditHistoryLoading.value = false;
 }
 
 async function handleRefresh() {
   await loadSecondaryData({ silent: true });
-}
-
-async function canDismissSyncJobDetailsModal() {
-  const canDismiss = await confirmDiscardSyncJobDetailsChanges();
-  if (canDismiss) resetSyncJobDetailsDraft();
-  return canDismiss;
-}
-
-async function requestRefreshSyncJobDetails() {
-  const shouldRefresh = await confirmDiscardSyncJobDetailsChanges();
-  if (!shouldRefresh) return;
-
-  resetSyncJobDetailsDraft();
-  await refreshSyncJobDetails();
-}
-
-async function saveSyncJobDetails() {
-  if (!selectedSyncJobDetailsJob.value?.jobName || !syncJobDetailsDirty.value || !isSyncJobDraftScheduleValid.value) return;
-
-  isSyncJobDetailsSaving.value = true;
-  try {
-    const updated = await updateSyncJob({
-      jobName: selectedSyncJobDetailsJob.value.jobName,
-      cronExpression: syncJobDraftCronExpression.value,
-      paused: syncJobDraftActive.value ? "N" : "Y"
-    }, translate("Sync job updated successfully."));
-
-    if (updated) {
-      showSyncJobDetailsModal.value = false;
-    }
-  } finally {
-    isSyncJobDetailsSaving.value = false;
-  }
-}
-
-async function refreshSyncJobDetails(opts: { silent?: boolean } = {}) {
-  if (!selectedSyncJobDetailsJob.value?.jobName) return;
-
-  if (!opts.silent) {
-    isSyncJobDetailsLoading.value = true;
-    syncJobAuditHistory.value = [];
-    syncJobAuditHistoryError.value = "";
-  }
-  try {
-    const jobDetails = await fetchJobDetail(selectedSyncJobDetailsJob.value.jobName, shop.value.productStoreId);
-
-    syncJobDetails.value = jobDetails || {};
-    setSyncJobDetailsDraft(syncJobDetails.value);
-
-
-    void loadSyncJobAuditHistory(jobDetails.jobName);
-  } catch (error: any) {
-    logger.error(error);
-    if (!opts.silent) {
-      syncJobDetails.value = {};
-      syncJobAuditHistory.value = [];
-      syncJobAuditHistoryError.value = "";
-      resetSyncJobDetailsDraft();
-      commonUtil.showToast(translate("Failed to load sync job details."));
-    }
-  } finally {
-    if (!opts.silent) {
-      isSyncJobDetailsLoading.value = false;
-    }
-  }
 }
 
 async function loadSyncJobAuditHistory(jobName: string) {
@@ -2849,54 +2669,6 @@ async function loadSyncJobAuditHistory(jobName: string) {
     isSyncJobAuditHistoryLoading.value = false;
   }
 }
-
-function getSyncJobOriginalCronExpression() {
-  return syncJobDetails.value?.cronExpression || selectedSyncJobDetailsJob.value?.cronExpression || "";
-}
-
-function getSyncJobOriginalActive() {
-  const job = syncJobDetails.value?.jobName ? syncJobDetails.value : selectedSyncJobDetailsJob.value;
-  return !isJobPaused(job);
-}
-
-function setSyncJobDetailsDraft(jobDetails: any = {}) {
-  syncJobDraftCronExpression.value = jobDetails?.cronExpression || selectedSyncJobDetailsJob.value?.cronExpression || "";
-  syncJobDraftActive.value = !isJobPaused(jobDetails?.jobName ? jobDetails : selectedSyncJobDetailsJob.value);
-}
-
-function resetSyncJobDetailsDraft() {
-  syncJobDraftCronExpression.value = getSyncJobOriginalCronExpression();
-  syncJobDraftActive.value = getSyncJobOriginalActive();
-}
-
-function handleSyncJobActiveChange(isActive: boolean) {
-  syncJobDraftActive.value = isActive;
-}
-
-async function confirmDiscardSyncJobDetailsChanges() {
-  if (!syncJobDetailsDirty.value) return true;
-
-  return new Promise<boolean>((resolve) => {
-    alertController.create({
-      header: translate("Unsaved changes"),
-      message: translate("You have unsaved job changes. Discard them?"),
-      backdropDismiss: false,
-      buttons: [
-        {
-          text: translate("Keep editing"),
-          role: "cancel",
-          handler: () => resolve(false)
-        },
-        {
-          text: translate("Discard changes"),
-          role: "destructive",
-          handler: () => resolve(true)
-        }
-      ]
-    }).then((alert) => alert.present());
-  });
-}
-
 
 function openHistory() {
 
@@ -3474,7 +3246,7 @@ function getTrackedRefreshJobs() {
     syncJobObj.value,
     bulkOperationSendJob.value,
     bulkOperationPollJob.value,
-    syncJobDetails.value?.jobName ? syncJobDetails.value : selectedSyncJobDetailsJob.value
+    selectedSyncJobDetailsJob.value
   ].filter((job: any) => job?.jobName && !isJobPaused(job));
 
   return trackedJobs.filter((job: any, index: number, jobs: any[]) => {
@@ -3508,16 +3280,6 @@ function getRelativeNextRunLabel(job: any) {
     return translate("1 min");
   }
   return translate("{count} mins", { count: diffInMinutes });
-}
-
-function getCronDescription(cronExpression: string) {
-  if (!cronExpression) return "";
-
-  try {
-    return cronstrue.toString(cronExpression);
-  } catch (error) {
-    return "";
-  }
 }
 
 function getNextRunMillis(job: any): number | null {
@@ -3588,11 +3350,6 @@ function formatParameterValue(value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
-}
-
-function getSyncJobAuditHistoryKey(auditLog: any) {
-  return auditLog.auditHistorySeqId ||
-    [auditLog.changedEntityName, auditLog.pkPrimaryValue, auditLog.changedFieldName, auditLog.changedDate].filter(Boolean).join("-");
 }
 
 function getSyncJobAuditFieldLabel(auditLog: any) {
@@ -3669,14 +3426,6 @@ function formatAuditFieldName(fieldName: string) {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function getSyncJobRunKey(run: any) {
-  return run.jobRunId || run.runId || run.serviceJobRunId || run.systemMessageId || run.createdDate || JSON.stringify(run);
-}
-
-function getSyncJobRunTitle(run: any) {
-  return run.jobRunId || run.runId || run.serviceJobRunId || run.systemMessageId || translate("Run");
-}
-
 function getSyncJobRunStartedAt(run: any) {
   return run.runTime ||
     run.runDate ||
@@ -3706,75 +3455,6 @@ function getSyncJobRunStatus(run: any) {
   if (getSyncJobRunCompletedAt(run)) return translate("Success");
   if (getSyncJobRunStartedAt(run)) return translate("Running");
   return translate("Terminated");
-}
-
-function getSyncJobRunStatusColor(run: any) {
-  if (run.hasError === "Y") return "danger";
-  if (getSyncJobRunCompletedAt(run)) return "success";
-  if (getSyncJobRunStartedAt(run)) return "primary";
-  return "warning";
-}
-
-
-
-function getSyncJobRunCount(run: any) {
-  if (run.objectCount) return `${run.objectCount} ${translate("objects")}`;
-  if (run.totalRecordCount) return `${run.totalRecordCount} ${translate("records")}`;
-  return "";
-}
-
-function getSyncJobRunUser(run: any) {
-  return run.userId || run.runAsUser || run.createdByUserLogin || "";
-}
-
-function getSyncJobRunMessage(run: any) {
-  const messageCandidates = [
-    run.outputMessage,
-    run.output,
-    run.responseMessage,
-    run.resultMessage,
-    run.runMessage,
-    run.statusMessage,
-    run.successMessage,
-    run.returnMessage,
-    run.message,
-    run.messages,
-    run.errorMessage,
-    run.error,
-    run.errors,
-    run.reason,
-    run.serviceResult,
-    run.result,
-    run.response
-  ];
-
-  for (const message of messageCandidates) {
-    const formattedMessage = formatSyncJobRunMessageValue(message);
-    if (formattedMessage) return formattedMessage;
-  }
-
-  return "";
-}
-
-function formatSyncJobRunMessageValue(value: any): string {
-  if (value === undefined || value === null || value === "") return "";
-
-  if (Array.isArray(value)) {
-    return value.map(formatSyncJobRunMessageValue).filter(Boolean).join(", ");
-  }
-
-  if (typeof value === "object") {
-    const nestedMessage = value.outputMessage || value.responseMessage || value.resultMessage || value.message || value.errorMessage || value.reason;
-    if (nestedMessage) return formatSyncJobRunMessageValue(nestedMessage);
-
-    try {
-      return JSON.stringify(value);
-    } catch (error) {
-      return "";
-    }
-  }
-
-  return String(value).trim();
 }
 
 // Moved parseDateTimeValue to @/utils

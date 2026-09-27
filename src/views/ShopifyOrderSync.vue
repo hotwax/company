@@ -672,7 +672,6 @@
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSync.job?.jobName || ''"
-      :title="translate('Queue order requests')"
       :allowed-parameter-names="['shopId', 'systemMessageRemoteId', 'systemMessageTypeId', 'runAsBatch']"
       :parameter-description="translate('Job and service parameters used by this Order Sync job.')"
       :can-run-now="canRunForSelectedShop"
@@ -1436,7 +1435,7 @@ async function confirmRunNow() {
   }
 }
 
-async function saveJobFromModal(input: { cronExpression: string; paused: boolean }) {
+async function saveJobFromModal(input: { cronExpression?: string; paused?: boolean }) {
   const shopId = props.id;
   const currentJob = orderSync.job;
   /**
@@ -1450,10 +1449,11 @@ async function saveJobFromModal(input: { cronExpression: string; paused: boolean
   if (!shopId || !currentJob || orderSync.selectedShopId !== shopId) {
     throw new Error("The loaded Order Sync job does not belong to the selected Shopify shop.");
   }
-  if (input.cronExpression !== currentJob.cronExpression) {
+  // The modal passes only a changed field, one per call, so each write is its own committed stage.
+  if (input.cronExpression !== undefined) {
     await orderSync.updateSchedule(input.cronExpression, shopId);
   }
-  if (input.paused !== orderSync.isPaused) {
+  if (input.paused !== undefined) {
     await orderSync.updateJobStatus(input.paused, shopId);
   }
 }

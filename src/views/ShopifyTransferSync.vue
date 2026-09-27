@@ -557,9 +557,7 @@
     <ServiceJobDetailsModal
       :is-open="showJobModal"
       :job-name="selectedJobName"
-      :title="selectedJobTitle"
       :allowed-parameter-names="selectedJobParameterNames"
-      :protected-parameter-names="['shopId']"
       :parameter-description="selectedJobParameterDescription"
       @updated="handleJobUpdated"
       @close="showJobModal = false"
@@ -960,9 +958,6 @@ const selectedJobName = ref("");
 const selectedJob = ref<any>(null);
 const configuringJobKey = ref("");
 
-const selectedJobTitle = computed(() => selectedJob.value
-  ? translate(selectedJob.value.definition.label)
-  : "");
 const selectedJobParameterNames = computed(() =>
   selectedJob.value?.definition.key === "update"
     ? ["shopId", "configId", "overlapMinutes"]

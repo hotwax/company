@@ -470,7 +470,8 @@ describe("ShopifyFulfillmentSync - live cached data", () => {
     const modal = wrapper.findComponent(ServiceJobDetailsModal);
     expect(modal.props('isOpen')).toBe(true);
     expect(modal.props('jobName')).toBe('retry_job');
-    expect(modal.props('protectedParameterNames')).toContain('shopId');
+    // Identity parameters are protected by the modal itself; this screen opts none back in.
+    expect(modal.props('editableParameterNames')).toEqual([]);
     modal.vm.$emit('close'); await flushPromises();
     expect(modal.props('isOpen')).toBe(false);
     const values = wrapper.find('[aria-label="Fulfillment sync health"]').findAll('ion-label[slot="end"]');

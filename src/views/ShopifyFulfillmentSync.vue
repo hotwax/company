@@ -376,9 +376,7 @@
         <ServiceJobDetailsModal
           :is-open="!!selectedSyncJob"
           :job-name="selectedSyncJob?.jobName || ''"
-          :title="translate('Sync job')"
           :parameter-description="translate('Configuration for this fulfillment sync job. Shared retry jobs affect other integrations too.')"
-          :protected-parameter-names="['shopId', 'configId', 'systemMessageRemoteId', 'systemMessageTypeId', 'systemMessageTypeIds']"
           @updated="syncNow()"
           @close="selectedSyncJob = null"
         />

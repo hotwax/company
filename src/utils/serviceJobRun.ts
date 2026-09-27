@@ -53,7 +53,9 @@ const RUN_TUNING_PARAMETERS: Record<string, string> = {
   staleSendingMinutes: "Stale send timeout in minutes",
 };
 
+/** A total leads its breakdown (a purge reads "Records removed" before which kinds they were). */
 const RUN_RESULT_LABELS: Record<string, string> = {
+  recordsRemoved: "Records removed",
   ageOnlyDetailRecordsRemoved: "Removed for age only",
   assignedDetailRecordsRemoved: "Removed, already batched",
   batchCount: "Batches",
@@ -63,10 +65,10 @@ const RUN_RESULT_LABELS: Record<string, string> = {
   cutoffTimestamp: "Cutoff",
   failedPassCount: "Failed passes",
   passCount: "Passes run",
-  recordsRemoved: "Records removed",
   remainingPendingCount: "Still pending",
   requeuedSendingCount: "Re-queued from sending",
   stoppedReason: "Stopped because",
+  systemMessageId: "System message",
   terminalDetailRecordsRemoved: "Removed, terminal",
   unassignedZeroRecordsRemoved: "Removed, zero change and unbatched",
 };
