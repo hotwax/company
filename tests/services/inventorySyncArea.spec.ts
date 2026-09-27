@@ -47,7 +47,6 @@ describe("inventory sync area", () => {
       "shopifyLocationInventoryAdjustmentDetailMessage",
       "inventoryEventSystemMessage",
       "inventoryEventProduct",
-      "inventoryEventBounds",
     ]);
     expect(sync.start.mock.calls[0][0].every((domain: any) => domain.args.shopId === "100002")).toBe(true);
     expect(sync.stop).not.toHaveBeenCalled();
@@ -68,16 +67,19 @@ describe("inventory sync area", () => {
     expect(sync.stop).not.toHaveBeenCalled();
   });
 
-  it("loads older events through the ledger's own rows domain", async () => {
+  it("loads older events through the ledger's rows domain, and its bounds on request only", async () => {
     const { useInventorySyncArea } = await load();
     const { loadEventsFrom } = useInventorySyncArea();
 
+    const { loadLedgerBounds } = useInventorySyncArea();
     await loadEventsFrom("channel", 1_000);
     await loadEventsFrom("location", 2_000);
+    await loadLedgerBounds("location", "100002");
 
     expect(sync.afterMutation.mock.calls).toEqual([
       ["shopifyInventoryAdjustmentDetail", { fromMs: 1_000 }],
       ["shopifyLocationInventoryAdjustmentDetail", { fromMs: 2_000 }],
+      ["inventoryEventBounds", { kind: "location", shopId: "100002" }],
     ]);
   });
 });

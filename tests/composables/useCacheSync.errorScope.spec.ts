@@ -87,4 +87,15 @@ describe("useCacheSync error scoping", () => {
     harness.options.onStatus({ type: "sync-end", domain: "inventoryEventProduct", written: 0, at: 2 });
     expect(sync.failingDomains.value).toEqual({});
   });
+
+  it("retires a failure raised by a targeted refetch once a later one succeeds", async () => {
+    const sync = useCacheSync();
+    await sync.start([]);
+
+    harness.options.onStatus({ type: "sync-error", domain: "inventoryEventBounds", message: "500" });
+    expect(sync.failingDomains.value).toEqual({ inventoryEventBounds: "500" });
+
+    harness.options.onStatus({ type: "refetch-end", domain: "inventoryEventBounds", written: 1 });
+    expect(sync.failingDomains.value).toEqual({});
+  });
 });

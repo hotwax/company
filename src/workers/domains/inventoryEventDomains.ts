@@ -28,8 +28,6 @@ const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
 /** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
-/** The purge job runs hourly, so the server's oldest row moves no faster than that. */
-const BOUNDS_INTERVAL_MS = 10 * 60 * 1000;
 /** A backfill's backstop: 40 pages of 250, past any ledger the five-day purge leaves. */
 const BACKFILL_MAX_PAGES = 40;
 const MESSAGE_REFRESH_MAX = 25;
@@ -217,24 +215,22 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
 }
 
 /**
- * Where each ledger starts on the server, for the history's calendars. The server purges old rows, so a
- * cached row older than the server's oldest is gone there and leaves the cache too: the cache mirrors
- * the purge exactly instead of guessing at it.
+ * Where a ledger starts on the server, for the history's calendars: asked once when a history page
+ * loads, never polled. The server purges old rows, so a cached row older than the server's oldest is
+ * gone there and leaves the cache too: the cache mirrors the purge instead of guessing at it.
  */
 registerSyncDomain({
   name: INVENTORY_EVENT_DOMAINS.bounds,
-  intervalMs: BOUNDS_INTERVAL_MS,
-  async sync(ctx, args: ShopArgs = {}) {
-    const shopId = shopOf(args);
-    if(!shopId) {return 0;}
-    let written = 0;
-    for(const ledger of Object.values(INVENTORY_LEDGERS)) {
-      const oldest = await serverOldestAt(ctx, ledger, shopId);
-      written += await inventoryLedgerBoundCache.upsertMany([{ kind: ledger.kind, shopId, oldestCreatedDate: oldest ?? null }]);
-      // An empty ledger on the server means nothing cached for this shop is still there.
-      const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => (toMillis(row.raw?.createdDate) ?? Infinity) < (oldest ?? Infinity));
-      await ledger.cache.removeMany(stale.map((row) => ledger.keyOf(row.raw as Record<string, unknown>) ?? "").filter(Boolean));
-    }
+  sync: () => Promise.resolve(0),
+  async refetchOne(ctx, pk) {
+    const shopId = shopOf(pk);
+    const ledger = INVENTORY_LEDGERS[pk?.kind as InventoryEventKind];
+    if(!shopId || !ledger) {return 0;}
+    const oldest = await serverOldestAt(ctx, ledger, shopId);
+    const written = await inventoryLedgerBoundCache.upsertMany([{ kind: ledger.kind, shopId, oldestCreatedDate: oldest ?? null }]);
+    // An empty ledger on the server means nothing cached for this shop is still there.
+    const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => (toMillis(row.raw?.createdDate) ?? Infinity) < (oldest ?? Infinity));
+    await ledger.cache.removeMany(stale.map((row) => ledger.keyOf(row.raw as Record<string, unknown>) ?? "").filter(Boolean));
 
     return written;
   },

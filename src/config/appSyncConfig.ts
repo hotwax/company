@@ -124,6 +124,9 @@ export const INVENTORY_EVENT_DOMAINS = {
   bounds: "inventoryEventBounds",
 } as const;
 
+/** `bounds` is not polled: each history page asks for it once when it loads. */
 export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {
-  return Object.values(INVENTORY_EVENT_DOMAINS).map((name) => ({ name, args: { shopId } }));
+  return Object.values(INVENTORY_EVENT_DOMAINS)
+    .filter((name) => name !== INVENTORY_EVENT_DOMAINS.bounds)
+    .map((name) => ({ name, args: { shopId } }));
 }

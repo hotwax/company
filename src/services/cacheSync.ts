@@ -117,6 +117,10 @@ export function createCacheSync() {
         }
         break;
       }
+      // A targeted refetch that succeeds retires its domain's reported failure, as a sync pass does.
+      case "refetch-end":
+        if(data.domain) {clearFailing(String(data.domain));}
+        break;
       case "sync-cycle-end":
         activeCycles = Math.max(0, activeCycles - 1);
         lastSyncAt.value = data.at ?? Date.now();

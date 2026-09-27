@@ -44,5 +44,9 @@ export function useInventorySyncArea() {
   const loadEventsFrom = (kind: InventoryEventKind, fromMs: number) =>
     afterMutation(INVENTORY_EVENT_DOMAINS[kind === "channel" ? "channelRows" : "locationRows"], { fromMs });
 
-  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom };
+  /** Where the ledger starts on the server; a history page asks once when it loads. */
+  const loadLedgerBounds = (kind: InventoryEventKind, shopId: string) =>
+    afterMutation(INVENTORY_EVENT_DOMAINS.bounds, { kind, shopId });
+
+  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom, loadLedgerBounds };
 }

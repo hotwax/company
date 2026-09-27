@@ -271,7 +271,7 @@ const props = defineProps<{ id: string; kind: InventoryEventKind }>();
 const route = useRoute();
 const router = useRouter();
 const syncContext = useShopifySyncContext(() => props.id);
-const { failingDomains, manualRefreshing, syncNow, loadEventsFrom } = useInventorySyncArea();
+const { failingDomains, manualRefreshing, syncNow, loadEventsFrom, loadLedgerBounds } = useInventorySyncArea();
 const {
   events, hydrated, liveUpdates, loadedAt, oldestEventAt, serverOldestAt, retention, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
 } = useInventoryEvents(() => props.id, props.kind);
@@ -346,6 +346,9 @@ const calendarBounds = computed(() => {
 
   return { from: boundsOf(oldestIso.value, filters.to || todayIso), to: boundsOf(filters.from || oldestIso.value, todayIso) };
 });
+
+// Once per load (and per shop, for a reused view). A failure shows in the toolbar's sync status.
+watch(() => props.id, (shopId) => { loadLedgerBounds(props.kind, shopId).catch(() => undefined); }, { immediate: true });
 
 /**
  * A date filter older than the cache loads that range from the server first. An unset From with a set

@@ -201,9 +201,10 @@ describe("the history reaching past the cache", () => {
     cacheRow("KEPT", 2_000);
     state.responses[LOCATION] = () => [locationRow({ createdDate: 1_000 })];
 
-    await domain.sync(ctx, { shopId: "100002" });
+    await domain.refetchOne(ctx, { kind: "location", shopId: "100002" });
 
-    expect(state.gets.find((call) => call.url === LOCATION)?.params).toEqual({ shopId: "100002", orderByField: "createdDate", pageSize: 1, pageIndex: 0 });
+    // One request, for this ledger only: the page asks once when it loads.
+    expect(state.gets).toEqual([{ url: LOCATION, params: { shopId: "100002", orderByField: "createdDate", pageSize: 1, pageIndex: 0 } }]);
     expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(1_000);
     expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId)).toEqual(["KEPT"]);
   });
@@ -212,9 +213,9 @@ describe("the history reaching past the cache", () => {
     const domain = await load("inventoryEventBounds");
     state.responses[LOCATION] = (params) => ({ detailCount: 3, hasMore: params.pageIndex === 0, details: [locationRow({ createdDate: params.pageIndex === 2 ? 700 : 9_000 })] });
 
-    await domain.sync(ctx, { shopId: "100002" });
+    await domain.refetchOne(ctx, { kind: "location", shopId: "100002" });
 
-    expect(state.gets.filter((call) => call.url === LOCATION).map((call) => call.params.pageIndex)).toEqual([0, 2]);
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 2]);
     expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(700);
   });
 

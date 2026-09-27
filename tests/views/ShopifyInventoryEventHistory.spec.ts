@@ -18,7 +18,7 @@ const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
 const routeQuery = ref<Record<string, string>>({});
 
-const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), loadEventsFrom: vi.fn(), ledgerOptions: undefined as any }));
+const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), loadEventsFrom: vi.fn(), loadLedgerBounds: vi.fn(), ledgerOptions: undefined as any }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({ replace: harness.replace, push: vi.fn() }),
@@ -36,7 +36,7 @@ vi.mock("@common", () => ({
 vi.mock("@/services/inventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
-    syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom,
+    syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
   }),
 }));
 
@@ -158,6 +158,7 @@ beforeEach(() => {
   serviceJobs.value = [];
   bounds.value = [];
   harness.loadEventsFrom.mockReset();
+  harness.loadLedgerBounds.mockReset().mockResolvedValue(1);
   ledgerHydrated.value = true;
   areaFailures.value = {};
   routeQuery.value = {};
@@ -230,6 +231,8 @@ describe("ShopifyInventoryEventHistory - one page, either ledger", () => {
     await wrapper.setProps({ id: "100051" });
 
     expect(toValue(harness.ledgerOptions).scope).toEqual({ field: "shopId", value: "100051" });
+    // The server bound is asked once per load, and again only for the new shop.
+    expect(harness.loadLedgerBounds.mock.calls).toEqual([["location", "100002"], ["location", "100051"]]);
   });
 
   it("labels a physical location by the facilities mapped to it, from the cache", async () => {
