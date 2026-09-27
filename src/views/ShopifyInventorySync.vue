@@ -66,7 +66,7 @@
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
                 :button="!!job.job"
                 :detail="!!job.job"
-                @click="openServiceJob(job.job, job.name)"
+                @click="openServiceJob(job.job)"
               >
                 <ion-icon slot="start" :icon="job.icon" />
                 <ion-label>
@@ -167,7 +167,7 @@
                 :key="`${job.name}-${job.targetChannelId ?? ''}`"
                 :button="!!job.job"
                 :detail="!!job.job"
-                @click="openServiceJob(job.job, `${job.name} (${channel.facilityGroupName || channel.description || channel.inventoryChannelId})`)"
+                @click="openServiceJob(job.job)"
               >
                 <ion-icon slot="start" :icon="job.icon" />
                 <ion-label class="ion-text-wrap">
@@ -558,9 +558,8 @@
     <ServiceJobDetailsModal
       :is-open="!!selectedServiceJob"
       :job-name="selectedServiceJob?.jobName || ''"
-      :title="selectedServiceJob?.title || translate('Inventory sync job')"
       :parameter-description="translate('Job and service parameters used by this inventory sync job.')"
-      :protected-parameter-names="selectedServiceJob?.protectedParameterNames || []"
+      :editable-parameter-names="selectedServiceJob?.editableParameterNames || []"
       :parameter-options="selectedServiceJob?.parameterOptions || {}"
       @updated="refreshServiceJobData"
       @close="selectedServiceJob = null"
@@ -673,8 +672,7 @@ const router = useRouter();
 interface ParameterOption { value: string; label: string }
 interface ServiceJobSelection {
   jobName: string;
-  title: string;
-  protectedParameterNames: string[];
+  editableParameterNames: string[];
   parameterOptions: Record<string, ParameterOption[]>;
 }
 const selectedServiceJob = ref<ServiceJobSelection | null>(null);
@@ -1878,9 +1876,9 @@ async function openChannelFacilities(channel: any) {
   }
 }
 
-function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
+function handleScheduleChannelJob(payload: { jobName: string }) {
   editingChannel.value = null;
-  selectedServiceJob.value = serviceJobSelection(payload.jobName, payload.title);
+  selectedServiceJob.value = serviceJobSelection(payload.jobName);
 }
 
 async function onChannelUpdated() {
@@ -1901,22 +1899,21 @@ async function onChannelUpdated() {
  * one is how the tool is aimed. So it is editable there, and offered as a dropdown of channel names
  * rather than a free-text id, which is a misconfiguration the job would only reveal when it ran.
  */
-function serviceJobSelection(jobName: string, title: string, serviceName?: string): ServiceJobSelection {
+function serviceJobSelection(jobName: string, serviceName?: string): ServiceJobSelection {
+  // Every other job that carries inventoryChannelId is bound to one channel (the modal protects it);
+  // only the discard tool takes it as an input, chosen from this shop's channels.
   const isDiscardJob = serviceName === DISCARD_PENDING_EVENTS_SERVICE;
 
   return {
     jobName: String(jobName),
-    title,
-    // Default to protecting the channel: every other job that carries inventoryChannelId is bound to
-    // one channel, and only the discard tool takes it as an input.
-    protectedParameterNames: isDiscardJob ? [] : ["inventoryChannelId", "shopId"],
+    editableParameterNames: isDiscardJob ? ["inventoryChannelId"] : [],
     parameterOptions: isDiscardJob ? { inventoryChannelId: channelFilterOptions.value } : {},
   };
 }
 
-function openServiceJob(job: any, title: string) {
+function openServiceJob(job: any) {
   if(!job?.jobName) {return;}
-  selectedServiceJob.value = serviceJobSelection(job.jobName, title, job.serviceName);
+  selectedServiceJob.value = serviceJobSelection(job.jobName, job.serviceName);
 }
 
 /** "View all runs" goes to the full history page, which is what it says. */

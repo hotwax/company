@@ -302,6 +302,7 @@
   "No customer name": "No customer name",
   "No data": "No data",
   "No data found": "No data found",
+  "No description": "No description",
   "No errors recorded for this message.": "No errors recorded for this message.",
   "No facility groups of type CHANNEL_FAC_GROUP exist on this OMS. Create one before mapping an inventory channel.": "No facility groups of type CHANNEL_FAC_GROUP exist on this OMS. Create one before mapping an inventory channel.",
   "No failed attempts recorded.": "No failed attempts recorded.",

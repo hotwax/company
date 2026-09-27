@@ -672,7 +672,6 @@
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSync.job?.jobName || ''"
-      :title="translate('Queue order requests')"
       :allowed-parameter-names="['shopId', 'systemMessageRemoteId', 'systemMessageTypeId', 'runAsBatch']"
       :parameter-description="translate('Job and service parameters used by this Order Sync job.')"
       :can-run-now="canRunForSelectedShop"

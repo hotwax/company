@@ -302,8 +302,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         stubs: {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
-            props: ["isOpen", "jobName", "title"],
-            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
+            props: ["isOpen", "jobName"],
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -352,8 +352,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         stubs: {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
-            props: ["isOpen", "jobName", "title"],
-            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
+            props: ["isOpen", "jobName"],
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -376,10 +376,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     await flushPromises();
 
     const modal = wrapper.find("[data-testid='service-job-modal']");
-    expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset channel ATP");
-    expect(modal.text()).toContain("Retail Channel");
-    expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1001");
+    // Titled by the job's own name, the same on every screen.
+    expect(modal.text()).toBe("reset_InventoryChannelInventory_IC_1001");
   });
 
   it("keeps a physical ATP setup failure visible and scopes setup to the current shop", async () => {
@@ -405,8 +403,8 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
         stubs: {
           IonModal: { template: "<div><slot /></div>" },
           ServiceJobDetailsModal: {
-            props: ["isOpen", "jobName", "title"],
-            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ title }}: {{ jobName }}</div>",
+            props: ["isOpen", "jobName"],
+            template: "<div data-testid=\"service-job-modal\" v-if=\"isOpen\">{{ jobName }}</div>",
           },
           EditInventoryChannelModal: true,
           SetupInventoryChannelModal: true,
@@ -441,9 +439,7 @@ describe("ShopifyInventorySync - Per-channel reset job scheduling", () => {
     // Creating from a single channel's row lands in that job's modal, which is the one thing the
     // removed button did that Set up alone did not.
     const modal = wrapper.find("[data-testid='service-job-modal']");
-    expect(modal.exists()).toBe(true);
-    expect(modal.text()).toContain("Reset channel ATP - Wholesale Channel");
-    expect(modal.text()).toContain("reset_InventoryChannelInventory_IC_1002");
+    expect(modal.text()).toBe("reset_InventoryChannelInventory_IC_1002");
   });
 }, 20000);
 

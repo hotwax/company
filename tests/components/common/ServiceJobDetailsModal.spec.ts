@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IonModal, IonToggle, alertController } from '@ionic/vue';
+import { IonFabButton, IonInput, IonModal, IonToggle, alertController } from '@ionic/vue';
 const api = vi.hoisted(() => ({ detail: vi.fn(), runs: vi.fn(), audits: vi.fn(), update: vi.fn(), run: vi.fn() }));
 vi.mock('@common', () => ({ translate: (s: string) => s, commonUtil: { showToast: vi.fn() } }));
 vi.mock('@/utils', () => ({ formatDateTime: (s: any) => s ? String(s) : '' }));
 vi.mock('@/composables/useServiceJobs', () => ({ useServiceJob: () => ({
   fetchJobDetail: api.detail, fetchJobRuns: api.runs, fetchJobAuditHistory: api.audits, updateJob: api.update, runNow: api.run,
 }) }));
+import { commonUtil } from '@common';
 import Modal from '@/components/common/ServiceJobDetailsModal.vue';
-const mountModal = () => mount(Modal, { props: { isOpen: true, jobName: 'JOB1' }, global: { stubs: {
+import { CacheReconciliationError } from '@/utils/cacheReconciliationError';
+const mountModal = (props: Record<string, unknown> = {}) => mount(Modal, { props: { isOpen: true, jobName: 'JOB1', ...props }, global: { stubs: {
   IonModal: { props: ['isOpen', 'canDismiss', 'backdropDismiss'], template: '<div><slot /></div>' },
 } } });
 
@@ -55,6 +57,76 @@ describe('job modal load identity and dismissal', () => {
     expect(wrapper.text()).toContain('Sync job details unavailable');
     expect(wrapper.findComponent(IonToggle).exists()).toBe(false);
     expect(await wrapper.findComponent(IonModal).props('canDismiss')()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('job modal title, identity parameters and committed writes', () => {
+  const job = () => ({
+    jobName: 'JOB1', description: 'Purges settled rows', serviceName: 'svc#Purge', paused: 'N', cronExpression: '0 0 * ? * *',
+    serviceJobParameters: [
+      { parameterName: 'shopId', parameterValue: '100002' },
+      { parameterName: 'inventoryChannelId', parameterValue: 'IC_1' },
+      { parameterName: 'daysToKeep', parameterValue: '5' },
+    ],
+  });
+  const input = (wrapper: any, label: string) => wrapper.findAllComponents(IonInput).find((field: any) => field.props('label') === label);
+  const RECONCILED = 'The server change was saved, but this view could not be refreshed. Refresh before retrying.';
+  beforeEach(() => { vi.clearAllMocks(); api.detail.mockResolvedValue(job()); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); });
+
+  it('is titled by the job name and describes the job instead of repeating it', async () => {
+    const wrapper = mountModal(); await flushPromises();
+    expect(wrapper.find('ion-title').text()).toBe('JOB1');
+    expect(wrapper.text()).toContain('Purges settled rows');
+    expect(wrapper.text().split('JOB1')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('keeps identity parameters read-only unless the screen names one as an input', async () => {
+    const wrapper = mountModal(); await flushPromises();
+    expect(input(wrapper, 'shopId').props('disabled')).toBe(true);
+    expect(input(wrapper, 'inventoryChannelId').props('disabled')).toBe(true);
+    expect(input(wrapper, 'daysToKeep').props('disabled')).toBe(false);
+    await wrapper.setProps({ editableParameterNames: ['inventoryChannelId'] });
+    expect(input(wrapper, 'inventoryChannelId').props('disabled')).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('closes a save whose write landed but whose cache refresh failed, without sending it again', async () => {
+    api.update.mockRejectedValue(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }));
+    const wrapper = mountModal(); await flushPromises();
+    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } }); await flushPromises();
+    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+    expect(commonUtil.showToast).toHaveBeenLastCalledWith(RECONCILED);
+    expect(wrapper.emitted('close')).toHaveLength(1);
+    expect(await wrapper.findComponent(IonModal).props('canDismiss')()).toBe(true);
+    expect(api.update).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('re-sends only the unsent parameters after a screen-owned schedule write landed', async () => {
+    const saveHandler = vi.fn().mockResolvedValue(undefined);
+    api.update.mockRejectedValueOnce(new Error('daysToKeep must be at least 1')).mockResolvedValueOnce({});
+    const wrapper = mountModal({ saveHandler }); await flushPromises();
+    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } });
+    input(wrapper, 'daysToKeep').vm.$emit('ionInput', { detail: { value: '7' } }); await flushPromises();
+
+    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+    expect(wrapper.emitted('close')).toBeUndefined();
+    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+
+    expect(saveHandler).toHaveBeenCalledTimes(1);
+    expect(api.update).toHaveBeenLastCalledWith({ jobName: 'JOB1', serviceJobParameters: [{ parameterName: 'daysToKeep', parameterValue: '7' }] });
+    expect(wrapper.emitted('close')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('reloads after a run whose cache refresh failed, because the run was queued', async () => {
+    api.run.mockRejectedValue(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }));
+    const wrapper = mountModal(); await flushPromises();
+    await wrapper.findAll('ion-button').find((button) => button.text() === 'Run now')!.trigger('click'); await flushPromises();
+    expect(commonUtil.showToast).toHaveBeenLastCalledWith(RECONCILED);
+    expect(api.detail).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
 });

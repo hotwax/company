@@ -286,16 +286,14 @@ export function useServiceJob() {
   };
 
   /**
-   * `productStoreId` scopes a store-bound job: a job carrying a `productStoreIds` parameter only
-   * counts as "this store's job" when the values match, and is otherwise treated as a draft.
-   *
-   * Passed in rather than read from a store. It used to come from `productStore.current`, which
-   * made the result depend on ambient state only two screens ever set — a caller that had not been
-   * through those flows silently got draft-job behaviour.
+   * The job as the server has it. Given a `productStoreId`, a job carrying a `productStoreIds`
+   * parameter must belong to that store, or the read fails: that is how a screen asks "this store's
+   * job". Without one there is no store to check, so the job is returned as it is; gating it anyway
+   * failed every store-bound job for callers that only want to show it (the job modal).
    */
   const fetchJobDetail = async (jobName: string, productStoreId?: string) => {
-    return fetchDeduplicated(`job_detail_${jobName}`, async () => {
-      let jobDetails: Record<string, any> = {};
+    return fetchDeduplicated(`job_detail_${jobName}_${productStoreId ?? ""}`, async () => {
+      let job: Record<string, any>;
       try {
         const resp = await api({
           url: `admin/serviceJobs/${jobName}`,
@@ -304,34 +302,22 @@ export function useServiceJob() {
             pageSize: 1000
           }
         }) as any;
-        const job = resp?.data?.jobDetail || {};
-
-        const isJobProductStoreDependent = () => job.serviceJobParameters?.some((param: any) => param.parameterName === "productStoreIds");
-
-        if (isJobProductStoreDependent()) {
-          const jobProductStore = job.serviceJobParameters.find((param: any) => param.parameterName === "productStoreIds");
-          if (jobProductStore?.parameterName && jobProductStore.parameterValue === productStoreId) {
-            jobDetails = job;
-          } else if (!jobProductStore?.parameterName) {
-            jobDetails = { ...job, isDraftJob: true };
-          }
-        } else {
-          jobDetails = job;
-        }
+        job = resp?.data?.jobDetail || {};
       } catch(err) {
         logger.error("Failed to fetch job details", err);
         throw err;
       }
 
-      if (!Object.keys(jobDetails || {}).length) {
+      const storeParameter = job.serviceJobParameters?.find((param: any) => param.parameterName === "productStoreIds");
+      if (!Object.keys(job).length || (productStoreId !== undefined && storeParameter && storeParameter.parameterValue !== productStoreId)) {
         throw new Error(`Service job detail is unavailable for ${jobName}.`);
       }
 
-      const job = getNormalizedJobDetail(jobDetails);
-      if (job.instanceOfProductId && !state.products[job.instanceOfProductId]) {
-        await fetchProductDetail(job.instanceOfProductId);
+      const normalized = getNormalizedJobDetail(job);
+      if (normalized.instanceOfProductId && !state.products[normalized.instanceOfProductId]) {
+        await fetchProductDetail(normalized.instanceOfProductId);
       }
-      return job;
+      return normalized;
     });
   };
 

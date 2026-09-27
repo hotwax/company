@@ -651,7 +651,6 @@
     <ServiceJobDetailsModal
       :is-open="showSyncJobDetailsModal"
       :job-name="selectedSyncJobDetailsJob?.jobName || ''"
-      :title="selectedSyncJobDetailsJob?.jobName || ''"
       @close="showSyncJobDetailsModal = false"
     />
   </ion-page>

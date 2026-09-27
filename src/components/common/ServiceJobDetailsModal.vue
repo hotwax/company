@@ -40,8 +40,7 @@
         <ion-list lines="full">
           <ion-item>
             <ion-label>
-              {{ modalTitle }}
-              <p>{{ jobDetails.jobName }}</p>
+              {{ jobDetails.description || translate('No description') }}
               <p>{{ jobDetails.serviceName || translate('Unavailable') }}</p>
             </ion-label>
           </ion-item>
@@ -224,18 +223,26 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
+import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { translateMutationError } from "@/utils/errorPresentation";
 import { serviceJobRunStatus } from '@/utils/serviceJobRun';
+
+/**
+ * Parameters that bind a job to what it serves - the ones a screen finds the job BY. Editing one
+ * silently re-points the job instead of configuring it, so they are read-only unless a screen names
+ * one in `editableParameterNames` because, for that job, it is an input.
+ */
+const IDENTITY_PARAMETER_NAMES = [
+  "shopId", "productStoreId", "productStoreIds", "configId", "inventoryChannelId",
+  "systemMessageRemoteId", "systemMessageTypeId", "systemMessageTypeIds",
+];
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
+  /** Also the modal's title, on every screen. */
   jobName: string;
-  title?: string;
   allowedParameterNames?: string[];
-  /**
-   * Job parameters that stay read-only. For identity parameters - the ones a screen finds this job
-   * BY - editing the value silently reassigns the job to something else instead of configuring it.
-   */
-  protectedParameterNames?: string[];
+  editableParameterNames?: string[];
   /**
    * Valid values per job parameter, keyed by parameter name. A parameter listed here renders as a
    * dropdown instead of a free-text field.
@@ -249,9 +256,8 @@ const props = withDefaults(defineProps<{
   runHandler?: (() => Promise<unknown>) | null;
   saveHandler?: ((payload: { cronExpression: string; paused: boolean }) => Promise<unknown>) | null;
 }>(), {
-  title: '',
   allowedParameterNames: () => [],
-  protectedParameterNames: () => [],
+  editableParameterNames: () => [],
   parameterOptions: () => ({}),
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
@@ -275,7 +281,7 @@ const draftCronExpression = ref('');
 const draftActive = ref(false);
 const draftParameters = ref<Record<string, string>>({});
 
-const modalTitle = computed(() => props.title || jobDetails.value.jobName || props.jobName || translate('Sync job details'));
+const modalTitle = computed(() => props.jobName || translate("Sync job details"));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
 const hasLoadedJob = computed(() => !!props.jobName && jobDetails.value.jobName === props.jobName && !loadError.value);
@@ -332,7 +338,8 @@ const jobParameters = computed(() =>
       key: `job-${parameter.parameterName}`,
       name: String(parameter.parameterName),
       label: String(parameter.parameterName),
-      isProtected: props.protectedParameterNames.includes(String(parameter.parameterName)),
+      isProtected: IDENTITY_PARAMETER_NAMES.includes(String(parameter.parameterName)) &&
+        !props.editableParameterNames.includes(String(parameter.parameterName)),
       options: props.parameterOptions[String(parameter.parameterName)],
     })));
 
@@ -418,55 +425,83 @@ async function requestClose() { if (await confirmDiscard()) { resetDraft(); emit
 function handleDidDismiss() { resetDraft(); emit('close'); }
 async function requestRefresh() { if (await confirmDiscard()) await load(); }
 async function runJobNow() {
-  if (!hasLoadedJob.value || isLoading.value || isSaving.value || isRunning.value || !props.canRunNow) return;
+  if(!hasLoadedJob.value || isLoading.value || isSaving.value || isRunning.value || !props.canRunNow) {return;}
   isRunning.value = true;
   try {
     const result = props.runHandler ? await props.runHandler() : await runNow(props.jobName);
-    if (result === false) return;
-    commonUtil.showToast(translate('Job queued successfully.'));
-    await load();
+    if(result === false) {return;}
+    commonUtil.showToast(translate("Job queued successfully."));
+  } catch (error) {
+    commonUtil.showToast(translateMutationError(error, "Something went wrong."));
+    // Only the cache refresh after a queued run failed: the run is real, so the view reloads.
+    if(!isCacheReconciliationError(error)) {return;}
+  } finally {
+    isRunning.value = false;
   }
-  catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
-  finally { isRunning.value = false; }
+  await load();
 }
 async function save() {
-  if (!canSave.value) return;
+  if(!canSave.value) {return;}
   isSaving.value = true;
+  const paused = !draftActive.value;
+  const schedule = { cronExpression: draftCronExpression.value, paused: paused ? "Y" : "N" };
+  const parameterChanges = changedParameters.value;
   try {
-    const paused = !draftActive.value;
-    const parameterChanges = changedParameters.value;
-    if (props.saveHandler) {
-      await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
-      // A `saveHandler` owns the schedule/pause write only - it is where a screen puts its own
-      // validation for those. Parameters go through the standard job PUT so a caller that predates
-      // editable parameters drops them silently instead of writing them.
-      if (parameterChanges.length) await updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges });
+    if(props.saveHandler) {
+      // A `saveHandler` owns the schedule/pause write; parameters go through the standard job PUT. It
+      // runs only while the schedule is unsaved, so a retry after the parameter write failed skips it.
+      if(scheduleChanged.value || draftActive.value !== originalActive.value) {
+        await committed(() => props.saveHandler!({ cronExpression: schedule.cronExpression, paused }), schedule, []);
+      }
+      if(parameterChanges.length) {
+        await committed(() => updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges }), {}, parameterChanges);
+      }
     } else {
-      await updateJob({
+      await committed(() => updateJob({
         jobName: props.jobName,
-        paused: paused ? 'Y' : 'N',
-        ...(scheduleChanged.value ? { cronExpression: draftCronExpression.value } : {}),
+        paused: schedule.paused,
+        ...(scheduleChanged.value ? { cronExpression: schedule.cronExpression } : {}),
         ...(parameterChanges.length ? { serviceJobParameters: parameterChanges } : {}),
-      });
+      }), schedule, parameterChanges);
     }
-    // Fold the saved values back in before closing. Emitting `close` leaves `jobDetails` holding the
-    // pre-save row, so `isDirty` is still true when ion-modal runs `can-dismiss` - and the user is
-    // asked to discard the changes that were just written.
-    jobDetails.value = {
-      ...jobDetails.value,
-      cronExpression: draftCronExpression.value,
-      paused: paused ? 'Y' : 'N',
-      serviceJobParameters: (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
-        .map((parameter: any) => {
-          const saved = parameterChanges.find((change) => change.parameterName === String(parameter?.parameterName ?? ''));
-          return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
-        }),
-    };
-    resetDraft();
-    commonUtil.showToast(translate('Sync job updated successfully.'));
-    emit('updated'); emit('close');
-  } catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
-  finally { isSaving.value = false; }
+    commonUtil.showToast(translate("Sync job updated successfully."));
+  } catch (error) {
+    commonUtil.showToast(translateMutationError(error, "Failed to update sync job."));
+    // Whatever landed is folded in, so the modal stays open only for changes that were not sent.
+    if(isDirty.value) {return;}
+  } finally {
+    isSaving.value = false;
+  }
+  emit("updated");
+  emit("close");
+}
+
+/**
+ * Run one write and fold what it wrote into the loaded job, including when only the cache refresh
+ * after it failed: the write landed, and leaving it dirty would send it again on retry.
+ */
+async function committed(write: () => Promise<unknown>, schedule: Record<string, string>, parameterChanges: Array<{ parameterName: string; parameterValue: string }>) {
+  try {
+    await write();
+  } catch (error) {
+    if(isCacheReconciliationError(error)) {fold(schedule, parameterChanges);}
+    throw error;
+  }
+  fold(schedule, parameterChanges);
+}
+
+/** Folded values match their drafts, so `isDirty` (and `can-dismiss`) stop counting them. */
+function fold(schedule: Record<string, string>, parameterChanges: Array<{ parameterName: string; parameterValue: string }>) {
+  jobDetails.value = {
+    ...jobDetails.value,
+    ...schedule,
+    serviceJobParameters: (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
+      .map((parameter: any) => {
+        const saved = parameterChanges.find((change) => change.parameterName === String(parameter?.parameterName ?? ""));
+
+        return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
+      }),
+  };
 }
 function formatDate(value: unknown) { return formatDateTime(value) || translate('Not available'); }
 /**
