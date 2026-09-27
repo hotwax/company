@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { mount, flushPromises } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IonFabButton, IonInput, IonModal, IonRadioGroup, IonToggle, alertController } from '@ionic/vue';
 const api = vi.hoisted(() => ({ detail: vi.fn(), runs: vi.fn(), audits: vi.fn(), usernames: vi.fn(), update: vi.fn(), run: vi.fn() }));
 vi.mock('@common', () => ({ translate: (s: string) => s, commonUtil: { showToast: vi.fn() } }));
@@ -15,9 +15,30 @@ import { CacheReconciliationError } from '@/utils/cacheReconciliationError';
 const mountModal = (props: Record<string, unknown> = {}) => mount(Modal, { props: { isOpen: true, jobName: 'JOB1', ...props }, global: { stubs: {
   IonModal: { props: ['isOpen', 'canDismiss', 'backdropDismiss'], template: '<div><slot /></div>' },
 } } });
+enableAutoUnmount(afterEach);
+
+const job = (over: Record<string, unknown> = {}) => ({
+  jobName: 'JOB1', description: 'Purges settled rows', serviceName: 'svc#Purge', paused: 'N', cronExpression: '0 0 * ? * *',
+  executionTimeZone: 'America/Los_Angeles',
+  serviceJobParameters: [
+    { parameterName: 'shopId', parameterValue: '100002' }, { parameterName: 'inventoryChannelId', parameterValue: 'IC_1' },
+    { parameterName: 'daysToKeep', parameterValue: '5' },
+  ],
+  serviceInParameters: [
+    { name: 'daysToKeep', type: 'Integer', default: 5, required: 'true' }, { name: 'purgeUnsynced', type: 'Boolean' }, { name: '_jobRunId' },
+  ],
+  ...over,
+});
+const input = (wrapper: any, label: string) => wrapper.findAllComponents(IonInput).find((field: any) => field.props('label') === label);
+const dirty = (wrapper: any) => !wrapper.findComponent(IonModal).props('backdropDismiss');
+const save = async (wrapper: any) => { await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises(); };
+const RECONCILED = 'The server change was saved, but this view could not be refreshed. Refresh before retrying.';
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.detail.mockResolvedValue(job()); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); api.usernames.mockResolvedValue({});
+});
 
 describe('job modal load identity and dismissal', () => {
-  beforeEach(() => { vi.clearAllMocks(); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); api.usernames.mockResolvedValue({}); });
   it('can close a failed initial read without claiming unsaved edits', async () => {
     api.detail.mockRejectedValue(new Error('expired session'));
     const alert = vi.spyOn(alertController, 'create');
@@ -28,16 +49,13 @@ describe('job modal load identity and dismissal', () => {
     expect(alert).not.toHaveBeenCalled();
     expect(wrapper.emitted('close')).toHaveLength(1);
     expect(api.update).not.toHaveBeenCalled(); expect(api.run).not.toHaveBeenCalled();
-    wrapper.unmount(); alert.mockRestore();
+    alert.mockRestore();
   });
   it('preserves the dirty guard for a real user edit after loading', async () => {
-    api.detail.mockResolvedValue({ jobName: 'JOB1', paused: 'Y' });
     const wrapper = mountModal(); await flushPromises();
-    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(true);
-    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: true } });
-    await wrapper.vm.$nextTick();
-    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(false);
-    wrapper.unmount();
+    expect(dirty(wrapper)).toBe(false);
+    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } }); await flushPromises();
+    expect(dirty(wrapper)).toBe(true);
   });
   it('ignores an earlier job response after switching jobs', async () => {
     let finishFirst!: (v: any) => void;
@@ -50,7 +68,6 @@ describe('job modal load identity and dismissal', () => {
     expect(wrapper.text()).toContain('SERVICE2');
     expect(wrapper.text()).not.toContain('STALE_SERVICE');
     expect(wrapper.findComponent(IonToggle).props('checked')).toBe(false);
-    wrapper.unmount();
   });
   it('rejects a mismatched job response', async () => {
     api.detail.mockResolvedValue({ jobName: 'OTHER', paused: 'N' });
@@ -58,81 +75,101 @@ describe('job modal load identity and dismissal', () => {
     expect(wrapper.text()).toContain('Sync job details unavailable');
     expect(wrapper.findComponent(IonToggle).exists()).toBe(false);
     expect(await wrapper.findComponent(IonModal).props('canDismiss')()).toBe(true);
-    wrapper.unmount();
   });
 });
 
-describe('job modal title, identity parameters and committed writes', () => {
-  const job = () => ({
-    jobName: 'JOB1', description: 'Purges settled rows', serviceName: 'svc#Purge', paused: 'N', cronExpression: '0 0 * ? * *',
-    serviceJobParameters: [
-      { parameterName: 'shopId', parameterValue: '100002' },
-      { parameterName: 'inventoryChannelId', parameterValue: 'IC_1' },
-      { parameterName: 'daysToKeep', parameterValue: '5' },
-    ],
-  });
-  const input = (wrapper: any, label: string) => wrapper.findAllComponents(IonInput).find((field: any) => field.props('label') === label);
-  const RECONCILED = 'The server change was saved, but this view could not be refreshed. Refresh before retrying.';
-  beforeEach(() => {
-    vi.clearAllMocks();
-    api.detail.mockResolvedValue(job()); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); api.usernames.mockResolvedValue({});
-  });
-
-  it('names who changed the job by username, not user id', async () => {
-    api.audits.mockResolvedValue([{ auditHistorySeqId: '1', changedFieldName: 'paused', changedByUserId: '100002', changedDate: 5 }]);
-    api.usernames.mockResolvedValue({ 100002: 'aditya.patel' });
-    const wrapper = mountModal(); await flushPromises();
-    expect(api.usernames).toHaveBeenCalledWith(['100002']);
-    expect(wrapper.text()).toContain('Changed by: aditya.patel');
-    expect(wrapper.text()).not.toContain('100002');
-    wrapper.unmount();
-  });
-
-  it('is titled by the job name and describes the job instead of repeating it', async () => {
+describe('job modal content', () => {
+  it('is titled by the job name, states its schedule in the job time zone, and guards identity parameters', async () => {
     const wrapper = mountModal(); await flushPromises();
     expect(wrapper.find('ion-title').text()).toBe('JOB1');
-    expect(wrapper.text()).toContain('Purges settled rows');
     expect(wrapper.text().split('JOB1')).toHaveLength(2);
-    wrapper.unmount();
-  });
-
-  it('keeps identity parameters read-only unless the screen names one as an input', async () => {
-    const wrapper = mountModal(); await flushPromises();
+    expect(wrapper.text()).toContain('Purges settled rows');
+    expect(wrapper.text()).toContain('Every hour (America/Los_Angeles)');
+    // Identity parameters are read only unless the screen names one as an input.
     expect(input(wrapper, 'shopId').props('disabled')).toBe(true);
+    expect(input(wrapper, 'shopId').props('helperText')).toBe('read only');
     expect(input(wrapper, 'inventoryChannelId').props('disabled')).toBe(true);
-    expect(input(wrapper, 'daysToKeep').props('disabled')).toBe(false);
     await wrapper.setProps({ editableParameterNames: ['inventoryChannelId'] });
     expect(input(wrapper, 'inventoryChannelId').props('disabled')).toBe(false);
-    wrapper.unmount();
+    // The service signature is the field's helper text; outlined, outside ion-item, which clips an outline label.
+    expect(input(wrapper, 'daysToKeep').props()).toMatchObject({ helperText: 'Integer, default {value}, required', fill: 'outline', disabled: false });
+    expect(input(wrapper, 'daysToKeep').element.closest('ion-item')).toBeNull();
+    // Only the parameters the job does not set are listed, without Moqui's own underscore ones.
+    expect(wrapper.text()).toContain('Not set on this job');
+    expect(wrapper.text()).toContain('purgeUnsynced');
+    expect(wrapper.text()).not.toContain('_jobRunId');
+    expect(wrapper.findAll('ion-label').some((label) => label.text().includes('daysToKeep'))).toBe(false);
   });
 
+  it('shows what each run did with its status once, and each audited change by username in words', async () => {
+    api.runs.mockResolvedValue([
+      { jobRunId: 'R2', startTime: 10_000, endTime: 10_222, hasError: 'N', results: JSON.stringify({ recordsRemoved: 20, ageOnlyDetailRecordsRemoved: 0 }) },
+      { jobRunId: 'R1', startTime: 1_000, endTime: 4_000, hasError: 'Y', results: '{}', errors: 'Lock wait timeout exceeded' },
+    ]);
+    api.audits.mockResolvedValue([
+      { auditHistorySeqId: '2', changedFieldName: 'paused', oldValueText: 'N', newValueText: 'Y', changedByUserId: '100002', changedDate: 20 },
+      { auditHistorySeqId: '1', changedFieldName: 'cronExpression', oldValueText: null, newValueText: '0 0 * ? * *', changedDate: 10 },
+    ]);
+    api.usernames.mockResolvedValue({ 100002: 'aditya.patel' });
+    const wrapper = mountModal(); await flushPromises();
+    const runs = wrapper.findAll('ion-item').map((row) => row.text()).filter((text) => text.includes('{duration}'));
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toContain('Records removed: 20');
+    expect(runs[0]).not.toContain('Removed for age only');
+    expect(runs[0].split('Completed')).toHaveLength(2);
+    expect(runs[1]).toContain('Lock wait timeout exceeded');
+    expect(api.usernames.mock.calls[0][0]).toContain('100002');
+    expect(wrapper.text()).toContain('Changed by: aditya.patel');
+    for(const line of ['Previous value: Active', 'New value: Paused', 'Previous value: Not set']) {expect(wrapper.text()).toContain(line);}
+    expect(wrapper.text()).toMatch(/New value: 0 0 \* \? \* \* \(.+\)/);
+  });
+
+  it.each([
+    { saved: '0 0/30 * * * ?', preset: '0 0/30 * * * ?' },
+    { saved: '0 */30 * ? * *', preset: '0 0/30 * * * ?' },
+    { saved: '0 0/5 * * * ?', preset: undefined },
+  ])('selects the preset a saved schedule is, in either spelling ($saved)', async ({ saved, preset }) => {
+    api.detail.mockResolvedValue(job({ cronExpression: saved }));
+    const wrapper = mountModal(); await flushPromises();
+    // With nothing selected Ionic's wrapper reports its own empty-value symbol, not undefined.
+    const value = wrapper.findComponent(IonRadioGroup).props('value');
+    expect(typeof value === 'string' ? value : undefined).toBe(preset);
+    if(!preset) {return;}
+    // Its own preset keeps the saved spelling, so it is no change; another preset writes the stored form.
+    wrapper.findComponent(IonRadioGroup).vm.$emit('ionChange', { detail: { value: preset } }); await flushPromises();
+    expect(dirty(wrapper)).toBe(false);
+    wrapper.findComponent(IonRadioGroup).vm.$emit('ionChange', { detail: { value: '0 0 * * * ?' } }); await flushPromises();
+    expect(input(wrapper, 'Quartz cron expression').props('modelValue')).toBe('0 0 * * * ?');
+  });
+});
+
+describe('job modal committed writes', () => {
   it('closes a save whose write landed but whose cache refresh failed, without sending it again', async () => {
     api.update.mockRejectedValue(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }));
     const wrapper = mountModal(); await flushPromises();
     wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } }); await flushPromises();
-    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+    await save(wrapper);
     expect(commonUtil.showToast).toHaveBeenLastCalledWith(RECONCILED);
     expect(wrapper.emitted('close')).toHaveLength(1);
     expect(await wrapper.findComponent(IonModal).props('canDismiss')()).toBe(true);
     expect(api.update).toHaveBeenCalledTimes(1);
-    wrapper.unmount();
   });
 
-  it('re-sends only the unsent parameters after a screen-owned schedule write landed', async () => {
-    const saveHandler = vi.fn().mockResolvedValue(undefined);
-    api.update.mockRejectedValueOnce(new Error('daysToKeep must be at least 1')).mockResolvedValueOnce({});
+  it('retries only what has not landed, one field of a screen-owned save at a time', async () => {
+    const saveHandler = vi.fn().mockRejectedValueOnce(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' })).mockResolvedValue(undefined);
+    api.update.mockRejectedValueOnce(new Error('daysToKeep must be at least 1')).mockResolvedValue({});
     const wrapper = mountModal({ saveHandler }); await flushPromises();
+    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *');
     wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } });
     input(wrapper, 'daysToKeep').vm.$emit('ionInput', { detail: { value: '7' } }); await flushPromises();
 
-    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+    // The schedule landed but its refresh failed; then the pause landed and the parameters failed.
+    await save(wrapper); await save(wrapper);
     expect(wrapper.emitted('close')).toBeUndefined();
-    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
-
-    expect(saveHandler.mock.calls).toEqual([[{ paused: true }]]);
-    expect(api.update).toHaveBeenLastCalledWith({ jobName: 'JOB1', serviceJobParameters: [{ parameterName: 'daysToKeep', parameterValue: '7' }] });
+    await save(wrapper);
+    expect(saveHandler.mock.calls).toEqual([[{ cronExpression: '0 0 0 ? * *' }], [{ paused: true }]]);
+    expect(api.update.mock.calls).toEqual([1, 2].map(() => [{ jobName: 'JOB1', serviceJobParameters: [{ parameterName: 'daysToKeep', parameterValue: '7' }] }]));
     expect(wrapper.emitted('close')).toHaveLength(1);
-    wrapper.unmount();
   });
 
   it('reloads after a run whose cache refresh failed, because the run was queued', async () => {
@@ -141,114 +178,5 @@ describe('job modal title, identity parameters and committed writes', () => {
     await wrapper.findAll('ion-button').find((button) => button.text() === 'Run now')!.trigger('click'); await flushPromises();
     expect(commonUtil.showToast).toHaveBeenLastCalledWith(RECONCILED);
     expect(api.detail).toHaveBeenCalledTimes(2);
-    wrapper.unmount();
-  });
-
-  it('keeps a pause change unsaved when the schedule write before it landed but its refresh failed', async () => {
-    const saveHandler = vi.fn()
-      .mockRejectedValueOnce(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }))
-      .mockResolvedValue(undefined);
-    const wrapper = mountModal({ saveHandler }); await flushPromises();
-    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *');
-    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } }); await flushPromises();
-
-    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
-    expect(wrapper.emitted('close')).toBeUndefined();
-    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
-
-    expect(saveHandler.mock.calls).toEqual([[{ cronExpression: '0 0 0 ? * *' }], [{ paused: true }]]);
-    expect(wrapper.emitted('close')).toHaveLength(1);
-    wrapper.unmount();
-  });
-
-  it("shows the service's signature under the job's own field, and lists only the parameters the job does not set", async () => {
-    api.detail.mockResolvedValue({ ...job(), serviceInParameters: [
-      { name: 'daysToKeep', type: 'Integer', default: 5, required: 'true' },
-      { name: 'purgeUnsynced', type: 'Boolean', default: null, required: null },
-      { name: '_jobRunId', type: null, default: null, required: null },
-    ] });
-    const wrapper = mountModal(); await flushPromises();
-    expect(input(wrapper, 'daysToKeep').props('helperText')).toBe('Integer, default {value}, required');
-    // Outlined and outside ion-item, whose wrapper clips an outline label; a protected field says why it is disabled.
-    expect(input(wrapper, 'daysToKeep').props('fill')).toBe('outline');
-    expect(input(wrapper, 'daysToKeep').element.closest('ion-item')).toBeNull();
-    expect(input(wrapper, 'shopId').props('helperText')).toBe('read only');
-    expect(wrapper.text()).toContain('Not set on this job');
-    expect(wrapper.text()).toContain('purgeUnsynced');
-    expect(wrapper.text()).not.toContain('_jobRunId');
-    // Set on the job, so it is a field with helper text, not also a row in the unset list.
-    expect(wrapper.findAll('ion-label').some((label) => label.text().includes('daysToKeep'))).toBe(false);
-    wrapper.unmount();
-  });
-
-  it("shows each recent run's timing and what it did, with its status once", async () => {
-    api.runs.mockResolvedValue([
-      { jobRunId: 'R2', startTime: 10_000, endTime: 10_222, hasError: 'N',
-        results: JSON.stringify({ recordsRemoved: 20, terminalDetailRecordsRemoved: 19, ageOnlyDetailRecordsRemoved: 0 }) },
-      { jobRunId: 'R1', startTime: 1_000, endTime: 4_000, hasError: 'Y', results: '{}', errors: 'Lock wait timeout exceeded' },
-    ]);
-    const wrapper = mountModal(); await flushPromises();
-    const rows = wrapper.findAll('ion-item').map((row) => row.text()).filter((text) => text.includes('{duration}'));
-    expect(rows).toHaveLength(2);
-
-    expect(rows[0]).toContain('Took {duration}');
-    expect(rows[0]).toContain('Records removed: 20');
-    expect(rows[0]).not.toContain('Removed for age only');
-    expect(rows[0].split('Completed')).toHaveLength(2);
-    expect(rows[1]).toContain('Lock wait timeout exceeded');
-    expect(rows[1]).toContain('Failed');
-    wrapper.unmount();
-  });
-
-  it('shows what each audited change was, in words where the raw value is a code', async () => {
-    api.audits.mockResolvedValue([
-      { auditHistorySeqId: '2', changedFieldName: 'paused', oldValueText: 'N', newValueText: 'Y', changedDate: 20 },
-      { auditHistorySeqId: '1', changedFieldName: 'cronExpression', oldValueText: null, newValueText: '0 0 * ? * *', changedDate: 10 },
-    ]);
-    const wrapper = mountModal(); await flushPromises();
-    const text = wrapper.text();
-
-    expect(text).toContain('Previous value: Active');
-    expect(text).toContain('New value: Paused');
-    expect(text).toContain('Previous value: Not set');
-    expect(text).toMatch(/New value: 0 0 \* \? \* \* \(.+\)/);
-    wrapper.unmount();
-  });
-
-  it("states the schedule in the job's own time zone, for the saved schedule and a draft alike", async () => {
-    api.detail.mockResolvedValue({ ...job(), executionTimeZone: 'America/Los_Angeles' });
-    const wrapper = mountModal(); await flushPromises();
-    expect(wrapper.text()).toMatch(/\S \(America\/Los_Angeles\)/);
-
-    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *'); await flushPromises();
-    expect(wrapper.text()).toContain('At 12:00 AM (America/Los_Angeles)');
-    wrapper.unmount();
-  });
-
-  it.each([
-    { saved: '0 0/30 * * * ?', preset: '0 0/30 * * * ?' },
-    { saved: '0 */30 * ? * *', preset: '0 0/30 * * * ?' },
-    { saved: '0 0/5 * * * ?', preset: undefined },
-  ])('selects the preset a saved schedule is, in either spelling ($saved)', async ({ saved, preset }) => {
-    api.detail.mockResolvedValue({ ...job(), cronExpression: saved });
-    const wrapper = mountModal(); await flushPromises();
-    // With nothing selected Ionic's wrapper reports its own empty-value symbol, not undefined.
-    const value = wrapper.findComponent(IonRadioGroup).props('value');
-    expect(typeof value === 'string' ? value : undefined).toBe(preset);
-    wrapper.unmount();
-  });
-
-  it("keeps the saved spelling when its own preset is chosen, and writes the stored form for another", async () => {
-    api.detail.mockResolvedValue({ ...job(), cronExpression: '0 */30 * ? * *' });
-    const wrapper = mountModal(); await flushPromises();
-    const presets = wrapper.findComponent(IonRadioGroup);
-
-    presets.vm.$emit('ionChange', { detail: { value: '0 0/30 * * * ?' } }); await flushPromises();
-    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(true);
-
-    presets.vm.$emit('ionChange', { detail: { value: '0 0 * * * ?' } }); await flushPromises();
-    expect(input(wrapper, 'Quartz cron expression').props('modelValue')).toBe('0 0 * * * ?');
-    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(false);
-    wrapper.unmount();
   });
 });
