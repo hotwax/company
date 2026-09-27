@@ -609,4 +609,9 @@ function auditKey(audit: any) { return String(audit.auditLogId || audit.entityAu
 
 <style scoped>
 .overline { color: var(--ion-color-medium); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* Room under the last row for the save button, which floats over the content (56px, 16px off the edge). */
+ion-content {
+  --padding-bottom: var(--spacer-2xl);
+}
 </style>
