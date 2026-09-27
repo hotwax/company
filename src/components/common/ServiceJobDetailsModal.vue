@@ -123,6 +123,7 @@
                   label-placement="stacked"
                   interface="popover"
                   :label="parameter.label"
+                  :helper-text="parameter.signature"
                   :value="draftParameters[parameter.name]"
                   :disabled="isSaving || !canEdit || parameter.isProtected"
                   @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
@@ -135,6 +136,7 @@
                   v-else
                   label-placement="stacked"
                   :label="parameter.label"
+                  :helper-text="parameter.signature"
                   :value="draftParameters[parameter.name]"
                   :disabled="isSaving || !canEdit || parameter.isProtected"
                   @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
@@ -142,14 +144,18 @@
                 <ion-note v-if="parameter.isProtected" slot="end">{{ translate('Read only') }}</ion-note>
               </ion-item>
 
-              <!-- Service parameters are the service SIGNATURE (type, mode, default), not values
-                   stored against this job - there is nothing here a save could write, so they stay
-                   read-only rather than offering an edit that goes nowhere. -->
-              <template v-if="serviceParameters.length">
-                <ion-list-header>{{ translate('Service parameters') }}</ion-list-header>
-                <ion-item v-for="parameter in serviceParameters" :key="parameter.key">
-                  <ion-label>{{ parameter.label }}</ion-label>
-                  <ion-label slot="end">{{ parameter.value }}</ion-label>
+              <!-- The service's other parameters: its SIGNATURE, not values stored against this job, so
+                   there is nothing a save could write. A parameter the job sets shows its signature
+                   as the helper text of its own field instead. -->
+              <template v-if="unsetServiceParameters.length">
+                <ion-list-header>{{ translate("Not set on this job") }}</ion-list-header>
+                <ion-item v-for="parameter in unsetServiceParameters" :key="parameter.name">
+                  <ion-label>
+                    {{ parameter.name }}
+                    <p v-if="parameter.signature">
+                      {{ parameter.signature }}
+                    </p>
+                  </ion-label>
                 </ion-item>
               </template>
 
@@ -254,7 +260,8 @@ const props = withDefaults(defineProps<{
   runNowDisabledReason?: string;
   editDisabledReason?: string;
   runHandler?: (() => Promise<unknown>) | null;
-  saveHandler?: ((payload: { cronExpression: string; paused: boolean }) => Promise<unknown>) | null;
+  /** Writes the one field it is given (schedule or pause); called once per changed field. */
+  saveHandler?: ((payload: { cronExpression?: string; paused?: boolean }) => Promise<unknown>) | null;
 }>(), {
   allowedParameterNames: () => [],
   editableParameterNames: () => [],
@@ -330,6 +337,17 @@ const scheduleOptions = [
 ];
 const parameterIsAllowed = (parameter: any) => !props.allowedParameterNames.length || props.allowedParameterNames.includes(String(parameter?.parameterName || parameter?.name || ''));
 
+/** The service's signature per parameter name, e.g. "Integer, default 5, required". */
+const serviceSignatures = computed(() => {
+  const parameters = Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : [];
+
+  return new Map<string, string>(parameters.map((parameter: any) => [String(parameter?.name ?? ""), [
+    parameter?.type,
+    parameter?.default === null || parameter?.default === undefined ? "" : translate("default {value}", { value: String(parameter.default) }),
+    parameter?.required === true || parameter?.required === "true" ? translate("required") : "",
+  ].filter(Boolean).join(", ")]));
+});
+
 /** Only rows with a real parameterName can be written back, so unnamed rows are not made editable. */
 const jobParameters = computed(() =>
   (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
@@ -339,21 +357,19 @@ const jobParameters = computed(() =>
       key: `job-${parameter.parameterName}`,
       name: String(parameter.parameterName),
       label: String(parameter.parameterName),
+      signature: serviceSignatures.value.get(String(parameter.parameterName)) || undefined,
       isProtected: IDENTITY_PARAMETER_NAMES.includes(String(parameter.parameterName)) &&
         !props.editableParameterNames.includes(String(parameter.parameterName)),
       options: props.parameterOptions[String(parameter.parameterName)],
     })));
 
-const serviceParameters = computed(() =>
-  (Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : [])
-    .filter(parameterIsAllowed)
-    .map((parameter: any, index: number) => ({
-      key: `service-${parameter.parameterName || parameter.name || index}`,
-      label: parameter.parameterName || parameter.name || translate('Parameter'),
-      value: formatValue(parameter.defaultValue || parameter.parameterValue || parameter.type || parameter.mode),
-    })));
+/** Service parameters the job does not set; a leading underscore marks one Moqui supplies itself (`_jobRunId`). */
+const unsetServiceParameters = computed(() => [...serviceSignatures.value]
+  .filter(([name]) => name && !name.startsWith("_") && parameterIsAllowed({ name }))
+  .filter(([name]) => !jobParameters.value.some((parameter) => parameter.name === name))
+  .map(([name, signature]) => ({ name, signature })));
 
-const parameterCount = computed(() => jobParameters.value.length + serviceParameters.value.length);
+const parameterCount = computed(() => jobParameters.value.length + unsetServiceParameters.value.length);
 
 const originalParameters = computed<Record<string, string>>(() => Object.fromEntries(
   (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
@@ -453,10 +469,14 @@ async function save() {
   const parameterChanges = changedParameters.value;
   try {
     if(props.saveHandler) {
-      // A `saveHandler` owns the schedule/pause write; parameters go through the standard job PUT. It
-      // runs only while the schedule is unsaved, so a retry after the parameter write failed skips it.
-      if(scheduleChanged.value || draftActive.value !== originalActive.value) {
-        await committed(() => props.saveHandler!({ cronExpression: schedule.cronExpression, paused }), schedule, []);
+      // A `saveHandler` owns the schedule and pause writes, one field per call, so each is folded in as
+      // it lands: a failure after the first leaves only the second unsaved, and a retry skips the first.
+      // Parameters go through the standard job PUT.
+      if(scheduleChanged.value) {
+        await committed(() => props.saveHandler!({ cronExpression: schedule.cronExpression }), { cronExpression: schedule.cronExpression }, []);
+      }
+      if(draftActive.value !== originalActive.value) {
+        await committed(() => props.saveHandler!({ paused }), { paused: schedule.paused }, []);
       }
       if(parameterChanges.length) {
         await committed(() => updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges }), {}, parameterChanges);
@@ -510,17 +530,11 @@ function fold(schedule: Record<string, string>, parameterChanges: Array<{ parame
 }
 function formatDate(value: unknown) { return formatDateTime(value) || translate('Not available'); }
 /**
- * The value an input edits, which must round-trip - so unlike `formatValue` it never substitutes
- * "Not available" for an empty value, which would otherwise be saved back as the literal text.
+ * The value an input edits, which must round-trip - so it never substitutes "Not available" for an
+ * empty value, which would otherwise be saved back as the literal text.
  */
 function toDraftValue(value: unknown) {
   if (value === undefined || value === null) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-function formatValue(value: unknown) {
-  if (value === undefined || value === null || value === '') return translate('Not available');
-  if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }

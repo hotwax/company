@@ -129,7 +129,7 @@ describe('job modal title, identity parameters and committed writes', () => {
     expect(wrapper.emitted('close')).toBeUndefined();
     await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
 
-    expect(saveHandler).toHaveBeenCalledTimes(1);
+    expect(saveHandler.mock.calls).toEqual([[{ paused: true }]]);
     expect(api.update).toHaveBeenLastCalledWith({ jobName: 'JOB1', serviceJobParameters: [{ parameterName: 'daysToKeep', parameterValue: '7' }] });
     expect(wrapper.emitted('close')).toHaveLength(1);
     wrapper.unmount();
@@ -141,6 +141,39 @@ describe('job modal title, identity parameters and committed writes', () => {
     await wrapper.findAll('ion-button').find((button) => button.text() === 'Run now')!.trigger('click'); await flushPromises();
     expect(commonUtil.showToast).toHaveBeenLastCalledWith(RECONCILED);
     expect(api.detail).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
+  it('keeps a pause change unsaved when the schedule write before it landed but its refresh failed', async () => {
+    const saveHandler = vi.fn()
+      .mockRejectedValueOnce(new CacheReconciliationError('serviceJob', { jobName: 'JOB1' }))
+      .mockResolvedValue(undefined);
+    const wrapper = mountModal({ saveHandler }); await flushPromises();
+    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *');
+    wrapper.findComponent(IonToggle).vm.$emit('ionChange', { detail: { checked: false } }); await flushPromises();
+
+    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+    expect(wrapper.emitted('close')).toBeUndefined();
+    await wrapper.findComponent(IonFabButton).trigger('click'); await flushPromises();
+
+    expect(saveHandler.mock.calls).toEqual([[{ cronExpression: '0 0 0 ? * *' }], [{ paused: true }]]);
+    expect(wrapper.emitted('close')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("shows the service's signature under the job's own field, and lists only the parameters the job does not set", async () => {
+    api.detail.mockResolvedValue({ ...job(), serviceInParameters: [
+      { name: 'daysToKeep', type: 'Integer', default: 5, required: 'true' },
+      { name: 'purgeUnsynced', type: 'Boolean', default: null, required: null },
+      { name: '_jobRunId', type: null, default: null, required: null },
+    ] });
+    const wrapper = mountModal(); await flushPromises();
+    expect(input(wrapper, 'daysToKeep').props('helperText')).toBe('Integer, default {value}, required');
+    expect(wrapper.text()).toContain('Not set on this job');
+    expect(wrapper.text()).toContain('purgeUnsynced');
+    expect(wrapper.text()).not.toContain('_jobRunId');
+    // Set on the job, so it is a field with helper text, not also a row in the unset list.
+    expect(wrapper.findAll('ion-label').some((label) => label.text().includes('daysToKeep'))).toBe(false);
     wrapper.unmount();
   });
 });
