@@ -65,14 +65,6 @@
             <ion-label>{{ translate('Active') }}</ion-label>
             <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="draftActive = $event.detail.checked" />
           </ion-item>
-          <ion-item>
-            <ion-label>{{ translate('Last run') }}</ion-label>
-            <ion-label slot="end">{{ lastRunLabel }}</ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-label>{{ translate('Instance of product') }}</ion-label>
-            <ion-label slot="end">{{ productLabel }}</ion-label>
-          </ion-item>
         </ion-list>
 
         <ion-accordion-group>
@@ -181,8 +173,14 @@
 
           <ion-accordion value="recent-runs">
             <ion-item slot="header">
-              <ion-label>{{ translate('Recent runs') }}<p>{{ translate('Last 5 executions for this service job.') }}</p></ion-label>
-              <ion-note slot="end">{{ recentRuns.length }}</ion-note>
+              <!-- The last run, readable with the section closed; the rows below are the five newest. -->
+              <ion-label>
+                {{ translate('Recent runs') }}
+                <p>{{ runRows[0] ? translate("Last run {at}", { at: runRows[0].startedAt }) : translate('No recent runs') }}</p>
+              </ion-label>
+              <ion-badge v-if="runRows[0]" slot="end" :color="runRows[0].statusColor">
+                {{ runRows[0].statusLabel }}
+              </ion-badge>
             </ion-item>
             <!-- The status once, as the badge; the lines say when, how long, and what the run did. -->
             <ion-list slot="content" inset lines="full">
@@ -352,9 +350,6 @@ const nextRunLabel = computed(() => {
   const nextRun = details.nextExecutionDateTime ?? details.nextRunTime ?? details.nextRunDate;
   return formatDateTime(nextRun) || translate('Not scheduled');
 });
-const lastRunLabel = computed(() => recentRuns.value.length
-  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)}, ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
-  : translate('No recent runs'));
 /**
  * What each recent run did. Zero figures are dropped (a publisher pass that found an empty queue reads
  * "Stopped because: the queue was empty", not five zeros), and `{}` results leave just the timing.
@@ -377,7 +372,6 @@ const runRows = computed(() => recentRuns.value.map((run) => {
     statusColor: statusColor(status),
   };
 }));
-const productLabel = computed(() => jobDetails.value.instanceOfProductId || translate('Unavailable'));
 const scheduleOptions = [
   { label: 'Every 15 minutes', expression: '0 */15 * ? * *' },
   { label: 'Every 30 minutes', expression: '0 */30 * ? * *' },

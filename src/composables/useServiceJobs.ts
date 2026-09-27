@@ -180,7 +180,6 @@ const getNormalizedJobDetail = (jobDetail: any = {}) => getNormalizedJob(jobDeta
  */
 const state = reactive({
   jobs: [] as Array<any>,
-  products: {} as any,
   loading: false
 });
 
@@ -271,25 +270,6 @@ export function useServiceJob() {
     });
   };
 
-  /** Product detail for a product-bound job. Internal: only `fetchJobDetail` needs it. */
-  const fetchProductDetail = async (productId: string) => {
-    if (state.products[productId]) return;
-    return fetchDeduplicated(`product_${productId}`, async () => {
-      try {
-        const resp = await api({
-          url: `oms/products/${productId}`,
-          method: "GET"
-        }) as any;
-        if (resp?.data) {
-          state.products[productId] = resp.data;
-        }
-      } catch(err) {
-        logger.error("Failed to fetch product detail", err);
-        throw err;
-      }
-    });
-  };
-
   /**
    * The job as the server has it. Given a `productStoreId`, a job carrying a `productStoreIds`
    * parameter must belong to that store, or the read fails: that is how a screen asks "this store's
@@ -318,11 +298,7 @@ export function useServiceJob() {
         throw new Error(`Service job detail is unavailable for ${jobName}.`);
       }
 
-      const normalized = getNormalizedJobDetail(job);
-      if (normalized.instanceOfProductId && !state.products[normalized.instanceOfProductId]) {
-        await fetchProductDetail(normalized.instanceOfProductId);
-      }
-      return normalized;
+      return getNormalizedJobDetail(job);
     });
   };
 
