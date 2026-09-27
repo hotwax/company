@@ -96,7 +96,7 @@
                   <ion-note slot="end">{{ nextRunLabel }}</ion-note>
                 </ion-item>
                 <ion-list-header>{{ translate('Schedule Options') }}</ion-list-header>
-                <ion-radio-group v-model="draftCronExpression">
+                <ion-radio-group :value="selectedPreset" @ion-change="choosePreset($event.detail.value)">
                   <ion-item v-for="option in scheduleOptions" :key="option.expression">
                     <ion-radio label-placement="end" justify="start" :value="option.expression" :disabled="isSaving || !canEdit">{{ translate(option.label) }}</ion-radio>
                   </ion-item>
@@ -385,12 +385,30 @@ const runRows = computed(() => recentRuns.value.map((run) => {
     statusColor: statusColor(status),
   };
 }));
+/** Spelled the way the OMS stores its own schedules (`0 0/30 * * * ?`), so choosing one writes that form. */
 const scheduleOptions = [
-  { label: 'Every 15 minutes', expression: '0 */15 * ? * *' },
-  { label: 'Every 30 minutes', expression: '0 */30 * ? * *' },
-  { label: 'Every hour', expression: '0 0 * ? * *' },
-  { label: 'Every day at midnight', expression: '0 0 0 ? * *' },
+  { label: "Every 15 minutes", expression: "0 0/15 * * * ?" },
+  { label: "Every 30 minutes", expression: "0 0/30 * * * ?" },
+  { label: "Every hour", expression: "0 0 * * * ?" },
+  { label: "Every day at midnight", expression: "0 0 0 * * ?" },
 ];
+
+/** Two Quartz spellings of one schedule compare equal: a step from `*` is one from `0`, and `?` is `*` in the day fields. */
+function cronKey(expression: string) {
+  return String(expression ?? "").trim().split(/\s+/)
+    .map((field) => (field === "?" ? "*" : field.replace(/^\*\//, "0/")))
+    .join(" ");
+}
+
+/** The preset the draft schedule is, whichever spelling it was saved in. */
+const selectedPreset = computed(() =>
+  scheduleOptions.find((option) => cronKey(option.expression) === cronKey(draftCronExpression.value))?.expression);
+
+/** Choosing the saved schedule's own preset keeps its saved spelling, so it is not an unsaved change. */
+function choosePreset(expression: unknown) {
+  if(typeof expression !== "string" || !expression) {return;}
+  draftCronExpression.value = cronKey(expression) === cronKey(originalCronExpression.value) ? originalCronExpression.value : expression;
+}
 const parameterIsAllowed = (parameter: any) => !props.allowedParameterNames.length || props.allowedParameterNames.includes(String(parameter?.parameterName || parameter?.name || ''));
 
 /** The service's signature per parameter name, e.g. "Integer, default 5, required". */

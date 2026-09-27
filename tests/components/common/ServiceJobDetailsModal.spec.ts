@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IonFabButton, IonInput, IonModal, IonToggle, alertController } from '@ionic/vue';
+import { IonFabButton, IonInput, IonModal, IonRadioGroup, IonToggle, alertController } from '@ionic/vue';
 const api = vi.hoisted(() => ({ detail: vi.fn(), runs: vi.fn(), audits: vi.fn(), usernames: vi.fn(), update: vi.fn(), run: vi.fn() }));
 vi.mock('@common', () => ({ translate: (s: string) => s, commonUtil: { showToast: vi.fn() } }));
 vi.mock('@/utils', () => ({ formatDateTime: (s: any) => s ? String(s) : '' }));
@@ -222,6 +222,33 @@ describe('job modal title, identity parameters and committed writes', () => {
 
     input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *'); await flushPromises();
     expect(wrapper.text()).toContain('At 12:00 AM (America/Los_Angeles)');
+    wrapper.unmount();
+  });
+
+  it.each([
+    { saved: '0 0/30 * * * ?', preset: '0 0/30 * * * ?' },
+    { saved: '0 */30 * ? * *', preset: '0 0/30 * * * ?' },
+    { saved: '0 0/5 * * * ?', preset: undefined },
+  ])('selects the preset a saved schedule is, in either spelling ($saved)', async ({ saved, preset }) => {
+    api.detail.mockResolvedValue({ ...job(), cronExpression: saved });
+    const wrapper = mountModal(); await flushPromises();
+    // With nothing selected Ionic's wrapper reports its own empty-value symbol, not undefined.
+    const value = wrapper.findComponent(IonRadioGroup).props('value');
+    expect(typeof value === 'string' ? value : undefined).toBe(preset);
+    wrapper.unmount();
+  });
+
+  it("keeps the saved spelling when its own preset is chosen, and writes the stored form for another", async () => {
+    api.detail.mockResolvedValue({ ...job(), cronExpression: '0 */30 * ? * *' });
+    const wrapper = mountModal(); await flushPromises();
+    const presets = wrapper.findComponent(IonRadioGroup);
+
+    presets.vm.$emit('ionChange', { detail: { value: '0 0/30 * * * ?' } }); await flushPromises();
+    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(true);
+
+    presets.vm.$emit('ionChange', { detail: { value: '0 0 * * * ?' } }); await flushPromises();
+    expect(input(wrapper, 'Quartz cron expression').props('modelValue')).toBe('0 0 * * * ?');
+    expect(wrapper.findComponent(IonModal).props('backdropDismiss')).toBe(false);
     wrapper.unmount();
   });
 });
