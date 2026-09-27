@@ -184,7 +184,7 @@
               <ion-item v-for="audit in auditHistory" :key="auditKey(audit)">
                 <ion-label>
                   {{ audit.changedFieldName || audit.fieldName || translate('Job change') }}
-                  <p v-if="audit.changedByUserLoginId || audit.changedByUserId">{{ translate('Changed by') }}: {{ audit.changedByUserLoginId || audit.changedByUserId }}</p>
+                  <p v-if="audit.changedByUserLoginId || audit.changedByUserId">{{ translate('Changed by') }}: {{ audit.changedByUserLoginId || usernames[audit.changedByUserId] || audit.changedByUserId }}</p>
                   <p>{{ translate('Job configuration changed') }}</p>
                 </ion-label>
                 <ion-note slot="end">{{ formatDate(audit.changedDate || audit.changedDateTime) }}</ion-note>
@@ -268,7 +268,7 @@ const props = withDefaults(defineProps<{
   saveHandler: null,
 });
 const emit = defineEmits<{ close: []; updated: [] }>();
-const { fetchJobDetail, fetchJobRuns, fetchJobAuditHistory, updateJob, runNow } = useServiceJob();
+const { fetchJobDetail, fetchJobRuns, fetchJobAuditHistory, fetchUsernames, updateJob, runNow } = useServiceJob();
 
 const isLoading = ref(false);
 const isSaving = ref(false);
@@ -277,6 +277,7 @@ const loadError = ref('');
 const jobDetails = ref<Record<string, any>>({});
 const recentRuns = ref<any[]>([]);
 const auditHistory = ref<any[]>([]);
+const usernames = ref<Record<string, string>>({});
 const draftCronExpression = ref('');
 const draftActive = ref(false);
 const draftParameters = ref<Record<string, string>>({});
@@ -395,6 +396,10 @@ async function load() {
     recentRuns.value = Array.isArray(runs) ? runs : [];
     auditHistory.value = Array.isArray(audits) ? audits : [];
     resetDraft();
+    // Names arrive after the modal has rendered; until then a row shows the id.
+    void fetchUsernames(auditHistory.value.map((audit) => String(audit.changedByUserId ?? ""))).then((names) => {
+      if(request === loadGeneration) {usernames.value = names;}
+    });
   } catch (_error) {
     if (request !== loadGeneration) return;
     loadError.value = translate('Failed to load sync job details.');

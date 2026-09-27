@@ -2,11 +2,12 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IonFabButton, IonInput, IonModal, IonToggle, alertController } from '@ionic/vue';
-const api = vi.hoisted(() => ({ detail: vi.fn(), runs: vi.fn(), audits: vi.fn(), update: vi.fn(), run: vi.fn() }));
+const api = vi.hoisted(() => ({ detail: vi.fn(), runs: vi.fn(), audits: vi.fn(), usernames: vi.fn(), update: vi.fn(), run: vi.fn() }));
 vi.mock('@common', () => ({ translate: (s: string) => s, commonUtil: { showToast: vi.fn() } }));
 vi.mock('@/utils', () => ({ formatDateTime: (s: any) => s ? String(s) : '' }));
 vi.mock('@/composables/useServiceJobs', () => ({ useServiceJob: () => ({
-  fetchJobDetail: api.detail, fetchJobRuns: api.runs, fetchJobAuditHistory: api.audits, updateJob: api.update, runNow: api.run,
+  fetchJobDetail: api.detail, fetchJobRuns: api.runs, fetchJobAuditHistory: api.audits, fetchUsernames: api.usernames,
+  updateJob: api.update, runNow: api.run,
 }) }));
 import { commonUtil } from '@common';
 import Modal from '@/components/common/ServiceJobDetailsModal.vue';
@@ -16,7 +17,7 @@ const mountModal = (props: Record<string, unknown> = {}) => mount(Modal, { props
 } } });
 
 describe('job modal load identity and dismissal', () => {
-  beforeEach(() => { vi.clearAllMocks(); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); });
+  beforeEach(() => { vi.clearAllMocks(); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); api.usernames.mockResolvedValue({}); });
   it('can close a failed initial read without claiming unsaved edits', async () => {
     api.detail.mockRejectedValue(new Error('expired session'));
     const alert = vi.spyOn(alertController, 'create');
@@ -72,7 +73,20 @@ describe('job modal title, identity parameters and committed writes', () => {
   });
   const input = (wrapper: any, label: string) => wrapper.findAllComponents(IonInput).find((field: any) => field.props('label') === label);
   const RECONCILED = 'The server change was saved, but this view could not be refreshed. Refresh before retrying.';
-  beforeEach(() => { vi.clearAllMocks(); api.detail.mockResolvedValue(job()); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.detail.mockResolvedValue(job()); api.runs.mockResolvedValue([]); api.audits.mockResolvedValue([]); api.usernames.mockResolvedValue({});
+  });
+
+  it('names who changed the job by username, not user id', async () => {
+    api.audits.mockResolvedValue([{ auditHistorySeqId: '1', changedFieldName: 'paused', changedByUserId: '100002', changedDate: 5 }]);
+    api.usernames.mockResolvedValue({ 100002: 'aditya.patel' });
+    const wrapper = mountModal(); await flushPromises();
+    expect(api.usernames).toHaveBeenCalledWith(['100002']);
+    expect(wrapper.text()).toContain('Changed by: aditya.patel');
+    expect(wrapper.text()).not.toContain('100002');
+    wrapper.unmount();
+  });
 
   it('is titled by the job name and describes the job instead of repeating it', async () => {
     const wrapper = mountModal(); await flushPromises();

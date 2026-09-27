@@ -3,6 +3,7 @@ import { api, logger } from "@common";
 import cronstrue from "cronstrue";
 import { serviceJobCache, serviceJobRunCache } from "@/utils/cacheEntities";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { onSessionCleared } from "./sessionScope";
 import { useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
@@ -195,6 +196,10 @@ const defaultJobFetchParams = {
  * on the same tick — so without this the same request goes out repeatedly.
  */
 const pendingRequests = {} as any;
+
+/** `userId` → username for this session: an audit log records who changed a job by id only. */
+const usernamesById = new Map<string, Promise<string>>();
+onSessionCleared(() => usernamesById.clear());
 const fetchDeduplicated = async (key: string, fetchFn: () => Promise<any>) => {
   if (pendingRequests[key]) return pendingRequests[key];
   pendingRequests[key] = fetchFn().finally(() => delete pendingRequests[key]);
@@ -386,6 +391,28 @@ export function useServiceJob() {
   };
 
   /**
+   * The username behind each user id, one request per user per session. A user that cannot be read
+   * (a system id, a missing permission) stays its id, and is asked again next time.
+   */
+  const fetchUsernames = async (userIds: string[]): Promise<Record<string, string>> => {
+    const entries = await Promise.all([...new Set(userIds.filter(Boolean))].map(async (userId) => {
+      if(!usernamesById.has(userId)) {
+        usernamesById.set(userId, api({ url: `admin/users/${encodeURIComponent(userId)}`, method: "GET" })
+          .then((resp: any) => String(resp?.data?.username || userId))
+          .catch(() => {
+            usernamesById.delete(userId);
+
+            return userId;
+          }));
+      }
+
+      return [userId, await usernamesById.get(userId)!] as const;
+    }));
+
+    return Object.fromEntries(entries);
+  };
+
+  /**
    * The PUT answers with a message, not the updated row, and the LIST screens read the cached
    * definition rather than this response - so without the write-through a job stayed "Paused / No
    * active schedule" on the page that had just activated it, right through a full reload, until the
@@ -418,6 +445,7 @@ export function useServiceJob() {
     fetchJobDetail,
     fetchJobRuns,
     fetchJobAuditHistory,
+    fetchUsernames,
     updateJob,
     runNow
   };
