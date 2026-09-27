@@ -212,10 +212,11 @@
             </ion-item>
             <ion-list slot="content" lines="full">
               <ion-item v-for="audit in auditHistory" :key="auditKey(audit)">
-                <ion-label>
+                <ion-label class="ion-text-wrap">
                   {{ audit.changedFieldName || audit.fieldName || translate('Job change') }}
                   <p v-if="audit.changedByUserLoginId || audit.changedByUserId">{{ translate('Changed by') }}: {{ audit.changedByUserLoginId || usernames[audit.changedByUserId] || audit.changedByUserId }}</p>
-                  <p>{{ translate('Job configuration changed') }}</p>
+                  <p>{{ translate("Previous value") }}: {{ auditValueOf(audit, audit.oldValueText) }}</p>
+                  <p>{{ translate("New value") }}: {{ auditValueOf(audit, audit.newValueText) }}</p>
                 </ion-label>
                 <ion-note slot="end">{{ formatDate(audit.changedDate || audit.changedDateTime) }}</ion-note>
               </ion-item>
@@ -576,6 +577,25 @@ function fold(schedule: Record<string, string>, parameterChanges: Array<{ parame
         return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
       }),
   };
+}
+/**
+ * An audit value as a reader would say it: `paused` Y/N as Paused/Active, a cron expression with its
+ * schedule in words, and an empty value (the field was first set, or cleared) as "Not set".
+ */
+function auditValueOf(audit: any, value: unknown) {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  if(!text) {return translate("Not set");}
+  const field = String(audit?.changedFieldName ?? audit?.fieldName ?? "");
+  if(field === "paused" && (text === "Y" || text === "N")) {return translate(text === "Y" ? "Paused" : "Active");}
+  if(field === "cronExpression") {
+    try {
+      return `${text} (${cronstrue.toString(text)})`;
+    } catch {
+      return text;
+    }
+  }
+
+  return text;
 }
 function formatDate(value: unknown) { return formatDateTime(value) || translate('Not available'); }
 /**

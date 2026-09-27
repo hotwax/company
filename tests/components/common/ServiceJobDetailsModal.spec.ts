@@ -199,4 +199,19 @@ describe('job modal title, identity parameters and committed writes', () => {
     expect(rows[1]).toContain('Failed');
     wrapper.unmount();
   });
+
+  it('shows what each audited change was, in words where the raw value is a code', async () => {
+    api.audits.mockResolvedValue([
+      { auditHistorySeqId: '2', changedFieldName: 'paused', oldValueText: 'N', newValueText: 'Y', changedDate: 20 },
+      { auditHistorySeqId: '1', changedFieldName: 'cronExpression', oldValueText: null, newValueText: '0 0 * ? * *', changedDate: 10 },
+    ]);
+    const wrapper = mountModal(); await flushPromises();
+    const text = wrapper.text();
+
+    expect(text).toContain('Previous value: Active');
+    expect(text).toContain('New value: Paused');
+    expect(text).toContain('Previous value: Not set');
+    expect(text).toMatch(/New value: 0 0 \* \? \* \* \(.+\)/);
+    wrapper.unmount();
+  });
 });
