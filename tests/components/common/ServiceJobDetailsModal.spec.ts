@@ -214,4 +214,14 @@ describe('job modal title, identity parameters and committed writes', () => {
     expect(text).toMatch(/New value: 0 0 \* \? \* \* \(.+\)/);
     wrapper.unmount();
   });
+
+  it("states the schedule in the job's own time zone, for the saved schedule and a draft alike", async () => {
+    api.detail.mockResolvedValue({ ...job(), executionTimeZone: 'America/Los_Angeles' });
+    const wrapper = mountModal(); await flushPromises();
+    expect(wrapper.text()).toMatch(/\S \(America\/Los_Angeles\)/);
+
+    input(wrapper, 'Quartz cron expression').vm.$emit('update:modelValue', '0 0 0 ? * *'); await flushPromises();
+    expect(wrapper.text()).toContain('At 12:00 AM (America/Los_Angeles)');
+    wrapper.unmount();
+  });
 });

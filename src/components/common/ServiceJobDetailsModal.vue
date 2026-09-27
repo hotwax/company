@@ -333,9 +333,21 @@ const isScheduleValid = computed(() => {
  */
 const scheduleChanged = computed(() => draftCronExpression.value !== originalCronExpression.value);
 const canSave = computed(() => !isLoading.value && !isSaving.value && props.canEdit && isDirty.value && (!scheduleChanged.value || isScheduleValid.value));
+/**
+ * The schedule in words, in the job's own `executionTimeZone`: the OMS evaluates the cron there, so
+ * "At 12:00 AM" is that zone's midnight, not the reader's. A draft runs in the same zone once saved.
+ */
 const scheduleDescription = computed(() => {
-  if (!draftCronExpression.value) return translate('Not scheduled');
-  try { return cronstrue.toString(draftCronExpression.value); } catch (_error) { return translate('Schedule preview unavailable'); }
+  if(!draftCronExpression.value) {return translate("Not scheduled");}
+  let schedule: string;
+  try {
+    schedule = cronstrue.toString(draftCronExpression.value);
+  } catch {
+    return translate("Schedule preview unavailable");
+  }
+  const timeZone = String(jobDetails.value.executionTimeZone ?? "").trim();
+
+  return timeZone ? `${schedule} (${timeZone})` : schedule;
 });
 /**
  * The job routes call this `nextExecutionDateTime`; nothing returns `nextRunTime`, which this read.
