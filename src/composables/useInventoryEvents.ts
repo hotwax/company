@@ -6,6 +6,7 @@ import { type InventoryEventSourceLookup, useInventoryEventSources } from "@/com
 import {
   facilityCache,
   inventoryChannelCache,
+  serviceJobCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryItemCache,
   shopifyInventoryItemKey,
@@ -19,6 +20,7 @@ import {
   type InventoryEventKind,
   type InventoryEventMessage,
   effectiveMessageOf,
+  ledgerRetentionOf,
   toInventoryEvent,
 } from "@/utils/inventoryEvents";
 import { type InventoryEventSourceRoot, canonicalEventTypeId } from "@/utils/inventoryEventSourceRoots";
@@ -91,6 +93,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   const { records: facilities } = useCachedList<any>(facilityCache);
   const { records: channels } = useCachedList<any>(inventoryChannelCache, scoped);
   const { rows: inventoryItemRows } = useCachedList(shopifyInventoryItemCache, scoped);
+  const { records: serviceJobs } = useCachedList<any>(serviceJobCache);
   const { labelFor: statusLabel } = useStatuses();
   const { sources, resolve: resolveSourceArtifacts, sourceKeyOf } = useInventoryEventSources();
 
@@ -193,6 +196,11 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   const liveUpdates = computed(() => !ledgerRows.value.length ||
     ledgerRows.value.some((row) => (row.raw as Record<string, any>)?.detailLastUpdatedStamp != null));
 
+  /** The ledger read is index-ordered newest first, so the oldest loaded event is the last row. */
+  const oldestEventAt = computed(() => events.value[events.value.length - 1]?.createdAt || undefined);
+
+  const retention = computed(() => ledgerRetentionOf(kind, serviceJobs.value));
+
   const loadedAt = computed(() => ledgerRows.value.reduce((newest, row) => Math.max(newest, Number(row.cachedAt) || 0), 0) || undefined);
 
   function sourceArtifactFor(event: InventoryEvent) {
@@ -211,6 +219,8 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
     hydrated,
     liveUpdates,
     loadedAt,
+    oldestEventAt,
+    retention,
     locationOptions,
     eventTypeOptions,
     locationLabelFor,

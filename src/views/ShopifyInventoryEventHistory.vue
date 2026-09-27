@@ -75,16 +75,22 @@
                   readonly
                   :placeholder="translate('Any date')"
                 />
+                <!-- Days before the oldest loaded event are disabled, so no calendar day is empty for lack of data. -->
                 <ion-popover :trigger="`${pickerId}-${bound.key}`" :keep-contents-mounted="true">
                   <ion-datetime
                     presentation="date"
                     :value="filters[bound.key] || undefined"
-                    :min="bound.key === 'to' ? filters.from || undefined : undefined"
-                    :max="bound.key === 'from' ? filters.to || todayIso : todayIso"
+                    :min="calendarBounds[bound.key].min"
+                    :max="calendarBounds[bound.key].max"
                     :show-default-buttons="true"
                     :show-clear-button="true"
                     @ion-change="filters[bound.key] = dateOnly($event.detail.value)"
                   />
+                  <ion-item v-if="bound.key === 'from' && purgeNote" lines="none">
+                    <ion-label class="ion-text-wrap">
+                      <p>{{ purgeNote }}</p>
+                    </ion-label>
+                  </ion-item>
                 </ion-popover>
                 <ion-button v-if="filters[bound.key]" fill="clear" class="clear-filter-button" :aria-label="bound.clearLabel" @click.stop="filters[bound.key] = ''">
                   <ion-icon slot="icon-only" :icon="closeCircleOutline" />
@@ -117,7 +123,7 @@
             <ion-label class="ion-text-wrap">
               {{ kind === "channel" ? translate("Channel inventory events") : translate("Location inventory events") }}
               <p v-if="liveUpdates">
-                {{ translate("The newest 500 events for this connection, kept current with every event and batch that has changed since. Settled events are purged after five days, so this is a working window rather than a full history.") }}
+                {{ translate("The newest 500 events for this connection, kept current with every event and batch that has changed since.") }}
               </p>
               <p v-else>
                 {{ translate("Live updates are off: this OMS does not report when an inventory event changes. Showing the newest 500 events as read at {at}; refresh to read them again.", { at: formatDateTime(loadedAt) }) }}
@@ -267,7 +273,7 @@ const router = useRouter();
 const syncContext = useShopifySyncContext(() => props.id);
 const { failingDomains, manualRefreshing, syncNow } = useInventorySyncArea();
 const {
-  events, hydrated, liveUpdates, loadedAt, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
+  events, hydrated, liveUpdates, loadedAt, oldestEventAt, retention, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
 } = useInventoryEvents(() => props.id, props.kind);
 
 /** This page's own ledger first: its failure is the one that explains an empty or stale list. */
@@ -326,6 +332,24 @@ const dateBounds = [
   { key: "from" as const, label: translate("From"), clearLabel: translate("Clear from date") },
   { key: "to" as const, label: translate("To"), clearLabel: translate("Clear to date") },
 ];
+
+const oldestIso = computed(() => (oldestEventAt.value ? DateTime.fromMillis(oldestEventAt.value).toISODate() ?? undefined : undefined));
+
+/** ISO dates compare as strings; a `to` filter older than the oldest event must not invert the range. */
+const calendarBounds = computed(() => {
+  const boundsOf = (min: string | undefined, max: string | undefined) => ({ min: min && max && min > max ? max : min, max });
+
+  return { from: boundsOf(oldestIso.value, filters.to || todayIso), to: boundsOf(filters.from || oldestIso.value, todayIso) };
+});
+
+/** The purge job is OMS-wide, not per shop. */
+const purgeNote = computed(() => {
+  if(!retention.value) {return "";}
+
+  return retention.value.paused
+    ? translate("The purge job is paused, so settled events are kept until it resumes.")
+    : translate("The purge job keeps settled events for {days} days.", { days: retention.value.days });
+});
 
 /** ion-datetime hands back an ISO string, an array for multiple selection, or nothing on clear. */
 function dateOnly(value: unknown): string {

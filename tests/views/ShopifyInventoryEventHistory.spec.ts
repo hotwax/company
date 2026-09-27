@@ -12,6 +12,7 @@ const shopLocations = ref<any[]>([]);
 const facilities = ref<any[]>([]);
 const channels = ref<any[]>([]);
 const inventoryItems = ref<any[]>([]);
+const serviceJobs = ref<any[]>([]);
 const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
 const routeQuery = ref<Record<string, string>>({});
@@ -69,6 +70,7 @@ vi.mock("@/composables/useCachedList", () => ({
     if(table === "shopifyLocations") {return list(shopLocations);}
     if(table === "facilities") {return list(facilities);}
     if(table === "inventoryChannels") {return list(channels);}
+    if(table === "serviceJobs") {return list(serviceJobs);}
     if(table === "shopifyInventoryItems") {
       return list(inventoryItems, ref(true), "itemKey", (raw) => `${raw.shopId}|${raw.shopifyInventoryItemId}`);
     }
@@ -151,6 +153,7 @@ beforeEach(() => {
   facilities.value = [];
   channels.value = [];
   inventoryItems.value = [];
+  serviceJobs.value = [];
   ledgerHydrated.value = true;
   areaFailures.value = {};
   routeQuery.value = {};
@@ -340,6 +343,32 @@ describe("ShopifyInventoryEventHistory - filters", () => {
 
     const option = wrapper.findAllComponents({ name: "IonSelectOption" }).find((entry) => entry.props("value") === "LOC_STORE");
     expect(option?.text()).toBe("Brooklyn Store");
+  });
+});
+
+describe("ShopifyInventoryEventHistory - date pickers", () => {
+  const datetimes = (wrapper: VueWrapper) => wrapper.findAllComponents({ name: "IonDatetime" });
+
+  it("starts both calendars at the oldest loaded event, and says what the purge job keeps", async () => {
+    const oldest = Date.parse("2026-09-21T15:00:00");
+    // Newest first, as the index-ordered cache read delivers them.
+    locationDetails.value = [locationRow({ eventReferenceId: "NEW", createdDate: Date.parse("2026-09-25T09:00:00") }), locationRow({ eventReferenceId: "OLD", createdDate: oldest })];
+    serviceJobs.value = [{
+      jobName: "purge_OldShopifyLocationInventoryAdjustmentDetails_hourly", paused: "N",
+      serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
+      serviceJobParameters: [{ parameterName: "daysToKeep", parameterValue: "7" }],
+    }];
+    const wrapper = await mountHistory("location");
+
+    expect(datetimes(wrapper).map((picker) => picker.attributes("min"))).toEqual(["2026-09-21", "2026-09-21"]);
+    expect(wrapper.text()).toContain("The purge job keeps settled events for 7 days.");
+  });
+
+  it("says nothing about purging when the OMS has no purge job for this ledger", async () => {
+    locationDetails.value = [locationRow()];
+    const wrapper = await mountHistory("location");
+
+    expect(wrapper.text()).not.toContain("The purge job");
   });
 });
 

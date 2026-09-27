@@ -57,6 +57,7 @@ vi.mock("@/utils/cacheEntities", () => ({
   shopifyLocationInventoryAdjustmentDetailCache: fakeCache("location", locationKey, ["shopId"]),
   systemMessageCache: fakeCache("systemMessages", (raw) => String(raw.systemMessageId), []),
   shopifyInventoryItemCache: fakeCache("shopifyInventoryItems", itemKey, ["shopId"]),
+  serviceJobCache: fakeCache("serviceJobs", (raw) => String(raw.jobName), []),
 }));
 
 vi.mock("@/workers/domains/workerFetch", () => ({
@@ -176,6 +177,26 @@ describe("the rows poller", () => {
 
     expect(await domain.sync(ctx, { shopId: "100002" })).toBe(1);
     expect(state.tables.channel.get(channelKey(row)).shopId).toBe("100002");
+  });
+
+  it.each([
+    { paused: "N", kept: ["RECENT"] },
+    { paused: "Y", kept: ["OLD", "RECENT"] },
+  ])("prunes settled rows past the purge job's daysToKeep, and none while it is paused ($paused)", async ({ paused, kept }) => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    const day = 24 * 60 * 60 * 1000;
+    for(const [ref, age] of [["OLD", 4], ["RECENT", 2]] as const) {
+      const row = locationRow({ eventReferenceId: ref, createdDate: Date.now() - age * day, systemMessageId: "M", systemMessageStatusId: "SmsgSent" });
+      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+    }
+    state.tables.serviceJobs.set("purge", { raw: {
+      jobName: "purge", paused, serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
+      serviceJobParameters: [{ parameterName: "daysToKeep", parameterValue: "3" }],
+    } });
+
+    await domain.sync(ctx, { shopId: "100002" });
+
+    expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId).sort()).toEqual(kept);
   });
 
   it("reads nothing without a shop, rather than every shop", async () => {

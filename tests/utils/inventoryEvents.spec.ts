@@ -7,6 +7,7 @@ import {
   filterInventoryEvents,
   groupInventoryEventBatches,
   isUnsettledMessage,
+  ledgerRetentionOf,
   roundDelta,
   sourceOf,
   sumDelta,
@@ -187,6 +188,24 @@ describe("figures, batches and filters", () => {
     expect(filterInventoryEvents(events, { fromMs: 2_000, toMs: 2_100 }, text).map((e) => e.eventReferenceId)).toEqual(["B", "C"]);
     expect(filterInventoryEvents(events, { query: "d" }, text).map((e) => e.eventReferenceId)).toEqual(["D"]);
     expect(filterInventoryEvents(events, { locationId: "ELSEWHERE" }, text)).toEqual([]);
+  });
+});
+
+describe("ledgerRetentionOf — the purge job's window per ledger", () => {
+  const job = (serviceName: string, daysToKeep?: string, paused = "N") => ({
+    jobName: "purge", serviceName, paused, serviceJobParameters: daysToKeep ? [{ parameterName: "daysToKeep", parameterValue: daysToKeep }] : [],
+  });
+  const LOCATION = "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails";
+
+  it("reads the ledger's own job, its days, and whether it is paused", () => {
+    expect(ledgerRetentionOf("location", [job(LOCATION, "3")])).toEqual({ days: 3, paused: false });
+    expect(ledgerRetentionOf("location", [job(LOCATION, "3", "Y")])).toEqual({ days: 3, paused: true });
+    expect(ledgerRetentionOf("channel", [job(LOCATION, "3")])).toBeUndefined();
+  });
+
+  it("falls back to the service's own default of 5 when the parameter is absent or invalid", () => {
+    expect(ledgerRetentionOf("location", [job(LOCATION)])?.days).toBe(5);
+    expect(ledgerRetentionOf("location", [job(LOCATION, "0")])?.days).toBe(5);
   });
 });
 

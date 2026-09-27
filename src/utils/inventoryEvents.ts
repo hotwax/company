@@ -8,6 +8,7 @@
  */
 import { toMillis } from "./cacheProjection";
 import { type InventoryEventSourceRoot, canonicalEventTypeId, isReservationEventType, sourceRootFor } from "./inventoryEventSourceRoots";
+import { type ServiceJob, parameterMap } from "./serviceJob";
 import { isSuccess } from "./systemMessage";
 
 export type InventoryEventKind = "channel" | "location";
@@ -61,6 +62,21 @@ export interface InventoryEvent {
   batchedAt?: number;
   awaitingDelivery: boolean;
   decisionComment: string;
+}
+
+/** The connector's OMS-wide purge job for each ledger. */
+export const INVENTORY_LEDGER_PURGE_SERVICES: Record<InventoryEventKind, string> = {
+  channel: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyInventoryAdjustmentDetails",
+  location: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
+};
+
+/** How long the ledger's purge job keeps settled rows; 5 is the service's own `daysToKeep` default. */
+export function ledgerRetentionOf(kind: InventoryEventKind, jobs: readonly ServiceJob[]): { days: number; paused: boolean } | undefined {
+  const job = jobs.find((candidate) => candidate?.serviceName === INVENTORY_LEDGER_PURGE_SERVICES[kind]);
+  if(!job) {return undefined;}
+  const days = Number(parameterMap(job).daysToKeep);
+
+  return { days: Number.isInteger(days) && days >= 1 ? days : 5, paused: job.paused === "Y" };
 }
 
 /** Six places, so float noise (`0.1 + 0.2 - 0.3`) settles the way the OMS's BigDecimal does; never `-0`. */

@@ -2,6 +2,7 @@ import { INVENTORY_EVENT_DOMAINS } from "@/config/appSyncConfig";
 import type { CachedEntity } from "@/utils/appCacheDb";
 import {
   locationInventoryAdjustmentKey,
+  serviceJobCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryAdjustmentDetailProjection,
   shopifyInventoryItemCache,
@@ -10,7 +11,9 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { toMillis } from "@/utils/cacheProjection";
-import { type InventoryEventKind, deliveryStateOf, effectiveMessageOf, isUnsettledMessage } from "@/utils/inventoryEvents";
+import {
+  type InventoryEventKind, deliveryStateOf, effectiveMessageOf, isUnsettledMessage, ledgerRetentionOf,
+} from "@/utils/inventoryEvents";
 import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet, workerPost } from "./workerFetch";
 
@@ -27,8 +30,7 @@ const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
 /** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
-/** The connector's own purge window. */
-const RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 10 * 60 * 1000;
 const MESSAGE_REFRESH_MAX = 25;
 /** Two requests of 100 items per tick, so a cold page does not burst the quota the OMS's own jobs share. */
@@ -101,12 +103,17 @@ async function scopedRows(cache: CachedEntity, shopId: string) {
 
 const lastPruneAt = new Map<string, number>();
 
-/** Upserts never remove, so settled rows past the server's purge window are dropped here. */
+/**
+ * Upserts never remove, so settled rows past the purge job's `daysToKeep` are dropped here, and kept
+ * while the job is paused, so the history spans what the server keeps. No job still bounds the cache.
+ */
 async function pruneSettled(ledger: LedgerDefinition, shopId: string, now: number): Promise<void> {
   const pruneKey = `${ledger.kind}|${shopId}`;
   if(now - (lastPruneAt.get(pruneKey) ?? 0) < PRUNE_EVERY_MS) {return;}
   lastPruneAt.set(pruneKey, now);
-  const cutoff = now - RETENTION_MS;
+  const retention = ledgerRetentionOf(ledger.kind, (await serviceJobCache.all()).map((row) => row.raw as any));
+  if(retention?.paused) {return;}
+  const cutoff = now - (retention?.days ?? 5) * DAY_MS;
   const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => {
     const raw = row.raw as Record<string, any>;
     if((toMillis(raw.createdDate) ?? now) >= cutoff) {return false;}
