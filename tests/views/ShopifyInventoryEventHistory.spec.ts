@@ -13,11 +13,12 @@ const facilities = ref<any[]>([]);
 const channels = ref<any[]>([]);
 const inventoryItems = ref<any[]>([]);
 const serviceJobs = ref<any[]>([]);
+const bounds = ref<any[]>([]);
 const ledgerHydrated = ref(true);
 const areaFailures = ref<Record<string, string>>({});
 const routeQuery = ref<Record<string, string>>({});
 
-const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), ledgerOptions: undefined as any }));
+const harness = vi.hoisted(() => ({ replace: vi.fn(), resolveSources: vi.fn(), syncNow: vi.fn(), loadEventsFrom: vi.fn(), ledgerOptions: undefined as any }));
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({ replace: harness.replace, push: vi.fn() }),
@@ -35,7 +36,7 @@ vi.mock("@common", () => ({
 vi.mock("@/services/inventorySyncArea", () => ({
   useInventorySyncArea: () => ({
     ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
-    syncNow: harness.syncNow, afterMutation: vi.fn(),
+    syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom,
   }),
 }));
 
@@ -71,6 +72,7 @@ vi.mock("@/composables/useCachedList", () => ({
     if(table === "facilities") {return list(facilities);}
     if(table === "inventoryChannels") {return list(channels);}
     if(table === "serviceJobs") {return list(serviceJobs);}
+    if(table === "inventoryLedgerBounds") {return list(bounds);}
     if(table === "shopifyInventoryItems") {
       return list(inventoryItems, ref(true), "itemKey", (raw) => `${raw.shopId}|${raw.shopifyInventoryItemId}`);
     }
@@ -154,6 +156,8 @@ beforeEach(() => {
   channels.value = [];
   inventoryItems.value = [];
   serviceJobs.value = [];
+  bounds.value = [];
+  harness.loadEventsFrom.mockReset();
   ledgerHydrated.value = true;
   areaFailures.value = {};
   routeQuery.value = {};
@@ -362,6 +366,40 @@ describe("ShopifyInventoryEventHistory - date pickers", () => {
 
     expect(datetimes(wrapper).map((picker) => picker.attributes("min"))).toEqual(["2026-09-21", "2026-09-21"]);
     expect(wrapper.text()).toContain("The purge job keeps settled events for 7 days.");
+  });
+
+  it("starts the calendars where the server's copy starts, not where the cache does", async () => {
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(datetimes(wrapper).map((picker) => picker.attributes("min"))).toEqual(["2026-09-22", "2026-09-22"]);
+  });
+
+  it("loads a From date older than the cache from the server, showing the loading card until it lands", async () => {
+    let finish!: () => void;
+    harness.loadEventsFrom.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
+    routeQuery.value = { from: "2026-09-23", to: "2026-09-23" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-25T09:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    const wrapper = await mountHistory("location");
+
+    expect(harness.loadEventsFrom).toHaveBeenCalledWith("location", Date.parse("2026-09-23T00:00:00"));
+    expect(wrapper.text()).toContain("This is not a confirmed empty history.");
+
+    finish();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("No inventory events match this view");
+  });
+
+  it("asks for nothing older once the cache already reaches the server's oldest row", async () => {
+    routeQuery.value = { from: "2026-09-20" };
+    locationDetails.value = [locationRow({ createdDate: Date.parse("2026-09-22T13:00:00") })];
+    bounds.value = [{ kind: "location", shopId: "100002", oldestCreatedDate: Date.parse("2026-09-22T13:00:00") }];
+    await mountHistory("location");
+
+    expect(harness.loadEventsFrom).not.toHaveBeenCalled();
   });
 
   it("says nothing about purging when the OMS has no purge job for this ledger", async () => {

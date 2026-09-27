@@ -6,6 +6,7 @@ import { type InventoryEventSourceLookup, useInventoryEventSources } from "@/com
 import {
   facilityCache,
   inventoryChannelCache,
+  inventoryLedgerBoundCache,
   serviceJobCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryItemCache,
@@ -14,6 +15,7 @@ import {
   shopifyLocationInventoryAdjustmentDetailCache,
   systemMessageCache,
 } from "@/utils/cacheEntities";
+import { toMillis } from "@/utils/cacheProjection";
 import {
   type DeliveryStateId,
   type InventoryEvent,
@@ -94,6 +96,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   const { records: channels } = useCachedList<any>(inventoryChannelCache, scoped);
   const { rows: inventoryItemRows } = useCachedList(shopifyInventoryItemCache, scoped);
   const { records: serviceJobs } = useCachedList<any>(serviceJobCache);
+  const { records: bounds } = useCachedList<any>(inventoryLedgerBoundCache, scoped);
   const { labelFor: statusLabel } = useStatuses();
   const { sources, resolve: resolveSourceArtifacts, sourceKeyOf } = useInventoryEventSources();
 
@@ -196,8 +199,13 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
   const liveUpdates = computed(() => !ledgerRows.value.length ||
     ledgerRows.value.some((row) => (row.raw as Record<string, any>)?.detailLastUpdatedStamp != null));
 
-  /** The ledger read is index-ordered newest first, so the oldest loaded event is the last row. */
+  /**
+   * The cache holds a window of the ledger, not all of it. `oldestEventAt` is where the window starts
+   * (the index-ordered read is newest first, so it is the last row); `serverOldestAt` is where the
+   * server's copy starts. A date filter between the two needs `loadEventsFrom` first.
+   */
   const oldestEventAt = computed(() => events.value[events.value.length - 1]?.createdAt || undefined);
+  const serverOldestAt = computed(() => toMillis(bounds.value.find((bound: any) => bound.kind === kind)?.oldestCreatedDate));
 
   const retention = computed(() => ledgerRetentionOf(kind, serviceJobs.value));
 
@@ -220,6 +228,7 @@ export function useInventoryEvents(shopId: MaybeRefOrGetter<string>, kind: Inven
     liveUpdates,
     loadedAt,
     oldestEventAt,
+    serverOldestAt,
     retention,
     locationOptions,
     eventTypeOptions,

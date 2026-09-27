@@ -1,8 +1,8 @@
 import { INVENTORY_EVENT_DOMAINS } from "@/config/appSyncConfig";
 import type { CachedEntity } from "@/utils/appCacheDb";
 import {
+  inventoryLedgerBoundCache,
   locationInventoryAdjustmentKey,
-  serviceJobCache,
   shopifyInventoryAdjustmentDetailCache,
   shopifyInventoryAdjustmentDetailProjection,
   shopifyInventoryItemCache,
@@ -11,9 +11,7 @@ import {
   systemMessageCache,
 } from "@/utils/cacheEntities";
 import { toMillis } from "@/utils/cacheProjection";
-import {
-  type InventoryEventKind, deliveryStateOf, effectiveMessageOf, isUnsettledMessage, ledgerRetentionOf,
-} from "@/utils/inventoryEvents";
+import { type InventoryEventKind, effectiveMessageOf, isUnsettledMessage } from "@/utils/inventoryEvents";
 import { type SyncContext, registerSyncDomain } from "../syncRegistry";
 import { pageAll, workerGet, workerPost } from "./workerFetch";
 
@@ -30,8 +28,10 @@ const PAGE_SIZE = 250;
 const POLL_INTERVAL_MS = 10_000;
 /** A row committed late by a transaction that started early carries a stamp older than the cursor. */
 const CURSOR_OVERLAP_MS = 60_000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const PRUNE_EVERY_MS = 10 * 60 * 1000;
+/** The purge job runs hourly, so the server's oldest row moves no faster than that. */
+const BOUNDS_INTERVAL_MS = 10 * 60 * 1000;
+/** A backfill's backstop: 40 pages of 250, past any ledger the five-day purge leaves. */
+const BACKFILL_MAX_PAGES = 40;
 const MESSAGE_REFRESH_MAX = 25;
 /** Two requests of 100 items per tick, so a cold page does not burst the quota the OMS's own jobs share. */
 const INVENTORY_ITEM_BATCH_SIZE = 100;
@@ -101,27 +101,43 @@ async function scopedRows(cache: CachedEntity, shopId: string) {
   return (await cache.all()).filter((row) => String(row.shopId ?? "") === shopId);
 }
 
-const lastPruneAt = new Map<string, number>();
+function oldestCachedAt(rows: Array<{ raw?: any }>): number | undefined {
+  const oldest = rows.reduce((min, row) => Math.min(min, toMillis(row.raw?.createdDate) ?? Infinity), Infinity);
+
+  return Number.isFinite(oldest) ? oldest : undefined;
+}
+
+/** The ledger's oldest row on the server: one row from the entity list, or count then last page from the older service. */
+async function serverOldestAt(ctx: SyncContext, ledger: LedgerDefinition, shopId: string): Promise<number | undefined> {
+  const first = await workerGet(ctx, ledger.endpoint, { shopId, orderByField: "createdDate", pageSize: 1, pageIndex: 0 });
+  if(Array.isArray(first)) {return toMillis(first[0]?.createdDate);}
+  // The older service ignores the sort and returns newest first, with a count of the whole set.
+  const count = Number(first?.detailCount);
+  if(!Array.isArray(first?.details) || !Number.isInteger(count)) {throw new Error(`[sync] ${ledger.endpoint}: unexpected response shape.`);}
+  if(!count) {return undefined;}
+  const last = ledgerRowsOf(await workerGet(ctx, ledger.endpoint, { shopId, pageSize: 1, pageIndex: count - 1 }), ledger.endpoint);
+
+  return toMillis(last[0]?.createdDate);
+}
 
 /**
- * Upserts never remove, so settled rows past the purge job's `daysToKeep` are dropped here, and kept
- * while the job is paused, so the history spans what the server keeps. No job still bounds the cache.
+ * The shop's events from `fromMs` up to `beforeMs`, newest first. The entity list takes the range; the
+ * older service has none, so it is paged newest first until a page reaches back past `fromMs`.
  */
-async function pruneSettled(ledger: LedgerDefinition, shopId: string, now: number): Promise<void> {
-  const pruneKey = `${ledger.kind}|${shopId}`;
-  if(now - (lastPruneAt.get(pruneKey) ?? 0) < PRUNE_EVERY_MS) {return;}
-  lastPruneAt.set(pruneKey, now);
-  const retention = ledgerRetentionOf(ledger.kind, (await serviceJobCache.all()).map((row) => row.raw as any));
-  if(retention?.paused) {return;}
-  const cutoff = now - (retention?.days ?? 5) * DAY_MS;
-  const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => {
-    const raw = row.raw as Record<string, any>;
-    if((toMillis(raw.createdDate) ?? now) >= cutoff) {return false;}
-    const state = deliveryStateOf(raw.systemMessageId || undefined, Number(raw.computedInventoryChange ?? 0), raw.systemMessageStatusId);
+async function rowsSince(ctx: SyncContext, ledger: LedgerDefinition, shopId: string, fromMs: number, beforeMs?: number) {
+  const range = { shopId, createdDate_from: fromMs, ...(beforeMs === undefined ? {} : { createdDate_thru: beforeMs }), orderByField: "-createdDate" };
+  const rows: Array<Record<string, any>> = [];
+  for(let pageIndex = 0; pageIndex < BACKFILL_MAX_PAGES; pageIndex++) {
+    const page = await workerGet(ctx, ledger.endpoint, { ...range, pageSize: PAGE_SIZE, pageIndex });
+    const pageRows = ledgerRowsOf(page, ledger.endpoint);
+    rows.push(...pageRows);
+    const more = Array.isArray(page)
+      ? pageRows.length === PAGE_SIZE
+      : page.hasMore && (toMillis(pageRows[pageRows.length - 1]?.createdDate) ?? 0) >= fromMs;
+    if(!more) {break;}
+  }
 
-    return state.id === "noChange" || state.id === "sent" || state.id === "cancelled";
-  });
-  await ledger.cache.removeMany(stale.map((row) => ledger.keyOf(row.raw) ?? "").filter(Boolean));
+  return rows.filter((row) => (toMillis(row.createdDate) ?? 0) >= fromMs);
 }
 
 function cursorRead(
@@ -168,10 +184,19 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
       } else {
         changed = await changedRows(ledger, await cursorRead(ctx, ledger, shopId, "detailLastUpdatedStamp", cursor));
       }
-      const written = changed.length ? await ledger.cache.upsertMany(changed) : 0;
-      await pruneSettled(ledger, shopId, Date.now());
 
-      return written;
+      return changed.length ? ledger.cache.upsertMany(changed) : 0;
+    },
+    /** The history's date filter reaching past the cache: load the shop's events back to `pk.fromMs`. */
+    async refetchOne(ctx, pk, args: ShopArgs = {}) {
+      const shopId = shopOf(args);
+      const fromMs = Number(pk?.fromMs);
+      if(!shopId || !Number.isFinite(fromMs)) {return 0;}
+      const cachedOldest = oldestCachedAt(await scopedRows(ledger.cache, shopId));
+      if(cachedOldest !== undefined && fromMs >= cachedOldest) {return 0;}
+      const rows = await rowsSince(ctx, ledger, shopId, fromMs, cachedOldest);
+
+      return rows.length ? ledger.cache.upsertMany(rows) : 0;
     },
   });
 
@@ -190,6 +215,30 @@ for(const ledger of Object.values(INVENTORY_LEDGERS)) {
     },
   });
 }
+
+/**
+ * Where each ledger starts on the server, for the history's calendars. The server purges old rows, so a
+ * cached row older than the server's oldest is gone there and leaves the cache too: the cache mirrors
+ * the purge exactly instead of guessing at it.
+ */
+registerSyncDomain({
+  name: INVENTORY_EVENT_DOMAINS.bounds,
+  intervalMs: BOUNDS_INTERVAL_MS,
+  async sync(ctx, args: ShopArgs = {}) {
+    const shopId = shopOf(args);
+    if(!shopId) {return 0;}
+    let written = 0;
+    for(const ledger of Object.values(INVENTORY_LEDGERS)) {
+      const oldest = await serverOldestAt(ctx, ledger, shopId);
+      written += await inventoryLedgerBoundCache.upsertMany([{ kind: ledger.kind, shopId, oldestCreatedDate: oldest ?? null }]);
+      // An empty ledger on the server means nothing cached for this shop is still there.
+      const stale = (await scopedRows(ledger.cache, shopId)).filter((row) => (toMillis(row.raw?.createdDate) ?? Infinity) < (oldest ?? Infinity));
+      await ledger.cache.removeMany(stale.map((row) => ledger.keyOf(row.raw as Record<string, unknown>) ?? "").filter(Boolean));
+    }
+
+    return written;
+  },
+});
 
 /** Unsettled batches' messages, one request each: `admin/systemMessages` ignores `_op=in` (verified live). */
 registerSyncDomain({

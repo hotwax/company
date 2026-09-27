@@ -121,6 +121,7 @@ export const INVENTORY_EVENT_DOMAINS = {
   locationMessages: "shopifyLocationInventoryAdjustmentDetailMessage",
   systemMessages: "inventoryEventSystemMessage",
   products: "inventoryEventProduct",
+  bounds: "inventoryEventBounds",
 } as const;
 
 export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {

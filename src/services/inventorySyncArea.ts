@@ -1,6 +1,7 @@
 import { ref } from "vue";
-import { inventoryEventAreaDomains } from "@/config/appSyncConfig";
+import { INVENTORY_EVENT_DOMAINS, inventoryEventAreaDomains } from "@/config/appSyncConfig";
 import { createCacheSync } from "@/services/cacheSync";
+import type { InventoryEventKind } from "@/utils/inventoryEvents";
 
 /**
  * One polling lifecycle for every page under a shop's `/shopify-connection-details/:id/inventory-sync`,
@@ -39,5 +40,9 @@ export async function followInventorySyncArea(to: { path: string }): Promise<voi
 export function useInventorySyncArea() {
   const { failingDomains, manualRefreshing, syncNow, afterMutation } = sync;
 
-  return { failingDomains, manualRefreshing, syncNow, afterMutation };
+  /** Load a ledger's events back to `fromMs` into the cache, for a date filter older than the cache. */
+  const loadEventsFrom = (kind: InventoryEventKind, fromMs: number) =>
+    afterMutation(INVENTORY_EVENT_DOMAINS[kind === "channel" ? "channelRows" : "locationRows"], { fromMs });
+
+  return { failingDomains, manualRefreshing, syncNow, afterMutation, loadEventsFrom };
 }

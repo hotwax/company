@@ -84,6 +84,8 @@ class CompanyCacheDB extends Dexie {
   shopifyLocationInventoryAdjustmentDetails!: Table<CachedRow, string>;
   /** Shopify's own product/variant for each inventory item the ledgers name. */
   shopifyInventoryItems!: Table<CachedRow, string>;
+  /** Each inventory ledger's oldest row on the server, per shop. */
+  inventoryLedgerBounds!: Table<CachedRow, string>;
   /** Shopify aggregate ATP channel configuration, scoped by shop. */
   inventoryChannels!: Table<CachedRow, string>;
   /** Which DataDocuments the Shopify inventory event feed listens to. */
@@ -206,6 +208,8 @@ const CACHE_SCHEMA = {
     "locationAdjustmentKey, shopId, systemMessageId, createdDate, [shopId+createdDate], [shopId+detailLastUpdatedStamp], [shopId+systemMessageLastUpdatedStamp]",
   /** Class C: the inventory items the ledgers name, as Shopify describes them, keyed per shop. */
   shopifyInventoryItems: "itemKey, shopId",
+  /** One row per `kind|shopId`: where the server's copy of a ledger starts, so the history can reach it. */
+  inventoryLedgerBounds: "boundKey, shopId",
   // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
   dataFeeds: "dataFeedId, dataFeedTypeEnumId, lastUpdatedStamp",
   serviceJobs: "jobName, serviceName, paused, cronExpression, nextExecutionDateTime",

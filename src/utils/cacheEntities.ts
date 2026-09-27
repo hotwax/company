@@ -1215,4 +1215,13 @@ export const shopifyInventoryItemProjection = {
 
 export const shopifyInventoryItemCache = defineCachedEntity("shopifyInventoryItems", shopifyInventoryItemProjection);
 
+/** A ledger's oldest row on the server for one shop; absent `oldestCreatedDate` means the server has none. */
+export const inventoryLedgerBoundProjection = {
+  keyField: "boundKey",
+  fields: { boundKey: "text", kind: "text", shopId: "text", oldestCreatedDate: "date" },
+  buildKey: (raw: Record<string, unknown>) => (raw?.kind && raw?.shopId ? `${raw.kind}|${raw.shopId}` : undefined),
+} as const;
+
+export const inventoryLedgerBoundCache = defineCachedEntity("inventoryLedgerBounds", inventoryLedgerBoundProjection);
+
 

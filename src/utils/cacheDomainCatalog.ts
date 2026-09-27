@@ -86,6 +86,7 @@ export const CACHE_DOMAIN_CATALOG: CacheDomainEntry[] = [
   { name: "shopifyLocationInventoryAdjustmentDetailMessage", table: "shopifyLocationInventoryAdjustmentDetails", label: "Shopify location inventory event deliveries", syncClass: "A" },
   { name: "inventoryEventSystemMessage", table: "systemMessages", label: "Unsettled inventory event batches", syncClass: "A" },
   { name: "inventoryEventProduct", table: "shopifyInventoryItems", label: "Shopify products for inventory events", syncClass: "C" },
+  { name: "inventoryEventBounds", table: "inventoryLedgerBounds", label: "Oldest inventory events on the server", syncClass: "A" },
   { name: "shopifyBulkOperation", table: "shopifyBulkOperations", label: "Shopify bulk operations", syncClass: "C" },
 ];
 

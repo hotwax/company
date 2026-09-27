@@ -75,7 +75,7 @@
                   readonly
                   :placeholder="translate('Any date')"
                 />
-                <!-- Days before the oldest loaded event are disabled, so no calendar day is empty for lack of data. -->
+                <!-- Days before the server's oldest event are disabled; days older than the cache are loaded on demand. -->
                 <ion-popover :trigger="`${pickerId}-${bound.key}`" :keep-contents-mounted="true">
                   <ion-datetime
                     presentation="date"
@@ -123,10 +123,10 @@
             <ion-label class="ion-text-wrap">
               {{ kind === "channel" ? translate("Channel inventory events") : translate("Location inventory events") }}
               <p v-if="liveUpdates">
-                {{ translate("The newest 500 events for this connection, kept current with every event and batch that has changed since.") }}
+                {{ translate("Events for this connection, kept current with every event and batch that has changed since. The newest 500 load first; an older From date loads the rest.") }}
               </p>
               <p v-else>
-                {{ translate("Live updates are off: this OMS does not report when an inventory event changes. Showing the newest 500 events as read at {at}; refresh to read them again.", { at: formatDateTime(loadedAt) }) }}
+                {{ translate("Live updates are off: this OMS does not report when an inventory event changes. Showing events as read at {at}; refresh to read them again.", { at: formatDateTime(loadedAt) }) }}
               </p>
             </ion-label>
           </ion-item>
@@ -202,7 +202,7 @@
         </div>
 
         <!-- "Nothing here" is only claimed once the cache is readable. -->
-        <ion-card v-else-if="hydrated">
+        <ion-card v-else-if="hydrated && !loadingOlder">
           <ion-item lines="none">
             <ion-icon slot="start" :icon="timeOutline" />
             <ion-label class="ion-text-wrap">
@@ -271,9 +271,9 @@ const props = defineProps<{ id: string; kind: InventoryEventKind }>();
 const route = useRoute();
 const router = useRouter();
 const syncContext = useShopifySyncContext(() => props.id);
-const { failingDomains, manualRefreshing, syncNow } = useInventorySyncArea();
+const { failingDomains, manualRefreshing, syncNow, loadEventsFrom } = useInventorySyncArea();
 const {
-  events, hydrated, liveUpdates, loadedAt, oldestEventAt, retention, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
+  events, hydrated, liveUpdates, loadedAt, oldestEventAt, serverOldestAt, retention, locationOptions, eventTypeOptions, sourceArtifactFor, resolveSources,
 } = useInventoryEvents(() => props.id, props.kind);
 
 /** This page's own ledger first: its failure is the one that explains an empty or stale list. */
@@ -333,7 +333,12 @@ const dateBounds = [
   { key: "to" as const, label: translate("To"), clearLabel: translate("Clear to date") },
 ];
 
-const oldestIso = computed(() => (oldestEventAt.value ? DateTime.fromMillis(oldestEventAt.value).toISODate() ?? undefined : undefined));
+/** The server's copy starts here; before the bounds poll answers, the cache's is the best known. */
+const oldestIso = computed(() => {
+  const oldest = serverOldestAt.value ?? oldestEventAt.value;
+
+  return oldest ? DateTime.fromMillis(oldest).toISODate() ?? undefined : undefined;
+});
 
 /** ISO dates compare as strings; a `to` filter older than the oldest event must not invert the range. */
 const calendarBounds = computed(() => {
@@ -341,6 +346,27 @@ const calendarBounds = computed(() => {
 
   return { from: boundsOf(oldestIso.value, filters.to || todayIso), to: boundsOf(filters.from || oldestIso.value, todayIso) };
 });
+
+/**
+ * A date filter older than the cache loads that range from the server first. An unset From with a set
+ * To asks for everything up to To, so it reaches back to the server's oldest. Until the rows land, the
+ * loading card stands in for the empty one.
+ */
+const loadingOlder = ref(false);
+watch([() => filters.from, () => filters.to, oldestEventAt, serverOldestAt], async ([from, to, cachedOldest, serverOldest]) => {
+  const requested = from ? DateTime.fromISO(from).startOf("day").toMillis() : to ? serverOldest : undefined;
+  if(requested === undefined || loadingOlder.value || cachedOldest === undefined || requested >= cachedOldest) {return;}
+  // The cache already reaches the server's oldest row: there is nothing older to load.
+  if(serverOldest !== undefined && cachedOldest <= serverOldest) {return;}
+  loadingOlder.value = true;
+  try {
+    await loadEventsFrom(props.kind, Math.max(requested, serverOldest ?? requested));
+  } catch {
+    // The failed domain is reported by the toolbar's sync status.
+  } finally {
+    loadingOlder.value = false;
+  }
+}, { immediate: true });
 
 /** The purge job is OMS-wide, not per shop. */
 const purgeNote = computed(() => {

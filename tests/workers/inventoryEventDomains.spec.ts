@@ -57,7 +57,7 @@ vi.mock("@/utils/cacheEntities", () => ({
   shopifyLocationInventoryAdjustmentDetailCache: fakeCache("location", locationKey, ["shopId"]),
   systemMessageCache: fakeCache("systemMessages", (raw) => String(raw.systemMessageId), []),
   shopifyInventoryItemCache: fakeCache("shopifyInventoryItems", itemKey, ["shopId"]),
-  serviceJobCache: fakeCache("serviceJobs", (raw) => String(raw.jobName), []),
+  inventoryLedgerBoundCache: fakeCache("bounds", (raw) => `${raw.kind}|${raw.shopId}`, ["shopId"]),
 }));
 
 vi.mock("@/workers/domains/workerFetch", () => ({
@@ -179,32 +179,71 @@ describe("the rows poller", () => {
     expect(state.tables.channel.get(channelKey(row)).shopId).toBe("100002");
   });
 
-  it.each([
-    { paused: "N", kept: ["RECENT"] },
-    { paused: "Y", kept: ["OLD", "RECENT"] },
-  ])("prunes settled rows past the purge job's daysToKeep, and none while it is paused ($paused)", async ({ paused, kept }) => {
-    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
-    const day = 24 * 60 * 60 * 1000;
-    for(const [ref, age] of [["OLD", 4], ["RECENT", 2]] as const) {
-      const row = locationRow({ eventReferenceId: ref, createdDate: Date.now() - age * day, systemMessageId: "M", systemMessageStatusId: "SmsgSent" });
-      state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
-    }
-    state.tables.serviceJobs.set("purge", { raw: {
-      jobName: "purge", paused, serviceName: "co.hotwax.sob.product.InventoryServices.purge#OldShopifyLocationInventoryAdjustmentDetails",
-      serviceJobParameters: [{ parameterName: "daysToKeep", parameterValue: "3" }],
-    } });
-
-    await domain.sync(ctx, { shopId: "100002" });
-
-    expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId).sort()).toEqual(kept);
-  });
-
   it("reads nothing without a shop, rather than every shop", async () => {
     const domain = await load("shopifyInventoryAdjustmentDetail");
 
     expect(await domain.sync(ctx, {})).toBe(0);
     expect(state.gets).toEqual([]);
     expect(state.pages).toEqual([]);
+  });
+});
+
+describe("the history reaching past the cache", () => {
+  const LOCATION = "sob/shopify/locationInventoryAdjustmentDetails";
+  const cacheRow = (ref: string, createdDate: number) => {
+    const row = locationRow({ eventReferenceId: ref, createdDate });
+    state.tables.location.set(locationKey(row), { raw: row, shopId: "100002" });
+  };
+
+  it("stores the server's oldest row from one sorted row, and drops cached rows the purge already removed", async () => {
+    const domain = await load("inventoryEventBounds");
+    cacheRow("PURGED", 500);
+    cacheRow("KEPT", 2_000);
+    state.responses[LOCATION] = () => [locationRow({ createdDate: 1_000 })];
+
+    await domain.sync(ctx, { shopId: "100002" });
+
+    expect(state.gets.find((call) => call.url === LOCATION)?.params).toEqual({ shopId: "100002", orderByField: "createdDate", pageSize: 1, pageIndex: 0 });
+    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(1_000);
+    expect([...state.tables.location.values()].map((row) => row.raw.eventReferenceId)).toEqual(["KEPT"]);
+  });
+
+  it("reads the oldest from the older service's count and last page", async () => {
+    const domain = await load("inventoryEventBounds");
+    state.responses[LOCATION] = (params) => ({ detailCount: 3, hasMore: params.pageIndex === 0, details: [locationRow({ createdDate: params.pageIndex === 2 ? 700 : 9_000 })] });
+
+    await domain.sync(ctx, { shopId: "100002" });
+
+    expect(state.gets.filter((call) => call.url === LOCATION).map((call) => call.params.pageIndex)).toEqual([0, 2]);
+    expect(state.tables.bounds.get("location|100002").raw.oldestCreatedDate).toBe(700);
+  });
+
+  it("loads the range between a chosen date and the cache's oldest row from the entity list", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    cacheRow("CACHED", 5_000);
+    state.responses[LOCATION] = () => [locationRow({ eventReferenceId: "OLDER", createdDate: 3_000 })];
+
+    expect(await domain.refetchOne(ctx, { fromMs: 1_000 }, { shopId: "100002" })).toBe(1);
+    expect(state.gets[0].params).toEqual({
+      shopId: "100002", createdDate_from: 1_000, createdDate_thru: 5_000, orderByField: "-createdDate", pageSize: 250, pageIndex: 0,
+    });
+    expect(await domain.refetchOne(ctx, { fromMs: 6_000 }, { shopId: "100002" })).toBe(0);
+  });
+
+  it("pages the older service newest first until it reaches back past the chosen date", async () => {
+    const domain = await load("shopifyLocationInventoryAdjustmentDetail");
+    cacheRow("CACHED", 9_000);
+    const pages = [[9_000, 8_000], [4_000, 900], [800, 700]];
+    state.responses[LOCATION] = (params) => ({
+      hasMore: Number(params.pageIndex) < 2,
+      details: pages[Number(params.pageIndex)].map((createdDate) => locationRow({ eventReferenceId: String(createdDate), createdDate })),
+    });
+
+    await domain.refetchOne(ctx, { fromMs: 1_000 }, { shopId: "100002" });
+
+    expect(state.gets.map((call) => call.params.pageIndex)).toEqual([0, 1]);
+    expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: "4000" })))).toBe(true);
+    expect(state.tables.location.has(locationKey(locationRow({ eventReferenceId: "900" })))).toBe(false);
   });
 });
 

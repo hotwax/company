@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 
-const sync = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }));
+const sync = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), afterMutation: vi.fn() }));
 
 vi.mock("@/services/cacheSync", () => ({
   createCacheSync: () => ({
     ...sync, ready: ref(false), busy: ref(false), manualRefreshing: ref(false), error: ref(""),
-    syncNow: vi.fn(), afterMutation: vi.fn(),
+    syncNow: vi.fn(),
   }),
 }));
 
@@ -47,6 +47,7 @@ describe("inventory sync area", () => {
       "shopifyLocationInventoryAdjustmentDetailMessage",
       "inventoryEventSystemMessage",
       "inventoryEventProduct",
+      "inventoryEventBounds",
     ]);
     expect(sync.start.mock.calls[0][0].every((domain: any) => domain.args.shopId === "100002")).toBe(true);
     expect(sync.stop).not.toHaveBeenCalled();
@@ -65,5 +66,18 @@ describe("inventory sync area", () => {
     expect(sync.start).toHaveBeenCalledTimes(2);
     expect(sync.start.mock.calls[1][0][0].args.shopId).toBe("100051");
     expect(sync.stop).not.toHaveBeenCalled();
+  });
+
+  it("loads older events through the ledger's own rows domain", async () => {
+    const { useInventorySyncArea } = await load();
+    const { loadEventsFrom } = useInventorySyncArea();
+
+    await loadEventsFrom("channel", 1_000);
+    await loadEventsFrom("location", 2_000);
+
+    expect(sync.afterMutation.mock.calls).toEqual([
+      ["shopifyInventoryAdjustmentDetail", { fromMs: 1_000 }],
+      ["shopifyLocationInventoryAdjustmentDetail", { fromMs: 2_000 }],
+    ]);
   });
 });
