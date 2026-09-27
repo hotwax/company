@@ -9,6 +9,7 @@ import { ideTraceVue } from 'chrome-ide-trace/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import pkg from './package.json'
 import manifest from './manifest.json'
+import { sharedDevEnvPlugin } from '../../common/vite/sharedDevEnv'
 
 const require = createRequire(import.meta.url)
 const projectRoot = path.resolve(new URL('.', import.meta.url).pathname)
@@ -72,7 +73,7 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 8100
   },
-  plugins: [
+  plugins: [sharedDevEnvPlugin(),
     ideTraceVue(),
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),
