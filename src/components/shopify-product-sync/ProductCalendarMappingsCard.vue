@@ -7,29 +7,37 @@
 
     <ion-list lines="full">
       <ion-item v-for="field in calendarFields" :key="field.key" :data-testid="`calendar-mapping-${field.key}`">
-        <ion-input
-          :label="translate(field.label)"
-          label-placement="stacked"
-          :placeholder="translate('namespace:key')"
-          :value="drafts[field.key]"
-          @ion-input="updateDraft(field.key, $event.detail.value)"
-        />
-        <ion-button
-          slot="end"
-          fill="clear"
-          :disabled="!shopId || !isDirty(field.key) || savingFields[field.key]"
-          :data-testid="`save-calendar-mapping-${field.key}`"
-          @click="saveField(field.key)"
-        >
-          {{ translate("Save") }}
-          <ion-icon slot="end" :icon="saveOutline" />
-        </ion-button>
+        <ion-label v-if="!hydrated">
+          {{ translate(field.label) }}
+          <p><ion-skeleton-text animated /></p>
+        </ion-label>
+        <template v-else>
+          <ion-input
+            :label="translate(field.label)"
+            label-placement="stacked"
+            :placeholder="translate('namespace:key')"
+            :value="drafts[field.key]"
+            :disabled="!!savingField"
+            @ion-input="updateDraft(field.key, $event.detail.value)"
+          />
+          <ion-button
+            slot="end"
+            fill="clear"
+            :disabled="!shopId || !isDirty(field.key) || !!savingField"
+            :data-testid="`save-calendar-mapping-${field.key}`"
+            @click="saveField(field.key)"
+          >
+            {{ translate("Save") }}
+            <ion-icon slot="end" :icon="saveOutline" />
+          </ion-button>
+        </template>
       </ion-item>
     </ion-list>
   </ion-card>
 </template>
 
 <script setup lang="ts">
+import { commonUtil, logger, translate } from "@common"
 import {
   IonButton,
   IonCard,
@@ -39,12 +47,14 @@ import {
   IonIcon,
   IonInput,
   IonItem,
+  IonLabel,
   IonList,
+  IonSkeletonText,
 } from "@ionic/vue"
 import { saveOutline } from "ionicons/icons"
 import { computed, ref, watch } from "vue"
-import { commonUtil, logger, translate } from "@common"
 import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify"
+import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/cacheReconciliationError"
 
 const CALENDAR_MAPPING_TYPE = "SHOPIFY_PRODUCT_CALENDAR_DATE"
 
@@ -59,12 +69,13 @@ type CalendarDateField = typeof calendarFields[number]["key"]
 type FieldValues = Record<CalendarDateField, string>
 
 const props = defineProps<{ shopId: string }>()
-const { mappings } = useShopifyTypeMappings(props.shopId, CALENDAR_MAPPING_TYPE)
+const { mappings, hydrated } = useShopifyTypeMappings(props.shopId, CALENDAR_MAPPING_TYPE)
 const shopMutations = useShopifyShopMutations(props.shopId)
 
 function emptyValues(): FieldValues {
   return calendarFields.reduce((values, field) => {
     values[field.key] = ""
+
     return values
   }, {} as FieldValues)
 }
@@ -76,21 +87,24 @@ function normalize(value: unknown) {
 const mappingByField = computed<Partial<Record<CalendarDateField, Record<string, unknown>>>>(() => {
   return mappings.value.reduce((byField: Partial<Record<CalendarDateField, Record<string, unknown>>>, mapping: Record<string, unknown>) => {
     const field = calendarFields.find((candidate) => candidate.key === mapping.mappedKey)?.key
-    if (field) byField[field] = mapping
+    if(field) {
+      byField[field] = mapping
+    }
+
     return byField
   }, {})
 })
 const drafts = ref<FieldValues>(emptyValues())
 const committedValues = ref<FieldValues>(emptyValues())
-const savingFields = ref<Record<CalendarDateField, boolean>>(calendarFields.reduce((values, field) => {
-  values[field.key] = false
-  return values
-}, {} as Record<CalendarDateField, boolean>))
+// Every save refreshes the shop's whole type-mapping partition, so one pending save locks all fields.
+const savingField = ref<CalendarDateField | null>(null)
 
 watch(mappingByField, (currentMappings) => {
   calendarFields.forEach((field) => {
     const mappedValue = normalize(currentMappings[field.key]?.mappedValue)
-    if (drafts.value[field.key] === committedValues.value[field.key]) drafts.value[field.key] = mappedValue
+    if(drafts.value[field.key] === committedValues.value[field.key]) {
+      drafts.value[field.key] = mappedValue
+    }
     committedValues.value[field.key] = mappedValue
   })
 }, { immediate: true })
@@ -105,9 +119,11 @@ function isDirty(field: CalendarDateField) {
 
 async function saveField(field: CalendarDateField) {
   const mappedValue = normalize(drafts.value[field])
-  if (!isDirty(field)) return
+  if(!isDirty(field) || savingField.value) {
+    return
+  }
 
-  savingFields.value[field] = true
+  savingField.value = field
   try {
     const response = mappedValue
       ? await shopMutations.saveTypeMapping({
@@ -115,20 +131,23 @@ async function saveField(field: CalendarDateField) {
         mappedKey: field,
         mappedValue,
       })
-      : await shopMutations.retireTypeMapping({
-        mappedTypeId: CALENDAR_MAPPING_TYPE,
-        mappedKey: field,
-      })
-    if (commonUtil.hasError(response)) {
+      : await shopMutations.deleteTypeMapping({ mappedKey: field })
+    if(commonUtil.hasError(response)) {
       throw response.data
     }
     committedValues.value[field] = mappedValue
     commonUtil.showToast(translate("Mapping updated successfully"))
   } catch (error) {
     logger.error(error)
-    commonUtil.showToast(translate("Failed to update mapping"))
+    if(isCacheReconciliationError(error)) {
+      // The server write is committed; only the cache refresh failed, so never offer to replay it.
+      committedValues.value[field] = mappedValue
+      commonUtil.showToast(translate(CACHE_RECONCILIATION_ERROR_MESSAGE))
+    } else {
+      commonUtil.showToast(translate("Failed to update mapping"))
+    }
   } finally {
-    savingFields.value[field] = false
+    savingField.value = null
   }
 }
 </script>

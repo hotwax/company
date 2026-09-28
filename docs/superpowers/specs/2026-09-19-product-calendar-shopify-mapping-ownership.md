@@ -70,13 +70,16 @@ The card presents the four supported calendar destination fields:
 - Sales discontinuation date (`salesDiscontinuationDate`)
 
 For each field, the operator can enter the Shopify metafield selector and save it. A blank saved
-value retires the field's mapping using the existing value-clearing behavior. The editor uses the
+value deletes the field's mapping, as every Company mapping surface does since clearing moved from an
+empty-value write to `DELETE oms/shopifyShops/typeMappings`. The editor uses the
 same native Ionic card/list and clear-action patterns as the other Company mapping surfaces; it
 does not add a new store, polling loop, endpoint, or cache domain.
 
 Reads use the existing `useShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_CALENDAR_DATE")` cached
-slice. Writes use the existing `useShopifyShopMutations(shopId)` save/retire methods, which refresh
-the affected shop's type-mapping cache after a successful server response.
+slice. Writes use the existing `useShopifyShopMutations(shopId)` save/delete methods, which refresh
+the affected shop's type-mapping cache after a successful server response. That refresh replaces the
+shop's whole type-mapping partition, so one pending save locks every field in the card. Until the
+cached slice hydrates, the fields render skeletons rather than editable blanks.
 
 ## Failure and empty states
 
@@ -107,7 +110,7 @@ Automated coverage will prove:
 2. Products omits the Company action when there is no eligible shop or Company URL.
 3. Company renders the existing mapping values for the current shop and sends the exact mapping
    type, destination field, and selector through the existing mutation seam.
-4. Retiring a mapping sends the existing empty-value retirement write, not a DELETE.
+4. Clearing a mapping sends the existing type-mapping DELETE for that key.
 5. Order Routing preserves the scoped link to Products and its date-condition action styling.
 
 Manual UAT will verify the full path: Order Routing rule → Products calendar summary → Company
