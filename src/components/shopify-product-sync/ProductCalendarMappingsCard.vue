@@ -6,54 +6,55 @@
     </ion-card-header>
 
     <ion-list lines="full">
-      <ion-item v-for="field in calendarFields" :key="field.key" :data-testid="`calendar-mapping-${field.key}`">
-        <ion-label v-if="!hydrated">
+      <ion-item
+        v-for="field in calendarFields"
+        :key="field.key"
+        :button="hydrated"
+        :detail="hydrated"
+        :disabled="hydrated && (!shopId || !!savingField)"
+        :data-testid="`calendar-mapping-${field.key}`"
+        @click="openPicker(field.key)"
+      >
+        <ion-label>
           {{ translate(field.label) }}
-          <p><ion-skeleton-text animated /></p>
+          <p v-if="!hydrated">
+            <ion-skeleton-text animated />
+          </p>
+          <p v-else>
+            {{ committedValues[field.key] || translate("Not mapped") }}
+          </p>
         </ion-label>
-        <template v-else>
-          <ion-input
-            :label="translate(field.label)"
-            label-placement="stacked"
-            :placeholder="translate('namespace:key')"
-            :value="drafts[field.key]"
-            :disabled="!!savingField"
-            @ion-input="updateDraft(field.key, $event.detail.value)"
-          />
-          <ion-button
-            slot="end"
-            fill="clear"
-            :disabled="!shopId || !isDirty(field.key) || !!savingField"
-            :data-testid="`save-calendar-mapping-${field.key}`"
-            @click="saveField(field.key)"
-          >
-            {{ translate("Save") }}
-            <ion-icon slot="end" :icon="saveOutline" />
-          </ion-button>
-        </template>
+        <ion-spinner v-if="savingField === field.key" slot="end" name="crescent" />
       </ion-item>
     </ion-list>
+
+    <CalendarMetafieldPickerModal
+      :field="editingFieldConfig"
+      :current-selector="editingField ? committedValues[editingField] : ''"
+      :system-message-remote-id="remoteId"
+      :saving="!!savingField"
+      @close="closePicker"
+      @save="(selector) => editingField && saveField(editingField, selector)"
+    />
   </ion-card>
 </template>
 
 <script setup lang="ts">
 import { commonUtil, logger, translate } from "@common"
 import {
-  IonButton,
   IonCard,
   IonCardHeader,
   IonCardSubtitle,
   IonCardTitle,
-  IonIcon,
-  IonInput,
   IonItem,
   IonLabel,
   IonList,
   IonSkeletonText,
+  IonSpinner,
 } from "@ionic/vue"
-import { saveOutline } from "ionicons/icons"
 import { computed, ref, watch } from "vue"
-import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify"
+import CalendarMetafieldPickerModal from "@/components/shopify-product-sync/CalendarMetafieldPickerModal.vue"
+import { useShopifyShopMutations, useShopifySyncContext, useShopifyTypeMappings } from "@/composables/useShopify"
 import { CACHE_RECONCILIATION_ERROR_MESSAGE, isCacheReconciliationError } from "@/utils/cacheReconciliationError"
 
 const CALENDAR_MAPPING_TYPE = "SHOPIFY_PRODUCT_CALENDAR_DATE"
@@ -70,6 +71,7 @@ type FieldValues = Record<CalendarDateField, string>
 
 const props = defineProps<{ shopId: string }>()
 const { mappings, hydrated } = useShopifyTypeMappings(props.shopId, CALENDAR_MAPPING_TYPE)
+const { remoteId } = useShopifySyncContext(() => props.shopId)
 const shopMutations = useShopifyShopMutations(props.shopId)
 
 function emptyValues(): FieldValues {
@@ -94,32 +96,34 @@ const mappingByField = computed<Partial<Record<CalendarDateField, Record<string,
     return byField
   }, {})
 })
-const drafts = ref<FieldValues>(emptyValues())
+// Follows the cache, except after a committed write whose cache refresh failed (see saveField).
 const committedValues = ref<FieldValues>(emptyValues())
 // Every save refreshes the shop's whole type-mapping partition, so one pending save locks all fields.
 const savingField = ref<CalendarDateField | null>(null)
+const editingField = ref<CalendarDateField | null>(null)
+const editingFieldConfig = computed(() => calendarFields.find((field) => field.key === editingField.value) ?? null)
 
 watch(mappingByField, (currentMappings) => {
   calendarFields.forEach((field) => {
-    const mappedValue = normalize(currentMappings[field.key]?.mappedValue)
-    if(drafts.value[field.key] === committedValues.value[field.key]) {
-      drafts.value[field.key] = mappedValue
-    }
-    committedValues.value[field.key] = mappedValue
+    committedValues.value[field.key] = normalize(currentMappings[field.key]?.mappedValue)
   })
 }, { immediate: true })
 
-function updateDraft(field: CalendarDateField, value: unknown) {
-  drafts.value[field] = String(value ?? "")
+function openPicker(field: CalendarDateField) {
+  if(hydrated.value && props.shopId && !savingField.value) {
+    editingField.value = field
+  }
 }
 
-function isDirty(field: CalendarDateField) {
-  return normalize(drafts.value[field]) !== committedValues.value[field]
+function closePicker() {
+  if(!savingField.value) {
+    editingField.value = null
+  }
 }
 
-async function saveField(field: CalendarDateField) {
-  const mappedValue = normalize(drafts.value[field])
-  if(!isDirty(field) || savingField.value) {
+async function saveField(field: CalendarDateField, selector: string) {
+  const mappedValue = normalize(selector)
+  if(savingField.value || mappedValue === committedValues.value[field]) {
     return
   }
 
@@ -136,14 +140,17 @@ async function saveField(field: CalendarDateField) {
       throw response.data
     }
     committedValues.value[field] = mappedValue
+    editingField.value = null
     commonUtil.showToast(translate("Mapping updated successfully"))
   } catch (error) {
     logger.error(error)
     if(isCacheReconciliationError(error)) {
       // The server write is committed; only the cache refresh failed, so never offer to replay it.
       committedValues.value[field] = mappedValue
+      editingField.value = null
       commonUtil.showToast(translate(CACHE_RECONCILIATION_ERROR_MESSAGE))
     } else {
+      // Keep the picker open with the operator's choice so they can retry or cancel.
       commonUtil.showToast(translate("Failed to update mapping"))
     }
   } finally {

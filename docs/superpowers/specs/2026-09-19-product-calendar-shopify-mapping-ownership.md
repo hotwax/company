@@ -69,11 +69,24 @@ The card presents the four supported calendar destination fields:
 - Support discontinuation date (`supportDiscontinuationDate`)
 - Sales discontinuation date (`salesDiscontinuationDate`)
 
-For each field, the operator can enter the Shopify metafield selector and save it. A blank saved
-value deletes the field's mapping, as every Company mapping surface does since clearing moved from an
-empty-value write to `DELETE oms/shopifyShops/typeMappings`. The editor uses the
-same native Ionic card/list and clear-action patterns as the other Company mapping surfaces; it
-does not add a new store, polling loop, endpoint, or cache domain.
+Each field opens a picker instead of a free-text input. The connector reads a calendar mapping only
+as `namespace:key` split at the first colon, and only from a `date` or `date_time` metafield; it
+drops any other value without an error. The picker therefore:
+
+- lists the shop's product and variant metafield definitions of those two types, read live through
+  the existing `shopify/graphql` proxy (`metafieldDefinitions`), with a search over name, namespace,
+  and key;
+- saves the chosen definition as `namespace:key`;
+- offers manual entry for a metafield without a definition. A typed value must be checked against
+  Shopify before it can be saved. An exact date-type match can be saved directly. A value with no
+  matching definition, a non-date definition, or an unreachable Shopify can be saved only after the
+  operator acknowledges that the dates may not be populated. A value the connector cannot parse
+  cannot be saved;
+- removes a mapping with an explicit action, which deletes the key, as every Company mapping surface
+  does since clearing moved from an empty-value write to `DELETE oms/shopifyShops/typeMappings`.
+
+The picker adds no store, polling loop, endpoint, or cache domain; metafield definitions are a live
+read because Shopify owns them.
 
 Reads use the existing `useShopifyTypeMappings(shopId, "SHOPIFY_PRODUCT_CALENDAR_DATE")` cached
 slice. Writes use the existing `useShopifyShopMutations(shopId)` save/delete methods, which refresh
@@ -110,8 +123,10 @@ Automated coverage will prove:
 2. Products omits the Company action when there is no eligible shop or Company URL.
 3. Company renders the existing mapping values for the current shop and sends the exact mapping
    type, destination field, and selector through the existing mutation seam.
-4. Clearing a mapping sends the existing type-mapping DELETE for that key.
-5. Order Routing preserves the scoped link to Products and its date-condition action styling.
+4. Removing a mapping sends the existing type-mapping DELETE for that key.
+5. The picker lists only date and date-time definitions, and a typed selector is saveable only after
+   a check matches it or the operator acknowledges the warning.
+6. Order Routing preserves the scoped link to Products and its date-condition action styling.
 
 Manual UAT will verify the full path: Order Routing rule → Products calendar summary → Company
 Product Sync mapping editor, plus a real save/read-back against the available OMS instance without
