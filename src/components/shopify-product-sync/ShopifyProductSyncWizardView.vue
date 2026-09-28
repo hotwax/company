@@ -37,6 +37,8 @@
         data-testid="review-configurations">
         {{ translate("Review configurations") }}
       </ion-button>
+
+      <slot name="setup-tracker" />
     </div>
     <ion-card class="step" v-if="currentStep === 'product-store'">
       <ion-card-header>

@@ -114,7 +114,11 @@
           :is-webhook-loading="isWebhookLoading"
           :is-webhook-supported="isWebhookSupported"
           @toggle-webhook="toggleWebhookSubscription"
-        />
+        >
+          <template #sync-monitor>
+            <ProductCalendarMappingsCard :key="id" :shop-id="id" />
+          </template>
+        </shopify-product-sync-returning-view>
 
         <shopify-product-sync-wizard-view
           v-else
@@ -188,7 +192,11 @@
           @toggle-start-confirmation="toggleStartConfirmation"
           @open-step-details="openStepDetails"
           @run-system-message-action="runSystemMessageAction"
-        />
+        >
+          <template #setup-tracker>
+            <ProductCalendarMappingsCard :key="id" :shop-id="id" />
+          </template>
+        </shopify-product-sync-wizard-view>
       </template>
 
       <ion-modal :is-open="showModeModal" :backdrop-dismiss="false" @didDismiss="showModeModal = false">
@@ -704,6 +712,7 @@ import { useStatuses } from "@/composables/useSeed";
 import router from "@/router";
 import ShopifyProductSyncReturningView from "@/components/shopify-product-sync/ShopifyProductSyncReturningView.vue";
 import ShopifyProductSyncWizardView from "@/components/shopify-product-sync/ShopifyProductSyncWizardView.vue";
+import ProductCalendarMappingsCard from "@/components/shopify-product-sync/ProductCalendarMappingsCard.vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import SystemMessageDetailsModal from "@/components/common/SystemMessageDetailsModal.vue";
 import AnimatedDuration from "@/components/common/AnimatedDuration.vue";

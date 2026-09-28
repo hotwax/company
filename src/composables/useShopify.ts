@@ -30,6 +30,9 @@ import {
 import Actions from "@/authorization/actions";
 import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
+import {
+  METAFIELD_DEFINITIONS_QUERY, SHOPIFY_METAFIELD_OWNER_TYPES, type ShopifyMetafieldDefinition, parseMetafieldDefinitionsPage,
+} from "@/utils/shopifyMetafieldDefinitions";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
 import {
@@ -7158,6 +7161,28 @@ export async function fetchCurrentShopifyInventory(payload: {systemMessageRemote
     queryText: INVENTORY_AT_LOCATION_QUERY, variables: {itemId, locationId},
   }});
   return parseInventorySnapshot(response, itemId, locationId);
+}
+
+/** Live read of every product and variant metafield definition on the shop; Shopify owns these, so nothing caches them. */
+export async function fetchShopifyMetafieldDefinitions(systemMessageRemoteId: string): Promise<ShopifyMetafieldDefinition[]> {
+  if (!systemMessageRemoteId) throw new Error("Shopify connection is unavailable.");
+  const byOwner = await Promise.all(SHOPIFY_METAFIELD_OWNER_TYPES.map(async (ownerType) => {
+    const definitions: ShopifyMetafieldDefinition[] = [];
+    const cursors = new Set<string>();
+    let after: string | null = null;
+    do {
+      const response = await requestBackend<any>({url: "shopify/graphql", method: "post", data: {
+        systemMessageRemoteId, queryText: METAFIELD_DEFINITIONS_QUERY, variables: {ownerType, after},
+      }}, "Shopify metafield definition lookup");
+      const page = parseMetafieldDefinitionsPage(response, ownerType);
+      definitions.push(...page.definitions);
+      after = page.endCursor;
+      if (after && cursors.has(after)) throw new Error("Shopify metafield definition pagination did not advance.");
+      if (after) cursors.add(after);
+    } while (after);
+    return definitions;
+  }));
+  return byOwner.flat();
 }
 
 /** Rebuild one mapped OMS product's local search document; does not write Shopify. */

@@ -298,6 +298,8 @@
         </ion-item>
       </ion-list>
     </ion-card>
+
+    <slot name="sync-monitor" />
   </section>
 
   <section class="sync-stat">
