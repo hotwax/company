@@ -1,4 +1,4 @@
-import { computed, onUnmounted, ref, type Ref } from "vue";
+import { type MaybeRefOrGetter, computed, onUnmounted, ref, toValue, watch, type Ref } from "vue";
 import type { Subscription } from "dexie";
 import type { CachedEntity, LiveQueryOptions } from "@/utils/appCacheDb";
 import type { CachedRow } from "@/utils/cacheProjection";
@@ -75,7 +75,8 @@ async function warnOnScopeMiss(entity: CachedEntity, options: CachedListOptions)
 
 export function useCachedList<T = Record<string, any>>(
   entity: CachedEntity,
-  options: CachedListOptions = {},
+  /** A getter re-subscribes when it changes, so a scope can follow a route param. */
+  options: MaybeRefOrGetter<CachedListOptions> = {},
 ): CachedList<T> {
   const rows = ref<CachedRow[]>([]) as Ref<CachedRow[]>;
   const records = ref<T[]>([]) as Ref<T[]>;
@@ -94,25 +95,35 @@ export function useCachedList<T = Record<string, any>>(
    */
   const hydrated = computed(() => emitted.value && (rows.value.length > 0 || !bootstrapState.running));
 
-  // Subscribe immediately (not in onMounted) so a warm cache paints on the very first render.
-  const subscription: Subscription = entity.live(options).subscribe({
-    next: (next) => {
-      rows.value = next;
-      records.value = next.map((row) => row.raw as T);
-      emitted.value = true;
-      if (next.length === 0) void warnOnScopeMiss(entity, options);
-    },
-    error: (err) => {
-      // Don't strand the page on a skeleton — but do say something. A failing live query is always a
-      // cache-layer fault (a `dateField` that is not indexed, a `where('[a+b]')` against a database
-      // without that index, a closed connection), and swallowing it renders as a clean "no records
-      // found" with an empty console, which is indistinguishable from an empty table.
-      console.error(`[cache] live query failed for "${entity.table}" — rendering as empty:`, err);
-      emitted.value = true;
-    },
-  });
+  let subscription: Subscription | undefined;
+  // Immediate (not in onMounted) so a warm cache paints on the very first render.
+  watch(() => toValue(options), (current) => {
+    subscription?.unsubscribe();
+    // A new scope must not show the old scope's rows, nor claim empty before its own first emit.
+    if(subscription) {
+      rows.value = [];
+      records.value = [];
+      emitted.value = false;
+    }
+    subscription = entity.live(current).subscribe({
+      next: (next) => {
+        rows.value = next;
+        records.value = next.map((row) => row.raw as T);
+        emitted.value = true;
+        if (next.length === 0) void warnOnScopeMiss(entity, current);
+      },
+      error: (err) => {
+        // Don't strand the page on a skeleton — but do say something. A failing live query is always a
+        // cache-layer fault (a `dateField` that is not indexed, a `where('[a+b]')` against a database
+        // without that index, a closed connection), and swallowing it renders as a clean "no records
+        // found" with an empty console, which is indistinguishable from an empty table.
+        console.error(`[cache] live query failed for "${entity.table}" — rendering as empty:`, err);
+        emitted.value = true;
+      },
+    });
+  }, { immediate: true });
 
-  onUnmounted(() => subscription.unsubscribe());
+  onUnmounted(() => subscription?.unsubscribe());
 
   return { rows, records, hydrated };
 }

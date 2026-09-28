@@ -104,7 +104,38 @@ export function useUserAccountActions() {
     return draft;
   };
 
-  return { sendResetPasswordEmail, resetPassword, getBaseURL, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft };
+  const createUserAccountAndSetup = async (
+    payload: any,
+    partyTypeId: string,
+    facilityId?: string,
+    emailAddress?: string,
+    contactNumber?: string
+  ) => {
+    const resp = await userStore.createUser(payload);
+    if(resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
+      const partyId = resp.data.partyId;
+
+      await userStore.ensurePartyRole({ partyId, roleTypeId: "APPLICATION_USER" });
+
+      if(partyTypeId === "PARTY_GROUP" && facilityId) {
+        await userStore.addPartyToFacility({ partyId, facilityId, roleTypeId: "WAREHOUSE_PICKER" });
+      }
+      if(emailAddress) {
+        await userStore.createUpdatePartyEmailAddress({ partyId, emailAddress, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
+      }
+      if(contactNumber) {
+        await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
+      }
+
+      await userStore.indexEmployee(partyId);
+
+      return { partyId };
+    } else {
+      throw resp.data;
+    }
+  };
+
+  return { sendResetPasswordEmail, resetPassword, getBaseURL, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft, createUserAccountAndSetup };
 }
 
 /** Preserve the authenticated REST context root; reject embedded credentials, queries, and fragments. */

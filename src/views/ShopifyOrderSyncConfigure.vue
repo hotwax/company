@@ -415,7 +415,7 @@
                 <ion-label>
                   {{ translate("Schedule") }}
                   <p>{{ activationTarget?.cronExpression || draftCronExpression }}</p>
-                  <p>{{ activationTarget?.scheduleDescription || scheduleDescription }} · {{ activationTarget?.timeZone || timeZone }}</p>
+                  <p>{{ activationTarget?.scheduleDescription || scheduleDescription }}, {{ activationTarget?.timeZone || timeZone }}</p>
                 </ion-label>
               </ion-item>
             </ion-list>
@@ -709,7 +709,7 @@ const scheduleStateLabel = computed(() => {
 
 const jobStateLabel = computed(() => {
   if (isMissing.value) return translate("Missing");
-  if (isConfiguredPaused.value) return translate("Configured · Paused");
+  if (isConfiguredPaused.value) return translate("Configured, paused");
   return translate("Configured");
 });
 
@@ -760,7 +760,7 @@ const mappingRows = computed<MappingRow[]>(() => {
 const mappingSummary = computed(() => {
   const readyCount = mappingReadiness.value.families.filter((family) => family.ready).length;
   if (readyCount === 3) return translate("All 3 mapping families are ready");
-  return translate("{ready} of 3 ready · {warnings} warnings", {
+  return translate("{ready} of 3 ready, {warnings} warnings", {
     ready: readyCount,
     warnings: mappingReadiness.value.warnings.length
   });

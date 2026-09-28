@@ -75,7 +75,7 @@
             <ion-label>
               {{ translate("System message") }}
               <p>
-                {{ currentSyncRun.systemMessageId }} · {{ translate("Created") }} 
+                {{ currentSyncRun.systemMessageId }}, {{ translate("Created") }} 
                 <AnimatedDuration :start-time="currentSyncRun.systemMessage?.initDate || currentSyncRun.systemMessage?.createdDate" />
               </p>
               <p>{{ systemMessageProgressLabel }}</p>
@@ -112,7 +112,7 @@
               {{ translate("Next step") }}
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
               <p v-if="systemMessageFsmState.nextJob">
-                {{ systemMessageFsmState.nextJob.label }} · {{ systemMessageFsmState.nextJob.nextRunLabel }}
+                {{ systemMessageFsmState.nextJob.label }}, {{ systemMessageFsmState.nextJob.nextRunLabel }}
               </p>
             </ion-label>
             <ion-buttons slot="end">
@@ -162,7 +162,7 @@
             <ion-label>
               {{ translate("HotWax bulk import") }}
               <p v-if="currentSyncRun.mdmLog?.id">
-                {{ currentSyncRun.mdmLog.id }} · {{ translate("Started") }} 
+                {{ currentSyncRun.mdmLog.id }}, {{ translate("Started") }} 
                 <AnimatedDuration 
                   :start-time="currentSyncRun.mdmLog.startDate" 
                 />

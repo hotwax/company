@@ -651,7 +651,6 @@
     <ServiceJobDetailsModal
       :is-open="showSyncJobDetailsModal"
       :job-name="selectedSyncJobDetailsJob?.jobName || ''"
-      :title="selectedSyncJobDetailsJob?.jobName || ''"
       @close="showSyncJobDetailsModal = false"
     />
   </ion-page>
@@ -967,7 +966,7 @@ function formatJobLastRun(job: any, isPausedState: boolean) {
     const status = latest.statusDesc || latest.statusId || (latest.hasError === "Y" ? translate("Error") : translate("Finished"))
     const dateLabel = startedAt ? commonUtil.formatDateTime(startedAt) : ""
 
-    return dateLabel ? `${translate("Last run")}: ${dateLabel} · ${status}` : String(status)
+    return dateLabel ? `${translate("Last run")}: ${dateLabel}, ${status}` : String(status)
   }
 
   return job.cronString || translate("No recent runs")

@@ -110,6 +110,7 @@ import { computed, ref } from 'vue';
 import { DateTime } from 'luxon';
 import { useEnumGroupMembers, useNetSuite } from "@/composables/useNetSuite";
 import { useTypedEnums } from "@/composables/useSeed";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 
 const inventoryVarianceTypeId = JSON.parse(import.meta.env.VITE_NETSUITE_INTEGRATION_TYPE_MAPPING)?.INVENTORY_VARIANCE_TYPE_ID
 
@@ -123,9 +124,15 @@ const {
 const { values: inventoryVariances, hydrated } = useTypedEnums("IID_REASON");
 const { members: enumGroupMembers } = useEnumGroupMembers();
 
-/** enumId → whether it belongs to the NetSuite reason group (was `getEnumGroups`). */
+/**
+ * enumId → its currently active NetSuite reason group membership (was `getEnumGroups`).
+ *
+ * "Remove" stamps a `thruDate` on the row rather than deleting it, so without the
+ * `isEffectiveNow` filter an expired row still matches by `enumId` and the checkbox reads as
+ * still checked right after the removal that just persisted correctly.
+ */
 const enumsInEnumGroup = computed(() => (enumId: any) =>
-  enumGroupMembers.value.find((member: any) => member.enumId === enumId))
+  enumGroupMembers.value.find((member: any) => member.enumId === enumId && isEffectiveNow(member, Date.now())))
 
 // The `updatedNetSuiteIds` computed property maps each `mappingKey`(enumId) from `integrationTypeMappings` 
 // to an object containing `mappingValue` and `integrationMappingId`(NETSUITE_VAR_TRAN)
@@ -190,7 +197,7 @@ async function addVarianceToGroup(enumId: any, event: any) {
 
   try {
     let payload: any = {
-      enumerationGroupId: "NETSUITE_IIV_REASON",
+      enumerationGroupId: "IA_VAR_NETSUITE",
       enumerationId: enumId
     }
 
@@ -216,7 +223,7 @@ async function addVarianceToGroup(enumId: any, event: any) {
 
     if(isMember === wasMember) {
       commonUtil.showToast(translate("The server accepted the change but did not save it."));
-      logger.error(`enumGroupMember for ${enumId} did not persist; NETSUITE_IIV_REASON may not exist as an EnumerationGroup`);
+      logger.error(`enumGroupMember for ${enumId} did not persist`);
     }
   } catch (err) {
     // Reverting the checkbox shows *something* happened but not that it failed — a user who looks

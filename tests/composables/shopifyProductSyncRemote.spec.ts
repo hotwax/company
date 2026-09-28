@@ -77,10 +77,13 @@ vi.mock("@/services/appCacheBootstrap", () => ({
 
 import {
   fetchProductMappings,
+  useTransferMappingResolution,
   refreshMappedProductSearchIndex,
   fetchShopSystemMessageRemoteId,
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
+
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
 
 const SHOP_ID = "10000";
 const SHOPIFY_SHOP_ID = "6973849727";
@@ -211,5 +214,54 @@ describe('product mapping inspection', () => {
     harness.api.mockResolvedValueOnce(page('1', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}})
       .mockResolvedValueOnce(page('2', true, 'same')).mockResolvedValueOnce({data: {entityValueList: []}});
     await expect(fetchProductMappings(input)).rejects.toThrow('pagination did not advance');
+  });
+});
+
+
+describe("transfer product mapping resolution", () => {
+  const row = (variantId: string) => ({ shopId: "100051", productId: "100198", shopifyProductId: variantId, shopifyInventoryItemId: "9" + variantId });
+  const mapped = (variantId: string) => ({ productId: "100198", variantId, inventoryItemId: "9" + variantId, available: true });
+  const variants = (ids = ["1", "2"]) => ({ data: { statusCode: 200, response: { nodes: ids.map(id => ({
+    id: `gid://shopify/ProductVariant/${id}`, title: "L", sku: "same-sku", inventoryItem: { id: `gid://shopify/InventoryItem/9${id}` },
+    product: { id: `gid://shopify/Product/8${id}`, title: id === "1" ? "Carbon" : "Bundle(Test)", status: id === "1" ? "ACTIVE" : "DRAFT" },
+  })) } } });
+
+  it("shows both live variants without assuming Draft means an incorrect mapping", async () => {
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants());
+    const choices = await fetchTransferMappingChoices("100051", "100198");
+    expect(choices.map(choice => [choice.title, choice.status, choice.available])).toEqual([["Carbon", "ACTIVE", true], ["Bundle(Test)", "DRAFT", true]]);
+    expect(harness.api.mock.calls.every(([request]) => request.method !== "DELETE")).toBe(true);
+  });
+
+  it("rejects a mapping read that includes another shop or product", async () => {
+    harness.api.mockResolvedValueOnce({ data: [{ ...row("1"), shopId: "other-shop" }] });
+    await expect(fetchTransferMappingChoices("100051", "100198")).rejects.toThrow("could not be verified");
+  });
+
+  it("prevents a stale selection from deleting a newly changed mapping", async () => {
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("3")] }).mockResolvedValueOnce(variants(["1", "3"]));
+    await expect(keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")])).rejects.toThrow("Mappings changed");
+    expect(harness.api.mock.calls.every(([request]) => request.method !== "DELETE")).toBe(true);
+  });
+
+  it("removes only the unselected mapping in the selected shop and verifies what remains", async () => {
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants())
+      .mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: [row("1")] });
+    await keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")]);
+    expect(harness.api.mock.calls.filter(([request]) => request.method === "DELETE").map(([request]) => request)).toEqual([
+      { url: "sob/products/100198/shopifyShopProducts", method: "DELETE", params: { shopId: "100051", shopifyProductId: "2" } },
+    ]);
+  });
+
+  it("reports an uncertain write without replaying a delete", async () => {
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants()).mockRejectedValueOnce(new Error("Lost response"));
+    await expect(keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")])).rejects.toThrow("Some mappings may have changed");
+    expect(harness.api.mock.calls.filter(([request]) => request.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("does not treat a rejected mapping removal as success", async () => {
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants()).mockResolvedValueOnce({ data: { errors: ["Denied"] } });
+    harness.hasError.mockReturnValue(true);
+    await expect(keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")])).rejects.toThrow("could not be fully verified");
   });
 });

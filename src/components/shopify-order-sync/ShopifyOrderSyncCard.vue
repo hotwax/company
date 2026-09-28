@@ -167,7 +167,7 @@ const cardAriaLabel = computed(() => [
   processedCount.value,
   translate("Pending batch requests"),
   pendingCount.value,
-].join(" · "));
+].join(", "));
 
 const batchDetail = computed(() => getProgressDetail(
   props.snapshot.batchDetail,

@@ -28,6 +28,7 @@ import {
   toValue, watch,
 } from "vue";
 import Actions from "@/authorization/actions";
+import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { parseDateTimeValue } from "@/utils";
@@ -780,18 +781,14 @@ export function useShopifyLocations(shopId: string | undefined) {
   // Stable order so an unscoped read's `find`/`reduce` winner does not vary — see `stableByShop`.
   const records = computed(() => stableByShop(unordered.value));
 
-  /** shopifyLocationId → facilityId, the shape mapping editors work in. */
-  const facilityByLocation = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      if(row.shopifyLocationId) {map[row.shopifyLocationId] = row.facilityId ?? "";}
-
-      return map;
-    }, {}));
-
   /**
-   * facilityId → shopifyLocationId — the INVERSE, for screens that list facilities and show each
-   * one's mapped Shopify id. Provided as a map because callers otherwise index the records array
-   * by facilityId, which silently yields undefined and renders every row as unmapped.
+   * facilityId → shopifyLocationId, for screens that list facilities and show each one's mapped
+   * Shopify id. Provided as a map because callers otherwise index the records array by facilityId,
+   * which silently yields undefined and renders every row as unmapped.
+   *
+   * There is deliberately no single-valued inverse: several facilities may share one Shopify
+   * location, so a location → facility map would silently keep only one of them. A caller that needs
+   * the reverse lookup should group into `Record<string, string[]>`.
    */
   const locationByFacility = computed<Record<string, string>>(() =>
     records.value.reduce((map: Record<string, string>, row: any) => {
@@ -800,7 +797,7 @@ export function useShopifyLocations(shopId: string | undefined) {
       return map;
     }, {}));
 
-  return { locations: records, facilityByLocation, locationByFacility, records, hydrated };
+  return { locations: records, locationByFacility, records, hydrated };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1026,6 +1023,19 @@ export function useShopifyShopMutations(shopId: string) {
   const refreshLocations = () => refreshAfterMutation("shopifyLocation", { shopId });
   const refreshCarrierShipments = () => refreshAfterMutation("shopifyCarrierShipment", { shopId });
 
+  /**
+   * DELETE one mapping row by its full PK. Moqui's entity-auto delete reads a PK value of `*` as a
+   * wildcard and deletes every matching row, so a key of `*` would wipe the shop's whole table —
+   * refuse it, and an empty key, before the request goes out.
+   */
+  const deleteMapping = async (url: string, pk: Record<string, string>, refresh: () => Promise<unknown>, options?: WriteOptions) => {
+    if(Object.values(pk).some((value) => !value || value === "*")) {throw new Error(`Refusing to delete ${url} without an exact key`);}
+    const resp: any = await api({ url, method: "delete", data: { ...pk, shopId } });
+    if(!commonUtil.hasError(resp) && wants(options)) {await refresh();}
+
+    return resp;
+  };
+
   return {
     refreshTypeMappings,
     refreshLocations,
@@ -1045,7 +1055,7 @@ export function useShopifyShopMutations(shopId: string) {
     /**
      * Upsert a type mapping. The endpoint is `store`, and the entity PK is
      * (shopId, mappedKey) — so re-saving the same key overwrites its value, while a NEW key inserts
-     * a new row and leaves the old key behind (see `removeTypeMapping`).
+     * a new row and leaves the old key behind (see `deleteTypeMapping`).
      */
     async saveTypeMapping(
       payload: { mappedTypeId: string; mappedKey: string; mappedValue?: string },
@@ -1062,29 +1072,15 @@ export function useShopifyShopMutations(shopId: string) {
     },
 
     /**
-     * Retire a mapping key by CLEARING its value — the alternate to a delete route that does not
-     * exist.
+     * Delete a mapping key. The PK is (shopId, mappedKey), so this is how a RENAME drops its old key
+     * and how clearing an input unmaps a row.
      *
-     * `oms.rest.xml` defines `shopifyShops/typeMappings` with `get` and `post` only; there are zero
-     * delete methods anywhere under `oms/shopifyShops`, and `DELETE` answers 405. Path-scoped and
-     * `admin/`-prefixed variants 404 (probed live 2026-07-27). This used to issue that DELETE, which
-     * meant every RENAME of an existing mapping died on the 405 before its replacement `POST` ran —
-     * the edit wrote nothing at all, and the sales-channel screen showed no error while doing it.
-     *
-     * The endpoint is `store` and the PK is (shopId, mappedKey), so re-posting the old key with an
-     * empty `mappedValue` unmaps it in place: the row survives as a key with no value, which is
-     * exactly what the reader treats as unmapped (`keyByValue` skips value-less rows). Verified
-     * live: the read-back row keeps `mappedKey` and no longer carries `mappedValue`.
+     * `DELETE oms/shopifyShops/typeMappings` exists from oms v3.1.0. Before that it answered 405 and
+     * clearing re-posted the key with an empty `mappedValue`, so databases still hold value-less rows
+     * from that workaround — which is why every reader keeps skipping them.
      */
-    async retireTypeMapping(payload: { mappedTypeId: string; mappedKey: string }, options?: WriteOptions) {
-      const resp: any = await api({
-        url: "oms/shopifyShops/typeMappings",
-        method: "post",
-        data: { ...payload, shopId, mappedValue: "" },
-      });
-      if(!commonUtil.hasError(resp) && wants(options)) {await refreshTypeMappings();}
-
-      return resp;
+    deleteTypeMapping(payload: { mappedKey: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/typeMappings", { mappedKey: payload.mappedKey }, refreshTypeMappings, options);
     },
 
     async saveCarrierShipment(payload: Record<string, any>, options?: WriteOptions) {
@@ -1098,6 +1094,15 @@ export function useShopifyShopMutations(shopId: string) {
       return resp;
     },
 
+    /**
+     * Delete a carrier-shipment mapping. The PK is (shopId, shopifyShippingMethod) and the POST is
+     * `create`, so neither a rename nor a clear can update the row in place: both delete it. Posting an
+     * empty name instead makes Moqui generate a sequenced key and insert a junk row.
+     */
+    deleteCarrierShipment(payload: { shopifyShippingMethod: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/carrierShipments", { shopifyShippingMethod: payload.shopifyShippingMethod }, refreshCarrierShipments, options);
+    },
+
     /** Upsert a location↔facility mapping (`ShopifyShopLocation` `store`). */
     async saveLocation(payload: Record<string, any>, options?: WriteOptions) {
       const resp: any = await api({
@@ -1108,6 +1113,11 @@ export function useShopifyShopMutations(shopId: string) {
       if(!commonUtil.hasError(resp) && wants(options)) {await refreshLocations();}
 
       return resp;
+    },
+
+    /** Unmap a facility from this shop — deletes its `ShopifyShopLocation` row, PK (shopId, facilityId). */
+    deleteLocation(payload: { facilityId: string }, options?: WriteOptions) {
+      return deleteMapping("oms/shopifyShops/locations", { facilityId: payload.facilityId }, refreshLocations, options);
     },
   };
 }
@@ -1163,15 +1173,6 @@ export interface InventoryEventSource {
 function inventoryEventSourceKey(eventTypeId: string, eventReferenceId: string): string {
   return `${eventTypeId}|${eventReferenceId}`;
 }
-
-const PHYSICAL_EVENT_TYPES = ["PHYSICAL_INVENTORY", "CYCLE_COUNT"];
-
-const UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES: Record<string, string> = {
-  RECEIPT: "The OMS does not expose the receipt behind this movement.",
-  TRANSFER_RECEIPT: "The OMS does not expose the transfer receipt behind this movement.",
-  RETURN_RESTOCK: "The OMS does not expose the return receipt behind this movement.",
-  POS_ISSUANCE: "The OMS does not expose the POS sale behind this movement.",
-};
 
 const eventSources = ref(new Map<string, InventoryEventSource>());
 
@@ -1290,7 +1291,7 @@ async function eventSourceActorName(userLoginId: string): Promise<string> {
 }
 
 /**
- * RESERVATION_CREATE / RESERVATION_RELEASE -- one call, no scan.
+ * The four reservation families -- generic and transfer, create and release -- one call, no scan.
  *
  * The reference is `inventoryItemId:inventoryItemDetailSeqId`, which is exactly the path id plus the
  * filter this mount takes, so the row it describes is addressable directly. The only family where that
@@ -1314,13 +1315,13 @@ async function resolveReservationSource(lookup: InventoryEventSourceLookup): Pro
 }
 
 /**
- * PHYSICAL_INVENTORY / CYCLE_COUNT -- who, and which count.
+ * SIE_PHYSICAL_INVENTORY / SIE_CYCLE_COUNT -- who, and which count.
  *
  * `varianceDecisions` is the one enrichment resource on this OMS that needs no path scope: it takes the
  * physicalInventoryId straight off the ledger reference. Its own contract describes it as bridging a
  * cycle-count variance to the decision that produced it, which is precisely the question here.
  *
- * A PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
+ * A SIE_PHYSICAL_INVENTORY row is a MANUAL variance and has no count decision behind it, so an empty result
  * is the expected answer for half this family rather than a failure. The fallback -- the manual-variance
  * audit trail on inventoryItem/{id}/variances -- needs an inventoryItemId that only the decision would
  * have supplied, so a manual variance stops here and says so.
@@ -1353,7 +1354,7 @@ async function resolvePhysicalSource(lookup: InventoryEventSourceLookup): Promis
   };
 }
 
-/** EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
+/** SIE_EXTERNAL_RESET -- a direct read by primary key, the only family whose reference is a REST id. */
 async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): Promise<InventoryEventSource> {
   const reset = await readEventSource(`poorti/externalInventoryResets/${encodeURIComponent(lookup.eventReferenceId)}`);
   if(!reset?.resetItemId) {
@@ -1369,9 +1370,9 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
   };
 }
 
-/*
- * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE -- the document behind a movement, in ONE
- * call for a whole page.
+/**
+ * SIE_RECEIPT / SIE_TRANSFER_RECEIPT / SIE_RETURN_RESTOCK / SIE_POS_ISSUANCE -- the families that need a scan.
+ * The document behind a movement is resolved in one GraphQL call for a whole page.
  *
  * These four are the families the REST catalog could not reach from what the ledger carries.
  * `InventoryItemDetailAndOrder` holds the order behind each of them, but both of its mounts are scoped
@@ -1393,11 +1394,9 @@ async function resolveExternalResetSource(lookup: InventoryEventSourceLookup): P
  */
 type MovementFamily = "receipt" | "issuance";
 
-const MOVEMENT_FAMILIES: Record<string, MovementFamily> = {
-  RECEIPT: "receipt",
-  TRANSFER_RECEIPT: "receipt",
-  RETURN_RESTOCK: "receipt",
-  POS_ISSUANCE: "issuance",
+const MOVEMENT_FAMILIES: Partial<Record<InventoryEventSourceRoot, MovementFamily>> = {
+  shipmentReceipts: "receipt",
+  itemIssuances: "issuance",
 };
 
 /**
@@ -1649,38 +1648,25 @@ async function readMovementDocuments(
   return answers;
 }
 
+/**
+ * The one-call-per-row resolvers. The movement roots are absent on purpose: they answer in bulk below,
+ * and `readMovementDocuments` returns an entry for every reference it is asked about, so a movement row
+ * never falls through to a per-row resolver. The configuration families have no root and no resolver.
+ */
 function eventSourceResolverFor(eventTypeId: string) {
-  if(eventTypeId.startsWith("RESERVATION_")) {return resolveReservationSource;}
-  if(PHYSICAL_EVENT_TYPES.includes(eventTypeId)) {return resolvePhysicalSource;}
-  if(eventTypeId === "EXTERNAL_RESET") {return resolveExternalResetSource;}
-
-  /*
-   * RECEIPT / TRANSFER_RECEIPT / RETURN_RESTOCK / POS_ISSUANCE name a document this app cannot reach.
-   * `InventoryItemDetailAndOrder` holds the order behind each of them and accepts `receiptId` and
-   * `itemIssuanceId` as filters, but both of its mounts are scoped by a path -- product + facility, or
-   * inventory item -- and the ledger carries neither, because the event is aggregate over a facility
-   * GROUP. Walking the group's member facilities one call at a time was the workaround, and it cost a
-   * request per facility per row: fine on a two-store channel, fifteen per row on `RetailAggregate`.
-   * These rows now show the reference they carry -- "Shipment receipt 120565" -- which is true, until
-   * an unscoped read exists.
-   *
-   * The configuration families name no document at all. Their references decode locally to ids the app
-   * already holds, and the audit-keyed ones cannot be looked up: entityAuditLogs filters on the changed
-   * entity and its PK values, neither of which the ledger keeps.
-   */
-  const unresolvedMessage = UNSUPPORTED_MOVEMENT_SOURCE_MESSAGES[eventTypeId];
-  if(unresolvedMessage) {
-    return async (): Promise<InventoryEventSource> => ({
-      label: "",
-      unresolved: translate(unresolvedMessage),
-    });
+  switch(sourceRootFor(eventTypeId)) {
+    case "inventoryItemDetails": return resolveReservationSource;
+    case "varianceDecisions": return resolvePhysicalSource;
+    case "externalInventoryResets": return resolveExternalResetSource;
+    default: return null;
   }
-  return null;
 }
 
 /** Families answered in bulk rather than one call per row. Skipped once the OMS says it cannot. */
 function movementFamilyFor(eventTypeId: string): MovementFamily | null {
-  return MOVEMENT_FAMILIES[eventTypeId] ?? null;
+  const root = sourceRootFor(eventTypeId);
+
+  return (root && MOVEMENT_FAMILIES[root]) ?? null;
 }
 
 /**
@@ -1742,7 +1728,7 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
   const movementEntries = entries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId));
   const singleEntries = entries.filter(([, lookup]) => !movementFamilyFor(lookup.eventTypeId));
   for(const family of ["receipt", "issuance"] as MovementFamily[]) {
-    const familyEntries = movementEntries.filter(([, lookup]) => MOVEMENT_FAMILIES[lookup.eventTypeId] === family);
+    const familyEntries = movementEntries.filter(([, lookup]) => movementFamilyFor(lookup.eventTypeId) === family);
     for(let index = 0; index < familyEntries.length; index += MOVEMENT_LOOKUP_CHUNK) {
       const chunk = familyEntries.slice(index, index + MOVEMENT_LOOKUP_CHUNK);
       // One reference can carry two event types (a receipt that is also a restock), so the ids are
@@ -1775,11 +1761,10 @@ async function resolveEventSources(lookups: InventoryEventSourceLookup[]): Promi
         }
         attempt.failures = 0;
         attempt.retryable = false;
-        const fallbackResolver = eventSourceResolverFor(lookup.eventTypeId);
+        // `readMovementDocuments` answers every reference it was given, on every path including its
+        // denials, so the `??` is a belt-and-braces guard rather than a second lookup strategy.
         next.set(key, answers.get(lookup.eventReferenceId)
-          ?? (fallbackResolver
-            ? await fallbackResolver(lookup)
-            : movementUnresolved(translate("The OMS has no inventory movement with this reference."))));
+          ?? movementUnresolved(translate("The OMS has no inventory movement with this reference.")));
         changed = true;
       }
       if(changed) {eventSources.value = next;}
@@ -2327,9 +2312,9 @@ export function useShopifySyncMappings(shopIdSource: ShopIdSource) {
   const forShop = (rows: any[]) => rows.filter((row: any) => String(row.shopId) === shopId.value);
 
   /**
-   * A row with no `mappedValue` is a RETIRED key, not a mapping — retiring is a value-clearing write
-   * because the endpoint has no delete (see `retireTypeMapping`). Counting those rows would report a
-   * family as ready after its only mapping was cleared.
+   * A row with no `mappedValue` is a RETIRED key, not a mapping — left by the value-clearing write that
+   * stood in for a delete before oms v3.1.0 (see `deleteTypeMapping`). Counting those rows would report
+   * a family as ready after its only mapping was cleared.
    */
   const isMapped = (row: any) => Boolean(row?.mappedValue);
   const salesChannelMappings = computed(() =>
@@ -3381,7 +3366,7 @@ function readinessCount(value: readonly unknown[] | number | boolean | undefined
 
 export function deriveOrderSyncMappingReadiness(input: OrderSyncMappingInput): OrderSyncMappingReadiness {
   const typeMappings = selectedShopRecords(input.typeMappings || [], input.selectedShopId);
-  // A value-less row is a retired key, not a mapping — see `retireTypeMapping`.
+  // A value-less row is a retired key, not a mapping — see `deleteTypeMapping`.
   const mappedRowsOfType = (mappedTypeId: string) => typeMappings.filter((record) =>
     firstText(record, ["mappedTypeId", "mappingTypeId"]) === mappedTypeId && Boolean(firstText(record, ["mappedValue"])));
   const salesCount = input.salesChannelMappings === undefined
@@ -3517,9 +3502,9 @@ function normalizeLogOutcome(log: DataManagerLogLike): NormalizedLogOutcome {
 }
 
 function progressLabel(state: SyncProgressState, successful: number, failed: number): string {
-  if(state === "completed") {return `Completed · ${successful} ${successful === 1 ? "order" : "orders"}`;}
-  if(state === "partial") {return `Partially completed · ${successful} processed · ${failed} failed`;}
-  if(state === "failed") {return failed ? `Failed · ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";}
+  if(state === "completed") {return `Completed, ${successful} ${successful === 1 ? "order" : "orders"}`;}
+  if(state === "partial") {return `Partially completed, ${successful} processed, ${failed} failed`;}
+  if(state === "failed") {return failed ? `Failed, ${failed} ${failed === 1 ? "record" : "records"}` : "Failed";}
   if(state === "active") {return "In progress";}
 
   return "Waiting";
@@ -4107,8 +4092,8 @@ export interface ShopifyOrderSyncCardSnapshot {
  * Badge text per progress state.
  *
  * NOT `SyncProgressRow.stateLabel`, which the deleted store used: that reads
- * `"Completed · 5 orders"` — too long for a badge, and it carries the ` · ` separator this app's UI
- * conventions prohibit. The counts belong on the detail line, which is where they already are.
+ * `"Completed, 5 orders"`, which is too long for a badge. The counts belong on the detail line, which is
+ * where they already are.
  *
  * The wording is also load-bearing for COLOUR: the card resolves a badge colour by matching this text
  * (`failed|error` → danger, `partial|paused` → warning, `completed|success` → success,
@@ -7182,6 +7167,95 @@ export async function refreshMappedProductSearchIndex(productId: string) {
   if (!response || response.data == null || commonUtil.hasError(response)) {
     throw new Error(translate('Search index refresh was not confirmed'));
   }
+}
+
+export interface ShopifyProductMappingChoice {
+  productId: string;
+  variantId: string;
+  inventoryItemId: string;
+  title?: string;
+  variantTitle?: string;
+  sku?: string;
+  barcode?: string;
+  status?: string;
+  shopifyProductId?: string;
+  imageUrl?: string;
+  available: boolean;
+}
+
+/** Current shop-scoped mappings, independent of a historical staging diagnostic. */
+const fetchTransferProductMappings = async (shopId: string, productId: string): Promise<ShopifyProductMappingChoice[]> => {
+  if(!shopId || !productId) {throw new Error(translate("Shop and OMS product are required."));}
+  const mappings: ShopifyProductMappingChoice[] = [];
+  for(let pageIndex = 0; ; pageIndex++) {
+    const page = await requestBackend<any>({
+      url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "GET",
+      params: { shopId, pageIndex, pageSize: 100, fieldsToSelect: "shopId,productId,shopifyProductId,shopifyInventoryItemId" },
+    });
+    if(!Array.isArray(page) || page.some(row => String(row.shopId) !== shopId || String(row.productId) !== productId)) {
+      throw new Error(translate("Current product mappings could not be verified."));
+    }
+    mappings.push(...page.map(row => ({ productId, variantId: String(row.shopifyProductId), inventoryItemId: String(row.shopifyInventoryItemId || ""), available: false })));
+    if(page.length < 100) {break;}
+  }
+
+  return mappings;
+};
+
+/** Resolve the actual variants; Solr's OMS name cannot distinguish duplicate Shopify mappings. */
+const fetchTransferMappingChoices = async (shopId: string, productId: string): Promise<ShopifyProductMappingChoice[]> => {
+  const mappings = await fetchTransferProductMappings(shopId, productId);
+  for(let offset = 0; offset < mappings.length; offset += 100) {
+    const batch = mappings.slice(offset, offset + 100);
+    const result = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+      shopId,
+      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status } } } }",
+      variables: { ids: batch.map(row => `gid://shopify/ProductVariant/${row.variantId}`) },
+    } });
+    if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(result.response?.nodes)) {
+      throw new Error(translate("Shopify variants could not be loaded. Recheck before changing mappings."));
+    }
+    for(const row of batch) {
+      const variant = result.response.nodes.find((node: any) => node?.id === `gid://shopify/ProductVariant/${row.variantId}`);
+      if(!variant) {continue;}
+      Object.assign(row, { title: variant.product?.title, variantTitle: variant.title, sku: variant.sku, barcode: variant.barcode,
+        status: variant.product?.status, shopifyProductId: variant.product?.id?.split("/").pop(), imageUrl: variant.image?.url,
+        available: variant.inventoryItem?.id === `gid://shopify/InventoryItem/${row.inventoryItemId}` });
+    }
+  }
+
+  return mappings;
+};
+
+const mappingFingerprint = (rows: ShopifyProductMappingChoice[]): string => {
+  return rows.map(row => `${row.productId}:${row.variantId}:${row.inventoryItemId}`).sort().join("|");
+};
+
+/** Explicit catalog repair. Recheck before writing and verify the retained mapping after writing. */
+const keepTransferProductMapping = async (shopId: string, productId: string, keepVariantId: string, expected: ShopifyProductMappingChoice[]) => {
+  const current = await fetchTransferMappingChoices(shopId, productId);
+  if(mappingFingerprint(current) !== mappingFingerprint(expected) || !current.some(row => row.variantId === keepVariantId && row.available)) {
+    throw new Error(translate("Mappings changed since you opened this page. Recheck and choose again."));
+  }
+  try {
+    for(const row of current.filter(row => row.variantId !== keepVariantId)) {
+      const response: any = await api({ url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "DELETE",
+        params: { shopId, shopifyProductId: row.variantId } });
+      if(!response || response.data == null || commonUtil.hasError(response)) {throw new Error("Mapping removal was rejected");}
+    }
+    const remaining = await fetchTransferProductMappings(shopId, productId);
+    if(remaining.length !== 1 || remaining[0].variantId !== keepVariantId || remaining[0].inventoryItemId !== current.find(row => row.variantId === keepVariantId)?.inventoryItemId) {
+      throw new Error("Unverified mapping change");
+    }
+  } catch {
+    // A lost response may follow a committed delete; never invite blind replay of this action.
+    throw new Error(translate("The mapping change could not be fully verified. Some mappings may have changed. Recheck the current mappings before trying again."));
+  }
+};
+
+/** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
+export function useTransferMappingResolution() {
+  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
 }
 
 /** Read every variant and its existing OMS mapping without re-running an import. */

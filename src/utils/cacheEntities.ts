@@ -1,5 +1,4 @@
 import { defineCachedEntity } from "./appCacheDb";
-import { locationInventoryAdjustmentKey } from "./shopifyLocationInventory";
 
 /**
  * Cached entity definitions — the shared contract between the worker (which writes) and views /
@@ -407,10 +406,16 @@ export const shopifyLocationProjection = {
     shopifyLocationId: "text",
     lastUpdatedStamp: "date",
   },
+  /**
+   * The entity PK, (shopId, facilityId). Several facilities may map to ONE Shopify location, and
+   * keying on `shopifyLocationId` collapsed them into a single row, so all but one read as unmapped.
+   * A row with no `shopifyLocationId` is a leftover of clearing by value, not a mapping, and stays
+   * out of the cache.
+   */
   buildKey: (raw: Record<string, unknown>) => {
-    if(!raw?.shopId || !raw?.shopifyLocationId) {return undefined;}
+    if(!raw?.shopId || !raw?.facilityId || !raw?.shopifyLocationId) {return undefined;}
 
-    return `${raw.shopId}|${raw.shopifyLocationId}`;
+    return `${raw.shopId}|${raw.facilityId}`;
   },
 } as const;
 
@@ -453,100 +458,52 @@ export const dataFeedProjection = {
 } as const;
 
 /**
- * ShopifyInventoryAdjustmentDetail — the write-ahead event ledger behind aggregate inventory.
- * Mirrors the server entity, whose PK is
- * eventTypeId + eventReferenceId + inventoryChannelId + shopifyInventoryItemId; `adjustmentKey` is
- * the synthetic cache key for that so fan-out rows never overwrite each other.
- *
- * Deliberately absent, because the server row does not carry them:
- *  - shopId / shopifyLocationId — the channel IS the target identity (it maps a facility group to
- *    exactly one shop and one Shopify location). Scope by channel, resolve the shop through
- *    `inventoryChannels`.
- *  - productId / shopifyProductId / internalName — a detail row identifies a Shopify inventory item
- *    at a channel and carries no OMS product. Consumers needing a product join ShopifyShopProduct
- *    on shopId + shopifyInventoryItemId.
+ * The top-level columns both ledgers index on; the model reads everything else from `raw`. Never
+ * `detailStatusId`: delivery is derived from the message link and the delta (`src/utils/inventoryEvents.ts`).
  */
+const INVENTORY_LEDGER_FIELDS = {
+  shopId: "text",
+  shopifyInventoryItemId: "text",
+  computedInventoryChange: "count",
+  systemMessageId: "text",
+  createdDate: "date",
+  detailLastUpdatedStamp: "date",
+  systemMessageLastUpdatedStamp: "date",
+} as const;
+
+/**
+ * A ledger row's key from its real primary key. A missing part drops the row, so if rows ever stop
+ * caching while the request returns 200, the identity has drifted from the server: the connector once
+ * split a packed `eventKey` into these two columns, and the cache silently stayed empty.
+ */
+function ledgerKey(...fields: string[]) {
+  return (raw: Record<string, unknown>): string | undefined => {
+    const identity = fields.map((field) => raw?.[field]);
+    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
+
+    return JSON.stringify(identity.map(String));
+  };
+}
+
+export const locationInventoryAdjustmentKey = ledgerKey("eventTypeId", "eventReferenceId", "shopId", "shopifyLocationId", "shopifyInventoryItemId");
+
+/** The aggregate ledger; its view aliases `shopId` and `shopifyLocationId` from the channel. */
 export const shopifyInventoryAdjustmentDetailProjection = {
   keyField: "adjustmentKey",
   fields: {
     adjustmentKey: "text",
-    eventTypeId: "text",
-    eventReferenceId: "text",
-    eventTypeDescription: "text",
-    shopifyReason: "text",
+    ...INVENTORY_LEDGER_FIELDS,
     inventoryChannelId: "text",
-    shopifyInventoryItemId: "text",
-    computedInventoryChange: "count",
-    decisionComment: "text",
-    systemMessageId: "text",
-    detailStatusId: "text",
-    createdDate: "date",
-    lastUpdatedStamp: "date",
-    facilityGroupId: "text",
-    inventoryChannelDescription: "text",
-    // Aliased onto the view from the channel, so a row carries its own target location without
-    // depending on the channel cache being warm.
-    shopifyLocationId: "text",
-    // Normally null. Set only on a delta written to drain a location the channel has stopped pointing
-    // at, and dropping it here made that row indistinguishable from an ordinary one on screen -- while
-    // the publisher still sends it to the OLD location. This is the field a retarget turns on.
-    publishShopifyLocationId: "text",
-    systemMessageStatusId: "text",
-    systemMessageInitDate: "date",
-    systemMessageProcessedDate: "date",
-    systemMessageLastAttemptDate: "date",
   },
-  /**
-   * The ledger's real primary key: (eventTypeId, eventReferenceId, inventoryChannelId,
-   * shopifyInventoryItemId). The type says WHAT KIND of source event a row came from, the
-   * reference says WHICH occurrence of it.
-   *
-   * This used to key on a single packed `eventKey`. The connector split that into two columns and
-   * `eventKey` no longer exists on the view or the endpoint, so every row hit the
-   * `undefined`-on-missing-field guard below and was dropped - silently, because the request still
-   * returned 200 with a correct payload. The cache stayed empty forever, and the page reported
-   * "0 aggregate events pending batching" and "No inventory events match this view" while the
-   * ledger held real pending rows.
-   *
-   * If this guard ever starts returning undefined again, the identity has drifted from the server
-   * - check the endpoint's field names before assuming there is no data.
-   */
-  buildKey: (raw: Record<string, unknown>) => {
-    const identity = [
-      raw?.eventTypeId,
-      raw?.eventReferenceId,
-      raw?.inventoryChannelId,
-      raw?.shopifyInventoryItemId,
-    ];
-    if(identity.some((value) => value === undefined || value === null || value === "")) {return undefined;}
-
-    return JSON.stringify(identity.map(String));
-  },
+  buildKey: ledgerKey("eventTypeId", "eventReferenceId", "inventoryChannelId", "shopifyInventoryItemId"),
 } as const;
 
-/**
- * ShopifyLocationInventoryAdjustmentDetail — the per-Shopify-location real-time inventory push
- * ledger. Distinct from `shopifyInventoryAdjustmentDetailProjection` (the AGGREGATE channel
- * ledger): this row carries `shopId`/`shopifyLocationId` directly rather than resolving them
- * through a channel, because real-time location push targets one Shopify location per mapped
- * facility rather than a facility-group aggregate. PK is eventTypeId + eventReferenceId + shopId +
- * shopifyLocationId + shopifyInventoryItemId, so `locationAdjustmentKey` is the synthetic cache key for that.
- */
+/** The physical ledger: one source event applied to one Shopify inventory level. */
 export const shopifyLocationInventoryAdjustmentDetailProjection = {
   keyField: "locationAdjustmentKey",
   fields: {
     locationAdjustmentKey: "text",
-    eventTypeId: "text",
-    eventReferenceId: "text",
-    eventTypeDescription: "text",
-    shopId: "text",
-    shopifyLocationId: "text",
-    shopifyInventoryItemId: "text",
-    computedInventoryChange: "count",
-    decisionComment: "text",
-    systemMessageId: "text",
-    createdDate: "date",
-    lastUpdatedStamp: "date",
+    ...INVENTORY_LEDGER_FIELDS,
   },
   buildKey: locationInventoryAdjustmentKey,
 } as const;
@@ -708,7 +665,7 @@ export const productStoreShippingMethodProjection = {
 export const shopifyCarrierShipmentCache = defineCachedEntity("shopifyCarrierShipments", shopifyCarrierShipmentProjection);
 export const productStoreShippingMethodCache = defineCachedEntity("productStoreShippingMethods", productStoreShippingMethodProjection);
 
-/** EnumerationGroupMember rows for a NetSuite reason group. PK UNVERIFIED (empty on this instance). */
+/** EnumerationGroupMember rows for a NetSuite reason group. */
 export const enumGroupMemberProjection = {
   keyField: "enumGroupMemberKey",
   fields: {
@@ -718,7 +675,7 @@ export const enumGroupMemberProjection = {
   buildKey: (raw: Record<string, unknown>) => {
     if(!raw?.enumId) {return undefined;}
 
-    return `${raw.enumerationGroupId ?? "NETSUITE_IIV_REASON"}|${raw.enumId}`;
+    return `${raw.enumerationGroupId ?? "IA_VAR_NETSUITE"}|${raw.enumId}`;
   },
 } as const;
 
@@ -1232,20 +1189,39 @@ export const shopifyTransferPendingProjection = {
 
 export const shopifyTransferPendingCache = defineCachedEntity("shopifyTransferPending", shopifyTransferPendingProjection);
 
-/** Server-computed location inventory KPI totals, one authoritative summary per shop. */
-export const shopifyLocationInventorySummaryProjection = {
-  keyField: "shopId",
+/** The cache key of one shop's inventory item: Shopify's inventory item id is only unique per shop. */
+export function shopifyInventoryItemKey(shopId: unknown, shopifyInventoryItemId: unknown): string {
+  return `${String(shopId ?? "")}|${String(shopifyInventoryItemId ?? "")}`;
+}
+
+/** An inventory item as Shopify describes it (`shopify/graphql`); the ids are Shopify's numeric ones. */
+export const shopifyInventoryItemProjection = {
+  keyField: "itemKey",
   fields: {
+    itemKey: "text",
     shopId: "text",
-    backlogCount: "count",
-    oldestBacklogDate: "date",
-    errorLinkedCount: "count",
-    noOpOrQuarantinedCount: "count",
+    shopifyInventoryItemId: "text",
+    sku: "text",
+    shopifyVariantId: "text",
+    variantTitle: "text",
+    shopifyProductId: "text",
+    productTitle: "text",
+    imageUrl: "text",
   },
+  buildKey: (raw: Record<string, unknown>) => (raw?.shopId && raw?.shopifyInventoryItemId
+    ? shopifyInventoryItemKey(raw.shopId, raw.shopifyInventoryItemId)
+    : undefined),
 } as const;
 
-export const shopifyLocationInventorySummaryCache = defineCachedEntity(
-  "shopifyLocationInventorySummaries",
-  shopifyLocationInventorySummaryProjection,
-);
+export const shopifyInventoryItemCache = defineCachedEntity("shopifyInventoryItems", shopifyInventoryItemProjection);
+
+/** A ledger's oldest row on the server for one shop; absent `oldestCreatedDate` means the server has none. */
+export const inventoryLedgerBoundProjection = {
+  keyField: "boundKey",
+  fields: { boundKey: "text", kind: "text", shopId: "text", oldestCreatedDate: "date" },
+  buildKey: (raw: Record<string, unknown>) => (raw?.kind && raw?.shopId ? `${raw.kind}|${raw.shopId}` : undefined),
+} as const;
+
+export const inventoryLedgerBoundCache = defineCachedEntity("inventoryLedgerBounds", inventoryLedgerBoundProjection);
+
 

@@ -112,3 +112,21 @@ export const appSyncConfig: AppSyncConfig = {
 export function liveScopeFor(domain: string): LiveDomainScope {
   return appSyncConfig.live[domain] ?? {};
 }
+
+/** The inventory sync area's class-A domains, named once for the worker and the area service. */
+export const INVENTORY_EVENT_DOMAINS = {
+  channelRows: "shopifyInventoryAdjustmentDetail",
+  channelMessages: "shopifyInventoryAdjustmentDetailMessage",
+  locationRows: "shopifyLocationInventoryAdjustmentDetail",
+  locationMessages: "shopifyLocationInventoryAdjustmentDetailMessage",
+  systemMessages: "inventoryEventSystemMessage",
+  products: "inventoryEventProduct",
+  bounds: "inventoryEventBounds",
+} as const;
+
+/** `bounds` is not polled: each history page asks for it once when it loads. */
+export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {
+  return Object.values(INVENTORY_EVENT_DOMAINS)
+    .filter((name) => name !== INVENTORY_EVENT_DOMAINS.bounds)
+    .map((name) => ({ name, args: { shopId } }));
+}

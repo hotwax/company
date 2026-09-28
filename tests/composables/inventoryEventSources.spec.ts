@@ -25,10 +25,21 @@ vi.mock("@/composables/useCachedList", () => ({
 
 import { clearSessionScopedState } from "@/composables/sessionScope";
 import { useInventoryEventSources } from "@/composables/useShopify";
+/** Ledger ids as the OMS writes them — fixtures, not a catalog: the app owns no copy of the vocabulary. */
+const EVENT_TYPE = {
+  RECEIPT: "SIE_RECEIPT", TRANSFER_RECEIPT: "SIE_TRANSFER_RECEIPT", RETURN_RESTOCK: "SIE_RETURN_RESTOCK",
+  POS_ISSUANCE: "SIE_POS_ISSUANCE", CYCLE_COUNT: "SIE_CYCLE_COUNT",
+} as const;
+
+/** Both reservation pairs, generic and transfer. A shrunk list would make the test below vacuous. */
+const RESERVATION_EVENT_TYPES = [
+  "SIE_RESERVATION_CREATE", "SIE_RESERVATION_RELEASE",
+  "SIE_TRANSFER_RESERVATION_CREATE", "SIE_TRANSFER_RESERVATION_RELEASE",
+];
 
 /** A cycle count resolves through one call to `varianceDecisions`, so it is the cheapest probe. */
 const countLookup = (eventReferenceId = "PI_1") => ({
-  eventTypeId: "CYCLE_COUNT",
+  eventTypeId: EVENT_TYPE.CYCLE_COUNT,
   eventReferenceId,
 });
 
@@ -50,7 +61,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     const calls = harness.api.mock.calls.length;
     await resolve([countLookup()]);
 
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.label).toContain("Weekly count");
     expect(harness.api.mock.calls.length).toBe(calls);
   });
 
@@ -59,16 +70,16 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([
-      { eventTypeId: "RECEIPT", eventReferenceId: "R1", productId: "P1" },
-      { eventTypeId: "TRANSFER_RECEIPT", eventReferenceId: "R2", productId: "P1" },
-      { eventTypeId: "RETURN_RESTOCK", eventReferenceId: "R3", productId: "P1" },
-      { eventTypeId: "POS_ISSUANCE", eventReferenceId: "I1", productId: "P1" },
+      { eventTypeId: EVENT_TYPE.RECEIPT, eventReferenceId: "R1" },
+      { eventTypeId: EVENT_TYPE.TRANSFER_RECEIPT, eventReferenceId: "R2" },
+      { eventTypeId: EVENT_TYPE.RETURN_RESTOCK, eventReferenceId: "R3" },
+      { eventTypeId: EVENT_TYPE.POS_ISSUANCE, eventReferenceId: "I1" },
     ]);
 
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain("no inventory movement");
-    expect(sources.value.get(sourceKeyOf("TRANSFER_RECEIPT", "R2"))?.unresolved).toContain("no inventory movement");
-    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R3"))?.unresolved).toContain("no inventory movement");
-    expect(sources.value.get(sourceKeyOf("POS_ISSUANCE", "I1"))?.unresolved).toContain("no inventory movement");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.unresolved).toContain("no inventory movement");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.TRANSFER_RECEIPT, "R2"))?.unresolved).toContain("no inventory movement");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RETURN_RESTOCK, "R3"))?.unresolved).toContain("no inventory movement");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.POS_ISSUANCE, "I1"))?.unresolved).toContain("no inventory movement");
   });
 
   /**
@@ -86,7 +97,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     // Three attempts, then the page stops asking — not one per tick for the life of the session.
     expect(harness.api.mock.calls.length).toBe(3);
     expect(harness.api.mock.calls.every(([args]: any[]) => String(args?.url).includes("varianceDecisions"))).toBe(true);
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.unresolved)
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.unresolved)
       .toContain("no longer being retried");
   });
 
@@ -99,7 +110,34 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
     await resolve([countLookup()]);
     await resolve([countLookup()]);
 
-    expect(sources.value.get(sourceKeyOf("CYCLE_COUNT", "PI_1"))?.label).toContain("Weekly count");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.CYCLE_COUNT, "PI_1"))?.label).toContain("Weekly count");
+  });
+
+  /**
+   * The trap the `SIE_` rename sets. The transfer pair is spelled `SIE_TRANSFER_RESERVATION_*`, so the
+   * prefix test this dispatch used to run -- `startsWith("RESERVATION_")`, and equally a naive
+   * `startsWith("SIE_RESERVATION_")` -- matches only the generic two and leaves a transfer-order
+   * reservation with NO resolver at all: no order on the row, and its reference rendered as one opaque
+   * colon-joined token. All four families read the same InventoryItemDetail row.
+   */
+  it("resolves every reservation family, the new transfer ones included", async () => {
+    harness.api.mockResolvedValue({
+      data: [{ orderId: "TO_1", orderName: "TO-55", orderTypeId: "TRANSFER_ORDER" }],
+    });
+    const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
+
+    await resolve(RESERVATION_EVENT_TYPES.map((eventTypeId) => ({
+      eventTypeId,
+      eventReferenceId: "INV_1:00001",
+      productId: "P1",
+      facilityIds: ["FAC_1"],
+    })));
+
+    // Generic create/release plus transfer create/release — a shrunk list would make this vacuous.
+    expect(RESERVATION_EVENT_TYPES.length).toBe(4);
+    for(const eventTypeId of RESERVATION_EVENT_TYPES) {
+      expect(sources.value.get(sourceKeyOf(eventTypeId, "INV_1:00001"))?.label).toContain("TO-55");
+    }
   });
 
   it("does not re-queue keys a concurrent pass is already resolving", async () => {
@@ -144,7 +182,7 @@ describe("useInventoryEventSources — asking once, retrying only when it helps"
  * GraphQL movement root, so what is worth testing is the batching, the fallback when the OMS predates
  * that root, and that a row is never left silently blank.
  */
-const receiptLookup = (eventReferenceId: string, eventTypeId = "RECEIPT") => ({
+const receiptLookup = (eventReferenceId: string, eventTypeId = EVENT_TYPE.RECEIPT) => ({
   eventTypeId,
   eventReferenceId,
 });
@@ -204,11 +242,11 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     // `first` is the id count exactly: these roots are 1:1 on their PK, and the governor charges per row.
     expect(movementCalls()[0][0].data.variables.first).toBe(3);
     expect(orderCalls()[0][0].data.variables.q).toBe("orderId:10779,10780");
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.label).toBe("Purchase order WeeklyASN_5");
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toBe("Transfer order TO-42");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.label).toBe("Purchase order WeeklyASN_5");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R2"))?.label).toBe("Transfer order TO-42");
     // A receipt with no order is a real answer, not a blank row.
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R3"))?.label).toBe("");
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R3"))?.unresolved).toContain("no order");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R3"))?.label).toBe("");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R3"))?.unresolved).toContain("no order");
   });
 
   /**
@@ -230,7 +268,7 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     await resolve([receiptLookup("R2")]);
 
     expect(orderCalls().length).toBe(1);
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toBe("Transfer order MULTISHOP-85");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R2"))?.label).toBe("Transfer order MULTISHOP-85");
   });
 
   it("names the return behind a restock receipt, which belongs to no order", async () => {
@@ -240,18 +278,18 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     ]));
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
-    await resolve([receiptLookup("R1", "RETURN_RESTOCK"), receiptLookup("R2", "RETURN_RESTOCK")]);
+    await resolve([receiptLookup("R1", EVENT_TYPE.RETURN_RESTOCK), receiptLookup("R2", EVENT_TYPE.RETURN_RESTOCK)]);
 
-    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R1"))?.label).toBe("Return M101225");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RETURN_RESTOCK, "R1"))?.label).toBe("Return M101225");
     // Neither an order nor a return: "carries no order" is the truth only here.
-    expect(sources.value.get(sourceKeyOf("RETURN_RESTOCK", "R2"))?.unresolved).toContain("no order");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RETURN_RESTOCK, "R2"))?.unresolved).toContain("no order");
   });
 
   it("asks separately per family, because each filters on its own key", async () => {
     respondWith(movementResponse([]));
     const { resolve } = useInventoryEventSources();
 
-    await resolve([receiptLookup("R1"), receiptLookup("I1", "POS_ISSUANCE")]);
+    await resolve([receiptLookup("R1"), receiptLookup("I1", EVENT_TYPE.POS_ISSUANCE)]);
 
     const queries = movementCalls().map(([args]: any[]) => args.data.variables.q).sort();
     expect(queries).toEqual(["itemIssuanceId:I1", "receiptId:R1"]);
@@ -267,10 +305,10 @@ describe("useInventoryEventSources — the document behind a movement", () => {
 
     await resolve([receiptLookup("R1")]);
     // A later pass, and a different reference, must not re-ask: the remote schema is fixed at startup.
-    await resolve([receiptLookup("R2"), receiptLookup("I1", "POS_ISSUANCE")]);
+    await resolve([receiptLookup("R2"), receiptLookup("I1", EVENT_TYPE.POS_ISSUANCE)]);
 
     expect(graphqlCalls().length).toBe(1);
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain("does not expose");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.unresolved).toContain("does not expose");
   });
 
   /**
@@ -286,10 +324,10 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1")]);
-    await resolve([receiptLookup("R2"), receiptLookup("I1", "POS_ISSUANCE")]);
+    await resolve([receiptLookup("R2"), receiptLookup("I1", EVENT_TYPE.POS_ISSUANCE)]);
 
     expect(graphqlCalls().length).toBe(1);
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.unresolved).toContain(expected);
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.unresolved).toContain(expected);
   });
 
   it("does not let a stale pre-logout capability response poison the next session", async () => {
@@ -315,7 +353,7 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     await Promise.all([previousSession, nextSession]);
 
     expect(movementCalls().length).toBe(2);
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.label).toContain("Next-session order");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R2"))?.label).toContain("Next-session order");
   });
 
   /**
@@ -335,7 +373,7 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     const passes = [
       resolve([receiptLookup("R1")]),
       resolve([receiptLookup("R2")]),
-      resolve([receiptLookup("R3"), receiptLookup("I1", "POS_ISSUANCE")]),
+      resolve([receiptLookup("R3"), receiptLookup("I1", EVENT_TYPE.POS_ISSUANCE)]),
     ];
     release(undefined);
     await Promise.all(passes);
@@ -351,7 +389,7 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     await resolve([receiptLookup("R0")]);
     const afterProbe = movementCalls().length;
     // ...so a later pass pays no gate, and each family still gets its own query.
-    await resolve([receiptLookup("R1"), receiptLookup("I1", "POS_ISSUANCE")]);
+    await resolve([receiptLookup("R1"), receiptLookup("I1", EVENT_TYPE.POS_ISSUANCE)]);
 
     expect(movementCalls().length - afterProbe).toBe(2);
   });
@@ -373,7 +411,7 @@ describe("useInventoryEventSources — the document behind a movement", () => {
 
     await resolve([receiptLookup("R1"), receiptLookup("R_MISSING")]);
 
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R_MISSING"))?.unresolved).toContain("no inventory movement");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R_MISSING"))?.unresolved).toContain("no inventory movement");
   });
 
   it("does not name a row from a page that filled up, and says why", async () => {
@@ -383,8 +421,8 @@ describe("useInventoryEventSources — the document behind a movement", () => {
 
     await resolve([receiptLookup("R1"), receiptLookup("R2")]);
 
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.label).toBe("Purchase order WeeklyASN_5");
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R2"))?.unresolved).toContain("Too many movements");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.label).toBe("Purchase order WeeklyASN_5");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R2"))?.unresolved).toContain("Too many movements");
   });
 
   it("retries a failed batch instead of marking every row in it permanently unresolvable", async () => {
@@ -394,9 +432,9 @@ describe("useInventoryEventSources — the document behind a movement", () => {
     const { sources, resolve, sourceKeyOf } = useInventoryEventSources();
 
     await resolve([receiptLookup("R1")]);
-    expect(sources.value.has(sourceKeyOf("RECEIPT", "R1"))).toBe(false);
+    expect(sources.value.has(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))).toBe(false);
 
     await resolve([receiptLookup("R1")]);
-    expect(sources.value.get(sourceKeyOf("RECEIPT", "R1"))?.label).toBe("Purchase order WeeklyASN_5");
+    expect(sources.value.get(sourceKeyOf(EVENT_TYPE.RECEIPT, "R1"))?.label).toBe("Purchase order WeeklyASN_5");
   });
 });

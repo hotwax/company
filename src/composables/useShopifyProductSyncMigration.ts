@@ -234,7 +234,7 @@ export function buildLegacySystemMessageItem(systemMessage: any): ProductSyncMig
     id: String(systemMessage?.systemMessageId || "").trim(),
     label: getLegacySystemMessageLabel(systemMessage),
     status: "active",
-    note: `${statusId || "Unknown status"}${formattedInitDate ? ` · ${formattedInitDate}` : ""}`,
+    note: `${statusId || "Unknown status"}${formattedInitDate ? `, ${formattedInitDate}` : ""}`,
     systemMessageTypeId: systemMessage?.systemMessageTypeId,
     remoteMessageId: systemMessage?.remoteMessageId,
     systemMessageRemoteId: systemMessage?.systemMessageRemoteId

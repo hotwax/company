@@ -75,7 +75,7 @@ import { businessOutline, desktopOutline, arrowForwardOutline } from "ionicons/i
 import { commonUtil, translate, logger } from "@common";
 
 const userStore = useUserStore();
-const { consumeUserCreationDraft } = useUserAccountActions();
+const { consumeUserCreationDraft, createUserAccountAndSetup } = useUserAccountActions();
 
 const isFacilityLogin = ref(false);
 const formData = ref({
@@ -171,29 +171,16 @@ const createUser = async () => {
       payload.externalId = formData.value.externalId;
     }
 
-    const resp = await userStore.createUser(payload);
-    if(resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
-      const partyId = resp.data.partyId;
+    const { partyId } = await createUserAccountAndSetup(
+      payload,
+      partyTypeId,
+      formData.value.facilityId,
+      formData.value.emailAddress,
+      formData.value.contactNumber
+    );
 
-      await userStore.ensurePartyRole({ partyId, roleTypeId: "APPLICATION_USER" });
-
-      if(partyTypeId === "PARTY_GROUP") {
-        await userStore.addPartyToFacility({ partyId, facilityId: formData.value.facilityId, roleTypeId: "WAREHOUSE_PICKER" });
-      }
-      if(formData.value.emailAddress) {
-        await userStore.createUpdatePartyEmailAddress({ partyId, emailAddress: formData.value.emailAddress, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
-      }
-      if(formData.value.contactNumber) {
-        await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber: formData.value.contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
-      }
-
-      await userStore.indexEmployee(partyId);
-
-      commonUtil.showToast(translate("User created successfully"));
-      router.replace({ path: `/user-confirmation/${partyId}` });
-    } else {
-      throw resp.data;
-    }
+    commonUtil.showToast(translate("User created successfully"));
+    router.replace({ path: `/user-confirmation/${partyId}` });
   } catch (err: any) {
     let errorMessage = translate("Failed to create user.");
     if(err?.response?.data?.error?.message) {
