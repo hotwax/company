@@ -151,7 +151,6 @@ import {
   type ShopifyMetafieldDefinition,
   checkMetafieldSelector,
   isCalendarMetafieldType,
-  parseMetafieldSelector,
 } from "@/utils/shopifyMetafieldDefinitions"
 
 const props = defineProps<{
@@ -267,7 +266,8 @@ async function loadDefinitions() {
 // Re-reads Shopify without the list's loading state, so the list never collapses under the form.
 async function checkManualSelector() {
   const selector = manualSelector.value.trim()
-  if(!parseMetafieldSelector(selector)) {
+  // The connector cannot parse a malformed value, so reject it without asking Shopify.
+  if(checkMetafieldSelector(selector, definitions.value).status === "invalid") {
     manualCheck.value = { selector, result: { status: "invalid" } }
 
     return

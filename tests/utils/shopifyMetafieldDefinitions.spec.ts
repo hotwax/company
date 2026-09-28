@@ -3,7 +3,6 @@ import {
   type ShopifyMetafieldDefinition,
   checkMetafieldSelector,
   parseMetafieldDefinitionsPage,
-  parseMetafieldSelector,
 } from "@/utils/shopifyMetafieldDefinitions"
 
 const definition = (overrides: Partial<ShopifyMetafieldDefinition>): ShopifyMetafieldDefinition => ({
@@ -16,13 +15,15 @@ const definition = (overrides: Partial<ShopifyMetafieldDefinition>): ShopifyMeta
   ...overrides,
 })
 
-describe("parseMetafieldSelector", () => {
+describe("selector format", () => {
   it("splits at the first colon, as the connector does", () => {
-    expect(parseMetafieldSelector(" custom:launch:us ")).toEqual({ namespace: "custom", key: "launch:us" })
+    const launch = definition({ key: "launch:us", selector: "custom:launch:us" })
+
+    expect(checkMetafieldSelector(" custom:launch:us ", [launch])).toEqual({ status: "match", matches: [launch] })
   })
 
   it.each(["", "go_live_date", ":go_live_date", "custom:", "HC_PREORDER.PROMISE_DATE"])("rejects %j", (value) => {
-    expect(parseMetafieldSelector(value)).toBeNull()
+    expect(checkMetafieldSelector(value, [definition({})])).toEqual({ status: "invalid" })
   })
 })
 

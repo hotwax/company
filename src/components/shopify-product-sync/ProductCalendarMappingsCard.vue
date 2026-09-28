@@ -11,7 +11,6 @@
         :key="field.key"
         :button="hydrated"
         :detail="hydrated"
-        :disabled="hydrated && (!shopId || !!savingField)"
         :data-testid="`calendar-mapping-${field.key}`"
         @click="openPicker(field.key)"
       >
@@ -24,7 +23,6 @@
             {{ committedValues[field.key] || translate("Not mapped") }}
           </p>
         </ion-label>
-        <ion-spinner v-if="savingField === field.key" slot="end" name="crescent" />
       </ion-item>
     </ion-list>
 
@@ -32,7 +30,7 @@
       :field="editingFieldConfig"
       :current-selector="editingField ? committedValues[editingField] : ''"
       :system-message-remote-id="remoteId"
-      :saving="!!savingField"
+      :saving="saving"
       @close="closePicker"
       @save="(selector) => editingField && saveField(editingField, selector)"
     />
@@ -50,7 +48,6 @@ import {
   IonLabel,
   IonList,
   IonSkeletonText,
-  IonSpinner,
 } from "@ionic/vue"
 import { computed, ref, watch } from "vue"
 import CalendarMetafieldPickerModal from "@/components/shopify-product-sync/CalendarMetafieldPickerModal.vue"
@@ -98,8 +95,9 @@ const mappingByField = computed<Partial<Record<CalendarDateField, Record<string,
 })
 // Follows the cache, except after a committed write whose cache refresh failed (see saveField).
 const committedValues = ref<FieldValues>(emptyValues())
-// Every save refreshes the shop's whole type-mapping partition, so one pending save locks all fields.
-const savingField = ref<CalendarDateField | null>(null)
+// Every save refreshes the shop's whole type-mapping partition. The picker stays open and cannot be
+// dismissed while a save is pending, so saves never overlap.
+const saving = ref(false)
 const editingField = ref<CalendarDateField | null>(null)
 const editingFieldConfig = computed(() => calendarFields.find((field) => field.key === editingField.value) ?? null)
 
@@ -110,24 +108,24 @@ watch(mappingByField, (currentMappings) => {
 }, { immediate: true })
 
 function openPicker(field: CalendarDateField) {
-  if(hydrated.value && props.shopId && !savingField.value) {
+  if(hydrated.value && props.shopId) {
     editingField.value = field
   }
 }
 
 function closePicker() {
-  if(!savingField.value) {
+  if(!saving.value) {
     editingField.value = null
   }
 }
 
 async function saveField(field: CalendarDateField, selector: string) {
   const mappedValue = normalize(selector)
-  if(savingField.value || mappedValue === committedValues.value[field]) {
+  if(saving.value || mappedValue === committedValues.value[field]) {
     return
   }
 
-  savingField.value = field
+  saving.value = true
   try {
     const response = mappedValue
       ? await shopMutations.saveTypeMapping({
@@ -154,7 +152,7 @@ async function saveField(field: CalendarDateField, selector: string) {
       commonUtil.showToast(translate("Failed to update mapping"))
     }
   } finally {
-    savingField.value = null
+    saving.value = false
   }
 }
 </script>

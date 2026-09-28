@@ -3,7 +3,7 @@ export type ShopifyMetafieldOwnerType = "PRODUCT" | "PRODUCTVARIANT";
 export const SHOPIFY_METAFIELD_OWNER_TYPES: ShopifyMetafieldOwnerType[] = ["PRODUCT", "PRODUCTVARIANT"];
 
 /** The product sync reads a calendar metafield only when its type is one of these; it skips any other. */
-export const CALENDAR_METAFIELD_TYPES = ["date", "date_time"];
+const CALENDAR_METAFIELD_TYPES = ["date", "date_time"];
 
 export interface ShopifyMetafieldDefinition {
   ownerType: ShopifyMetafieldOwnerType;
@@ -51,7 +51,7 @@ export function isCalendarMetafieldType(type: string) {
  * Split a stored selector the way the connector does: at the FIRST colon, with a non-empty namespace
  * and key. The connector silently drops any value this rejects, so the editor must refuse it too.
  */
-export function parseMetafieldSelector(value: unknown): { namespace: string; key: string } | null {
+function parseMetafieldSelector(value: unknown): { namespace: string; key: string } | null {
   const selector = String(value ?? "").trim();
   const separator = selector.indexOf(":");
   if(separator <= 0 || separator >= selector.length - 1) {return null;}

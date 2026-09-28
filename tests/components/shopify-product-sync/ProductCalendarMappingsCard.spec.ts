@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   hydrated: true,
   saveTypeMapping: vi.fn(),
   deleteTypeMapping: vi.fn(),
-  refreshTypeMappings: vi.fn(),
   hasError: vi.fn(),
   showToast: vi.fn(),
   logger: { error: vi.fn() },
@@ -35,7 +34,6 @@ vi.mock("@/composables/useShopify", async () => {
     useShopifyShopMutations: () => ({
       saveTypeMapping: mocks.saveTypeMapping,
       deleteTypeMapping: mocks.deleteTypeMapping,
-      refreshTypeMappings: mocks.refreshTypeMappings,
     }),
   }
 })
@@ -62,7 +60,6 @@ vi.mock("@ionic/vue", () => ({
   IonLabel: defineComponent({ template: "<label><slot /></label>" }),
   IonList: defineComponent({ template: "<div><slot /></div>" }),
   IonSkeletonText: defineComponent({ template: "<span data-testid=\"skeleton\" />" }),
-  IonSpinner: defineComponent({ template: "<span data-testid=\"spinner\" />" }),
 }))
 
 import PickerStub from "@/components/shopify-product-sync/CalendarMetafieldPickerModal.vue"
@@ -91,7 +88,6 @@ describe("ProductCalendarMappingsCard", () => {
     mocks.hydrated = true
     mocks.saveTypeMapping.mockReset().mockResolvedValue({})
     mocks.deleteTypeMapping.mockReset().mockResolvedValue({})
-    mocks.refreshTypeMappings.mockReset().mockResolvedValue(undefined)
     mocks.hasError.mockReset().mockReturnValue(false)
     mocks.showToast.mockReset()
     mocks.logger.error.mockReset()
@@ -165,7 +161,7 @@ describe("ProductCalendarMappingsCard", () => {
     expect(picker(wrapper).props("field")).toBeNull()
   })
 
-  it("locks every field while any save is pending", async () => {
+  it("keeps the picker open and ignores a second save or a close while a save is pending", async () => {
     let finishSave: (value: unknown) => void = () => undefined
     mocks.saveTypeMapping.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve }))
     const wrapper = mount(ProductCalendarMappingsCard, { props: { shopId: "SHOP_1" } })
@@ -175,8 +171,6 @@ describe("ProductCalendarMappingsCard", () => {
     await flushPromises()
 
     expect(picker(wrapper).props("saving")).toBe(true)
-    expect(row(wrapper, "introductionDate").attributes("disabled")).toBe("true")
-    expect(row(wrapper, "releaseDate").find("[data-testid=\"spinner\"]").exists()).toBe(true)
     picker(wrapper).vm.$emit("close")
     picker(wrapper).vm.$emit("save", "calendar:other")
     await flushPromises()
@@ -186,7 +180,7 @@ describe("ProductCalendarMappingsCard", () => {
     finishSave({})
     await flushPromises()
 
-    expect(row(wrapper, "introductionDate").attributes("disabled")).toBe("false")
+    expect(picker(wrapper).props("saving")).toBe(false)
     expect(picker(wrapper).props("field")).toBeNull()
   })
 
