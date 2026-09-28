@@ -58,9 +58,9 @@ and opens in a new tab with `rel="noopener noreferrer"`.
 
 ## Company behavior
 
-Company Product Sync owns a Product calendar mappings card for its current shop. The card is
-available from the Product Sync page regardless of whether the shop is in first-time setup or the
-returning experience, because mappings are integration configuration rather than sync-run state.
+Company Product Sync owns a Product calendar mappings card for its current shop. The card is one
+of the Sync monitor cards in the returning experience, beside the sync jobs, pipeline, and custom
+request cards. The first-time setup wizard does not show it.
 
 The card presents the four supported calendar destination fields:
 

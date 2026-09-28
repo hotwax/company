@@ -14,7 +14,6 @@
 
     <ShopifyProductMappingsModal :product="mappingReviewProduct" :system-message-remote-id="productsPickerSystemMessageRemoteId" :product-store-id="draft.selectedProductStoreId" @close="mappingReviewProduct = null" />
     <ion-content>
-      <ProductCalendarMappingsCard :key="id" :shop-id="id" />
       <ion-card v-if="selectedProductSyncFeedback" role="status">
         <ion-card-header>
           <ion-card-title>{{ translate("Selected product sync") }}</ion-card-title>
@@ -115,7 +114,11 @@
           :is-webhook-loading="isWebhookLoading"
           :is-webhook-supported="isWebhookSupported"
           @toggle-webhook="toggleWebhookSubscription"
-        />
+        >
+          <template #sync-monitor>
+            <ProductCalendarMappingsCard :key="id" :shop-id="id" />
+          </template>
+        </shopify-product-sync-returning-view>
 
         <shopify-product-sync-wizard-view
           v-else
