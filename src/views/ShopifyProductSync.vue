@@ -192,7 +192,11 @@
           @toggle-start-confirmation="toggleStartConfirmation"
           @open-step-details="openStepDetails"
           @run-system-message-action="runSystemMessageAction"
-        />
+        >
+          <template #setup-tracker>
+            <ProductCalendarMappingsCard :key="id" :shop-id="id" />
+          </template>
+        </shopify-product-sync-wizard-view>
       </template>
 
       <ion-modal :is-open="showModeModal" :backdrop-dismiss="false" @didDismiss="showModeModal = false">
