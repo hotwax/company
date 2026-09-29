@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { companyDb } from "@/db/companyDb";
-import { entityKeyOf, projectRow } from "@common/db/projection";
+import { entityKeyOf, projectRow } from "@common/db/storage/projection";
 
 const shopifyFulfillmentHistoryProjection = companyDb.entities.shopifyFulfillmentHistories;
 const shopifyFulfillmentHistorySupportProjection = companyDb.entities.shopifyFulfillmentHistorySupport;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 
 /**
  * An automatic snapshot must never empty a populated table on the strength of a zero-row fetch.
@@ -26,7 +26,7 @@ vi.mock("@common/core/workerRemoteApi", () => ({
   unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
 
-vi.mock("@common/db/baseDb", async (importOriginal) => {
+vi.mock("@common/db/storage/baseDb", async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
     ...actual,

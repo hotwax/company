@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { keepNewerThan } from "@common/db/projection";
+import { keepNewerThan } from "@common/db/storage/projection";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineEntity } from "@common/db/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 import {
   diffStaleKeys,
   isEffectiveNow,
@@ -11,7 +11,7 @@ import {
   toCount,
   toMillis,
   toText,
-} from "@common/db/projection";
+} from "@common/db/storage/projection";
 
 const NOW = 1_700_000_000_000;
 

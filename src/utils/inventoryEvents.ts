@@ -6,7 +6,7 @@
  * retired): unbatched with a non-zero delta is waiting, unbatched zero is a no-op, batched is whatever
  * its System Message says. Vue- and i18n-free so the rules test without a DOM or a locale.
  */
-import { toMillis } from "@common/db/projection";
+import { toMillis } from "@common/db/storage/projection";
 import { type InventoryEventSourceRoot, canonicalEventTypeId, isReservationEventType, sourceRootFor } from "./inventoryEventSourceRoots";
 import { type ServiceJob, parameterMap } from "./serviceJob";
 import { isSuccess } from "./systemMessage";

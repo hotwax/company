@@ -1,7 +1,7 @@
 import { INVENTORY_EVENT_DOMAINS, INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
 import { companyDb } from "@/db/companyDb";
-import type { EntityClient } from "@common/db/dbClient";
-import { canonicalKey, entityKeyOf, toMillis } from "@common/db/projection";
+import type { EntityClient } from "@common/db/storage/dbClient";
+import { canonicalKey, entityKeyOf, toMillis } from "@common/db/storage/projection";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { DbKey, SyncContext, SyncDomain } from "@common/db/types";
 import { pageAll, workerGet, workerPost } from "@common/core/workerRemoteApi";

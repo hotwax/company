@@ -1,6 +1,6 @@
 /* eslint-disable require-await -- mocked async boundaries intentionally match worker/cache contracts */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 
 const state = vi.hoisted(() => ({
   roles: [] as any[],

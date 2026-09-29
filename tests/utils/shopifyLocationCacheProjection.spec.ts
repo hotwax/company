@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { companyDb } from "@/db/companyDb";
-import { entityKeyOf, projectRows } from "@common/db/projection";
+import { entityKeyOf, projectRows } from "@common/db/storage/projection";
 import { isShopifyLocationMapping } from "@/utils/shopifyShop";
 
 const SYNCED_AT = 1_800_000_000_000;

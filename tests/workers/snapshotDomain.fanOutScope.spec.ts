@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 
 const AUTHORITATIVE_STORE = "STORE_EXPECTED";
 

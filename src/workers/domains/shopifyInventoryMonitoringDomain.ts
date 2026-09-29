@@ -1,5 +1,5 @@
 import { companyDb } from "@/db/companyDb";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db/baseDb";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db/storage/baseDb";
 import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
 import type { SyncContext } from "@common/db/types";
 import { pageAll, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";

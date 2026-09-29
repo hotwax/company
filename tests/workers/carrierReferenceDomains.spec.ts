@@ -69,7 +69,7 @@ const ctx = { maargUrl: "https://example.test/", token: "token", omsInstance: "d
 async function registeredDomain(name: string) {
   vi.resetModules();
   const { companyDb } = await import("@/db/companyDb");
-  const { setAppDb } = await import("@common/db/appDbRegistry");
+  const { setAppDb } = await import("@common/db/schema/appDbRegistry");
   setAppDb(companyDb as any);
   const { referenceDomains } = await import("@/workers/domains/referenceDomains");
   return referenceDomains.find((d) => d.name === name);

@@ -15,7 +15,7 @@ const joinKey = (...values: unknown[]) => values.map(String).join("\u0000");
 
 vi.mock("@/db/companyDb", async (importOriginal) => {
   const { companyDb } = await importOriginal<typeof import("@/db/companyDb")>();
-  const { canonicalKey, entityKeyOf, projectRow } = await import("@common/db/projection");
+  const { canonicalKey, entityKeyOf, projectRow } = await import("@common/db/storage/projection");
   /** The fake tables' names, by the real table each stands in for. */
   const TABLE_ALIASES: Record<string, string> = {
     shopifyInventoryAdjustmentDetails: "channel",

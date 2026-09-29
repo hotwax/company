@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/defineEntity";
+import { defineEntity } from "@common/db/schema/defineEntity";
 
 /**
  * A write-through that stores NOTHING is the worst kind of cache bug: the mutation succeeds, the

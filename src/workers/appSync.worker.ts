@@ -4,7 +4,7 @@
  * All domain definitions (common seed reference domains and Company app-specific domains)
  * are explicitly imported and registered via `registerDomains(...)` prior to exposing the harness.
  */
-import { commonDomains } from "@common/db/domains/commonDomains";
+import { commonDomains } from "@common/db/seed/seedDomains";
 import { registerDomains } from "@common/db/sync/syncRegistry";
 
 import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
