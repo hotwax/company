@@ -8,7 +8,7 @@ import type {
 import { formatDateTime } from "@/utils"
 import { DATA_MANAGER_LOG_STATUS_IDS, logOutcome } from "@/utils/dataManagerLog"
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as syncError, syncNow } from "@/services/appDbSync"
-import type { ActiveDomain } from "@/workers/syncRegistry"
+import type { ActiveDomain } from "@common/db"
 import type { ProductStoreOnboardingRunRequest } from "./useProductStoreOnboardingWizard"
 import { useServiceJobRunsByJob } from "./useServiceJobs"
 import {

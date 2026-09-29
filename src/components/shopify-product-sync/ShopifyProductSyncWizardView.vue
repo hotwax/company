@@ -37,6 +37,8 @@
         data-testid="review-configurations">
         {{ translate("Review configurations") }}
       </ion-button>
+
+      <slot name="setup-tracker" />
     </div>
     <ion-card class="step" v-if="currentStep === 'product-store'">
       <ion-card-header>
@@ -330,7 +332,7 @@
               <p>{{ translate("Next step") }}</p>
               <p>{{ systemMessageFsmState.nextJobReason }}</p>
               <p v-if="systemMessageFsmState.nextJob">
-                {{ systemMessageFsmState.nextJob.label }} · {{ systemMessageFsmState.nextJob.nextRunLabel }}
+                {{ systemMessageFsmState.nextJob.label }}, {{ systemMessageFsmState.nextJob.nextRunLabel }}
               </p>
             </ion-label>
             <ion-buttons slot="end">

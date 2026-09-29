@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { api, commonUtil, logger, useDb } from "@common";
+import { api, client, commonUtil, logger, useDb } from "@common";
 import { useUserStore } from "@/store/user";
 import { resyncDomain } from "@/services/appDbSync";
 import { onSessionCleared } from "./sessionScope";
@@ -74,6 +74,29 @@ onSessionCleared(clearUserCreationDraft);
 export function useUserAccountActions() {
   const userStore = useUserStore();
   const sendResetPasswordEmail = (userLoginId: string) => userStore.sendResetPasswordEmail({ userLoginId });
+
+  const getBaseURL = (maarg: string) => {
+    if (maarg.startsWith("http")) {
+      const cleanMaarg = maarg.endsWith("/") ? maarg.slice(0, -1) : maarg;
+      return cleanMaarg.includes("/rest/s1") ? cleanMaarg : `${cleanMaarg}/rest/s1/`;
+    }
+    return `https://${maarg}.hotwax.io/rest/s1/`;
+  };
+
+  const resetPassword = async (payload: any, maarg: string) => {
+    return client({
+      baseURL: getBaseURL(maarg),
+      url: `admin/users/${payload.userId}/changePassword`,
+      method: "post",
+      data: {
+        username: payload.username,
+        oldPassword: payload.oldPassword,
+        newPassword: payload.newPassword,
+        newPasswordVerify: payload.newPasswordVerify
+      }
+    });
+  };
+
   const setUserCreationDraftFromSearch = (search: string) => {
     const name = search.trim();
     const [firstName = "", ...lastName] = name ? name.split(/\s+/) : [];
@@ -85,7 +108,38 @@ export function useUserAccountActions() {
     return draft;
   };
 
-  return { sendResetPasswordEmail, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft };
+  const createUserAccountAndSetup = async (
+    payload: any,
+    partyTypeId: string,
+    facilityId?: string,
+    emailAddress?: string,
+    contactNumber?: string
+  ) => {
+    const resp = await userStore.createUser(payload);
+    if(resp.status === 200 && !commonUtil.hasError(resp) && resp.data.partyId) {
+      const partyId = resp.data.partyId;
+
+      await userStore.ensurePartyRole({ partyId, roleTypeId: "APPLICATION_USER" });
+
+      if(partyTypeId === "PARTY_GROUP" && facilityId) {
+        await userStore.addPartyToFacility({ partyId, facilityId, roleTypeId: "WAREHOUSE_PICKER" });
+      }
+      if(emailAddress) {
+        await userStore.createUpdatePartyEmailAddress({ partyId, emailAddress, contactMechPurposeTypeId: "PRIMARY_EMAIL" });
+      }
+      if(contactNumber) {
+        await userStore.createUpdatePartyTelecomNumber({ partyId, contactNumber, contactMechPurposeTypeId: "PRIMARY_PHONE" });
+      }
+
+      await userStore.indexEmployee(partyId);
+
+      return { partyId };
+    } else {
+      throw resp.data;
+    }
+  };
+
+  return { sendResetPasswordEmail, resetPassword, getBaseURL, setUserCreationDraftFromSearch, consumeUserCreationDraft, clearUserCreationDraft, createUserAccountAndSetup };
 }
 
 /** Preserve the authenticated REST context root; reject embedded credentials, queries, and fragments. */

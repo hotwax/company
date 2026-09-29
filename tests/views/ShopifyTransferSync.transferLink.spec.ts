@@ -3,6 +3,8 @@ import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, reactive, ref } from "vue";
 
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 /**
  * The row header's Shopify link. Guards the two halves that make it open in a NEW tab rather than
  * navigating this one: `target="_blank"` reaching the anchor, and `@click.stop` keeping the click
@@ -83,21 +85,15 @@ vi.mock("@/utils/shopifyTransferSync", async () => ({
 
 vi.mock("@/composables/useShopifyTransferSync", () => ({
   useShopifyPendingCounts: () => ({
-    counts: ref({ create: 1 }), creationOrderCount: ref(1), total: ref(1), hydrated: ref(true),
+    counts: ref({ create: 0 }), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
-  useShopifyPendingSegment: (_shop: any, segment: any) => ({
-    rows: ref(typeof segment === "function" && segment() === "create"
-      ? [{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]
-      : []),
-    hydrated: ref(true),
-    count: ref(1),
-  }),
+  useShopifyPendingSegment: () => ({ rows: ref([]), hydrated: ref(true), count: ref(0) }),
   useShopifyTransferSyncLaunch: () => ({
     currentDate: ref("2026-09-01T00:00:00.000Z"), counts: ref({}), loading: ref(false),
     saving: ref(false), error: ref(""), load: vi.fn(), save: vi.fn(),
   }),
   useShopifySyncedSegment: () => ({
-    rows: ref([]), total: ref(0), loading: ref(false), error: ref(""),
+    rows: ref([{ segment: "create", orderId: "128253", shopifyInventoryTransferId: "4604788917", orderItemSeqId: "01", quantity: 1 }]), total: ref(1), loading: ref(false), error: ref(""),
     hasMore: ref(false), load: vi.fn(), loadMore: vi.fn(),
   }),
   useShopifyTransferSyncJobs: () => ({ cards: ref([]), ensure: vi.fn() }),
@@ -114,7 +110,7 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
 async function mountView() {
   const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
 
-  return mount(ShopifyTransferSync, {
+  const wrapper = mount(ShopifyTransferSync, {
     props: { id: "1000" },
     global: {
         stubs: {
@@ -155,9 +151,16 @@ async function mountView() {
           IonFab: { template: "<div class='ion-fab'><slot /></div>" },
           IonFabButton: { template: "<button class='ion-fab-button'><slot /></button>" },
           ServiceJobDetailsModal: { template: "<div />" },
+          ShopifyTransferDeliveryStatus: true,
         },
     },
   });
+  // Confirmed Shopify transfers belong in Synced. Outstanding creation rows open their detail
+  // page instead of carrying a remote link for a transfer that has not yet been created.
+  (wrapper.vm as any).direction = "synced";
+  await wrapper.vm.$nextTick();
+
+  return wrapper;
 }
 
 describe("ShopifyTransferSync - Shopify transfer link", () => {

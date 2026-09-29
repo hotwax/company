@@ -208,7 +208,7 @@ export async function fetchShippingGatewayConfigs(force = false): Promise<Shippi
   status.gatewayConfigs = "pending";
   try {
     const resp = await safeApi({
-      url: "oms/shippingGatewayConfigs",
+      url: "oms/shipping/gatewayConfigs",
       method: "get",
     });
     const list = unwrapList(resp.data, "shipGatewayConfigList");
@@ -235,7 +235,7 @@ export async function fetchShippingGatewayAuths(force = false): Promise<Shipping
   status.auths = "pending";
   try {
     const resp = await safeApi({
-      url: "oms/shippingGatewayAuths",
+      url: "oms/shipping/gatewayAuths",
       method: "get",
     });
     state.shippingGatewayAuths = unwrapList(resp.data, "shipAuthList");
@@ -258,7 +258,7 @@ export async function createShippingGatewayAuth(data: {
   authHeaderName?: string;
 }): Promise<void> {
   const response: any = await safeApi({
-    url: "oms/shippingGatewayAuths",
+    url: "oms/shipping/gatewayAuths",
     method: "post",
     data: {
       ...data,
@@ -274,7 +274,7 @@ export async function updateShippingGatewayAuth(
   data: Partial<ShippingGatewayAuth>
 ): Promise<void> {
   const response: any = await safeApi({
-    url: `oms/shippingGatewayAuths/${shippingGatewayAuthId}`,
+    url: `oms/shipping/gatewayAuths/${shippingGatewayAuthId}`,
     method: "put",
     data,
   });
@@ -284,7 +284,7 @@ export async function updateShippingGatewayAuth(
 
 export async function deleteShippingGatewayAuth(shippingGatewayAuthId: string): Promise<void> {
   const response: any = await safeApi({
-    url: `oms/shippingGatewayAuths/${shippingGatewayAuthId}`,
+    url: `oms/shipping/gatewayAuths/${shippingGatewayAuthId}`,
     method: "delete",
   });
   assertUnigateMutation(response, "Failed to delete carrier credentials.");
@@ -304,7 +304,7 @@ export async function fetchShippingCarrierConfigs(force = false): Promise<Shippi
   status.carrierConfigs = "pending";
   try {
     const resp = await safeApi({
-      url: "oms/shippingCarrierConfigs",
+      url: "oms/shipping/carrierConfigs",
       method: "get",
     });
     state.shippingCarrierConfigs = unwrapList(resp.data, "carrierConfigList");
@@ -318,7 +318,7 @@ export async function fetchShippingCarrierConfigs(force = false): Promise<Shippi
 
 export async function saveShippingCarrierConfig(data: ShippingCarrierConfig): Promise<void> {
   const response: any = await safeApi({
-    url: "oms/shippingCarrierConfigs",
+    url: "oms/shipping/carrierConfigs",
     method: "post",
     data,
   });
@@ -328,7 +328,7 @@ export async function saveShippingCarrierConfig(data: ShippingCarrierConfig): Pr
 
 export async function deleteShippingCarrierConfig(carrierConfigId: string): Promise<void> {
   const response: any = await safeApi({
-    url: `oms/shippingCarrierConfigs/${carrierConfigId}`,
+    url: `oms/shipping/carrierConfigs/${carrierConfigId}`,
     method: "delete",
   });
   assertUnigateMutation(response, "Failed to delete carrier configuration.");
@@ -348,7 +348,7 @@ export async function fetchShippingCarrierBillingConfigs(force = false): Promise
   status.billingConfigs = "pending";
   try {
     const resp = await safeApi({
-      url: "oms/shippingCarrierBillingConfigs",
+      url: "oms/shipping/carrierBillingConfigs",
       method: "get",
     });
     state.shippingCarrierBillingConfigs = unwrapList(resp.data, "billingConfigList");
@@ -362,7 +362,7 @@ export async function fetchShippingCarrierBillingConfigs(force = false): Promise
 
 export async function saveShippingCarrierBillingConfig(data: ShippingCarrierBillingConfig): Promise<void> {
   const response: any = await safeApi({
-    url: "oms/shippingCarrierBillingConfigs",
+    url: "oms/shipping/carrierBillingConfigs",
     method: "post",
     data,
   });
@@ -372,7 +372,7 @@ export async function saveShippingCarrierBillingConfig(data: ShippingCarrierBill
 
 export async function deleteShippingCarrierBillingConfig(carrierBillingConfigId: string): Promise<void> {
   const response: any = await safeApi({
-    url: `oms/shippingCarrierBillingConfigs/${carrierBillingConfigId}`,
+    url: `oms/shipping/carrierBillingConfigs/${carrierBillingConfigId}`,
     method: "delete",
   });
   assertUnigateMutation(response, "Failed to delete billing configuration.");

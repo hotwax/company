@@ -252,7 +252,7 @@ import { commonUtil, logger, translate } from "@common";
 import { useFacilities, useFacilityGroupMutations, useFacilityGroupProductStores, useFacilityGroupRecord, useFacilityGroupTypeOptions, useFacilityGroupTypes, useGroupFacilities } from '@/composables/useFacilities';
 import { useProductStores } from '@/composables/useProductStores';
 import { renumberSequence, sortMembersBySequence } from '@/utils/facilityGroupSequence';
-import { api } from '@common';
+
 import { DateTime } from 'luxon';
 import { addCircleOutline, arrowForwardOutline, closeOutline, removeCircleOutline, saveOutline } from 'ionicons/icons';
 

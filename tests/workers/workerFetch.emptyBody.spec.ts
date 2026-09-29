@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { locationInventoryAdjustmentKey } from "@/utils/shopifyLocationInventory";
 
 /**
  * A response body that fails to parse must NOT be reported as "no records".

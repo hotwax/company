@@ -3,6 +3,7 @@ import { api, logger, useDb } from "@common";
 import cronstrue from "cronstrue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/services/appDbSync";
+import { onSessionCleared } from "./sessionScope";
 
 /**
  * Service job master entity — job definitions, plus the live detail/history surface.
@@ -180,7 +181,6 @@ const getNormalizedJobDetail = (jobDetail: any = {}) => getNormalizedJob(jobDeta
  */
 const state = reactive({
   jobs: [] as Array<any>,
-  products: {} as any,
   loading: false
 });
 
@@ -196,6 +196,10 @@ const defaultJobFetchParams = {
  * on the same tick — so without this the same request goes out repeatedly.
  */
 const pendingRequests = {} as any;
+
+/** `userId` → username for this session: an audit log records who changed a job by id only. */
+const usernamesById = new Map<string, Promise<string>>();
+onSessionCleared(() => usernamesById.clear());
 const fetchDeduplicated = async (key: string, fetchFn: () => Promise<any>) => {
   if (pendingRequests[key]) return pendingRequests[key];
   pendingRequests[key] = fetchFn().finally(() => delete pendingRequests[key]);
@@ -267,36 +271,15 @@ export function useServiceJob() {
     });
   };
 
-  /** Product detail for a product-bound job. Internal: only `fetchJobDetail` needs it. */
-  const fetchProductDetail = async (productId: string) => {
-    if (state.products[productId]) return;
-    return fetchDeduplicated(`product_${productId}`, async () => {
-      try {
-        const resp = await api({
-          url: `oms/products/${productId}`,
-          method: "GET"
-        }) as any;
-        if (resp?.data) {
-          state.products[productId] = resp.data;
-        }
-      } catch(err) {
-        logger.error("Failed to fetch product detail", err);
-        throw err;
-      }
-    });
-  };
-
   /**
-   * `productStoreId` scopes a store-bound job: a job carrying a `productStoreIds` parameter only
-   * counts as "this store's job" when the values match, and is otherwise treated as a draft.
-   *
-   * Passed in rather than read from a store. It used to come from `productStore.current`, which
-   * made the result depend on ambient state only two screens ever set — a caller that had not been
-   * through those flows silently got draft-job behaviour.
+   * The job as the server has it. Given a `productStoreId`, a job carrying a `productStoreIds`
+   * parameter must belong to that store, or the read fails: that is how a screen asks "this store's
+   * job". Without one there is no store to check, so the job is returned as it is; gating it anyway
+   * failed every store-bound job for callers that only want to show it (the job modal).
    */
   const fetchJobDetail = async (jobName: string, productStoreId?: string) => {
-    return fetchDeduplicated(`job_detail_${jobName}`, async () => {
-      let jobDetails: Record<string, any> = {};
+    return fetchDeduplicated(`job_detail_${jobName}_${productStoreId ?? ""}`, async () => {
+      let job: Record<string, any>;
       try {
         const resp = await api({
           url: `admin/serviceJobs/${jobName}`,
@@ -305,34 +288,18 @@ export function useServiceJob() {
             pageSize: 1000
           }
         }) as any;
-        const job = resp?.data?.jobDetail || {};
-
-        const isJobProductStoreDependent = () => job.serviceJobParameters?.some((param: any) => param.parameterName === "productStoreIds");
-
-        if (isJobProductStoreDependent()) {
-          const jobProductStore = job.serviceJobParameters.find((param: any) => param.parameterName === "productStoreIds");
-          if (jobProductStore?.parameterName && jobProductStore.parameterValue === productStoreId) {
-            jobDetails = job;
-          } else if (!jobProductStore?.parameterName) {
-            jobDetails = { ...job, isDraftJob: true };
-          }
-        } else {
-          jobDetails = job;
-        }
+        job = resp?.data?.jobDetail || {};
       } catch(err) {
         logger.error("Failed to fetch job details", err);
         throw err;
       }
 
-      if (!Object.keys(jobDetails || {}).length) {
+      const storeParameter = job.serviceJobParameters?.find((param: any) => param.parameterName === "productStoreIds");
+      if (!Object.keys(job).length || (productStoreId !== undefined && storeParameter && storeParameter.parameterValue !== productStoreId)) {
         throw new Error(`Service job detail is unavailable for ${jobName}.`);
       }
 
-      const job = getNormalizedJobDetail(jobDetails);
-      if (job.instanceOfProductId && !state.products[job.instanceOfProductId]) {
-        await fetchProductDetail(job.instanceOfProductId);
-      }
-      return job;
+      return getNormalizedJobDetail(job);
     });
   };
 
@@ -401,6 +368,28 @@ export function useServiceJob() {
   };
 
   /**
+   * The username behind each user id, one request per user per session. A user that cannot be read
+   * (a system id, a missing permission) stays its id, and is asked again next time.
+   */
+  const fetchUsernames = async (userIds: string[]): Promise<Record<string, string>> => {
+    const entries = await Promise.all([...new Set(userIds.filter(Boolean))].map(async (userId) => {
+      if(!usernamesById.has(userId)) {
+        usernamesById.set(userId, api({ url: `admin/users/${encodeURIComponent(userId)}`, method: "GET" })
+          .then((resp: any) => String(resp?.data?.username || userId))
+          .catch(() => {
+            usernamesById.delete(userId);
+
+            return userId;
+          }));
+      }
+
+      return [userId, await usernamesById.get(userId)!] as const;
+    }));
+
+    return Object.fromEntries(entries);
+  };
+
+  /**
    * The PUT answers with a message, not the updated row, and the LIST screens read the cached
    * definition rather than this response - so without the write-through a job stayed "Paused / No
    * active schedule" on the page that had just activated it, right through a full reload, until the
@@ -433,6 +422,7 @@ export function useServiceJob() {
     fetchJobDetail,
     fetchJobRuns,
     fetchJobAuditHistory,
+    fetchUsernames,
     updateJob,
     runNow
   };

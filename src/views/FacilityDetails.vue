@@ -841,9 +841,8 @@ import FacilityShopifyMappingModal from '@/components/facility/FacilityShopifyMa
 import FacilityExternalIdModal from '@/components/facility/FacilityExternalIdModal.vue';
 import FacilityMappingPopover from '@/components/facility/FacilityMappingPopover.vue';
 
-import { api } from '@common';
-import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, useFacilityQueries } from '@/composables/useFacilities';
-import { useRoleTypes, useTypedEnums, useGeos, useEnums } from '@/composables/useSeed';
+import { isFacilityStaffParty, useFacilityMutations, useFacilityTypes, useFacilityGroups, useFacilityGroupTypes, useFacilityDetail, useFacilityIdentificationTypes, usePartyQueries, useFacilityOrderCounts } from '@/composables/useFacilities';
+import { useRoleTypes, useTypedEnums, useGeos, useEnums, useGeocode } from '@/composables/useSeed';
 
 const props = defineProps<{ facilityId: string }>();
 
@@ -853,7 +852,9 @@ const {
   calendarOptions, load, reloadAssociations, refreshVolatile,
 } = useFacilityDetail(props.facilityId);
 const mutations = useFacilityMutations(props.facilityId);
-const facilityQueries = useFacilityQueries();
+const { fetchPartyRoleDetails } = usePartyQueries();
+const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
+const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
 const { facilityTypes } = useFacilityTypes();
@@ -945,7 +946,8 @@ function getParentFacilityTypeId(typeId: string): string {
 
 /** Party+role lookup for the staff picker — a one-off live query, deliberately not cached. */
 async function getPartyRoleAndPartyDetails(payload: Record<string, any>) {
-  return facilityQueries.getPartyRoleAndPartyDetails(payload);
+  const { roleTypeId, ...params } = payload;
+  return fetchPartyRoleDetails(roleTypeId, params);
 }
 
 function getFacilityTypesByParentTypeId() {
@@ -1218,7 +1220,7 @@ async function fetchPostalCodeByGeoPoints() {
   };
 
   try {
-    const resp = await facilityQueries.fetchGeocodeData(payload);
+    const resp = await geocode(payload);
     const pCode = postalAddress.value.postalCode;
     const fetchedPostcode = resp.response.docs[0].postcode;
     isRegenerationRequired.value = !(pCode.startsWith('0') ? pCode.substring(1) === fetchedPostcode || pCode === fetchedPostcode : pCode === fetchedPostcode);
@@ -1399,7 +1401,13 @@ async function openFacilityOrderCountModal() {
   isOrderCountLoading.value = true;
   showFacilityOrderCountModal.value = true;
   try {
-    facilityOrderCounts.value = await facilityQueries.fetchFacilityOrderCounts(props.facilityId);
+    const data = await fetchFacilityOrderHistory(props.facilityId);
+    if (data.length > 0) {
+      facilityOrderCounts.value = data.map((item: any) => ({
+        ...item,
+        entryDate: DateTime.fromMillis(item.entryDate).toFormat('MMM dd yyyy')
+      }));
+    }
   } catch (error) {
     console.error("Failed to fetch facility order counts", error);
   } finally {
@@ -2006,7 +2014,7 @@ async function generateLatLong() {
   const query = postalCode.startsWith('0') ? `${postalCode} OR ${postalCode.substring(1)}` : postalCode;
 
   try {
-    const resp = await facilityQueries.fetchGeocodeData({ json: { query: `postcode: ${query}` } });
+    const resp = await geocode({ json: { query: `postcode: ${query}` } });
 
     if (resp.docs.length > 0) {
       const result = resp.docs[0];

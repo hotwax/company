@@ -67,7 +67,8 @@ Env config comes from `.env` (see `.env.example`): `VITE_OMS_TYPE` (`MOQUI`), lo
   and redirects to `/product-store` when the permission expression fails.
 - i18n: `createDxpI18n(localeMessages)` over [`src/locales/en.json`](src/locales/en.json); use
   `translate()` from `@common` in code and `$t` in templates. **Every new user-facing string goes in
-  `en.json`.**
+  `en.json`.** `local/i18n-check-keys` checks `<script>` only; an unregistered template key renders
+  its `{placeholders}` raw. `en.json` has duplicate keys, so edit it as text, never a JSON round-trip.
 - Theme: [`src/theme/variables.css`](src/theme/variables.css) plus `@common/css/{settings,theme}.css`.
 
 ## 4. The data layer — read this before touching screen data
@@ -107,13 +108,27 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
 | **B** | reference / config, whole-set | **once per login**, then only on mutation. Never on an interval, never per page load. | product stores and all-store shipping methods, carriers and their shipment methods/facilities, facilities, facility groups, service jobs, permissions, statuses, enums, all type tables, Shopify shops/locations/type mappings |
-| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage` |
-| **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation` |
+| **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers |
+| **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation`, `shopifyInventoryItems` (inventory event products, from Shopify) |
 
-Class B runs in an **app-lifetime** worker started by `appDbSync`; class A runs in a
-**view-scoped** worker started by `useDbSync`. Two workers is a known, bounded deviation from the
-one-worker principle (their lifecycles differ); consolidating them is a candidate cleanup, not a bug
-to "fix" incidentally.
+One app-lifetime worker, started by `appDbSync`, runs every class. Class B seeds once per login;
+class A domains are polled only while a view has activated them through
+`activateSyncDomains(domains, owner)` / `deactivateSyncDomains(owner)`.
+
+**The inventory sync area** is route-scoped class A:
+[`inventorySyncArea.ts`](src/services/inventorySyncArea.ts), driven by `router.afterEach`, activates the
+inventory event domains under its own owner for as long as the user is under
+`/shopify-connection-details/:id/inventory-sync`, so every page there shares a warm cache. A page in the
+area that needs more domains activates `[...its own, ...inventoryEventAreaDomains(shopId)]`, since the
+worker holds one active set. [`inventoryEventDomains.ts`](src/workers/domains/inventoryEventDomains.ts)
+polls each ledger's newest 500, then its `detailLastUpdatedStamp` and `systemMessageLastUpdatedStamp`
+cursors (needs the connector release with those aliases; older ones get the window only), re-reads
+unsettled messages by id, and names products through Shopify's `nodes` query (`shopify/graphql`, two
+requests of 100 per tick, backing off on budget). The cache is a window, not the ledger:
+`inventoryEventBounds`, asked once per history page load and never polled, records where the server's
+copy starts (and drops cached rows the purge already removed), the history's calendars start there, and an older From date loads that range through the
+rows domain's `refetchOne`. Sync failures render through `SyncStatusButton` in the
+toolbar, never as a banner.
 
 ### 4.3 Layer map
 
@@ -129,10 +144,9 @@ to "fix" incidentally.
 | [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — importing a domain module registers it; the harness must be imported **last** |
 | [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
 | [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
-| [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `workerFetch` |
+| [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `inventoryEventDomains`, `workerFetch` |
 | [`src/composables/useCachedList.ts`](src/composables/useCachedList.ts) | The read seam for views |
-| [`src/composables/useDbSync.ts`](src/composables/useDbSync.ts) | View-scoped class-A lifecycle (`start`/`stop`/`syncNow`) |
-
+| [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts) | Route-scoped class-A activation for a shop's inventory sync pages (see §4.2) |
 
 `pollingService`, `pollingWorkerHarness`, and `syncRegistry` are **framework-shaped, app-local**:
 they are written to be promoted into `@common` later. Keep app specifics out of them — those belong
@@ -183,6 +197,14 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
   accepted `version(2)` but silently did not create the added store, so writes failed while fetches
   kept succeeding. Just edit `CACHE_SCHEMA`; `ensureCacheReady()` compares declared tables to the
   database's real `objectStoreNames` and rebuilds on mismatch. Never add `version(2)`.
+- **Changing what cached rows mean needs a contract bump.** The schema check above compares store
+  sets only, so a release that keeps every table and key field but changes what stored rows mean
+  (ids renamed or re-prefixed, a key field re-derived) passes it untouched. Domains written with
+  `upsertMany` never prune a row the server no longer has, so such rows linger and resolve nothing.
+  In the same commit as that change, increment `CACHE_CONTRACT_VERSION` in
+  [`appCacheDb.ts`](src/utils/appCacheDb.ts) and add a line to its changelog comment.
+  `ensureCacheIdentity` stamps the version into the cache identity, so every installation wipes and
+  re-seeds once on its next cache bootstrap. Never decrement or reuse a number.
 - **Worker query params must expand arrays into repeated keys.** `workerRemoteApi` builds its query
   with `URLSearchParams`, which comma-joins arrays (`id=A%2CB`); Moqui reads that as one literal
   value and returns an empty list — a **silent** zero-row failure. Use `workerGet`'s serializer in
@@ -275,6 +297,7 @@ concept is the smell this rule prevents.
 | [`useShopifyProductSyncMigration.ts`](src/composables/useShopifyProductSyncMigration.ts) | The Upgrade Assistant: eligibility, legacy teardown state, and the legacy-sync retirement writes |
 | [`useKlaviyo.ts`](src/composables/useKlaviyo.ts) | The Klaviyo surface. Deliberately LIVE reads — Klaviyo has no cached domain; email types are a load-once memo |
 | [`useAppPermissions.ts`](src/composables/useAppPermissions.ts) | App permissions over the cached permission + user-group sets |
+| [`useInventoryEvents.ts`](src/composables/useInventoryEvents.ts) | Both Shopify inventory ledgers as one row model (`src/utils/inventoryEvents.ts`) for the monitor and `ShopifyInventoryEventHistory`. IndexedDB only; never reads `detailStatusId` |
 | [`useCachedList` / `useCacheSync` / `useCacheStatus`](src/composables/) | Data-layer seams (§4.3) |
 | `useProducts` (shared, in accxui `common/composables/useProducts.ts`) | The product master: productId → merchandiser-facing fields from Solr. Not app-owned, and it clears itself on logout through common's own session scope, so nothing in this app registers it |
 | [`sessionScope.ts`](src/composables/sessionScope.ts) | The logout story for module-level composable state: a composable holding session data registers a reset, and logout calls `clearSessionScopedState()` once. Module state survives an SPA logout, so without this user B sees user A's data |

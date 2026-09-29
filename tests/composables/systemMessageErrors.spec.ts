@@ -110,6 +110,19 @@ describe("ensureSystemMessageErrors", () => {
     expect(mocks.api).toHaveBeenCalledTimes(2);
   });
 
+  it("drops a confirmed-clean answer once a fresh fetch finds a retry's error", async () => {
+    const retryError = { errorText: "Shopify timed out", errorDate: 5 };
+    mocks.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({ data: [retryError] });
+    const { ensureSystemMessageErrors, fetchSystemMessageErrors } = useSystemMessage();
+
+    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([]);
+    expect(await fetchSystemMessageErrors("MSG_4")).toEqual([retryError]);
+    // Stored rows are the projected error itself, with the message id stamped in.
+    mocks.errorCacheAll.mockResolvedValue([{ systemMessageId: "MSG_4", ...retryError }]);
+
+    expect(await ensureSystemMessageErrors("MSG_4")).toEqual([{ systemMessageId: "MSG_4", ...retryError }]);
+  });
+
   it("does not let a late empty response from the previous session restore the memo", async () => {
     let resolveOld!: (value: any) => void;
     const oldResponse = new Promise((resolve) => { resolveOld = resolve; });

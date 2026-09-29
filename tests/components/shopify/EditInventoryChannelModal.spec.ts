@@ -160,10 +160,7 @@ describe("EditInventoryChannelModal", () => {
 
     expect(wrapper.emitted("schedule-job")).toBeTruthy();
     expect(wrapper.emitted("schedule-job")![0]).toEqual([
-      {
-        jobName: "reset_InventoryChannelInventory_IC_1001",
-        title: "Reset aggregate ATP - Main Warehouse Group",
-      },
+      { jobName: "reset_InventoryChannelInventory_IC_1001" },
     ]);
   });
 
@@ -201,10 +198,7 @@ describe("EditInventoryChannelModal", () => {
     });
     expect(wrapper.emitted("schedule-job")).toBeTruthy();
     expect(wrapper.emitted("schedule-job")![0]).toEqual([
-      {
-        jobName: "reset_InventoryChannelInventory_IC_1002",
-        title: "Reset aggregate ATP - Secondary Group",
-      },
+      { jobName: "reset_InventoryChannelInventory_IC_1002" },
     ]);
   });
   it("keeps the current target and excludes active claims on this shop, including claims arriving after selection", async () => {

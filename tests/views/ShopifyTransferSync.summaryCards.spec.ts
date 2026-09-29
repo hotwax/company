@@ -6,6 +6,8 @@ import { reactive, ref } from "vue";
 const apiMock = vi.fn();
 let maargUrl = "https://oms.example.com/rest/s1/";
 
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 vi.mock("@common", () => ({
   api: (args: any) => apiMock(args),
   commonUtil: {
@@ -234,6 +236,26 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     expect((wrapper.vm as any).webhookCallbackUrl).toContain("arn:aws:events:");
   });
 
+  it("reloads the selected synced history when returning from Errors, without fetching an errors history resource", async () => {
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, {
+      props: { id: "1000" },
+      global: { stubs: { ...STUBS, ShopifyTransferStagingErrors: { template: '<div class="staging-errors" />' } } },
+    });
+    const view = wrapper.vm as any;
+    view.direction = "synced";
+    view.activeTab = "errors";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".staging-errors").exists()).toBe(true);
+    expect(wrapper.find(".direction-toggle").exists()).toBe(false);
+    expect(view.loadSynced).not.toHaveBeenCalled();
+
+    view.activeTab = "create";
+    await wrapper.vm.$nextTick();
+    expect(view.loadSynced).toHaveBeenCalledWith("1000", "create");
+    expect(wrapper.find(".direction-toggle").exists()).toBe(true);
+  });
+
   it("renders two summary cards: left with pending count and syncing from, right with webhooks and jobs", async () => {
     const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
     const wrapper = mount(ShopifyTransferSync, {
@@ -282,16 +304,23 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     expect(wrapper.vm.showWebhooksModal).toBe(true);
   });
 
-  it("shows the stale banner when the active domain is failing", async () => {
-    syncDomainsErrorRef.value = "";
+  it("shows the stale banner when the transfer sync domain is failing, and not for a stager read", async () => {
+    const { serviceState } = await import("@common/db");
     const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
     const wrapper = mount(ShopifyTransferSync, { props: { id: "1000" }, global: { stubs: STUBS } });
     await wrapper.vm.$nextTick();
     expect(wrapper.find(".stale-banner").exists()).toBe(false);
 
-    syncDomainsErrorRef.value = "429 from Shopify";
+    // Stager-read failures belong in the Errors tab; they do not make the activity ledger unavailable.
+    serviceState.errors.serviceJobRun = "job runs unavailable";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".stale-banner").exists()).toBe(false);
+
+    serviceState.errors.shopifyTransferSync = "429 from Shopify";
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".stale-banner").text()).toContain("429 from Shopify");
+    delete serviceState.errors.serviceJobRun;
+    delete serviceState.errors.shopifyTransferSync;
   });
 });

@@ -247,6 +247,12 @@
             @open="openOrderSyncEntry()"
           />
           <section>
+            <ion-item detail class="item-box" lines="none" button @click="openFulfillmentSync()">
+              <ion-label>
+                {{ translate("Fulfillment sync") }}
+                <p>{{ translate("See which fulfillments Shopify has not confirmed, and how late each one is") }}</p>
+              </ion-label>
+            </ion-item>
             <ion-item detail class="item-box" lines="none" button @click="openShipmentMethods()">
               <ion-label>{{ translate("Shipping methods") }}</ion-label>
             </ion-item>
@@ -459,7 +465,10 @@
             </ion-label>
           </ion-item>
 
-          <div v-if="scopes.length" class="ion-margin-horizontal">
+          <div v-if="isFetchingScopes" class="ion-text-center ion-padding ion-margin-top">
+            <ion-spinner name="crescent" />
+          </div>
+          <div v-else-if="scopes.length" class="ion-margin-horizontal">
             <ion-chip v-for="scope in scopes" :key="scope" outline>
               <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label>{{ scope }}</ion-label>
@@ -478,7 +487,7 @@
           <ion-button
             class="ion-margin"
             expand="block"
-            :disabled="!accessScopesRemoteId"
+            :disabled="!accessScopesRemoteId || isFetchingScopes"
             @click="refresh()"
           >
             <ion-icon slot="start" :icon="refreshOutline" />
@@ -549,7 +558,7 @@
 <script setup lang="ts">
 import { IonBackButton, IonBadge, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonCheckbox, IonChip, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewWillEnter } from "@ionic/vue";
 import { alertCircleOutline, checkmarkCircleOutline, closeOutline, copyOutline, informationCircleOutline, refreshOutline, storefrontOutline } from "ionicons/icons";
-import { api, commonUtil, emitter, logger, translate } from '@common'
+import { commonUtil, emitter, logger, translate } from '@common'
 import { formatDateTime, parseDateTimeValue } from '@/utils';
 import { DateTime } from "luxon";
 import { computed, defineProps, reactive, ref, watch } from "vue";
@@ -561,6 +570,7 @@ import {
 } from "@/composables/useShopifyProductSyncMigration";
 import {
   fetchUnsyncedProductUpdateCount,
+  useShopifyUnsyncedProductCount,
   useShopifyConnectionSyncSession,
   useShopifyOrderSyncCard,
   useShopifyProductSyncRun,
@@ -612,7 +622,15 @@ const productSyncSummary = computed(() => ({ syncRunState: productSyncRunState.v
 
 const productSyncRecordsProcessed = computed(() =>
   Number(productSyncRunState.value.latestConsumedSystemMessage?.totalRecordCount || 0));
-const productSyncUnsyncedCount = ref(0);
+const {
+  count: productSyncUnsyncedCount,
+  refresh: refreshProductSyncUnsyncedCount,
+} = useShopifyUnsyncedProductCount({
+  remoteId: productSyncRemoteId,
+  lastSyncedAt: () => productSyncRunState.value.lastSyncedAt,
+  load: fetchUnsyncedProductUpdateCount,
+  onError: (error) => logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error),
+});
 const hasProductSyncSummaryError = ref(false);
 const productSyncMigrationEligibility = ref({
   componentRelease: "",
@@ -910,7 +928,7 @@ const activityGraphCaption = computed(() => {
     return `${translate("No sync activity recorded in the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}.`;
   }
 
-  return `${activityGraphTotalCount.value} ${translate("sync runs")} · ${activityGraphActiveHourCount.value} ${translate("active hours")}`;
+  return `${activityGraphTotalCount.value} ${translate("sync runs")}, ${activityGraphActiveHourCount.value} ${translate("active hours")}`;
 });
 const activityGraphAriaLabel = computed(() => {
   return `${translate("Product sync activity over the last")} ${PRODUCT_SYNC_ACTIVITY_HOUR_COUNT} ${translate("hours")}. ${activityGraphCaption.value}. ${translate("Peak")} ${activityGraphPeakCount.value}/${translate("hour")}.`;
@@ -980,6 +998,12 @@ watch(selectedShopId, async (shopId: string) => {
   }
 }, { immediate: true });
 
+// Ionic keeps this page mounted while the product-sync page runs. Refresh remote truth whenever the
+// retained summary becomes visible again, even if the last-sync timestamp has not changed.
+onIonViewWillEnter(() => {
+  void refreshProductSyncUnsyncedCount().catch(() => undefined);
+});
+
 async function loadConnectionSummaries(shopId = selectedShopId.value) {
   if (!shopId) {
     selectedShopLoadError.value = translate("The selected Shopify connection could not be loaded.");
@@ -1020,7 +1044,6 @@ async function loadProductsInventorySummary() {
   };
   // Nothing to reset for the run state or the record count — both are cached projections that
   // re-derive from whichever shop is selected.
-  productSyncUnsyncedCount.value = 0;
   clearSyncRun();
 
   if (!props.id) {
@@ -1056,37 +1079,11 @@ async function loadProductsInventorySummary() {
     logger.warn("Failed to inspect legacy product sync state", legacyTeardownStateResult.reason);
   }
 
-  /**
-   * The remote is resolved from the CACHE — it is a join of two cached tables, never a request.
-   * `fetchShopSystemMessageRemoteId` used to be the fourth leg of the batch above.
-   */
-  const systemMessageRemoteId = productSyncRemoteId.value || null;
-
-  try {
-    /**
-     * `unsyncedUpdates` is the only part of the old dashboard summary this page still asks for: it
-     * counts products changed in Shopify since the last sync, which only Shopify knows.
-     *
-     * Everything else the summary returned — the run state, the pending-request count — is now the
-     * reactive `productSyncRunState` above, derived from cached messages and imports. The old call
-     * fetched five things and this page read two of them.
-     */
-    productSyncUnsyncedCount.value = await loadUnsyncedProductUpdateCount(systemMessageRemoteId);
-  } catch (error) {
-    logger.warn("Failed to count unsynced product updates (Shopify is the only source)", error);
-    productSyncUnsyncedCount.value = 0;
-  }
+  // `useShopifyUnsyncedProductCount` also refreshes when the retained page observes a new sync
+  // cursor. Await the first load so the summary skeleton does not briefly show an old count.
+  await refreshProductSyncUnsyncedCount().catch(() => undefined);
 
   isSyncSummaryLoading.value = false;
-}
-
-/** Shopify-only: how many products changed since the last completed sync. */
-async function loadUnsyncedProductUpdateCount(systemMessageRemoteId: string | null): Promise<number> {
-  if (!systemMessageRemoteId) return 0;
-  return fetchUnsyncedProductUpdateCount(
-    systemMessageRemoteId,
-    productSyncRunState.value.lastSyncedAt || undefined,
-  );
 }
 
 /**
@@ -1172,8 +1169,7 @@ async function cloneTypeMappings(mappedTypeId: string) {
   // 2. Delete existing mappings in target
   if (targetMappings.length > 0) {
     const deletePromises = targetMappings.map((mapping: any) =>
-      useShopifyShopMutations(targetShopId).retireTypeMapping({
-        mappedTypeId,
+      useShopifyShopMutations(targetShopId).deleteTypeMapping({
         mappedKey: mapping.mappedKey
       }, { refresh: false })
     );
@@ -1355,6 +1351,7 @@ async function updateCredentials() {
 // ----- Access scopes modal -----
 const showAccessScopes = ref(false);
 const accessScopesRemoteId = ref<string>('');
+const isFetchingScopes = ref(false);
 
 const scopeInfo = computed(() =>
   accessScopesRemoteId.value ? scopesFor(accessScopesRemoteId.value) : null
@@ -1372,6 +1369,8 @@ async function openAccessScopesModal() {
   accessScopesRemoteId.value = productSyncRemoteId.value;
   if (!accessScopesRemoteId.value) {
     commonUtil.showToast(translate('No Shopify shop remote found for this connection'));
+  } else if(!scopeInfo.value) {
+    await refresh(true);
   }
 }
 
@@ -1403,18 +1402,25 @@ async function onConnectionAccessScopeChange(accessScopeEnumId: string) {
   isSavingAccessScope.value = false;
 }
 
-async function refresh() {
+async function refresh(isAutoFetch = false) {
   if (!accessScopesRemoteId.value) return;
 
-  emitter.emit('presentLoader');
+  if(!isAutoFetch) {emitter.emit('presentLoader');}
+  isFetchingScopes.value = true;
   try {
     const granted = await refreshAccessScopes(accessScopesRemoteId.value);
-    commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
+    if(!isAutoFetch) {
+      commonUtil.showToast(translate('Fetched {count} access scope(s) from Shopify', { count: granted.length }));
+    }
   } catch (error: any) {
     logger.error('refreshAccessScopes', error);
+    // Report a failure either way: opening the modal is a user action too, and an empty list alone
+    // reads as "no scopes granted" rather than "could not reach Shopify".
     commonUtil.showToast(translate('Failed to refresh access scopes'));
+  } finally {
+    isFetchingScopes.value = false;
+    if(!isAutoFetch) {emitter.emit('dismissLoader');}
   }
-  emitter.emit('dismissLoader');
 }
 
 // ----- Product store modal -----
@@ -1507,6 +1513,10 @@ function openShopifyLocations() {
 
 function openInventorySync() {
   router.push(`/shopify-connection-details/${props.id}/inventory-sync`);
+}
+
+function openFulfillmentSync() {
+  router.push(`/shopify-connection-details/${props.id}/fulfillment-sync`);
 }
 
 function openTransferSync() {

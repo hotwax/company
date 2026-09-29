@@ -114,7 +114,7 @@
                     <p>{{ translate("Shop ID") }}: {{ id }}</p>
                   </ion-label>
                   <ion-note slot="end">
-                    {{ shopName }} · {{ shopifyShopId || translate("Not available") }}
+                    {{ shopName }}, {{ shopifyShopId || translate("Not available") }}
                   </ion-note>
                 </ion-item>
                 <ion-item>
@@ -206,11 +206,11 @@
 
                     <template v-if="row.id === 'batch-request'">
                       <p v-if="latestBatch?.systemMessageId">
-                        {{ translate("SystemMessage") }} · {{ latestBatch.systemMessageId }}
+                        {{ translate("SystemMessage") }}: {{ latestBatch.systemMessageId }}
                       </p>
                       <p v-else>{{ translate("SystemMessage not created yet") }}</p>
-                      <p>{{ translate("Requested") }} · {{ batchRequestedLabel }}</p>
-                      <p>{{ translate("Job run") }} · {{ latestBatch?.createdByJobRunId || translate("Not available") }}</p>
+                      <p>{{ translate("Requested") }}: {{ batchRequestedLabel }}</p>
+                      <p>{{ translate("Job run") }}: {{ latestBatch?.createdByJobRunId || translate("Not available") }}</p>
                     </template>
 
                     <template v-else>
@@ -223,7 +223,7 @@
                       <template v-else>
                         <p v-for="log in progressImports" :key="log.logId || log.configId">
                           <ion-button class="progress-fact-button" fill="clear" size="small" @click.stop="openMdmLogDetails(log.logId)">
-                            {{ importLabel(log.configId) }} · {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }} · {{ log.totalRecordCount }} {{ translate("records") }}
+                            {{ importLabel(log.configId) }}, {{ rawStatusLabel(log.statusId, log.failedRecordCount, log.successRecordCount) }}, {{ log.totalRecordCount }} {{ translate("records") }}
                           </ion-button>
                         </p>
                       </template>
@@ -375,7 +375,7 @@
                       <ion-label class="ion-text-wrap">
                         {{ order.orderName || order.shopifyOrderId }}
                         <p>{{ translate("Shopify order") }} {{ order.shopifyOrderId || translate("Not available") }}</p>
-                        <p>{{ translate("Processed") }} · {{ formatDate(order.processedAt) }}</p>
+                        <p>{{ translate("Processed") }}: {{ formatDate(order.processedAt) }}</p>
                       </ion-label>
                       <ion-badge slot="end" :color="order.outcome === 'Created' ? 'success' : 'primary'">
                         {{ translate(order.outcome) }}
@@ -466,7 +466,7 @@
                     <ion-item>
                       <ion-label>{{ translate("Records") }}</ion-label>
                       <ion-note slot="end">
-                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }} ·
+                        {{ log.totalRecordCount }} {{ translate(log.totalRecordCount === 1 ? "record" : "records") }},
                         {{ log.failedRecordCount }} {{ translate(log.failedRecordCount === 1 ? "error record" : "error records") }}
                       </ion-note>
                     </ion-item>
@@ -633,22 +633,24 @@
           <ion-list-header v-if="!queryString.trim()">
             <ion-label>{{ translate("Recently created orders from Shopify") }}</ion-label>
           </ion-list-header>
-          <ion-item button @click="toggleAll">
-            <ion-label>
-              {{ translate("Select all") }}
-              <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
-            </ion-label>
-            <ion-checkbox slot="end" :checked="allSelected" @click.stop="toggleAll" />
+          <ion-item>
+            <ion-checkbox justify="space-between" :checked="allSelected" @ion-change="toggleAll">
+              <ion-label>
+                {{ translate("Select all") }}
+                <p>{{ selectedOrders.length }} {{ translate("selected") }}</p>
+              </ion-label>
+            </ion-checkbox>
           </ion-item>
-          <ion-item v-for="order in orders" :key="order.legacyResourceId" button @click="toggleOrder(order)">
-            <ion-label>
-              {{ order.name }}
-              <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
-              <p>{{ order.customerName || translate("No customer") }} · {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
-              <p>{{ formatOrderDate(order.createdAt) }}</p>
-            </ion-label>
-            <ion-note slot="end">{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
-            <ion-checkbox slot="end" :checked="isSelected(order.legacyResourceId)" @click.stop="toggleOrder(order)" />
+          <ion-item v-for="order in orders" :key="order.legacyResourceId">
+            <ion-checkbox justify="space-between" :checked="isSelected(order.legacyResourceId)" @ion-change="toggleOrder(order)">
+              <ion-label>
+                {{ order.name }}
+                <p>{{ translate("Shopify ID") }}: {{ order.legacyResourceId }}</p>
+                <p>{{ order.customerName || translate("No customer") }}, {{ order.displayFinancialStatus || translate("Status unavailable") }}</p>
+                <p>{{ formatOrderDate(order.createdAt) }}</p>
+              </ion-label>
+              <ion-note>{{ order.totalAmount || translate("No total") }} {{ order.currencyCode || "" }}</ion-note>
+            </ion-checkbox>
           </ion-item>
         </ion-list>
         <ion-list v-else-if="isLoading" lines="none"><ion-item><ion-spinner name="crescent" /></ion-item></ion-list>
@@ -670,7 +672,6 @@
     <ServiceJobDetailsModal
       :is-open="showJobDetailsModal"
       :job-name="orderSync.job?.jobName || ''"
-      :title="translate('Queue order requests')"
       :allowed-parameter-names="['shopId', 'systemMessageRemoteId', 'systemMessageTypeId', 'runAsBatch']"
       :parameter-description="translate('Job and service parameters used by this Order Sync job.')"
       :can-run-now="canRunForSelectedShop"
@@ -1008,19 +1009,19 @@ function progressDetailLabel(row: SyncProgressRow): string {
   }
   if (row.state === "completed") {
     return row.successfulRecords === 1
-      ? translate("Completed · {count} order", { count: row.successfulRecords })
-      : translate("Completed · {count} orders", { count: row.successfulRecords });
+      ? translate("Completed, {count} order", { count: row.successfulRecords })
+      : translate("Completed, {count} orders", { count: row.successfulRecords });
   }
   if (row.state === "partial") {
-    return translate("Partially completed · {processed} processed · {failed} failed", {
+    return translate("Partially completed, {processed} processed, {failed} failed", {
       processed: row.successfulRecords,
       failed: row.failedRecords,
     });
   }
   if (row.state === "failed" && row.failedRecords) {
     return row.failedRecords === 1
-      ? translate("Failed · {count} record", { count: row.failedRecords })
-      : translate("Failed · {count} records", { count: row.failedRecords });
+      ? translate("Failed, {count} record", { count: row.failedRecords })
+      : translate("Failed, {count} records", { count: row.failedRecords });
   }
   return progressStateLabel(row.state);
 }
@@ -1065,7 +1066,7 @@ function historyObjectLabel(objectType: string, count: number): string {
     FulfillmentLocation: ["Fulfillment location", "Fulfillment locations"],
   };
   const [singular, plural] = labels[objectType] || [objectType, objectType];
-  return `${translate(count === 1 ? singular : plural)} · ${count}`;
+  return `${translate(count === 1 ? singular : plural)}: ${count}`;
 }
 
 function openSystemMessageDetails(systemMessageId: unknown) {
@@ -1434,7 +1435,7 @@ async function confirmRunNow() {
   }
 }
 
-async function saveJobFromModal(input: { cronExpression: string; paused: boolean }) {
+async function saveJobFromModal(input: { cronExpression?: string; paused?: boolean }) {
   const shopId = props.id;
   const currentJob = orderSync.job;
   /**
@@ -1448,10 +1449,11 @@ async function saveJobFromModal(input: { cronExpression: string; paused: boolean
   if (!shopId || !currentJob || orderSync.selectedShopId !== shopId) {
     throw new Error("The loaded Order Sync job does not belong to the selected Shopify shop.");
   }
-  if (input.cronExpression !== currentJob.cronExpression) {
+  // The modal passes only a changed field, one per call, so each write is its own committed stage.
+  if (input.cronExpression !== undefined) {
     await orderSync.updateSchedule(input.cronExpression, shopId);
   }
-  if (input.paused !== orderSync.isPaused) {
+  if (input.paused !== undefined) {
     await orderSync.updateJobStatus(input.paused, shopId);
   }
 }

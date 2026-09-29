@@ -1,6 +1,6 @@
 {
   "schema": {
-    "dataManagerLogs": "logId, configId, systemMessageId, statusId, createdDate, startDateTime, finishDateTime, cancelDateTime, lastUpdatedStamp, [configId+createdDate], [configId+finishDateTime]",
+    "dataManagerLogs": "logId, configId, transferShopId, systemMessageId, statusId, createdDate, startDateTime, finishDateTime, cancelDateTime, lastUpdatedStamp, [configId+createdDate], [configId+finishDateTime]",
     "systemMessages": "systemMessageId, systemMessageTypeId, systemMessageRemoteId, statusId, initDate, processedDate, lastAttemptDate, lastUpdatedStamp, [systemMessageRemoteId+initDate], [systemMessageRemoteId+systemMessageTypeId], [systemMessageRemoteId+systemMessageTypeId+initDate], [systemMessageRemoteId+statusId]",
     "serviceJobRuns": "jobRunId, jobName, startTime, endTime, hasError, [jobName+startTime]",
     "syncRuns": "systemMessageId, shopId, configId, systemMessageTypeId, systemMessageRemoteId, statusId, logId, initDate, lastUpdatedStamp, [shopId+systemMessageTypeId+initDate], [shopId+configId+initDate]",
@@ -27,11 +27,11 @@
     "netSuiteOrderPushBacklog": "productStoreId, checkedAt",
     "systemMessageErrors": "[systemMessageId+errorDate], systemMessageId, errorDate, attemptedStatusId",
     "productUpdateHistories": "[shopId+productId], shopId, productId, systemMessageId, lastUpdatedStamp, [shopId+lastUpdatedStamp]",
-    "shopifyInventoryAdjustmentDetails": "[eventTypeId+eventReferenceId+inventoryChannelId+shopifyInventoryItemId], eventTypeId, eventReferenceId, inventoryChannelId, shopifyInventoryItemId, systemMessageId, detailStatusId, createdDate, lastUpdatedStamp, [inventoryChannelId+createdDate], [inventoryChannelId+lastUpdatedStamp], [inventoryChannelId+detailStatusId], [systemMessageId+createdDate]",
+    "shopifyInventoryAdjustmentDetails": "[eventTypeId+eventReferenceId+inventoryChannelId+shopifyInventoryItemId], shopId, systemMessageId, createdDate, [shopId+createdDate], [shopId+detailLastUpdatedStamp], [shopId+systemMessageLastUpdatedStamp]",
     "carrierFacilities": "[partyId+facilityId+roleTypeId+fromDate], partyId, facilityId, roleTypeId, fromDate, thruDate",
     "inventoryEventDocuments": "[dataDocumentId+dataFeedId], dataDocumentId, dataFeedId",
     "organizationRelationships": "[partyIdFrom+partyIdTo+roleTypeIdFrom+roleTypeIdTo+partyRelationshipTypeId+fromDate], partyIdFrom, partyIdTo, partyRelationshipTypeId, fromDate, thruDate",
-    "shopifyLocations": "[shopId+shopifyLocationId], shopId, facilityId, shopifyLocationId",
+    "shopifyLocations": "[shopId+facilityId], shopId, facilityId, shopifyLocationId",
     "shopifyTypeMappings": "[shopId+mappedTypeId+mappedKey], shopId, mappedTypeId, mappedKey",
     "shopifyCarrierShipments": "[shopId+carrierPartyId+shipmentMethodTypeId], shopId, carrierPartyId, shipmentMethodTypeId",
     "facilityGroupProductStores": "[facilityGroupId+productStoreId+fromDate], facilityGroupId, productStoreId, fromDate, thruDate",

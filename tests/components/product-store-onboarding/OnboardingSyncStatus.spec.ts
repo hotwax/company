@@ -27,11 +27,11 @@ function mountStatus(overrides: Record<string, unknown> = {}) {
       initialLoad: {
         status: "running",
         summary: "HotWax is processing the exported Shopify product file.",
-        lastRunLabel: "Last run: Aug 12, 10:30 · Running",
+        lastRunLabel: "Last run: Aug 12, 10:30, Running",
         totalRecordCount: 1200,
         failedRecordCount: 3,
         stages: [
-          { id: "message", label: "System message", status: "completed", detail: "MSG-100 · Created 2 minutes ago" },
+          { id: "message", label: "System message", status: "completed", detail: "MSG-100, Created 2 minutes ago" },
           { id: "bulk", label: "Shopify bulk operation", status: "running", totalRecordCount: 1200 },
           { id: "import", label: "HotWax bulk import", status: "pending", detail: "Waiting for HotWax to import the Shopify export file." }
         ]
@@ -60,7 +60,7 @@ describe("OnboardingSyncStatus", () => {
     expect(wrapper.text()).toContain("Missing")
     expect(wrapper.text()).toContain("Current or last run")
     expect(wrapper.text()).toContain("Request context")
-    expect(wrapper.text()).toContain("Last run: Aug 12, 10:30 · Running")
+    expect(wrapper.text()).toContain("Last run: Aug 12, 10:30, Running")
     expect(wrapper.text()).toContain("3 failed of 1,200 records processed")
     expect(wrapper.text()).toContain("System message")
     expect(wrapper.text()).toContain("Shopify bulk operation")

@@ -168,7 +168,7 @@ const props = defineProps<{ isOpen: boolean; channel: any }>();
 const emit = defineEmits<{
   close: [];
   updated: [];
-  "schedule-job": [{ jobName: string; title: string }];
+  "schedule-job": [{ jobName: string }];
 }>();
 
 const { records: cachedJobs } = useDb<any>("serviceJobs");
@@ -230,10 +230,7 @@ async function openScheduleJob() {
       isSettingUpJob.value = false;
     }
   }
-  emit("schedule-job", {
-    jobName,
-    title: `${translate("Reset aggregate ATP")} - ${channelName}`,
-  });
+  emit("schedule-job", { jobName });
 }
 
 /** Locations parked here are unassigned rather than backing a real facility. */

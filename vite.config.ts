@@ -4,6 +4,7 @@ import path from 'path'
 import { createRequire } from 'module'
 import { defineConfig, loadEnv } from 'vite'
 import { versionInfoUtil } from '../../common/utils/versionInfoUtil'
+import { commonEnvPlugin } from '../../common/vite/commonEnvPlugin'
 import { localApiServerDiscoveryPlugin } from '../../common/vite/localApiServerDiscoveryPlugin'
 import { ideTraceVue } from 'chrome-ide-trace/vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -73,6 +74,7 @@ export default defineConfig(({ mode }) => {
     port: 8100
   },
   plugins: [
+    commonEnvPlugin(),
     ideTraceVue(),
     resolveCommonDeps(),
     localApiServerDiscoveryPlugin(),

@@ -319,9 +319,9 @@ defineSnapshotDomain({
   syncClass: "B",
   table: "enumGroupMembers",
   projection: companyDb.entities.enumGroupMembers,
-  listUrl: "admin/enumGroups/NETSUITE_IIV_REASON/members",
+  listUrl: "admin/enumGroups/IA_VAR_NETSUITE/members",
   collectionKey: null,
-  listParams: { enumerationGroupId: "NETSUITE_IIV_REASON" },
+  listParams: { enumerationGroupId: "IA_VAR_NETSUITE" },
 }),
 
 /**

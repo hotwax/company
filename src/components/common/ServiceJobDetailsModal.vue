@@ -40,8 +40,7 @@
         <ion-list lines="full">
           <ion-item>
             <ion-label>
-              {{ modalTitle }}
-              <p>{{ jobDetails.jobName }}</p>
+              {{ jobDetails.description || translate('No description') }}
               <p>{{ jobDetails.serviceName || translate('Unavailable') }}</p>
             </ion-label>
           </ion-item>
@@ -66,14 +65,6 @@
             <ion-label>{{ translate('Active') }}</ion-label>
             <ion-toggle slot="end" :checked="draftActive" :disabled="isSaving || !canEdit" @ionChange="draftActive = $event.detail.checked" />
           </ion-item>
-          <ion-item>
-            <ion-label>{{ translate('Last run') }}</ion-label>
-            <ion-label slot="end">{{ lastRunLabel }}</ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-label>{{ translate('Instance of product') }}</ion-label>
-            <ion-label slot="end">{{ productLabel }}</ion-label>
-          </ion-item>
         </ion-list>
 
         <ion-accordion-group>
@@ -85,24 +76,33 @@
               </ion-label>
               <ion-note slot="end">{{ nextRunLabel }}</ion-note>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <ion-item>
-                <ion-input label-placement="stacked" :label="translate('Quartz cron expression')" v-model="draftCronExpression" :disabled="isSaving || !canEdit" />
-              </ion-item>
-              <ion-item>
-                <ion-label>
-                  <p class="overline">{{ translate('Schedule preview') }}</p>
-                  {{ isScheduleValid ? scheduleDescription : translate('Provide a valid cron expression') }}
-                </ion-label>
-                <ion-note slot="end">{{ nextRunLabel }}</ion-note>
-              </ion-item>
-              <ion-list-header>{{ translate('Schedule Options') }}</ion-list-header>
-              <ion-radio-group v-model="draftCronExpression">
-                <ion-item v-for="option in scheduleOptions" :key="option.expression">
-                  <ion-radio label-placement="end" justify="start" :value="option.expression" :disabled="isSaving || !canEdit">{{ translate(option.label) }}</ion-radio>
+            <div slot="content">
+              <!-- Outlined fields sit in padded content, not in an ion-item, whose wrapper clips the outline label. -->
+              <div class="ion-padding">
+                <ion-input
+                  v-model="draftCronExpression"
+                  fill="outline"
+                  label-placement="stacked"
+                  :label="translate('Quartz cron expression')"
+                  :disabled="isSaving || !canEdit"
+                />
+              </div>
+              <ion-list lines="full">
+                <ion-item>
+                  <ion-label>
+                    <p class="overline">{{ translate('Schedule preview') }}</p>
+                    {{ isScheduleValid ? scheduleDescription : translate('Provide a valid cron expression') }}
+                  </ion-label>
+                  <ion-note slot="end">{{ nextRunLabel }}</ion-note>
                 </ion-item>
-              </ion-radio-group>
-            </ion-list>
+                <ion-list-header>{{ translate('Schedule Options') }}</ion-list-header>
+                <ion-radio-group :value="selectedPreset" @ion-change="choosePreset($event.detail.value)">
+                  <ion-item v-for="option in scheduleOptions" :key="option.expression">
+                    <ion-radio label-placement="end" justify="start" :value="option.expression" :disabled="isSaving || !canEdit">{{ translate(option.label) }}</ion-radio>
+                  </ion-item>
+                </ion-radio-group>
+              </ion-list>
+            </div>
           </ion-accordion>
 
           <ion-accordion value="parameters">
@@ -113,66 +113,95 @@
               </ion-label>
               <ion-note slot="end">{{ parameterCount }}</ion-note>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <!-- The job parameters are this job's stored values, so they are the editable ones.
-                   Saved through the same `serviceJobParameters` PUT that provisions a cloned job. -->
-              <ion-item v-for="parameter in jobParameters" :key="parameter.key">
-                <!-- A parameter whose valid values the host screen knows is chosen, not typed: an id
-                     typed by hand is a silent misconfiguration the job only reveals when it runs. -->
-                <ion-select
-                  v-if="parameter.options"
-                  label-placement="stacked"
-                  interface="popover"
-                  :label="parameter.label"
-                  :value="draftParameters[parameter.name]"
-                  :disabled="isSaving || !canEdit || parameter.isProtected"
-                  @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
-                >
-                  <ion-select-option v-for="option in parameter.options" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </ion-select-option>
-                </ion-select>
-                <ion-input
-                  v-else
-                  label-placement="stacked"
-                  :label="parameter.label"
-                  :value="draftParameters[parameter.name]"
-                  :disabled="isSaving || !canEdit || parameter.isProtected"
-                  @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
-                />
-                <ion-note v-if="parameter.isProtected" slot="end">{{ translate('Read only') }}</ion-note>
-              </ion-item>
+            <div slot="content">
+              <!-- The job parameters are this job's stored values, so they are the editable ones. Saved
+                   through the same `serviceJobParameters` PUT that provisions a cloned job. Outlined, in
+                   padded content rather than ion-items, whose wrapper clips the outline label. -->
+              <div v-if="jobParameters.length" class="ion-padding">
+                <template v-for="parameter in jobParameters" :key="parameter.key">
+                  <!-- A parameter whose valid values the host screen knows is chosen, not typed: an id
+                       typed by hand is a silent misconfiguration the job only reveals when it runs. -->
+                  <ion-select
+                    v-if="parameter.options"
+                    class="ion-margin-bottom"
+                    fill="outline"
+                    label-placement="stacked"
+                    interface="popover"
+                    :label="parameter.label"
+                    :helper-text="parameter.helperText"
+                    :value="draftParameters[parameter.name]"
+                    :disabled="isSaving || !canEdit || parameter.isProtected"
+                    @ionChange="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                  >
+                    <ion-select-option v-for="option in parameter.options" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </ion-select-option>
+                  </ion-select>
+                  <ion-input
+                    v-else
+                    class="ion-margin-bottom"
+                    fill="outline"
+                    label-placement="stacked"
+                    :label="parameter.label"
+                    :helper-text="parameter.helperText"
+                    :value="draftParameters[parameter.name]"
+                    :disabled="isSaving || !canEdit || parameter.isProtected"
+                    @ionInput="draftParameters[parameter.name] = String($event.detail.value ?? '')"
+                  />
+                </template>
+              </div>
 
-              <!-- Service parameters are the service SIGNATURE (type, mode, default), not values
-                   stored against this job - there is nothing here a save could write, so they stay
-                   read-only rather than offering an edit that goes nowhere. -->
-              <template v-if="serviceParameters.length">
-                <ion-list-header>{{ translate('Service parameters') }}</ion-list-header>
-                <ion-item v-for="parameter in serviceParameters" :key="parameter.key">
-                  <ion-label>{{ parameter.label }}</ion-label>
-                  <ion-label slot="end">{{ parameter.value }}</ion-label>
-                </ion-item>
-              </template>
-
-              <ion-item v-if="!parameterCount"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
-            </ion-list>
+              <!-- The service's other parameters: its SIGNATURE, not values stored against this job, so
+                   there is nothing a save could write. A parameter the job sets shows its signature
+                   as the helper text of its own field instead. -->
+              <ion-list v-if="unsetServiceParameters.length || !parameterCount" lines="full">
+                <template v-if="unsetServiceParameters.length">
+                  <ion-list-header>{{ translate("Not set on this job") }}</ion-list-header>
+                  <ion-item v-for="parameter in unsetServiceParameters" :key="parameter.name">
+                    <ion-label>
+                      {{ parameter.name }}
+                      <p v-if="parameter.signature">
+                        {{ parameter.signature }}
+                      </p>
+                    </ion-label>
+                  </ion-item>
+                </template>
+                <ion-item v-if="!parameterCount"><ion-label>{{ translate('No parameters found') }}</ion-label></ion-item>
+              </ion-list>
+            </div>
           </ion-accordion>
 
           <ion-accordion value="recent-runs">
             <ion-item slot="header">
-              <ion-label>{{ translate('Recent runs') }}<p>{{ translate('Last 5 executions for this service job.') }}</p></ion-label>
-              <ion-note slot="end">{{ recentRuns.length }}</ion-note>
+              <!-- The last run, readable with the section closed; the rows below are the five newest. -->
+              <ion-label>
+                {{ translate('Recent runs') }}
+                <p>{{ runRows[0] ? translate("Last run {at}", { at: runRows[0].startedAt }) : translate('No recent runs') }}</p>
+              </ion-label>
+              <ion-badge v-if="runRows[0]" slot="end" :color="runRows[0].statusColor">
+                {{ runRows[0].statusLabel }}
+              </ion-badge>
             </ion-item>
-            <ion-list slot="content" lines="full">
-              <ion-item v-for="run in recentRuns" :key="runKey(run)">
-                <ion-label>
-                  {{ statusLabel(serviceJobRunStatus(run)) }}
-                  <p>{{ formatDate(run.startTime || run.startedAt) }}</p>
-                  <p v-if="run.endTime || run.completedAt">{{ translate('Completed') }} {{ formatDate(run.endTime || run.completedAt) }}</p>
+            <!-- The status once, as the badge; the lines say when, how long, and what the run did. -->
+            <ion-list slot="content" inset lines="full">
+              <ion-item v-for="run in runRows" :key="run.key">
+                <ion-label class="ion-text-wrap">
+                  {{ run.startedAt }}
+                  <p v-if="run.duration">
+                    {{ run.duration }}
+                  </p>
+                  <p v-for="figure in run.figures" :key="figure">
+                    {{ figure }}
+                  </p>
+                  <p v-if="run.error">
+                    {{ run.error }}
+                  </p>
                 </ion-label>
-                <ion-badge slot="end" :color="statusColor(serviceJobRunStatus(run))">{{ statusLabel(serviceJobRunStatus(run)) }}</ion-badge>
+                <ion-badge slot="end" :color="run.statusColor">
+                  {{ run.statusLabel }}
+                </ion-badge>
               </ion-item>
-              <ion-item v-if="!recentRuns.length"><ion-label>{{ translate('No recent runs found') }}</ion-label></ion-item>
+              <ion-item v-if="!runRows.length"><ion-label>{{ translate('No recent runs found') }}</ion-label></ion-item>
             </ion-list>
           </ion-accordion>
 
@@ -183,10 +212,11 @@
             </ion-item>
             <ion-list slot="content" lines="full">
               <ion-item v-for="audit in auditHistory" :key="auditKey(audit)">
-                <ion-label>
+                <ion-label class="ion-text-wrap">
                   {{ audit.changedFieldName || audit.fieldName || translate('Job change') }}
-                  <p v-if="audit.changedByUserLoginId || audit.changedByUserId">{{ translate('Changed by') }}: {{ audit.changedByUserLoginId || audit.changedByUserId }}</p>
-                  <p>{{ translate('Job configuration changed') }}</p>
+                  <p v-if="audit.changedByUserLoginId || audit.changedByUserId">{{ translate('Changed by') }}: {{ audit.changedByUserLoginId || usernames[audit.changedByUserId] || audit.changedByUserId }}</p>
+                  <p>{{ translate("Previous value") }}: {{ auditValueOf(audit, audit.oldValueText) }}</p>
+                  <p>{{ translate("New value") }}: {{ auditValueOf(audit, audit.newValueText) }}</p>
                 </ion-label>
                 <ion-note slot="end">{{ formatDate(audit.changedDate || audit.changedDateTime) }}</ion-note>
               </ion-item>
@@ -224,18 +254,27 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
-import { serviceJobRunStatus } from '@/utils/serviceJobRun';
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
+import { translateMutationError } from "@/utils/errorPresentation";
+import { formatLag } from "@/utils/inventoryEventTime";
+import { describeRunResult, serviceJobRunStatus } from "@/utils/serviceJobRun";
+
+/**
+ * Parameters that bind a job to what it serves - the ones a screen finds the job BY. Editing one
+ * silently re-points the job instead of configuring it, so they are read-only unless a screen names
+ * one in `editableParameterNames` because, for that job, it is an input.
+ */
+const IDENTITY_PARAMETER_NAMES = [
+  "shopId", "productStoreId", "productStoreIds", "configId", "inventoryChannelId",
+  "systemMessageRemoteId", "systemMessageTypeId", "systemMessageTypeIds",
+];
 
 const props = withDefaults(defineProps<{
   isOpen: boolean;
+  /** Also the modal's title, on every screen. */
   jobName: string;
-  title?: string;
   allowedParameterNames?: string[];
-  /**
-   * Job parameters that stay read-only. For identity parameters - the ones a screen finds this job
-   * BY - editing the value silently reassigns the job to something else instead of configuring it.
-   */
-  protectedParameterNames?: string[];
+  editableParameterNames?: string[];
   /**
    * Valid values per job parameter, keyed by parameter name. A parameter listed here renders as a
    * dropdown instead of a free-text field.
@@ -247,11 +286,11 @@ const props = withDefaults(defineProps<{
   runNowDisabledReason?: string;
   editDisabledReason?: string;
   runHandler?: (() => Promise<unknown>) | null;
-  saveHandler?: ((payload: { cronExpression: string; paused: boolean }) => Promise<unknown>) | null;
+  /** Writes the one field it is given (schedule or pause); called once per changed field. */
+  saveHandler?: ((payload: { cronExpression?: string; paused?: boolean }) => Promise<unknown>) | null;
 }>(), {
-  title: '',
   allowedParameterNames: () => [],
-  protectedParameterNames: () => [],
+  editableParameterNames: () => [],
   parameterOptions: () => ({}),
   parameterDescription: 'Job and service parameters used for this Shopify product sync.',
   canRunNow: true,
@@ -262,7 +301,7 @@ const props = withDefaults(defineProps<{
   saveHandler: null,
 });
 const emit = defineEmits<{ close: []; updated: [] }>();
-const { fetchJobDetail, fetchJobRuns, fetchJobAuditHistory, updateJob, runNow } = useServiceJob();
+const { fetchJobDetail, fetchJobRuns, fetchJobAuditHistory, fetchUsernames, updateJob, runNow } = useServiceJob();
 
 const isLoading = ref(false);
 const isSaving = ref(false);
@@ -271,11 +310,12 @@ const loadError = ref('');
 const jobDetails = ref<Record<string, any>>({});
 const recentRuns = ref<any[]>([]);
 const auditHistory = ref<any[]>([]);
+const usernames = ref<Record<string, string>>({});
 const draftCronExpression = ref('');
 const draftActive = ref(false);
 const draftParameters = ref<Record<string, string>>({});
 
-const modalTitle = computed(() => props.title || jobDetails.value.jobName || props.jobName || translate('Sync job details'));
+const modalTitle = computed(() => props.jobName || translate("Sync job details"));
 const originalCronExpression = computed(() => String(jobDetails.value.cronExpression || ''));
 const originalActive = computed(() => String(jobDetails.value.paused || 'N').toUpperCase() !== 'Y');
 const hasLoadedJob = computed(() => !!props.jobName && jobDetails.value.jobName === props.jobName && !loadError.value);
@@ -293,9 +333,21 @@ const isScheduleValid = computed(() => {
  */
 const scheduleChanged = computed(() => draftCronExpression.value !== originalCronExpression.value);
 const canSave = computed(() => !isLoading.value && !isSaving.value && props.canEdit && isDirty.value && (!scheduleChanged.value || isScheduleValid.value));
+/**
+ * The schedule in words, in the job's own `executionTimeZone`: the OMS evaluates the cron there, so
+ * "At 12:00 AM" is that zone's midnight, not the reader's. A draft runs in the same zone once saved.
+ */
 const scheduleDescription = computed(() => {
-  if (!draftCronExpression.value) return translate('Not scheduled');
-  try { return cronstrue.toString(draftCronExpression.value); } catch (_error) { return translate('Schedule preview unavailable'); }
+  if(!draftCronExpression.value) {return translate("Not scheduled");}
+  let schedule: string;
+  try {
+    schedule = cronstrue.toString(draftCronExpression.value);
+  } catch {
+    return translate("Schedule preview unavailable");
+  }
+  const timeZone = String(jobDetails.value.executionTimeZone ?? "").trim();
+
+  return timeZone ? `${schedule} (${timeZone})` : schedule;
 });
 /**
  * The job routes call this `nextExecutionDateTime`; nothing returns `nextRunTime`, which this read.
@@ -311,41 +363,93 @@ const nextRunLabel = computed(() => {
   const nextRun = details.nextExecutionDateTime ?? details.nextRunTime ?? details.nextRunDate;
   return formatDateTime(nextRun) || translate('Not scheduled');
 });
-const lastRunLabel = computed(() => recentRuns.value.length
-  ? `${formatDate(recentRuns.value[0].startTime || recentRuns.value[0].startedAt)} · ${statusLabel(serviceJobRunStatus(recentRuns.value[0]))}`
-  : translate('No recent runs'));
-const productLabel = computed(() => jobDetails.value.instanceOfProductId || translate('Unavailable'));
+/**
+ * What each recent run did. Zero figures are dropped (a publisher pass that found an empty queue reads
+ * "Stopped because: the queue was empty", not five zeros), and `{}` results leave just the timing.
+ */
+const runRows = computed(() => recentRuns.value.map((run) => {
+  const status = serviceJobRunStatus(run);
+  const started = Number(run.startTime ?? run.startedAt);
+  const tookMs = Number(run.endTime ?? run.completedAt) - started;
+  const error = status === "Failed" ? String(run.errors ?? "").trim() : "";
+
+  return {
+    key: runKey(run),
+    startedAt: formatDate(run.startTime || run.startedAt),
+    duration: Number.isFinite(tookMs) && tookMs >= 0
+      ? translate("Took {duration}", { duration: tookMs < 1000 ? translate("{ms} ms", { ms: tookMs }) : formatLag(tookMs) })
+      : "",
+    figures: describeRunResult(run.results).filter((row) => row.value !== "0").map((row) => `${row.label}: ${row.value}`),
+    error: error.length > 200 ? `${error.slice(0, 200).trimEnd()}…` : error,
+    statusLabel: statusLabel(status),
+    statusColor: statusColor(status),
+  };
+}));
+/** Spelled the way the OMS stores its own schedules (`0 0/30 * * * ?`), so choosing one writes that form. */
 const scheduleOptions = [
-  { label: 'Every 15 minutes', expression: '0 */15 * ? * *' },
-  { label: 'Every 30 minutes', expression: '0 */30 * ? * *' },
-  { label: 'Every hour', expression: '0 0 * ? * *' },
-  { label: 'Every day at midnight', expression: '0 0 0 ? * *' },
+  { label: "Every 15 minutes", expression: "0 0/15 * * * ?" },
+  { label: "Every 30 minutes", expression: "0 0/30 * * * ?" },
+  { label: "Every hour", expression: "0 0 * * * ?" },
+  { label: "Every day at midnight", expression: "0 0 0 * * ?" },
 ];
+
+/** Two Quartz spellings of one schedule compare equal: a step from `*` is one from `0`, and `?` is `*` in the day fields. */
+function cronKey(expression: string) {
+  return String(expression ?? "").trim().split(/\s+/)
+    .map((field) => (field === "?" ? "*" : field.replace(/^\*\//, "0/")))
+    .join(" ");
+}
+
+/** The preset the draft schedule is, whichever spelling it was saved in. */
+const selectedPreset = computed(() =>
+  scheduleOptions.find((option) => cronKey(option.expression) === cronKey(draftCronExpression.value))?.expression);
+
+/** Choosing the saved schedule's own preset keeps its saved spelling, so it is not an unsaved change. */
+function choosePreset(expression: unknown) {
+  if(typeof expression !== "string" || !expression) {return;}
+  draftCronExpression.value = cronKey(expression) === cronKey(originalCronExpression.value) ? originalCronExpression.value : expression;
+}
 const parameterIsAllowed = (parameter: any) => !props.allowedParameterNames.length || props.allowedParameterNames.includes(String(parameter?.parameterName || parameter?.name || ''));
+
+/** The service's signature per parameter name, e.g. "Integer, default 5, required". */
+const serviceSignatures = computed(() => {
+  const parameters = Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : [];
+
+  return new Map<string, string>(parameters.map((parameter: any) => [String(parameter?.name ?? ""), [
+    parameter?.type,
+    parameter?.default === null || parameter?.default === undefined ? "" : translate("default {value}", { value: String(parameter.default) }),
+    parameter?.required === true || parameter?.required === "true" ? translate("required") : "",
+  ].filter(Boolean).join(", ")]));
+});
 
 /** Only rows with a real parameterName can be written back, so unnamed rows are not made editable. */
 const jobParameters = computed(() =>
   (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
     .filter(parameterIsAllowed)
     .filter((parameter: any) => !!parameter?.parameterName)
-    .map((parameter: any) => ({
-      key: `job-${parameter.parameterName}`,
-      name: String(parameter.parameterName),
-      label: String(parameter.parameterName),
-      isProtected: props.protectedParameterNames.includes(String(parameter.parameterName)),
-      options: props.parameterOptions[String(parameter.parameterName)],
-    })));
+    .map((parameter: any) => {
+      const name = String(parameter.parameterName);
+      const isProtected = IDENTITY_PARAMETER_NAMES.includes(name) && !props.editableParameterNames.includes(name);
 
-const serviceParameters = computed(() =>
-  (Array.isArray(jobDetails.value.serviceInParameters) ? jobDetails.value.serviceInParameters : [])
-    .filter(parameterIsAllowed)
-    .map((parameter: any, index: number) => ({
-      key: `service-${parameter.parameterName || parameter.name || index}`,
-      label: parameter.parameterName || parameter.name || translate('Parameter'),
-      value: formatValue(parameter.defaultValue || parameter.parameterValue || parameter.type || parameter.mode),
-    })));
+      return {
+        key: `job-${name}`, name, label: name, isProtected,
+        helperText: helperTextOf({ name, isProtected }), options: props.parameterOptions[name],
+      };
+    }));
 
-const parameterCount = computed(() => jobParameters.value.length + serviceParameters.value.length);
+/** The field's helper text: the service's signature for it, and why it is disabled when it is. */
+function helperTextOf(parameter: { name: string; isProtected: boolean }) {
+  return [serviceSignatures.value.get(parameter.name), parameter.isProtected ? translate("read only") : ""]
+    .filter(Boolean).join(", ") || undefined;
+}
+
+/** Service parameters the job does not set; a leading underscore marks one Moqui supplies itself (`_jobRunId`). */
+const unsetServiceParameters = computed(() => [...serviceSignatures.value]
+  .filter(([name]) => name && !name.startsWith("_") && parameterIsAllowed({ name }))
+  .filter(([name]) => !jobParameters.value.some((parameter) => parameter.name === name))
+  .map(([name, signature]) => ({ name, signature })));
+
+const parameterCount = computed(() => jobParameters.value.length + unsetServiceParameters.value.length);
 
 const originalParameters = computed<Record<string, string>>(() => Object.fromEntries(
   (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
@@ -388,6 +492,10 @@ async function load() {
     recentRuns.value = Array.isArray(runs) ? runs : [];
     auditHistory.value = Array.isArray(audits) ? audits : [];
     resetDraft();
+    // Names arrive after the modal has rendered; until then a row shows the id.
+    void fetchUsernames(auditHistory.value.map((audit) => String(audit.changedByUserId ?? ""))).then((names) => {
+      if(request === loadGeneration) {usernames.value = names;}
+    });
   } catch (_error) {
     if (request !== loadGeneration) return;
     loadError.value = translate('Failed to load sync job details.');
@@ -418,69 +526,114 @@ async function requestClose() { if (await confirmDiscard()) { resetDraft(); emit
 function handleDidDismiss() { resetDraft(); emit('close'); }
 async function requestRefresh() { if (await confirmDiscard()) await load(); }
 async function runJobNow() {
-  if (!hasLoadedJob.value || isLoading.value || isSaving.value || isRunning.value || !props.canRunNow) return;
+  if(!hasLoadedJob.value || isLoading.value || isSaving.value || isRunning.value || !props.canRunNow) {return;}
   isRunning.value = true;
   try {
     const result = props.runHandler ? await props.runHandler() : await runNow(props.jobName);
-    if (result === false) return;
-    commonUtil.showToast(translate('Job queued successfully.'));
-    await load();
+    if(result === false) {return;}
+    commonUtil.showToast(translate("Job queued successfully."));
+  } catch (error) {
+    commonUtil.showToast(translateMutationError(error, "Something went wrong."));
+    // Only the cache refresh after a queued run failed: the run is real, so the view reloads.
+    if(!isCacheReconciliationError(error)) {return;}
+  } finally {
+    isRunning.value = false;
   }
-  catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
-  finally { isRunning.value = false; }
+  await load();
 }
 async function save() {
-  if (!canSave.value) return;
+  if(!canSave.value) {return;}
   isSaving.value = true;
+  const paused = !draftActive.value;
+  const schedule = { cronExpression: draftCronExpression.value, paused: paused ? "Y" : "N" };
+  const parameterChanges = changedParameters.value;
   try {
-    const paused = !draftActive.value;
-    const parameterChanges = changedParameters.value;
-    if (props.saveHandler) {
-      await props.saveHandler({ cronExpression: draftCronExpression.value, paused });
-      // A `saveHandler` owns the schedule/pause write only - it is where a screen puts its own
-      // validation for those. Parameters go through the standard job PUT so a caller that predates
-      // editable parameters drops them silently instead of writing them.
-      if (parameterChanges.length) await updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges });
+    if(props.saveHandler) {
+      // A `saveHandler` owns the schedule and pause writes, one field per call, so each is folded in as
+      // it lands: a failure after the first leaves only the second unsaved, and a retry skips the first.
+      // Parameters go through the standard job PUT.
+      if(scheduleChanged.value) {
+        await committed(() => props.saveHandler!({ cronExpression: schedule.cronExpression }), { cronExpression: schedule.cronExpression }, []);
+      }
+      if(draftActive.value !== originalActive.value) {
+        await committed(() => props.saveHandler!({ paused }), { paused: schedule.paused }, []);
+      }
+      if(parameterChanges.length) {
+        await committed(() => updateJob({ jobName: props.jobName, serviceJobParameters: parameterChanges }), {}, parameterChanges);
+      }
     } else {
-      await updateJob({
+      await committed(() => updateJob({
         jobName: props.jobName,
-        paused: paused ? 'Y' : 'N',
-        ...(scheduleChanged.value ? { cronExpression: draftCronExpression.value } : {}),
+        paused: schedule.paused,
+        ...(scheduleChanged.value ? { cronExpression: schedule.cronExpression } : {}),
         ...(parameterChanges.length ? { serviceJobParameters: parameterChanges } : {}),
-      });
+      }), schedule, parameterChanges);
     }
-    // Fold the saved values back in before closing. Emitting `close` leaves `jobDetails` holding the
-    // pre-save row, so `isDirty` is still true when ion-modal runs `can-dismiss` - and the user is
-    // asked to discard the changes that were just written.
-    jobDetails.value = {
-      ...jobDetails.value,
-      cronExpression: draftCronExpression.value,
-      paused: paused ? 'Y' : 'N',
-      serviceJobParameters: (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
-        .map((parameter: any) => {
-          const saved = parameterChanges.find((change) => change.parameterName === String(parameter?.parameterName ?? ''));
-          return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
-        }),
-    };
-    resetDraft();
-    commonUtil.showToast(translate('Sync job updated successfully.'));
-    emit('updated'); emit('close');
-  } catch (_error) { commonUtil.showToast(translate('Something went wrong.')); }
-  finally { isSaving.value = false; }
+    commonUtil.showToast(translate("Sync job updated successfully."));
+  } catch (error) {
+    commonUtil.showToast(translateMutationError(error, "Failed to update sync job."));
+    // Whatever landed is folded in, so the modal stays open only for changes that were not sent.
+    if(isDirty.value) {return;}
+  } finally {
+    isSaving.value = false;
+  }
+  emit("updated");
+  emit("close");
+}
+
+/**
+ * Run one write and fold what it wrote into the loaded job, including when only the cache refresh
+ * after it failed: the write landed, and leaving it dirty would send it again on retry.
+ */
+async function committed(write: () => Promise<unknown>, schedule: Record<string, string>, parameterChanges: Array<{ parameterName: string; parameterValue: string }>) {
+  try {
+    await write();
+  } catch (error) {
+    if(isCacheReconciliationError(error)) {fold(schedule, parameterChanges);}
+    throw error;
+  }
+  fold(schedule, parameterChanges);
+}
+
+/** Folded values match their drafts, so `isDirty` (and `can-dismiss`) stop counting them. */
+function fold(schedule: Record<string, string>, parameterChanges: Array<{ parameterName: string; parameterValue: string }>) {
+  jobDetails.value = {
+    ...jobDetails.value,
+    ...schedule,
+    serviceJobParameters: (Array.isArray(jobDetails.value.serviceJobParameters) ? jobDetails.value.serviceJobParameters : [])
+      .map((parameter: any) => {
+        const saved = parameterChanges.find((change) => change.parameterName === String(parameter?.parameterName ?? ""));
+
+        return saved ? { ...parameter, parameterValue: saved.parameterValue } : parameter;
+      }),
+  };
+}
+/**
+ * An audit value as a reader would say it: `paused` Y/N as Paused/Active, a cron expression with its
+ * schedule in words, and an empty value (the field was first set, or cleared) as "Not set".
+ */
+function auditValueOf(audit: any, value: unknown) {
+  const text = value === undefined || value === null ? "" : String(value).trim();
+  if(!text) {return translate("Not set");}
+  const field = String(audit?.changedFieldName ?? audit?.fieldName ?? "");
+  if(field === "paused" && (text === "Y" || text === "N")) {return translate(text === "Y" ? "Paused" : "Active");}
+  if(field === "cronExpression") {
+    try {
+      return `${text} (${cronstrue.toString(text)})`;
+    } catch {
+      return text;
+    }
+  }
+
+  return text;
 }
 function formatDate(value: unknown) { return formatDateTime(value) || translate('Not available'); }
 /**
- * The value an input edits, which must round-trip - so unlike `formatValue` it never substitutes
- * "Not available" for an empty value, which would otherwise be saved back as the literal text.
+ * The value an input edits, which must round-trip - so it never substitutes "Not available" for an
+ * empty value, which would otherwise be saved back as the literal text.
  */
 function toDraftValue(value: unknown) {
   if (value === undefined || value === null) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-function formatValue(value: unknown) {
-  if (value === undefined || value === null || value === '') return translate('Not available');
-  if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
@@ -506,4 +659,9 @@ function auditKey(audit: any) { return String(audit.auditLogId || audit.entityAu
 
 <style scoped>
 .overline { color: var(--ion-color-medium); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* Room under the last row for the save button, which floats over the content (56px, 16px off the edge). */
+ion-content {
+  --padding-bottom: var(--spacer-2xl);
+}
 </style>

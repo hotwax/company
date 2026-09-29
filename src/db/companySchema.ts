@@ -15,6 +15,38 @@
 import { defineEntity } from "@common/db/defineEntity";
 import { defineSchema } from "@common/db/defineSchema";
 
+/**
+ * The columns both Shopify inventory ledgers store; the event model reads them in
+ * `src/utils/inventoryEvents.ts`. The two `*LastUpdatedStamp` aliases are the pollers' cursors.
+ */
+const INVENTORY_LEDGER_FIELDS = {
+  eventTypeId: "text",
+  eventReferenceId: "text",
+  eventTypeDescription: "text",
+  shopifyReason: "text",
+  shopId: "text",
+  shopifyLocationId: "text",
+  shopifyInventoryItemId: "text",
+  computedInventoryChange: "count",
+  decisionComment: "text",
+  systemMessageId: "text",
+  systemMessageStatusId: "text",
+  systemMessageInitDate: "date",
+  systemMessageProcessedDate: "date",
+  createdDate: "date",
+  detailLastUpdatedStamp: "date",
+  systemMessageLastUpdatedStamp: "date",
+} as const;
+
+const INVENTORY_LEDGER_INDEXES = [
+  "shopId",
+  "systemMessageId",
+  "createdDate",
+  "[shopId+createdDate]",
+  "[shopId+detailLastUpdatedStamp]",
+  "[shopId+systemMessageLastUpdatedStamp]",
+];
+
 export const companySchema = defineSchema({
   // --- class A: live, append-mostly (incremental cursor sync) ---
   //
@@ -40,9 +72,20 @@ export const companySchema = defineSchema({
       finishDateTime: "date",
       cancelDateTime: "date",
       lastUpdatedStamp: "date",
+
+      // --- Shopify transfer delivery (`shopifyTransferDelivery` domain) ---
+      logContentId: "text",
+      fileSize: "count",
+      /** Stamped by the delivery domain: the shop whose transfer file this log delivered. */
+      transferShopId: "text",
+      /** The transfers in the retained source file — never inferred from a successful shop run. */
+      transferOrderIds: "structured",
+      transferMembershipChecked: "text",
+      transferMembershipError: "text",
     },
     indexes: [
       "configId",
+      "transferShopId",
       "systemMessageId",
       "statusId",
       "createdDate",
@@ -66,6 +109,13 @@ export const companySchema = defineSchema({
       initDate: "date",
       processedDate: "date",
       lastAttemptDate: "date",
+      /**
+       * Delivery attempts so far. The fulfillment sync screen renders it, and SmsgError only means
+       * anything next to it — the sweep sets that status when failCount reaches the retry limit,
+       * while a retrying message stays SmsgProduced with a rising count. Projected as a count so the
+       * string the server may send ("3") never leaks into arithmetic.
+       */
+      failCount: "count",
       // ⚠️ The response does NOT carry `lastUpdatedStamp` (verified live) — it stays declared
       // because the table indexes it, but expect `undefined`. `initDate` is the usable cursor.
       lastUpdatedStamp: "date",
@@ -609,53 +659,26 @@ export const companySchema = defineSchema({
   }),
 
   /**
-   * ShopifyInventoryAdjustmentDetail — one immutable OMS event contribution to one Shopify
-   * inventory item at one channel. The real primary key is (eventTypeId, eventReferenceId,
-   * inventoryChannelId, shopifyInventoryItemId) — `shopifyInventoryAdjustmentDetailProjection`'s
-   * doc comment states this explicitly and its `buildKey` requires all four with no tolerance,
-   * so there is no missing-member judgment call here.
+   * ShopifyInventoryAdjustmentDetail — the aggregate channel ledger: one immutable OMS event
+   * contribution to one Shopify inventory item at one channel. PK is (eventTypeId, eventReferenceId,
+   * inventoryChannelId, shopifyInventoryItemId). Its view aliases `shopId` and `shopifyLocationId`
+   * from the channel, so it is shop-scoped like the location ledger and both share the same pollers:
+   * `[shopId+createdDate]` for the newest-first read, and one update cursor per poller.
+   *
+   * Never `detailStatusId`: delivery is derived from the message link and the delta
+   * (`src/utils/inventoryEvents.ts`).
    */
   shopifyInventoryAdjustmentDetails: defineEntity({
     primaryKey: "eventTypeId,eventReferenceId,inventoryChannelId,shopifyInventoryItemId",
     fields: {
-      eventTypeId: "text",
-      eventReferenceId: "text",
-      eventTypeDescription: "text",
-      shopifyReason: "text",
+      ...INVENTORY_LEDGER_FIELDS,
       inventoryChannelId: "text",
-      shopifyInventoryItemId: "text",
-      computedInventoryChange: "count",
-      decisionComment: "text",
-      systemMessageId: "text",
-      detailStatusId: "text",
-      createdDate: "date",
-      lastUpdatedStamp: "date",
-      facilityGroupId: "text",
-      inventoryChannelDescription: "text",
-      shopifyLocationId: "text",
       // Normally null. Set only on a delta written to drain a location the channel has stopped
       // pointing at, so a retarget stays visible even though the publisher still targets the OLD
       // location.
       publishShopifyLocationId: "text",
-      systemMessageStatusId: "text",
-      systemMessageInitDate: "date",
-      systemMessageProcessedDate: "date",
-      systemMessageLastAttemptDate: "date",
     },
-    indexes: [
-      "eventTypeId",
-      "eventReferenceId",
-      "inventoryChannelId",
-      "shopifyInventoryItemId",
-      "systemMessageId",
-      "detailStatusId",
-      "createdDate",
-      "lastUpdatedStamp",
-      "[inventoryChannelId+createdDate]",
-      "[inventoryChannelId+lastUpdatedStamp]",
-      "[inventoryChannelId+detailStatusId]",
-      "[systemMessageId+createdDate]",
-    ],
+    indexes: INVENTORY_LEDGER_INDEXES,
   }),
 
   /**
@@ -721,12 +744,15 @@ export const companySchema = defineSchema({
 
   /**
    * ShopifyLocation — a shop's Shopify location mapped to an internal facility. Tier-3 shop-scoped
-   * reference, fetched unscoped as one snapshot. `shopifyLocationProjection.buildKey` joins only
-   * shopId + shopifyLocationId (not `facilityId`, which is a mapped attribute, not part of
-   * identity) with no tolerated members.
+   * reference, fetched unscoped as one snapshot.
+   *
+   * Keyed on the entity PK, (shopId, facilityId). Several facilities may map to ONE Shopify
+   * location, and keying on `shopifyLocationId` collapsed them into a single row, so all but one
+   * read as unmapped. A row with no `shopifyLocationId` is a leftover of clearing by value, not a
+   * mapping — `useShopifyLocations` leaves it out.
    */
   shopifyLocations: defineEntity({
-    primaryKey: "shopId,shopifyLocationId",
+    primaryKey: "shopId,facilityId",
     fields: {
       shopId: "text",
       facilityId: "text",
@@ -806,7 +832,7 @@ export const companySchema = defineSchema({
    * empty 200 on the available instance, so the natural key could not be confirmed live. Converted
    * to its implied compound key (enumerationGroupId + enumId), the fields `buildKey` joins in
    * order — that function defaults a missing `enumerationGroupId` to the literal constant
-   * `"NETSUITE_IIV_REASON"` rather than reading it from another field, so this is not a `rename`
+   * `"IA_VAR_NETSUITE"` rather than reading it from another field, so this is not a `rename`
    * case.
    */
   enumGroupMembers: defineEntity({
@@ -870,57 +896,146 @@ export const companySchema = defineSchema({
   }),
 
   /**
-   * ShopifyLocationInventoryAdjustmentDetail — the real-time PER-SHOPIFY-LOCATION push ledger.
-   *
-   * Distinct from `shopifyInventoryAdjustmentDetails`, which is the facility-group AGGREGATE
-   * ledger keyed on `inventoryChannelId`. This row targets one Shopify location directly, so it
-   * carries `shopId`/`shopifyLocationId` and needs no channel indirection to scope by shop — which
-   * is why `shopId` is both a key member and an index: the domain snapshot-replaces one shop's
-   * slice at a time.
-   *
-   * Key members match `locationInventoryAdjustmentKey` in `utils/shopifyLocationInventory.ts`,
-   * which the sync pass uses as its `keyOf` and which tolerates no missing member.
+   * ShopifyLocationInventoryAdjustmentDetail — the physical ledger: one source event applied to one
+   * Shopify inventory level. PK is (eventTypeId, eventReferenceId, shopId, shopifyLocationId,
+   * shopifyInventoryItemId). Indexed identically to the aggregate ledger, for the same pollers.
    */
   shopifyLocationInventoryAdjustmentDetails: defineEntity({
     primaryKey: "eventTypeId,eventReferenceId,shopId,shopifyLocationId,shopifyInventoryItemId",
+    fields: { ...INVENTORY_LEDGER_FIELDS },
+    indexes: INVENTORY_LEDGER_INDEXES,
+  }),
+
+  /** Class C: the inventory items the ledgers name, as Shopify describes them, per shop. */
+  shopifyInventoryItems: defineEntity({
+    primaryKey: "shopId,shopifyInventoryItemId",
     fields: {
-      eventTypeId: "text",
-      eventReferenceId: "text",
       shopId: "text",
-      shopifyLocationId: "text",
       shopifyInventoryItemId: "text",
-      eventTypeDescription: "text",
-      computedInventoryChange: "count",
-      decisionComment: "text",
-      systemMessageId: "text",
-      systemMessageStatusId: "text",
-      createdDate: "date",
-      /** Server-supplied row identity, read by the history list as its render key. */
-      locationAdjustmentKey: "text",
+      sku: "text",
+      shopifyVariantId: "text",
+      variantTitle: "text",
+      shopifyProductId: "text",
+      productTitle: "text",
+      imageUrl: "text",
     },
-    indexes: [
-      "shopId",
-      "shopifyLocationId",
-      "eventTypeId",
-      "systemMessageId",
-      "createdDate",
-      "[shopId+createdDate]",
-    ],
+    indexes: ["shopId"],
   }),
 
   /**
-   * The backend-computed rollup for one shop's location ledger. One row per shop, replaced whole on
-   * each pass — the counts are authoritative and must never be derived client-side from a windowed
-   * detail set. Shape matches `normalizeLocationInventorySummary`.
+   * One row per (kind, shopId): where the server's copy of a ledger starts, so the history can reach
+   * it. An absent `oldestCreatedDate` means the server has none.
    */
-  shopifyLocationInventorySummaries: defineEntity({
+  inventoryLedgerBounds: defineEntity({
+    primaryKey: "kind,shopId",
+    fields: { kind: "text", shopId: "text", oldestCreatedDate: "date" },
+    indexes: ["shopId"],
+  }),
+
+  // --- Shopify fulfillment sync ---
+  //
+  // The queued half is plain SystemMessages (type CreateShopifyFulfillment) and needs nothing new.
+  // The synced half reads `sob/shopify/fulfillmentHistories`, a Moqui entity-list endpoint over
+  // ShopifyFulfillmentHistory added by a connector release rolling out IN PARALLEL with the screen —
+  // an instance that has not taken it answers 404, which is a "cannot know", not an error.
+
+  /**
+   * ShopifyFulfillmentHistory — one fulfillment the OMS knows Shopify holds, per shop. The key is
+   * COMPOSITE: `fulfillmentId` is Shopify's legacy numeric id, only unique WITHIN a shop.
+   *
+   * `processedDate` is null on rows the OMS itself pushed (the connector only stamps it on rows it
+   * ingested), so its absence is a meaning, not a gap. `[shopId+lastUpdatedStamp]` serves both the
+   * per-shop incremental cursor and the screen's newest-first read; `shipmentId`/`omsOrderId` are the
+   * joins back to the OMS side.
+   */
+  shopifyFulfillmentHistories: defineEntity({
+    primaryKey: "shopId,fulfillmentId",
+    fields: {
+      shopId: "text",
+      shopifyOrderId: "text",
+      fulfillmentId: "text",
+      processedDate: "date",
+      lastUpdatedStamp: "date",
+      omsOrderId: "text",
+      orderDate: "date",
+      shipmentId: "text",
+      originFacilityId: "text",
+      shippedDate: "date",
+    },
+    indexes: ["shopId", "shopifyOrderId", "fulfillmentId", "shipmentId", "omsOrderId", "processedDate", "lastUpdatedStamp", "[shopId+lastUpdatedStamp]"],
+  }),
+
+  /**
+   * Whether `sob/shopify/fulfillmentHistories` exists on this instance, per shop. "The OMS cannot
+   * tell me" must render differently from "no fulfillments have synced", and the worker and the
+   * screen are different realms — this row is how the 404 verdict crosses to the screen reactively.
+   */
+  shopifyFulfillmentHistorySupport: defineEntity({
     primaryKey: "shopId",
     fields: {
       shopId: "text",
-      backlogCount: "count",
-      oldestBacklogDate: "date",
-      errorLinkedCount: "count",
-      noOpOrQuarantinedCount: "count",
+      /** "Y" / "N". Absent means never probed this login. */
+      isSupported: "text",
+      /** When the verdict last CHANGED — the domain skips the write while the answer holds. */
+      checkedAt: "date",
     },
+    indexes: ["checkedAt"],
+  }),
+
+  /** Fulfillments Shopify still owes per shop, from `sob/shopify/fulfillmentHistories`. */
+  shopifyPendingFulfillments: defineEntity({
+    primaryKey: "shopId,shipmentId",
+    fields: {
+      shopId: "text",
+      shipmentId: "text",
+      orderId: "text",
+      orderName: "text",
+      orderDate: "date",
+      statusDate: "date",
+      facilityName: "text",
+      originFacilityId: "text",
+    },
+    indexes: ["shopId", "statusDate"],
+  }),
+
+  /** One row per shop: how the last pending-fulfillment read went. */
+  shopifyPendingFulfillmentStatus: defineEntity({
+    primaryKey: "shopId",
+    fields: { shopId: "text", state: "text", error: "text", hasMore: "text", checkedAt: "date" },
+  }),
+
+  /** One row per shop: the fulfillment sync health counters. */
+  shopifyFulfillmentHealth: defineEntity({
+    primaryKey: "shopId",
+    fields: {
+      shopId: "text",
+      state: "text",
+      checkedAt: "date",
+      shippedSince: "date",
+      syncedSince: "date",
+      shippedCount: "count",
+      syncedCount: "count",
+      unsyncedErrorCount: "count",
+      pendingCount: "count",
+      sendingCount: "count",
+      syncedLastHourCount: "count",
+    },
+  }),
+
+  /** One row per (shopId, orderId): the order sync screen's per-order fulfillment verdict. */
+  shopifyOrderSyncHistory: defineEntity({
+    primaryKey: "shopId,orderId",
+    fields: {
+      shopId: "text",
+      orderId: "text",
+      state: "text",
+      checkedAt: "date",
+      // Each read whole from `sob/shopify/orderFulfillmentHistory`, all pages.
+      pending: "structured",
+      messages: "structured",
+      synced: "structured",
+      errors: "structured",
+    },
+    indexes: ["shopId", "orderId"],
   }),
 });

@@ -40,8 +40,10 @@ const COMPANY_SEED_TABLES = [
 
 export const companyDb = defineAppDb({
   suffix: "CompanyDB",
-  // v2: added the two shopifyLocationInventory* stores. Additive, so Dexie upgrades in place.
-  version: 2,
+  // v2: added the two shopifyLocationInventory* stores.
+  // v3: main's inventory ledger, fulfillment sync and Shopify location re-key (`shopId|facilityId`).
+  //     Every `eventTypeId` also gained an `SIE_` prefix, so pre-release ledger rows must not survive.
+  version: 3,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

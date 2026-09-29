@@ -16,10 +16,14 @@ import { organizationDomain } from "./domains/organizationDomain";
 import {
   shopifyInventoryEventFeedDomain,
   inventoryChannelDomain,
-  shopifyInventoryAdjustmentDetailDomain,
 } from "./domains/shopifyInventoryMonitoringDomain";
-import { shopifyLocationInventoryAdjustmentDetailDomain } from "./domains/shopifyLocationInventoryDomain";
+import { inventoryEventDomains } from "./domains/inventoryEventDomains";
 import { shopifyTransferSyncDomain } from "./domains/shopifyTransferSyncDomain";
+import { shopifyTransferDeliveryDomain } from "./domains/shopifyTransferDeliveryDomain";
+import { shopifyFulfillmentHistoryDomain } from "./domains/shopifyFulfillmentHistoryDomain";
+import { shopifyPendingFulfillmentDomain } from "./domains/shopifyPendingFulfillmentDomain";
+import { shopifyFulfillmentHealthDomain } from "./domains/shopifyFulfillmentHealthDomain";
+import { shopifyOrderSyncHistoryDomain } from "./domains/shopifyOrderSyncHistoryDomain";
 import { netSuiteOrderPushDomain } from "./domains/netSuiteOrderPushDomain";
 import { referenceDomains } from "./domains/referenceDomains";
 
@@ -68,9 +72,13 @@ registerDomains([
   organizationDomain,
   shopifyInventoryEventFeedDomain,
   inventoryChannelDomain,
-  shopifyInventoryAdjustmentDetailDomain,
-  shopifyLocationInventoryAdjustmentDetailDomain,
+  ...inventoryEventDomains,
   shopifyTransferSyncDomain,
+  shopifyTransferDeliveryDomain,
+  shopifyFulfillmentHistoryDomain,
+  shopifyPendingFulfillmentDomain,
+  shopifyFulfillmentHealthDomain,
+  shopifyOrderSyncHistoryDomain,
   netSuiteOrderPushDomain,
   ...referenceDomains,
 ]);
