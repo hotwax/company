@@ -582,8 +582,9 @@ import { DateTime } from "luxon";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
-import { useDbSync } from "@/composables/useDbSync";
 import { useDb } from "@common";
+import { serviceState } from "@common/db";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as transferSyncError, syncNow } from "@/services/appDbSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
@@ -1014,19 +1015,14 @@ function handleJobUpdated() {
   showJobModal.value = false;
 }
 
-const {
-  start: startSyncDomains,
-  stop: stopSyncDomains,
-  error: transferSyncError,
-  domainStatus,
-  syncNow,
-} = useDbSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyTransferSyncView");
+
 const viewSyncBaselineAt = ref(0);
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
   cacheHydrated: hydrated.value,
   cachedRowCount: pendingTotal.value,
-  liveSyncAt: Number(domainStatus.value.shopifyTransferSync?.at ?? 0),
+  liveSyncAt: serviceState.syncedAt.shopifyTransferSync ?? 0,
   viewSyncBaselineAt: viewSyncBaselineAt.value,
 }));
 
@@ -1040,8 +1036,8 @@ function startTransferSyncDomains() {
   void loadLaunch(shopId.value, undefined, true);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
-  viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
-  void startSyncDomains(activeSyncDomains());
+  viewSyncBaselineAt.value = serviceState.syncedAt.shopifyTransferSync ?? 0;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   void loadWebhookReconciliation();
 }
 
@@ -1057,7 +1053,7 @@ async function retry() {
 watch(shopId, startTransferSyncDomains);
 onIonViewWillEnter(startTransferSyncDomains);
 
-onIonViewDidLeave(() => { stopSyncDomains(); });
+onIonViewDidLeave(() => { void deactivateSyncDomains(SYNC_OWNER); });
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 /**
  * L1 unit — what an Order Sync mutation RESOLVES TO.
@@ -113,6 +114,10 @@ vi.mock("@common", () => ({
 vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   bootstrapState: { running: false },
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
 }));
 
 
@@ -130,8 +135,6 @@ vi.mock("@/composables/useDataManager", () => ({
   }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-vi.mock("@/composables/useDbSync", () => ({ useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
-
 import { useShopifyOrderSync } from "@/composables/useShopify";
 
 /** What `api()` really resolves to — the envelope whose `.data` the callers were reading through. */

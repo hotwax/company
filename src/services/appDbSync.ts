@@ -10,6 +10,12 @@ export const {
   resyncDomain,
   resyncReferenceData,
   bootstrapState,
+  activateSyncDomains,
+  deactivateSyncDomains,
+  createSyncDomainOwner,
+  syncNow,
+  syncDomainsReady,
+  syncDomainsError,
 } = setupAppDbSync({
   db: companyDb,
   getWorkerUrl: () => new URL(appSyncUrl, import.meta.url),

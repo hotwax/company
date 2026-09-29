@@ -97,16 +97,12 @@ vi.mock("@common", () => ({
 
 vi.mock("@/services/appDbSync", () => ({
   resyncDomain: vi.fn(),
-}));
-
-vi.mock("@/composables/useDbSync", () => ({
-  useDbSync: () => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
-    ready: syncReady,
-    error: syncError,
-    afterMutation: vi.fn(),
-  }),
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  refreshAfterMutation: vi.fn(),
+  syncDomainsReady: syncReady,
+  syncDomainsError: syncError,
 }));
 
 vi.mock("@/composables/useFacilities", () => ({

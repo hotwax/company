@@ -923,11 +923,12 @@ const activityGraphAriaLabel = computed(() => {
  * cached messages and imports, and without the worker filling those tables they are legitimately
  * empty — each card would report "never synced" for a shop with a long history.
  *
- * One session, not two, because every `useDbSync()` owns its own worker. Product sync stays on
- * its idle cadence (this page only summarises it; the product sync screen asks for the fast one)
- * while order sync escalates to 10s on its own whenever a batch is moving.
+ * One session, not two, because there is ONE worker with ONE active domain set — two sessions would
+ * each call `activateSyncDomains` and the second would silently drop the first's domains. Product
+ * sync stays on its idle cadence (this page only summarises it; the product sync screen asks for the
+ * fast one) while order sync escalates to 10s on its own whenever a batch is moving.
  */
-const { domainStatus: syncDomainStatus, workerError: syncWorkerError } = useShopifyConnectionSyncSession({
+const { syncedAt: syncSyncedAt, workerError: syncWorkerError } = useShopifyConnectionSyncSession({
   orderSyncActive: () => orderSyncBatchActive.value,
 });
 
@@ -939,9 +940,9 @@ const { domainStatus: syncDomainStatus, workerError: syncWorkerError } = useShop
  *   - `isSyncSummaryLoading` covers `loadProductsInventorySummary` — eligibility, access state,
  *     legacy teardown, the unsynced count. It does NOT cover the cached runs the card is gated on.
  *   - `shouldShowProductSyncWidget` is true once those runs are in the cache.
- *   - `syncDomainStatus.syncRun` is set the first time the worker finishes a pass of the domain that
- *     fills them, which is the only thing that separates "this shop has never synced" from "we have
- *     not looked yet".
+ *   - `syncSyncedAt.syncRun` — `serviceState.syncedAt`, a plain reactive object (no `.value`) — is set
+ *     the first time the worker finishes a pass of the domain that fills them, which is the only thing
+ *     that separates "this shop has never synced" from "we have not looked yet".
  *
  * Measured on a cold cache before this: the skeleton came down at 1.4s when the summary flag
  * cleared, the runs landed between three and six seconds later, and the gap rendered nothing at all
@@ -954,7 +955,7 @@ const { domainStatus: syncDomainStatus, workerError: syncWorkerError } = useShop
  */
 const isProductSyncCardLoading = computed(() =>
   isSyncSummaryLoading.value ||
-  (!shouldShowProductSyncWidget.value && !syncDomainStatus.value.syncRun && !syncWorkerError.value));
+  (!shouldShowProductSyncWidget.value && !syncSyncedAt.syncRun && !syncWorkerError.value));
 
 /**
  * Load the summaries once the shop is known.

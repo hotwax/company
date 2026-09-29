@@ -307,7 +307,7 @@ import { closeOutline, informationCircleOutline, openOutline, saveOutline, searc
 import { commonUtil, emitter, logger, translate } from '@common';
 import router from "@/router";
 import { useNetSuite } from "@/composables/useNetSuite";
-import { useDbSync } from "@/composables/useDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/services/appDbSync";
 import {
   useNetSuiteOrderPushBacklog,
   useNetSuiteRecentRuns,
@@ -332,7 +332,7 @@ const { groups: netSuiteRuleGroups } =
   useNetSuiteRuleGroups(() => netSuiteProductStore.value?.productStoreId);
 const { failed: failedRuns } =
   useNetSuiteRecentRuns(() => netSuiteRuleGroups.value.map((group: any) => group.ruleGroupId));
-const { start: startSyncDomains, stop: stopSyncDomains } = useDbSync();
+const SYNC_OWNER = createSyncDomainOwner("netSuiteView");
 
 function netSuiteSyncDomains() {
   const productStoreId = netSuiteProductStore.value?.productStoreId;
@@ -342,9 +342,9 @@ function netSuiteSyncDomains() {
 }
 
 // The store comes from the cache, so it typically resolves after first paint.
-watch(() => netSuiteProductStore.value?.productStoreId, () => { void startSyncDomains(netSuiteSyncDomains()); });
-onIonViewWillEnter(() => { void startSyncDomains(netSuiteSyncDomains()); });
-onIonViewDidLeave(() => { stopSyncDomains(); });
+watch(() => netSuiteProductStore.value?.productStoreId, () => { void activateSyncDomains(netSuiteSyncDomains(), SYNC_OWNER); });
+onIonViewWillEnter(() => { void activateSyncDomains(netSuiteSyncDomains(), SYNC_OWNER); });
+onIonViewDidLeave(() => { void deactivateSyncDomains(SYNC_OWNER); });
 
 function openSyncMonitor() {
   if (!netSuiteProductStore.value?.productStoreId) return;

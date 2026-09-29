@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
@@ -54,10 +55,6 @@ vi.mock("@/composables/useSeed", () => ({
   useStatuses: () => ({ labelFor: (statusId: string) => statusId }),
 }));
 
-vi.mock("@/composables/useDbSync", () => ({
-  useDbSync: () => ({ start: vi.fn(), stop: vi.fn() }),
-}));
-
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
@@ -65,6 +62,10 @@ vi.mock("@/composables/useServiceJobs", () => ({
 vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
 }));
 
 import {

@@ -221,7 +221,7 @@ import {
 import { alertCircleOutline, checkmarkCircleOutline, playOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useNetSuiteProductStore } from "@/composables/useProductStores";
-import { useDbSync } from "@/composables/useDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains } from "@/services/appDbSync";
 import {
   describeConditions,
   describeSortBy,
@@ -254,7 +254,7 @@ const { pendingCount, checkedAt: backlogCheckedAt, hydrated: backlogHydrated } =
   useNetSuiteOrderPushBacklog(() => productStoreId.value);
 
 const { setRuleEnabled: setRuleEnabledApi, runNow } = useNetSuiteRuleGroupMutations();
-const { start: startSyncDomains, stop: stopSyncDomains } = useDbSync();
+const SYNC_OWNER = createSyncDomainOwner("netSuiteSyncMonitorView");
 
 // Rules for every group are already cached, so the per-group count needs no extra read.
 const { countFor: ruleCountFor } = useNetSuiteRulesByGroup();
@@ -280,7 +280,7 @@ async function setRuleEnabled(rule: any, enabled: boolean) {
     await setRuleEnabledApi(rule.ruleId, enabled);
     commonUtil.showToast(translate(enabled ? "Rule enabled" : "Rule disabled"));
     // The write returns the PK only, so the cache is refreshed from the worker rather than patched.
-    await startSyncDomains(activeSyncDomains());
+    await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   } catch (error) {
     logger.error("Failed to change NetSuite rule status", rule.ruleId, error);
     commonUtil.showToast(translate("Failed to update rule"));
@@ -310,10 +310,10 @@ function activeSyncDomains() {
 }
 
 // The product store is resolved from the cache, so it usually arrives after first paint.
-watch(productStoreId, () => { void startSyncDomains(activeSyncDomains()); });
+watch(productStoreId, () => { void activateSyncDomains(activeSyncDomains(), SYNC_OWNER); });
 
-onIonViewWillEnter(() => { void startSyncDomains(activeSyncDomains()); });
-onIonViewDidLeave(() => { stopSyncDomains(); });
+onIonViewWillEnter(() => { void activateSyncDomains(activeSyncDomains(), SYNC_OWNER); });
+onIonViewDidLeave(() => { void deactivateSyncDomains(SYNC_OWNER); });
 </script>
 
 <style scoped>

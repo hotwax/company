@@ -13,6 +13,10 @@ describe("appDbSync surface contract", () => {
     expect(typeof appDbSync.resyncReferenceData).toBe("function");
     expect(typeof appDbSync.resyncDomain).toBe("function");
     expect(typeof appDbSync.syncService).toBe("function");
+    expect(typeof appDbSync.activateSyncDomains).toBe("function");
+    expect(typeof appDbSync.deactivateSyncDomains).toBe("function");
+    expect(typeof appDbSync.createSyncDomainOwner).toBe("function");
+    expect(typeof appDbSync.syncNow).toBe("function");
   });
 
   it("exports bootstrapState as an alias to serviceState", () => {
@@ -22,6 +26,11 @@ describe("appDbSync surface contract", () => {
 
   it("exports referenceDomainNames as an array", () => {
     expect(Array.isArray(appDbSync.referenceDomainNames)).toBe(true);
+  });
+
+  it("exports the view-scoped activation state as refs", () => {
+    expect(appDbSync.syncDomainsReady.value).toBe(false);
+    expect(appDbSync.syncDomainsError.value).toBe("");
   });
 });
 

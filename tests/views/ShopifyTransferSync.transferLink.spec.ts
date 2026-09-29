@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 
 /**
  * The row header's Shopify link. Guards the two halves that make it open in a NEW tab rather than
@@ -38,13 +38,23 @@ vi.mock("@/composables/useShopify", () => ({
   }),
 }));
 
-vi.mock("@/composables/useDbSync", () => ({
-  useDbSync: () => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    error: ref(""),
-    domainStatus: ref({ shopifyTransferSync: { at: 100 } }),
-    syncNow: vi.fn(),
+vi.mock("@/services/appDbSync", () => ({
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
+  refreshAfterMutation: vi.fn(),
+}));
+
+vi.mock("@common/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  serviceState: reactive({
+    running: false,
+    lastSyncAt: 0,
+    syncedAt: { shopifyTransferSync: 100 },
+    written: {},
+    errors: {},
   }),
 }));
 

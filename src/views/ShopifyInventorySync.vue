@@ -1672,7 +1672,6 @@ import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.v
 import EditInventoryChannelModal from "@/components/shopify/EditInventoryChannelModal.vue";
 import SetupInventoryChannelModal from "@/components/shopify/SetupInventoryChannelModal.vue";
 import SelectFacilityModal from "@/components/facility/SelectFacilityModal.vue";
-import { useDbSync } from "@/composables/useDbSync";
 import { useEffectiveNow } from "@/composables/useEffectiveNow";
 import { useFacilityGroupMutations, useFacilityTypes } from "@/composables/useFacilities";
 import { useStatuses } from "@/composables/useSeed";
@@ -1705,7 +1704,10 @@ import {
 } from "@/composables/useShopify";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useVirtualRows } from "@/composables/useVirtualRows";
-import { resyncDomain } from "@/services/appDbSync";
+import {
+  activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation as afterMutation,
+  syncDomainsError as inventorySyncError, syncDomainsReady as inventorySyncReady, resyncDomain,
+} from "@/services/appDbSync";
 import { formatDateTime } from "@/utils";
 import { isEffectiveNow } from "@common/db";
 import { parameterMap } from "@/utils/serviceJob";
@@ -1907,13 +1909,7 @@ const { records: cachedGroupFacilities, hydrated: groupFacilitiesHydrated } = us
  * composition and in the source-resolution search until some unrelated cache write happened.
  */
 const groupFacilitiesEffectiveNow = useEffectiveNow(cachedGroupFacilities);
-const {
-  start: startSyncDomains,
-  stop: stopSyncDomains,
-  ready: inventorySyncReady,
-  error: inventorySyncError,
-  afterMutation,
-} = useDbSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyInventorySyncView");
 
 /**
  * SHOPIFY'S OWN NAME FOR EACH LOCATION, read from Shopify through get#ShopifyLocations -- the same
@@ -3737,7 +3733,7 @@ function activeSyncDomains() {
 // Channels are cached asynchronously, so the detail domain is usually skipped on first pass and
 // starts here once they land.
 watch(() => `${props.id ?? ""}|${watchedJobNames.value.join(",")}|${shopChannelIds.value.join(",")}`, () => {
-  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
+  if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 });
 watch(() => props.initialView, (view) => { activeView.value = view ?? "monitor"; });
 watch(() => props.initialHistoryMode, (mode) => {
@@ -3754,7 +3750,7 @@ onIonViewWillEnter(() => {
   if (props.initialHistoryMode === "unassigned") {
     locationFilterState.value = "unassigned";
   }
-  void startSyncDomains(activeSyncDomains());
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   // The feed domain is gated to one sync per login, so a mode changed from anywhere else stays
   // stale here for the whole session. This page owns the toggle, so it re-reads the row on entry.
   void afterMutation("shopifyInventoryEventFeed", { dataFeedId: SHOPIFY_INVENTORY_EVENT_FEED_ID });
@@ -3772,7 +3768,7 @@ onIonViewWillEnter(() => {
 
 onIonViewDidLeave(() => {
   isViewActive.value = false;
-  stopSyncDomains();
+  void deactivateSyncDomains(SYNC_OWNER);
 });
 
 /**
@@ -4006,7 +4002,7 @@ async function openChannelSetup() {
   const { data } = await modal.onDidDismiss();
   // The channel drives which reset jobs belong to this connection, so pull both domains again
   // rather than waiting for the next scheduled sync pass.
-  if(data?.created) {await startSyncDomains(activeSyncDomains());}
+  if(data?.created) {await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }
 
 function openChannelEdit(channel: any) {
@@ -4078,7 +4074,7 @@ function handleScheduleChannelJob(payload: { jobName: string; title: string }) {
 async function onChannelUpdated() {
   // Changing the location changes what the reset jobs target, so re-read rather than waiting for the
   // next scheduled pass.
-  await startSyncDomains(activeSyncDomains());
+  await activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
 }
 
 /** The one way into a job's configuration - from its row in Inventory sync jobs. */
@@ -4122,7 +4118,7 @@ function openJobRuns(job: any, title: string) {
 }
 
 function refreshServiceJobData() {
-  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
+  if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }
 
 const provisioningJobKind = ref<JobSetupKind | "">("");

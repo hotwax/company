@@ -21,8 +21,13 @@ vi.mock("@ionic/vue", () => ({
   onIonViewDidLeave: (callback: () => void) => { harness.leave = callback }
 }))
 
-vi.mock("@/composables/useDbSync", () => ({
-  useDbSync: () => harness.cacheSync
+vi.mock("@/services/appDbSync", () => ({
+  activateSyncDomains: (...args: any[]) => harness.cacheSync.start(...args),
+  deactivateSyncDomains: (...args: any[]) => harness.cacheSync.stop(...args),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: (...args: any[]) => harness.cacheSync.syncNow(...args),
+  syncDomainsError: ref(""),
+  refreshAfterMutation: vi.fn()
 }))
 
 import {

@@ -30,7 +30,7 @@ import {
 } from "vue";
 import Actions from "@/authorization/actions";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
-import { refreshAfterMutation } from "@/services/appDbSync";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as workerError, syncNow } from "@/services/appDbSync";
 import { parseDateTimeValue } from "@/utils";
 import {
   DATA_MANAGER_LOG_STATUS_IDS,
@@ -43,8 +43,8 @@ import {
 } from "@/utils/shopifyBulkOperation";
 import { shopRemoteCandidates, sortRemotesByAccess } from "@/utils/systemMessage";
 import type { ActiveDomain } from "@common/db";
+import { serviceState } from "@common/db";
 import { onSessionCleared } from "./sessionScope";
-import { useDbSync } from "./useDbSync";
 import { useDataManager } from "./useDataManager";
 import { useStatuses } from "./useSeed";
 import { useServiceJob } from "./useServiceJobs";
@@ -2034,8 +2034,9 @@ export interface ShopifySyncSessionOptions extends SyncFeatureDomainOptions {
  * The class-A domains ONE sync feature needs — its messages and the imports they produce.
  *
  * Exported because a page can render more than one feature (connection details shows both product
- * sync and order sync) and every `useDbSync()` call owns its own worker. Composing two features'
- * domain lists into a single session is therefore the difference between one worker and two.
+ * sync and order sync) and there is ONE worker with ONE active domain set. Two features each
+ * calling `activateSyncDomains` would overwrite each other's scope, so composing their domain
+ * lists into a single activation is what lets both run.
  *
  * ⚠️ The message domain is scoped to THIS feature's types. The app config lists every type any screen
  * might want, and syncing all of them costs one request per (type × remote) per tick — twelve for a
@@ -2082,11 +2083,15 @@ export function useShopifySyncSession(
   feature: ShopifySyncFeature,
   options: ShopifySyncSessionOptions,
 ) {
-  const { start, stop, syncNow, error: workerError, domainStatus } = useDbSync();
-
   const isPageActive = ref(false);
   /** True only during a manual/live refresh — never for observing cached progress. */
   const isRefreshing = ref(false);
+  /**
+   * A distinct owner per SESSION instance, not the shared feature id: both the polling session and
+   * the history session activate under `ORDER_SYNC_FEATURE`, so two simultaneously live sessions
+   * would otherwise share one owner string and defeat the teardown guard in `setupAppDbSync`.
+   */
+  const SYNC_OWNER = createSyncDomainOwner(feature.id);
 
   /**
    * The domain set, as a COMPUTED over everything that can change it.
@@ -2117,12 +2122,12 @@ export function useShopifySyncSession(
   async function activate() {
     isPageActive.value = true;
     if(!activeDomainSet.value.length) {
-      stop();
+      void deactivateSyncDomains(SYNC_OWNER);
 
       return;
     }
     try {
-      await start(activeDomainSet.value);
+      await activateSyncDomains(activeDomainSet.value, SYNC_OWNER);
     } catch (error) {
       logger.error(`Failed to activate ${feature.id} sync domains`, error);
       options.onError?.(error);
@@ -2131,18 +2136,18 @@ export function useShopifySyncSession(
 
   function deactivate() {
     isPageActive.value = false;
-    stop();
+    void deactivateSyncDomains(SYNC_OWNER);
   }
 
-  /** `start` swaps the domain set on the running worker rather than respawning it, so this is cheap. */
+  /** `activateSyncDomains` swaps the domain set on the running worker rather than respawning it. */
   watch(activeDomainSet, (domains) => {
     if(!isPageActive.value) {return;}
     if(!domains.length) {
-      stop();
+      void deactivateSyncDomains(SYNC_OWNER);
 
       return;
     }
-    void start(domains).catch((error) => {
+    void activateSyncDomains(domains, SYNC_OWNER).catch((error) => {
       logger.error(`Failed to re-scope ${feature.id} sync domains`, error);
     });
   });
@@ -2174,19 +2179,19 @@ export function useShopifySyncSession(
   onBeforeUnmount(() => deactivate());
 
   /**
-   * `domainStatus` is passed through because a cached projection cannot tell "this shop has nothing"
+   * `syncedAt` is passed through because a cached projection cannot tell "this shop has nothing"
    * from "the worker has not fetched this shop yet" on its own. `useDb`'s `hydrated` answers
    * that only for the app-wide seed (`bootstrapState.running`), which is long finished by the time a
-   * screen activates its own domains -- so a screen that needs the distinction reads the per-domain
-   * result here instead.
+   * screen activates its own domains -- so a screen that needs the distinction reads
+   * `serviceState.syncedAt` here instead.
    *
-   * `workerError` goes with it, and a screen waiting on `domainStatus` must read both: a failed start
-   * or a failed pass never records a `sync-end`, so a screen watching only for success waits forever.
-   * A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
+   * `workerError` goes with it, and a screen waiting on `syncedAt` must read both: a failed start
+   * or a failed pass never records a sync-end timestamp, so a screen watching only for success waits
+   * forever. A failure is a real answer -- "we looked and could not tell" -- not a longer wait.
    */
   return {
     isPageActive, isRefreshing, manualRefresh, activate, deactivate,
-    domainStatus, workerError,
+    syncedAt: serviceState.syncedAt, workerError,
   };
 }
 
@@ -5107,12 +5112,12 @@ export interface ConnectionSyncSessionOptions {
 }
 
 /**
- * The Shopify connection details page's session — BOTH sync features on ONE worker.
+ * The Shopify connection details page's session — BOTH sync features on ONE activation.
  *
  * Why this exists instead of the page composing two separate sessions and
- * `useShopifyOrderSyncPolling` side by side: each `useDbSync()` owns its own `SyncService`, so two
- * sessions spawn two workers with two independent timers, both polling on behalf of one screen. This
- * composes the two features' domain lists and hands them to a single session instead.
+ * `useShopifyOrderSyncPolling` side by side: there is one worker with one active domain set, so two
+ * sessions would each call `activateSyncDomains` and the second would silently drop the first's
+ * domains. This composes the two features' domain lists and activates them once instead.
  *
  * Cadence stays PER FEATURE. `intervalMs` is stamped on each `ActiveDomain` and `effectiveInterval`
  * prefers it over the registered default, so order sync can run its 10s active cadence while product
