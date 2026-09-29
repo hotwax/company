@@ -76,7 +76,7 @@ export async function loadGroupPermissionRecords(groupId: string, force = false)
 
   if(commonUtil.hasError(resp)) {throw resp.data;}
   if(requestGeneration !== sessionGeneration) {return;}
-  state.permissionRecordsByGroup[groupId] = resp.data || [];
+  state.permissionRecordsByGroup[groupId] = resp.data?.userGroupPermissionList || [];
 }
 
 /**

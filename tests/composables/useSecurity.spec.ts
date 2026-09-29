@@ -60,14 +60,14 @@ describe("useUserGroupPermissions — active-grant derivation", () => {
   it("keeps only unexpired grants, keyed by userPermissionId, from THIS group's endpoint", async () => {
     const now = Date.now();
     harness.api.mockResolvedValueOnce({
-      data: [
+      data: { userGroupPermissionList: [
         // Soft-expired revoke — must NOT come back as granted.
         { userGroupId: "SGRP", userPermissionId: "REVOKED_PERM", fromDate: 1, thruDate: now - 60_000 },
         // Open-ended grant (no thruDate) — active.
         { userGroupId: "SGRP", userPermissionId: "OPEN_PERM", fromDate: 1 },
         // Grant expiring in the future — still active today.
         { userGroupId: "SGRP", userPermissionId: "FUTURE_PERM", fromDate: 1, thruDate: now + 60_000 },
-      ],
+      ] },
     });
 
     const group = useUserGroupPermissions("SGRP");
@@ -83,7 +83,7 @@ describe("useUserGroupPermissions — active-grant derivation", () => {
   });
 
   it("reports a failed fetch as no grants rather than stale ones", async () => {
-    harness.api.mockResolvedValueOnce({ data: [{ userGroupId: "SGRP", userPermissionId: "OPEN_PERM", fromDate: 1 }] });
+    harness.api.mockResolvedValueOnce({ data: { userGroupPermissionList: [{ userGroupId: "SGRP", userPermissionId: "OPEN_PERM", fromDate: 1 }] } });
     const group = useUserGroupPermissions("SGRP");
     await group.load();
     expect(Object.keys(group.activePermissions.value)).toHaveLength(1);

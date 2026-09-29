@@ -57,7 +57,7 @@ function mockBackend(options: {
     const url = String(config?.url ?? "");
     let match = url.match(/^admin\/userGroups\/([^/]+)\/permissions$/);
     if(config?.method === "get" && match) {
-      return { data: options.groupPermissions?.[match[1]] ?? [] };
+      return { data: { userGroupPermissionList: options.groupPermissions?.[match[1]] ?? [] } };
     }
     match = url.match(/^admin\/groups\/([^/]+)\/users$/);
     if(config?.method === "get" && match) {
@@ -341,11 +341,11 @@ describe("useAppPermissions — session boundaries", () => {
     clearSessionScopedState();
     const newLoad = loadGroupPermissionRecords("GROUP_0");
 
-    resolveOld({ data: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] });
+    resolveOld({ data: { userGroupPermissionList: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] } });
     await oldLoad;
     expect(composable.activeGroupsByPermission("P1")).toEqual([]);
 
-    resolveNew({ data: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] });
+    resolveNew({ data: { userGroupPermissionList: [{ userPermissionId: "P1", fromDate: Date.now() - 100_000 }] } });
     await newLoad;
     expect(composable.activeGroupsByPermission("P1")).toHaveLength(1);
   });
