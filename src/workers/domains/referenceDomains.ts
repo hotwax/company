@@ -246,7 +246,7 @@ registerSnapshotDomain({
   table: "permissions",
   projection: permissionProjection,
   listUrl: "admin/userPermissions",
-  collectionKey: null, // bare array
+  collectionKey: "userPermissionList",
   listParams: { orderByField: "userPermissionId" },
 });
 
