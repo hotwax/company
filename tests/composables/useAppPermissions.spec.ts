@@ -324,6 +324,24 @@ describe("useAppPermissions — session boundaries", () => {
     expect(groupUserRequests()).toHaveLength(2);
   });
 
+  it("reads group permission records from the envelope, the legacy bare array, or falls back to empty", async () => {
+    const { loadGroupPermissionRecords, security, useAppPermissions } = await freshModule();
+    security.__setUserGroups(accessGroups(3));
+    security.__setPermissions([{ userPermissionId: "P1", description: "P one" }]);
+    const composable = useAppPermissions();
+    const record = { userPermissionId: "P1", fromDate: Date.now() - 100_000 };
+    api
+      .mockResolvedValueOnce({ data: { userGroupPermissionList: [record], userGroupPermissionListCount: 1 } })
+      .mockResolvedValueOnce({ data: [record] })
+      .mockResolvedValueOnce({ data: {} });
+
+    await loadGroupPermissionRecords("GROUP_0");
+    await loadGroupPermissionRecords("GROUP_1");
+    await loadGroupPermissionRecords("GROUP_2");
+
+    expect(composable.activeGroupsByPermission("P1").map((group) => group.groupId)).toEqual(["GROUP_0", "GROUP_1"]);
+  });
+
   it("does not let late permission responses from the previous session repopulate state", async () => {
     const { clearSessionScopedState, loadGroupPermissionRecords, security, useAppPermissions } = await freshModule();
     security.__setUserGroups(accessGroups(1));

@@ -76,7 +76,8 @@ export async function loadGroupPermissionRecords(groupId: string, force = false)
 
   if(commonUtil.hasError(resp)) {throw resp.data;}
   if(requestGeneration !== sessionGeneration) {return;}
-  state.permissionRecordsByGroup[groupId] = resp.data?.userGroupPermissionList || [];
+  // New service envelope first, then the legacy bare-array response, then empty.
+  state.permissionRecordsByGroup[groupId] = resp.data?.userGroupPermissionList ?? (Array.isArray(resp.data) ? resp.data : []);
 }
 
 /**

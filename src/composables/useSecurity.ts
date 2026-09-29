@@ -259,7 +259,8 @@ async function fetchArtifactGroupsOnce(): Promise<any[]> {
     cache: true,
   });
   if (commonUtil.hasError(resp)) throw resp.data;
-  return resp.data?.artifactGroupList ?? [];
+  // New service envelope first, then the legacy bare-array response, then empty.
+  return resp.data?.artifactGroupList ?? (Array.isArray(resp.data) ? resp.data : []);
 }
 
 export function useArtifactGroups() {
@@ -299,7 +300,8 @@ export function useUserGroupPermissions(userGroupId: string) {
       });
       if (commonUtil.hasError(resp)) throw resp.data;
       const now = Date.now();
-      (resp.data?.userGroupPermissionList || [])
+      // New service envelope first, then the legacy bare-array response, then empty.
+      (resp.data?.userGroupPermissionList ?? (Array.isArray(resp.data) ? resp.data : []))
         .filter((groupPermission: any) => !groupPermission.thruDate || groupPermission.thruDate > now)
         .forEach((groupPermission: any) => {
           next[groupPermission.userPermissionId] = groupPermission;
@@ -324,7 +326,8 @@ export function useArtifactAuthorizations(userGroupId: string) {
         params: { pageSize: 1000 },
       });
       if (commonUtil.hasError(resp)) throw resp.data;
-      next = resp.data?.artifactAuthzList ?? [];
+      // New service envelope first, then the legacy bare-array response, then empty.
+      next = resp.data?.artifactAuthzList ?? (Array.isArray(resp.data) ? resp.data : []);
     } catch (error) {
       logger.error("Failed to fetch artifact authorizations.", error);
     }

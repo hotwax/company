@@ -48,7 +48,7 @@ vi.mock("@/store/user", () => ({
   useUserStore: () => ({ get getUserProfile() { return profile.value; } }),
 }));
 
-import { updateUserGroup, useUserGroupPermissions, useUserToken } from "@/composables/useSecurity";
+import { updateUserGroup, useArtifactAuthorizations, useUserGroupPermissions, useUserToken } from "@/composables/useSecurity";
 
 beforeEach(() => {
   harness.api.mockReset();
@@ -92,6 +92,39 @@ describe("useUserGroupPermissions — active-grant derivation", () => {
     await group.load();
 
     expect(group.activePermissions.value).toEqual({});
+  });
+
+  it("still reads the legacy bare-array response", async () => {
+    harness.api.mockResolvedValueOnce({ data: [{ userGroupId: "SGRP", userPermissionId: "OPEN_PERM", fromDate: 1 }] });
+    const group = useUserGroupPermissions("SGRP");
+    await group.load();
+    expect(Object.keys(group.activePermissions.value)).toEqual(["OPEN_PERM"]);
+  });
+
+  it("falls back to no grants for an unrecognised response shape", async () => {
+    harness.api.mockResolvedValueOnce({ data: {} });
+    const group = useUserGroupPermissions("SGRP");
+    await group.load();
+    expect(group.activePermissions.value).toEqual({});
+  });
+});
+
+describe("useArtifactAuthorizations — response shapes", () => {
+  it("reads the service envelope, then the legacy bare array, then falls back to empty", async () => {
+    const authz = { artifactAuthzId: "AUTHZ_1", userGroupId: "SGRP", artifactGroupId: "AG" };
+    const group = useArtifactAuthorizations("SGRP");
+
+    harness.api.mockResolvedValueOnce({ data: { artifactAuthzList: [authz], artifactAuthzListCount: 1 } });
+    await group.load();
+    expect(group.authorizations.value).toEqual([authz]);
+
+    harness.api.mockResolvedValueOnce({ data: [authz] });
+    await group.load();
+    expect(group.authorizations.value).toEqual([authz]);
+
+    harness.api.mockResolvedValueOnce({ data: {} });
+    await group.load();
+    expect(group.authorizations.value).toEqual([]);
   });
 });
 
