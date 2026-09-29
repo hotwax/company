@@ -287,6 +287,36 @@ export const useUserStore = defineStore("user", {
       return succeeded
     },
 
+    async fetchUserDetails(payload: any) {
+      const solrPayload = {
+        json: {
+          params: {
+            rows : payload.pageSize || 100,
+            start: payload.pageIndex ? payload.pageIndex * payload.pageSize : 0,
+          },
+          query: "*:*",
+          filter: ["docType:EMPLOYEE"]
+        }
+      } as any
+
+      if(payload.filters) {
+        payload.filters.map((filter: any) => solrPayload["json"]["filter"].push(filter))
+      }
+
+      try {
+        const resp = await useSolrSearch().runSolrQuery(solrPayload)
+
+        if(!commonUtil.hasError(resp)) {
+          return resp.data?.response?.docs || []
+        } else {
+          throw resp.data
+        }
+      } catch (error) {
+        logger.error(error)
+      }
+      return []
+    },
+
     addPartyToFacility(payload: { partyId: string; facilityId: string; roleTypeId: string; fromDate?: any }): Promise<any> {
       return api({
         url: `oms/facilities/${payload.facilityId}/parties`,
@@ -300,7 +330,7 @@ export const useUserStore = defineStore("user", {
       return api({
         url: `admin/users/${payload.userId}/groups`,
         method: "post",
-        data: { userGroupId: payload.userGroupId, fromDate: payload.fromDate || DateTime.now().toMillis() }
+        data: { userGroupId: payload.userGroupId, fromDate: String(payload.fromDate || DateTime.now().toMillis()) }
       })
     },
 
@@ -697,6 +727,14 @@ export const useUserStore = defineStore("user", {
       }
     },
 
+    async getUserDetailsByLogin(userLoginId: string): Promise<any> {
+      return await api({
+        url: "admin/user/profile",
+        method: "get",
+        params: { username: userLoginId }
+      })
+    },
+
     async getSelectedUserDetails(payload: { partyId: string; isFetchRequired?: boolean }) {
       const currentSelectedUser = JSON.parse(JSON.stringify(this.selectedUser))
       if(currentSelectedUser.partyId === payload.partyId && !payload.isFetchRequired) {
@@ -720,7 +758,8 @@ export const useUserStore = defineStore("user", {
             groupName: partyResp.data.groupName,
             externalId: partyResp.data.externalId,
             statusId: partyResp.data.statusId,
-            userId: partyResp.data.userId
+            userId: partyResp.data.userId,
+            createdByUserLogin: partyResp.data.createdByUserLogin
           }
 
           if(partyResp.data.userId) {
@@ -828,24 +867,12 @@ export const useUserStore = defineStore("user", {
       }
 
       if(selectedUser.createdByUserLogin) {
-        const resp = await api({
-          baseURL: commonUtil.getOmsURL(),
-          url: "performFind",
-          method: "POST",
-          data: {
-            entityName: "UserLogin",
-            inputFields: {
-              userLoginId: selectedUser.createdByUserLogin
-            },
-            viewSize: 1,
-            fieldList: ["partyId"],
-            distinct: "Y",
-            noConditionFind: "Y"
-          }
-        })
+        const resp = await this.fetchUserDetails({
+          filters: [`username:${selectedUser.createdByUserLogin}`]
+        });
 
-        if(!commonUtil.hasError(resp)) {
-          selectedUser.createdByUserPartyId = resp.data.docs[0].partyId
+        if(!commonUtil.hasError(resp) && resp.length) {
+          selectedUser.createdByUserPartyId = resp[0]?.partyId
         }
       }
       this.selectedUser = selectedUser
