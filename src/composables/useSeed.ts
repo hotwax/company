@@ -1,5 +1,6 @@
 import { computed, ref } from "vue";
 import { api, commonUtil, logger, useDb } from "@common";
+import { serviceState, useSeedData } from "@common/db";
 import { getResponseErrorMessage } from "@/utils";
 import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
 import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
@@ -17,39 +18,56 @@ function byDescription(a: any, b: any): number {
  * they are the picker and label sources the whole app reads. Replaces `utilStore`.
  */
 
+// --- framework seed tables ------------------------------------------------------------------
+//
+// Thin wrappers over the framework's `useSeedData`, which keeps one live read per seed table for
+// the session. They keep the shapes templates already index into; the lookups themselves live in
+// `@common/db`.
+
+const seed = useSeedData();
+
+/**
+ * `useDb`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
+ * and it either has rows or sync is no longer filling it, so an empty list really is empty.
+ */
+function seedHydrated(firstRead: () => Promise<unknown>, rows: () => unknown[]) {
+  const landed = ref(false);
+  firstRead().finally(() => { landed.value = true; });
+  return computed(() => landed.value && (rows().length > 0 || !serviceState.running));
+}
+
+/** `id → description` over rows, falling back to the id. */
+function descriptionMap(rows: any[], idField: string): Record<string, string> {
+  return rows.reduce((map: Record<string, string>, row: any) => {
+    if (row[idField]) map[row[idField]] = row.description || row[idField];
+    return map;
+  }, {});
+}
+
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
-  const { records, hydrated } = useDb<any>("statuses");
+  const statuses = computed(() => seed.statuses());
 
   /** statusId → description, the map templates index into. */
-  const statusItems = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      map[row.statusId] = row.description ?? row.statusId;
-      return map;
-    }, {}));
+  const statusItems = computed<Record<string, string>>(() => descriptionMap(statuses.value, "statusId"));
 
   const labelFor = (statusId: string | undefined) =>
     (statusId ? statusItems.value[statusId] ?? statusId : "");
 
   /** Statuses of one statusTypeId (e.g. order vs shipment status sets). */
-  const ofType = (statusTypeId: string) =>
-    records.value.filter((row: any) => row.statusTypeId === statusTypeId).sort(byDescription);
+  const ofType = (statusTypeId: string) => [...seed.statusItemsByType(statusTypeId)].sort(byDescription);
 
-  return { statuses: records, statusItems, labelFor, ofType, hydrated };
+  return { statuses, statusItems, labelFor, ofType };
 }
 
 // --- enumerations ---------------------------------------------------------------------------
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
-  const { records, hydrated } = useDb<any>("enums");
-  const enumItems = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      map[row.enumId] = row.description ?? row.enumId;
-      return map;
-    }, {}));
-  return { enums: records, enumItems, hydrated };
+  const enums = computed(() => seed.enums());
+  const enumItems = computed<Record<string, string>>(() => descriptionMap(enums.value, "enumId"));
+  return { enums, enumItems };
 }
 
 /**
@@ -60,60 +78,42 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
-  const { records, hydrated } = useDb<any>(
-    "enums",
-    { scope: { field: "enumTypeId", value: enumTypeId } },
-  );
-  const values = computed(() => [...records.value].sort(byDescription));
-  const enumItems = computed<Record<string, string>>(() =>
-    values.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.enumId) map[row.enumId] = row.description ?? row.enumId;
-      return map;
-    }, {}));
+  const values = computed(() => [...seed.enumsByType(enumTypeId)].sort(byDescription));
+  const enumItems = computed<Record<string, string>>(() => descriptionMap(values.value, "enumId"));
   const labelFor = (enumId: string | undefined) =>
     (enumId ? enumItems.value[enumId] ?? enumId : "");
+  const hydrated = seedHydrated(() => seed.getEnumsByType(enumTypeId), () => values.value);
   return { values, enumItems, descriptionById: enumItems, labelFor, hydrated };
 }
 
 /** Enum types (id → description). */
 export function useEnumTypes() {
-  const { records, hydrated } = useDb<any>("enumTypes");
-  return { enumTypes: computed(() => [...records.value].sort(byDescription)), hydrated };
+  return { enumTypes: computed(() => [...seed.enumTypes()].sort(byDescription)) };
 }
 
 // --- geographic boundaries ------------------------------------------------------------------
 
 export function useGeos() {
-  const { records: geos, hydrated } = useDb<any>("geos");
-  const { records: assocs } = useDb<any>("geoAssocs");
-
+  const geos = computed(() => seed.geos());
   const byId = computed<Record<string, any>>(() =>
     geos.value.reduce((map: Record<string, any>, row: any) => {
       if (row.geoId) map[row.geoId] = row;
       return map;
     }, {}));
 
-  const countries = computed(() => geos.value
-    .filter((row: any) => row.geoTypeId === "COUNTRY")
-    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? ""))));
+  const countries = computed(() => seed.countries());
 
   /**
    * Countries in the DBIC association group.
    *
    * No dedicated fetch: `admin/geos/assocs?toGeoId=DBIC` was its own request, but the geoAssoc
    * domain already snapshots that same endpoint unfiltered, so DBIC is just a slice of the cache.
-   * One fewer login call, and it stays correct as associations change.
    */
-  const dbicCountries = computed(() => assocs.value
-    .filter((assoc: any) => assoc.toGeoId === "DBIC")
-    .map((assoc: any) => byId.value[assoc.geoId] ?? { geoId: assoc.geoId })
-    .filter(Boolean));
+  const dbicCountries = computed(() => seed.dbicCountries());
 
-  const statesOf = (countryGeoId: string) => assocs.value
-    .filter((assoc: any) => assoc.geoId === countryGeoId && assoc.geoAssocTypeEnumId === "GAT_REGIONS")
-    .map((assoc: any) => byId.value[assoc.toGeoId])
-    .filter(Boolean)
-    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? "")));
+  const statesOf = (countryGeoId: string) => seed.statesForCountry(countryGeoId);
+
+  const hydrated = seedHydrated(() => seed.getGeos(), () => geos.value);
 
   return { geos, countries, statesOf, dbicCountries, byId, hydrated };
 }
@@ -193,13 +193,13 @@ export function useCurrencies() {
 }
 
 export function useShipmentMethodTypes() {
-  const { records, hydrated } = sortedTypes("shipmentMethodTypes");
-  return { shipmentMethodTypes: records, hydrated };
+  return { shipmentMethodTypes: computed(() => [...seed.shipmentMethodTypes()].sort(byDescription)) };
 }
 
 export function usePaymentMethodTypes() {
-  const { records, hydrated } = sortedTypes("paymentMethodTypes");
-  return { paymentMethodTypes: records, hydrated };
+  const paymentMethodTypes = computed(() => [...seed.paymentMethodTypes()].sort(byDescription));
+  const hydrated = seedHydrated(() => seed.getPaymentMethodTypes(), () => paymentMethodTypes.value);
+  return { paymentMethodTypes, hydrated };
 }
 
 /**
@@ -217,14 +217,10 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
-  const { records, hydrated } = sortedTypes("roleTypes");
+  const roleTypes = computed(() => [...seed.roleTypes()].sort(byDescription));
   /** roleTypeId → description, matching the map the party-role templates index. */
-  const descriptionById = computed<Record<string, string>>(() =>
-    records.value.reduce((map: Record<string, string>, row: any) => {
-      if (row.roleTypeId) map[row.roleTypeId] = row.description || row.roleTypeId;
-      return map;
-    }, {}));
-  return { roleTypes: records, descriptionById, hydrated };
+  const descriptionById = computed<Record<string, string>>(() => descriptionMap(roleTypes.value, "roleTypeId"));
+  return { roleTypes, descriptionById };
 }
 
 /**
