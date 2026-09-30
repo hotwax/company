@@ -410,7 +410,8 @@ import { useOrderSyncHistory } from "@/composables/useOrderSyncHistory";
 import { parseFulfillmentMessageText } from "@/utils/shopifyFulfillment";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { serviceState } from "@common/db";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import { useFacilities } from "@/composables/useFacilities";
 import {
   useFulfillmentSyncHealth, useShopifySyncContext, useOmsShipmentContext, usePendingFulfillments,
@@ -480,21 +481,21 @@ const {
 const { errors: cachedMessageErrors } = useSystemMessageErrors();
 const { records: cachedFacilities } = useFacilities();
 /**
- * `syncNow` rather than `afterMutation` on purpose, and `afterMutation` is deliberately not taken.
+ * `syncNow` rather than `refreshAfterMutation` on purpose.
  *
- * `afterMutation` re-reads ONE record through a domain's `refetchOne`, which only
+ * `refreshAfterMutation` re-reads ONE record through a domain's `refetchOne`, which only
  * `shopifyFulfillmentHistoryDomain` implements. The other three domains behind this screen —
  * pending, health, order-sync history — are per-shop snapshots with no record to address, so an
- * `afterMutation` call for them is a silent no-op. Sending one shipment also moves the figures on
+ * `refreshAfterMutation` call for them is a silent no-op. Sending one shipment also moves the figures on
  * every one of them at once: the shipment leaves Pending, a System Message appears in Queued, the
  * health counts shift, and on success a row lands in Synced. A forced cycle is what refreshes all
- * four; destructuring `afterMutation` here only suggested a targeted refresh that cannot work.
+ * four; a targeted refresh here cannot work.
  */
-const { start: startSyncDomains, stop: stopSyncDomains, syncNow, error: syncError } = useCacheSync();
-const historySyncError = computed(() => String(syncError.value || "").startsWith("shopifyFulfillmentHistory:") ? syncError.value : "");
+const SYNC_OWNER = createSyncDomainOwner("shopifyFulfillmentSync");
+const historySyncError = computed(() => serviceState.errors.shopifyFulfillmentHistory ?? "");
 
 // ---------------------------------------------------------------------------------------------
-// Worker lifecycle — the same start/stop shape the inventory sync page uses.
+// Domain activation — the same activate/deactivate shape the inventory sync page uses.
 // ---------------------------------------------------------------------------------------------
 
 const isViewActive = ref(false);
@@ -513,20 +514,20 @@ function activeSyncDomains() {
 
 // Wait for this shop's exact remotes; do not fetch a cross-shop message sample while resolving.
 watch(() => `${props.id ?? ""}|${syncContext.remoteIds.value.join(",")}|${selectedOrderIds.value.join(",")}`, () => {
-  if(isViewActive.value) {void startSyncDomains(activeSyncDomains());}
+  if(isViewActive.value) {void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);}
 }, { immediate: true });
 
 onIonViewWillEnter(() => {
   isViewActive.value = true;
   waitingClock.value = Date.now();
   waitingClockTimer = setInterval(() => { waitingClock.value = Date.now(); }, 60_000);
-  void startSyncDomains(activeSyncDomains());
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
 });
 
 onIonViewDidLeave(() => {
   isViewActive.value = false;
   if(waitingClockTimer) {clearInterval(waitingClockTimer); waitingClockTimer = undefined;}
-  stopSyncDomains();
+  void deactivateSyncDomains(SYNC_OWNER);
 });
 
 // ---------------------------------------------------------------------------------------------

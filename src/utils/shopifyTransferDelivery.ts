@@ -1,4 +1,4 @@
-import { toMillis } from "./cacheProjection";
+import { toMillis } from "@common/db/storage/projection";
 
 export const TRANSFER_DELIVERY_CONFIGS = {
   create: "POST_SHOPIFY_TRANSFER_ORDER",

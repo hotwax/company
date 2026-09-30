@@ -184,7 +184,7 @@ export async function savePermissionGroups(
   };
 }
 
-/** Resolves once a cached table can be trusted (see the `hydrated` note in useCachedList.ts). */
+/** Resolves once a cached table can be trusted (see the `hydrated` note in common/db/composables/useDb.ts). */
 const untilHydrated = (hydrated: Ref<boolean>) => new Promise<void>((resolve) => {
   if(hydrated.value) {
     resolve();

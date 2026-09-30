@@ -606,9 +606,10 @@ import { useRouter } from "vue-router";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferSnapshot from "@/components/shopify/ShopifyTransferSnapshot.vue";
+import { useDb } from "@common";
+import { serviceState } from "@common/db";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncNow } from "@/services/appDbSync";
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
-import { useCachedList } from "@/composables/useCachedList";
-import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
@@ -623,7 +624,6 @@ import {
 } from "@/composables/useShopifyTransferSync";
 import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
-import { facilityCache } from "@/utils/cacheEntities";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 import { transferSyncIssuePath } from "@/utils/shopifyTransferStagingErrors";
 import { isTransferSyncMonitoringLoaded, shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
@@ -684,7 +684,7 @@ const { rows: pairedRows } = useShopifyPendingSegment(
 const segmentRows = computed<any[]>(() => [...primaryRows.value, ...pairedRows.value]
   .sort((a: any, b: any) => Number(a?.occurredAt ?? 0) - Number(b?.occurredAt ?? 0)));
 
-const { records: facilities } = useCachedList<any>(facilityCache);
+const { records: facilities } = useDb<any>("facilities");
 const facilityNamesById = computed<Record<string, string>>(() => Object.fromEntries(
   facilities.value
     .filter((facility: any) => facility?.facilityId)
@@ -1052,28 +1052,21 @@ function handleJobUpdated() {
   showJobModal.value = false;
 }
 
-const {
-  start: startSyncDomains,
-  stop: stopSyncDomains,
-  error: syncError,
-  failingDomains,
-  domainStatus,
-  syncNow,
-} = useCacheSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyTransferSyncView");
+const failingDomains = computed<Record<string, string>>(() => serviceState.errors);
 // Stager-read failures belong in the Errors tab; they do not make the activity ledger unavailable.
-const transferSyncError = computed(() => failingDomains?.value
-  ? failingDomains.value.shopifyTransferSync || failingDomains.value.auth || failingDomains.value.__start || ""
-  : syncError.value);
+const transferSyncError = computed(() =>
+  failingDomains.value.shopifyTransferSync || failingDomains.value.auth || failingDomains.value.__start || "");
 const viewSyncBaselineAt = ref(0);
 const viewActive = ref(false);
 const stagingSyncBaselineAt = ref(0);
-const stagingRunsChecked = computed(() => Number(domainStatus.value.serviceJobRun?.at ?? 0) > stagingSyncBaselineAt.value);
-const deliveryChecked = computed(() => Number(domainStatus.value.shopifyTransferDelivery?.at ?? 0) > stagingSyncBaselineAt.value);
+const stagingRunsChecked = computed(() => (serviceState.syncedAt.serviceJobRun ?? 0) > stagingSyncBaselineAt.value);
+const deliveryChecked = computed(() => (serviceState.syncedAt.shopifyTransferDelivery ?? 0) > stagingSyncBaselineAt.value);
 
 const monitoringLoaded = computed(() => isTransferSyncMonitoringLoaded({
   cacheHydrated: hydrated.value,
   cachedRowCount: pendingTotal.value,
-  liveSyncAt: Number(domainStatus.value.shopifyTransferSync?.at ?? 0),
+  liveSyncAt: serviceState.syncedAt.shopifyTransferSync ?? 0,
   viewSyncBaselineAt: viewSyncBaselineAt.value,
 }));
 
@@ -1091,12 +1084,12 @@ function activeSyncDomains() {
 
 function startTransferSyncDomains() {
   viewActive.value = true;
-  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
+  stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
   void loadLaunch(shopId.value, undefined, true);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
-  viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);
-  void startSyncDomains(activeSyncDomains());
+  viewSyncBaselineAt.value = serviceState.syncedAt.shopifyTransferSync ?? 0;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
   void loadWebhookReconciliation();
 }
 
@@ -1112,12 +1105,12 @@ async function retry() {
 watch(shopId, startTransferSyncDomains);
 watch(() => `${activeTab.value}|${stagingJobNames.value.join("|")}`, () => {
   if(!viewActive.value) {return;}
-  stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
-  void startSyncDomains(activeSyncDomains());
+  stagingSyncBaselineAt.value = serviceState.syncedAt.serviceJobRun ?? 0;
+  void activateSyncDomains(activeSyncDomains(), SYNC_OWNER);
 });
 onIonViewWillEnter(startTransferSyncDomains);
 
-onIonViewDidLeave(() => { viewActive.value = false; stopSyncDomains(); });
+onIonViewDidLeave(() => { viewActive.value = false; void deactivateSyncDomains(SYNC_OWNER); });
 </script>
 
 <style scoped>

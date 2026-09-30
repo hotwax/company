@@ -31,7 +31,7 @@ import { translate } from "@common";
 import { IonButton, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonPopover } from "@ionic/vue";
 import { warningOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
-import { CACHE_DOMAIN_CATALOG } from "@/utils/cacheDomainCatalog";
+import { INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
 
 // Two root nodes, so there is no single element to inherit attributes.
 defineOptions({ inheritAttrs: false });
@@ -53,13 +53,14 @@ function openDetails(event: Event) {
   open.value = true;
 }
 
-const DOMAIN_LABELS = new Map(CACHE_DOMAIN_CATALOG.map((entry) => [entry.name, entry.label]));
 
 function labelFor(domain: string): string {
   if(domain === "auth") {return translate("Sign-in");}
   if(domain === "__start") {return translate("Background sync");}
 
-  return DOMAIN_LABELS.get(domain) ? translate(DOMAIN_LABELS.get(domain) as string) : domain;
+  const label = INVENTORY_SYNC_DOMAIN_LABELS[domain];
+
+  return label ? translate(label) : domain;
 }
 
 /** OMS errors often arrive as a JSON body; the readable part is its `errors` text. */

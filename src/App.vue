@@ -17,7 +17,7 @@ import { emitter, FastTravel, translate } from '@common'
 import { Settings } from 'luxon'
 import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
-import { startReferenceSync } from '@/services/appCacheBootstrap'
+import { startAppDbSync } from '@/services/appDbSync'
 import router from "@/router"
 
 const userStore = useUserStore()
@@ -79,7 +79,7 @@ onMounted(() => {
 // `isAuthenticated` is false at mount and flips true a moment later — the sync then never ran.
 // Watching also makes the trigger literally "on login". Fire-and-forget: never gates app start.
 watch(useAuth().isAuthenticated, (authenticated) => {
-  if (authenticated) void startReferenceSync()
+  if (authenticated) void startAppDbSync()
 }, { immediate: true })
 
 onUnmounted(() => {

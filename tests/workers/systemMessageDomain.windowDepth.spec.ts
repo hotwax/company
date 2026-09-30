@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const calls = vi.hoisted(() => ({ pageNewestFirst: [] as any[] }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
+vi.mock("@common/core/workerRemoteApi", () => ({
   pageNewestFirst: vi.fn(async (options: any) => {
     calls.pageNewestFirst.push(options);
     return [];
@@ -32,17 +32,28 @@ vi.mock("@/workers/domains/workerFetch", () => ({
 /** How many rows the cache claims to hold for the scope under test. */
 const cacheState = vi.hoisted(() => ({ count: 0 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  systemMessageCache: {
-    all: vi.fn(async () => []),
-    count: vi.fn(async () => cacheState.count),
-    newestCursor: vi.fn(async () => 1_700_000_000_000),
-    rowsMissing: vi.fn(async () => []),
-    upsertMany: vi.fn(async (rows: any[]) => rows.length),
-  },
-  shopifyShopCache: { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) },
-  systemMessageRemoteCache: {
-    all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessages") {
+        return {
+          all: vi.fn(async () => []),
+          count: vi.fn(async () => cacheState.count),
+          newestCursor: vi.fn(async () => 1_700_000_000_000),
+          rowsMissing: vi.fn(async () => []),
+          upsertMany: vi.fn(async (rows: any[]) => rows.length),
+        };
+      }
+      if (table === "shopifyShops") {
+        return { all: vi.fn(async () => [{ shopId: "10000", shopifyShopId: "111" }]) };
+      }
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(async () => [{ systemMessageRemoteId: "RemoteA", remoteId: "111", internalId: "10000" }]),
+        };
+      }
+      return {};
+    },
   },
 }));
 
@@ -54,21 +65,20 @@ vi.mock("@/utils/systemMessage", () => ({
   resolveShopRemoteIds: () => ["RemoteA"],
 }));
 
-vi.mock("@/utils/cacheProjection", () => ({
-  keepNewerThan: (page: any[]) => page,
-}));
+vi.mock("@common/db", async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    keepNewerThan: (page: any[]) => page,
+  };
+});
 
-const domains = vi.hoisted(() => ({ registered: [] as any[] }));
-vi.mock("@/workers/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { domains.registered.push(domain); },
-}));
+import { systemMessageDomain } from "@/workers/domains/systemMessageDomain";
 
 const ctx = { maargUrl: "http://x", token: "t" } as any;
 
 async function tick(args: any) {
-  await import("@/workers/domains/systemMessageDomain");
-  const domain = domains.registered.find((d) => d.name === "systemMessage");
-  return domain.sync(ctx, args);
+  return systemMessageDomain.sync(ctx, args);
 }
 
 beforeEach(() => {

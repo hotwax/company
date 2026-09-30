@@ -72,7 +72,7 @@ vi.mock("@common", () => ({
 vi.mock("@/components/common/Menu.vue", () => ({ default: harness.stub("Menu") }));
 vi.mock("@common/composables/useAuth", () => ({ useAuth: () => ({ isAuthenticated: ref(false) }) }));
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ current: null }) }));
-vi.mock("@/services/appCacheBootstrap", () => ({ startReferenceSync: vi.fn() }));
+vi.mock("@/services/appDbSync", () => ({ startAppDbSync: vi.fn() }));
 vi.mock("@/router", () => ({ default: { currentRoute: { value: { name: "Login" } } } }));
 
 import App from "@/App.vue";

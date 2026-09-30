@@ -1,11 +1,12 @@
-import {
-  dataManagerLogCache,
-  shopifyShopCache,
-  syncRunCache,
-  systemMessageCache,
-} from "@/utils/cacheEntities";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { unwrapCollection, workerGet, workerPost } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { SyncContext } from "@common/db/types";
+import { unwrapCollection, workerGet, workerPost } from "@common/core/workerRemoteApi";
+
+const syncRunEntity = companyDb.entity("syncRuns");
+const shopifyShopEntity = companyDb.entity("shopifyShops");
+const systemMessageEntity = companyDb.entity("systemMessages");
+const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
 
 /**
  * SyncRun — class A, and the only SHOP-SCOPED sync cursor.
@@ -63,7 +64,7 @@ async function resolveScopes(args: SyncRunArgs): Promise<SyncRunScope[]> {
   if(args.scopes?.length) {return args.scopes;}
   if(!args.systemMessageTypeIds?.length) {return [];}
 
-  const shops = await shopifyShopCache.all();
+  const shops = await shopifyShopEntity.all();
   const shopIds = [...new Set(shops.map((shop: any) => String(shop.shopId ?? "")).filter(Boolean))];
 
   return shopIds.flatMap((shopId) =>
@@ -106,7 +107,7 @@ async function syncScope(ctx: SyncContext, scope: SyncRunScope, args: SyncRunArg
   const batchSize = args.batchSize ?? 25;
   const target = args.total ?? 100;
 
-  const cached = await syncRunCache.count(
+  const cached = await syncRunEntity.count(
     { field: "shopId", value: scope.shopId },
     { systemMessageTypeId: scope.systemMessageTypeId },
   );
@@ -120,7 +121,7 @@ async function syncScope(ctx: SyncContext, scope: SyncRunScope, args: SyncRunArg
     if(page.length < batchSize) {break;}
   }
 
-  return rows.length ? syncRunCache.upsertMany(rows.slice(0, wanted)) : 0;
+  return rows.length ? syncRunEntity.upsertMany(rows.slice(0, wanted)) : 0;
 }
 
 /** Ids named by cached runs that are missing from `table`. */
@@ -156,14 +157,14 @@ async function missingIds(
 async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
   const limit = args.enrichMax ?? 10;
 
-  const runs = (await syncRunCache.all())
+  const runs = (await syncRunEntity.all())
     .slice()
     .sort((a: any, b: any) => Number(b.initDate ?? 0) - Number(a.initDate ?? 0));
   if(!runs.length) {return 0;}
 
   const [cachedMessages, cachedLogs] = await Promise.all([
-    systemMessageCache.all(),
-    dataManagerLogCache.all(),
+    systemMessageEntity.all(),
+    dataManagerLogEntity.all(),
   ]);
   const haveMessages = new Set(cachedMessages.map((row: any) => String(row.systemMessageId)));
   const haveLogs = new Set(cachedLogs.map((row: any) => String(row.logId)));
@@ -178,7 +179,7 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
         pageSize: 1,
       });
       const row = resp?.systemMessages?.[0];
-      if(row) {written += await systemMessageCache.upsertMany([row]);}
+      if(row) {written += await systemMessageEntity.upsertMany([row]);}
     } catch {
       // one bad id must not sink the pass; the next tick retries it
     }
@@ -188,7 +189,7 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
     try {
       const resp = await workerGet(ctx, LOG_ENDPOINT, { logId });
       const row = resp?.dataManagerLogs?.[0];
-      if(row) {written += await dataManagerLogCache.upsertMany([row]);}
+      if(row) {written += await dataManagerLogEntity.upsertMany([row]);}
     } catch {
       // as above
     }
@@ -197,8 +198,11 @@ async function enrich(ctx: SyncContext, args: SyncRunArgs): Promise<number> {
   return written;
 }
 
-registerSyncDomain({
+export const syncRunDomain = defineSyncDomain({
   name: "syncRun",
+  table: "syncRuns",
+  label: "Sync runs",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: SyncRunArgs = {}) {
     const scopes = await resolveScopes(args);
@@ -239,6 +243,6 @@ registerSyncDomain({
     });
     const rows = unwrapCollection(resp, "entityValueList");
 
-    return rows.length ? syncRunCache.upsertMany(rows) : 0;
+    return rows.length ? syncRunEntity.upsertMany(rows) : 0;
   },
 });
