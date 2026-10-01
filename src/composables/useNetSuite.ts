@@ -1,9 +1,15 @@
 import { computed } from "vue";
-import { isEffectiveNow } from "@common/db";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 import { alertController } from "@ionic/vue";
-import { api, commonUtil, emitter, logger, useDb } from "@common";
+import { api, commonUtil, emitter, logger } from "@common";
 import { translate } from "@/i18n";
-import { resyncDomain } from "@/services/appDbSync";
+import {
+  enumGroupMemberCache,
+  facilityIdentificationCache,
+  integrationTypeMappingCache,
+} from "@/utils/cacheEntities";
+import { resyncDomain } from "@/services/appCacheBootstrap";
+import { useCachedList } from "./useCachedList";
 
 /**
  * NetSuite master entity — the whole integration surface in one composable.
@@ -28,8 +34,8 @@ import { resyncDomain } from "@/services/appDbSync";
  * This is the table every NetSuite mapping screen edits.
  */
 export function useIntegrationTypeMappings(integrationTypeId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "integrationTypeMappings",
+  const { records, hydrated } = useCachedList<any>(
+    integrationTypeMappingCache,
     integrationTypeId ? { scope: { field: "integrationTypeId", value: integrationTypeId } } : {},
   );
 
@@ -57,17 +63,15 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
   return { mappings: records, valueByKey, mappingByKey, byType, records, hydrated };
 }
 
-/** Enum group members for one group (e.g. sales channel / variance reason sets). */
-export function useEnumGroupMembers(enumGroupId: string) {
-  const { records, hydrated } = useDb<any>("enumGroupMembers");
-  const members = computed(() =>
-    records.value.filter((row: any) => row.enumGroupId === enumGroupId));
-  return { members, hydrated };
+/** Members of the NetSuite variance-reason enum group. */
+export function useEnumGroupMembers() {
+  const { records, hydrated } = useCachedList<any>(enumGroupMemberCache);
+  return { members: records, records, hydrated };
 }
 
-/** Facility identifications (party/facility external-id mappings). */
+/** Facility identifications NetSuite uses as departments. */
 export function useFacilityIdentifications() {
-  const { records, hydrated } = useDb<any>("facilityIdentifications");
+  const { records, hydrated } = useCachedList<any>(facilityIdentificationCache);
 
   /**
    * Only identifications in force right now. `oms/facilities/identifications` returns thru-dated
@@ -80,7 +84,7 @@ export function useFacilityIdentifications() {
    */
   const active = computed<any[]>(() => {
     const now = Date.now();
-    return records.value.filter((row: any) => isEffectiveNow(row, now));
+    return records.value.filter((row: any) => isEffectiveNow(row.raw ?? row, now));
   });
 
   /** facilityId → identification value, the shape the departments screen edits. */

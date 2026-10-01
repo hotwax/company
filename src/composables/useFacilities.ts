@@ -1,17 +1,16 @@
 import { computed, ref } from "vue";
 import { DateTime } from "luxon";
-import { api, commonUtil, logger, translate, useDb } from "@common";
+import { api, commonUtil, logger, translate } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow, toCount, toMillis } from "@common/db";
+import { isEffectiveNow, toCount, toMillis } from "@/utils/cacheProjection";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
+import { facilityCache, facilityGroupCache, facilityTypeCache, groupFacilityCache } from "@/utils/cacheEntities";
+import { facilityGroupProductStoreCache, productStoreFacilityCache } from "@/utils/cacheEntities";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";
 import { useFacilityIdentifications } from "./useNetSuite";
-
-function byDescription(a: any, b: any): number {
-  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
-}
+import { byDescription, useCachedList, useCachedRecord } from "./useCachedList";
 
 /**
  * Facility master entity — facilities, their types, and facility GROUPS with their memberships.
@@ -64,7 +63,7 @@ export interface FacilityFilters {
  * screen states which facilities it wants rather than issuing a scoped request.
  */
 export function useFacilities(filters: FacilityFilters = {}) {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useCachedList<any>(facilityCache);
 
   const facilities = computed(() => records.value.filter((facility: any) => {
     if (filters.excludeVirtual && isVirtualFacility(facility)) return false;
@@ -77,10 +76,8 @@ export function useFacilities(filters: FacilityFilters = {}) {
   return { facilities, records, hydrated };
 }
 
-export const useFacilityRecord = (facilityId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilities", () => facilityId ? { equals: { facilityId } } : {});
-  return { record, hydrated };
-};
+export const useFacilityRecord = (facilityId: string | undefined) =>
+  useCachedRecord(facilityCache, "facilityId", facilityId);
 
 export interface FacilityTypeFilters {
   /**
@@ -98,7 +95,7 @@ export interface FacilityTypeFilters {
 
 /** Facility types, description-ordered for pickers, narrowed by `filters`. */
 export function useFacilityTypes(filters: FacilityTypeFilters = {}) {
-  const { records, hydrated } = useDb<any>("facilityTypes");
+  const { records, hydrated } = useCachedList<any>(facilityTypeCache);
 
   const facilityTypes = computed(() => records.value
     .filter((type: any) => {
@@ -124,7 +121,7 @@ export const ARCHIVE_FACILITY_GROUP_ID = "ARCHIVE";
  * marks it. Filtering on the facility rows alone would keep showing it in the active list.
  */
 export function useFacilityPartitions() {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useCachedList<any>(facilityCache);
   const { archivedIds } = useArchivedFacilities();
 
   const allVirtual = computed(() => records.value.filter(isVirtualFacility));
@@ -146,7 +143,7 @@ export function useFacilityPartitions() {
  */
 export function useArchivedFacilities() {
   const { active, hydrated: membershipsHydrated } = useGroupMembershipIndex();
-  const { records: facilities, hydrated: facilitiesHydrated } = useDb<any>("facilities");
+  const { records: facilities, hydrated: facilitiesHydrated } = useCachedList<any>(facilityCache);
 
   const archivedMembers = computed(() =>
     active.value.filter((row: any) => row.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID));
@@ -178,7 +175,7 @@ export function useArchivedFacilities() {
 
 /** Groups with their member counts folded in — what the group list renders. */
 export function useFacilityGroups() {
-  const { records, hydrated } = useDb<any>("facilityGroups");
+  const { records, hydrated } = useCachedList<any>(facilityGroupCache);
   const { facilityCountByGroup } = useGroupFacilityCounts();
 
   const { productStoreCountByGroup } = useFacilityGroupProductStoreCounts();
@@ -192,16 +189,14 @@ export function useFacilityGroups() {
   return { facilityGroups, records, hydrated };
 }
 
-export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilityGroups", () => facilityGroupId ? { equals: { facilityGroupId } } : {});
-  return { record, hydrated };
-};
+export const useFacilityGroupRecord = (facilityGroupId: string | undefined) =>
+  useCachedRecord(facilityGroupCache, "facilityGroupId", facilityGroupId);
 
 /**
  * Members of one group, or every membership when no group is given.
  *
- * `fromDate`/`thruDate` are served from the PROJECTION, so they are always epoch millis rather than
- * whatever shape the OMS emitted. The group screen
+ * `fromDate`/`thruDate` are served from the PROJECTION, not the raw server row. `useCachedList`
+ * hands back `row.raw`, i.e. whatever shape the OMS emitted the timestamp as, and the group screen
  * echoes `fromDate` back on every membership revision. Since `store` matches the row on the exact
  * timestamp, echoing an un-normalized value inserts a duplicate member instead of updating one —
  * see `useFacilityGroupMutations.saveMembers`. The projected value is always epoch millis.
@@ -212,12 +207,12 @@ export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
  * being one duplicate row and becomes a duplicate of the whole group.
  */
 export function useGroupFacilities(facilityGroupId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "groupFacilities",
+  const { rows, records, hydrated } = useCachedList<any>(
+    groupFacilityCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
-  const members = computed<any[]>(() => records.value.map((row: any) => {
-    const raw = row;
+  const members = computed<any[]>(() => rows.value.map((row: any) => {
+    const raw = row.raw ?? {};
     const sequenceNum = toCount(raw.sequenceNum);
     return {
       ...raw,
@@ -233,7 +228,7 @@ export function useGroupFacilities(facilityGroupId?: string) {
 
 /** facilityGroupId → member count, honoring `thruDate` (memberships are date-effective). */
 export function useGroupFacilityCounts() {
-  const { records, hydrated } = useDb<any>("groupFacilities");
+  const { records, hydrated } = useCachedList<any>(groupFacilityCache);
   return {
     facilityCountByGroup: computed<Record<string, number>>(() => {
       const now = Date.now();
@@ -253,7 +248,7 @@ export function useGroupFacilityCounts() {
  * Expired memberships (`thruDate` in the past) are excluded, matching the server's `filterByDate`.
  */
 export function useGroupMembershipIndex() {
-  const { records, hydrated } = useDb<any>("groupFacilities");
+  const { records, hydrated } = useCachedList<any>(groupFacilityCache);
 
   const active = computed(() => {
     const now = Date.now();
@@ -288,7 +283,7 @@ export function useGroupMembershipIndex() {
  * Deriving the distinct ids off `facilityGroups` makes them work.
  */
 export function useFacilityGroupTypes() {
-  const { records, hydrated } = useDb<any>("facilityGroups");
+  const { records, hydrated } = useCachedList<any>(facilityGroupCache);
   const facilityGroupTypes = computed(() => {
     const seen = new Set<string>();
     for (const group of records.value as any[]) {
@@ -351,8 +346,8 @@ export function useFacilityGroupTypeOptions() {
  * which is what lets the facility list filter by product store.
  */
 export function useFacilityProductStores(facilityId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "productStoreFacilities",
+  const { records, hydrated } = useCachedList<any>(
+    productStoreFacilityCache,
     facilityId ? { scope: { field: "facilityId", value: facilityId } } : {},
   );
 
@@ -382,8 +377,8 @@ export const useFacilityShopifyMappings = (facilityId: string | undefined) =>
  * membership counts use.
  */
 export function useFacilityGroupProductStores(facilityGroupId?: string) {
-  const { records, hydrated } = useDb<any>(
-    "facilityGroupProductStores",
+  const { records, hydrated } = useCachedList<any>(
+    facilityGroupProductStoreCache,
     facilityGroupId ? { scope: { field: "facilityGroupId", value: facilityGroupId } } : {},
   );
   // `Date.now()` belongs INSIDE the computed. Read once at setup it freezes the cutoff at the
@@ -876,7 +871,7 @@ export function useFacilityDetail(facilityId: string) {
 
   /** Everything, in the aggregate shape the template already binds. */
   const current = computed<Record<string, any>>(() => {
-    const base = facility.value ?? {};
+    const base = (facility.value as any)?.raw ?? facility.value ?? {};
     const maximumOrderLimit = base.maximumOrderLimit;
     const groups = groupsByFacility.value[facilityId] ?? [];
     // These four are NOT facility fields — they are derived from group membership, exactly as
@@ -1037,7 +1032,7 @@ export function useFacilityMutations(facilityId?: string) {
     // ------------------------------------------------- groups (CACHED: groupFacilities)
     async addToGroup(payload: Record<string, any>) {
       const resp = await post(`oms/facilities/${requireFacilityId()}/groups`, { ...payload, facilityId });
-      await refreshAfterMutation("groupFacility", { facilityGroupId: payload.facilityGroupId });
+      await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
       return resp;
     },
     async updateGroupAssociation(payload: Record<string, any>) {
@@ -1045,7 +1040,7 @@ export function useFacilityMutations(facilityId?: string) {
         `oms/facilities/${requireFacilityId()}/groups/${encodeURIComponent(payload.facilityGroupId)}`,
         { ...payload, facilityId },
       );
-      await refreshAfterMutation("groupFacility", { facilityGroupId: payload.facilityGroupId });
+      await refreshAfterMutation("facilityGroupMember", { facilityGroupId: payload.facilityGroupId });
       return resp;
     },
     async createGroup(payload: Record<string, any>) {
@@ -1171,7 +1166,7 @@ export function useFacilityMutations(facilityId?: string) {
  * Each lands in a DIFFERENT cached domain, and getting that wrong is silent — the write succeeds,
  * the toast says so, and the screen keeps showing the old value:
  *   - group name/description/type → `facilityGroup`
- *   - members added/removed/resequenced → `groupFacility` (scoped re-list, so removals prune)
+ *   - members added/removed/resequenced → `facilityGroupMember` (scoped re-list, so removals prune)
  *   - product stores linked/unlinked → `facilityGroupProductStore`
  */
 export function useFacilityGroupMutations(facilityGroupId?: string) {
@@ -1291,7 +1286,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
 
       // Refresh even on partial failure: some writes may have landed, and the cache must reflect
       // what the server actually holds rather than what was attempted.
-      if (rows.length) await refreshAfterMutation("groupFacility", { facilityGroupId });
+      if (rows.length) await refreshAfterMutation("facilityGroupMember", { facilityGroupId });
       return { failed, results };
     },
 
@@ -1333,7 +1328,7 @@ export function useFacilityGroupMutations(facilityGroupId?: string) {
  *
  * That distinction is the whole reason this is separate: refreshing the `facility` domain here
  * would fetch a row that did not change and leave the archived list stale. The cache consequence
- * belongs to `groupFacility`, re-listed for the one group so a removed member is pruned.
+ * belongs to `facilityGroupMember`, re-listed for the one group so a removed member is pruned.
  */
 export function useFacilityArchive() {
   /** Resolve the archive group, creating it once if this OMS has never had one. */
@@ -1371,7 +1366,7 @@ export function useFacilityArchive() {
   }
 
   const refreshArchive = () =>
-    refreshAfterMutation("groupFacility", { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID });
+    refreshAfterMutation("facilityGroupMember", { facilityGroupId: ARCHIVE_FACILITY_GROUP_ID });
 
   return {
     async archive(facilityId: string) {

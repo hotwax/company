@@ -1,10 +1,16 @@
 /* eslint-disable no-restricted-syntax -- pure hierarchy helpers and entity mutations share this entity composable */
-import { api, commonUtil, translate, useDb } from "@common";
-import { computed, ref, type Ref } from "vue";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { api, commonUtil, translate } from "@common";
+import { computed, ref } from "vue";
+import { refreshAfterMutation, resyncDomain } from "@/services/appCacheBootstrap";
 import { getResponseErrorMessage } from "@/utils";
-import { isEffectiveNow } from "@common/db";
+import {
+  facilityCache,
+  organizationCache,
+  organizationRelationshipCache,
+} from "@/utils/cacheEntities";
+import { isEffectiveNow } from "@/utils/cacheProjection";
 import { onSessionCleared } from "./sessionScope";
+import { useCachedList, useCachedRecord } from "./useCachedList";
 
 export const INTERNAL_ORGANIZATION_ROLE = "INTERNAL_ORGANIZATIO";
 export const ORGANIZATION_RELATIONSHIP_TYPE = "SUB_DIVISION";
@@ -173,8 +179,8 @@ export function wouldCreateOrganizationCycle(
 }
 
 export function useOrganizations() {
-  const organizationRead = useDb<Organization>("organizations");
-  const relationshipRead = useDb<OrganizationRelationship>("organizationRelationships");
+  const organizationRead = useCachedList<Organization>(organizationCache);
+  const relationshipRead = useCachedList<OrganizationRelationship>(organizationRelationshipCache);
   const forest = computed(() =>
     deriveOrganizationForest(organizationRead.records.value, relationshipRead.records.value));
   const organizations = computed(() =>
@@ -190,16 +196,11 @@ export function useOrganizations() {
   };
 }
 
-export const useOrganizationRecord = (partyId: string | Ref<string | undefined> | undefined) => {
-  const { first: record, hydrated } = useDb<Organization>("organizations", () => {
-    const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
-    return targetId ? { equals: { partyId: targetId } } : {};
-  });
-  return { record, hydrated };
-};
+export const useOrganizationRecord = (partyId: string | Ref<string | undefined> | undefined) =>
+  useCachedRecord<Organization>(organizationCache, "partyId", partyId);
 
 export function useOrganizationFacilities(partyId: string | Ref<string | undefined> | undefined) {
-  const { records, hydrated } = useDb<any>("facilities");
+  const { records, hydrated } = useCachedList<any>(facilityCache);
   const facilities = computed(() => {
     const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
     return targetId ? records.value.filter((row: any) => row.ownerPartyId === targetId) : records.value;

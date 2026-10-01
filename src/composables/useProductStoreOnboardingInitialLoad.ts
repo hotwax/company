@@ -7,8 +7,8 @@ import type {
 } from "@/components/product-store-onboarding/OnboardingSyncStatus.types"
 import { formatDateTime } from "@/utils"
 import { DATA_MANAGER_LOG_STATUS_IDS, logOutcome } from "@/utils/dataManagerLog"
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as syncError, syncNow } from "@/services/appDbSync"
-import type { ActiveDomain } from "@common/db"
+import type { ActiveDomain } from "@/workers/syncRegistry"
+import { useCacheSync } from "./useCacheSync"
 import type { ProductStoreOnboardingRunRequest } from "./useProductStoreOnboardingWizard"
 import { useServiceJobRunsByJob } from "./useServiceJobs"
 import {
@@ -657,8 +657,7 @@ export function useProductStoreOnboardingInitialLoad(
   const orderJobName = computed(() => onboardingInitialLoadJobName("orders", shopId.value))
   const watchedJobNames = computed(() => [inventoryJobName.value, orderJobName.value].filter(Boolean))
   const serviceJobRuns = useServiceJobRunsByJob(() => watchedJobNames.value, 25)
-  const SYNC_OWNER = createSyncDomainOwner("productStoreOnboardingInitialLoad")
-
+  const sync = useCacheSync()
   const active = ref(false)
   const scopeRefreshed = ref(false)
 
@@ -808,14 +807,14 @@ export function useProductStoreOnboardingInitialLoad(
     const scopeKey = selectedShopScopeKey.value
     if(!scopeKey || !nextDomains.length) {
       scopeRefreshed.value = false
-      void deactivateSyncDomains(SYNC_OWNER)
+      sync.stop()
 
       return
     }
 
-    await activateSyncDomains(nextDomains, SYNC_OWNER)
-    await syncNow()
-    if(syncError.value) {throw new Error(syncError.value)}
+    await sync.start(nextDomains)
+    await sync.syncNow()
+    if(sync.error.value) {throw new Error(sync.error.value)}
     await refetchPendingJobRuns()
     if(scopeKey === selectedShopScopeKey.value) {scopeRefreshed.value = true}
   }
@@ -842,7 +841,7 @@ export function useProductStoreOnboardingInitialLoad(
       )
       if(terminal) {return}
 
-      await refreshAfterMutation("serviceJobRun", {
+      await sync.afterMutation("serviceJobRun", {
         jobName,
         jobRunId: request.jobRunId
       })
@@ -857,14 +856,14 @@ export function useProductStoreOnboardingInitialLoad(
 
   function deactivate() {
     active.value = false
-    void deactivateSyncDomains(SYNC_OWNER)
+    sync.stop()
   }
 
   async function refresh() {
     const scopeKey = selectedShopScopeKey.value
     if(!scopeKey || !domains.value.length) {
       scopeRefreshed.value = false
-      void deactivateSyncDomains(SYNC_OWNER)
+      sync.stop()
 
       return
     }
@@ -873,8 +872,8 @@ export function useProductStoreOnboardingInitialLoad(
       await activate()
     } else {
       scopeRefreshed.value = false
-      await syncNow()
-      if(syncError.value) {throw new Error(syncError.value)}
+      await sync.syncNow()
+      if(sync.error.value) {throw new Error(sync.error.value)}
       await refetchPendingJobRuns()
       if(scopeKey === selectedShopScopeKey.value) {scopeRefreshed.value = true}
     }
@@ -891,8 +890,10 @@ export function useProductStoreOnboardingInitialLoad(
     inventory,
     orders,
     active,
-    refreshError: syncError,
+    refreshing: sync.manualRefreshing,
+    refreshError: sync.error,
     scopeRefreshed,
+    lastRefreshedAt: sync.lastSyncAt,
     activate,
     deactivate,
     refresh

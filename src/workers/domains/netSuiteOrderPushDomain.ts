@@ -1,13 +1,12 @@
-import { companyDb } from "@/db/companyDb";
-import { keepNewerThan } from "@common/db";
-
-const netSuiteDecisionRuleEntity = companyDb.entity("netSuiteDecisionRules");
-const netSuiteOrderPushBacklogEntity = companyDb.entity("netSuiteOrderPushBacklog");
-const netSuiteRuleGroupEntity = companyDb.entity("netSuiteRuleGroups");
-const netSuiteRuleGroupRunEntity = companyDb.entity("netSuiteRuleGroupRuns");
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
+import {
+  netSuiteDecisionRuleCache,
+  netSuiteOrderPushBacklogCache,
+  netSuiteRuleGroupCache,
+  netSuiteRuleGroupRunCache,
+} from "@/utils/cacheEntities";
+import { keepNewerThan } from "@/utils/cacheProjection";
+import { registerSyncDomain, type SyncContext } from "../syncRegistry";
+import { pageNewestFirst, workerGet } from "./workerFetch";
 
 /**
  * NetSuite order push — the live half of the sync monitor.
@@ -60,7 +59,7 @@ async function syncRuleGroups(ctx: SyncContext, productStoreId: string): Promise
     pageSize: 50,
   });
   const groups: any[] = Array.isArray(resp) ? resp : [];
-  await netSuiteRuleGroupEntity.upsertMany(groups);
+  await netSuiteRuleGroupCache.upsertMany(groups);
   return groups;
 }
 
@@ -78,11 +77,11 @@ async function syncDecisionRules(ctx: SyncContext, ruleGroupIds: string[]): Prom
     pageSize: 200,
   });
   const rules: any[] = Array.isArray(resp) ? resp : [];
-  return netSuiteDecisionRuleEntity.upsertMany(rules);
+  return netSuiteDecisionRuleCache.upsertMany(rules);
 }
 
 async function syncRuns(ctx: SyncContext, ruleGroupId: string, total: number): Promise<number> {
-  const cursor = await netSuiteRuleGroupRunEntity.newestCursor("startDate", {
+  const cursor = await netSuiteRuleGroupRunCache.newestCursor("startDate", {
     field: "ruleGroupId",
     value: ruleGroupId,
   });
@@ -100,7 +99,7 @@ async function syncRuns(ctx: SyncContext, ruleGroupId: string, total: number): P
   // `ruleGroupId` IS echoed on RuleGroupRun rows (it is a real column, unlike ServiceJobRun's
   // jobName), so no stamping is needed — but a defensive fill costs nothing and keeps the per-group
   // cursor correct if a future master trims the field.
-  return netSuiteRuleGroupRunEntity.upsertMany(
+  return netSuiteRuleGroupRunCache.upsertMany(
     runs.map((run: any) => ({ ...run, ruleGroupId: run?.ruleGroupId ?? ruleGroupId })),
   );
 }
@@ -132,16 +131,13 @@ async function syncBacklog(ctx: SyncContext, productStoreId: string): Promise<nu
     isSupported = "N";
   }
 
-  return netSuiteOrderPushBacklogEntity.upsertMany([
+  return netSuiteOrderPushBacklogCache.upsertMany([
     { productStoreId, pendingCount, isSupported, checkedAt: Date.now() },
   ]);
 }
 
-export const netSuiteOrderPushDomain = defineSyncDomain({
+registerSyncDomain({
   name: "netSuiteOrderPush",
-  table: "netSuiteRuleGroups",
-  label: "NetSuite order push",
-  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: NetSuiteOrderPushArgs = {}) {
     const productStoreId = String(args.productStoreId ?? "").trim();

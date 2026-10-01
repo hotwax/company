@@ -31,30 +31,6 @@ vi.mock("@common", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (key: string, values: Record<string, unknown> = {}) =>
     Object.entries(values).reduce((message, [name, value]) => message.replace(`{${name}}`, String(value)), key),
-  // Stored rows are the projected server rows themselves, with no synthetic key beside them.
-  useDb: (table: string, options?: any) => {
-    if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
-    const list = (source: { value: any[] }, hydrated = ref(true)) => {
-      const records = computed(() => {
-        const filter = toValue(options)?.filter;
-
-        return filter ? source.value.filter(filter) : source.value;
-      });
-
-      return { records, first: computed(() => records.value[0]), count: computed(() => records.value.length), hydrated };
-    };
-    if(table === "shopifyInventoryAdjustmentDetails") {return list(channelDetails, ledgerHydrated);}
-    if(table === "shopifyLocationInventoryAdjustmentDetails") {return list(locationDetails, ledgerHydrated);}
-    if(table === "systemMessages") {return list(messages);}
-    if(table === "shopifyLocations") {return list(shopLocations);}
-    if(table === "facilities") {return list(facilities);}
-    if(table === "inventoryChannels") {return list(channels);}
-    if(table === "serviceJobs") {return list(serviceJobs);}
-    if(table === "inventoryLedgerBounds") {return list(bounds);}
-    if(table === "shopifyInventoryItems") {return list(inventoryItems);}
-
-    return list(ref([]));
-  },
 }));
 
 vi.mock("@/services/inventorySyncArea", () => ({
@@ -62,6 +38,47 @@ vi.mock("@/services/inventorySyncArea", () => ({
     ready: ref(true), error: ref(""), failingDomains: areaFailures, busy: ref(false), manualRefreshing: ref(false),
     syncNow: harness.syncNow, afterMutation: vi.fn(), loadEventsFrom: harness.loadEventsFrom, loadLedgerBounds: harness.loadLedgerBounds,
   }),
+}));
+
+function asCachedRows(records: { value: any[] }, keyField?: string, keyOf?: (raw: any) => string) {
+  return computed(() => records.value.map((raw: any) => ({
+    ...raw,
+    ...(keyField && keyOf ? { [keyField]: keyOf(raw) } : {}),
+    raw,
+    cachedAt: raw.cachedAt ?? 0,
+  })));
+}
+
+vi.mock("@/composables/useCachedList", () => ({
+  useCachedList: (cache: any, options?: any) => {
+    const table = String(cache?.table ?? "");
+    if(table.endsWith("AdjustmentDetails")) {harness.ledgerOptions = options;}
+    const list = (records: { value: any[] }, hydrated = ref(true), keyField?: string, keyOf?: (raw: any) => string) =>
+      ({ records, rows: asCachedRows(records, keyField, keyOf), hydrated });
+    if(table === "shopifyInventoryAdjustmentDetails") {
+      return list(
+        channelDetails, ledgerHydrated, "adjustmentKey",
+        (raw) => [raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId].join("|")
+      );
+    }
+    if(table === "shopifyLocationInventoryAdjustmentDetails") {
+      return list(
+        locationDetails, ledgerHydrated, "locationAdjustmentKey",
+        (raw) => [raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId].join("|")
+      );
+    }
+    if(table === "systemMessages") {return list(messages);}
+    if(table === "shopifyLocations") {return list(shopLocations);}
+    if(table === "facilities") {return list(facilities);}
+    if(table === "inventoryChannels") {return list(channels);}
+    if(table === "serviceJobs") {return list(serviceJobs);}
+    if(table === "inventoryLedgerBounds") {return list(bounds);}
+    if(table === "shopifyInventoryItems") {
+      return list(inventoryItems, ref(true), "itemKey", (raw) => `${raw.shopId}|${raw.shopifyInventoryItemId}`);
+    }
+
+    return list(ref([]));
+  },
 }));
 
 vi.mock("@/composables/useSeed", () => ({
@@ -285,8 +302,8 @@ describe("ShopifyInventoryEventHistory - delivery, read from the freshest cached
   });
 
   it("lets the message poller's later read override the row's joined status", async () => {
-    channelDetails.value = [channelRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", syncedAt: 5 })];
-    messages.value = [{ systemMessageId: "M1", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE, syncedAt: 50 }];
+    channelDetails.value = [channelRow({ systemMessageId: "M1", systemMessageStatusId: "SmsgProduced", cachedAt: 5 })];
+    messages.value = [{ systemMessageId: "M1", statusId: "SmsgSent", processedDate: 1_000_000 + 2 * MINUTE, cachedAt: 50 }];
     const wrapper = await mountHistory("channel");
 
     expect(rows(wrapper)[0].text()).toContain("Status SmsgSent");

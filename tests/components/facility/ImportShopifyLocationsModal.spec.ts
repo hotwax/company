@@ -47,7 +47,7 @@ vi.mock("@/composables/useFacilities", () => ({
   useFacilityProductStores: () => ({ associations: harness.associations }),
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: harness.refreshAfterMutation,
 }));
 

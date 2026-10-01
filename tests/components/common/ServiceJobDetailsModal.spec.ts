@@ -11,7 +11,7 @@ vi.mock('@/composables/useServiceJobs', () => ({ useServiceJob: () => ({
 }) }));
 import { commonUtil } from '@common';
 import Modal from '@/components/common/ServiceJobDetailsModal.vue';
-import { CacheReconciliationError } from '@/utils/db/cacheReconciliationError';
+import { CacheReconciliationError } from '@/utils/cacheReconciliationError';
 const mountModal = (props: Record<string, unknown> = {}) => mount(Modal, { props: { isOpen: true, jobName: 'JOB1', ...props }, global: { stubs: {
   IonModal: { props: ['isOpen', 'canDismiss', 'backdropDismiss'], template: '<div><slot /></div>' },
 } } });

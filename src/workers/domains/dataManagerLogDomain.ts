@@ -1,11 +1,7 @@
-import { companyDb } from "@/db/companyDb";
-import { keepNewerThan } from "@common/db";
-
-const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
-
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
+import { dataManagerLogCache } from "@/utils/cacheEntities";
+import { keepNewerThan } from "@/utils/cacheProjection";
+import { registerSyncDomain, type SyncContext } from "../syncRegistry";
+import { pageNewestFirst, workerGet } from "./workerFetch";
 
 /**
  * DataManagerLog — class A (live, append-mostly).
@@ -57,12 +53,12 @@ async function syncCreated(ctx: SyncContext, args: DataManagerLogArgs): Promise<
    * set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which does scope by shop, omits `systemMessageId` and so
    * cannot be joined to a message. Depth is the only lever — see `importTotal`.
    */
-  const cached = await dataManagerLogEntity.count(scope);
+  const cached = await dataManagerLogCache.count(scope);
   const isShallow = cached < target;
 
   const cursor = isShallow
     ? undefined
-    : await dataManagerLogEntity.newestCursor("createdDate", scope);
+    : await dataManagerLogCache.newestCursor("createdDate", scope);
 
   const logs = await pageNewestFirst({
     ctx,
@@ -83,7 +79,7 @@ async function syncCreated(ctx: SyncContext, args: DataManagerLogArgs): Promise<
     keep: cursor === undefined ? undefined : (page) => keepNewerThan(page, "createdDate", cursor),
   });
 
-  return dataManagerLogEntity.upsertMany(logs);
+  return dataManagerLogCache.upsertMany(logs);
 }
 
 /**
@@ -96,7 +92,7 @@ async function syncCreated(ctx: SyncContext, args: DataManagerLogArgs): Promise<
  */
 async function refreshUnfinished(ctx: SyncContext, args: DataManagerLogArgs): Promise<number> {
   const maxAgeMs = args.refreshMaxAgeMs ?? DEFAULT_REFRESH_MAX_AGE_MS;
-  const targets = await dataManagerLogEntity.rowsMissing("finishDateTime", {
+  const targets = await dataManagerLogCache.rowsMissing("finishDateTime", {
     limit: args.refreshMax ?? 25,
     since: { field: "createdDate", afterMs: Date.now() - maxAgeMs },
   });
@@ -110,14 +106,11 @@ async function refreshUnfinished(ctx: SyncContext, args: DataManagerLogArgs): Pr
       // one bad logId must not sink the pass; the next tick retries it
     }
   }
-  return dataManagerLogEntity.upsertMany(refreshed);
+  return dataManagerLogCache.upsertMany(refreshed);
 }
 
-export const dataManagerLogDomain = defineSyncDomain({
+registerSyncDomain({
   name: "dataManagerLog",
-  table: "dataManagerLogs",
-  label: "Data manager logs",
-  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: DataManagerLogArgs = {}) {
     const created = await syncCreated(ctx, args);
@@ -129,6 +122,6 @@ export const dataManagerLogDomain = defineSyncDomain({
     if (!logId) return 0;
     const resp = await workerGet(ctx, ENDPOINT, { logId });
     const latest = resp?.[COLLECTION]?.[0];
-    return latest ? dataManagerLogEntity.upsertMany([latest]) : 0;
+    return latest ? dataManagerLogCache.upsertMany([latest]) : 0;
   },
 });

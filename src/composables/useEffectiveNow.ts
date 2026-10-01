@@ -7,7 +7,7 @@ import {
   toValue,
   watch,
 } from "vue";
-import { toMillis } from "@common/db";
+import { toMillis } from "@/utils/cacheProjection";
 
 const MAX_TIMER_DELAY = 2_147_483_647;
 
@@ -21,7 +21,13 @@ export function useEffectiveNow(rows: MaybeRefOrGetter<Array<Record<string, unkn
   const now = ref(Date.now());
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const boundaries = () => toValue(rows).flatMap((row) => {
+  const boundaries = () => toValue(rows).flatMap((cachedRow) => {
+    const row = (
+      cachedRow.raw && typeof cachedRow.raw === "object"
+        ? cachedRow.raw
+        : cachedRow
+    ) as Record<string, unknown>;
+
     return [toMillis(row.fromDate), toMillis(row.thruDate)]
       .filter((boundary): boundary is number => boundary !== undefined);
   });

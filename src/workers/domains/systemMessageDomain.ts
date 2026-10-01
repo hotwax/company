@@ -1,14 +1,9 @@
-import { companyDb } from "@/db/companyDb";
+import { shopifyShopCache, systemMessageCache, systemMessageRemoteCache } from "@/utils/cacheEntities";
 import { liveScopeFor } from "@/config/appSyncConfig";
-import { keepNewerThan } from "@common/db";
+import { keepNewerThan } from "@/utils/cacheProjection";
 import { resolveShopRemoteIds } from "@/utils/systemMessage";
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
-
-const systemMessageEntity = companyDb.entity("systemMessages");
-const shopifyShopEntity = companyDb.entity("shopifyShops");
-const systemMessageRemoteEntity = companyDb.entity("systemMessageRemotes");
+import { registerSyncDomain, type SyncContext } from "../syncRegistry";
+import { pageNewestFirst, workerGet } from "./workerFetch";
 
 /**
  * SystemMessage — class A (live, append-mostly).
@@ -96,8 +91,8 @@ async function resolveRemoteIds(args: SystemMessageArgs): Promise<string[] | und
   if (!scope.scopeToShopifyShopRemotes) return undefined; // unscoped only if explicitly configured
 
   const [shops, remotes] = await Promise.all([
-    shopifyShopEntity.all(),
-    systemMessageRemoteEntity.all(),
+    shopifyShopCache.all(),
+    systemMessageRemoteCache.all(),
   ]);
   return resolveShopRemoteIds(shops as any[], remotes as any[]);
 }
@@ -108,7 +103,7 @@ async function resolveRemoteIds(args: SystemMessageArgs): Promise<string[] | und
  * Read through the `[systemMessageRemoteId+systemMessageTypeId+initDate]` compound index — added for
  * exactly this — so it is an index seek rather than a scan of the message table.
  *
- * This used to call `systemMessageEntity.all()` and filter in JS, which meant a full read of every
+ * This used to call `systemMessageCache.all()` and filter in JS, which meant a full read of every
  * cached message (each carrying ~1KB of `messageText`) once per (remote, type) — twelve full table
  * reads per tick on the configured six types across two remotes, while the index it documents sat
  * unused.
@@ -119,9 +114,9 @@ async function newestCursorForType(
 ): Promise<number | undefined> {
   if (!remoteId) {
     // Unscoped: no partition to seek within, so narrow by type only.
-    return systemMessageEntity.newestCursor("initDate", undefined, { systemMessageTypeId });
+    return systemMessageCache.newestCursor("initDate", undefined, { systemMessageTypeId });
   }
-  return systemMessageEntity.newestCursor(
+  return systemMessageCache.newestCursor(
     "initDate",
     { field: "systemMessageRemoteId", value: remoteId },
     { systemMessageTypeId },
@@ -169,14 +164,14 @@ async function syncRemote(
    * for a settled window and the deep pass stops happening once it is full.
    */
   const equals = messageType ? { systemMessageTypeId: messageType.systemMessageTypeId } : undefined;
-  const cached = await systemMessageEntity.count(scope, equals);
+  const cached = await systemMessageCache.count(scope, equals);
   const isShallow = cached < target;
 
   const cursor = isShallow
     ? undefined
     : messageType
       ? await newestCursorForType(remoteId, messageType.systemMessageTypeId)
-      : await systemMessageEntity.newestCursor("initDate", scope);
+      : await systemMessageCache.newestCursor("initDate", scope);
 
   return pageNewestFirst({
     ctx,
@@ -221,7 +216,7 @@ async function syncRecent(ctx: SyncContext, args: SystemMessageArgs): Promise<nu
   for (const remoteId of targets) {
     for (const messageType of messageTypes) {
       const messages = await syncRemote(ctx, args, remoteId, messageType);
-      written += await systemMessageEntity.upsertMany(messages);
+      written += await systemMessageCache.upsertMany(messages);
     }
   }
   return written;
@@ -239,7 +234,7 @@ async function syncRecent(ctx: SyncContext, args: SystemMessageArgs): Promise<nu
  */
 async function refreshUnprocessed(ctx: SyncContext, args: SystemMessageArgs): Promise<number> {
   const maxAgeMs = args.refreshMaxAgeMs ?? DEFAULT_REFRESH_MAX_AGE_MS;
-  const targets = await systemMessageEntity.rowsMissing("processedDate", {
+  const targets = await systemMessageCache.rowsMissing("processedDate", {
     limit: args.refreshMax ?? 25,
     since: { field: "initDate", afterMs: Date.now() - maxAgeMs },
   });
@@ -257,14 +252,11 @@ async function refreshUnprocessed(ctx: SyncContext, args: SystemMessageArgs): Pr
       // skip this message this tick; the next tick retries it
     }
   }
-  return systemMessageEntity.upsertMany(refreshed);
+  return systemMessageCache.upsertMany(refreshed);
 }
 
-export const systemMessageDomain = defineSyncDomain({
+registerSyncDomain({
   name: "systemMessage",
-  table: "systemMessages",
-  label: "System messages",
-  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: SystemMessageArgs = {}) {
     const recent = await syncRecent(ctx, args);
@@ -280,6 +272,6 @@ export const systemMessageDomain = defineSyncDomain({
       pageSize: 1,
     });
     const latest = resp?.[COLLECTION]?.[0];
-    return latest ? systemMessageEntity.upsertMany([latest]) : 0;
+    return latest ? systemMessageCache.upsertMany([latest]) : 0;
   },
 });

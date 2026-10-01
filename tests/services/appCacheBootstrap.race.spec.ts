@@ -23,64 +23,61 @@ const harnessState = vi.hoisted(() => ({
   statusHandler: undefined as undefined | ((status: Record<string, any>) => void),
 }));
 
-vi.mock("@common/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@common/db")>();
-  return {
-    ...actual,
-    createSyncService: (options: { onStatus?: (status: Record<string, any>) => void }) => {
-      harnessState.statusHandler = options.onStatus;
+vi.mock("@/services/pollingService", () => ({
+  createSyncService: (options: { onStatus?: (status: Record<string, any>) => void }) => {
+    harnessState.statusHandler = options.onStatus;
 
-      return {
-        start: () => {
-          harnessState.startCalls += 1;
+    return {
+      // Spawning a worker takes real time. Resolving on a macrotask reproduces the window in which
+      // `service` is already assigned but the Comlink handle is not.
+      start: () => {
+        harnessState.startCalls += 1;
 
-          return new Promise<void>((resolve, reject) => {
-            setTimeout(() => {
-              if(harnessState.startError) {
-                harnessState.statusHandler?.({
-                  type: "sync-error",
-                  message: harnessState.startError.message,
-                });
-                reject(harnessState.startError);
+        return new Promise<void>((resolve, reject) => {
+          setTimeout(() => {
+            if(harnessState.startError) {
+              harnessState.statusHandler?.({
+                type: "sync-error",
+                message: harnessState.startError.message,
+              });
+              reject(harnessState.startError);
 
-                return;
-              }
-              harnessState.startResolved = true;
-              resolve();
-            }, 5);
-          });
-        },
-        refetchOne: async (domain: string) => {
-          harnessState.refetchCalls.push({ domain, whenStartResolved: harnessState.startResolved });
-          if(harnessState.refetchError) {throw harnessState.refetchError;}
+              return;
+            }
+            harnessState.startResolved = true;
+            resolve();
+          }, 5);
+        });
+      },
+      // Mirrors pollingService: returns 0 while `harness` is still null.
+      refetchOne: async (domain: string) => {
+        harnessState.refetchCalls.push({ domain, whenStartResolved: harnessState.startResolved });
+        if(harnessState.refetchError) {throw harnessState.refetchError;}
 
-          return harnessState.startResolved ? 1 : 0;
-        },
-        syncDomainNow: async (domain: string) => {
-          harnessState.syncDomainCalls.push(domain);
+        return harnessState.startResolved ? 1 : 0;
+      },
+      syncDomainNow: async (domain: string) => {
+        harnessState.syncDomainCalls.push(domain);
 
-          return harnessState.startResolved ? 1 : 0;
-        },
-        syncNow: async () => undefined,
-        setDomains: async () => undefined,
-        registeredDomains: async () => [],
-        stop: () => undefined,
-      };
-    },
-  };
-});
+        return harnessState.startResolved ? 1 : 0;
+      },
+      syncNow: async () => undefined,
+      setDomains: async () => undefined,
+      registeredDomains: async () => [],
+      stop: () => undefined,
+    };
+  },
+}));
 
 vi.mock("@common", () => ({
   commonUtil: { getMaargURL: () => "https://example.test/rest/s1/" },
 }));
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    raw: () => ({ syncMeta: { delete: vi.fn(async () => undefined) } }),
-  },
+vi.mock("@/utils/appCacheDb", () => ({
+  appCacheDb: { syncMeta: { delete: vi.fn(async () => undefined) } },
+  clearSyncMarkers: vi.fn(async () => undefined),
+  ensureCacheIdentity: vi.fn(async () => false),
 }));
-
-
 
 vi.mock("@/store/user", () => ({ useUserStore: () => ({ current: { userId: "u1" } }) }));
 
@@ -97,7 +94,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not drop the refresh when the worker is still starting", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
 
     // App.vue: fire-and-forget. `service` is assigned synchronously, `start()` is still pending.
     void mod.startReferenceSync();
@@ -112,7 +109,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not drop a forced domain resync when the worker is still starting", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     void mod.startReferenceSync();
 
     await mod.resyncDomain("facilityGroup");
@@ -122,7 +119,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("still works when nothing started the bootstrap yet", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
 
     const written = await mod.refreshAfterMutation("productStore", { productStoreId: "STORE" });
 
@@ -131,7 +128,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears a stale domain error when a later sync succeeds", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -153,7 +150,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears only the recovered scope when a targeted refetch succeeds", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -182,7 +179,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("clears every scoped error only after a domain-wide resync succeeds", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -208,7 +205,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("records and clears a service-level refetch rejection under the canonical PK scope", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
     const cause = new Error("carrier refetch HTTP 503");
     harnessState.refetchError = cause;
@@ -235,7 +232,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("does not reorder a worker-recorded scoped error when the service rejects it again", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     await mod.startReferenceSync();
 
     harnessState.statusHandler?.({
@@ -259,7 +256,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("wraps a missing service after a concurrent stop instead of silently returning zero", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     const refresh = mod.refreshAfterMutation("carrier", { partyId: "FEDEX" });
 
     mod.stopReferenceSync();
@@ -273,7 +270,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("records domainless startup failures globally and clears them only after recovery", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
 
     await mod.startReferenceSync();
@@ -291,7 +288,7 @@ describe("refreshAfterMutation during the app-load bootstrap", () => {
   });
 
   it("restarts a failed bootstrap from the visible domain-refresh path", async () => {
-    const mod = await import("@/services/appDbSync");
+    const mod = await import("@/services/appCacheBootstrap");
     harnessState.startError = new Error("cache open failed: IndexedDB unavailable");
 
     await mod.startReferenceSync();

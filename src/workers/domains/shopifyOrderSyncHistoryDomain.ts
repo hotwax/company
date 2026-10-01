@@ -1,22 +1,18 @@
-import { companyDb } from "@/db/companyDb";
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import { workerGet } from "@common/core/workerRemoteApi";
+import { shopifyOrderSyncHistoryCache } from "@/utils/cacheEntities";
+import { registerSyncDomain } from "../syncRegistry";
+import { workerGet } from "./workerFetch";
 
-const orderSyncHistoryEntity = companyDb.entity("shopifyOrderSyncHistory");
-
-export const shopifyOrderSyncHistoryDomain = defineSyncDomain({
+registerSyncDomain({
   name: "shopifyOrderSyncHistory",
-  table: "shopifyOrderSyncHistory",
-  label: "Selected order fulfillment history",
-  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: { shopId?: string; orderIds?: string[] } = {}) {
     const shopId = String(args.shopId || "");
     if (!shopId) return 0;
     let written = 0;
     for (const orderId of [...new Set(args.orderIds || [])]) {
+      const historyKey = `${shopId}:${orderId}`;
       try {
-        const history = { shopId, orderId, pending: [] as any[], messages: [] as any[], synced: [] as any[], errors: [] as any[] };
+        const history = { historyKey, shopId, orderId, pending: [] as any[], messages: [] as any[], synced: [] as any[], errors: [] as any[] };
         let pageIndex = 0;
         let hasMore = true;
         while (hasMore) {
@@ -27,9 +23,9 @@ export const shopifyOrderSyncHistoryDomain = defineSyncDomain({
           hasMore = page.hasMore;
           pageIndex++;
         }
-        written += await orderSyncHistoryEntity.upsertMany([{ ...history, state: "ready", checkedAt: Date.now() }]);
+        written += await shopifyOrderSyncHistoryCache.upsertMany([{ ...history, state: "ready", checkedAt: Date.now() }]);
       } catch (error) {
-        await orderSyncHistoryEntity.upsertMany([{ shopId, orderId, state: "error", checkedAt: Date.now() }]);
+        await shopifyOrderSyncHistoryCache.upsertMany([{ historyKey, shopId, orderId, state: "error", checkedAt: Date.now() }]);
         throw error;
       }
     }

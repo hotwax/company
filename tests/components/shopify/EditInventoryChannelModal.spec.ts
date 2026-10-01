@@ -28,9 +28,12 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-  useDb: (entityName: string) => ({
-    records: entityName === "inventoryChannel" ? cachedChannels : cachedJobs,
-    rows: entityName === "inventoryChannel" ? cachedChannels : cachedJobs,
+}));
+
+vi.mock("@/composables/useCachedList", () => ({
+  useCachedList: (entity: any) => ({
+    records: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
+    rows: entity.table === "inventoryChannels" ? cachedChannels : cachedJobs,
     hydrated: ref(true),
   }),
 }));

@@ -5,7 +5,6 @@ import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
 import { useMaargConfig } from "@/composables/useSeed"
-import { startAppDbSync, stopAppDbSync } from "@/services/appDbSync"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -444,8 +443,8 @@ export const useUserStore = defineStore("user", {
          * rather than the retired util store. The old code also fetched roles here and never read
          * them — dropped with the store.
          */
-        const { useSeedData } = await import("@common/db")
-        const cachedStores = await useSeedData().getProductStores().catch(() => [])
+        const { productStoreCache } = await import("@/utils/cacheEntities")
+        const cachedStores = await productStoreCache.all().catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
@@ -964,7 +963,8 @@ export const useUserStore = defineStore("user", {
       // cache identity check needs). `startReferenceSync` is idempotent, so the watcher still
       // covering the page-refresh case is harmless.
       try {
-        void startAppDbSync()
+        const { startReferenceSync } = await import("@/services/appCacheBootstrap")
+        void startReferenceSync()
       } catch (error) {
         logger.error("Failed to start the reference cache sync after login", error)
       }
@@ -978,8 +978,12 @@ export const useUserStore = defineStore("user", {
       this.$reset()
       useAuth().clearAuth()
 
-      // Stop worker and wipe the local read cache (IndexedDB)
-      await stopAppDbSync().catch(() => { /* never block logout on cache cleanup */ })
+      // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
+      // sessions yet, so one user's cached data can never surface in another's session.
+      const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
+      stopReferenceSync()
+      const { clearAllCaches } = await import("@/utils/appCacheDb")
+      await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
       const { useMaargConfig } = await import("@/composables/useSeed")
       useMaargConfig().clear()

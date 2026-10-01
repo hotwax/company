@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineEntity } from "@common/db/schema/defineEntity";
 
 /**
  * An automatic snapshot must never empty a populated table on the strength of a zero-row fetch.
@@ -18,45 +17,31 @@ const state = vi.hoisted(() => ({
   syncedAlready: false,
 }));
 
-vi.mock("@common/core/workerRemoteApi", () => ({
+vi.mock("@/workers/domains/workerFetch", () => ({
   pageAll: vi.fn(async () => state.fetched),
-  pageNewestFirst: vi.fn(async () => []),
   workerGet: vi.fn(async () => null),
-  workerPost: vi.fn(async () => null),
   unwrapCollection: (resp: any) => (Array.isArray(resp) ? resp : []),
 }));
 
-vi.mock("@common/db/storage/baseDb", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    hasSyncedThisLogin: vi.fn(async () => state.syncedAlready),
-    markSyncedThisLogin: vi.fn(async (_db: any, name: string) => { state.marked.push(name); }),
-  };
-});
-
-const stubDb = () => ({
-  table: () => ({
-    count: async () => state.cachedCount,
-    toArray: async () => [],
-    toCollection: () => ({
-      primaryKeys: async () => Array.from({ length: state.cachedCount }, (_, i) => `K${i}`),
-      toArray: async () => [],
+vi.mock("@/utils/appCacheDb", () => ({
+  appCacheDb: { table: () => ({ count: async () => state.cachedCount }) },
+  defineCachedEntity: () => ({
+    table: "productStores",
+    snapshotReplace: vi.fn(async (rows: any[]) => {
+      state.snapshotCalls.push(rows);
+      return { written: rows.length, pruned: state.cachedCount };
     }),
-    where: () => ({ equals: () => ({ toArray: async () => [] }) }),
-    bulkPut: async (rows: any[]) => { state.snapshotCalls.push(rows); },
-    bulkDelete: async (keys: any[]) => { state.snapshotCalls.push(keys); },
-    put: async () => {},
-    delete: async () => {},
+    upsertMany: vi.fn(async (rows: any[]) => rows.length),
+    remove: vi.fn(async () => undefined),
   }),
-  transaction: async (_mode: any, _tables: any, fn: () => Promise<any>) => fn(),
-  syncMeta: { get: async () => undefined, put: async () => {}, delete: async () => {} },
-}) as any;
+  hasSyncedThisLogin: vi.fn(async () => state.syncedAlready),
+  markSyncedThisLogin: vi.fn(async (name: string) => { state.marked.push(name); }),
+}));
 
 const CONFIG = {
   name: "productStoreTest",
   table: "productStores" as const,
-  projection: defineEntity({ primaryKey: "productStoreId", fields: { productStoreId: "text" } }),
+  projection: { keyField: "productStoreId", fields: { productStoreId: "text" as const } },
   listUrl: "admin/productStores",
   collectionKey: null,
 };
@@ -65,66 +50,63 @@ const ctx = { maargUrl: "https://x.test/", token: "t" };
 
 async function register() {
   vi.resetModules();
-  const { registerSnapshotDomain } = await import("@common/db/sync/defineSnapshotDomain");
-  return registerSnapshotDomain(CONFIG as any, () => stubDb());
+  const { registerSnapshotDomain } = await import("@/workers/domains/snapshotDomain");
+  registerSnapshotDomain(CONFIG as any);
+  const { getSyncDomain } = await import("@/workers/syncRegistry");
+  return getSyncDomain("productStoreTest")!;
 }
 
-beforeEach(() => {
-  state.fetched = [];
-  state.cachedCount = 0;
-  state.snapshotCalls = [];
-  state.marked = [];
-  state.syncedAlready = false;
-});
-
 describe("snapshot domain zero-row wipe guard", () => {
+  beforeEach(() => {
+    state.fetched = [];
+    state.cachedCount = 0;
+    state.snapshotCalls = [];
+    state.marked = [];
+    state.syncedAlready = false;
+  });
+
   it("refuses to snapshot when the fetch is empty but the cache holds rows", async () => {
     state.fetched = [];
-    state.cachedCount = 5;
-    const domain = await register();
+    state.cachedCount = 17;
 
-    const written = await domain.sync(ctx as any, undefined, { force: false });
+    const domain = await register();
+    const written = await domain.sync(ctx, undefined, {});
 
     expect(written).toBe(0);
-    expect(state.snapshotCalls).toHaveLength(0);
-    // Crucial: not marked synced, so the next tick retries.
-    expect(state.marked).toHaveLength(0);
+    expect(state.snapshotCalls).toHaveLength(0); // nothing pruned
+    expect(state.marked).toEqual([]); // and NOT marked synced, so the next pass retries
   });
 
   it("allows an empty snapshot when the cache is also empty (a genuinely empty set)", async () => {
     state.fetched = [];
     state.cachedCount = 0;
+
     const domain = await register();
+    await domain.sync(ctx, undefined, {});
 
-    const written = await domain.sync(ctx as any, undefined, { force: false });
-
-    expect(written).toBe(0);
+    expect(state.snapshotCalls).toHaveLength(1);
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 
   it("lets a manual resync (force) clear a table deliberately", async () => {
     state.fetched = [];
-    state.cachedCount = 5;
+    state.cachedCount = 17;
+
     const domain = await register();
+    await domain.sync(ctx, undefined, { force: true });
 
-    const written = await domain.sync(ctx as any, undefined, { force: true });
-
-    expect(written).toBe(0);
     expect(state.snapshotCalls).toHaveLength(1);
-    expect(state.marked).toEqual(["productStoreTest"]);
+    expect(state.snapshotCalls[0]).toEqual([]);
   });
 
   it("snapshots normally when the fetch returns rows", async () => {
-    state.fetched = [{ productStoreId: "STORE_1" }];
-    state.cachedCount = 5;
+    state.fetched = [{ productStoreId: "STORE" }, { productStoreId: "STORE2" }];
+    state.cachedCount = 17;
+
     const domain = await register();
+    const written = await domain.sync(ctx, undefined, {});
 
-    const written = await domain.sync(ctx as any, undefined, { force: false });
-
-    expect(written).toBe(1);
-    expect(state.snapshotCalls).toHaveLength(2); // 1 bulkDelete (stale keys) + 1 bulkPut
-    expect(state.snapshotCalls[1][0]).toMatchObject({ productStoreId: "STORE_1" });
-    expect(state.snapshotCalls[1][0]).toHaveProperty("syncedAt");
+    expect(written).toBe(2);
     expect(state.marked).toEqual(["productStoreTest"]);
   });
 });
