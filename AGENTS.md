@@ -102,7 +102,7 @@ re-introduces exactly the load waterfalls this layer exists to remove.
 
 ### 4.2 Three sync classes
 
-Declared per domain in [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) — one
+Declared per domain in [`src/utils/cacheDomainCatalog.ts`](src/utils/cacheDomainCatalog.ts) — one
 list shared by the bootstrap and the Settings "Data Fetch Status" card so they cannot disagree.
 
 | Class | Character | When it syncs | Examples |
@@ -111,16 +111,15 @@ list shared by the bootstrap and the Settings "Data Fetch Status" card so they c
 | **A** | live, append-mostly | polled on a cadence *while a view that needs it is open* | `dataManagerLog`, `systemMessage`, both Shopify inventory ledgers |
 | **C** | on-demand, parent-scoped | fetched when a parent record asks for it | `shopifyBulkOperation`, `shopifyInventoryItems` (inventory event products, from Shopify) |
 
-One app-lifetime worker, started by `appDbSync`, runs every class. Class B seeds once per login;
-class A domains are polled only while a view has activated them through
-`activateSyncDomains(domains, owner)` / `deactivateSyncDomains(owner)`.
+Class B runs in an **app-lifetime** worker started by `appCacheBootstrap`; class A runs in a
+**view-scoped** worker started by `useCacheSync`. Two workers is a known, bounded deviation from the
+one-worker principle (their lifecycles differ); consolidating them is a candidate cleanup, not a bug
+to "fix" incidentally.
 
 **The inventory sync area** is route-scoped class A:
-[`inventorySyncArea.ts`](src/services/inventorySyncArea.ts), driven by `router.afterEach`, activates the
-inventory event domains under its own owner for as long as the user is under
-`/shopify-connection-details/:id/inventory-sync`, so every page there shares a warm cache. A page in the
-area that needs more domains activates `[...its own, ...inventoryEventAreaDomains(shopId)]`, since the
-worker holds one active set. [`inventoryEventDomains.ts`](src/workers/domains/inventoryEventDomains.ts)
+[`inventorySyncArea.ts`](src/services/inventorySyncArea.ts), driven by `router.afterEach`, runs one
+worker for as long as the user is under `/shopify-connection-details/:id/inventory-sync`, so every page
+there shares a warm cache. [`inventoryEventDomains.ts`](src/workers/domains/inventoryEventDomains.ts)
 polls each ledger's newest 500, then its `detailLastUpdatedStamp` and `systemMessageLastUpdatedStamp`
 cursors (needs the connector release with those aliases; older ones get the window only), re-reads
 unsettled messages by id, and names products through Shopify's `nodes` query (`shopify/graphql`, two
@@ -134,19 +133,22 @@ toolbar, never as a banner.
 
 | File | Role |
 | --- | --- |
-| [`src/utils/db/appCacheDb.ts`](src/utils/db/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |
-| [`src/utils/db/cacheProjection.ts`](src/utils/db/cacheProjection.ts) | Row projection/normalization (`text`/`date`/`count` field kinds), staleness diffing. Every cached row also carries the untouched server object in `raw` |
-| [`src/utils/db/cacheEntities.ts`](src/utils/db/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
-| [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) | Domain → table → label → sync class |
+| [`src/utils/appCacheDb.ts`](src/utils/appCacheDb.ts) | The Dexie database `CompanyCacheDB`: schema, `defineCachedEntity()`, `live()` queries, `ensureCacheReady()`, login markers, `clearAllCaches()` |
+| [`src/utils/cacheProjection.ts`](src/utils/cacheProjection.ts) | Row projection/normalization (`text`/`date`/`count` field kinds), staleness diffing. Every cached row also carries the untouched server object in `raw` |
+| [`src/utils/cacheEntities.ts`](src/utils/cacheEntities.ts) | The entity definitions — the shared read/write contract between worker and views |
+| [`src/utils/cacheDomainCatalog.ts`](src/utils/cacheDomainCatalog.ts) | Domain → table → label → sync class |
 | [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows, and which seed domains to exclude |
-| [`src/services/appDbSync.ts`](src/services/appDbSync.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
+| [`src/services/appCacheBootstrap.ts`](src/services/appCacheBootstrap.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
 | [`src/services/pollingService.ts`](src/services/pollingService.ts) | Main-thread half: spawns/terminates the worker, pushes the bearer token over `BroadcastChannel`, routes `auth-error` |
 | [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — importing a domain module registers it; the harness must be imported **last** |
 | [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
 | [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
 | [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `inventoryEventDomains`, `workerFetch` |
 | [`src/composables/useCachedList.ts`](src/composables/useCachedList.ts) | The read seam for views |
-| [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts) | Route-scoped class-A activation for a shop's inventory sync pages (see §4.2) |
+| [`src/services/cacheSync.ts`](src/services/cacheSync.ts) | The class-A lifecycle with no component attached (`createCacheSync`) |
+| [`src/composables/useCacheSync.ts`](src/composables/useCacheSync.ts) | View-scoped class-A lifecycle: `createCacheSync` bound to a view's unmount |
+| [`src/services/inventorySyncArea.ts`](src/services/inventorySyncArea.ts) | Route-scoped class-A lifecycle for a shop's inventory sync pages (see §4.2) |
+| [`src/composables/useCacheStatus.ts`](src/composables/useCacheStatus.ts) | Live row counts / last-sync times for the Settings diagnostics card |
 
 `pollingService`, `pollingWorkerHarness`, and `syncRegistry` are **framework-shaped, app-local**:
 they are written to be promoted into `@common` later. Keep app specifics out of them — those belong

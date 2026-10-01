@@ -154,9 +154,7 @@ import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import { useDbStatus } from "@common/db";
-import { companyDb } from "@/db/companyDb";
-import { resyncDomain, resyncReferenceData, syncService } from "@/services/appDbSync";
+import { useCacheStatus } from "@/composables/useCacheStatus";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
@@ -178,14 +176,7 @@ const userFetchStatus = computed(() => userStore.fetchStatus)
 // Live IndexedDB state: per-domain row counts + last sync, and the force-refresh actions.
 const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
-} = useDbStatus(
-  companyDb.raw(),
-  async () => (await syncService()?.catalog()) ?? [],
-  {
-    resyncDomain,
-    resyncAll: resyncReferenceData,
-  },
-);
+} = useCacheStatus();
 
 const formatSyncTime = (millis: number) =>
   DateTime.fromMillis(millis).toLocaleString(DateTime.DATETIME_MED);

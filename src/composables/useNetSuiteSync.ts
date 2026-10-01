@@ -1,5 +1,12 @@
 import { computed, type Ref } from "vue";
-import { api, commonUtil, logger, useDb } from "@common";
+import { api, commonUtil, logger } from "@common";
+import {
+  netSuiteDecisionRuleCache,
+  netSuiteOrderPushBacklogCache,
+  netSuiteRuleGroupCache,
+  netSuiteRuleGroupRunCache,
+} from "@/utils/cacheEntities";
+import { useCachedList } from "./useCachedList";
 
 /**
  * NetSuite order-push monitoring and rule-group management.
@@ -57,7 +64,7 @@ export const FEED_HONOURED_SORT_TYPE = "ENTCT_SORT_BY";
  * integer and mean opposite things to whoever is on call.
  */
 export function useNetSuiteOrderPushBacklog(productStoreId: () => string | undefined) {
-  const { records, hydrated } = useDb<any>("netSuiteOrderPushBacklog");
+  const { records, hydrated } = useCachedList<any>(netSuiteOrderPushBacklogCache);
 
   const row = computed<any>(() => {
     const wanted = String(productStoreId() ?? "");
@@ -78,7 +85,7 @@ export function useNetSuiteOrderPushBacklog(productStoreId: () => string | undef
 
 /** NetSuite order-push rule groups for a store, sequence order. */
 export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) {
-  const { records, hydrated } = useDb<any>("netSuiteRuleGroups");
+  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupCache);
 
   const groups = computed<any[]>(() => {
     const wanted = String(productStoreId() ?? "");
@@ -101,7 +108,7 @@ export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) 
  * separates them.
  */
 export function useNetSuiteDecisionRules(ruleGroupId: () => string | undefined) {
-  const { records, hydrated } = useDb<any>("netSuiteDecisionRules");
+  const { records, hydrated } = useCachedList<any>(netSuiteDecisionRuleCache);
 
   const all = computed<any[]>(() => {
     const wanted = String(ruleGroupId() ?? "");
@@ -126,7 +133,7 @@ export function useNetSuiteDecisionRules(ruleGroupId: () => string | undefined) 
  * correctly returns nothing when given no id, so it cannot double as an "all groups" read.
  */
 export function useNetSuiteRulesByGroup() {
-  const { records, hydrated } = useDb<any>("netSuiteDecisionRules");
+  const { records, hydrated } = useCachedList<any>(netSuiteDecisionRuleCache);
 
   const byGroup = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
@@ -152,7 +159,7 @@ export function useNetSuiteRulesByGroup() {
  * MDM logs instead. The monitor says so rather than rendering a bare "no runs".
  */
 export function useNetSuiteRuleGroupRuns(ruleGroupId: () => string | undefined, limit = 25) {
-  const { records, hydrated } = useDb<any>("netSuiteRuleGroupRuns", { dateField: "startDate" });
+  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupRunCache, { dateField: "startDate" });
 
   const runs = computed<any[]>(() => {
     const wanted = String(ruleGroupId() ?? "");
@@ -172,7 +179,7 @@ export function useNetSuiteRuleGroupRuns(ruleGroupId: () => string | undefined, 
 
 /** Every cached run across the store's groups, newest first — the monitor's activity feed. */
 export function useNetSuiteRecentRuns(ruleGroupIds: () => string[], limit = 25) {
-  const { records, hydrated } = useDb<any>("netSuiteRuleGroupRuns", { dateField: "startDate" });
+  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupRunCache, { dateField: "startDate" });
 
   const runs = computed<any[]>(() => {
     const wanted = new Set(ruleGroupIds().filter(Boolean).map(String));

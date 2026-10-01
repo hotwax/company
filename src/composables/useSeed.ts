@@ -1,14 +1,23 @@
 import { computed, ref } from "vue";
-import { api, commonUtil, logger, useDb } from "@common";
-import { serviceState, useSeedData } from "@common/db";
+import { api, commonUtil, logger } from "@common";
 import { getResponseErrorMessage } from "@/utils";
-import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
-import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
+import { resyncDomain } from "@/services/appCacheBootstrap";
+import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import {
+  currencyCache,
+  enumCache,
+  enumTypeCache,
+  geoAssocCache,
+  geoCache,
+  paymentMethodTypeCache,
+  productTypeCache,
+  roleTypeCache,
+  shipmentMethodTypeCache,
+  statusCache,
+  systemMessageTypeCache,
+} from "@/utils/cacheEntities";
+import { byDescription, useCachedList } from "./useCachedList";
 import { usePrimaryOrganization } from "./useOrganizations";
-
-function byDescription(a: any, b: any): number {
-  return String(a?.description ?? "").localeCompare(String(b?.description ?? ""));
-}
 
 /**
  * SEED data — the reference sets that are not tied to any single model: statuses, enumerations,
@@ -18,56 +27,39 @@ function byDescription(a: any, b: any): number {
  * they are the picker and label sources the whole app reads. Replaces `utilStore`.
  */
 
-// --- framework seed tables ------------------------------------------------------------------
-//
-// Thin wrappers over the framework's `useSeedData`, which keeps one live read per seed table for
-// the session. They keep the shapes templates already index into; the lookups themselves live in
-// `@common/db`.
-
-const seed = useSeedData();
-
-/**
- * `useDb`'s `hydrated`, for a seed table read through `useSeedData`: its first read has landed,
- * and it either has rows or sync is no longer filling it, so an empty list really is empty.
- */
-function seedHydrated(firstRead: () => Promise<unknown>, rows: () => unknown[]) {
-  const landed = ref(false);
-  firstRead().finally(() => { landed.value = true; });
-  return computed(() => landed.value && (rows().length > 0 || !serviceState.running));
-}
-
-/** `id → description` over rows, falling back to the id. */
-function descriptionMap(rows: any[], idField: string): Record<string, string> {
-  return rows.reduce((map: Record<string, string>, row: any) => {
-    if (row[idField]) map[row[idField]] = row.description || row[idField];
-    return map;
-  }, {});
-}
-
 // --- statuses -------------------------------------------------------------------------------
 
 export function useStatuses() {
-  const statuses = computed(() => seed.statuses());
+  const { records, hydrated } = useCachedList<any>(statusCache);
 
   /** statusId → description, the map templates index into. */
-  const statusItems = computed<Record<string, string>>(() => descriptionMap(statuses.value, "statusId"));
+  const statusItems = computed<Record<string, string>>(() =>
+    records.value.reduce((map: Record<string, string>, row: any) => {
+      map[row.statusId] = row.description ?? row.statusId;
+      return map;
+    }, {}));
 
   const labelFor = (statusId: string | undefined) =>
     (statusId ? statusItems.value[statusId] ?? statusId : "");
 
   /** Statuses of one statusTypeId (e.g. order vs shipment status sets). */
-  const ofType = (statusTypeId: string) => [...seed.statusItemsByType(statusTypeId)].sort(byDescription);
+  const ofType = (statusTypeId: string) =>
+    records.value.filter((row: any) => row.statusTypeId === statusTypeId).sort(byDescription);
 
-  return { statuses, statusItems, labelFor, ofType };
+  return { statuses: records, statusItems, labelFor, ofType, hydrated };
 }
 
 // --- enumerations ---------------------------------------------------------------------------
 
 /** The generic enumeration catalog (id → description). */
 export function useEnums() {
-  const enums = computed(() => seed.enums());
-  const enumItems = computed<Record<string, string>>(() => descriptionMap(enums.value, "enumId"));
-  return { enums, enumItems };
+  const { records, hydrated } = useCachedList<any>(enumCache);
+  const enumItems = computed<Record<string, string>>(() =>
+    records.value.reduce((map: Record<string, string>, row: any) => {
+      map[row.enumId] = row.description ?? row.enumId;
+      return map;
+    }, {}));
+  return { enums: records, enumItems, hydrated };
 }
 
 /**
@@ -78,55 +70,80 @@ export function useEnums() {
  * without adding a domain.
  */
 export function useTypedEnums(enumTypeId: string) {
-  const values = computed(() => [...seed.enumsByType(enumTypeId)].sort(byDescription));
-  const enumItems = computed<Record<string, string>>(() => descriptionMap(values.value, "enumId"));
-  const labelFor = (enumId: string | undefined) =>
-    (enumId ? enumItems.value[enumId] ?? enumId : "");
-  const hydrated = seedHydrated(() => seed.getEnumsByType(enumTypeId), () => values.value);
-  return { values, enumItems, descriptionById: enumItems, labelFor, hydrated };
-}
-
-/** Enum types (id → description). */
-export function useEnumTypes() {
-  return { enumTypes: computed(() => [...seed.enumTypes()].sort(byDescription)) };
-}
-
-// --- geographic boundaries ------------------------------------------------------------------
-
-export function useGeos() {
-  const geos = computed(() => seed.geos());
-  const byId = computed<Record<string, any>>(() =>
-    geos.value.reduce((map: Record<string, any>, row: any) => {
-      if (row.geoId) map[row.geoId] = row;
+  const { records, hydrated } = useCachedList<any>(
+    enumCache,
+    { scope: { field: "enumTypeId", value: enumTypeId } },
+  );
+  const values = computed(() => [...records.value].sort(byDescription));
+  /**
+   * enumId → description. The Pinia state these replaced was a map, and templates index it
+   * directly (`locationTypes[location.locationTypeEnumId]`); handing back only the array made
+   * every such lookup silently `undefined`.
+   */
+  const descriptionById = computed<Record<string, string>>(() =>
+    records.value.reduce((map: Record<string, string>, row: any) => {
+      if (row.enumId) map[row.enumId] = row.description ?? row.enumId;
       return map;
     }, {}));
+  return { values, descriptionById, hydrated };
+}
 
-  const countries = computed(() => seed.countries());
+/** The enumeration type catalog. */
+export function useEnumTypes() {
+  const { records, hydrated } = useCachedList<any>(enumTypeCache);
+  return { enumTypes: computed(() => [...records.value].sort(byDescription)), hydrated };
+}
 
+/**
+ * Geo reference straight from Moqui — replaces `utilStore` states / operating countries.
+ * `useGeos()` is the flat catalog; `statesOf(countryGeoId)` walks the association table.
+ */
+export function useGeos() {
+  const { records: geos, hydrated } = useCachedList<any>(geoCache);
+  const { records: assocs } = useCachedList<any>(geoAssocCache);
+
+  const byId = computed<Record<string, any>>(() =>
+    geos.value.reduce((map: Record<string, any>, geo: any) => { map[geo.geoId] = geo; return map; }, {}));
+
+  const countries = computed(() => geos.value
+    .filter((geo: any) => String(geo.geoTypeEnumId ?? "").includes("COUNTRY"))
+    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? ""))));
+
+  /**
+   * Child geos (states / provinces / regions) of a country, resolved through GeoAssoc.
+   * Direction verified live: `geoId` is the country, `toGeoId` the region (ARE → AE-AJ).
+   * Restricted to `GAT_REGIONS`; `GAT_GROUP_MEMBER` is a different relationship (geo groups).
+   */
   /**
    * Countries in the DBIC association group.
    *
    * No dedicated fetch: `admin/geos/assocs?toGeoId=DBIC` was its own request, but the geoAssoc
    * domain already snapshots that same endpoint unfiltered, so DBIC is just a slice of the cache.
+   * One fewer login call, and it stays correct as associations change.
    */
-  const dbicCountries = computed(() => seed.dbicCountries());
+  const dbicCountries = computed(() => assocs.value
+    .filter((assoc: any) => assoc.toGeoId === "DBIC")
+    .map((assoc: any) => byId.value[assoc.geoId] ?? { geoId: assoc.geoId })
+    .filter(Boolean));
 
-  const statesOf = (countryGeoId: string) => seed.statesForCountry(countryGeoId);
-
-  const hydrated = seedHydrated(() => seed.getGeos(), () => geos.value);
+  const statesOf = (countryGeoId: string) => assocs.value
+    .filter((assoc: any) => assoc.geoId === countryGeoId && assoc.geoAssocTypeEnumId === "GAT_REGIONS")
+    .map((assoc: any) => byId.value[assoc.toGeoId])
+    .filter(Boolean)
+    .sort((a: any, b: any) => String(a.geoName ?? "").localeCompare(String(b.geoName ?? "")));
 
   return { geos, countries, statesOf, dbicCountries, byId, hydrated };
 }
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: Parameters<typeof useDb>[0]) {
-  const { records, hydrated } = useDb<any>(cache);
+function sortedTypes(cache: Parameters<typeof useCachedList>[0]) {
+  const { records, hydrated } = useCachedList<any>(cache);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
 
 export function useProductTypes() {
-  const { records, hydrated } = sortedTypes("productTypes");
+  const { records, hydrated } = sortedTypes(productTypeCache);
   return { productTypes: records, hydrated };
 }
 
@@ -136,70 +153,64 @@ export function useProductTypes() {
  */
 export function useShipmentMethodTypeMutations() {
   const assertSuccessful = (response: any, fallback: string) => {
-    if (commonUtil.hasError(response)) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        {},
-        new Error(getResponseErrorMessage(response, fallback)),
-      );
+    if(commonUtil.hasError(response)) {
+      throw new Error(getResponseErrorMessage(response, fallback));
     }
   };
 
-  const createShipmentMethodType = async (payload: { shipmentMethodTypeId: string; description: string; sequenceNum?: number }) => {
-    const response: any = await api({
-      url: "oms/shipmentMethodTypes",
-      method: "post",
-      data: payload,
-    });
-    assertSuccessful(response, "Failed to create shipping method type");
+  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
     try {
       await resyncDomain("shipmentMethodType");
-    } catch (cause) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        { shipmentMethodTypeId: payload.shipmentMethodTypeId },
-        cause,
-      );
-    }
-    return response;
-  };
-
-  const renameShipmentMethodType = async (shipmentMethodTypeId: string, description: string) => {
-    const response: any = await api({
-      url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
-      method: "put",
-      data: { shipmentMethodTypeId, description },
-    });
-    assertSuccessful(response, "Failed to rename shipping method type");
-    try {
-      await resyncDomain("shipmentMethodType");
-    } catch (cause) {
+    } catch (error) {
       throw new CacheReconciliationError(
         "shipmentMethodType",
         { shipmentMethodTypeId },
-        cause,
+        error,
       );
     }
-    return response;
   };
+
+  async function createShipmentMethodType(payload: { shipmentMethodTypeId: string; description: string }) {
+    const resp: any = await api({
+      url: "oms/shippingGateways/shipmentMethodTypes",
+      method: "post",
+      data: payload,
+    });
+    assertSuccessful(resp, "Failed to create the shipment method type.");
+    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
+
+    return resp;
+  }
+
+  async function renameShipmentMethodType(shipmentMethodTypeId: string, description: string) {
+    const resp: any = await api({
+      url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
+      method: "put",
+      data: { shipmentMethodTypeId, description: description.trim() },
+    });
+    assertSuccessful(resp, "Failed to rename the shipment method type.");
+    await resyncShipmentMethodTypes(shipmentMethodTypeId);
+
+    return resp;
+  }
 
   return { createShipmentMethodType, renameShipmentMethodType };
 }
 
 /** Currencies (UOMs of type UT_CURRENCY_MEASURE), cached at login. */
 export function useCurrencies() {
-  const { records, hydrated } = sortedTypes("currencies");
+  const { records, hydrated } = sortedTypes(currencyCache);
   return { currencies: records, hydrated };
 }
 
 export function useShipmentMethodTypes() {
-  return { shipmentMethodTypes: computed(() => [...seed.shipmentMethodTypes()].sort(byDescription)) };
+  const { records, hydrated } = sortedTypes(shipmentMethodTypeCache);
+  return { shipmentMethodTypes: records, hydrated };
 }
 
 export function usePaymentMethodTypes() {
-  const paymentMethodTypes = computed(() => [...seed.paymentMethodTypes()].sort(byDescription));
-  const hydrated = seedHydrated(() => seed.getPaymentMethodTypes(), () => paymentMethodTypes.value);
-  return { paymentMethodTypes, hydrated };
+  const { records, hydrated } = sortedTypes(paymentMethodTypeCache);
+  return { paymentMethodTypes: records, hydrated };
 }
 
 /**
@@ -217,10 +228,14 @@ export async function createPaymentMethodType(payload: { paymentMethodTypeId: st
 }
 
 export function useRoleTypes() {
-  const roleTypes = computed(() => [...seed.roleTypes()].sort(byDescription));
+  const { records, hydrated } = sortedTypes(roleTypeCache);
   /** roleTypeId → description, matching the map the party-role templates index. */
-  const descriptionById = computed<Record<string, string>>(() => descriptionMap(roleTypes.value, "roleTypeId"));
-  return { roleTypes, descriptionById };
+  const descriptionById = computed<Record<string, string>>(() =>
+    records.value.reduce((map: Record<string, string>, row: any) => {
+      if (row.roleTypeId) map[row.roleTypeId] = row.description || row.roleTypeId;
+      return map;
+    }, {}));
+  return { roleTypes: records, descriptionById, hydrated };
 }
 
 /**
@@ -230,7 +245,7 @@ export function useRoleTypes() {
  * on a single page load, for 9 distinct ids). Cached as one set, so labelling is a local lookup.
  */
 export function useSystemMessageTypes() {
-  const { records, hydrated } = useDb<any>("systemMessageTypes");
+  const { records, hydrated } = useCachedList<any>(systemMessageTypeCache);
 
   /** systemMessageTypeId → description. */
   const typeItems = computed<Record<string, string>>(() =>

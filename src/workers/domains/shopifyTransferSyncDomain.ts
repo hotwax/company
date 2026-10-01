@@ -1,8 +1,6 @@
-import { companyDb } from "@/db/companyDb";
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import { pageAll } from "@common/core/workerRemoteApi";
-
-const shopifyTransferPendingEntity = companyDb.entity("shopifyTransferPending" as any);
+import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
+import { registerSyncDomain } from "../syncRegistry";
+import { pageAll } from "./workerFetch";
 
 /**
  * Shopify transfer sync — what has not reached Shopify yet.
@@ -87,11 +85,8 @@ function tagRows(rows: any[], segment: PendingSegment): any[] {
   }));
 }
 
-export const shopifyTransferSyncDomain = defineSyncDomain({
+registerSyncDomain({
   name: "shopifyTransferSync",
-  table: "shopifyTransferPending",
-  label: "Shopify transfer sync",
-  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: ShopifyTransferSyncArgs = {}) {
     const shopId = String(args.shopId ?? "").trim();
@@ -118,7 +113,7 @@ export const shopifyTransferSyncDomain = defineSyncDomain({
     // Snapshot, scoped to this shop: a segment that has drained to empty must lose its cached
     // rows, or resolved work keeps rendering as outstanding and the tab count stays wrong.
     // Scoping by shopId leaves every other shop's rows alone.
-    const { written } = await shopifyTransferPendingEntity.snapshotReplace(
+    const { written } = await shopifyTransferPendingCache.snapshotReplace(
       perSegment.flat(),
       { field: "shopId", value: shopId },
     );

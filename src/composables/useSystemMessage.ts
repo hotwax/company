@@ -1,12 +1,18 @@
 import { computed, reactive, toRefs, type Ref } from 'vue';
-import { api, commonUtil, logger, useDb } from '@common'
-import { companyDb } from '@/db/companyDb';
+import { api, commonUtil, logger } from '@common'
+import {
+  shopifyBulkOperationCache,
+  systemMessageCache,
+  systemMessageErrorCache,
+  systemMessageRemoteCache,
+} from '@/utils/cacheEntities';
 import {
   getReferencedBulkOperationSystemMessageIds,
   getSystemMessageBulkOperationId,
   getSystemMessageCandidateIds
 } from "@/utils/shopifyBulkOperation";
 import { onSessionCleared } from "./sessionScope";
+import { useCachedList, useCachedRecord } from "./useCachedList";
 
 const BULK_OPERATION_QUERY = `
   query BulkOperation($id: ID!) {
@@ -60,7 +66,7 @@ export function systemMessageMayHaveErrors(systemMessage: any): boolean {
 /**
  * A Shopify bulk operation, as this app reads it.
  *
- * Fields mirror `shopifyBulkOperations` entity schema; every one is optional because
+ * Fields mirror `shopifyBulkOperationProjection` in `cacheEntities`; every one is optional because
  * the value legitimately starts as `{}` before a run has one, and `isStatusUnavailable` is the
  * synthetic marker set when Shopify cannot be reached (rendered as "status unavailable", not as a
  * failure).
@@ -144,7 +150,7 @@ export function useSystemMessage() {
         messagesKnownToHaveNoErrors.delete(systemMessageId);
         // `systemMessageId` is not echoed on each row — the id is only in the URL — so stamp it in,
         // otherwise the synthetic key cannot be built and the join has nothing to match on.
-        void companyDb.entity("systemMessageErrors").upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
+        void systemMessageErrorCache.upsertMany(errors.map((error) => ({ ...error, systemMessageId })));
       }
       return errors;
     } catch (err) {
@@ -164,9 +170,9 @@ export function useSystemMessage() {
     if (messagesKnownToHaveNoErrors.has(systemMessageId)) return [];
 
     try {
-      const cached = (await companyDb.entity("systemMessageErrors").all())
+      const cached = (await systemMessageErrorCache.all())
         .filter((row: any) => row.systemMessageId === systemMessageId);
-      if (cached.length) return cached;
+      if (cached.length) return cached.map((row: any) => row.raw);
     } catch {
       // cache unavailable — fall through to the network
     }
@@ -196,15 +202,15 @@ export function useSystemMessage() {
   const ensureSystemMessageById = async (systemMessageId: string) => {
     if (!systemMessageId) return null;
     try {
-      const cached = (await companyDb.entity("systemMessages").all())
+      const cached = (await systemMessageCache.all())
         .find((row: any) => String(row.systemMessageId) === String(systemMessageId));
-      if (cached) return cached;
+      if (cached) return cached.raw ?? cached;
     } catch {
       // cache unavailable — fall through to the network
     }
 
     const fetched = await fetchSystemMessageById(systemMessageId).catch(() => null);
-    if (fetched) await companyDb.entity("systemMessages").upsertMany([fetched]);
+    if (fetched) await systemMessageCache.upsertMany([fetched]);
     return fetched;
   };
 
@@ -289,11 +295,11 @@ export function useSystemMessage() {
   const fetchShopifyBulkOperation = async (bulkOperationId: string, systemMessageRemoteId: string) => {
     // Cache-first: a finished operation is immutable, so serve it locally and skip the remote call.
     try {
-      const cached = (await companyDb.entity("shopifyBulkOperations").all())
+      const cached = (await shopifyBulkOperationCache.all())
         .find((row: any) => row.id === bulkOperationId);
       if (cached && isTerminalBulkOperation(cached.status as string)) {
-        state.currentShopifyBulkOperation = cached;
-        return cached;
+        state.currentShopifyBulkOperation = cached.raw;
+        return cached.raw;
       }
     } catch {
       // cache miss or read failure — fall through to the live call
@@ -319,7 +325,7 @@ export function useSystemMessage() {
       if (payload) {
         state.currentShopifyBulkOperation = payload;
         // Cache it so a later visit needs no Shopify round-trip once it has finished.
-        void companyDb.entity("shopifyBulkOperations").upsertMany([{ ...payload, systemMessageRemoteId }]);
+        void shopifyBulkOperationCache.upsertMany([{ ...payload, systemMessageRemoteId }]);
         return payload;
       }
     } catch (err) {
@@ -387,7 +393,7 @@ export function useSystemMessage() {
   /**
    * A Shopify bulk operation as this app handles it.
    *
-   * Mirrors `shopifyBulkOperations` entity schema, plus `isStatusUnavailable` — the
+   * Mirrors `shopifyBulkOperationProjection` in `cacheEntities`, plus `isStatusUnavailable` — the
    * synthetic marker set when Shopify cannot be reached for a run, which callers render as "status
    * unavailable" rather than as a failure.
    *
@@ -541,7 +547,7 @@ export interface SystemMessageQuery {
 export function useSystemMessages(systemMessageRemoteId?: string, query: SystemMessageQuery = {}) {
   const statusSet = query.statusIds?.length ? new Set(query.statusIds) : undefined;
 
-  const { records, hydrated } = useDb<any>("systemMessages", {
+  const { records, hydrated } = useCachedList<any>(systemMessageCache, {
     dateField: 'initDate',
     ...(systemMessageRemoteId
       ? { scope: { field: 'systemMessageRemoteId', value: systemMessageRemoteId } }
@@ -570,14 +576,12 @@ export function useLatestSystemMessage(systemMessageRemoteId?: string, systemMes
   return { message: computed<any>(() => records.value[0]), hydrated };
 }
 
-export function useSystemMessageRecord(systemMessageId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessages", () => systemMessageId ? { equals: { systemMessageId } } : {});
-  return { record, hydrated };
-}
+export const useSystemMessageRecord = (systemMessageId: string | undefined) =>
+  useCachedRecord(systemMessageCache, 'systemMessageId', systemMessageId);
 
 /** Cached errors for one message. Populated on demand — see `ensureSystemMessageErrors`. */
 export function useSystemMessageErrors(systemMessageId?: string) {
-  const { records, hydrated } = useDb<any>("systemMessageErrors", {
+  const { records, hydrated } = useCachedList<any>(systemMessageErrorCache, {
     dateField: 'errorDate',
     ...(systemMessageId ? { scope: { field: 'systemMessageId', value: systemMessageId } } : {}),
   });
@@ -595,10 +599,8 @@ export function useSystemMessageErrors(systemMessageId?: string) {
 }
 
 /** A cached Shopify bulk operation by its gid. */
-export function useShopifyBulkOperationRecord(bulkOperationId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("shopifyBulkOperations", () => bulkOperationId ? { equals: { id: bulkOperationId } } : {});
-  return { record, hydrated };
-}
+export const useShopifyBulkOperationRecord = (bulkOperationId: string | undefined) =>
+  useCachedRecord(shopifyBulkOperationCache, 'id', bulkOperationId);
 
 /**
  * The bulk operation for a message, resolved through the id chain the message carries
@@ -608,7 +610,7 @@ export function useShopifyBulkOperationRecord(bulkOperationId: string | undefine
 export function useBulkOperationForMessage(message: Ref<any> | (() => any)) {
   const source = computed<any>(() => (typeof message === 'function' ? message() : message.value));
   const bulkOperationId = computed<string>(() => getSystemMessageBulkOperationId(source.value) || '');
-  const { records, hydrated } = useDb<any>("shopifyBulkOperations");
+  const { records, hydrated } = useCachedList<any>(shopifyBulkOperationCache);
 
   const bulkOperation = computed<any>(() =>
     bulkOperationId.value
@@ -626,11 +628,9 @@ export function useBulkOperationForMessage(message: Ref<any> | (() => any)) {
  * (Shopify, Klaviyo, NetSuite) merely reference it.
  */
 export function useSystemMessageRemotes() {
-  const { records, hydrated } = useDb<any>("systemMessageRemotes");
+  const { records, hydrated } = useCachedList<any>(systemMessageRemoteCache);
   return { remotes: records, records, hydrated };
 }
 
-export function useSystemMessageRemoteRecord(systemMessageRemoteId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessageRemotes", () => systemMessageRemoteId ? { equals: { systemMessageRemoteId } } : {});
-  return { record, hydrated };
-}
+export const useSystemMessageRemoteRecord = (systemMessageRemoteId: string | undefined) =>
+  useCachedRecord(systemMessageRemoteCache, 'systemMessageRemoteId', systemMessageRemoteId);

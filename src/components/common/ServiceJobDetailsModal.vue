@@ -254,7 +254,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { commonUtil, translate } from '@common';
 import { formatDateTime } from '@/utils';
 import { useServiceJob } from '@/composables/useServiceJobs';
-import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
+import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";
 import { formatLag } from "@/utils/inventoryEventTime";
 import { describeRunResult, serviceJobRunStatus } from "@/utils/serviceJobRun";

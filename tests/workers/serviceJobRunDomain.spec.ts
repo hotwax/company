@@ -8,39 +8,37 @@ const state = vi.hoisted(() => ({
   upserts: [] as any[][],
 }));
 
-vi.mock("@/db/companyDb", () => ({
-  companyDb: {
-    entity: (table: string) => {
-      if (table === "serviceJobRuns") {
-        return {
-          all: vi.fn(async () => (state as any).cached ?? []),
-          newestCursor: vi.fn(async () => state.cursor),
-          upsertMany: vi.fn(async (rows: any[]) => {
-            state.upserts.push(rows);
-            return rows.length;
-          }),
-        };
-      }
-      return {};
-    },
+vi.mock("@/utils/cacheEntities", () => ({
+  serviceJobRunCache: {
+    // refreshUnfinished scans every cached row to find running jobs worth re-reading.
+    all: vi.fn(async () => state.cached ?? []),
+    newestCursor: vi.fn(async () => state.cursor),
+    upsertMany: vi.fn(async (rows: any[]) => {
+      state.upserts.push(rows);
+
+      return rows.length;
+    }),
   },
 }));
 
-vi.mock("@common/core/workerRemoteApi", () => ({
+vi.mock("@/workers/domains/workerFetch", () => ({
   pageNewestFirst: vi.fn(async (options: any) =>
     options.keep ? options.keep(state.serverPage) : state.serverPage),
   workerGet: vi.fn(),
 }));
 
-vi.mock("@common/db/sync/syncRegistry", () => ({
+vi.mock("@/workers/syncRegistry", () => ({
   registerSyncDomain: (domain: any) => { state.domains.push(domain); },
 }));
 
 const ctx = { maargUrl: "https://example.test", token: "token" } as any;
 
 async function loadDomain() {
-  const { serviceJobRunDomain } = await import("@/workers/domains/serviceJobRunDomain");
-  return serviceJobRunDomain;
+  vi.resetModules();
+  state.domains = [];
+  await import("@/workers/domains/serviceJobRunDomain");
+
+  return state.domains.find((domain) => domain.name === "serviceJobRun");
 }
 
 describe("serviceJobRun cache domain", () => {

@@ -1,5 +1,7 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
-import { api, logger, useDb } from '@common'
+import { api, logger } from '@common'
+import { dataManagerLogCache } from '@/utils/cacheEntities';
+import { useCachedList, useCachedRecord } from './useCachedList';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';
 
@@ -28,7 +30,7 @@ export function useRecentDataManagerLogs(
   limit = 10,
   systemMessageIds?: MaybeRefOrGetter<readonly string[]>,
 ) {
-  const { records: configLogs, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records: configLogs, hydrated } = useCachedList<any>(dataManagerLogCache, {
     dateField: "createdDate",
     equals: { configId },
   });
@@ -167,7 +169,7 @@ export function useDataManager() {
     try {
       const cached = (await dataManagerLogCache.all())
         .find((row: any) => String(row.logId) === String(logId));
-      if (cached) return cached;
+      if (cached) return cached.raw ?? cached;
     } catch {
       // cache unavailable — fall through to the network
     }
@@ -319,7 +321,7 @@ export function useDataManager() {
 
 /** Cached DataManagerLogs, newest created first. Scope by config to follow one import type. */
 export function useDataManagerLogs(configId?: string) {
-  const { records, hydrated } = useDb<any>("dataManagerLogs", {
+  const { records, hydrated } = useCachedList<any>(dataManagerLogCache, {
     dateField: 'createdDate',
     ...(configId ? { scope: { field: 'configId', value: configId } } : {}),
   });
@@ -337,10 +339,8 @@ export function useDataManagerLogs(configId?: string) {
   return { logs: records, running, totals, records, hydrated };
 }
 
-export function useDataManagerLogRecord(logId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("dataManagerLogs", () => logId ? { equals: { logId } } : {});
-  return { record, hydrated };
-}
+export const useDataManagerLogRecord = (logId: string | undefined) =>
+  useCachedRecord(dataManagerLogCache, 'logId', logId);
 
 /**
  * The MDM log for one system message — the second half of a sync run.
@@ -353,7 +353,7 @@ export function useDataManagerLogForMessages(systemMessageIds: Ref<string[]> | (
   const ids = computed<string[]>(() =>
     (typeof systemMessageIds === 'function' ? systemMessageIds() : systemMessageIds.value) ?? []);
 
-  const { records, hydrated } = useDb<any>("dataManagerLogs", { dateField: 'createdDate' });
+  const { records, hydrated } = useCachedList<any>(dataManagerLogCache, { dateField: 'createdDate' });
 
   const log = computed<any>(() => {
     if (!ids.value.length) return undefined;

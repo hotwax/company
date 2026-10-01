@@ -55,28 +55,10 @@ vi.mock("@common", () => ({
       (message, [name, value]) => message.replace(`{${name}}`, String(value)),
       key,
     ),
-  useDb: (table: string) => {
-    const read = (records: { value: any[] }, hydrated = ref(true)) => ({
-      records, first: computed(() => records.value[0]), count: computed(() => records.value.length), hydrated,
-    });
-    if(table === "shopifyShops") {return read(cachedShops);}
-    if(table === "inventoryChannels") {return read(cachedChannels);}
-    if(table === "dataFeeds") {return read(cachedDataFeeds);}
-    if(table === "shopifyInventoryAdjustmentDetails") {return read(cachedAdjustmentDetails, detailsHydrated);}
-    if(table === "shopifyLocationInventoryAdjustmentDetails") {return read(cachedLocationDetails);}
-    if(table === "groupFacilities") {return read(cachedGroupFacilities, groupFacilitiesHydrated);}
-    if(table === "systemMessages") {return read(cachedMessages);}
-
-    return read(ref([]));
-  },
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/services/appCacheBootstrap", () => ({
   resyncDomain: vi.fn(),
-  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
-  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
-  createSyncDomainOwner: (label: string) => label,
-  refreshAfterMutation: vi.fn(),
 }));
 
 // The ledgers are polled by the inventory sync area, not by this view, so the view only reads its health.
@@ -92,12 +74,67 @@ vi.mock("@/services/inventorySyncArea", () => ({
   }),
 }));
 
+vi.mock("@/composables/useCacheSync", () => ({
+  useCacheSync: () => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+    ready: syncReady,
+    error: syncError,
+    failingDomains: ref({}),
+    afterMutation: vi.fn(),
+  }),
+}));
+
 vi.mock("@/composables/useFacilities", () => ({
   useFacilityTypes: () => ({ facilityTypes: ref([]) }),
   useFacilities: () => ({ facilities: ref([]), hydrated: ref(true) }),
   useFacilityGroupMutations: (facilityGroupId: string) => ({
     saveMembers: (...args: any[]) => harness.saveFacilityGroupMembers(facilityGroupId, ...args),
   }),
+}));
+
+/**
+ * The shape `useCachedList` really hands back: `records` are the server objects, `rows` the cached
+ * rows that carry them in `raw` beside their projected key. The inventory event model reads `rows`, so a
+ * stub that passed the records through as rows would feed it objects with no `raw` at all.
+ */
+function asCachedRows(records: { value: any[] }) {
+  return computed(() => records.value.map((raw: any) => ({
+    ...raw,
+    adjustmentKey: raw.adjustmentKey ?? [raw.eventTypeId, raw.eventReferenceId, raw.inventoryChannelId, raw.shopifyInventoryItemId].join("|"),
+    locationAdjustmentKey: raw.locationAdjustmentKey ?? [raw.eventTypeId, raw.eventReferenceId, raw.shopId, raw.shopifyLocationId, raw.shopifyInventoryItemId].join("|"),
+    raw,
+    cachedAt: raw.cachedAt ?? 0,
+  })));
+}
+
+vi.mock("@/composables/useCachedList", () => ({
+  useCachedList: (cache: any) => {
+    const table = String(cache?.table || cache?.name || "");
+    if(table.includes("shopifyShop") || table.includes("ShopifyShop")) {
+      return { records: cachedShops, rows: cachedShops, hydrated: ref(true) };
+    }
+    if(table.includes("inventoryChannel") || table.includes("InventoryChannel")) {
+      return { records: cachedChannels, rows: cachedChannels, hydrated: ref(true) };
+    }
+    if(table.includes("dataFeed") || table.includes("DataFeed")) {
+      return { records: cachedDataFeeds, rows: cachedDataFeeds, hydrated: ref(true) };
+    }
+    if(table.includes("shopifyInventoryAdjustmentDetail") || table.includes("ShopifyInventoryAdjustmentDetail")) {
+      return { records: cachedAdjustmentDetails, rows: asCachedRows(cachedAdjustmentDetails), hydrated: detailsHydrated };
+    }
+    if(table.includes("shopifyLocationInventoryAdjustmentDetail") || table.includes("ShopifyLocationInventoryAdjustmentDetail")) {
+      return { records: cachedLocationDetails, rows: asCachedRows(cachedLocationDetails), hydrated: ref(true) };
+    }
+    if(table.includes("groupFacilities") || table.includes("GroupFacility")) {
+      return { records: cachedGroupFacilities, rows: cachedGroupFacilities, hydrated: groupFacilitiesHydrated };
+    }
+    if(table.includes("systemMessage") || table.includes("SystemMessage")) {
+      return { records: cachedMessages, rows: asCachedRows(cachedMessages), hydrated: ref(true) };
+    }
+
+    return { records: ref([]), rows: ref([]), hydrated: ref(true) };
+  },
 }));
 
 vi.mock("@/composables/useServiceJobs", () => ({

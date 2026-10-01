@@ -1,8 +1,15 @@
-import { api, logger, useDb } from "@common";
-import { toMillis } from "@common/db";
+import { api, logger } from "@common";
 import { computed, toValue } from "vue";
 import {
   FULFILLMENT_HISTORY_ENDPOINT_MISSING,
+  shopifyPendingFulfillmentCache,
+  shopifyFulfillmentHealthCache,
+  shopifyPendingFulfillmentStatusCache,
+  shopifyFulfillmentHistoryCache,
+  shopifyFulfillmentHistorySupportCache,
+} from "@/utils/cacheEntities";
+import { toMillis } from "@/utils/cacheProjection";
+import {
   type ParsedFulfillmentMessage,
   QUEUED_FULFILLMENT_MESSAGE_TYPE_ID,
   QUEUED_FULFILLMENT_STATUS_IDS,
@@ -12,6 +19,7 @@ import {
   parseFulfillmentMessageText,
 } from "@/utils/shopifyFulfillment";
 import { onSessionCleared } from "./sessionScope";
+import { useCachedList } from "./useCachedList";
 import { type ShopIdSource, useShopifySyncContext } from "./useShopify";
 import { useSystemMessages } from "./useSystemMessage";
 
@@ -28,7 +36,7 @@ import { useSystemMessages } from "./useSystemMessage";
  *                 synced row is opened (`useShopifyFulfillmentDetails`) — never polled, cached for
  *                 the session because a fulfillment's record only grows.
  *
- * Everything list-shaped reads from IndexedDB through `useDb`; the worker owns all
+ * Everything list-shaped reads from IndexedDB through `useCachedList`; the worker owns all
  * cadence (activate `fulfillmentSyncDomains(...)` from `@/utils/shopifyFulfillment` to run it).
  * The one live read is the expand-time GraphQL call, which has no OMS-side cache to serve it. The
  * pure halves — payload parsing, detail mapping, the domain factory — live in
@@ -90,9 +98,7 @@ export function useQueuedFulfillments(shopIdSource: ShopIdSource) {
         messageText: String(message?.messageText ?? ""),
         orderId: String(message?.orderId ?? ""),
         parsed: parseFulfillmentMessageText(message?.messageText),
-      }))
-      // Newest first here: an `equals` read comes back in index order, not by `initDate`.
-      .sort((a, b) => (b.initDate ?? 0) - (a.initDate ?? 0));
+      }));
   });
 
   return { rows, hydrated };
@@ -128,11 +134,10 @@ export interface SyncedFulfillmentRow {
  */
 export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
-  const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
-  const { records: cachedRows, hydrated: historyHydrated } =
-    useDb<any>("shopifyFulfillmentHistories", shopScope);
+  const { rows: cachedRows, hydrated: historyHydrated } =
+    useCachedList<any>(shopifyFulfillmentHistoryCache);
   const { records: supportRecords, hydrated: supportHydrated } =
-    useDb<any>("shopifyFulfillmentHistorySupport", shopScope);
+    useCachedList<any>(shopifyFulfillmentHistorySupportCache);
 
   const hydrated = computed(() => historyHydrated.value && supportHydrated.value);
 
@@ -145,9 +150,7 @@ export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
       // instead of silently vanishing from an index-ordered read.
       .sort((a: any, b: any) => (Number(b?.lastUpdatedStamp) || 0) - (Number(a?.lastUpdatedStamp) || 0))
       .map((row: any) => ({
-        // The key the expand-time Shopify detail cache uses too, so a row and its enrichment address
-        // each other directly.
-        fulfillmentKey: `${row?.shopId ?? ""}:${row?.fulfillmentId ?? ""}`,
+        fulfillmentKey: String(row?.fulfillmentKey ?? ""),
         shopId: String(row?.shopId ?? ""),
         fulfillmentId: String(row?.fulfillmentId ?? ""),
         shopifyOrderId: String(row?.shopifyOrderId ?? ""),
@@ -407,20 +410,16 @@ export function useOmsShipmentContext() {
 
 export function usePendingFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
-  const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
-  const { records: rows } = useDb<any>("shopifyPendingFulfillments", shopScope);
-  const { first: status } = useDb<any>("shopifyPendingFulfillmentStatus", shopScope);
+  const { rows } = useCachedList<any>(shopifyPendingFulfillmentCache);
+  const { rows: statuses } = useCachedList<any>(shopifyPendingFulfillmentStatusCache);
   return {
-    rows: computed(() => rows.value
-      .map((row: any) => ({ ...row, pendingKey: `${row.shopId}:${row.shipmentId}` }))
-      .sort((a: any, b: any) => Number(a.statusDate) - Number(b.statusDate))),
-    status,
+    rows: computed(() => rows.value.filter((row: any) => row.shopId === shopId.value).sort((a: any, b: any) => Number(a.statusDate) - Number(b.statusDate))),
+    status: computed(() => statuses.value.find((row: any) => row.shopId === shopId.value)),
   };
 }
 
 export function useFulfillmentSyncHealth(shopIdSource: ShopIdSource) {
-  const { first: health, hydrated } = useDb<any>("shopifyFulfillmentHealth", () => ({
-    scope: { field: "shopId", value: String(toValue(shopIdSource) ?? "") },
-  }));
+  const { records, hydrated } = useCachedList<any>(shopifyFulfillmentHealthCache);
+  const health = computed(() => records.value.find(row => row.shopId === String(toValue(shopIdSource) ?? "")));
   return { health, hydrated };
 }
