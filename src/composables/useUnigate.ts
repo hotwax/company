@@ -175,9 +175,12 @@ export async function updateUnigateConnection(payload: {
   password?: string;
   description?: string;
 }): Promise<void> {
+  const sendUrl = normalizeUnigateSendUrl(payload.sendUrl);
+  if(!sendUrl) {throw new Error("Invalid UniGate instance URL");}
+
   const data: any = {
     systemMessageRemoteId: "UNIGATE_CONFIG",
-    sendUrl: normalizeUnigateSendUrl(payload.sendUrl),
+    sendUrl,
     internalId: payload.internalId.trim(),
     description: payload.description?.trim() || "Unigate configuration for shipping and communication integrations",
   };

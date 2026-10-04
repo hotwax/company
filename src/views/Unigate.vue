@@ -56,7 +56,19 @@
                 {{ translate("Custom URL (advanced)") }}
               </ion-select-option>
             </ion-select>
-            <ion-input v-if="environment === 'custom'" v-model="customUrl" class="ion-margin-bottom" fill="outline" :label="translate('UniGate URL')" label-placement="floating" type="url" placeholder="https://" :disabled="busy" required />
+            <ion-input
+              v-if="environment === 'custom'"
+              v-model="customUrl"
+              class="ion-margin-bottom"
+              fill="outline"
+              :label="translate('UniGate URL')"
+              :helper-text="translate('Use the HTTPS instance URL without a path, query or fragment.')"
+              label-placement="floating"
+              type="url"
+              placeholder="https://"
+              :disabled="busy"
+              required
+            />
             <p v-else-if="sendUrl">
               {{ sendUrl }}
             </p>
@@ -165,13 +177,7 @@ const hasSettings = computed(() => Boolean(connection.value.tenantId && connecti
 const needsKey = computed(() => !hasSettings.value || connection.value.hasKey === false || tenantId.value.trim() !== connection.value.tenantId || normalizeUnigateSendUrl(sendUrl.value) !== normalizeUnigateSendUrl(connection.value.sendUrl));
 const keyHelp = computed(() => needsKey.value ? "Enter the API key issued for this tenant and environment." : "Leave blank to keep the key saved in OMS.");
 const keyStatus = computed(() => connection.value.hasKey === true ? "Saved in OMS" : connection.value.hasKey === false ? "Missing" : "Key presence cannot be checked on this OMS version.");
-const canConnect = computed(() => {
-  try {
-    const url = new URL(sendUrl.value);
-
-    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash && Boolean(tenantId.value.trim()) && (!needsKey.value || Boolean(key.value.trim()));
-  } catch { return false; }
-});
+const canConnect = computed(() => Boolean(normalizeUnigateSendUrl(sendUrl.value)) && Boolean(tenantId.value.trim()) && (!needsKey.value || Boolean(key.value.trim())));
 const environmentWarning = computed(() => {
   const expected = getDefaultUnigateSendUrl(maargConfig.value);
 
@@ -184,7 +190,7 @@ const messages = {
   incomplete: "The saved connection is incomplete. Add the tenant ID, URL and API key.",
   unauthorized: "UniGate did not accept this tenant and API key. Check both values and the selected environment.",
   unreachable: "OMS could not reach UniGate. Check the URL or try again later.",
-  "invalid-url": "The saved UniGate URL is invalid. Use an HTTPS URL without credentials, a query or a fragment.",
+  "invalid-url": "The saved UniGate URL is invalid. Use an HTTPS instance URL without credentials, a path, a query or a fragment.",
   "route-unavailable": "OMS received a 404 from UniGate. Check the UniGate URL and whether this instance supports the verification endpoint.",
   "invalid-response": "The server did not return the expected UniGate response. Check the URL.",
   unavailable: "Settings are saved, but connection testing is unavailable on this OMS version. Ask your OMS administrator to enable it.",

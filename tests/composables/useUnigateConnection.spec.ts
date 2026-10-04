@@ -7,9 +7,15 @@ vi.mock("@common", () => ({ api: (...args: any[]) => harness.api(...args), commo
 vi.mock("@/services/appCacheBootstrap", () => ({ refreshAfterMutation: (...args: any[]) => harness.refresh(...args) }));
 
 beforeEach(() => { vi.clearAllMocks(); harness.refresh.mockResolvedValue(undefined); });
-const saved = { exists: true, tenantId: "TENANT", sendUrl: "https://unigate-uat.hotwax.io/rest/s1/unigate/", hasKey: true };
+const saved = { exists: true, tenantId: "TENANT", sendUrl: "https://unigate-uat.hotwax.io", hasKey: true };
 
 describe("UniGate connection state", () => {
+  it("rejects extra paths before making a configuration write", async () => {
+    const state = useUnigateConnection();
+    expect(await state.save({ tenantId: saved.tenantId, sendUrl: `${saved.sendUrl}/apps/Unigate`, key: "" })).toBe(false);
+    expect(harness.api).not.toHaveBeenCalled();
+    expect(state.busy.value).toBe(false);
+  });
   it("treats a legacy hidden key as unknown, and recognizes an existing record for updates", async () => {
     harness.api.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ data: { systemMessageRemoteList: [{ systemMessageRemoteId: "UNIGATE_CONFIG", internalId: saved.tenantId, sendUrl: saved.sendUrl }] } });
     const state = useUnigateConnection();

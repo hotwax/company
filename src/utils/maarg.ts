@@ -49,11 +49,11 @@ export function normalizeUnigateSendUrl(sendUrl: string) {
 
   try {
     const url = new URL(trimmedSendUrl);
-    // OMS adds the API prefix; accept previously saved API-base URLs when editing.
-    const normalizedPath = url.pathname.replace(/\/+$/, "").replace(/\/rest\/s1\/unigate$/, "");
-    return `${url.origin}${normalizedPath}`;
+    if(url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash || url.port === "0") {return "";}
+
+    return url.origin;
   } catch {
-    return trimmedSendUrl.replace(/\/+$/, "").replace(/\/rest\/s1\/unigate$/, "");
+    return "";
   }
 }
 
@@ -64,7 +64,7 @@ export function getDefaultUnigateSendUrl(maargInfo: any) {
 }
 
 export function getPreferredUnigateSendUrl(existingSendUrl: string, maargInfo: any) {
-  return normalizeUnigateSendUrl(existingSendUrl) || getDefaultUnigateSendUrl(maargInfo);
+  return String(existingSendUrl || "").trim() ? normalizeUnigateSendUrl(existingSendUrl) : getDefaultUnigateSendUrl(maargInfo);
 }
 
 // Emit a warning when the configured Unigate URL is recognisably from a
@@ -79,7 +79,9 @@ export function getPreferredUnigateSendUrl(existingSendUrl: string, maargInfo: a
 //    cases where we only know one side.)
 export function getUnigateSendUrlWarning(sendUrl: string, maargInfo: any) {
   const configuredSendUrl = normalizeUnigateSendUrl(sendUrl);
-  if (!configuredSendUrl) return "";
+  if(!configuredSendUrl) {
+    return String(sendUrl || "").trim() ? "Use the HTTPS instance URL without a path, query or fragment." : "";
+  }
 
   const instanceEnv = canonicalEnv(getMaargInstancePurpose(maargInfo));
   const configuredEnv = envForUnigateUrl(configuredSendUrl);

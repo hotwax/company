@@ -25,20 +25,18 @@ describe("maarg utils", () => {
   describe("normalizeUnigateSendUrl", () => {
     it("stores the instance base URL without a trailing slash", () => {
       expect(normalizeUnigateSendUrl(" https://example.com/ ")).toBe("https://example.com");
-      expect(normalizeUnigateSendUrl("https://example.com/api/")).toBe("https://example.com/api");
+      expect(normalizeUnigateSendUrl("https://example.com:8443/")).toBe("https://example.com:8443");
     });
 
-    it("accepts legacy API-base URLs without saving the API prefix", () => {
-      for(const url of ["https://example.com/rest/s1/unigate", "https://example.com/rest/s1/unigate/", "https://example.com/rest/s1/unigate///"]) {
-        expect(normalizeUnigateSendUrl(url)).toBe("https://example.com");
+    it("rejects API paths and other extra URL components rather than repairing them", () => {
+      for(const url of ["https://example.com/rest/s1/unigate", "https://example.com/rest/s1/unigate/", "https://example.com/apps/Unigate", "https://example.com/context", "https://example.com?mode=test", "https://example.com#test", "https://user:password@example.com", "http://example.com", "https://example.com:0"]) {
+        expect(normalizeUnigateSendUrl(url)).toBe("");
       }
-
-      expect(normalizeUnigateSendUrl("https://example.com/context/rest/s1/unigate/")).toBe("https://example.com/context");
     });
 
-    it("should fallback to string operations for invalid URLs", () => {
-      expect(normalizeUnigateSendUrl("invalid-url")).toBe("invalid-url");
-      expect(normalizeUnigateSendUrl("invalid-url/")).toBe("invalid-url");
+    it("rejects invalid URLs", () => {
+      expect(normalizeUnigateSendUrl("invalid-url")).toBe("");
+      expect(normalizeUnigateSendUrl("invalid-url/")).toBe("");
     });
 
     it("should handle empty strings", () => {
@@ -71,6 +69,9 @@ describe("maarg utils", () => {
   });
 
   describe("getPreferredUnigateSendUrl", () => {
+    it("does not replace an invalid existing URL with a different environment", () => {
+      expect(getPreferredUnigateSendUrl("https://custom.example.com/apps/Unigate", { instanceInfo: { instancePurpose: "prod" } })).toBe("");
+    });
     it("should prefer existing URL if provided", () => {
       expect(getPreferredUnigateSendUrl("https://custom.example.com/", { instanceInfo: { instancePurpose: "prod" } }))
         .toBe("https://custom.example.com");
@@ -90,9 +91,9 @@ describe("maarg utils", () => {
     });
 
     it("should return empty string if environments match exactly", () => {
-      expect(getUnigateSendUrlWarning("https://unigate.hotwax.io/rest/s1/unigate/", { instanceInfo: { instancePurpose: "prod" } }))
+      expect(getUnigateSendUrlWarning("https://unigate.hotwax.io", { instanceInfo: { instancePurpose: "prod" } }))
         .toBe("");
-      expect(getUnigateSendUrlWarning("https://unigate-uat.hotwax.io/rest/s1/unigate/", { instanceInfo: { instancePurpose: "uat" } }))
+      expect(getUnigateSendUrlWarning("https://unigate-uat.hotwax.io", { instanceInfo: { instancePurpose: "uat" } }))
         .toBe("");
     });
 
@@ -103,10 +104,10 @@ describe("maarg utils", () => {
     });
 
     it("should warn on reverse-lookup environment mismatch (e.g. prod URL on dev instance)", () => {
-      expect(getUnigateSendUrlWarning("https://unigate.hotwax.io/rest/s1/unigate/", { instanceInfo: { instancePurpose: "dev" } }))
+      expect(getUnigateSendUrlWarning("https://unigate.hotwax.io", { instanceInfo: { instancePurpose: "dev" } }))
         .toBe("This is the production Unigate URL configured on a dev OMS instance. Klaviyo calls will be proxied to the wrong environment.");
 
-      expect(getUnigateSendUrlWarning("https://unigate-uat.hotwax.io/rest/s1/unigate/", { instanceInfo: { instancePurpose: "prod" } }))
+      expect(getUnigateSendUrlWarning("https://unigate-uat.hotwax.io", { instanceInfo: { instancePurpose: "prod" } }))
         .toBe("This is the UAT Unigate URL configured on a production OMS instance. Klaviyo calls will be proxied to the wrong environment.");
     });
 

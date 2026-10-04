@@ -63,8 +63,9 @@ The fields the UI reads: `systemMessageRemoteId`, `internalId` (tenantPartyId),
 
 The Company app saves the UniGate instance base URL without `/rest/s1/unigate/`.
 Deploy the matching OMS and Poorti URL changes before saving this format on an
-existing instance. The updated backend adds the API prefix and also accepts
-older configurations that already contain it.
+existing instance. The component upgrade converts existing UniGate URLs to hostname-only HTTPS
+origins. Runtime callers add the API prefix directly; they do not repair paths.
+New settings reject paths, queries, fragments, or embedded credentials.
 
 ---
 

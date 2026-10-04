@@ -104,7 +104,10 @@ export function useUnigateConnection() {
     notice.value = "";
     result.value = null;
     try {
-      const data: Record<string, string> = { systemMessageRemoteId: "UNIGATE_CONFIG", internalId: input.tenantId.trim(), sendUrl: normalizeUnigateSendUrl(input.sendUrl) };
+      const sendUrl = normalizeUnigateSendUrl(input.sendUrl);
+      if(!sendUrl) {throw new Error("Invalid UniGate instance URL");}
+
+      const data: Record<string, string> = { systemMessageRemoteId: "UNIGATE_CONFIG", internalId: input.tenantId.trim(), sendUrl };
       if(input.key.trim()) {data.publicKey = input.key.trim();}
       const response = await api({ url: connection.value.exists ? "oms/systemMessageRemotes/UNIGATE_CONFIG" : "oms/systemMessageRemotes", method: connection.value.exists ? "put" : "post", data });
       if(commonUtil.hasError(response)) {throw new Error("Save failed");}

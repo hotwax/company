@@ -17,6 +17,7 @@
           <ion-input
             v-model="formData.sendUrl"
             :label="translate('Unigate base URL')"
+            :helper-text="translate('Use the HTTPS instance URL without a path, query or fragment.')"
             label-placement="floating"
             placeholder="https://unigate-uat.hotwax.io"
             required
@@ -99,6 +100,7 @@ import {
 import { closeOutline, eyeOffOutline, eyeOutline } from "ionicons/icons";
 import { commonUtil, translate } from "@common";
 import { updateUnigateConnection, useUnigate } from "@/composables/useUnigate";
+import { normalizeUnigateSendUrl } from "@/utils/maarg";
 
 const props = defineProps<{
   initialSendUrl?: string;
@@ -118,7 +120,7 @@ const formData = reactive({
 const showKey = ref(false);
 const isSaving = ref(false);
 
-const isValid = computed(() => Boolean(formData.sendUrl.trim() && formData.internalId.trim()));
+const isValid = computed(() => Boolean(normalizeUnigateSendUrl(formData.sendUrl) && formData.internalId.trim()));
 
 function dismiss(saved = false) {
   modalController.dismiss({ saved });

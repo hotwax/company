@@ -4486,5 +4486,6 @@
   "Failed to delete carrier mapping.": "Failed to delete carrier mapping.",
   "Enable the selected methods for your store before adding Shopify mappings.": "Enable the selected methods for your store before adding Shopify mappings.",
   "Existing store methods stay unchanged.": "Existing store methods stay unchanged.",
-  "Save your shipping methods before enabling them for a store.": "Save your shipping methods before enabling them for a store."
+  "Save your shipping methods before enabling them for a store.": "Save your shipping methods before enabling them for a store.",
+  "Use the HTTPS instance URL without a path, query or fragment.": "Use the HTTPS instance URL without a path, query or fragment."
 }
