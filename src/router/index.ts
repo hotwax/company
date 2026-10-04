@@ -182,6 +182,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/klaviyo/:id", name: "KlaviyoConnectionDetails", component: KlaviyoConnectionDetails, props: true, beforeEnter: authGuard },
   { path: "/netsuite", name: "NetSuite", component: NetSuite, beforeEnter: authGuard },
   { path: "/unigate", name: "Unigate", component: () => import("@/views/Unigate.vue"), beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carriers/connections", name: "CarrierConnections", component: () => import("@/views/CarrierConnections.vue"), beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
+  { path: "/carriers/:partyId/setup", name: "CarrierSetup", component: () => import("@/views/CarrierSetup.vue"), props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/carriers", name: "Carriers", component: Carriers, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/create-carrier", name: "CreateCarrier", component: CreateCarrier, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },
   { path: "/shipment-methods-setup/:partyId", name: "CarrierShipmentMethods", component: CarrierShipmentMethods, props: true, beforeEnter: requirePermission("CARRIER_SETUP_VIEW") },

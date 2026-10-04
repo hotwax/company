@@ -349,7 +349,7 @@ describe("CarrierDetails", () => {
     expect(isDisabled(buttonWithText(wrapper, "Edit"))).toBe(true);
   });
 
-  it("keeps cached sections and Klaviyo navigation inspectable when mutations are gated", async () => {
+  it("keeps cached sections and UniGate navigation inspectable when mutations are gated", async () => {
     harness.hasDetailErrors.value = true;
     harness.detailErrorMessages.value = ["Facility sync failed"];
     harness.readyForMutation.value = false;
@@ -361,11 +361,11 @@ describe("CarrierDetails", () => {
     segment.vm.$emit("update:modelValue", "account");
     await nextTick();
 
-    const manageButton = buttonWithText(wrapper, "Manage Unigate in Klaviyo");
+    const manageButton = buttonWithText(wrapper, "Manage UniGate connection");
     expect(isDisabled(manageButton)).toBe(false);
     await manageButton.trigger("click");
 
-    expect(harness.push).toHaveBeenCalledWith({ path: "/klaviyo" });
+    expect(harness.push).toHaveBeenCalledWith({ path: "/unigate" });
   });
 
   it("shows one retry for detail errors and stays fail-closed until it succeeds", async () => {
@@ -465,15 +465,15 @@ describe("CarrierDetails", () => {
     expect(harness.showToast).toHaveBeenLastCalledWith(expected);
   });
 
-  it("routes account setup intent to Klaviyo without exposing gateway edits", async () => {
+  it("routes account setup intent to UniGate without exposing gateway edits", async () => {
     const wrapper = await mountView();
     const segment = wrapper.getComponent(IonSegmentStub);
 
     segment.vm.$emit("update:modelValue", "account");
     await nextTick();
-    await buttonWithText(wrapper, "Manage Unigate in Klaviyo").trigger("click");
+    await buttonWithText(wrapper, "Manage UniGate connection").trigger("click");
 
-    expect(harness.push).toHaveBeenCalledWith({ path: "/klaviyo" });
+    expect(harness.push).toHaveBeenCalledWith({ path: "/unigate" });
     expect(wrapper.find("ion-input").exists()).toBe(false);
   });
 });

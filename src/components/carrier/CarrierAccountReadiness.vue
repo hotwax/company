@@ -12,9 +12,9 @@
           slot="end"
           fill="outline"
           :disabled="disabled"
-          @click="emit('open-klaviyo')"
+          @click="emit('open-unigate')"
         >
-          {{ translate("Manage Unigate in Klaviyo") }}
+          {{ translate("Manage UniGate connection") }}
         </ion-button>
       </ion-item>
 
@@ -44,7 +44,7 @@
     <div class="ion-padding-horizontal ion-padding-top readiness-action-section">
       <div class="section-title-row">
         <h3>{{ translate("Configured credentials") }}</h3>
-        <ion-button size="small" fill="outline" @click="openCreateAuthModal" data-testid="add-carrier-auth-btn">
+        <ion-button size="small" fill="outline" data-testid="add-carrier-auth-btn" @click="openCreateAuthModal">
           <ion-icon slot="start" :icon="addOutline" />
           {{ translate("Add credentials") }}
         </ion-button>
@@ -71,7 +71,7 @@
     <div class="ion-padding-horizontal ion-padding-top readiness-action-section">
       <div class="section-title-row">
         <h3>{{ translate("Store mappings") }}</h3>
-        <ion-button size="small" fill="outline" @click="openCreateMappingModal" data-testid="add-carrier-mapping-btn">
+        <ion-button size="small" fill="outline" data-testid="add-carrier-mapping-btn" @click="openCreateMappingModal">
           <ion-icon slot="start" :icon="addOutline" />
           {{ translate("Add mapping") }}
         </ion-button>
@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { translate } from "@common";
 import {
   IonButton,
   IonChip,
@@ -108,16 +108,15 @@ import {
   modalController,
 } from "@ionic/vue";
 import { addOutline } from "ionicons/icons";
-import { translate } from "@common";
+import { computed, onMounted } from "vue";
+import CreateShippingGatewayAuthModal from "@/components/unigate/CreateShippingGatewayAuthModal.vue";
+import ShippingCarrierConfigModal from "@/components/unigate/ShippingCarrierConfigModal.vue";
 import type {
   CarrierReadiness,
   CarrierReadinessStatus,
 } from "@/composables/useCarriers";
-import { translateCarrierAccountVerificationError } from "@/utils/errorPresentation";
 import { useCarrierUnigateReadiness, useUnigate } from "@/composables/useUnigate";
-import UnigateConnectionModal from "@/components/unigate/UnigateConnectionModal.vue";
-import CreateShippingGatewayAuthModal from "@/components/unigate/CreateShippingGatewayAuthModal.vue";
-import ShippingCarrierConfigModal from "@/components/unigate/ShippingCarrierConfigModal.vue";
+import { translateCarrierAccountVerificationError } from "@/utils/errorPresentation";
 
 const props = withDefaults(defineProps<{
   readiness: CarrierReadiness;
@@ -128,9 +127,7 @@ const props = withDefaults(defineProps<{
   disabled: false,
 });
 
-const emit = defineEmits<{
-  (event: "open-klaviyo"): void;
-}>();
+const emit = defineEmits<{ (event: "open-unigate"): void }>();
 
 const { fetchShippingGatewayAuths, fetchShippingCarrierConfigs } = useUnigate();
 const { matchingAuths, carrierConfigs, tenantStatus, credentialStatus, storeLinkStatus, addressValidationStatus } =
@@ -177,17 +174,11 @@ function statusLabel(status: CarrierReadinessStatus) {
 }
 
 function chipColor(status: CarrierReadinessStatus) {
-  if (status === "ready") return "success";
-  if (status === "action-required") return "warning";
-  if (status === "loading") return "medium";
-  return "medium";
-}
+  if(status === "ready") {return "success";}
+  if(status === "action-required") {return "warning";}
+  if(status === "loading") {return "medium";}
 
-async function openConnectionModal() {
-  const modal = await modalController.create({
-    component: UnigateConnectionModal,
-  });
-  await modal.present();
+  return "medium";
 }
 
 async function openCreateAuthModal() {

@@ -3,480 +3,217 @@
     <ion-header>
       <ion-toolbar>
         <ion-menu-button slot="start" />
-        <ion-title>{{ translate("Unigate Integration") }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button fill="outline" @click="openConnectionModal" data-testid="unigate-config-header-btn">
-            <ion-icon slot="start" :icon="settingsOutline" />
-            {{ translate("Connection settings") }}
-          </ion-button>
-        </ion-buttons>
+        <ion-title>{{ translate("Unigate") }}</ion-title>
       </ion-toolbar>
     </ion-header>
-
     <ion-content>
-      <!-- Identity & Status Banner -->
-      <section class="ion-padding identity-banner">
-        <div class="identity-content">
-          <div class="identity-titles">
-            <h1>{{ translate("Unigate Gateway") }}</h1>
-            <p v-if="tenantId">
-              {{ translate("Tenant") }}: <strong>{{ tenantId }}</strong>
-              <span v-if="sendUrl" class="ion-margin-start url-text">({{ sendUrl }})</span>
+      <ion-list v-if="loading" inset>
+        <ion-item><ion-label><ion-skeleton-text animated /></ion-label></ion-item>
+      </ion-list>
+      <ion-list v-else-if="loadError" inset>
+        <ion-item>
+          <ion-label class="ion-text-wrap">
+            <h2>{{ translate("Unable to load the UniGate connection") }}</h2>
+            <p>{{ translate("Check your connection and access to this OMS, then try again.") }}</p>
+          </ion-label>
+          <ion-button slot="end" @click="reload">
+            {{ translate("Retry") }}
+          </ion-button>
+        </ion-item>
+      </ion-list>
+      <template v-else>
+        <section class="ion-padding">
+          <h2>{{ translate(editing ? "Connect OMS to UniGate" : "OMS connection to UniGate") }}</h2>
+          <p v-if="editing">
+            {{ translate("Connect once to enable carrier and messaging integrations. Use the tenant ID and API key issued by your UniGate administrator.") }}
+          </p>
+          <ion-item v-if="result || !editing" lines="none">
+            <ion-icon slot="start" :icon="verified ? checkmarkCircleOutline : informationCircleOutline" :color="verified ? 'success' : 'warning'" />
+            <ion-label class="ion-text-wrap" role="status">
+              <h2>{{ translate(statusTitle) }}</h2>
+              <p>{{ translate(statusMessage) }}</p>
+              <p v-if="result?.carrierApiUnavailable">
+                {{ translate("Your tenant and API key work. The carrier API is incompatible with this OMS version; align the OMS and UniGate versions before setting up carriers.") }}
+              </p>
+              <p v-if="verified && result?.checkedAt">
+                {{ translate("Last checked") }}: {{ formatCheckedAt(result.checkedAt) }}
+              </p>
+            </ion-label>
+          </ion-item>
+
+          <form v-if="editing" @submit.prevent="connect">
+            <ion-select v-model="environment" class="ion-margin-bottom" fill="outline" :label="translate('Environment')" label-placement="floating" interface="popover" :disabled="busy">
+              <ion-select-option value="">
+                {{ translate("Choose an environment") }}
+              </ion-select-option>
+              <ion-select-option value="uat">
+                {{ translate("Test / UAT") }}
+              </ion-select-option>
+              <ion-select-option value="production">
+                {{ translate("Production") }}
+              </ion-select-option>
+              <ion-select-option value="custom">
+                {{ translate("Custom URL (advanced)") }}
+              </ion-select-option>
+            </ion-select>
+            <ion-input v-if="environment === 'custom'" v-model="customUrl" class="ion-margin-bottom" fill="outline" :label="translate('UniGate URL')" label-placement="floating" type="url" placeholder="https://" :disabled="busy" required />
+            <p v-else-if="sendUrl">
+              {{ sendUrl }}
             </p>
-            <p v-else class="text-muted">
-              {{ translate("Unigate connection is not configured yet.") }}
+            <ion-input v-model="tenantId" class="ion-margin-bottom" fill="outline" :label="translate('Tenant ID')" label-placement="floating" :helper-text="translate('Use your tenant organization’s party ID in UniGate.')" :disabled="busy" required />
+            <ion-input v-model="key" class="ion-margin-bottom" fill="outline" :label="translate('UniGate API key')" label-placement="floating" type="password" autocomplete="new-password" :helper-text="translate(keyHelp)" :disabled="busy" :required="needsKey" />
+            <p v-if="environmentWarning">
+              {{ translate(environmentWarning) }}
             </p>
-          </div>
-          <div class="identity-chips">
-            <ion-chip :color="isConfigured ? 'success' : 'warning'" outline>
-              <ion-icon :icon="isConfigured ? checkmarkCircleOutline : alertCircleOutline" />
-              <ion-label>{{ isConfigured ? translate("Configured") : translate("Action required") }}</ion-label>
-            </ion-chip>
-          </div>
-        </div>
-      </section>
+            <ion-button type="submit" :disabled="!canConnect || busy" data-testid="connect-unigate-btn">
+              <ion-spinner v-if="busy" slot="start" />
+              {{ translate(busy ? "Connecting…" : "Connect") }}
+            </ion-button>
+            <ion-button v-if="hasSettings" fill="clear" :disabled="busy" @click="cancelEdit">
+              {{ translate("Cancel") }}
+            </ion-button>
+          </form>
 
-      <!-- Segment Tabs -->
-      <ion-segment v-model="activeTab" class="ion-padding-horizontal" data-testid="unigate-segment-tabs">
-        <ion-segment-button value="credentials" data-testid="tab-credentials">
-          <ion-label>{{ translate("Carrier credentials") }} ({{ shippingGatewayAuths.length }})</ion-label>
-        </ion-segment-button>
-        <ion-segment-button value="mappings" data-testid="tab-mappings">
-          <ion-label>{{ translate("Carrier mappings") }} ({{ shippingCarrierConfigs.length }})</ion-label>
-        </ion-segment-button>
-        <ion-segment-button value="billing" data-testid="tab-billing">
-          <ion-label>{{ translate("Billing accounts") }} ({{ shippingCarrierBillingConfigs.length }})</ion-label>
-        </ion-segment-button>
-        <ion-segment-button value="connection" data-testid="tab-connection">
-          <ion-label>{{ translate("Tenant & Status") }}</ion-label>
-        </ion-segment-button>
-      </ion-segment>
-
-      <!-- Tab 1: Carrier Credentials (ShippingGatewayAuths) -->
-      <section v-if="activeTab === 'credentials'" class="ion-padding" data-testid="unigate-credentials-section">
-        <div class="section-header">
-          <div>
-            <h2>{{ translate("Shipping Gateway Auths") }}</h2>
-            <p class="text-muted">{{ translate("Manage carrier API credentials and authentication tokens stored in Unigate.") }}</p>
-          </div>
-          <ion-button @click="openCreateAuthModal()" data-testid="add-credential-btn">
-            <ion-icon slot="start" :icon="addOutline" />
-            {{ translate("Add credentials") }}
-          </ion-button>
-        </div>
-
-        <div v-if="shippingGatewayAuths.length === 0" class="empty-state">
-          <p>{{ translate("No carrier credentials configured in Unigate yet.") }}</p>
-          <ion-button fill="outline" @click="openCreateAuthModal()">
-            {{ translate("Add your first carrier credential") }}
-          </ion-button>
-        </div>
-
-        <ion-list v-else lines="full" class="ion-margin-top">
-          <ion-item v-for="auth in shippingGatewayAuths" :key="auth.shippingGatewayAuthId">
-            <ion-label class="ion-text-wrap">
-              <div class="item-title-row">
-                {{ auth.description || auth.shippingGatewayAuthId }}
-                <ion-chip color="primary" outline>
-                  <ion-label>{{ auth.shippingGatewayConfigId }}</ion-label>
-                </ion-chip>
-              </div>
-              <p>
-                <strong>{{ translate("Auth ID") }}:</strong> {{ auth.shippingGatewayAuthId }}
-                <span v-if="auth.username" class="ion-margin-start">
-                  <strong>{{ translate("Username/Key") }}:</strong> {{ auth.username }}
-                </span>
-                <span v-if="auth.baseUrl" class="ion-margin-start">
-                  <strong>{{ translate("Base URL") }}:</strong> {{ auth.baseUrl }}
-                </span>
-              </p>
-            </ion-label>
-            <ion-buttons slot="end">
-              <ion-button fill="clear" @click="openCreateAuthModal(auth)" :title="translate('Edit')">
-                <ion-icon slot="icon-only" :icon="pencilOutline" />
-              </ion-button>
-              <ion-button color="danger" fill="clear" @click="confirmDeleteAuth(auth)" :title="translate('Delete')">
-                <ion-icon slot="icon-only" :icon="trashOutline" />
-              </ion-button>
-            </ion-buttons>
-          </ion-item>
-        </ion-list>
-      </section>
-
-      <!-- Tab 2: Carrier Mappings (ShippingCarrierConfigs) -->
-      <section v-if="activeTab === 'mappings'" class="ion-padding" data-testid="unigate-mappings-section">
-        <div class="section-header">
-          <div>
-            <h2>{{ translate("OMS Carrier Mappings") }}</h2>
-            <p class="text-muted">{{ translate("Link OMS carrier parties, product stores, and facilities to Unigate gateway credentials.") }}</p>
-          </div>
-          <ion-button @click="openCreateCarrierConfigModal()" data-testid="add-mapping-btn">
-            <ion-icon slot="start" :icon="addOutline" />
-            {{ translate("Add carrier mapping") }}
-          </ion-button>
-        </div>
-
-        <div v-if="shippingCarrierConfigs.length === 0" class="empty-state">
-          <p>{{ translate("No carrier mappings configured yet.") }}</p>
-          <ion-button fill="outline" @click="openCreateCarrierConfigModal()">
-            {{ translate("Add your first carrier mapping") }}
-          </ion-button>
-        </div>
-
-        <ion-list v-else lines="full" class="ion-margin-top">
-          <ion-item v-for="cfg in shippingCarrierConfigs" :key="cfg.carrierConfigId">
-            <ion-label class="ion-text-wrap">
-              <div class="item-title-row">
-                {{ cfg.carrierPartyId }} &rarr; {{ cfg.productStoreId }}
-                <ion-chip color="secondary" outline>
-                  <ion-label>{{ cfg.gatewayAuthId }}</ion-label>
-                </ion-chip>
-                <ion-chip v-if="cfg.facilityId" color="medium" outline>
-                  <ion-label>{{ translate("Facility") }}: {{ cfg.facilityId }}</ion-label>
-                </ion-chip>
-              </div>
-              <p>
-                <span v-if="cfg.carrierAccountId">
-                  <strong>{{ translate("Account #") }}:</strong> {{ cfg.carrierAccountId }} |
-                </span>
-                <span v-if="cfg.packagingType">
-                  <strong>{{ translate("Packaging") }}:</strong> {{ cfg.packagingType }} |
-                </span>
-                <span v-if="cfg.labelSize">
-                  <strong>{{ translate("Label") }}:</strong> {{ cfg.labelSize }} ({{ cfg.labelImageType || 'PDF' }})
-                </span>
-              </p>
-            </ion-label>
-            <ion-buttons slot="end">
-              <ion-button fill="clear" @click="openCreateCarrierConfigModal(cfg)" :title="translate('Edit')">
-                <ion-icon slot="icon-only" :icon="pencilOutline" />
-              </ion-button>
-              <ion-button color="danger" fill="clear" @click="confirmDeleteCarrierConfig(cfg)" :title="translate('Delete')">
-                <ion-icon slot="icon-only" :icon="trashOutline" />
-              </ion-button>
-            </ion-buttons>
-          </ion-item>
-        </ion-list>
-      </section>
-
-      <!-- Tab 3: Billing Accounts (ShippingCarrierBillingConfigs) -->
-      <section v-if="activeTab === 'billing'" class="ion-padding" data-testid="unigate-billing-section">
-        <div class="section-header">
-          <div>
-            <h2>{{ translate("Carrier Billing Configurations") }}</h2>
-            <p class="text-muted">{{ translate("Map carrier billing accounts by product store and sales channel.") }}</p>
-          </div>
-          <ion-button @click="openCreateBillingConfigModal()" data-testid="add-billing-btn">
-            <ion-icon slot="start" :icon="addOutline" />
-            {{ translate("Add billing config") }}
-          </ion-button>
-        </div>
-
-        <div v-if="shippingCarrierBillingConfigs.length === 0" class="empty-state">
-          <p>{{ translate("No carrier billing configurations set up yet.") }}</p>
-          <ion-button fill="outline" @click="openCreateBillingConfigModal()">
-            {{ translate("Add your first billing configuration") }}
-          </ion-button>
-        </div>
-
-        <ion-list v-else lines="full" class="ion-margin-top">
-          <ion-item v-for="b in shippingCarrierBillingConfigs" :key="b.carrierBillingConfigId">
-            <ion-label class="ion-text-wrap">
-              <div class="item-title-row">
-                {{ b.carrierPartyId }} &rarr; {{ b.productStoreId }}
-                <ion-chip v-if="b.salesChannelEnumId" color="tertiary" outline>
-                  <ion-label>{{ b.salesChannelEnumId }}</ion-label>
-                </ion-chip>
-              </div>
-              <p>
-                <strong>{{ translate("Billing Account #") }}:</strong> {{ b.billingAccountNumber }}
-                <span v-if="b.facilityId" class="ion-margin-start">
-                  <strong>{{ translate("Facility") }}:</strong> {{ b.facilityId }}
-                </span>
-              </p>
-            </ion-label>
-            <ion-buttons slot="end">
-              <ion-button color="danger" fill="clear" @click="confirmDeleteBillingConfig(b)" :title="translate('Delete')">
-                <ion-icon slot="icon-only" :icon="trashOutline" />
-              </ion-button>
-            </ion-buttons>
-          </ion-item>
-        </ion-list>
-      </section>
-
-      <!-- Tab 4: Tenant Connection & Status -->
-      <section v-if="activeTab === 'connection'" class="ion-padding" data-testid="unigate-status-section">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-title>{{ translate("Unigate Connection Information") }}</ion-card-title>
-          </ion-card-header>
-          <ion-card-content>
-            <ion-list lines="full">
+          <template v-else>
+            <ion-list>
               <ion-item>
-                <ion-label>
-                  {{ translate("Tenant ID") }}
-                  <p>{{ tenantId || translate("Not configured") }}</p>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("Tenant ID") }}<p>{{ connection.tenantId }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
-                <ion-label>
-                  {{ translate("Unigate Base URL") }}
-                  <p>{{ sendUrl || translate("Not configured") }}</p>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("UniGate URL") }}<p>{{ connection.sendUrl }}</p>
                 </ion-label>
               </ion-item>
               <ion-item>
-                <ion-label>
-                  {{ translate("API Key / Token") }}
-                  <p>{{ hasKey ? translate("Configured (Secret stored)") : translate("Not configured") }}</p>
+                <ion-label class="ion-text-wrap">
+                  {{ translate("UniGate API key") }}<p>{{ translate(keyStatus) }}</p>
                 </ion-label>
               </ion-item>
             </ion-list>
+            <ion-button :disabled="busy" @click="test">
+              <ion-spinner v-if="busy" slot="start" />{{ translate(verified ? "Test again" : "Test connection") }}
+            </ion-button>
+            <ion-button fill="clear" :disabled="busy" @click="startEdit">
+              {{ translate("Edit connection") }}
+            </ion-button>
+          </template>
+          <p v-if="notice" role="alert">
+            {{ translate(notice) }}
+          </p>
+        </section>
 
-            <div class="ion-padding-top ion-text-right">
-              <ion-button fill="outline" @click="refreshAll()">
-                <ion-icon slot="start" :icon="refreshOutline" />
-                {{ translate("Refresh all data") }}
-              </ion-button>
-              <ion-button class="ion-margin-start" @click="openConnectionModal()">
-                {{ translate("Edit connection") }}
-              </ion-button>
+        <ion-list v-if="verified && !editing" inset>
+          <ion-list-header>{{ translate("Next steps") }}</ion-list-header>
+          <ion-item button detail router-link="/carriers">
+            <ion-label>{{ translate("Set up FedEx") }}<p>{{ translate("Connect FedEx or another carrier and assign it to your stores.") }}</p></ion-label>
+          </ion-item>
+          <ion-item button detail router-link="/klaviyo">
+            <ion-label>{{ translate("Set up Klaviyo") }}<p>{{ translate("Connect your account for customer notifications.") }}</p></ion-label>
+          </ion-item>
+        </ion-list>
+        <ion-accordion-group v-if="editing" class="ion-margin">
+          <ion-accordion value="tenant-help">
+            <ion-item slot="header">
+              <ion-label>{{ translate("Don't have a UniGate tenant?") }}</ion-label>
+            </ion-item>
+            <div slot="content" class="ion-padding">
+              <p>{{ translate("Ask your UniGate administrator to create a tenant and issue its API key for the selected environment. You need the tenant ID and key before connecting OMS.") }}</p>
+              <p>{{ translate("A FedEx account number or FedEx API key cannot be used here. Carrier credentials are added separately on the Carriers page.") }}</p>
+              <p v-if="unigateAppUrl">
+                <a :href="unigateAppUrl" target="_blank" rel="noopener noreferrer">{{ translate("Open UniGate") }}</a>
+              </p>
             </div>
-          </ion-card-content>
-        </ion-card>
-      </section>
+          </ion-accordion>
+        </ion-accordion-group>
+      </template>
+      <UnigateEditHistory :revision="historyRevision" />
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import {
-  alertController,
-  IonButton,
-  IonButtons,
-  IonCard,
-  IonCardContent,
-  IonCardHeader,
-  IonCardTitle,
-  IonChip,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonMenuButton,
-  IonPage,
-  IonSegment,
-  IonSegmentButton,
-  IonTitle,
-  IonToolbar,
-  modalController,
-} from "@ionic/vue";
-import {
-  addOutline,
-  alertCircleOutline,
-  checkmarkCircleOutline,
-  pencilOutline,
-  refreshOutline,
-  settingsOutline,
-  trashOutline,
-} from "ionicons/icons";
-import { commonUtil, translate } from "@common";
-import {
-  deleteShippingCarrierBillingConfig,
-  deleteShippingCarrierConfig,
-  deleteShippingGatewayAuth,
-  type ShippingCarrierBillingConfig,
-  type ShippingCarrierConfig,
-  type ShippingGatewayAuth,
-  useUnigate,
-} from "@/composables/useUnigate";
-import UnigateConnectionModal from "@/components/unigate/UnigateConnectionModal.vue";
-import CreateShippingGatewayAuthModal from "@/components/unigate/CreateShippingGatewayAuthModal.vue";
-import ShippingCarrierConfigModal from "@/components/unigate/ShippingCarrierConfigModal.vue";
-import ShippingCarrierBillingConfigModal from "@/components/unigate/ShippingCarrierBillingConfigModal.vue";
+import { translate } from "@common";
+import { IonAccordion, IonAccordionGroup, IonButton, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonListHeader, IonMenuButton, IonPage, IonSelect, IonSelectOption, IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewWillEnter, onIonViewWillLeave } from "@ionic/vue";
+import { checkmarkCircleOutline, informationCircleOutline } from "ionicons/icons";
+import { computed, ref } from "vue";
+import UnigateEditHistory from "@/components/unigate/UnigateEditHistory.vue";
+import { useMaargConfig } from "@/composables/useSeed";
+import { useUnigateConnection } from "@/composables/useUnigateConnection";
+import { getDefaultUnigateSendUrl, normalizeUnigateSendUrl } from "@/utils/maarg";
 
-const activeTab = ref<"credentials" | "mappings" | "billing" | "connection">("credentials");
+const { connection, loading, loadError, busy, result, notice, load, save, test } = useUnigateConnection();
+const { config: maargConfig, load: loadMaargConfig } = useMaargConfig();
+const editing = ref(false);
+const historyRevision = ref(0);
+const environment = ref("");
+const customUrl = ref("");
+const tenantId = ref("");
+const key = ref("");
+const urls: Record<string, string> = { uat: "https://unigate-uat.hotwax.io/rest/s1/unigate/", production: "https://unigate.hotwax.io/rest/s1/unigate/" };
+const sendUrl = computed(() => environment.value === "custom" ? customUrl.value.trim() : urls[environment.value] || "");
+const unigateAppUrl = computed(() => {
+  try {
+    const url = new URL(sendUrl.value);
+    if(url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {return "";}
 
-const {
-  unigateConfig,
-  shippingGatewayAuths,
-  shippingCarrierConfigs,
-  shippingCarrierBillingConfigs,
-  isConfigured,
-  tenantId,
-  sendUrl,
-  hasKey,
-  refreshAll,
-} = useUnigate();
-
-onMounted(async () => {
-  await refreshAll();
+    return `${url.origin}/apps/Unigate`;
+  } catch { return ""; }
 });
+const hasSettings = computed(() => Boolean(connection.value.tenantId && connection.value.sendUrl));
+const needsKey = computed(() => !hasSettings.value || connection.value.hasKey === false || tenantId.value.trim() !== connection.value.tenantId || normalizeUnigateSendUrl(sendUrl.value) !== normalizeUnigateSendUrl(connection.value.sendUrl));
+const keyHelp = computed(() => needsKey.value ? "Enter the API key issued for this tenant and environment." : "Leave blank to keep the key saved in OMS.");
+const keyStatus = computed(() => connection.value.hasKey === true ? "Saved in OMS" : connection.value.hasKey === false ? "Missing" : "Key presence cannot be checked on this OMS version.");
+const canConnect = computed(() => {
+  try {
+    const url = new URL(sendUrl.value);
 
-async function openConnectionModal() {
-  const modal = await modalController.create({
-    component: UnigateConnectionModal,
-  });
-  await modal.present();
-}
+    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash && Boolean(tenantId.value.trim()) && (!needsKey.value || Boolean(key.value.trim()));
+  } catch { return false; }
+});
+const environmentWarning = computed(() => {
+  const expected = getDefaultUnigateSendUrl(maargConfig.value);
 
-async function openCreateAuthModal(auth?: ShippingGatewayAuth) {
-  const modal = await modalController.create({
-    component: CreateShippingGatewayAuthModal,
-    componentProps: { auth },
-  });
-  await modal.present();
+  return expected && sendUrl.value && normalizeUnigateSendUrl(sendUrl.value) !== expected ? "This UniGate environment differs from the default for your OMS. Confirm the tenant and key belong to the environment you selected." : "";
+});
+const verified = computed(() => result.value?.status === "connected");
+const statusTitle = computed(() => verified.value ? "Connected to UniGate" : result.value ? "Connection needs attention" : "Saved, not verified");
+const messages = {
+  connected: "OMS successfully authenticated with UniGate.",
+  incomplete: "The saved connection is incomplete. Add the tenant ID, URL and API key.",
+  unauthorized: "UniGate did not accept this tenant and API key. Check both values and the selected environment.",
+  unreachable: "OMS could not reach UniGate. Check the URL or try again later.",
+  "invalid-url": "The saved UniGate URL is invalid. Use an HTTPS URL without credentials, a query or a fragment.",
+  "route-unavailable": "OMS received a 404 from UniGate. Check the UniGate URL and whether this instance supports the verification endpoint.",
+  "invalid-response": "The server did not return the expected UniGate response. Check the URL.",
+  unavailable: "Settings are saved, but connection testing is unavailable on this OMS version. Ask your OMS administrator to enable it.",
+  error: "The connection check could not be completed. Check your OMS access and try again.",
+};
+const statusMessage = computed(() => result.value ? messages[result.value.status] : "These settings are saved in OMS. Test the connection to confirm UniGate accepts them.");
+const formatCheckedAt = (value: string) => new Date(value).toLocaleString();
+function seedForm() {
+  tenantId.value = connection.value.tenantId;
+  key.value = "";
+  const url = normalizeUnigateSendUrl(connection.value.sendUrl || getDefaultUnigateSendUrl(maargConfig.value));
+  environment.value = Object.keys(urls).find((env) => urls[env] === url) || (url ? "custom" : "");
+  customUrl.value = url;
 }
-
-async function openCreateCarrierConfigModal(config?: ShippingCarrierConfig) {
-  const modal = await modalController.create({
-    component: ShippingCarrierConfigModal,
-    componentProps: { config },
-  });
-  await modal.present();
+function startEdit() { seedForm(); editing.value = true; result.value = null; notice.value = ""; }
+function cancelEdit() { key.value = ""; editing.value = false; }
+async function reload() {
+  if(busy.value) {return;}
+  await Promise.all([load(), loadMaargConfig()]);
+  seedForm();
+  editing.value = !hasSettings.value || connection.value.hasKey === false;
+  if(!loadError.value && !editing.value) {await test();}
 }
-
-async function openCreateBillingConfigModal(config?: ShippingCarrierBillingConfig) {
-  const modal = await modalController.create({
-    component: ShippingCarrierBillingConfigModal,
-    componentProps: { config },
-  });
-  await modal.present();
+async function connect() {
+  if(!canConnect.value || busy.value) {return;}
+  const saved = await save({ tenantId: tenantId.value, sendUrl: sendUrl.value, key: key.value });
+  key.value = "";
+  if(saved) { historyRevision.value++; editing.value = false; await test(); }
 }
-
-async function confirmDeleteAuth(auth: ShippingGatewayAuth) {
-  const alert = await alertController.create({
-    header: translate("Delete carrier credentials?"),
-    message: translate("Are you sure you want to delete {id} from Unigate?", { id: auth.shippingGatewayAuthId }),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      {
-        text: translate("Delete"),
-        role: "destructive",
-        handler: async () => {
-          try {
-            await deleteShippingGatewayAuth(auth.shippingGatewayAuthId);
-            commonUtil.showToast(translate("Carrier credentials deleted successfully."));
-          } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete carrier credentials."));
-          }
-        },
-      },
-    ],
-  });
-  await alert.present();
-}
-
-async function confirmDeleteCarrierConfig(cfg: ShippingCarrierConfig) {
-  if (!cfg.carrierConfigId) return;
-  const alert = await alertController.create({
-    header: translate("Delete carrier mapping?"),
-    message: translate("Are you sure you want to delete this carrier mapping?"),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      {
-        text: translate("Delete"),
-        role: "destructive",
-        handler: async () => {
-          try {
-            await deleteShippingCarrierConfig(cfg.carrierConfigId!);
-            commonUtil.showToast(translate("Carrier mapping deleted successfully."));
-          } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete carrier mapping."));
-          }
-        },
-      },
-    ],
-  });
-  await alert.present();
-}
-
-async function confirmDeleteBillingConfig(b: ShippingCarrierBillingConfig) {
-  if (!b.carrierBillingConfigId) return;
-  const alert = await alertController.create({
-    header: translate("Delete billing configuration?"),
-    message: translate("Are you sure you want to delete this billing configuration?"),
-    buttons: [
-      { text: translate("Cancel"), role: "cancel" },
-      {
-        text: translate("Delete"),
-        role: "destructive",
-        handler: async () => {
-          try {
-            await deleteShippingCarrierBillingConfig(b.carrierBillingConfigId!);
-            commonUtil.showToast(translate("Billing configuration deleted successfully."));
-          } catch (err: any) {
-            commonUtil.showToast(translate(err?.message || "Failed to delete billing configuration."));
-          }
-        },
-      },
-    ],
-  });
-  await alert.present();
-}
+onIonViewWillEnter(reload);
+onIonViewWillLeave(() => { key.value = ""; });
 </script>
-
-<style scoped>
-.identity-banner {
-  background-color: var(--ion-color-light);
-  border-bottom: 1px solid var(--ion-color-light-shade);
-}
-
-.identity-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacer-base);
-}
-
-.identity-titles h1 {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 4px 0;
-}
-
-.identity-titles p {
-  margin: 0;
-  color: var(--ion-color-medium);
-}
-
-.url-text {
-  font-size: 13px;
-  font-family: monospace;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacer-sm);
-  margin-bottom: var(--spacer-base);
-}
-
-.section-header h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 4px 0;
-}
-
-.empty-state {
-  text-align: center;
-  padding: var(--spacer-2xl) var(--spacer-base);
-  color: var(--ion-color-medium);
-}
-
-.item-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-sm);
-}
-
-.item-title-row h3 {
-  font-weight: 600;
-  margin: 0;
-}
-</style>

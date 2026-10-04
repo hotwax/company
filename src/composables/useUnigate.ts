@@ -1,5 +1,6 @@
-import { computed, reactive, ref, type Ref, unref } from "vue";
+/* eslint-disable no-restricted-syntax -- legacy service exports support the existing carrier configuration modals */
 import { api, commonUtil } from "@common";
+import { type Ref, computed, reactive, unref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { onSessionCleared } from "./sessionScope";
 
@@ -9,9 +10,10 @@ const log = {
 };
 
 const safeApi = async (req: any) => {
-  if (typeof api === "function") {
+  if(typeof api === "function") {
     return await api(req);
   }
+
   return { data: [] };
 };
 
@@ -82,15 +84,16 @@ const DEFAULT_GATEWAY_CONFIGS: ShippingGatewayConfig[] = [
 ];
 
 const unwrapList = (data: any, key?: string): any[] => {
-  if (Array.isArray(data)) return data;
-  if (key && Array.isArray(data?.[key])) return data[key];
-  if (Array.isArray(data?.docs)) return data.docs;
+  if(Array.isArray(data)) {return data;}
+  if(key && Array.isArray(data?.[key])) {return data[key];}
+  if(Array.isArray(data?.docs)) {return data.docs;}
+
   return [];
 };
 
 function assertUnigateMutation(response: any, fallback: string): void {
-  if (commonUtil.hasError(response)) {
-    throw new Error(commonUtil.getErrorMessage(response) || fallback);
+  if(commonUtil.hasError(response)) {
+    throw new Error(fallback);
   }
 }
 
@@ -128,8 +131,8 @@ onSessionCleared(() => {
 // =============================================================================================
 
 export async function fetchUnigateRemoteConfig(force = false): Promise<UnigateRemoteConfig | null> {
-  if (status.config === "pending") return state.unigateConfig;
-  if (!force && status.config === "success" && state.unigateConfig) return state.unigateConfig;
+  if(status.config === "pending") {return state.unigateConfig;}
+  if(!force && status.config === "success" && state.unigateConfig) {return state.unigateConfig;}
 
   status.config = "pending";
   try {
@@ -140,7 +143,7 @@ export async function fetchUnigateRemoteConfig(force = false): Promise<UnigateRe
     });
     const list = unwrapList(resp.data, "systemMessageRemoteList");
     const found = list.find((item: any) => item.systemMessageRemoteId === "UNIGATE_CONFIG");
-    if (found) {
+    if(found) {
       // Discard secrets (publicKey, password) from client state while projecting only safe readiness fields
       state.unigateConfig = {
         systemMessageRemoteId: found.systemMessageRemoteId,
@@ -154,10 +157,12 @@ export async function fetchUnigateRemoteConfig(force = false): Promise<UnigateRe
       state.unigateConfig = null;
     }
     status.config = "success";
+
     return state.unigateConfig;
-  } catch (err) {
-    log.error("Failed to fetch UNIGATE_CONFIG", err);
+  } catch {
+    log.error("Failed to fetch UNIGATE_CONFIG");
     status.config = "error";
+
     return null;
   }
 }
@@ -175,10 +180,10 @@ export async function updateUnigateConnection(payload: {
     internalId: payload.internalId.trim(),
     description: payload.description?.trim() || "Unigate configuration for shipping and communication integrations",
   };
-  if (payload.publicKey?.trim()) {
+  if(payload.publicKey?.trim()) {
     data.publicKey = payload.publicKey.trim();
   }
-  if (payload.password?.trim()) {
+  if(payload.password?.trim()) {
     data.password = payload.password.trim();
   }
 
@@ -200,8 +205,8 @@ export async function updateUnigateConnection(payload: {
 // =============================================================================================
 
 export async function fetchShippingGatewayConfigs(force = false): Promise<ShippingGatewayConfig[]> {
-  if (status.gatewayConfigs === "pending") return state.shippingGatewayConfigs;
-  if (!force && status.gatewayConfigs === "success" && state.shippingGatewayConfigs.length > 0) {
+  if(status.gatewayConfigs === "pending") {return state.shippingGatewayConfigs;}
+  if(!force && status.gatewayConfigs === "success" && state.shippingGatewayConfigs.length > 0) {
     return state.shippingGatewayConfigs;
   }
 
@@ -214,11 +219,12 @@ export async function fetchShippingGatewayConfigs(force = false): Promise<Shippi
     const list = unwrapList(resp.data, "shipGatewayConfigList");
     state.shippingGatewayConfigs = list.length > 0 ? list : DEFAULT_GATEWAY_CONFIGS;
     status.gatewayConfigs = "success";
-  } catch (err) {
-    log.warn("Failed to fetch shippingGatewayConfigs from server, using default registry", err);
+  } catch {
+    log.warn("Failed to fetch shippingGatewayConfigs from server, using default registry");
     state.shippingGatewayConfigs = DEFAULT_GATEWAY_CONFIGS;
     status.gatewayConfigs = "success";
   }
+
   return state.shippingGatewayConfigs;
 }
 
@@ -227,8 +233,8 @@ export async function fetchShippingGatewayConfigs(force = false): Promise<Shippi
 // =============================================================================================
 
 export async function fetchShippingGatewayAuths(force = false): Promise<ShippingGatewayAuth[]> {
-  if (status.auths === "pending") return state.shippingGatewayAuths;
-  if (!force && status.auths === "success" && state.shippingGatewayAuths.length > 0) {
+  if(status.auths === "pending") {return state.shippingGatewayAuths;}
+  if(!force && status.auths === "success" && state.shippingGatewayAuths.length > 0) {
     return state.shippingGatewayAuths;
   }
 
@@ -240,10 +246,11 @@ export async function fetchShippingGatewayAuths(force = false): Promise<Shipping
     });
     state.shippingGatewayAuths = unwrapList(resp.data, "shipAuthList");
     status.auths = "success";
-  } catch (err) {
-    log.error("Failed to fetch shippingGatewayAuths", err);
+  } catch {
+    log.error("Failed to fetch shippingGatewayAuths");
     status.auths = "error";
   }
+
   return state.shippingGatewayAuths;
 }
 
@@ -296,8 +303,8 @@ export async function deleteShippingGatewayAuth(shippingGatewayAuthId: string): 
 // =============================================================================================
 
 export async function fetchShippingCarrierConfigs(force = false): Promise<ShippingCarrierConfig[]> {
-  if (status.carrierConfigs === "pending") return state.shippingCarrierConfigs;
-  if (!force && status.carrierConfigs === "success" && state.shippingCarrierConfigs.length > 0) {
+  if(status.carrierConfigs === "pending") {return state.shippingCarrierConfigs;}
+  if(!force && status.carrierConfigs === "success" && state.shippingCarrierConfigs.length > 0) {
     return state.shippingCarrierConfigs;
   }
 
@@ -309,10 +316,11 @@ export async function fetchShippingCarrierConfigs(force = false): Promise<Shippi
     });
     state.shippingCarrierConfigs = unwrapList(resp.data, "carrierConfigList");
     status.carrierConfigs = "success";
-  } catch (err) {
-    log.error("Failed to fetch shippingCarrierConfigs", err);
+  } catch {
+    log.error("Failed to fetch shippingCarrierConfigs");
     status.carrierConfigs = "error";
   }
+
   return state.shippingCarrierConfigs;
 }
 
@@ -340,8 +348,8 @@ export async function deleteShippingCarrierConfig(carrierConfigId: string): Prom
 // =============================================================================================
 
 export async function fetchShippingCarrierBillingConfigs(force = false): Promise<ShippingCarrierBillingConfig[]> {
-  if (status.billingConfigs === "pending") return state.shippingCarrierBillingConfigs;
-  if (!force && status.billingConfigs === "success" && state.shippingCarrierBillingConfigs.length > 0) {
+  if(status.billingConfigs === "pending") {return state.shippingCarrierBillingConfigs;}
+  if(!force && status.billingConfigs === "success" && state.shippingCarrierBillingConfigs.length > 0) {
     return state.shippingCarrierBillingConfigs;
   }
 
@@ -353,10 +361,11 @@ export async function fetchShippingCarrierBillingConfigs(force = false): Promise
     });
     state.shippingCarrierBillingConfigs = unwrapList(resp.data, "billingConfigList");
     status.billingConfigs = "success";
-  } catch (err) {
-    log.error("Failed to fetch shippingCarrierBillingConfigs", err);
+  } catch {
+    log.error("Failed to fetch shippingCarrierBillingConfigs");
     status.billingConfigs = "error";
   }
+
   return state.shippingCarrierBillingConfigs;
 }
 
@@ -386,6 +395,7 @@ export async function deleteShippingCarrierBillingConfig(carrierBillingConfigId:
 export function useUnigate() {
   const isConfigured = computed(() => {
     const cfg = state.unigateConfig;
+
     return Boolean(cfg?.internalId && cfg?.sendUrl);
   });
 
@@ -438,11 +448,13 @@ export function useCarrierUnigateReadiness(carrierPartyIdRef: Ref<string | undef
 
   const matchingAuths = computed(() => {
     const party = (carrierPartyId.value || "").toUpperCase();
-    if (!party) return [];
+    if(!party) {return [];}
+
     return shippingGatewayAuths.value.filter((auth) => {
       const configId = (auth.shippingGatewayConfigId || "").toUpperCase();
       const authId = (auth.shippingGatewayAuthId || "").toUpperCase();
       const desc = (auth.description || "").toUpperCase();
+
       return (
         configId.includes(party) ||
         party.includes(configId) ||
@@ -454,30 +466,35 @@ export function useCarrierUnigateReadiness(carrierPartyIdRef: Ref<string | undef
 
   const carrierConfigs = computed(() => {
     const party = carrierPartyId.value;
-    if (!party) return [];
+    if(!party) {return [];}
+
     return shippingCarrierConfigs.value.filter((cfg) => cfg.carrierPartyId === party);
   });
 
   const tenantStatus = computed<"ready" | "loading" | "unavailable">(() => {
-    if (status.config === "pending") return "loading";
+    if(status.config === "pending") {return "loading";}
+
     return isConfigured.value ? "ready" : "unavailable";
   });
 
   const credentialStatus = computed<"ready" | "loading" | "unavailable">(() => {
-    if (status.auths === "pending") return "loading";
-    if (!isConfigured.value) return "unavailable";
+    if(status.auths === "pending") {return "loading";}
+    if(!isConfigured.value) {return "unavailable";}
+
     return matchingAuths.value.length > 0 ? "ready" : "unavailable";
   });
 
   const storeLinkStatus = computed<"ready" | "loading" | "unavailable">(() => {
-    if (status.carrierConfigs === "pending") return "loading";
-    if (!isConfigured.value) return "unavailable";
+    if(status.carrierConfigs === "pending") {return "loading";}
+    if(!isConfigured.value) {return "unavailable";}
+
     return carrierConfigs.value.length > 0 ? "ready" : "unavailable";
   });
 
   const addressValidationStatus = computed<"ready" | "loading" | "unavailable">(() => {
     const party = (carrierPartyId.value || "").toUpperCase();
-    if (party !== "FEDEX" && party !== "_NA_") return "unavailable";
+    if(party !== "FEDEX" && party !== "_NA_") {return "unavailable";}
+
     return isConfigured.value && credentialStatus.value === "ready" ? "ready" : "unavailable";
   });
 

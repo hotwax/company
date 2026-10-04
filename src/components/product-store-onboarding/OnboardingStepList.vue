@@ -9,6 +9,7 @@
         :key="`${step.id}-${stepStatuses[step.id]}`"
         button
         :detail="false"
+        :disabled="disabledStepIds?.includes(step.id)"
         :color="step.id === currentStepId ? 'light' : undefined"
         :aria-current="step.id === currentStepId ? 'step' : undefined"
         :aria-label="stepAriaLabel(step)"
@@ -32,7 +33,7 @@
   </ion-list>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts" generic="StepId extends string, GroupId extends string">
 import { translate } from "@common"
 import { IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote } from "@ionic/vue"
 import {
@@ -41,29 +42,26 @@ import {
   ellipseOutline,
   timeOutline
 } from "ionicons/icons"
-import type {
-  ProductStoreOnboardingGroup,
-  ProductStoreOnboardingStep,
-  ProductStoreOnboardingStepId,
-  ProductStoreOnboardingStepStatus
-} from "@/config/productStoreOnboarding"
+import type { ProductStoreOnboardingStepStatus } from "@/config/productStoreOnboarding"
 
+type Step = { id: StepId; group: GroupId; label: string }
 const props = defineProps<{
-  groups: ProductStoreOnboardingGroup[]
-  steps: ProductStoreOnboardingStep[]
-  currentStepId: ProductStoreOnboardingStepId
-  stepStatuses: Record<ProductStoreOnboardingStepId, ProductStoreOnboardingStepStatus>
+  groups: { id: GroupId; label: string }[]
+  steps: Step[]
+  currentStepId: StepId
+  stepStatuses: Record<StepId, ProductStoreOnboardingStepStatus>
+  disabledStepIds?: StepId[]
 }>()
 
 defineEmits<{
-  (event: "select-step", stepId: ProductStoreOnboardingStepId): void
+  (event: "select-step", stepId: StepId): void
 }>()
 
-function stepsByGroup(groupId: ProductStoreOnboardingGroup["id"]) {
+function stepsByGroup(groupId: GroupId) {
   return props.steps.filter((step) => step.group === groupId)
 }
 
-function stepOrdinal(step: ProductStoreOnboardingStep) {
+function stepOrdinal(step: Step) {
   return props.steps.findIndex((candidate) => candidate.id === step.id) + 1
 }
 
@@ -76,7 +74,7 @@ function statusLabel(status: ProductStoreOnboardingStepStatus) {
   }[status]
 }
 
-function stepAriaLabel(step: ProductStoreOnboardingStep) {
+function stepAriaLabel(step: Step) {
   return `${stepOrdinal(step)}. ${translate(step.label)}. ${translate(statusLabel(props.stepStatuses[step.id]))}`
 }
 

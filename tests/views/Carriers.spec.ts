@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { defineComponent, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defineComponent, ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   carriers: undefined as any,
@@ -37,6 +37,15 @@ vi.mock("@/composables/useCarriers", () => ({
     methodCountsAvailable: harness.methodCountsAvailable,
     readyForDisplay: harness.readyForDisplay,
     refreshCarriers: harness.refreshCarriers,
+  }),
+}));
+
+vi.mock("@/composables/useUnigate", () => ({
+  useUnigate: () => ({
+    shippingGatewayAuths: ref([]),
+    shippingCarrierConfigs: ref([]),
+    shippingCarrierBillingConfigs: ref([]),
+    refreshAll: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
@@ -97,7 +106,7 @@ function buttonWithText(wrapper: any, text: string) {
   const button = wrapper.findAll("ion-button").find((candidate: any) =>
     candidate.text().includes(text));
 
-  if (!button) {
+  if(!button) {
     throw new Error(`Button not found: ${text}`);
   }
 
@@ -150,36 +159,23 @@ describe("carrier catalog", () => {
     expect(wrapper.text()).toContain("1 method");
   });
 
-  it("distinguishes a trustworthy empty catalog from an empty search result", async () => {
-    harness.hydrated.value = true;
-    harness.readyForDisplay.value = true;
-
-    const emptyWrapper = await mountView();
-    expect(emptyWrapper.text()).toContain("No carriers configured.");
-    emptyWrapper.unmount();
-
-    harness.carriers.value = [UPS];
-    const searchWrapper = await mountView();
-    await searchWrapper.get("[data-testid=\"carrier-search\"]").setValue("FEDEX");
-
-    expect(searchWrapper.text()).toContain("No carriers match your search.");
-    expect(searchWrapper.text()).not.toContain("No carriers configured.");
-  });
-
-  it("filters the cached rows locally by carrier ID and name", async () => {
-    harness.carriers.value = [UPS, FEDEX];
+  it("offers common carriers only for a trustworthy empty catalog", async () => {
     harness.hydrated.value = true;
     harness.readyForDisplay.value = true;
     const wrapper = await mountView();
-    const search = wrapper.get("[data-testid=\"carrier-search\"]");
+    expect(wrapper.text()).toContain("No carriers configured.");
+    expect(wrapper.text()).toContain("FedEx");
+    expect(wrapper.text()).toContain("Canada Post");
+    expect(wrapper.find("ion-segment").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=carrier-search]").exists()).toBe(false);
+  });
 
-    await search.setValue("fedex");
-    expect(wrapper.text()).toContain("Federal Express");
-    expect(wrapper.text()).not.toContain("United Parcel Service");
-
-    await search.setValue("parcel");
-    expect(wrapper.text()).toContain("United Parcel Service");
-    expect(wrapper.text()).not.toContain("Federal Express");
+  it("does not offer starter actions when an empty catalog failed to load", async () => {
+    harness.hydrated.value = true;
+    harness.hasCatalogError.value = true;
+    const wrapper = await mountView();
+    expect(wrapper.text()).not.toContain("Canada Post");
+    expect(wrapper.text()).not.toContain("No carriers configured.");
   });
 
   it("opens the selected carrier through the named detail route", async () => {
@@ -190,7 +186,7 @@ describe("carrier catalog", () => {
     const fedexRow = wrapper.findAll("ion-item").find((item: any) =>
       item.text().includes("Federal Express"));
 
-    if (!fedexRow) {
+    if(!fedexRow) {
       throw new Error("FedEx carrier row not found");
     }
 

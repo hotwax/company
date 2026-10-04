@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header :translucent="true">
       <ion-toolbar>
-        <ion-back-button default-href="/carriers" slot="start" />
+        <ion-back-button slot="start" default-href="/carriers" />
         <ion-title>{{ translate("Carrier details") }}</ion-title>
       </ion-toolbar>
     </ion-header>
@@ -53,11 +53,24 @@
         </ion-item>
 
         <main v-if="carrier" class="carrier-detail">
-          <ion-list class="items-inline">
+          <ion-card>
+            <ion-item lines="none">
+              <ion-label class="ion-text-wrap">
+                {{ translate(configuredShipmentMethods.length ? "Continue carrier setup" : "How will you use this carrier?") }}
+                <p>{{ translate("Set up labels or external fulfillment, one step at a time.") }}</p>
+              </ion-label>
+              <ion-button slot="end" :router-link="`/carriers/${encodeURIComponent(partyId)}/setup`" :disabled="!readyForMutation">
+                {{ translate("Guided setup") }}
+              </ion-button>
+            </ion-item>
+          </ion-card>
+          <ion-list v-if="configuredShipmentMethods.length" class="items-inline">
             <ion-item lines="none">
               <ion-icon slot="start" :icon="peopleOutline" />
               <ion-label>
-                <p class="overline">{{ carrier.partyId }}</p>
+                <p class="overline">
+                  {{ carrier.partyId }}
+                </p>
                 {{ carrier.groupName || carrier.partyId }}
               </ion-label>
               <ion-button
@@ -86,7 +99,6 @@
               </ion-toggle>
             </ion-item>
           </ion-list>
-          <hr />
 
           <ion-segment
             v-model="selectedSegment"
@@ -149,7 +161,7 @@
               <CarrierAccountReadiness
                 :readiness="readiness"
                 :remote="remote"
-                @open-klaviyo="openKlaviyo"
+                @open-unigate="openUnigate"
               />
             </template>
           </div>
@@ -159,9 +171,9 @@
 
     <ion-fab
       v-if="selectedSegment === 'shipping-methods' && carrier"
+      slot="fixed"
       vertical="bottom"
       horizontal="end"
-      slot="fixed"
     >
       <ion-fab-button
         :disabled="!readyForMutation || hasPendingMutation"
@@ -196,14 +208,16 @@ import {
   IonToolbar,
   alertController,
   modalController,
+  onIonViewWillEnter,
+  onIonViewWillLeave,
 } from "@ionic/vue";
 import { addOutline, peopleOutline, shieldCheckmarkOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import CarrierAccountReadiness from "@/components/carrier/CarrierAccountReadiness.vue";
 import CarrierFacilityList from "@/components/carrier/CarrierFacilityList.vue";
 import CarrierStoreMethodList from "@/components/carrier/CarrierStoreMethodList.vue";
-import ShipmentMethods from "@/components/carrier/ShipmentMethods.vue";
 import CreateShipmentMethodModal from "@/components/carrier/CreateShipmentMethodModal.vue";
+import ShipmentMethods from "@/components/carrier/ShipmentMethods.vue";
 import {
   type CarrierShipmentMethod,
   type ProductStoreShipmentMethod,
@@ -216,12 +230,12 @@ import {
   expireProductStoreShipmentMethod,
   updateProductStoreShipmentMethod,
 } from "@/composables/useProductStores";
+import router from "@/router";
+import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
 import {
   translateMutationError,
   translateReferenceDataError,
 } from "@/utils/errorPresentation";
-import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
-import router from "@/router";
 
 const props = defineProps<{
   partyId: string;
@@ -243,6 +257,16 @@ const {
   refreshDetails,
 } = useCarrier(props.partyId);
 
+const viewingDetails = ref(false);
+function openInitialSetup() {
+  if(viewingDetails.value && readyForMutation.value && carrier.value && !configuredShipmentMethods.value.length) {
+    router.replace(`/carriers/${encodeURIComponent(props.partyId)}/setup`);
+  }
+}
+onIonViewWillEnter(() => { viewingDetails.value = true; openInitialSetup(); });
+onIonViewWillLeave(() => { viewingDetails.value = false; });
+watch([readyForMutation, carrier, configuredShipmentMethods], openInitialSetup);
+
 const selectedSegment = ref("shipping-methods");
 const configuredOnly = ref(true);
 const retryingDetails = ref(false);
@@ -252,17 +276,18 @@ const hasPendingMutation = computed(() => pendingActionKeys.value.size > 0);
 const pendingKeys = computed(() => Array.from(pendingActionKeys.value));
 
 const selectedStore = computed(() => {
-  if (!selectedSegment.value.startsWith("store:")) {
+  if(!selectedSegment.value.startsWith("store:")) {
     return undefined;
   }
   const storeId = selectedSegment.value.slice("store:".length);
+
   return productStores.value.find((store) => store.productStoreId === storeId);
 });
 
 watch(productStores, (stores) => {
-  if (selectedSegment.value.startsWith("store:")) {
+  if(selectedSegment.value.startsWith("store:")) {
     const storeId = selectedSegment.value.slice("store:".length);
-    if (!stores.some((store) => store.productStoreId === storeId)) {
+    if(!stores.some((store) => store.productStoreId === storeId)) {
       selectedSegment.value = "shipping-methods";
     }
   }
@@ -289,16 +314,19 @@ async function runGuardedMutation(
   addPendingKey(key);
   try {
     await operation();
-    if (successMessage) {
+    if(successMessage) {
       commonUtil.showToast(translate(successMessage));
     }
+
     return true;
   } catch (error: any) {
-    if (isCacheReconciliationError(error)) {
+    if(isCacheReconciliationError(error)) {
       commonUtil.showToast(translateMutationError(error, errorMessage));
+
       return true;
     }
     commonUtil.showToast(translateMutationError(error, errorMessage));
+
     return false;
   } finally {
     removePendingKey(key);
@@ -312,11 +340,12 @@ const openCreateShipmentMethodModal = async () => {
       carrierPartyId: props.partyId,
     },
   });
+
   return modal.present();
 };
 
 const openRenameCarrierAlert = async () => {
-  if (!carrier.value) return;
+  if(!carrier.value) {return;}
 
   const alert = await alertController.create({
     header: translate("Edit carrier detail"),
@@ -330,11 +359,12 @@ const openRenameCarrierAlert = async () => {
         text: translate("Save"),
         handler: async (data) => {
           const newName = data.groupName?.trim();
-          if (!newName) {
+          if(!newName) {
             commonUtil.showToast(translate("Carrier name can not be empty."));
+
             return false;
           }
-          if (newName !== carrier.value?.groupName) {
+          if(newName !== carrier.value?.groupName) {
             return await runGuardedMutation(
               `carrier:${carrier.value?.partyId}:rename`,
               () => renameCarrier(carrier.value!.partyId, newName),
@@ -342,6 +372,7 @@ const openRenameCarrierAlert = async () => {
               "Failed to rename the carrier.",
             );
           }
+
           return true;
         },
       },
@@ -357,7 +388,7 @@ const handleFacilityToggle = async ({
   facility: Record<string, any>;
   enabled: boolean;
 }) => {
-  if (!carrier.value) return;
+  if(!carrier.value) {return;}
   const key = `facility:${facility.facilityId}`;
   await runGuardedMutation(
     key,
@@ -384,21 +415,20 @@ const handleStoreAssociationToggle = async ({
   enabled: boolean;
 }) => {
   const store = selectedStore.value;
-  if (!store || !carrier.value) return;
+  if(!store || !carrier.value) {return;}
 
   const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:association`;
   await runGuardedMutation(
     key,
     async () => {
-      if (enabled) {
+      if(enabled) {
         await addProductStoreShipmentMethod(store.productStoreId, {
-          productStoreId: store.productStoreId,
           shipmentMethodTypeId: method.shipmentMethodTypeId,
           partyId: carrier.value!.partyId,
           roleTypeId: "CARRIER",
           isTrackingRequired: false,
         });
-      } else if (association?.productStoreShipMethId) {
+      } else if(association?.productStoreShipMethId) {
         await expireProductStoreShipmentMethod(
           store.productStoreId,
           association.productStoreShipMethId,
@@ -422,7 +452,7 @@ const handleStoreTrackingToggle = async ({
   required: boolean;
 }) => {
   const store = selectedStore.value;
-  if (!store || !association.productStoreShipMethId) return;
+  if(!store || !association.productStoreShipMethId) {return;}
 
   const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:tracking`;
   await runGuardedMutation(
@@ -448,7 +478,7 @@ const handleStoreGatewayUpdate = async ({
   shipmentGatewayConfigId?: string;
 }) => {
   const store = selectedStore.value;
-  if (!store || !association.productStoreShipMethId) return;
+  if(!store || !association.productStoreShipMethId) {return;}
 
   const key = `store:${store.productStoreId}:${method.shipmentMethodTypeId}:gateway`;
   await runGuardedMutation(
@@ -465,7 +495,7 @@ const handleStoreGatewayUpdate = async ({
 };
 
 const handleRetryDetails = async () => {
-  if (retryingDetails.value) {
+  if(retryingDetails.value) {
     return;
   }
   retryingDetails.value = true;
@@ -473,16 +503,14 @@ const handleRetryDetails = async () => {
     await refreshDetails();
     commonUtil.showToast(translate("Carrier details refreshed."));
   } catch (err: any) {
-    commonUtil.showToast(
-      translateReferenceDataError(err?.message || "Failed to refresh carrier details."),
-    );
+    commonUtil.showToast(translateReferenceDataError(err?.message || "Failed to refresh carrier details."),);
   } finally {
     retryingDetails.value = false;
   }
 };
 
-const openKlaviyo = () => {
-  router.push({ path: "/klaviyo" });
+const openUnigate = () => {
+  router.push({ path: "/unigate" });
 };
 </script>
 

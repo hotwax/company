@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, telescopeOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -165,27 +165,26 @@ const visibleAppPages = computed(() =>
 
 const integrationPages = [
   {
-    title: "Carriers",
-    url: "/carriers",
-    childRoutes: ["/carriers/", "/carrier-details/"],
-    permission: Actions.APP_CARRIERS_VIEW,
-    iosIcon: airplaneOutline,
-    mdIcon: airplaneOutline,
+    title: "Shopify",
+    url: "/shopify",
+    childRoutes: ["/shopify-connection-details"],
+    iosIcon: cartOutline,
+    mdIcon: cartOutline,
+  },
+  {
+    title: "NetSuite",
+    url: "/netsuite",
+    childRoutes: ["/netsuite/"],
+    iosIcon: walletOutline,
+    mdIcon: walletOutline
   },
   {
     title: "Unigate",
     url: "/unigate",
     childRoutes: ["/unigate/"],
     permission: Actions.APP_CARRIERS_VIEW,
-    iosIcon: layersOutline,
-    mdIcon: layersOutline,
-  },
-  {
-    title: "Shopify",
-    url: "/shopify",
-    childRoutes: ["/shopify-connection-details"],
-    iosIcon: cartOutline,
-    mdIcon: cartOutline,
+    iosIcon: telescopeOutline,
+    mdIcon: telescopeOutline,
   },
   {
     title: "Klaviyo",
@@ -195,11 +194,12 @@ const integrationPages = [
     mdIcon: mailOutline,
   },
   {
-    title: "NetSuite",
-    url: "/netsuite",
-    childRoutes: ["/netsuite/"],
-    iosIcon: walletOutline,
-    mdIcon: walletOutline
+    title: "Carriers",
+    url: "/carriers",
+    childRoutes: ["/carriers/", "/carrier-details/"],
+    permission: Actions.APP_CARRIERS_VIEW,
+    iosIcon: airplaneOutline,
+    mdIcon: airplaneOutline,
   },
 ];
 
@@ -225,18 +225,18 @@ const userPages = [
     mdIcon: keyOutline,
   },
   {
-    title: "Push Notifications",
-    url: "/notifications",
-    permission: Actions.APP_NOTIFICATIONS_VIEW,
-    iosIcon: notificationsOutline,
-    mdIcon: notificationsOutline,
-  },
-  {
     title: "App Permissions",
     url: "/app-permissions",
     permission: Actions.APP_APP_PERMISSIONS_VIEW,
     iosIcon: shieldCheckmarkOutline,
     mdIcon: shieldCheckmarkOutline,
+  },
+  {
+    title: "Push Notifications",
+    url: "/notifications",
+    permission: Actions.APP_NOTIFICATIONS_VIEW,
+    iosIcon: notificationsOutline,
+    mdIcon: notificationsOutline,
   }
 ];
 
