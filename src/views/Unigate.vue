@@ -151,7 +151,7 @@ const environment = ref("");
 const customUrl = ref("");
 const tenantId = ref("");
 const key = ref("");
-const urls: Record<string, string> = { uat: "https://unigate-uat.hotwax.io/rest/s1/unigate/", production: "https://unigate.hotwax.io/rest/s1/unigate/" };
+const urls: Record<string, string> = { uat: "https://unigate-uat.hotwax.io", production: "https://unigate.hotwax.io" };
 const sendUrl = computed(() => environment.value === "custom" ? customUrl.value.trim() : urls[environment.value] || "");
 const unigateAppUrl = computed(() => {
   try {

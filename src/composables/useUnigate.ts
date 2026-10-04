@@ -2,6 +2,7 @@
 import { api, commonUtil } from "@common";
 import { type Ref, computed, reactive, unref } from "vue";
 import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { normalizeUnigateSendUrl } from "@/utils/maarg";
 import { onSessionCleared } from "./sessionScope";
 
 const log = {
@@ -176,7 +177,7 @@ export async function updateUnigateConnection(payload: {
 }): Promise<void> {
   const data: any = {
     systemMessageRemoteId: "UNIGATE_CONFIG",
-    sendUrl: payload.sendUrl.trim(),
+    sendUrl: normalizeUnigateSendUrl(payload.sendUrl),
     internalId: payload.internalId.trim(),
     description: payload.description?.trim() || "Unigate configuration for shipping and communication integrations",
   };

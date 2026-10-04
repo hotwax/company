@@ -18,7 +18,7 @@
             v-model="formData.sendUrl"
             :label="translate('Unigate base URL')"
             label-placement="floating"
-            placeholder="https://unigate-uat.hotwax.io/rest/s1/unigate"
+            placeholder="https://unigate-uat.hotwax.io"
             required
             data-testid="unigate-send-url-input"
           />

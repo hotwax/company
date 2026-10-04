@@ -49,21 +49,22 @@ export function normalizeUnigateSendUrl(sendUrl: string) {
 
   try {
     const url = new URL(trimmedSendUrl);
-    const normalizedPath = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+    // OMS adds the API prefix; accept previously saved API-base URLs when editing.
+    const normalizedPath = url.pathname.replace(/\/+$/, "").replace(/\/rest\/s1\/unigate$/, "");
     return `${url.origin}${normalizedPath}`;
   } catch {
-    return trimmedSendUrl.endsWith("/") ? trimmedSendUrl : `${trimmedSendUrl}/`;
+    return trimmedSendUrl.replace(/\/+$/, "").replace(/\/rest\/s1\/unigate$/, "");
   }
 }
 
 export function getDefaultUnigateSendUrl(maargInfo: any) {
   const env = canonicalEnv(getMaargInstancePurpose(maargInfo));
   const host = UNIGATE_HOSTS_BY_ENV[env];
-  return host ? `https://${host}/rest/s1/unigate/` : "";
+  return host ? `https://${host}` : "";
 }
 
 export function getPreferredUnigateSendUrl(existingSendUrl: string, maargInfo: any) {
-  return String(existingSendUrl || "").trim() || getDefaultUnigateSendUrl(maargInfo);
+  return normalizeUnigateSendUrl(existingSendUrl) || getDefaultUnigateSendUrl(maargInfo);
 }
 
 // Emit a warning when the configured Unigate URL is recognisably from a

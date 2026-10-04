@@ -23,14 +23,22 @@ describe("maarg utils", () => {
   });
 
   describe("normalizeUnigateSendUrl", () => {
-    it("should append trailing slash and normalize valid URLs", () => {
-      expect(normalizeUnigateSendUrl("https://example.com/api")).toBe("https://example.com/api/");
-      expect(normalizeUnigateSendUrl("https://example.com/api/")).toBe("https://example.com/api/");
+    it("stores the instance base URL without a trailing slash", () => {
+      expect(normalizeUnigateSendUrl(" https://example.com/ ")).toBe("https://example.com");
+      expect(normalizeUnigateSendUrl("https://example.com/api/")).toBe("https://example.com/api");
+    });
+
+    it("accepts legacy API-base URLs without saving the API prefix", () => {
+      for(const url of ["https://example.com/rest/s1/unigate", "https://example.com/rest/s1/unigate/", "https://example.com/rest/s1/unigate///"]) {
+        expect(normalizeUnigateSendUrl(url)).toBe("https://example.com");
+      }
+
+      expect(normalizeUnigateSendUrl("https://example.com/context/rest/s1/unigate/")).toBe("https://example.com/context");
     });
 
     it("should fallback to string operations for invalid URLs", () => {
-      expect(normalizeUnigateSendUrl("invalid-url")).toBe("invalid-url/");
-      expect(normalizeUnigateSendUrl("invalid-url/")).toBe("invalid-url/");
+      expect(normalizeUnigateSendUrl("invalid-url")).toBe("invalid-url");
+      expect(normalizeUnigateSendUrl("invalid-url/")).toBe("invalid-url");
     });
 
     it("should handle empty strings", () => {
@@ -43,17 +51,17 @@ describe("maarg utils", () => {
   describe("getDefaultUnigateSendUrl", () => {
     it("should map known environments correctly", () => {
       expect(getDefaultUnigateSendUrl({ instanceInfo: { instancePurpose: "prod" } }))
-        .toBe("https://unigate.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate.hotwax.io");
       expect(getDefaultUnigateSendUrl({ instanceInfo: { instancePurpose: "production" } }))
-        .toBe("https://unigate.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate.hotwax.io");
 
       expect(getDefaultUnigateSendUrl({ instanceInfo: { instancePurpose: "uat" } }))
-        .toBe("https://unigate-uat.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate-uat.hotwax.io");
 
       expect(getDefaultUnigateSendUrl({ instanceInfo: { instancePurpose: "dev" } }))
-        .toBe("https://unigate-uat.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate-uat.hotwax.io");
       expect(getDefaultUnigateSendUrl({ instanceInfo: { instancePurpose: "development" } }))
-        .toBe("https://unigate-uat.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate-uat.hotwax.io");
     });
 
     it("should return empty string for unknown environments", () => {
@@ -65,14 +73,14 @@ describe("maarg utils", () => {
   describe("getPreferredUnigateSendUrl", () => {
     it("should prefer existing URL if provided", () => {
       expect(getPreferredUnigateSendUrl("https://custom.example.com/", { instanceInfo: { instancePurpose: "prod" } }))
-        .toBe("https://custom.example.com/");
+        .toBe("https://custom.example.com");
     });
 
     it("should fallback to default URL if existing is empty", () => {
       expect(getPreferredUnigateSendUrl("", { instanceInfo: { instancePurpose: "prod" } }))
-        .toBe("https://unigate.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate.hotwax.io");
       expect(getPreferredUnigateSendUrl("  ", { instanceInfo: { instancePurpose: "prod" } }))
-        .toBe("https://unigate.hotwax.io/rest/s1/unigate/");
+        .toBe("https://unigate.hotwax.io");
     });
   });
 
@@ -104,7 +112,7 @@ describe("maarg utils", () => {
 
     it("should warn on unknown URL fallback mismatch", () => {
       expect(getUnigateSendUrlWarning("https://unknown.example.com/", { instanceInfo: { instancePurpose: "prod" } }))
-        .toBe("production OMS instances are expected to use https://unigate.hotwax.io/rest/s1/unigate/. This tenant is currently using https://unknown.example.com/.");
+        .toBe("production OMS instances are expected to use https://unigate.hotwax.io. This tenant is currently using https://unknown.example.com.");
     });
 
     it("should return empty string if instance purpose is unknown and url is unknown", () => {

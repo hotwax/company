@@ -35,6 +35,7 @@ describe("UniGate connection state", () => {
     await state.load();
     expect(await state.save({ tenantId: saved.tenantId, sendUrl: saved.sendUrl, key: "" })).toBe(true);
     expect(harness.api.mock.calls[1][0].method).toBe("put");
+    expect(harness.api.mock.calls[1][0].data.sendUrl).toBe("https://unigate-uat.hotwax.io");
     expect(harness.api.mock.calls[1][0].data).not.toHaveProperty("publicKey");
     expect(state.result.value).toBeNull();
     harness.api.mockRejectedValueOnce({ response: { status: 404 } }).mockRejectedValueOnce({ response: { status: 404 } });

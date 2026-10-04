@@ -51,7 +51,7 @@ Lists all OMS-side system message remotes. We filter client-side for the
     "systemMessageRemoteId": "UNIGATE_CONFIG",
     "internalId": "TENANT_PARTY_ID",
     "description": "Unigate tenant connection",
-    "sendUrl": "https://dev-unigate.hotwax.io/rest/s1/unigate/",
+    "sendUrl": "https://dev-unigate.hotwax.io",
     "publicKey": "<unigate api key>",
     "authHeaderName": "api_key"
   }
@@ -60,6 +60,11 @@ Lists all OMS-side system message remotes. We filter client-side for the
 
 The fields the UI reads: `systemMessageRemoteId`, `internalId` (tenantPartyId),
 `sendUrl`, `description`. Anything else is ignored.
+
+The Company app saves the UniGate instance base URL without `/rest/s1/unigate/`.
+Deploy the matching OMS and Poorti URL changes before saving this format on an
+existing instance. The updated backend adds the API prefix and also accepts
+older configurations that already contain it.
 
 ---
 
