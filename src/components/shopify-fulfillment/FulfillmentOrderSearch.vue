@@ -56,10 +56,11 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { api, translate } from '@common';
+import { translate } from '@common';
 import { IonCard, IonCardHeader, IonCardTitle, IonSearchbar, IonSelect, IonSelectOption, IonInput, IonItem, IonList, IonLabel, IonCheckbox, IonNote, IonButton, IonChip, IonIcon, IonSkeletonText, IonModal, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter } from '@ionic/vue';
 import { closeCircle, closeOutline } from 'ionicons/icons';
 import { useStatuses } from '@/composables/useSeed';
+import { searchFulfillmentOrders } from '@/composables/useShopifyFulfillment';
 import { formatDateTime, hasError } from '@/utils';
 
 export interface SearchOrder { orderId: string; orderName?: string; shopifyOrderId?: string; orderDate?: number; statusId?: string }
@@ -130,17 +131,8 @@ async function fetchPage(term: string) {
     if (dateFrom.value) { search.orderDate_from = `${dateFrom.value} 00:00:00`; }
     if (dateThru.value) { search.orderDate_thru = `${dateThru.value} 23:59:59`; }
 
-    const response: any = await api({
-      url: 'oms/dataDocumentView',
-      method: 'POST',
-      data: {
-        dataDocumentId: DOCUMENT_ID,
-        pageIndex: 0,
-        // One over the page so a full page tells us there is more, without a count call.
-        pageSize: PAGE + 1,
-        customParametersMap: search,
-      },
-    });
+    // One over the page so a full page tells us there is more, without a count call.
+    const response: any = await searchFulfillmentOrders(DOCUMENT_ID, 0, PAGE + 1, search);
     if (id !== request) return;
     const rows = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : undefined;
     if (hasError(response) || !rows) throw new Error('Invalid order search');

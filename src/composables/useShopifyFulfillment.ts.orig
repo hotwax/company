@@ -449,11 +449,11 @@ export async function scheduleFulfillmentDiagnosis(shopId: string, shipmentId: s
   return response;
 }
 
-export async function searchFulfillmentOrders(dataDocumentId: string, pageIndex: number, pageSize: number, customParametersMap: any) {
+export async function searchFulfillmentOrders(dataDocumentId: string, query: string, pageIndex: number, pageSize: number, search: any) {
   const response: any = await api({
     url: "oms/dataDocumentView",
     method: "post",
-    data: { dataDocumentId, pageIndex, pageSize, customParametersMap },
+    data: { dataDocumentId, pageIndex, pageSize, search, keyword: query },
   });
   return response;
 }
