@@ -1,0 +1,22 @@
+--- src/components/shopify-fulfillment/FulfillmentOrderSearch.vue
++++ src/components/shopify-fulfillment/FulfillmentOrderSearch.vue
+@@ -131,16 +131,8 @@
+     if (dateFrom.value) { search.orderDate_from = `${dateFrom.value} 00:00:00`; }
+     if (dateThru.value) { search.orderDate_thru = `${dateThru.value} 23:59:59`; }
+
+-    const response: any = await api({
+-      url: 'oms/dataDocumentView',
+-      method: 'POST',
+-      data: {
+-        dataDocumentId: DOCUMENT_ID,
+-        pageIndex: 0,
+-        // One over the page so a full page tells us there is more, without a count call.
+-        pageSize: PAGE + 1,
+-        customParametersMap: search,
+-      },
+-    });
++    // One over the page so a full page tells us there is more, without a count call.
++    const response: any = await searchFulfillmentOrders(DOCUMENT_ID, 0, PAGE + 1, search);
+     if (id !== request) return;
+     const rows = Array.isArray(response?.data?.entityValueList) ? response.data.entityValueList : undefined;
+     if (hasError(response) || !rows) throw new Error('Invalid order search');

@@ -1,0 +1,16 @@
+--- src/composables/useShopifyFulfillment.ts
++++ src/composables/useShopifyFulfillment.ts
+@@ -449,9 +449,9 @@
+   return response;
+ }
+
+-export async function searchFulfillmentOrders(dataDocumentId: string, query: string, pageIndex: number, pageSize: number, search: any) {
++export async function searchFulfillmentOrders(dataDocumentId: string, pageIndex: number, pageSize: number, customParametersMap: any) {
+   const response: any = await api({
+     url: "oms/dataDocumentView",
+     method: "post",
+-    data: { dataDocumentId, pageIndex, pageSize, search, keyword: query },
++    data: { dataDocumentId, pageIndex, pageSize, customParametersMap },
+   });
+   return response;
+ }

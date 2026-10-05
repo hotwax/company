@@ -1,0 +1,40 @@
+--- src/composables/useShopifyFulfillment.ts
++++ src/composables/useShopifyFulfillment.ts
+@@ -359,3 +359,37 @@
+   const health = computed(() => records.value.find(row => row.shopId === String(toValue(shopIdSource) ?? "")));
+   return { health, hydrated };
+ }
++
++export async function releaseFulfillmentHold(shopId: string, shipmentId: string, fulfillmentOrderId: string, holdId: string) {
++  const response: any = await api({
++    url: "sob/shopify/fulfillmentHold",
++    method: "post",
++    data: { shopId, shipmentId, fulfillmentOrderId, holdId },
++  });
++  return response;
++}
++
++export async function scheduleFulfillmentDiagnosis(shopId: string, shipmentId: string, systemMessageId?: string, inspectHolds?: boolean) {
++  const params: any = { shopId, shipmentId };
++  if (systemMessageId) {
++    params.systemMessageId = systemMessageId;
++  }
++  if (inspectHolds) {
++    params.inspectHolds = true;
++  }
++  const response: any = await api({
++    url: "sob/shopify/fulfillmentDiagnosis",
++    method: "get",
++    params,
++  });
++  return response;
++}
++
++export async function searchFulfillmentOrders(dataDocumentId: string, query: string, pageIndex: number, pageSize: number, search: any) {
++  const response: any = await api({
++    url: "oms/dataDocumentView",
++    method: "post",
++    data: { dataDocumentId, pageIndex, pageSize, search, keyword: query },
++  });
++  return response;
++}
