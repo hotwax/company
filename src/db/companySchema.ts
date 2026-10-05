@@ -82,6 +82,12 @@ export const companySchema = defineSchema({
       transferOrderIds: "structured",
       transferMembershipChecked: "text",
       transferMembershipError: "text",
+
+      // --- the import's files: the import history links its error file and names its source ---
+      errorLogContentId: "text",
+      fileName: "text",
+      createdByJobRunId: "text",
+      createdStamp: "date",
     },
     indexes: [
       "configId",
@@ -135,6 +141,10 @@ export const companySchema = defineSchema({
        * view and history both display it; at the configured 200-message window that is ~200KB.
        */
       messageText: "text",
+      /** The order a message is about, where the producer stamps one — the order-sync screens link it. */
+      orderId: "text",
+      /** The job run that produced the message — order-sync history's "Job run" and its `?jobRunId=` link. */
+      createdByJobRunId: "text",
     },
     indexes: [
       "systemMessageTypeId",
@@ -154,9 +164,11 @@ export const companySchema = defineSchema({
   /**
    * ServiceJobRun (`moqui.service.job.ServiceJobRun`) — one execution of a scheduled job.
    *
-   * Heavy columns are deliberately dropped: `results` (text-very-long), `parameters`, `messages` and
-   * the host/thread diagnostics. The sync screens only ask "did the last run succeed, and when" —
-   * `hasError` plus the timestamps answer that, and `errors` carries the reason when it did not.
+   * `results`, `parameters` and `messages` are stored as the server sends them (`structured` passes
+   * a value through untouched): the transfer sync Errors tab and the inventory reset view read
+   * `results`, order sync links a run through its `parameters`, and onboarding correlates a run to
+   * the job it launched through them. A stored row carries only declared fields, so leaving them out
+   * made every one of those reads come back empty. Only the host/thread diagnostics are dropped.
    */
   serviceJobRuns: defineEntity({
     primaryKey: "jobRunId",
@@ -167,6 +179,9 @@ export const companySchema = defineSchema({
       errors: "text",
       startTime: "date",
       endTime: "date",
+      results: "structured",
+      parameters: "structured",
+      messages: "structured",
     },
     indexes: ["jobName", "startTime", "endTime", "hasError", "[jobName+startTime]"],
   }),
@@ -282,6 +297,10 @@ export const companySchema = defineSchema({
        * picks the wrong job silently.
        */
       serviceJobParameters: "structured",
+      /** A child job names the job it was cloned from; the job screens group and label by it. */
+      parentJobName: "text",
+      /** Rendered by the order-sync "Queue order requests" row; kept as the server sends it. */
+      lastRunTime: "structured",
     },
     indexes: ["serviceName", "paused", "cronExpression", "nextExecutionDateTime"],
   }),
@@ -436,6 +455,8 @@ export const companySchema = defineSchema({
       sequenceNumber: "count",
       fromDate: "date",
       thruDate: "date",
+      /** The NetSuite Shipment Methods screen's "orders" column, when the route returns it. */
+      orderCount: "count",
     },
     indexes: [
       "productStoreId",
@@ -456,6 +477,16 @@ export const companySchema = defineSchema({
       description: "text",
       parentTypeId: "text",
       lastUpdatedStamp: "date",
+      // The execution fields. The product-sync upgrade assistant decides whether a legacy type is
+      // already retired from exactly these, so without them every legacy type reads as retired and
+      // its teardown is skipped.
+      sendServiceName: "text",
+      consumeServiceName: "text",
+      sendPath: "text",
+      receivePath: "text",
+      receiveMovePath: "text",
+      receiveFilePattern: "text",
+      receiveResponseEnumId: "text",
     },
     indexes: ["parentTypeId"],
   }),
@@ -647,13 +678,22 @@ export const companySchema = defineSchema({
       systemMessageId: "text",
       parentProductId: "text",
       price: "count",
-      features: "text",
-      identifications: "text",
-      tags: "text",
-      assocs: "text",
-      differenceMap: "text",
+      // Kept as the server sends them — a JSON string or an object. `text` would flatten an object to
+      // "[object Object]", and `useProductUpdateHistory`'s `parseJson` already accepts either.
+      features: "structured",
+      identifications: "structured",
+      tags: "structured",
+      assocs: "structured",
+      differenceMap: "structured",
       lastUpdatedStamp: "date",
       createdStamp: "date",
+      // Display names the recent-sync list prefers over the diff's own copies.
+      parentTitle: "text",
+      parentProductName: "text",
+      productTitle: "text",
+      variantTitle: "text",
+      internalName: "text",
+      sku: "text",
     },
     indexes: ["shopId", "productId", "systemMessageId", "lastUpdatedStamp", "[shopId+lastUpdatedStamp]"],
   }),
@@ -719,6 +759,9 @@ export const companySchema = defineSchema({
       primaryEntityName: "text",
     },
     indexes: ["dataDocumentId", "dataFeedId"],
+    // "Attached to nothing" arrives with no `dataFeedId` at all; without a stand-in the row is
+    // unkeyable and dropped, and the screen reports the document as missing.
+    keyDefaults: { dataFeedId: "" },
   }),
 
   /**
@@ -848,21 +891,25 @@ export const companySchema = defineSchema({
   }),
 
   /**
-   * PK UNVERIFIED: `facilityIdentificationProjection`'s doc comment records that its endpoint also
-   * returns an empty 200 on the available instance, so the natural key could not be confirmed
-   * live. Converted to its implied compound key (facilityId + facilityIdenTypeId) — `buildKey`
-   * requires both with no tolerance, per its own comment explaining that defaulting a missing type
-   * would make two different identifications on one facility collide.
+   * FacilityIdentification — date-effective, keyed (facilityId, facilityIdenTypeId, fromDate).
+   *
+   * `oms/facilities/identifications` returns thru-dated rows alongside the live one, so the key MUST
+   * include `fromDate`: keyed on facility + type alone, the expired row and its replacement collapse
+   * into one, and whichever the response lists last wins. `fromDate` is also what an edit or a
+   * remove targets — sent without it, the server inserts a new identification and leaves the old one
+   * in force — and `thruDate` is what lets `isEffectiveNow` hide a removed one.
    */
   facilityIdentifications: defineEntity({
-    primaryKey: "facilityId,facilityIdenTypeId",
+    primaryKey: "facilityId,facilityIdenTypeId,fromDate",
     fields: {
       facilityId: "text",
       facilityIdenTypeId: "text",
       idValue: "text",
       description: "text",
+      fromDate: "date",
+      thruDate: "date",
     },
-    indexes: ["facilityId", "facilityIdenTypeId"],
+    indexes: ["facilityId", "facilityIdenTypeId", "thruDate"],
   }),
 
   /**
@@ -882,15 +929,40 @@ export const companySchema = defineSchema({
     indexes: ["appId", "environmentTypeId"],
   }),
 
+  /**
+   * Outstanding transfer work — one row per ARTIFACT Shopify has not been told about yet.
+   *
+   * Five server resources feed this one table, discriminated by `segment`. An order has many
+   * artifacts per segment (receipts, shipment statuses, item changes, unpushed items), so the key is
+   * (segment, shopId, orderId, artifactId); keyed on the order alone, every artifact of an order
+   * collapsed into one row. `artifactId` and `occurredAt` are stamped by the sync domain.
+   */
   shopifyTransferPending: defineEntity({
-    primaryKey: "segment,shopId,orderId",
+    primaryKey: "segment,shopId,orderId,artifactId",
     fields: {
       segment: "text",
       shopId: "text",
       orderId: "text",
+      artifactId: "text",
+      shopifyInventoryTransferId: "text",
+      orderItemSeqId: "text",
+      productId: "text",
+      quantity: "text",
+      // Exactly one of these identifies the artifact, according to `segment`.
+      shipmentId: "text",
       shipmentStatusId: "text",
       receiptId: "text",
+      orderStatusId: "text",
+      orderItemChangeId: "text",
       occurredAt: "date",
+      lastUpdatedStamp: "date",
+      // Read by the Receipts tab, which matches it against the live receipts' own value as a string,
+      // so it is kept exactly as sent; `occurredAt` is the millis copy used for ordering.
+      datetimeReceived: "structured",
+      quantityAccepted: "count",
+      quantityRejected: "count",
+      changedCancelQuantity: "count",
+      cancelQuantity: "count",
     },
     indexes: ["shopId", "segment", "orderId", "[shopId+segment]"],
   }),

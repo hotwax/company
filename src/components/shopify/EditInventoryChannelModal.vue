@@ -172,7 +172,7 @@ const emit = defineEmits<{
 }>();
 
 const { records: cachedJobs } = useDb<any>("serviceJobs");
-const { records: inventoryChannels } = useDb<any>("inventoryChannel");
+const { records: inventoryChannels } = useDb<any>("inventoryChannels");
 
 const isSettingUpJob = ref(false);
 

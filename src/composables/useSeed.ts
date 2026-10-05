@@ -120,7 +120,7 @@ export function useGeos() {
 
 // --- type tables ----------------------------------------------------------------------------
 
-function sortedTypes(cache: Parameters<typeof useDb>[0]) {
+function sortedTypes(cache: string) {
   const { records, hydrated } = useDb<any>(cache);
   return { records: computed(() => [...records.value].sort(byDescription)), hydrated };
 }
@@ -135,32 +135,33 @@ export function useProductTypes() {
  * callers must not resync it themselves.
  */
 export function useShipmentMethodTypeMutations() {
+  /**
+   * A failed WRITE is a plain error. Only a failure after the write committed is a
+   * `CacheReconciliationError` — callers present that one as "saved, but the list may be stale", so
+   * raising it for a rejected create would report a type that was never created as saved.
+   */
   const assertSuccessful = (response: any, fallback: string) => {
     if (commonUtil.hasError(response)) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        {},
-        new Error(getResponseErrorMessage(response, fallback)),
-      );
+      throw new Error(getResponseErrorMessage(response, fallback));
+    }
+  };
+
+  const resyncShipmentMethodTypes = async (shipmentMethodTypeId: string) => {
+    try {
+      await resyncDomain("shipmentMethodType");
+    } catch (cause) {
+      throw new CacheReconciliationError("shipmentMethodType", { shipmentMethodTypeId }, cause);
     }
   };
 
   const createShipmentMethodType = async (payload: { shipmentMethodTypeId: string; description: string; sequenceNum?: number }) => {
     const response: any = await api({
-      url: "oms/shipmentMethodTypes",
+      url: "oms/shippingGateways/shipmentMethodTypes",
       method: "post",
       data: payload,
     });
-    assertSuccessful(response, "Failed to create shipping method type");
-    try {
-      await resyncDomain("shipmentMethodType");
-    } catch (cause) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        { shipmentMethodTypeId: payload.shipmentMethodTypeId },
-        cause,
-      );
-    }
+    assertSuccessful(response, "Failed to create the shipment method type.");
+    await resyncShipmentMethodTypes(payload.shipmentMethodTypeId);
     return response;
   };
 
@@ -168,18 +169,10 @@ export function useShipmentMethodTypeMutations() {
     const response: any = await api({
       url: `oms/shippingGateways/shipmentMethodTypes/${encodeURIComponent(shipmentMethodTypeId)}`,
       method: "put",
-      data: { shipmentMethodTypeId, description },
+      data: { shipmentMethodTypeId, description: description.trim() },
     });
-    assertSuccessful(response, "Failed to rename shipping method type");
-    try {
-      await resyncDomain("shipmentMethodType");
-    } catch (cause) {
-      throw new CacheReconciliationError(
-        "shipmentMethodType",
-        { shipmentMethodTypeId },
-        cause,
-      );
-    }
+    assertSuccessful(response, "Failed to rename the shipment method type.");
+    await resyncShipmentMethodTypes(shipmentMethodTypeId);
     return response;
   };
 

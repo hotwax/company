@@ -85,8 +85,8 @@ const renameShipmentMethod = async () => {
           }
           if (updatedName !== props.shipmentMethod.description) {
             try {
-              const { renameShipmentMethodType } = useShipmentMethodTypeMutations(props.shipmentMethod.shipmentMethodTypeId);
-              await renameShipmentMethodType(updatedName);
+              const { renameShipmentMethodType } = useShipmentMethodTypeMutations();
+              await renameShipmentMethodType(props.shipmentMethod.shipmentMethodTypeId, updatedName);
               commonUtil.showToast(translate("Shipment method renamed successfully."));
               emit("mutation-complete");
             } catch (err) {

@@ -1,5 +1,6 @@
 import { computed, reactive, toRefs, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
 import { api, logger, useDb } from '@common'
+import { companyDb } from '@/db/companyDb';
 import { clearStorage, getErrorRecords, setErrorRecords } from '@/utils/storage';
 import Papa from 'papaparse';
 
@@ -165,8 +166,7 @@ export function useDataManager() {
   const ensureDataManagerLog = async (logId: string) => {
     if (!logId) return null;
     try {
-      const cached = (await dataManagerLogCache.all())
-        .find((row: any) => String(row.logId) === String(logId));
+      const cached = await companyDb.entity("dataManagerLogs").get(String(logId));
       if (cached) return cached;
     } catch {
       // cache unavailable — fall through to the network
@@ -180,7 +180,7 @@ export function useDataManager() {
       }) as any;
       const row = getFirstMdmLog(resp?.data);
       if (row) {
-        await dataManagerLogCache.upsertMany([row]);
+        await companyDb.entity("dataManagerLogs").upsertMany([row]);
         return row;
       }
     } catch (err) {

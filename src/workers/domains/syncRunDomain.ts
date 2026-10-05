@@ -107,10 +107,10 @@ async function syncScope(ctx: SyncContext, scope: SyncRunScope, args: SyncRunArg
   const batchSize = args.batchSize ?? 25;
   const target = args.total ?? 100;
 
-  const cached = await syncRunEntity.count(
-    { field: "shopId", value: scope.shopId },
-    { systemMessageTypeId: scope.systemMessageTypeId },
-  );
+  const cached = await syncRunEntity.count({
+    scope: { field: "shopId", value: scope.shopId },
+    equals: { systemMessageTypeId: scope.systemMessageTypeId },
+  });
   const wanted = cached < target ? target : batchSize;
 
   const rows: any[] = [];

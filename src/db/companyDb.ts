@@ -10,7 +10,7 @@
  */
 
 import { defineAppDb } from "@common/db/schema/defineAppDb";
-import { defineSchema, mergeSchemas } from "@common/db/schema/defineSchema";
+import { mergeSchemas } from "@common/db/schema/defineSchema";
 import { commonSchema } from "@common/db/seed/seedSchema";
 import { companySchema } from "./companySchema";
 
@@ -43,7 +43,9 @@ export const companyDb = defineAppDb({
   // v2: added the two shopifyLocationInventory* stores.
   // v3: main's inventory ledger, fulfillment sync and Shopify location re-key (`shopId|facilityId`).
   //     Every `eventTypeId` also gained an `SIE_` prefix, so pre-release ledger rows must not survive.
-  version: 3,
+  // v4: restored fields screens read (seed tables and several own tables), re-keyed
+  //     facilityIdentifications on fromDate and shopifyTransferPending on its artifact.
+  version: 4,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

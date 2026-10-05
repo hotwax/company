@@ -29,8 +29,8 @@ vi.mock("@common", () => ({
       key,
     ),
   useDb: (entityName: string) => ({
-    records: entityName === "inventoryChannel" ? cachedChannels : cachedJobs,
-    rows: entityName === "inventoryChannel" ? cachedChannels : cachedJobs,
+    records: entityName === "inventoryChannels" ? cachedChannels : cachedJobs,
+    rows: entityName === "inventoryChannels" ? cachedChannels : cachedJobs,
     hydrated: ref(true),
   }),
 }));

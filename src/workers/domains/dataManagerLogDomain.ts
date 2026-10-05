@@ -57,7 +57,7 @@ async function syncCreated(ctx: SyncContext, args: DataManagerLogArgs): Promise<
    * set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which does scope by shop, omits `systemMessageId` and so
    * cannot be joined to a message. Depth is the only lever — see `importTotal`.
    */
-  const cached = await dataManagerLogEntity.count(scope);
+  const cached = await dataManagerLogEntity.count({ scope });
   const isShallow = cached < target;
 
   const cursor = isShallow

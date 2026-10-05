@@ -58,10 +58,12 @@ export function useIntegrationTypeMappings(integrationTypeId?: string) {
 }
 
 /** Enum group members for one group (e.g. sales channel / variance reason sets). */
-export function useEnumGroupMembers(enumGroupId: string) {
+export function useEnumGroupMembers(enumerationGroupId?: string) {
   const { records, hydrated } = useDb<any>("enumGroupMembers");
-  const members = computed(() =>
-    records.value.filter((row: any) => row.enumGroupId === enumGroupId));
+  // The stored field is `enumerationGroupId`; with no group named, every cached member is returned.
+  const members = computed(() => enumerationGroupId
+    ? records.value.filter((row: any) => row.enumerationGroupId === enumerationGroupId)
+    : records.value);
   return { members, hydrated };
 }
 

@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, type Ref } from "vue";
 import { api, commonUtil, logger, useDb } from "@common";
 import {
   bootstrapState,

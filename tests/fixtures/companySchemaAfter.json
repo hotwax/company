@@ -36,7 +36,7 @@
     "shopifyCarrierShipments": "[shopId+carrierPartyId+shipmentMethodTypeId], shopId, carrierPartyId, shipmentMethodTypeId",
     "facilityGroupProductStores": "[facilityGroupId+productStoreId+fromDate], facilityGroupId, productStoreId, fromDate, thruDate",
     "enumGroupMembers": "[enumerationGroupId+enumId], enumerationGroupId, enumId",
-    "facilityIdentifications": "[facilityId+facilityIdenTypeId], facilityId, facilityIdenTypeId",
+    "facilityIdentifications": "[facilityId+facilityIdenTypeId+fromDate], facilityId, facilityIdenTypeId, thruDate",
     "appVersions": "[appId+environmentTypeId], appId, environmentTypeId"
   }
 }

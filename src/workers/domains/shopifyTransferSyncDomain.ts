@@ -83,6 +83,10 @@ function tagRows(rows: any[], segment: PendingSegment): any[] {
   return rows.map((row: any) => ({
     ...row,
     segment,
+    // The artifact's own PK; the create segment has no artifact, so its identity is the unpushed
+    // order item.
+    artifactId: row?.shipmentStatusId ?? row?.receiptId ?? row?.orderStatusId
+      ?? row?.orderItemChangeId ?? row?.orderItemSeqId,
     occurredAt: dateField ? row?.[dateField] : undefined,
   }));
 }

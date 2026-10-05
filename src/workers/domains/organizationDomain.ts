@@ -25,7 +25,8 @@ export function mergeInternalOrganization(
   detailResponse: any,
 ): Record<string, unknown> | undefined {
   const detail = unwrapPartyDetail(detailResponse);
-  if (!detail) { return undefined; }
+  // A person can hold the internal-organization role too; only a party group is an organization.
+  if (!detail || detail.partyTypeId !== PARTY_GROUP) { return undefined; }
 
   return { ...role, ...detail, roleTypeId: INTERNAL_ORG_ROLE };
 }

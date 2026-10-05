@@ -31,36 +31,16 @@ import { exposeWorkerHarness } from "@common/db/sync/pollingWorkerHarness";
 import { companyDb } from "@/db/companyDb";
 
 /**
- * Common seed domains that Company registers without custom overrides.
+ * Common seed domains for the seed tables Company's database actually has.
+ *
+ * Derived from the composed schema rather than listed by hand: a hand list registered twelve seed
+ * domains whose tables Company never picked, and each one failed on every login sync.
  * Overridden seed tables (carriers, carrierShipmentMethods, shopifyShops, facilityGroups, statuses)
- * are defined with Company-specific config in `referenceDomains.ts`.
+ * are registered with Company-specific config in `referenceDomains.ts`, which wins on name.
  */
-const companySeedDomains = [
-  commonDomains.productStore,
-  commonDomains.enum,
-  commonDomains.enumType,
-  commonDomains.facility,
-  commonDomains.facilityType,
-  commonDomains.groupFacility,
-  commonDomains.geo,
-  commonDomains.geoAssoc,
-  commonDomains.shipmentMethodType,
-  commonDomains.paymentMethodType,
-  commonDomains.returnReason,
-  commonDomains.returnType,
-  commonDomains.returnItemType,
-  commonDomains.roleType,
-  commonDomains.orderAdjustmentType,
-  commonDomains.contactMechPurposeType,
-  commonDomains.communicationEventType,
-  commonDomains.partyRelationshipType,
-  commonDomains.statusFlowTransition,
-  commonDomains.productStoreFacility,
-  commonDomains.productStoreFacilityGroup,
-  commonDomains.productStoreShipmentMethod,
-  commonDomains.productStoreEmailSetting,
-  commonDomains.shopifyShopLocation,
-];
+const OVERRIDDEN_SEED_TABLES = new Set(["carriers", "carrierShipmentMethods", "shopifyShops", "facilityGroups", "statuses"]);
+const companySeedDomains = Object.values(commonDomains).filter((domain) =>
+  domain.table && companyDb.seedTables.has(domain.table) && !OVERRIDDEN_SEED_TABLES.has(domain.table));
 
 registerDomains([
   ...companySeedDomains,

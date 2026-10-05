@@ -169,7 +169,7 @@ async function syncRemote(
    * for a settled window and the deep pass stops happening once it is full.
    */
   const equals = messageType ? { systemMessageTypeId: messageType.systemMessageTypeId } : undefined;
-  const cached = await systemMessageEntity.count(scope, equals);
+  const cached = await systemMessageEntity.count({ scope, equals });
   const isShallow = cached < target;
 
   const cursor = isShallow

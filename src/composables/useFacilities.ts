@@ -5,6 +5,7 @@ import { getResponseErrorMessage } from "@/utils";
 import { isEffectiveNow, toCount, toMillis } from "@common/db";
 import { facilityGroupTypeLabel } from "@/utils/facilityGroupTypeLabels";
 import { refreshAfterMutation, resyncDomain } from "@/services/appDbSync";
+import { companyDb } from "@/db/companyDb";
 import { useShopifyFacilityMappings } from "./useShopify";
 import { useTypedEnums } from "./useSeed";
 import { useFacilityIdentifications } from "./useNetSuite";
@@ -1339,7 +1340,7 @@ export function useFacilityArchive() {
   /** Resolve the archive group, creating it once if this OMS has never had one. */
   async function ensureArchiveGroup(): Promise<string> {
     // Cache first — the group list is a login snapshot, so a hit costs no request at all.
-    const cached = await facilityGroupCache.all();
+    const cached = await companyDb.entity("facilityGroups").all();
     if (cached.some((group: any) => group.facilityGroupId === ARCHIVE_FACILITY_GROUP_ID)) return ARCHIVE_FACILITY_GROUP_ID;
 
     // A cache miss is not proof of absence (the group may have been created outside this app since
