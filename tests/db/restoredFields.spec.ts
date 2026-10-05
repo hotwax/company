@@ -18,6 +18,7 @@ describe("stored rows keep the fields screens read", () => {
     ["dataManagerLogs", { logId: "L", errorLogContentId: "C", fileName: "a.json" }, ["errorLogContentId", "fileName"]],
     ["serviceJobs", { jobName: "J", parentJobName: "P" }, ["parentJobName"]],
     ["enums", { enumId: "E", enumName: "Name" }, ["enumName"]],
+    ["geos", { geoId: "USA_NY", geoName: "New York", wellKnownText: "NY" }, ["wellKnownText"]],
     ["productStoreFacilities", { productStoreId: "PS", facilityId: "F", storeName: "Store" }, ["storeName"]],
     ["systemMessages", { systemMessageId: "M", orderId: "O1" }, ["orderId"]],
     ["facilityIdentifications", { facilityId: "F", facilityIdenTypeId: "T", fromDate: 1, thruDate: 2 }, ["fromDate", "thruDate"]],

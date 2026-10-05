@@ -107,12 +107,14 @@ export const shopifyTransferSyncDomain = defineSyncDomain({
 
     const perSegment = await Promise.all(PENDING_SEGMENTS.map(async (segment) => {
       // Entity resources return a bare array, so no collectionKey. pageAll stops on the first
-      // empty page and has its own page backstop.
+      // empty page and has its own page backstop. requireComplete: the snapshot below prunes
+      // whatever a short read missed, so a read that hits the backstop fails the pass instead.
       const rows = await pageAll({
         ctx,
         url: PENDING_SEGMENT_ENDPOINTS[segment],
         params: { shopId },
         batchSize,
+        requireComplete: true,
         label: `transferSync:${segment}`,
       });
 

@@ -5,13 +5,13 @@ const state = vi.hoisted(() => ({
   domains: [] as any[],
   /** Rows each endpoint should return, keyed by url. */
   pages: {} as Record<string, any[]>,
-  fetched: [] as Array<{ url: string; params: any }>,
+  fetched: [] as Array<{ url: string; params: any; requireComplete?: boolean }>,
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
 vi.mock("@common/core/workerRemoteApi", () => ({
-  pageAll: vi.fn(async ({ url, params }: any) => {
-    state.fetched.push({ url, params });
+  pageAll: vi.fn(async ({ url, params, requireComplete }: any) => {
+    state.fetched.push({ url, params, requireComplete });
 
     return state.pages[url] ?? [];
   }),
@@ -57,6 +57,16 @@ describe("Shopify transfer sync worker domain", () => {
     ]);
     // Every read is shop-scoped: an unscoped one would cache another shop's work as this shop's.
     expect(state.fetched.every((call) => call.params.shopId === "SHOP_A")).toBe(true);
+  });
+
+  // The snapshot prunes every cached row the read did not return, so a short read must fail the
+  // pass instead of pruning outstanding work.
+  it("requires every segment read to be complete before snapshotting", async () => {
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A" });
+
+    expect(state.fetched.every((call) => call.requireComplete === true)).toBe(true);
   });
 
   it("tags each row with its segment and normalises the segment's own timestamp", async () => {
