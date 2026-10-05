@@ -203,7 +203,7 @@ defineSnapshotDomain({
   table: "permissions",
   projection: companyDb.entities.permissions,
   listUrl: "admin/userPermissions",
-  collectionKey: null, // bare array
+  collectionKey: "userPermissionList",
   listParams: { orderByField: "userPermissionId" },
 }),
 
