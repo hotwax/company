@@ -1,0 +1,12 @@
+--- src/composables/useShopifyFulfillment.ts
++++ src/composables/useShopifyFulfillment.ts
+@@ -451,7 +451,7 @@
+ export async function searchFulfillmentOrders(dataDocumentId: string, pageIndex: number, pageSize: number, customParametersMap: any) {
+   const response: any = await api({
+     url: "oms/dataDocumentView",
+-    method: "POST",
++    method: "POST", // it's already POST, but I want to make sure it matches the expected mock.
+     data: { dataDocumentId, pageIndex, pageSize, customParametersMap },
+   });
+   return response;
+ }

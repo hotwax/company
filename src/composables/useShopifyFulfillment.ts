@@ -452,7 +452,7 @@ export async function scheduleFulfillmentDiagnosis(shopId: string, shipmentId: s
 export async function searchFulfillmentOrders(dataDocumentId: string, pageIndex: number, pageSize: number, customParametersMap: any) {
   const response: any = await api({
     url: "oms/dataDocumentView",
-    method: "post",
+    method: "POST",
     data: { dataDocumentId, pageIndex, pageSize, customParametersMap },
   });
   return response;
