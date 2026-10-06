@@ -857,7 +857,7 @@ const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
 const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
-const { facilityTypes } = useFacilityTypes();
+const { facilityTypes ,  hydrated: facilityTypesHydrated} = useFacilityTypes();
 const { facilityGroupTypes } = useFacilityGroupTypes();
 const { facilityGroups: allFacilityGroups } = useFacilityGroups();
 const { descriptionById: partyRoles } = useRoleTypes();
@@ -914,7 +914,7 @@ function getImageUrl(imageUrl: string) {
  */
 let seededFromCache = false;
 function seedFromCachedFacility() {
-  if (seededFromCache || !current.value?.facilityTypeId) return;
+  if (seededFromCache || !current.value?.facilityTypeId || !facilityTypesHydrated.value) return;
   parentFacilityTypeId.value = getParentFacilityTypeId(current.value.facilityTypeId);
   initialParentFacilityTypeId.value = parentFacilityTypeId.value;
   facilityTypeId.value = current.value.facilityTypeId;
@@ -922,7 +922,7 @@ function seedFromCachedFacility() {
   defaultDaysToShip.value = current.value.defaultDaysToShip;
   seededFromCache = true;
 }
-watch(current, seedFromCachedFacility, { immediate: true, deep: true });
+watch([current, facilityTypes], seedFromCachedFacility, { immediate: true, deep: true });
 
 onIonViewWillEnter(async () => {
   seededFromCache = false;
