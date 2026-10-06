@@ -30,7 +30,7 @@
 import { translate } from "@common";
 import { IonButton, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonPopover } from "@ionic/vue";
 import { warningOutline } from "ionicons/icons";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { INVENTORY_SYNC_DOMAIN_LABELS } from "@/config/appSyncConfig";
 
 // Two root nodes, so there is no single element to inherit attributes.
@@ -53,12 +53,32 @@ function openDetails(event: Event) {
   open.value = true;
 }
 
+/**
+ * Every domain declares its label; they are read from the list the worker registers, imported on
+ * demand to keep the domain code out of startup. Until it loads, the inventory labels cover the area
+ * this button mostly serves.
+ */
+const catalogLabels = ref<Record<string, string>>({});
+let loadingCatalog = false;
+async function loadCatalogLabels() {
+  if(loadingCatalog || Object.keys(catalogLabels.value).length) {return;}
+  loadingCatalog = true;
+  try {
+    const { appSyncDomains } = await import("@/workers/appSyncDomains");
+    catalogLabels.value = Object.fromEntries(appSyncDomains.map((domain) => [domain.name, domain.label]));
+  } catch {
+    // Labels are cosmetic; the domain name still identifies the failure.
+  } finally {
+    loadingCatalog = false;
+  }
+}
+watch(() => Object.keys(props.failures ?? {}).length, (count) => { if(count) {void loadCatalogLabels();} }, { immediate: true });
 
 function labelFor(domain: string): string {
   if(domain === "auth") {return translate("Sign-in");}
   if(domain === "__start") {return translate("Background sync");}
 
-  const label = INVENTORY_SYNC_DOMAIN_LABELS[domain];
+  const label = catalogLabels.value[domain] || INVENTORY_SYNC_DOMAIN_LABELS[domain];
 
   return label ? translate(label) : domain;
 }
