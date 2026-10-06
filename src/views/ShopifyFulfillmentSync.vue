@@ -45,7 +45,7 @@
           <ion-item v-if="orderHistory.error.value"><ion-label>{{ translate('Order sync history could not be loaded. Refresh to retry.') }}</ion-label></ion-item>
           <ion-item v-else-if="!orderHistory.ready.value"><ion-label><ion-skeleton-text animated /></ion-label></ion-item>
           <ion-accordion-group v-else>
-            <ion-accordion v-for="(history, index) in orderHistory.histories.value" :key="history.historyKey" :value="history.orderId">
+            <ion-accordion v-for="(history, index) in orderHistory.histories.value" :key="history.orderId" :value="history.orderId">
               <ion-item slot="header"><ion-label>{{ selectedOrders[index].orderName || history.orderId }}</ion-label><ion-note slot="end">{{ history.messages.length }} {{ translate('Sync messages') }}</ion-note></ion-item>
               <ion-list slot="content">
                 <ion-item v-for="message in history.messages" :key="message.systemMessageId">
