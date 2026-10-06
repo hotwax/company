@@ -230,7 +230,7 @@ export function useCarriers() {
 }
 
 export const useCarrierRecord = (partyId: string | undefined) => {
-  const { first: record, hydrated } = useDb<CarrierRecord>("carriers", () => partyId ? { equals: { partyId } } : {});
+  const { first: record, hydrated } = useDb<CarrierRecord>("carriers", () => partyId ? { equals: { partyId } } : { filter: () => false });
   return { record, hydrated };
 };
 

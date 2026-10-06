@@ -193,7 +193,7 @@ export function useOrganizations() {
 export const useOrganizationRecord = (partyId: string | Ref<string | undefined> | undefined) => {
   const { first: record, hydrated } = useDb<Organization>("organizations", () => {
     const targetId = typeof partyId === "object" && partyId && "value" in partyId ? partyId.value : partyId;
-    return targetId ? { equals: { partyId: targetId } } : {};
+    return targetId ? { equals: { partyId: targetId } } : { filter: () => false };
   });
   return { record, hydrated };
 };

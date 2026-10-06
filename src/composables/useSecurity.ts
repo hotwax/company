@@ -36,7 +36,7 @@ export function useUserGroups() {
 }
 
 export const useUserGroupRecord = (userGroupId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("userGroups", () => userGroupId ? { equals: { userGroupId } } : {});
+  const { first: record, hydrated } = useDb<any>("userGroups", () => userGroupId ? { equals: { userGroupId } } : { filter: () => false });
   return { record, hydrated };
 };
 

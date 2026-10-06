@@ -571,7 +571,7 @@ export function useLatestSystemMessage(systemMessageRemoteId?: string, systemMes
 }
 
 export function useSystemMessageRecord(systemMessageId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessages", () => systemMessageId ? { equals: { systemMessageId } } : {});
+  const { first: record, hydrated } = useDb<any>("systemMessages", () => systemMessageId ? { equals: { systemMessageId } } : { filter: () => false });
   return { record, hydrated };
 }
 
@@ -596,7 +596,7 @@ export function useSystemMessageErrors(systemMessageId?: string) {
 
 /** A cached Shopify bulk operation by its gid. */
 export function useShopifyBulkOperationRecord(bulkOperationId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("shopifyBulkOperations", () => bulkOperationId ? { equals: { id: bulkOperationId } } : {});
+  const { first: record, hydrated } = useDb<any>("shopifyBulkOperations", () => bulkOperationId ? { equals: { id: bulkOperationId } } : { filter: () => false });
   return { record, hydrated };
 }
 
@@ -631,6 +631,6 @@ export function useSystemMessageRemotes() {
 }
 
 export function useSystemMessageRemoteRecord(systemMessageRemoteId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("systemMessageRemotes", () => systemMessageRemoteId ? { equals: { systemMessageRemoteId } } : {});
+  const { first: record, hydrated } = useDb<any>("systemMessageRemotes", () => systemMessageRemoteId ? { equals: { systemMessageRemoteId } } : { filter: () => false });
   return { record, hydrated };
 }

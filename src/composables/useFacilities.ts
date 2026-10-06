@@ -79,7 +79,7 @@ export function useFacilities(filters: FacilityFilters = {}) {
 }
 
 export const useFacilityRecord = (facilityId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilities", () => facilityId ? { equals: { facilityId } } : {});
+  const { first: record, hydrated } = useDb<any>("facilities", () => facilityId ? { equals: { facilityId } } : { filter: () => false });
   return { record, hydrated };
 };
 
@@ -194,7 +194,7 @@ export function useFacilityGroups() {
 }
 
 export const useFacilityGroupRecord = (facilityGroupId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("facilityGroups", () => facilityGroupId ? { equals: { facilityGroupId } } : {});
+  const { first: record, hydrated } = useDb<any>("facilityGroups", () => facilityGroupId ? { equals: { facilityGroupId } } : { filter: () => false });
   return { record, hydrated };
 };
 

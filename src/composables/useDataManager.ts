@@ -338,7 +338,7 @@ export function useDataManagerLogs(configId?: string) {
 }
 
 export function useDataManagerLogRecord(logId: string | undefined) {
-  const { first: record, hydrated } = useDb<any>("dataManagerLogs", () => logId ? { equals: { logId } } : {});
+  const { first: record, hydrated } = useDb<any>("dataManagerLogs", () => logId ? { equals: { logId } } : { filter: () => false });
   return { record, hydrated };
 }
 

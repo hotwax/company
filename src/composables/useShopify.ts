@@ -732,7 +732,7 @@ export async function ensureShopPhysicalAtpResetJob(shopId: string): Promise<str
 export const useShopifyShop = (shopId: MaybeRefOrGetter<string | undefined>) => {
   const { first: record, hydrated } = useDb<any>("shopifyShops", () => {
     const id = toValue(shopId);
-    return id ? { equals: { shopId: id } } : {};
+    return id ? { equals: { shopId: id } } : { filter: () => false };
   });
   return { record, hydrated };
 };

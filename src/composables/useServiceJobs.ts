@@ -61,7 +61,7 @@ export function useServiceJobs() {
 }
 
 export const useServiceJobRecord = (jobName: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("serviceJobs", () => jobName ? { equals: { jobName } } : {});
+  const { first: record, hydrated } = useDb<any>("serviceJobs", () => jobName ? { equals: { jobName } } : { filter: () => false });
   return { record, hydrated };
 };
 

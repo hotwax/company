@@ -79,7 +79,7 @@ export function useProductStores() {
 }
 
 export const useProductStoreRecord = (productStoreId: string | undefined) => {
-  const { first: record, hydrated } = useDb<any>("productStores", () => productStoreId ? { equals: { productStoreId } } : {});
+  const { first: record, hydrated } = useDb<any>("productStores", () => productStoreId ? { equals: { productStoreId } } : { filter: () => false });
   return { record, hydrated };
 };
 
