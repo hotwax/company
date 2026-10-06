@@ -905,6 +905,32 @@ const progressState = ref<any>({
   queuedJobsAhead: 0
 });
 
+/**
+ * Show the latest run in "Track sync progress" once the run spine arrives.
+ *
+ * The dashboard load picks the displayed run from `latestSystemMessage` once. On a cold cache (the
+ * first visit after login) the worker has not committed the spine yet, so that load clears the run
+ * and the card says "No recent sync history" until the page is reopened. Fill it when the spine
+ * lands instead, without replacing a deep-linked run, a different run already shown, or a
+ * just-started sync the spine has not caught up with.
+ *
+ * The spine row arrives before its message enrichment, and `fetchSyncRun` needs the enriched
+ * `systemMessageRemoteId` and `remoteMessageId` to look up the Shopify bulk operation. So this also
+ * re-runs for the same run when those land; `fetchSyncRun` is cache-first, so the repeat is cheap.
+ */
+watch(() => [
+  latestSystemMessage.value?.systemMessageId,
+  latestSystemMessage.value?.systemMessageRemoteId,
+  latestSystemMessage.value?.remoteMessageId
+], ([latestId]) => {
+  const shownId = currentSyncRun.value?.systemMessageId;
+  if(!latestId || requestedSystemMessageId.value || (shownId && shownId !== latestId)) {return;}
+  const trackedId = progressState.value?.systemMessageId;
+  if(trackedId && trackedId !== latestId && !progressState.value?.completed) {return;}
+
+  void fetchSyncRun(latestId, latestSystemMessage.value);
+});
+
 const syncJobRecentRuns = computed(() => cachedRunsFor(syncJobObj.value?.jobName));
 const detailedErrorSearchQuery = ref("");
 const selectedErrorRecord = ref<any>(null);
