@@ -154,9 +154,9 @@ import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import { useDbStatus } from "@common/db";
+import { catalogFrom, useDbStatus } from "@common/db";
 import { companyDb } from "@/db/companyDb";
-import { resyncDomain, resyncReferenceData, syncService } from "@/services/appDbSync";
+import { resyncDomain, resyncReferenceData } from "@/services/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
@@ -180,7 +180,10 @@ const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
 } = useDbStatus(
   companyDb.raw(),
-  async () => (await syncService()?.catalog()) ?? [],
+  // The domains the worker registers, read from the same list rather than asked of the worker: on a
+  // reload here, or after sync failed to start, there is no worker to answer, and this card's
+  // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.
+  async () => catalogFrom((await import("@/workers/appSyncDomains")).appSyncDomains),
   {
     resyncDomain,
     resyncAll: resyncReferenceData,

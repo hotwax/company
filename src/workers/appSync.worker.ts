@@ -4,64 +4,12 @@
  * All domain definitions (common seed reference domains and Company app-specific domains)
  * are explicitly imported and registered via `registerDomains(...)` prior to exposing the harness.
  */
-import { commonDomains } from "@common/db/seed/seedDomains";
 import { registerDomains } from "@common/db/sync/syncRegistry";
-
-import { dataManagerLogDomain } from "./domains/dataManagerLogDomain";
-import { systemMessageDomain } from "./domains/systemMessageDomain";
-import { serviceJobRunDomain } from "./domains/serviceJobRunDomain";
-import { syncRunDomain } from "./domains/syncRunDomain";
-import { productUpdateHistoryDomain } from "./domains/productUpdateHistoryDomain";
-import { organizationDomain } from "./domains/organizationDomain";
-import {
-  shopifyInventoryEventFeedDomain,
-  inventoryChannelDomain,
-} from "./domains/shopifyInventoryMonitoringDomain";
-import { inventoryEventDomains } from "./domains/inventoryEventDomains";
-import { shopifyTransferSyncDomain } from "./domains/shopifyTransferSyncDomain";
-import { shopifyTransferDeliveryDomain } from "./domains/shopifyTransferDeliveryDomain";
-import { shopifyFulfillmentHistoryDomain } from "./domains/shopifyFulfillmentHistoryDomain";
-import { shopifyPendingFulfillmentDomain } from "./domains/shopifyPendingFulfillmentDomain";
-import { shopifyFulfillmentHealthDomain } from "./domains/shopifyFulfillmentHealthDomain";
-import { shopifyOrderSyncHistoryDomain } from "./domains/shopifyOrderSyncHistoryDomain";
-import { netSuiteOrderPushDomain } from "./domains/netSuiteOrderPushDomain";
-import { referenceDomains } from "./domains/referenceDomains";
-
 import { exposeWorkerHarness } from "@common/db/sync/pollingWorkerHarness";
 import { companyDb } from "@/db/companyDb";
+import { appSyncDomains } from "./appSyncDomains";
 
-/**
- * Common seed domains for the seed tables Company's database actually has.
- *
- * Derived from the composed schema rather than listed by hand: a hand list registered twelve seed
- * domains whose tables Company never picked, and each one failed on every login sync.
- * Overridden seed tables (carriers, carrierShipmentMethods, shopifyShops, facilityGroups, statuses)
- * are registered with Company-specific config in `referenceDomains.ts`, which wins on name.
- */
-const OVERRIDDEN_SEED_TABLES = new Set(["carriers", "carrierShipmentMethods", "shopifyShops", "facilityGroups", "statuses"]);
-const companySeedDomains = Object.values(commonDomains).filter((domain) =>
-  domain.table && companyDb.seedTables.has(domain.table) && !OVERRIDDEN_SEED_TABLES.has(domain.table));
-
-registerDomains([
-  ...companySeedDomains,
-  dataManagerLogDomain,
-  systemMessageDomain,
-  serviceJobRunDomain,
-  syncRunDomain,
-  productUpdateHistoryDomain,
-  organizationDomain,
-  shopifyInventoryEventFeedDomain,
-  inventoryChannelDomain,
-  ...inventoryEventDomains,
-  shopifyTransferSyncDomain,
-  shopifyTransferDeliveryDomain,
-  shopifyFulfillmentHistoryDomain,
-  shopifyPendingFulfillmentDomain,
-  shopifyFulfillmentHealthDomain,
-  shopifyOrderSyncHistoryDomain,
-  netSuiteOrderPushDomain,
-  ...referenceDomains,
-]);
+registerDomains(appSyncDomains);
 
 // Each worker realm is a separate JS realm with its own module instances, so the resolver has to
 // be registered here as well as on the main thread. The harness hands us the instance on start().

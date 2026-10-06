@@ -56,6 +56,17 @@ describe("company domain registration", () => {
     expect(names).toContain("groupFacility");
   });
 
+  // Settings builds its Data Fetch Status card from this list without the worker, so it must be
+  // exactly what the worker registers, in the same order.
+  it("registers exactly the domains Settings lists", async () => {
+    const { catalogFrom, getAllSyncDomains } = await import("@common/db/sync/syncRegistry");
+    const { appSyncDomains } = await import("@/workers/appSyncDomains");
+
+    expect(catalogFrom(appSyncDomains)).toEqual(catalogFrom(getAllSyncDomains()));
+    expect(appSyncDomains.map((d) => d.name)).toContain("shopifyShop");
+    expect(appSyncDomains.map((d) => d.name)).toContain("serviceJob");
+  });
+
   it("gives every registered domain a label and a sync class", async () => {
     const { getAllSyncDomains } = await import("@common/db/sync/syncRegistry");
 

@@ -102,8 +102,9 @@ re-introduces exactly the load waterfalls this layer exists to remove.
 
 ### 4.2 Three sync classes
 
-Declared per domain in [`src/utils/db/cacheDomainCatalog.ts`](src/utils/db/cacheDomainCatalog.ts) — one
-list shared by the bootstrap and the Settings "Data Fetch Status" card so they cannot disagree.
+Declared per domain, and collected in [`src/workers/appSyncDomains.ts`](src/workers/appSyncDomains.ts) — one
+list the worker registers and the Settings "Data Fetch Status" card reads (`catalogFrom`), so they cannot
+disagree, and the card lists Company's domains even when the worker is not up.
 
 | Class | Character | When it syncs | Examples |
 | --- | --- | --- | --- |
@@ -141,7 +142,8 @@ toolbar, never as a banner.
 | [`src/config/appSyncConfig.ts`](src/config/appSyncConfig.ts) | **App-specific** sync policy: which class-A domains to run, their scope/filters/windows, and which seed domains to exclude |
 | [`src/services/appDbSync.ts`](src/services/appDbSync.ts) | Class-B once-per-login bootstrap; `refreshAfterMutation`, `resyncDomain`, `resyncReferenceData` |
 | [`src/services/pollingService.ts`](src/services/pollingService.ts) | Main-thread half: spawns/terminates the worker, pushes the bearer token over `BroadcastChannel`, routes `auth-error` |
-| [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — importing a domain module registers it; the harness must be imported **last** |
+| [`src/workers/appSyncDomains.ts`](src/workers/appSyncDomains.ts) | Every domain Company registers: the common seed domains for its seed tables, plus its own. Read by the worker and by Settings |
+| [`src/workers/appSync.worker.ts`](src/workers/appSync.worker.ts) | The worker entry — registers `appSyncDomains`, then exposes the harness |
 | [`src/workers/pollingWorkerHarness.ts`](src/workers/pollingWorkerHarness.ts) | Worker-side harness: the tick loop, held token, 401 detection, teardown |
 | [`src/workers/syncRegistry.ts`](src/workers/syncRegistry.ts) | `SyncDomain` contract + the pure `dueDomains()` scheduling rule (unit-tested without a worker) |
 | [`src/workers/domains/*`](src/workers/domains/) | The domains: `snapshotDomain` (class-B factory), `referenceDomains`, `systemMessageDomain`, `dataManagerLogDomain`, `serviceJobRunDomain`, `productUpdateHistoryDomain`, `inventoryEventDomains`, `workerFetch` |
@@ -188,7 +190,7 @@ scoped re-list so deletions inside the scope get pruned. A record that comes bac
 3. Register it in `cacheDomainCatalog.ts` with its sync class.
 4. Add the worker domain (usually one `createSnapshotDomain(...)` entry in `referenceDomains.ts`)
    and, for class A, its scope/window in `appSyncConfig.ts`.
-5. Import the domain module in `appSync.worker.ts` if it is a new file.
+5. Add the domain to `appSyncDomains` in `workers/appSyncDomains.ts`.
 6. Expose reads through the owning `use*` composable — never let a view import cache internals.
 
 ### 4.5 Hard-won rules (do not undo these)
