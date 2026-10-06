@@ -3,6 +3,7 @@ import { api, logger, useDb } from "@common";
 import cronstrue from "cronstrue";
 import { companyDb } from "@/db/companyDb";
 import { refreshAfterMutation } from "@/services/appDbSync";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { onSessionCleared } from "./sessionScope";
 
 /**
@@ -406,13 +407,24 @@ export function useServiceJob() {
     return resp;
   };
 
-  /** Run state (last run, next run) lives on the job row too, so the cache needs the same nudge. */
+  /**
+   * Run state (last run, next run) lives on the job row too, so the cache needs the same nudge.
+   *
+   * Unlike `updateJob`, a failed nudge does not reject: a run cannot be taken back, and the screens
+   * calling this report any rejection as "could not run", which invites a second run. The failure is
+   * still recorded as a sync error, so the stale row is reported there.
+   */
   const runNow = async (jobName: string) => {
     const resp = await api({
       url: `admin/serviceJobs/${jobName}/runNow`,
       method: "POST"
     });
-    await refreshAfterMutation("serviceJob", { jobName });
+    try {
+      await refreshAfterMutation("serviceJob", { jobName });
+    } catch (error) {
+      if(!isCacheReconciliationError(error)) throw error;
+      logger.warn(`Queued ${jobName}, but its cached job row could not be refreshed`, error);
+    }
     return resp;
   };
 

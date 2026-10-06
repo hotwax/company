@@ -136,6 +136,7 @@ vi.mock("@/composables/useDataManager", () => ({
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
 import { useShopifyOrderSync } from "@/composables/useShopify";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
 /** What `api()` really resolves to — the envelope whose `.data` the callers were reading through. */
 function axiosResponse(data: any, config: Record<string, any> = {}) {
@@ -321,6 +322,27 @@ describe("runNow", () => {
     await orderSync.runNow({ shopId: SHOP_ID });
 
     expect(callsTo(/runNow/)[0].url).toBe(`admin/serviceJobs/${JOB_NAME}/runNow`);
+  });
+
+  // A run cannot be taken back: reporting it failed because only the cache refresh after it failed
+  // invites the user to run the job a second time.
+  it("resolves the queued run when only the cache refresh after it fails", async () => {
+    respondWith([[/runNow/, { systemMessageId: "M228601" }]]);
+    harness.refreshAfterMutation.mockRejectedValue(new CacheReconciliationError("serviceJob", { jobName: JOB_NAME }));
+    const orderSync = boundOrderSync();
+
+    const result = await orderSync.runNow({ shopId: SHOP_ID });
+
+    expect(result.systemMessageId).toBe("M228601");
+    expect(orderSync.error).toBe("");
+  });
+
+  it("still rejects when the run itself is refused", async () => {
+    harness.api.mockRejectedValue(new Error("run refused"));
+    const orderSync = boundOrderSync();
+
+    await expect(orderSync.runNow({ shopId: SHOP_ID })).rejects.toThrow(/run refused/);
+    expect(harness.refreshAfterMutation).not.toHaveBeenCalled();
   });
 });
 
@@ -530,6 +552,24 @@ describe("targeted retry — the fromDate window replay", () => {
       fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
     })).rejects.toThrow(/run refused/);
 
+    const jobWrites = callsTo(jobRoute);
+    expect(jobWrites).toHaveLength(2);
+    expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
+  });
+
+  // The swap's write landed even when the cache refresh after it failed. Aborting there skipped the
+  // run AND the restore, leaving the replay window pinned to the job for every scheduled run.
+  it("runs and restores when only the cache refreshes fail", async () => {
+    respondWith([[runRoute, { jobRunId: "M2399240" }], [jobRoute, {}]]);
+    harness.refreshAfterMutation.mockRejectedValue(new CacheReconciliationError("serviceJob", { jobName: JOB_NAME }));
+    const orderSync = boundOrderSync();
+
+    const result = await orderSync.replayOrdersFromDate({
+      fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
+    });
+
+    expect(result.jobRunId).toBe("M2399240");
+    expect(callsTo(runRoute)).toHaveLength(1);
     const jobWrites = callsTo(jobRoute);
     expect(jobWrites).toHaveLength(2);
     expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));

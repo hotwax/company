@@ -32,6 +32,7 @@ import Actions from "@/authorization/actions";
 import { type InventoryEventSourceRoot, sourceRootFor } from "@/utils/inventoryEventSourceRoots";
 import { INVENTORY_AT_LOCATION_QUERY, inventoryGid, parseInventorySnapshot } from "@/utils/shopifyInventorySnapshot";
 import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation, syncDomainsError as workerError, syncNow } from "@/services/appDbSync";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   METAFIELD_DEFINITIONS_QUERY, SHOPIFY_METAFIELD_OWNER_TYPES, type ShopifyMetafieldDefinition, parseMetafieldDefinitionsPage,
 } from "@/utils/shopifyMetafieldDefinitions";
@@ -4798,7 +4799,7 @@ export function useShopifyOrderSync() {
       parameter.parameterName === "fromDate"
         ? { ...parameter, parameterValue: toJobTimestamp(fromDateIso) }
         : parameter);
-    await updateJob({ jobName, serviceJobParameters: swapped });
+    await writeParameters(jobName, swapped);
     try {
       const resp: any = await runJobNow(jobName);
       const result = { jobName, fromDate: fromDateIso, ...(resp?.data ?? {}) };
@@ -4806,8 +4807,22 @@ export function useShopifyOrderSync() {
 
       return result;
     } finally {
-      await updateJob({ jobName, serviceJobParameters: baseline });
-      await refreshAfterMutation("serviceJob", { jobName });
+      await writeParameters(jobName, baseline);
+    }
+  }
+
+  /**
+   * `updateJob` for the replay's swap and restore, where only a failed cache refresh after the PUT
+   * is tolerated: the PUT landed either way. Letting it throw skipped the run and the restore after
+   * the swap, pinning the replay window to the job, and after the restore reported a replay that
+   * ran as failed, inviting a second one. `updateJob` records the failure as a sync error.
+   */
+  async function writeParameters(jobName: string, serviceJobParameters: any[]) {
+    try {
+      await updateJob({ jobName, serviceJobParameters });
+    } catch (error) {
+      if(!isCacheReconciliationError(error)) throw error;
+      logger.warn(`Updated ${jobName}'s parameters, but its cached job row could not be refreshed`, error);
     }
   }
 
