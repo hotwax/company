@@ -76,7 +76,12 @@ export function useNetSuiteOrderPushBacklog(productStoreId: () => string | undef
   };
 }
 
-/** NetSuite order-push rule groups for a store, sequence order. */
+/**
+ * NetSuite order-push rule groups for a store, sequence order.
+ *
+ * The worker prunes groups the active-group read no longer returns; the status check here is the
+ * reader's own guard, so a row that is not active never renders even before that prune lands.
+ */
 export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) {
   const { records, hydrated } = useDb<any>("netSuiteRuleGroups");
 
@@ -86,7 +91,8 @@ export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) 
     return records.value
       .filter((group: any) =>
         String(group?.productStoreId ?? "") === wanted
-        && group?.groupTypeEnumId === NETSUITE_ORDER_PUSH_GROUP_TYPE)
+        && group?.groupTypeEnumId === NETSUITE_ORDER_PUSH_GROUP_TYPE
+        && (group?.statusId ?? RULE_GROUP_ACTIVE) === RULE_GROUP_ACTIVE)
       .sort((a: any, b: any) => Number(a?.sequenceNum ?? 0) - Number(b?.sequenceNum ?? 0));
   });
 

@@ -59,9 +59,14 @@ async function syncRuleGroups(ctx: SyncContext, productStoreId: string): Promise
     statusId: ACTIVE_GROUP_STATUS,
     pageSize: 50,
   });
-  const groups: any[] = Array.isArray(resp) ? resp : [];
-  await netSuiteRuleGroupEntity.upsertMany(groups);
-  return groups;
+  // Only a real list is authoritative. Anything else is left alone rather than read as "no groups",
+  // which would prune every group the store has on a malformed response.
+  if (!Array.isArray(resp)) return [];
+  // This response IS the store's active set, so it replaces the store's rows rather than merging
+  // into them: a group archived elsewhere is absent here and must leave the cache, or the monitor
+  // keeps rendering it (and its rules) indefinitely.
+  await netSuiteRuleGroupEntity.snapshotReplace(resp, { field: "productStoreId", value: productStoreId });
+  return resp;
 }
 
 async function syncDecisionRules(ctx: SyncContext, ruleGroupIds: string[]): Promise<number> {
