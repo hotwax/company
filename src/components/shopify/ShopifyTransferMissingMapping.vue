@@ -67,7 +67,7 @@
           <ion-icon slot="start" :icon="warningOutline" color="warning" />
           <ion-label class="ion-text-wrap">
             {{ translate("Not found in Shopify") }}
-            <p>{{ translate("No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or keep it off Shopify transfers.", { query: lastQueryLabel }) }}</p>
+            <p>{{ translate("No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or turn off Native Inventory Transfer Sync for this shop on the transfer sync page.", { query: lastQueryLabel }) }}</p>
           </ion-label>
         </ion-item>
         <ion-radio-group v-else-if="candidates.length" v-model="selected">

@@ -341,7 +341,7 @@
   "No service job runs found for the selected filters.": "No service job runs found for the selected filters.",
   "No shipment methods found.": "No shipment methods found.",
   "No Shopify remote is configured for this connection.": "No Shopify remote is configured for this connection.",
-  "No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or keep it off Shopify transfers.": "No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or keep it off Shopify transfers.",
+  "No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or turn off Native Inventory Transfer Sync for this shop on the transfer sync page.": "No Shopify variant matches {query}. Create this product in Shopify with inventory tracking on and run the product sync, or turn off Native Inventory Transfer Sync for this shop on the transfer sync page.",
   "No sync error recorded; includes queued shipments": "No sync error recorded; includes queued shipments",
   "No syncs in this category.": "No syncs in this category.",
   "None waiting": "None waiting",
