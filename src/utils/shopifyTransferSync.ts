@@ -65,3 +65,9 @@ export function transfersAppOrderUrl(orderId: unknown): string {
 
   return buildAppUrl("transfers", `/order-detail/${encodeURIComponent(id)}`) ?? "";
 }
+
+/** The search a missing mapping starts with: the product's SKU or barcode, exact. */
+export function initialVariantQuery(product: { sku?: string; upc?: string }): string {
+  return [product.sku ? `sku:${JSON.stringify(product.sku)}` : "", product.upc ? `barcode:${JSON.stringify(product.upc)}` : ""]
+    .filter(Boolean).join(" OR ");
+}

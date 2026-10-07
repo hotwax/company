@@ -83,7 +83,7 @@ import {
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
 
-const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders } = useTransferMappingResolution();
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders, searchVariants, addMapping } = useTransferMappingResolution();
 
 const SHOP_ID = "10000";
 const SHOPIFY_SHOP_ID = "6973849727";
@@ -342,5 +342,67 @@ describe("recent orders for duplicate transfer mappings", () => {
     expect(harness.api.mock.calls[1][0].data.variables).toEqual({ id: "o1", after: "lines-2" });
     expect(activity["2"]).toEqual({ orders: 1, units: 3, lastOrderAt: "2026-10-01T10:00:00Z", channels: { web: 1 }, capped: false });
     expect(activity["1"].orders).toBe(0);
+  });
+});
+
+describe("mapping an unmapped transfer product", () => {
+  const variantNode = (id: string, tracked = true) => ({ id: `gid://shopify/ProductVariant/${id}`, title: "Default Title", sku: "PKG390", barcode: "840270834802",
+    inventoryItem: { id: `gid://shopify/InventoryItem/9${id}`, tracked }, product: { id: `gid://shopify/Product/8${id}`, title: "Standard Ecomm Box", status: "ACTIVE", onlineStoreUrl: null } });
+  const reverse = (rows: Array<[string, string]>) => ({ data: { entityValueList: rows.map(([shopifyProductId, productId]) => ({ shopifyProductId, productId })) } });
+  const variantRead = (id: string, tracked = true) => ({ data: { statusCode: 200, response: { productVariant: { id: `gid://shopify/ProductVariant/${id}`, inventoryItem: { id: `gid://shopify/InventoryItem/9${id}`, tracked } } } } });
+  const mappingRow = (variantId: string) => ({ shopId: "10000", productId: "M111323", shopifyProductId: variantId, shopifyInventoryItemId: `9${variantId}` });
+  const posts = () => harness.api.mock.calls.filter(([request]) => request.method === "POST" && String(request.url).includes("shopifyShopProducts"));
+
+  beforeEach(() => { harness.api.mockReset(); });
+
+  it("flags search results that are untracked or already mapped to another OMS product", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: { statusCode: 200, response: { productVariants: { nodes: [variantNode("1"), variantNode("2", false), variantNode("3")] } } } })
+      .mockResolvedValueOnce(reverse([["3", "12199"]]));
+    const rows = await searchVariants("10000", "STORE", "sku:\"PKG390\"");
+
+    expect(rows.map(row => [row.variantId, row.tracked, row.mappedProductIds])).toEqual([["1", true, []], ["2", false, []], ["3", true, ["12199"]]]);
+    expect(harness.api.mock.calls[1][0].data.customParametersMap).toEqual({ productStoreId: "STORE", shopifyProductId: ["1", "2", "3"] });
+  });
+
+  it("writes the mapping with the variant's own inventory item and verifies it afterwards", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce(reverse([]))
+      .mockResolvedValueOnce(variantRead("1"))
+      .mockResolvedValueOnce({ data: { shopifyProductId: "1" } })
+      .mockResolvedValueOnce({ data: [mappingRow("1")] });
+    await addMapping("10000", "M111323", "STORE", "1");
+
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0][0].data).toEqual({ shopId: "10000", productId: "M111323", shopifyProductId: "1", shopifyInventoryItemId: "91" });
+  });
+
+  it("refuses a variant another OMS product already holds, since the write would re-point it", async () => {
+    harness.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce(reverse([["1", "12199"]]));
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("already mapped to another OMS product");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("refuses an untracked variant, which Shopify would reject on the transfer", async () => {
+    harness.api.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce(reverse([])).mockResolvedValueOnce(variantRead("1", false));
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("doesn't track inventory");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("stops when the product gained a mapping after the page opened", async () => {
+    harness.api.mockResolvedValueOnce({ data: [mappingRow("7")] });
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("mapped since you opened");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("reports an unverified write instead of claiming success", async () => {
+    harness.api
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce(reverse([]))
+      .mockResolvedValueOnce(variantRead("1"))
+      .mockResolvedValueOnce({ data: { shopifyProductId: "1" } })
+      .mockResolvedValueOnce({ data: [] });
+    await expect(addMapping("10000", "M111323", "STORE", "1")).rejects.toThrow("could not be verified");
   });
 });

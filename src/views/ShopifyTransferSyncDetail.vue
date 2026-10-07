@@ -70,6 +70,10 @@
           <ShopifyTransferMappingConflict v-else-if="isMappingConflict(resolutionIssue) && resolutionIssue.productId"
             :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId" :domain="shop?.myshopifyDomain"
             @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
+          <ShopifyTransferMissingMapping v-else-if="resolutionIssue.code === 'missing-product-mapping' && resolutionIssue.productId"
+            :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId"
+            :product-store-id="shop?.productStoreId" :domain="shop?.myshopifyDomain"
+            @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
           <ShopifyTransferUpdateBlocker v-else-if="resolutionIssue.code === 'unmapped-shipped-item'"
             :key="resolutionIssue.key" :shop-id="id" :order-id="orderId" :order-name="order?.orderName" :domain="shop?.myshopifyDomain"
             :issue="resolutionIssue" :waiting-receipts="dependentReceipts(resolutionIssue, selectedEntry.stage.issues)"
@@ -102,6 +106,7 @@ import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferMappingConflict from "@/components/shopify/ShopifyTransferMappingConflict.vue";
+import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferMissingMapping.vue";
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
 import { useCachedList } from "@/composables/useCachedList";
 import { useCacheSync } from "@/composables/useCacheSync";
@@ -197,7 +202,10 @@ const workingFacts = computed(() => {
 });
 function resolvedIssue(issue: TransferStagingIssue) {
   const resolved = resolveTransferStagingIssue(issue, checks.value[issue.key]);
-  return mappingReady.value[issue.key] && isMappingConflict(resolved) ? { ...resolved, title: "Mapping repaired; ready to stage" } : resolved;
+  if(!mappingReady.value[issue.key]) {return resolved;}
+  if(isMappingConflict(resolved)) {return { ...resolved, title: "Mapping repaired; ready to stage" };}
+
+  return resolved.code === "missing-product-mapping" ? { ...resolved, title: "Mapped to Shopify; ready to stage" } : resolved;
 }
 const resolutionIssue = computed(() => resolvedIssue(selectedEntry.value!.issue));
 const mappingReady = ref<Record<string, boolean>>({});
