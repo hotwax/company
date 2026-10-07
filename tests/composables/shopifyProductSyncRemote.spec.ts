@@ -83,7 +83,7 @@ import {
   fetchUpdateFilesToProcessCount,
 } from "@/composables/useShopify";
 
-const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders } = useTransferMappingResolution();
 
 const SHOP_ID = "10000";
 const SHOPIFY_SHOP_ID = "6973849727";
@@ -233,6 +233,14 @@ describe("transfer product mapping resolution", () => {
     expect(harness.api.mock.calls.every(([request]) => request.method !== "DELETE")).toBe(true);
   });
 
+  it("reports whether each listing is published on the Online Store", async () => {
+    const published = variants();
+    published.data.response.nodes[0].product.onlineStoreUrl = "https://example.test/products/carbon";
+    harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(published);
+    const choices = await fetchTransferMappingChoices("100051", "100198");
+    expect(choices.map(choice => choice.onlineStorePublished)).toEqual([true, false]);
+  });
+
   it("rejects a mapping read that includes another shop or product", async () => {
     harness.api.mockResolvedValueOnce({ data: [{ ...row("1"), shopId: "other-shop" }] });
     await expect(fetchTransferMappingChoices("100051", "100198")).rejects.toThrow("could not be verified");
@@ -263,5 +271,49 @@ describe("transfer product mapping resolution", () => {
     harness.api.mockResolvedValueOnce({ data: [row("1"), row("2")] }).mockResolvedValueOnce(variants()).mockResolvedValueOnce({ data: { errors: ["Denied"] } });
     harness.hasError.mockReturnValue(true);
     await expect(keepTransferProductMapping("100051", "100198", "1", [mapped("1"), mapped("2")])).rejects.toThrow("could not be fully verified");
+  });
+});
+
+describe("recent orders for duplicate transfer mappings", () => {
+  const choice = (variantId: string, sku = "same-sku") => ({ productId: "100198", variantId, inventoryItemId: `9${variantId}`, sku, available: true });
+  const line = (variantId: string, quantity = 1, sku = "same-sku") => ({ sku, quantity, variant: { id: `gid://shopify/ProductVariant/${variantId}` } });
+  const page = (orders: any[], hasNextPage = false) => ({ data: { statusCode: 200, response: { orders: {
+    pageInfo: { hasNextPage, endCursor: hasNextPage ? "next" : null }, nodes: orders,
+  } } } });
+
+  it("credits each order to the variant on its line item, since both listings share the SKU", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page([
+      { id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1", 2)] } },
+      { id: "o2", createdAt: "2026-10-03T10:00:00Z", sourceName: "web", lineItems: { nodes: [line("1"), line("1")] } },
+      { id: "o3", createdAt: "2026-10-02T10:00:00Z", sourceName: "1528379", lineItems: { nodes: [line("2"), line("9", 1, "other-sku")] } },
+    ]));
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    // o2 has the variant on two lines: one order, two units.
+    expect(activity["1"]).toEqual({ orders: 2, units: 4, lastOrderAt: "2026-10-03T10:00:00Z", channels: { pos: 1, web: 1 }, capped: false });
+    expect(activity["2"]).toEqual({ orders: 1, units: 1, lastOrderAt: "2026-10-02T10:00:00Z", channels: { "1528379": 1 }, capped: false });
+    // One search per shared SKU, scoped to the window.
+    expect(harness.api).toHaveBeenCalledTimes(1);
+    expect(harness.api.mock.calls[0][0].data.variables.query).toMatch(/^sku:"same-sku" created_at:>=\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("marks the counts as a lower bound when more pages remain than it reads", async () => {
+    harness.api.mockReset();
+    for(let i = 0; i < 5; i++) {
+      harness.api.mockResolvedValueOnce(page([{ id: `o${i}`, createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1")] } }], true));
+    }
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    expect(harness.api).toHaveBeenCalledTimes(5);
+    expect(activity["1"].orders).toBe(5);
+    expect(activity["1"].capped).toBe(true);
+    expect(activity["2"].capped).toBe(true);
+  });
+
+  it("fails loudly instead of reporting no orders when Shopify refuses the read", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce({ data: { statusCode: 200, graphqlErrors: [{ message: "Access denied" }], response: {} } });
+    await expect(fetchRecentOrders("100051", [choice("1"), choice("2")], 30)).rejects.toThrow("could not be loaded");
   });
 });

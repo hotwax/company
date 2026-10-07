@@ -7205,7 +7205,20 @@ export interface ShopifyProductMappingChoice {
   status?: string;
   shopifyProductId?: string;
   imageUrl?: string;
+  /** The Online Store is the one sales channel the app token can read; other channels need read_publications. */
+  onlineStorePublished?: boolean;
   available: boolean;
+}
+
+/** One mapped variant's recent Shopify orders. */
+export interface VariantOrderActivity {
+  orders: number;
+  units: number;
+  lastOrderAt?: string;
+  /** Order count per Shopify `sourceName` (web, pos, shopify_draft_order, or an app's id). */
+  channels: Record<string, number>;
+  /** More orders exist than were read; `orders` is a lower bound. */
+  capped: boolean;
 }
 
 /** Current shop-scoped mappings, independent of a historical staging diagnostic. */
@@ -7234,7 +7247,7 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
     const batch = mappings.slice(offset, offset + 100);
     const result = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
       shopId,
-      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status } } } }",
+      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status onlineStoreUrl } } } }",
       variables: { ids: batch.map(row => `gid://shopify/ProductVariant/${row.variantId}`) },
     } });
     if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(result.response?.nodes)) {
@@ -7245,11 +7258,61 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
       if(!variant) {continue;}
       Object.assign(row, { title: variant.product?.title, variantTitle: variant.title, sku: variant.sku, barcode: variant.barcode,
         status: variant.product?.status, shopifyProductId: variant.product?.id?.split("/").pop(), imageUrl: variant.image?.url,
+        onlineStorePublished: Boolean(variant.product?.onlineStoreUrl),
         available: variant.inventoryItem?.id === `gid://shopify/InventoryItem/${row.inventoryItemId}` });
     }
   }
 
   return mappings;
+};
+
+const RECENT_ORDER_PAGES = 5;
+const RECENT_ORDERS_QUERY = "query TransferMappingRecentOrders($query: String!, $after: String) { orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) { pageInfo { hasNextPage endCursor } nodes { id createdAt sourceName lineItems(first: 50) { nodes { sku quantity variant { id } } } } } }";
+
+/**
+ * Recent orders for each mapped variant, read from Shopify. Orders can only be searched by SKU, and
+ * duplicate listings usually share one, so each order is credited to the variant on its line item.
+ * Reads at most RECENT_ORDER_PAGES pages of 100 orders per SKU and marks the result capped beyond that.
+ */
+const fetchRecentVariantOrders = async (shopId: string, choices: ShopifyProductMappingChoice[], days = 30): Promise<Record<string, VariantOrderActivity>> => {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const activity: Record<string, VariantOrderActivity> = Object.fromEntries(choices.map(choice =>
+    [choice.variantId, { orders: 0, units: 0, channels: {}, capped: false } as VariantOrderActivity]));
+  const counted = new Set<string>();
+  for(const sku of new Set(choices.map(choice => choice.sku).filter(Boolean) as string[])) {
+    let after: string | null = null;
+    for(let page = 0; page < RECENT_ORDER_PAGES; page++) {
+      const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+        shopId, queryText: RECENT_ORDERS_QUERY, variables: { query: `sku:${JSON.stringify(sku)} created_at:>=${since}`, after },
+      } });
+      const orders = result?.response?.orders;
+      if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(orders?.nodes)) {
+        throw new Error(translate("Recent Shopify orders could not be loaded."));
+      }
+      for(const order of orders.nodes) {
+        for(const line of order.lineItems?.nodes ?? []) {
+          const variantId = String(line.variant?.id ?? "").split("/").pop() as string;
+          const entry = activity[variantId];
+          if(line.sku !== sku || !entry) {continue;}
+          entry.units += Number(line.quantity) || 0;
+          // One order can carry the same variant on several lines; count the order once.
+          if(counted.has(`${variantId}|${order.id}`)) {continue;}
+          counted.add(`${variantId}|${order.id}`);
+          entry.orders++;
+          const channel = String(order.sourceName || "unknown");
+          entry.channels[channel] = (entry.channels[channel] ?? 0) + 1;
+          if(!entry.lastOrderAt || order.createdAt > entry.lastOrderAt) {entry.lastOrderAt = order.createdAt;}
+        }
+      }
+      if(!orders.pageInfo?.hasNextPage) {break;}
+      after = orders.pageInfo.endCursor;
+      if(page === RECENT_ORDER_PAGES - 1) {
+        choices.filter(choice => choice.sku === sku).forEach(choice => { activity[choice.variantId].capped = true; });
+      }
+    }
+  }
+
+  return activity;
 };
 
 const mappingFingerprint = (rows: ShopifyProductMappingChoice[]): string => {
@@ -7280,7 +7343,7 @@ const keepTransferProductMapping = async (shopId: string, productId: string, kee
 
 /** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
 export function useTransferMappingResolution() {
-  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
+  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders: fetchRecentVariantOrders };
 }
 
 /** Read every variant and its existing OMS mapping without re-running an import. */
