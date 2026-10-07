@@ -16,6 +16,8 @@ export interface CacheSyncStatus {
   written?: number;
   message?: string;
   at?: number;
+  /** Structured context a domain attached to its failure, e.g. which part of a partial pass failed. */
+  details?: unknown;
 }
 
 /**
@@ -75,12 +77,26 @@ export function createCacheSync() {
    * banner inserted above the content, was a layout jump every ten seconds.
    */
   const failingDomains = ref<Record<string, string>>({});
+  /** The `details` a failing domain attached, under the same lifecycle as `failingDomains`. */
+  const failingDetails = ref<Record<string, unknown>>({});
 
-  function setFailing(domain: string, message: string) {
+  function setFailing(domain: string, message: string, details?: unknown) {
     if(failingDomains.value[domain] !== message) {failingDomains.value = { ...failingDomains.value, [domain]: message };}
+    if(details !== undefined) {
+      failingDetails.value = { ...failingDetails.value, [domain]: details };
+    } else if(domain in failingDetails.value) {
+      const next = { ...failingDetails.value };
+      delete next[domain];
+      failingDetails.value = next;
+    }
   }
 
   function clearFailing(domain: string) {
+    if(domain in failingDetails.value) {
+      const nextDetails = { ...failingDetails.value };
+      delete nextDetails[domain];
+      failingDetails.value = nextDetails;
+    }
     if(!(domain in failingDomains.value)) {return;}
     const next = { ...failingDomains.value };
     delete next[domain];
@@ -137,7 +153,7 @@ export function createCacheSync() {
           String(data.domain ?? "sync"),
           `${data.domain ?? "sync"}: ${data.message ?? "failed"}`,
         );
-        setFailing(String(data.domain ?? "sync"), String(data.message ?? "failed"));
+        setFailing(String(data.domain ?? "sync"), String(data.message ?? "failed"), data.details);
         if(activeCycles > 0) {activeCycleFailed = true;}
         break;
       case "auth-error":
@@ -159,6 +175,7 @@ export function createCacheSync() {
     // the new one while its first cycle is being scheduled.
     clearErrors();
     failingDomains.value = {};
+    failingDetails.value = {};
     if(service) {
       // Already running — just swap the domain set, no respawn.
       await service.setDomains(domains);
@@ -215,11 +232,12 @@ export function createCacheSync() {
     ready.value = false;
     clearErrors();
     failingDomains.value = {};
+    failingDetails.value = {};
     updateBusy();
   }
 
   return {
-    ready, busy, manualRefreshing, error, failingDomains, domainStatus, lastSyncAt, activeDomains, registeredDomains,
+    ready, busy, manualRefreshing, error, failingDomains, failingDetails, domainStatus, lastSyncAt, activeDomains, registeredDomains,
     start, syncNow, afterMutation, stop,
   };
 }

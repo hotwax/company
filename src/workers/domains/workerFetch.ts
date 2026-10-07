@@ -163,10 +163,15 @@ export async function pageAll(options: {
   /** Identity for the no-progress guard. Defaults to JSON of the record. */
   keyOf?: (record: any) => string | undefined;
   label?: string;
+  /**
+   * Stops the walk before its next page. A caller that gives up waiting (a timeout) must abort, or
+   * the abandoned walk keeps requesting pages whose results nobody will read.
+   */
+  signal?: AbortSignal;
 }): Promise<any[]> {
   const {
     ctx, url, collectionKey, strictCollection = false, requireComplete = false, params = {},
-    batchSize = 250, maxPages = 40, keyOf, label = url,
+    batchSize = 250, maxPages = 40, keyOf, label = url, signal,
   } = options;
 
   const collected: any[] = [];
@@ -174,6 +179,7 @@ export async function pageAll(options: {
   const identify = keyOf ?? ((record: any) => JSON.stringify(record));
 
   for (let pageIndex = 0; ; pageIndex++) {
+    if (signal?.aborted) throw signal.reason ?? new Error(`[sync] ${label}: aborted`);
     if (pageIndex >= maxPages) {
       if (requireComplete) throw new Error(`[sync] ${label}: incomplete snapshot (page limit)`);
       console.warn(
