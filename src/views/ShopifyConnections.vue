@@ -17,7 +17,7 @@
     <ion-content id="filter-content">
       <div>
         <aside class="filters">
-          <ion-searchbar :placeholder="translate('Search keys')" />
+          <ion-searchbar v-model="queryString" :placeholder="translate('Search keys')" />
           <ion-list>
             <ion-item lines="none">
               <ion-icon :icon="flashOutline" slot="start" />
@@ -32,7 +32,7 @@
               <ion-item lines="none"><ion-label><ion-skeleton-text animated style="width: 60%" /></ion-label></ion-item>
             </div>
           </template>
-          <div class="list-item" v-for="shop in shops" :key="shop.shopId" @click="openShopifyConnectionDetails(shop)">
+          <div class="list-item" v-for="shop in filteredShops" :key="shop.shopId" @click="openShopifyConnectionDetails(shop)">
             <ion-item lines="none">
               <ion-icon slot="start" :icon="storefrontOutline" />
               <ion-label class="ion-text-wrap">
@@ -74,6 +74,7 @@
 import { IonButton, IonButtons, IonChip, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenuButton, IonPage, IonSearchbar, IonSkeletonText, IonTitle, IonToggle, IonToolbar, modalController } from "@ionic/vue";
 import { addOutline, filterOutline, flashOutline, informationCircleOutline, openOutline, storefrontOutline } from "ionicons/icons";
 import { translate } from '@common';
+import { computed, ref } from "vue";
 import router from "@/router";
 import { useShopifyShops } from "@/composables/useShopify";
 import { refreshAfterMutation } from "@/services/appDbSync";
@@ -85,7 +86,15 @@ import CreateShopifyConnectionModal from "@/components/shopify/CreateShopifyConn
 // No fetch, no loading race: the worker keeps `shopifyShops` current and liveQuery re-renders.
 const { records: shops, hydrated } = useShopifyShops();
 
+const queryString = ref("");
 
+// Matches the shop name or id the row shows, case-insensitively.
+const filteredShops = computed(() => {
+  const query = queryString.value.trim().toLowerCase();
+  if (!query) return shops.value;
+  return shops.value.filter((shop: any) =>
+    [shop.name, shop.shopId].some((value) => String(value || "").toLowerCase().includes(query)));
+});
 
 function openShopifyConnectionDetails(shop: any) {
   router.push({ path: `/shopify-connection-details/${shop.shopId}` })
