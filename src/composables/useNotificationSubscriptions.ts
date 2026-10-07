@@ -37,9 +37,15 @@ export const NOTIFICATION_APPS = [
 
 export type NotificationApp = (typeof NOTIFICATION_APPS)[number];
 
+/**
+ * A row from `firebase/user/notificationtopic`. Depending on the instance this is either a
+ * NotificationTopicUser row (topic + userId) or a NotificationTopic metadata row (topic +
+ * topicTypeId, no userId). Only the former says anything about who is subscribed.
+ */
 export type SubscriptionRow = {
   topic: string;
-  userId: string;
+  userId?: string;
+  topicTypeId?: string;
   receiveNotifications?: string;
   description?: string;
 };
@@ -301,6 +307,16 @@ export function useNotificationSubscriptions() {
     () => new Set(filteredTopics.value.flatMap((topic) => topic.userIds)).size
   );
 
+  /**
+   * Whether the response carried any subscriber (userId) at all. Instances that return topic
+   * metadata rows instead of NotificationTopicUser rows give us topics but no subscribers, and
+   * reporting "0 users" or "topics with subscribers" off those rows would be a fabricated number.
+   * Views must hide subscriber counts when this is false.
+   */
+  const hasSubscriberData = computed(
+    () => !!state.subscriptions?.some((row) => !!row?.userId)
+  );
+
   /** Events defined for the app that nobody anywhere has subscribed to. */
   const unsubscribedEvents = computed(() => {
     const subscribed = new Set(topics.value.map((topic) => topic.enumId));
@@ -323,7 +339,7 @@ export function useNotificationSubscriptions() {
     // Annotated explicitly: `reactive()` widens the nullable array and `?? []` would otherwise
     // infer `never[]`, losing the row type.
     const rows: SubscriptionRow[] = state.subscriptions ?? [];
-    const ids = [...new Set(rows.map((row) => row.userId).filter(Boolean))];
+    const ids = [...new Set(rows.map((row) => row.userId).filter((id): id is string => !!id))];
     userNames.value = await fetchUserNames(ids);
 
     state.loading = false;
@@ -340,6 +356,7 @@ export function useNotificationSubscriptions() {
     clearFilters,
     facilityCount,
     userCount,
+    hasSubscriberData,
     unsubscribedEvents,
     load
   };
