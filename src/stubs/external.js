@@ -9,13 +9,6 @@ export const getToken = noop;
 export const onMessage = noop;
 export const isSupported = () => Promise.resolve(false);
 
-// comlink
-export const wrap = noop;
-export const expose = noop;
-export const releaseProxy = Symbol('releaseProxy');
-export const transfer = noop;
-export const Group = noop;
-
 // @shopify/app-bridge
 export const createApp = noop;
 
