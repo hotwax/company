@@ -722,8 +722,13 @@ const syncFailures = computed(() => ({
 }));
 const SYNC_PRIORITY = Object.values(INVENTORY_EVENT_DOMAINS);
 
+/**
+ * Same reason as `groupFacilitiesEffectiveNow`: a channel whose `thruDate` passes while the page is
+ * open must drop out, and a future-dated one must appear at its `fromDate`, without a reload.
+ */
+const inventoryChannelsEffectiveNow = useEffectiveNow(allInventoryChannels);
 const inventoryChannels = computed(() => allInventoryChannels.value.filter((channel: any) =>
-  String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, Date.now())));
+  String(channel.shopId) === String(props.id ?? "") && isEffectiveNow(channel, inventoryChannelsEffectiveNow.value)));
 
 /**
  * Shops by id, for naming a channel's target and for this connection's own push gate. Cached table,

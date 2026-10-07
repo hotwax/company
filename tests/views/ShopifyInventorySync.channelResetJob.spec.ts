@@ -707,3 +707,56 @@ describe("ShopifyInventorySync - monitor batch carousels", () => {
     wrapper.unmount();
   });
 });
+
+/**
+ * INV10 / INV11: the effective-channel filter used `Date.now()` with nothing reactive behind it, so a
+ * channel whose `thruDate` passed while the page was open kept its card, and a future-dated channel
+ * never got one, until some unrelated cache write or a reload. The boundaries alone must move it.
+ */
+describe("ShopifyInventorySync - channels crossing a date boundary while open", () => {
+  const T0 = Date.UTC(2026, 9, 7, 12, 0, 0);
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(T0);
+    detailsHydrated.value = true;
+    syncReady.value = true;
+    syncError.value = null;
+    cachedJobs.value = [];
+    cachedShops.value = [{ shopId: "100002", name: "Shopify Store", inventoryFeedType: "manual" }];
+    cachedChannels.value = [
+      { inventoryChannelId: "IC_EXPIRING", shopId: "100002", facilityGroupId: "FG_1", facilityGroupName: "Expiring Channel", shopifyLocationId: "LOC_1", fromDate: 1000, thruDate: T0 + 60_000 },
+      { inventoryChannelId: "IC_FUTURE", shopId: "100002", facilityGroupId: "FG_2", facilityGroupName: "Future Channel", shopifyLocationId: "LOC_2", fromDate: T0 + 120_000 },
+    ];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("drops an expiring channel at its thruDate and shows a future one at its fromDate", async () => {
+    const { default: ShopifyInventorySync } = await import("@/views/ShopifyInventorySync.vue");
+    const wrapper = mount(ShopifyInventorySync, {
+      props: { id: "100002" },
+      global: { stubs: { IonModal: true, ServiceJobDetailsModal: true, EditInventoryChannelModal: true, SetupInventoryChannelModal: true } },
+    });
+    await flushPromises();
+    const channelCards = () => wrapper.findAll("ion-card").filter((card) => card.text().includes("Reset channel ATP"));
+    const cardNames = () => ["Expiring Channel", "Future Channel"]
+      .filter((name) => channelCards().some((card) => card.text().includes(name)))
+      .map((name) => name.split(" ")[0].toLowerCase());
+
+    expect(cardNames()).toEqual(["expiring"]);
+
+    // No cache write in between: only the clock moves.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flushPromises();
+    expect(cardNames()).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flushPromises();
+    expect(cardNames()).toEqual(["future"]);
+    wrapper.unmount();
+  });
+});
