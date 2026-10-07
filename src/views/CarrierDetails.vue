@@ -396,7 +396,7 @@ const handleStoreAssociationToggle = async ({
           shipmentMethodTypeId: method.shipmentMethodTypeId,
           partyId: carrier.value!.partyId,
           roleTypeId: "CARRIER",
-          isTrackingRequired: false,
+          isTrackingRequired: "N",
         });
       } else if (association?.productStoreShipMethId) {
         await expireProductStoreShipmentMethod(
