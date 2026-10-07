@@ -871,15 +871,16 @@ export const companySchema = defineSchema({
   }),
 
   /**
-   * PK UNVERIFIED: `enumGroupMemberProjection`'s doc comment records that its endpoint returns an
-   * empty 200 on the available instance, so the natural key could not be confirmed live. Converted
-   * to its implied compound key (enumerationGroupId + enumId), the fields `buildKey` joins in
-   * order — that function defaults a missing `enumerationGroupId` to the literal constant
-   * `"IA_VAR_NETSUITE"` rather than reading it from another field, so this is not a `rename`
-   * case.
+   * EnumerationGroupMember — date-effective, keyed (enumerationGroupId, enumId, fromDate), the
+   * entity's own PK.
+   *
+   * Removing a reason stamps a `thruDate` and re-adding it inserts a NEW row with a later `fromDate`,
+   * so the members endpoint returns the expired row alongside its replacement. Keyed on group + enum
+   * alone those two collapsed into one and whichever came first won — the expired one, leaving the
+   * re-added reason unchecked. Readers pick the live row with `isEffectiveNow`.
    */
   enumGroupMembers: defineEntity({
-    primaryKey: "enumerationGroupId,enumId",
+    primaryKey: "enumerationGroupId,enumId,fromDate",
     fields: {
       enumerationGroupId: "text",
       enumId: "text",

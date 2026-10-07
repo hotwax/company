@@ -45,7 +45,9 @@ export const companyDb = defineAppDb({
   //     Every `eventTypeId` also gained an `SIE_` prefix, so pre-release ledger rows must not survive.
   // v4: restored fields screens read (seed tables and several own tables), re-keyed
   //     facilityIdentifications on fromDate and shopifyTransferPending on its artifact.
-  version: 4,
+  // v5: re-keyed enumGroupMembers on fromDate, so an expired membership and its re-added
+  //     replacement are two rows rather than one.
+  version: 5,
   schema: mergeSchemas(commonSchema.pick([...COMPANY_SEED_TABLES]), companySchema),
 });
 

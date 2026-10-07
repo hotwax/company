@@ -35,7 +35,7 @@
     "shopifyTypeMappings": "[shopId+mappedTypeId+mappedKey], shopId, mappedTypeId, mappedKey",
     "shopifyCarrierShipments": "[shopId+carrierPartyId+shipmentMethodTypeId], shopId, carrierPartyId, shipmentMethodTypeId",
     "facilityGroupProductStores": "[facilityGroupId+productStoreId+fromDate], facilityGroupId, productStoreId, fromDate, thruDate",
-    "enumGroupMembers": "[enumerationGroupId+enumId], enumerationGroupId, enumId",
+    "enumGroupMembers": "[enumerationGroupId+enumId+fromDate], enumerationGroupId, enumId",
     "facilityIdentifications": "[facilityId+facilityIdenTypeId+fromDate], facilityId, facilityIdenTypeId, thruDate",
     "appVersions": "[appId+environmentTypeId], appId, environmentTypeId"
   }
