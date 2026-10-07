@@ -108,7 +108,7 @@ import { useCacheSync } from "@/composables/useCacheSync";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { type TransferSyncJobCard, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
-import { fetchTransferSyncSummary, useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
+import { useTransferSyncSummary, useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { type TransferUpdateCheck, useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import { formatDateTime } from "@/utils";
@@ -151,14 +151,9 @@ const { products, resolve } = useProducts();
 const { records: facilities } = useCachedList<any>(facilityCache);
 function facilityName(id?: string) {return facilities.value.find(row => row.facilityId === id)?.facilityName || id || translate("Not available");}
 const transfersUrl = computed(() => transfersAppOrderUrl(props.orderId));
-const summary = ref<Awaited<ReturnType<typeof fetchTransferSyncSummary>>>();
-const summaryError = ref("");
-let summaryVersion = 0;
+const { summary, summaryError, loadSummary: doLoadSummary } = useTransferSyncSummary();
 async function loadSummary() {
-  const version = ++summaryVersion;
-  summary.value = undefined; summaryError.value = "";
-  try {const result = await fetchTransferSyncSummary(props.id, props.orderId); if(version === summaryVersion) {summary.value = result;}}
-  catch (err: any) {if(version === summaryVersion) {summaryError.value = err.message;}}
+  await doLoadSummary(props.id, props.orderId);
 }
 const { check } = useShopifyTransferUpdateCheck();
 const checks = ref<Record<string, TransferUpdateCheck>>({});
@@ -236,10 +231,10 @@ async function refresh() {
   catch { /* Owning read helpers expose their errors. */ } finally {refreshing.value = false;}
 }
 function enter() {active.value = true; startRuns(); void load([{ orderId: props.orderId }], { refresh: true }); void loadSummary(); mappingVersion.value++;}
-watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; if(active.value) {enter(); void recheckSelected();}});
+watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; if(active.value) {enter(); void recheckSelected();}});
 watch(jobNames, () => {if(active.value) {startRuns();}});
 onIonViewWillEnter(enter);
-onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; stop();});
+onIonViewDidLeave(() => {active.value = false; checkVersion++; stop();});
 const showJob = ref(false);
 const selectedJob = ref<TransferSyncJobCard>();
 function openJob(card?: TransferSyncJobCard) {if(card?.job) {selectedJob.value = card; showJob.value = true;}}

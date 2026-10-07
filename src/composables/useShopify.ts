@@ -916,13 +916,38 @@ export function useShopifyFacilityMappings(facilityId: string | undefined) {
  * find locations that exist on one side only. The OMS half comes from `useShopifyLocations`, so this
  * is the only request the audit needs.
  */
-export async function fetchLocationsFromShopify(shopId: string): Promise<any[]> {
-  const resp: any = await api({
-    url: `shopify/shops/${encodeURIComponent(shopId)}/shopify-locations`,
-    method: "get",
-  });
+export function useShopifyLocationsAudit() {
+  const health = ref<any>(null);
+  const isAuditing = ref(false);
 
-  return (resp?.data?.locations?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean);
+  async function runAudit(shopId: string, omsMappings: any[]) {
+    isAuditing.value = true;
+    try {
+      const resp: any = await api({
+        url: `shopify/shops/${encodeURIComponent(shopId)}/shopify-locations`,
+        method: "get",
+      });
+      const nodes = (resp?.data?.locations?.edges ?? []).map((edge: any) => edge?.node).filter(Boolean);
+
+      const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)));
+      const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]));
+
+      health.value = {
+        totalShopifyLocations: nodes.length,
+        unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop() ?? '')).length,
+        stale: omsMappings.filter((m: any) => {
+          const node = nodeById.get(String(m.shopifyLocationId));
+          return node && !node.isActive;
+        }).length
+      };
+    } catch (e) {
+      throw e;
+    } finally {
+      isAuditing.value = false;
+    }
+  }
+
+  return { health, isAuditing, runAudit };
 }
 
 export interface WriteOptions {
@@ -7367,32 +7392,65 @@ export async function repairInventoryResetImportConfig(): Promise<void> {
  * unpaged total in `x-total-count`. `activationStatus` is a real column on the OMS view, so it is
  * both the filter value sent up and the status read back per row.
  */
-export async function fetchProductFacilityActivations(shopId: string, params: {
-  activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
-}): Promise<{
-  activations: import("@/utils/shopifyActivation").ProductFacilityActivation[];
-  totalCount: number;
-}> {
-  if (!shopId) throw new Error("A Shopify connection is required.");
-  const { activationStatus, ...rest } = params;
-  const response: any = await api({
-    url: "sob/shopify/productFacilityActivations",
-    method: "get",
-    params: {
-      ...rest,
-      shopId,
-      // Paging is only stable under an explicit order; this is the order the OMS activation
-      // query itself uses.
-      orderByField: "productId,facilityId,shopifyProductId",
-      // "all" is the page's own idea of no filter; the resource has no such value.
-      ...(activationStatus === "all" ? {} : { activationStatus }),
-    },
-  });
-  if (commonUtil.hasError(response)) throw new Error("The OMS could not read product activation records.");
-  const activations = Array.isArray(response?.data) ? response.data : [];
-  const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
-  return { activations, totalCount: Number.isFinite(headerTotal) ? headerTotal : activations.length };
+export function useProductFacilityActivations() {
+  const rows = ref<import("@/utils/shopifyActivation").ProductFacilityActivation[]>([]);
+  const totalCount = ref(0);
+  const loading = ref(false);
+  const error = ref("");
+  let generation = 0;
+
+  async function load(shopId: string, params: {
+    activationStatus: string; productId?: string; facilityId?: string; pageIndex: number; pageSize: number;
+  }) {
+    const request = ++generation;
+    loading.value = true;
+    error.value = "";
+    try {
+      if (!shopId) throw new Error("A Shopify connection is required.");
+      const { activationStatus, ...rest } = params;
+      const response: any = await api({
+        url: "sob/shopify/productFacilityActivations",
+        method: "get",
+        params: {
+          ...rest,
+          shopId,
+          // Paging is only stable under an explicit order; this is the order the OMS activation
+          // query itself uses.
+          orderByField: "productId,facilityId,shopifyProductId",
+          // "all" is the page's own idea of no filter; the resource has no such value.
+          ...(activationStatus === "all" ? {} : { activationStatus }),
+        },
+      });
+      if (request !== generation) return;
+      if (commonUtil.hasError(response)) {
+        throw new Error("The OMS could not read product activation records.");
+      }
+      const activations = Array.isArray(response?.data) ? response.data : [];
+      const headerTotal = Number(response?.headers?.["x-total-count"] ?? NaN);
+
+      rows.value = activations;
+      totalCount.value = Number.isFinite(headerTotal) ? headerTotal : activations.length;
+    } catch (cause: any) {
+      if (request !== generation) return;
+      error.value = cause;
+      rows.value = [];
+      totalCount.value = 0;
+      throw cause;
+    } finally {
+      if (request === generation) {
+        loading.value = false;
+      }
+    }
+  }
+
+  function clearGeneration() {
+    generation++;
+    loading.value = false;
+  }
+
+  return { rows, totalCount, loading, error, load, clearGeneration };
 }
+
 
 // Shopify is the owning composable for all Shopify-facing screen APIs. The fulfillment reader
 // implementation remains split into a focused submodule, but callers import it through this owner
