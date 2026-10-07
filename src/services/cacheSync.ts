@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { type SyncService, createSyncService } from "@/services/pollingService";
-import type { ActiveDomain } from "@/workers/syncRegistry";
+import { type ActiveDomain, activationKey } from "@/workers/syncRegistry";
 
 /**
  * The cache-sync lifecycle: spawn the sync worker, activate domains, track per-domain status, stop.
@@ -24,6 +24,22 @@ export interface CacheSyncStatus {
  * The sync lifecycle without a component attached. `useCacheSync` binds it to a view; a service that
  * outlives any one view (the inventory sync area) owns one directly and stops it itself.
  */
+/**
+ * Domain names activated identically in both sets (same name, same args). Such a domain is still
+ * doing the same work, so its last failure still describes it.
+ */
+function unchangedDomains(before: ActiveDomain[], after: ActiveDomain[]): Set<string> {
+  const keysByName = (list: ActiveDomain[]) => {
+    const keys = new Map<string, string[]>();
+    for(const entry of list) {keys.set(entry.name, [...(keys.get(entry.name) ?? []), activationKey(entry)]);}
+
+    return new Map([...keys].map(([name, list]) => [name, list.sort().join("\n")]));
+  };
+  const previous = keysByName(before);
+
+  return new Set([...keysByName(after)].filter(([name, keys]) => previous.get(name) === keys).map(([name]) => name));
+}
+
 export function createCacheSync() {
   const ready = ref(false);
   const busy = ref(false);
@@ -103,6 +119,14 @@ export function createCacheSync() {
     failingDomains.value = next;
   }
 
+  /** Drop every failure except those of `keep`, across `error`, `failingDomains` and `failingDetails`. */
+  function retainFailures(keep: Set<string>) {
+    for(const domain of [...errorsByDomain.keys()]) {if(!keep.has(domain)) {errorsByDomain.delete(domain);}}
+    refreshError();
+    failingDomains.value = Object.fromEntries(Object.entries(failingDomains.value).filter(([domain]) => keep.has(domain)));
+    failingDetails.value = Object.fromEntries(Object.entries(failingDetails.value).filter(([domain]) => keep.has(domain)));
+  }
+
   function updateBusy() {
     manualRefreshing.value = pendingManualRefreshes > 0;
     busy.value = activeCycles > 0 || pendingManualRefreshes > 0;
@@ -170,12 +194,12 @@ export function createCacheSync() {
 
   /** Activate domains and start polling. Safe to call again to change the domain set. */
   async function start(domains: ActiveDomain[], options: { baseTickMs?: number } = {}) {
-    activeDomains.value = domains;
     // Domain changes can represent a different shop. Do not carry the previous scope's failure into
-    // the new one while its first cycle is being scheduled.
-    clearErrors();
-    failingDomains.value = {};
-    failingDetails.value = {};
+    // the new one while its first cycle is being scheduled. A domain whose activation is unchanged (a
+    // tab switch re-sends the same one) keeps its failure: setDomains starts no new pass, so clearing
+    // it would show that domain as healthy until its next scheduled tick.
+    retainFailures(service ? unchangedDomains(activeDomains.value, domains) : new Set());
+    activeDomains.value = domains;
     if(service) {
       // Already running — just swap the domain set, no respawn.
       await service.setDomains(domains);

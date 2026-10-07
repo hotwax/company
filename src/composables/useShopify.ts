@@ -7267,30 +7267,54 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
 };
 
 const RECENT_ORDER_PAGES = 5;
-const RECENT_ORDERS_QUERY = "query TransferMappingRecentOrders($query: String!, $after: String) { orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) { pageInfo { hasNextPage endCursor } nodes { id createdAt sourceName lineItems(first: 50) { nodes { sku quantity variant { id } } } } } }";
+const RECENT_ORDERS_QUERY = "query TransferMappingRecentOrders($query: String!, $after: String) { orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) { pageInfo { hasNextPage endCursor } nodes { id createdAt sourceName lineItems(first: 50) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+const ORDER_LINE_ITEMS_QUERY = "query TransferMappingOrderLines($id: ID!, $after: String) { node(id: $id) { ... on Order { lineItems(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+
+function assertShopifyRead(result: any, data: any) {
+  if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !data) {
+    throw new Error(translate("Recent Shopify orders could not be loaded."));
+  }
+}
+
+/** Every line item of one order: the first page came with the order search, the rest are paged here. */
+async function allOrderLines(shopId: string, order: any): Promise<any[]> {
+  const lines = [...(order.lineItems?.nodes ?? [])];
+  let pageInfo = order.lineItems?.pageInfo;
+  while(pageInfo?.hasNextPage) {
+    const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+      shopId, queryText: ORDER_LINE_ITEMS_QUERY, variables: { id: order.id, after: pageInfo.endCursor },
+    } });
+    const page = result?.response?.node?.lineItems;
+    assertShopifyRead(result, Array.isArray(page?.nodes) ? page : undefined);
+    lines.push(...page.nodes);
+    pageInfo = page.pageInfo;
+  }
+
+  return lines;
+}
 
 /**
  * Recent orders for each mapped variant, read from Shopify. Orders can only be searched by SKU, and
  * duplicate listings usually share one, so each order is credited to the variant on its line item.
  * Reads at most RECENT_ORDER_PAGES pages of 100 orders per SKU and marks the result capped beyond that.
+ * A variant without a SKU cannot be searched, so it gets no entry: its activity is unknown, not zero.
  */
 const fetchRecentVariantOrders = async (shopId: string, choices: ShopifyProductMappingChoice[], days = 30): Promise<Record<string, VariantOrderActivity>> => {
   const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  const activity: Record<string, VariantOrderActivity> = Object.fromEntries(choices.map(choice =>
+  const searchable = choices.filter(choice => choice.sku);
+  const activity: Record<string, VariantOrderActivity> = Object.fromEntries(searchable.map(choice =>
     [choice.variantId, { orders: 0, units: 0, channels: {}, capped: false } as VariantOrderActivity]));
   const counted = new Set<string>();
-  for(const sku of new Set(choices.map(choice => choice.sku).filter(Boolean) as string[])) {
+  for(const sku of new Set(searchable.map(choice => choice.sku as string))) {
     let after: string | null = null;
     for(let page = 0; page < RECENT_ORDER_PAGES; page++) {
       const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
         shopId, queryText: RECENT_ORDERS_QUERY, variables: { query: `sku:${JSON.stringify(sku)} created_at:>=${since}`, after },
       } });
       const orders = result?.response?.orders;
-      if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(orders?.nodes)) {
-        throw new Error(translate("Recent Shopify orders could not be loaded."));
-      }
+      assertShopifyRead(result, Array.isArray(orders?.nodes) ? orders : undefined);
       for(const order of orders.nodes) {
-        for(const line of order.lineItems?.nodes ?? []) {
+        for(const line of await allOrderLines(shopId, order)) {
           const variantId = String(line.variant?.id ?? "").split("/").pop() as string;
           const entry = activity[variantId];
           if(line.sku !== sku || !entry) {continue;}
@@ -7307,7 +7331,7 @@ const fetchRecentVariantOrders = async (shopId: string, choices: ShopifyProductM
       if(!orders.pageInfo?.hasNextPage) {break;}
       after = orders.pageInfo.endCursor;
       if(page === RECENT_ORDER_PAGES - 1) {
-        choices.filter(choice => choice.sku === sku).forEach(choice => { activity[choice.variantId].capped = true; });
+        searchable.filter(choice => choice.sku === sku).forEach(choice => { activity[choice.variantId].capped = true; });
       }
     }
   }

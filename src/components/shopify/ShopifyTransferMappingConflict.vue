@@ -79,6 +79,9 @@
             <p v-if="choice.onlineStorePublished === false">
               {{ translate("Not on the Online Store") }}
             </p>
+            <p v-if="!choice.sku && activityLoaded">
+              {{ translate("Recent orders can't be checked without a SKU") }}
+            </p>
             <div v-if="activity[choice.variantId]?.orders">
               <ion-chip v-for="channel in channelBreakdown(activity[choice.variantId])" :key="channel.label" outline>
                 <ion-label>{{ channel.label }} {{ channel.count }}</ion-label>
@@ -148,6 +151,8 @@ let version = 0;
 const activity = ref<Record<string, VariantOrderActivity>>({});
 const activityLoading = ref(false);
 const activityError = ref("");
+/** Set once a lookup finished, so a variant with no entry reads as "unknown" only after the lookup ran. */
+const activityLoaded = ref(false);
 const ready = computed(() => choices.value.length === 1 && choices.value[0].available);
 const sellingCount = computed(() => choices.value.filter(choice => (activity.value[choice.variantId]?.orders ?? 0) > 0).length);
 function orderCount(entry: VariantOrderActivity) {
@@ -174,7 +179,7 @@ async function loadActivity(token: number, rows: ShopifyProductMappingChoice[]) 
   activityLoading.value = true;
   try {
     const result = await fetchRecentOrders(props.shopId, rows, ACTIVITY_DAYS);
-    if(token === version) {activity.value = result;}
+    if(token === version) {activity.value = result; activityLoaded.value = true;}
   } catch (cause: any) {
     if(token === version) {activityError.value = cause.message || translate("Recent Shopify orders could not be loaded.");}
   } finally {if(token === version) {activityLoading.value = false;}}
@@ -205,6 +210,7 @@ async function load() {
   selected.value = "";
   choices.value = [];
   activity.value = {};
+  activityLoaded.value = false;
   activityError.value = "";
   emit("ready", false);
   try {

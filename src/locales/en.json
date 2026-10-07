@@ -358,6 +358,7 @@
   "Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected.": "Real-time inventory push disabled for this connection. Quantities already in Shopify are unaffected.",
   "Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off.": "Real-time inventory push enabled for this connection. Run a physical location QOH reset if stock moved while it was off.",
   "Real-time push": "Real-time push",
+  "Recent orders can't be checked without a SKU": "Recent orders can't be checked without a SKU",
   "Recent orders could not be loaded": "Recent orders could not be loaded",
   "Recent Shopify orders could not be loaded.": "Recent Shopify orders could not be loaded.",
   "required": "required",

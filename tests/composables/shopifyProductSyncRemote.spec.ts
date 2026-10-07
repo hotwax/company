@@ -316,4 +316,31 @@ describe("recent orders for duplicate transfer mappings", () => {
     harness.api.mockResolvedValueOnce({ data: { statusCode: 200, graphqlErrors: [{ message: "Access denied" }], response: {} } });
     await expect(fetchRecentOrders("100051", [choice("1"), choice("2")], 30)).rejects.toThrow("could not be loaded");
   });
+
+  it("reports a variant without a SKU as unknown rather than as zero orders", async () => {
+    harness.api.mockReset();
+    harness.api.mockResolvedValueOnce(page([{ id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "pos", lineItems: { nodes: [line("1")] } }]));
+    const activity = await fetchRecentOrders("100051", [choice("1"), { ...choice("2"), sku: "" }], 30);
+
+    expect(activity["1"].orders).toBe(1);
+    // No entry: the panel shows "can't be checked" instead of "0 orders".
+    expect(activity["2"]).toBeUndefined();
+    expect(harness.api).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the rest of an order's line items before deciding a variant did not sell on it", async () => {
+    harness.api.mockReset();
+    const firstLines = Array.from({ length: 50 }, (_, index) => line(`x${index}`, 1, `other-${index}`));
+    harness.api
+      .mockResolvedValueOnce(page([{ id: "o1", createdAt: "2026-10-01T10:00:00Z", sourceName: "web",
+        lineItems: { pageInfo: { hasNextPage: true, endCursor: "lines-2" }, nodes: firstLines } }]))
+      .mockResolvedValueOnce({ data: { statusCode: 200, response: { node: { lineItems: {
+        pageInfo: { hasNextPage: false, endCursor: null }, nodes: [line("2", 3)],
+      } } } } });
+    const activity = await fetchRecentOrders("100051", [choice("1"), choice("2")], 30);
+
+    expect(harness.api.mock.calls[1][0].data.variables).toEqual({ id: "o1", after: "lines-2" });
+    expect(activity["2"]).toEqual({ orders: 1, units: 3, lastOrderAt: "2026-10-01T10:00:00Z", channels: { web: 1 }, capped: false });
+    expect(activity["1"].orders).toBe(0);
+  });
 });
