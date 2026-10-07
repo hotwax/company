@@ -88,7 +88,7 @@
                   <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">{{ translate("Not loaded") }}</ion-label>
                   <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
                 </ion-item>
-                <ion-item lines="none">
+                <ion-item>
                   <ion-label class="ion-text-wrap">
                     {{ translate("Syncing from") }}
                     <p v-if="launchDate">
@@ -102,6 +102,29 @@
                   <ion-button v-else slot="end" fill="outline" size="small" @click="openLaunchModal()">
                     {{ launchDate ? translate("Change start date") : translate("Set start date") }}
                   </ion-button>
+                </ion-item>
+                <ion-item lines="none">
+                  <ion-label class="ion-text-wrap">
+                    {{ translate("Native Inventory Transfer Sync") }}
+                    <p v-if="nativeSyncLoadFailed">
+                      {{ translate("Not loaded") }}
+                    </p>
+                    <p v-else-if="nativeSyncEnabled">
+                      {{ translate("Transfer orders sync to Shopify as inventory transfers.") }}
+                    </p>
+                    <p v-else>
+                      {{ translate("Transfer orders do not sync as Shopify transfers. Their inventory changes sync as inventory updates.") }}
+                    </p>
+                  </ion-label>
+                  <ion-skeleton-text v-if="nativeSyncLoading" slot="end" :animated="true" class="count-skeleton" />
+                  <ion-toggle
+                    v-else
+                    slot="end"
+                    :checked="nativeSyncEnabled"
+                    :disabled="nativeSyncSaving || nativeSyncLoadFailed"
+                    :aria-label="translate('Native Inventory Transfer Sync')"
+                    @click.prevent="toggleNativeSync"
+                  />
                 </ion-item>
               </ion-list>
             </ion-card>
@@ -616,7 +639,7 @@ import {
   IonDatetime, IonDatetimeButton,
   IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote, IonPage, IonPopover, IonRadio, IonRadioGroup,
   IonSegment, IonSegmentButton, IonInput,
-  IonSkeletonText, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
+  IonSkeletonText, IonSpinner, IonTitle, IonToggle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter,
 } from "@ionic/vue";
 import { checkmarkCircleOutline, closeOutline, openOutline, refreshOutline, saveOutline, swapHorizontalOutline, warningOutline } from "ionicons/icons";
 import { DateTime } from "luxon";
@@ -633,6 +656,7 @@ import { useShopifyShop } from "@/composables/useShopify";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import {
   registerMissingTransferWebhook,
+  useShopifyNativeTransferSync,
   useShopifyPendingCounts,
   useShopifyPendingSegment,
   useShopifySyncedSegment,
@@ -724,6 +748,24 @@ const {
   load: loadLaunch,
   save: saveLaunch,
 } = useShopifyTransferSyncLaunch();
+
+// ---------------------------------------------------------------- native transfer sync switch
+const {
+  enabled: nativeSyncEnabled,
+  loading: nativeSyncLoading,
+  saving: nativeSyncSaving,
+  loadFailed: nativeSyncLoadFailed,
+  load: loadNativeSync,
+  save: saveNativeSync,
+} = useShopifyNativeTransferSync();
+
+async function toggleNativeSync(event: any) {
+  event?.stopImmediatePropagation?.();
+  if(nativeSyncSaving.value || nativeSyncLoadFailed.value) { return; }
+  if(!await saveNativeSync(shopId.value, !nativeSyncEnabled.value)) {
+    commonUtil.showToast(translate("Native Inventory Transfer Sync could not be updated."));
+  }
+}
 
 const showLaunchModal = ref(false);
 const launchChoice = ref("now");
@@ -1127,6 +1169,7 @@ function startTransferSyncDomains() {
   viewActive.value = true;
   stagingSyncBaselineAt.value = Number(domainStatus.value.serviceJobRun?.at ?? 0);
   void loadLaunch(shopId.value, undefined, true);
+  void loadNativeSync(shopId.value);
   // Ionic retains this component between visits. Use the last completed pass as this visit's
   // baseline so an old sync-end cannot authorize a new cold empty state.
   viewSyncBaselineAt.value = Number(domainStatus.value.shopifyTransferSync?.at ?? 0);

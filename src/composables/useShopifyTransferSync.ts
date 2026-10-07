@@ -191,6 +191,64 @@ export function useShopifyTransferSyncLaunch() {
   return { currentDate, counts, loading, saving, error, load, save };
 }
 
+/**
+ * Per-shop Native Inventory Transfer Sync switch (`SHPFY_NATIVE_TO_SYNC`). Off means the shop's
+ * transfer orders are not pushed as Shopify transfers, even with the transfer jobs running; their
+ * inventory changes reach Shopify as inventory events instead. No row means on.
+ */
+const NATIVE_SYNC_SETTING = "SHPFY_NATIVE_TO_SYNC";
+
+export function useShopifyNativeTransferSync() {
+  const enabled = ref(true);
+  const loading = ref(false);
+  const saving = ref(false);
+  const loadFailed = ref(false);
+
+  async function load(shopId: string) {
+    if(!shopId) { return; }
+    loading.value = true;
+    loadFailed.value = false;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "GET",
+        params: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, pageSize: 1 },
+      });
+      const rows = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      const value = String(rows[0]?.settingValue ?? "").trim().toLowerCase();
+      // Mirrors the connector: only an explicit false/N turns it off.
+      enabled.value = value !== "false" && value !== "n";
+    } catch {
+      // Never show a default the server did not confirm; the toggle stays disabled until a reload works.
+      loadFailed.value = true;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function save(shopId: string, next: boolean): Promise<boolean> {
+    if(!shopId) { return false; }
+    saving.value = true;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "POST",
+        data: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, settingValue: next ? "true" : "false" },
+      });
+      if(commonUtil.hasError(resp)) { return false; }
+      enabled.value = next;
+
+      return true;
+    } catch {
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return { enabled, loading, saving, loadFailed, load, save };
+}
+
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */
 const SYNCED_ORDER_BY = "-syncedDate";
 const SYNCED_PAGE_SIZE = 50;
