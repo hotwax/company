@@ -122,19 +122,19 @@ import { computed, defineProps, nextTick, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { shouldPopHistoryOnBack } from "@/utils/navigation";
 import { useFacilities } from '@/composables/useFacilities';
-import { fetchLocationsFromShopify, useShopifyLocations, useShopifyShopMutations } from "@/composables/useShopify";
+import { useShopifyLocationsAudit, useShopifyLocations, useShopifyShopMutations } from "@/composables/useShopify";
 import { refreshAfterMutation, resyncDomain } from '@/services/appCacheBootstrap';
 
 const props = defineProps(['id']);
 const shopMutations = useShopifyShopMutations(props.id);
 const editingItemId = ref("");
 const localMappings = ref<any>({});
-const health = ref<any>(null)
-const isAuditing = ref(false)
 
 // Facilities and this shop's location mappings both come from the cache — no fetch on entry.
 const { facilities } = useFacilities();
 const { locations: shopifyShopLocations, locationByFacility, hydrated } = useShopifyLocations(props.id);
+const { health, isAuditing, runAudit: runLocationAudit } = useShopifyLocationsAudit();
+
 // Skeleton shows only until the cache emits; on a warm cache that is immediate.
 const isLoading = computed(() => !hydrated.value);
 const backHref = computed(() => {
@@ -262,27 +262,11 @@ async function openImportModal() {
 }
 
 async function runAudit() {
-  isAuditing.value = true
   try {
-    // Shopify is remote truth so it is fetched; the OMS side is the cached `shopifyLocation`
-    // domain this page already subscribes to, so the audit costs ONE request instead of two.
-    const nodes = await fetchLocationsFromShopify(props.id)
-    const omsMappings = shopifyShopLocations.value || []
-    const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)))
-    const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]))
-
-    health.value = {
-      totalShopifyLocations: nodes.length,
-      unmapped: nodes.filter((n: any) => !mappedIds.has(String(n.id).split('/').pop() ?? '')).length,
-      stale: omsMappings.filter((m: any) => {
-        const node = nodeById.get(String(m.shopifyLocationId))
-        return node && !node.isActive
-      }).length
-    }
+    const omsMappings = shopifyShopLocations.value || [];
+    await runLocationAudit(props.id, omsMappings);
   } catch (e) {
-    commonUtil.showToast(translate('Audit failed'))
-  } finally {
-    isAuditing.value = false
+    commonUtil.showToast(translate('Audit failed'));
   }
 }
 
