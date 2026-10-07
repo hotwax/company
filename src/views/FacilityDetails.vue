@@ -1278,11 +1278,14 @@ async function associateCalendarToFacility() {
   emitter.emit('dismissLoader');
 }
 
+// The calendar is live per visit, so every schedule write is followed by a reload on dismiss —
+// the modals and popover only dismiss once their write has settled.
 async function addCustomSchedule() {
   const modal = await modalController.create({
     component: CustomScheduleModal,
     componentProps: { facilityId: props.facilityId }
   });
+  modal.onDidDismiss().then(() => reloadAssociations());
   return modal.present();
 }
 
@@ -1291,6 +1294,7 @@ async function addOperatingHours() {
     component: AddOperatingHoursModal,
     componentProps: { facilityId: props.facilityId }
   });
+  modal.onDidDismiss().then(() => reloadAssociations());
   return modal.present();
 }
 
@@ -1301,6 +1305,7 @@ async function openOperatingHoursPopover(event: Event) {
     event,
     showBackdrop: false
   });
+  popover.onDidDismiss().then(() => reloadAssociations());
   return popover.present();
 }
 
@@ -1959,7 +1964,7 @@ async function saveContact() {
       if (address.value.contactMechId) {
         resp = await mutations.updatePostalAddress({ ...address.value, facilityId: props.facilityId, contactMechPurposeTypeId: 'PRIMARY_LOCATION' });
       } else {
-        resp = await mutations.createPostalAddress({ ...address.value, facilityId: props.facilityId });
+        resp = await mutations.createPostalAddress({ ...address.value, facilityId: props.facilityId, contactMechPurposeTypeId: 'PRIMARY_LOCATION' });
       }
 
       if (!commonUtil.hasError(resp)) {
@@ -1970,8 +1975,12 @@ async function saveContact() {
         throw resp.data;
       }
     } catch (err) {
+      // Keep the modal open with the entered values so the user can correct and retry; closing it
+      // here made a rejected address look like it had been dropped silently.
       commonUtil.showToast(translate("Failed to update facility contact."));
       logger.error(err);
+      emitter.emit('dismissLoader');
+      return;
     }
   }
 

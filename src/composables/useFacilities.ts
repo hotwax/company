@@ -605,12 +605,34 @@ export function useFacilityQueries() {
  *    against `oms/facilities/{id}/calendars`, and the facility's current calendar is read by the
  *    detail façade from that same route.
  *  - **The calendar catalog and custom-schedule create** below target `oms/calendars/techData`
- *    and `oms/calendars/techData/week`. ⚠️ Those routes do NOT exist on the instance yet — probed
- *    live, both 404 ("Resource calendars not valid"). They are the contract the legacy store was
- *    written against and are pending a backend merge, so they are implemented here to that shape
- *    and degrade to an empty catalog rather than throwing. Once the API lands, the picker
- *    populates with no further change here.
+ *    and `oms/calendars/techData/week`. These 404'd ("Resource calendars not valid") on instances
+ *    without the backend merge, so they degrade to an empty catalog rather than throwing; where
+ *    the routes exist, the create answers 200 and the week rows carry the day timings.
+ *
+ * The association row carries no description or timings — those live on the calendar and its
+ * week — so `resolveFacilityCalendar` joins them for display.
  */
+/**
+ * The facility's effective OPERATING_HOURS association, joined with its calendar from
+ * `calendarOptions` (description + week timings), or {}.
+ *
+ * The association route returns expired rows too — removing a schedule closes its row with a
+ * `thruDate` rather than deleting it — so picking the first OPERATING_HOURS row kept rendering a
+ * removed schedule. The association's own fields win the merge: `fromDate` must stay the
+ * association's, since closing it addresses the row by that exact key.
+ */
+export function resolveFacilityCalendar(
+  associations: any[],
+  calendarOptions: any[],
+  now = Date.now(),
+): Record<string, any> {
+  const association = associations.find((row) =>
+    row?.facilityCalendarTypeId === "OPERATING_HOURS" && isEffectiveNow(row, now));
+  if (!association) return {};
+  const calendar = calendarOptions.find((option) => option?.calendarId === association.calendarId);
+  return { ...calendar, ...association };
+}
+
 export function useFacilityCalendars() {
   const calendarOptions = ref<any[]>([]);
   const catalogAvailable = ref(true);
@@ -624,9 +646,11 @@ export function useFacilityCalendars() {
       ]);
       const catalog: any[] = Array.isArray(catalogResp?.data) ? catalogResp.data : [];
       const weeks: any[] = Array.isArray(weekResp?.data) ? weekResp.data : [];
+      // The week is spread first: it has a `description` of its own (usually empty), which must
+      // not shadow the calendar's.
       calendarOptions.value = catalog.map((calendar: any) => ({
-        ...calendar,
         ...weeks.find((week: any) => week.calendarWeekId === calendar.calendarWeekId),
+        ...calendar,
       }));
       catalogAvailable.value = true;
     } catch (error) {
@@ -666,8 +690,7 @@ export function useFacilityCalendars() {
         params: { pageNoLimit: true },
       });
       const rows: any[] = Array.isArray(resp?.data) ? resp.data : [];
-      const now = Date.now();
-      return rows.find((row) => row.facilityCalendarTypeId === "OPERATING_HOURS" && isEffectiveNow(row, now)) ?? {};
+      return resolveFacilityCalendar(rows, []);
     } catch (error) {
       logger.error("Failed to read facility calendar", error);
       return {};
@@ -757,6 +780,7 @@ export function useFacilityDetail(facilityId: string) {
   const locations = ref<any[]>([]);
   const calendarOptions = ref<any[]>([]);
   const loadingAssociations = ref(false);
+  const { loadCalendarOptions: fetchCalendarOptions } = useFacilityCalendars();
 
   // ----------------------------------------------------------------- volatile
   const orderCount = ref<number | null>(null);
@@ -823,21 +847,19 @@ export function useFacilityDetail(facilityId: string) {
    * The store called the `/operatingHours` variant, which 404s ("Resource operatingHours not
    * valid") — verified live. So the facility calendar has never actually loaded, and the page has
    * always rendered its "no operating hours" branch. Filtering by type happens client-side.
+   *
+   * The association row is only `FacilityCalendar`, so the calendar catalog is read alongside it
+   * for the description and day timings — without that join every day rendered "Closed". The same
+   * catalog feeds the picker; it is empty where the techData routes are absent.
    */
   async function loadCalendar() {
-    const resp = await get(`oms/facilities/${encodeURIComponent(facilityId)}/calendars`, { pageNoLimit: true });
+    const [resp, options] = await Promise.all([
+      get(`oms/facilities/${encodeURIComponent(facilityId)}/calendars`, { pageNoLimit: true }),
+      fetchCalendarOptions(),
+    ]);
     const rows: any[] = Array.isArray(resp?.data) ? resp.data : [];
-    calendar.value = rows.find((row) => row.facilityCalendarTypeId === "OPERATING_HOURS") ?? rows[0] ?? {};
-  }
-
-  /**
-   * The old `oms/calendars/techData` endpoint does NOT exist — it 404s ("Resource calendars not
-   * valid") and appears in no REST definition, so the store's calendar picker has always been
-   * empty. Left unimplemented rather than guessing at a replacement: the correct source needs to
-   * be identified before the picker can work.
-   */
-  async function loadCalendarOptions() {
-    calendarOptions.value = [];
+    calendarOptions.value = options;
+    calendar.value = resolveFacilityCalendar(rows, options);
   }
 
   /** Live per-facility data. Runs on entry and after any mutation that touches it. */
@@ -849,7 +871,6 @@ export function useFacilityDetail(facilityId: string) {
         loadParties().catch((e) => logger.error("facility parties", e)),
         loadLocations().catch((e) => logger.error("facility locations", e)),
         loadCalendar().catch((e) => logger.error("facility calendar", e)),
-        loadCalendarOptions().catch((e) => logger.error("calendar options", e)),
       ]);
     } finally {
       loadingAssociations.value = false;
@@ -1156,10 +1177,7 @@ export function useFacilityMutations(facilityId?: string) {
         ...payload, facilityId, facilityCalendarTypeId: "OPERATING_HOURS", thruDate: Date.now(),
       }),
 
-    // `createCalendar` (POST oms/calendars/techData/week) is REMOVED: that route does not exist.
-    // Its sibling `oms/calendars/techData` 404s ("Resource calendars not valid") and neither
-    // appears in any Moqui REST definition — verified live 2026-07-26. The calendar picker needs a
-    // real source identified before it can work.
+    // Custom-schedule create (POST oms/calendars/techData/week) lives in `useFacilityCalendars`.
   };
 }
 
