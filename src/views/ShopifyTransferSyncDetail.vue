@@ -119,7 +119,7 @@ import { shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTr
 const props = defineProps<{ id: string; orderId: string }>();
 const shopId = computed(() => props.id);
 const { record: shop } = useShopifyShop(shopId);
-const { jobs } = useServiceJobs();
+const { jobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards } = useShopifyTransferSyncJobs(() => props.id, () => jobs.value);
 const stagingCards = computed(() => cards.value.filter(card => ["create", "update"].includes(card.definition.key)));
 const jobNames = computed(() => stagingCards.value.filter(card => card.job).map(card => card.jobName));
@@ -221,7 +221,10 @@ watch(order, value => {void resolve((value?.items || []).map(item => item.produc
 const SYNC_OWNER = createSyncDomainOwner("shopifyTransferSyncDetail");
 const failingDomains = computed<Record<string, string>>(() => serviceState.errors);
 const baseline = ref(0);
-const checked = computed(() => (serviceState.syncedAt.serviceJobRun ?? 0) > baseline.value);
+// With no configured stager there is no `serviceJobRun` to activate (see `startRuns`), so waiting for
+// one would spin forever: once the job cache has loaded, an empty job list is itself the answer.
+const checked = computed(() => (jobsHydrated.value && !jobNames.value.length)
+  || (serviceState.syncedAt.serviceJobRun ?? 0) > baseline.value);
 const deliveryChecked = computed(() => (serviceState.syncedAt.shopifyTransferDelivery ?? 0) > baseline.value);
 const active = ref(false);
 const refreshing = ref(false);
