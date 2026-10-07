@@ -61,6 +61,15 @@ function toChatItems(detail: any): ChatItem[] {
   return items
 }
 
+/**
+ * Turn a failed list read into the message the view shows, so a 403 explains itself instead of
+ * leaving the list blank. Returns an untranslated locale key.
+ */
+const listLoadError = (error: any, forbidden: string, failed: string): string => {
+  const status = Number(error?.response?.status ?? error?.status ?? error?.statusCode ?? 0)
+  return status === 401 || status === 403 ? forbidden : failed
+}
+
 export const useWorkforceStore = defineStore('workforce', {
   state: () => ({
     conversations: [] as WorkforceConversation[],
@@ -68,6 +77,10 @@ export const useWorkforceStore = defineStore('workforce', {
     detail: null as any,
     chatItems: [] as ChatItem[],
     activeAgents: [] as any[],
+    /** Locale key explaining why ai/conversations could not be read; '' when it loaded. */
+    conversationsError: '',
+    /** Locale key explaining why ai/agents could not be read; '' when it loaded. */
+    activeAgentsError: '',
     sending: false,
     deciding: false
   }),
@@ -78,8 +91,11 @@ export const useWorkforceStore = defineStore('workforce', {
         const resp = await api({ url: 'ai/conversations', method: 'get', params: { pageSize: 100 } }) as any
         if (hasError(resp)) throw resp.data
         this.conversations = resp.data.conversationList || []
+        this.conversationsError = ''
       } catch (error) {
         logger.error(error)
+        this.conversationsError = listLoadError(error,
+          'You do not have permission to view agent conversations.', 'Unable to load agent conversations.')
       }
     },
 
@@ -139,12 +155,16 @@ export const useWorkforceStore = defineStore('workforce', {
     },
 
     async fetchActiveAgents() {
+      this.activeAgentsError = ''
       try {
         const resp = await api({ url: 'ai/agents', method: 'get', params: { statusId: 'AI_AGENT_ACTIVE', pageSize: 100 } }) as any
+        if (hasError(resp)) throw resp.data
         // the entity-list REST method returns the rows directly as a JSON array
         this.activeAgents = Array.isArray(resp?.data) ? resp.data : (resp?.data?.aiAgentList || [])
       } catch (error) {
         logger.error(error)
+        this.activeAgentsError = listLoadError(error,
+          'You do not have permission to view active agents.', 'Unable to load active agents.')
       }
     },
 
