@@ -292,63 +292,40 @@ const saveReasonsOrder = async () => {
 const toggleReasonStatusForCurrentSegment = async (event: any, reason: any) => {
   event.stopImmediatePropagation();
   const groupId = currentGroupId.value;
+  if (!groupId) return;
 
-  if (groupId) {
-    // Fulfillment or BOPIS group association toggle
-    let resp: any;
-    const currentMember = groupRejectReasons.value[groupId]?.[reason.enumId];
+  // Fulfillment or BOPIS group association toggle
+  let resp: any;
+  const currentMember = groupRejectReasons.value[groupId]?.[reason.enumId];
 
-    const payload = {
-      enumerationId: reason.enumId,
-      enumerationGroupId: groupId,
-      sequenceNum: reason.sequenceNum
-    };
+  const payload = {
+    enumerationId: reason.enumId,
+    enumerationGroupId: groupId,
+    sequenceNum: reason.sequenceNum
+  };
 
-    try {
-      if (currentMember?.fromDate) {
-        resp = await updateEnumerationGroupMember({
-          ...payload,
-          fromDate: currentMember.fromDate,
-          thruDate: DateTime.now().toMillis()
-        });
-      } else {
-        resp = await createEnumerationGroupMember({
-          ...payload,
-          fromDate: DateTime.now().toMillis()
-        });
-      }
-
-      if (!commonUtil.hasError(resp)) {
-        await fetchEnumGroupMembers(groupId);
-      } else {
-        throw resp.data;
-      }
-    } catch (error: any) {
-      logger.error(error);
-      commonUtil.showToast(translate("Failed to update reason association with group."));
+  try {
+    if (currentMember?.fromDate) {
+      resp = await updateEnumerationGroupMember({
+        ...payload,
+        fromDate: currentMember.fromDate,
+        thruDate: DateTime.now().toMillis()
+      });
+    } else {
+      resp = await createEnumerationGroupMember({
+        ...payload,
+        fromDate: DateTime.now().toMillis()
+      });
     }
-  } else {
-    // Order Manager segment: Toggle active/inactive status of the enumeration directly
-    try {
-      const isCurrentlyActive = !reason.thruDate;
-      const updatedReason = {
-        ...reason,
-        thruDate: isCurrentlyActive ? DateTime.now().toMillis() : null
-      };
 
-      const resp: any = await updateEnumeration(updatedReason);
-      if (!commonUtil.hasError(resp)) {
-        reason.thruDate = updatedReason.thruDate;
-        const target = rejectReasons.value.find((r: any) => r.enumId === reason.enumId);
-        if (target) target.thruDate = updatedReason.thruDate;
-        commonUtil.showToast(translate("Rejection reason status updated successfully."));
-      } else {
-        throw resp.data;
-      }
-    } catch (error: any) {
-      logger.error(error);
-      commonUtil.showToast(translate("Failed to update rejection reason status."));
+    if (!commonUtil.hasError(resp)) {
+      await fetchEnumGroupMembers(groupId);
+    } else {
+      throw resp.data;
     }
+  } catch (error: any) {
+    logger.error(error);
+    commonUtil.showToast(translate("Failed to update reason association with group."));
   }
 };
 

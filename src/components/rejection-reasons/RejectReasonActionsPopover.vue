@@ -20,13 +20,12 @@ import { defineProps } from "vue";
 import { commonUtil, logger, translate } from "@common";
 import EditRejectionReasonModal from "@/components/rejection-reasons/EditRejectionReasonModal.vue";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
-import { DateTime } from "luxon";
 
 const props = defineProps<{
   reason: any;
 }>();
 
-const { updateEnumeration } = useRejectionReasons();
+const { deleteEnumeration } = useRejectionReasons();
 
 const openEditRejectionReasonModal = async () => {
   const editRejectionReasonModal = await modalController.create({
@@ -53,10 +52,7 @@ const removeRejectionReason = async () => {
         text: translate("Confirm"),
         handler: async () => {
           try {
-            const resp: any = await updateEnumeration({
-              ...props.reason,
-              thruDate: DateTime.now().toMillis()
-            });
+            const resp: any = await deleteEnumeration(props.reason.enumId);
             if (!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("Rejection reason removed successfully."));
               popoverController.dismiss({ isRemoved: true, removedEnumId: props.reason.enumId });

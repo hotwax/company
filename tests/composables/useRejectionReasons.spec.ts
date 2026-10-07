@@ -111,4 +111,19 @@ describe("useRejectionReasons composable", () => {
       })
     );
   });
+
+  it("deletes enumerations via DELETE API", async () => {
+    apiMock.mockResolvedValueOnce({ data: { success: true } });
+
+    const { deleteEnumeration } = rejectionReasonsComposable;
+    const deleteResp = await deleteEnumeration("REJ_RSN_DAMAGED");
+
+    expect(deleteResp.data.success).toBe(true);
+    expect(apiMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/admin/enums/REJ_RSN_DAMAGED",
+        method: "DELETE",
+      })
+    );
+  });
 });

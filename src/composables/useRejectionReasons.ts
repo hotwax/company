@@ -181,6 +181,21 @@ export function useRejectionReasons() {
     return resp;
   }
 
+  async function deleteEnumeration(enumId: string) {
+    const resp: any = await api({
+      url: `/admin/enums/${enumId}`,
+      method: "DELETE",
+    });
+    if (!commonUtil.hasError(resp)) {
+      try {
+        await resyncDomain("enum");
+      } catch (err) {
+        logger.error("Failed to resync enum domain", err);
+      }
+    }
+    return resp;
+  }
+
   return {
     rejectReasons,
     rejectReasonEnumTypes,
@@ -193,7 +208,9 @@ export function useRejectionReasons() {
     fetchBopisRejectReasons,
     createEnumeration,
     updateEnumeration,
+    deleteEnumeration,
     createEnumerationGroupMember,
     updateEnumerationGroupMember
   };
 }
+
