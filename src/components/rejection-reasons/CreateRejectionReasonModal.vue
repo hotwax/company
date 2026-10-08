@@ -18,7 +18,7 @@
             <div slot="label">{{ translate('Name') }} <ion-text color="danger">*</ion-text></div>
           </ion-input>
         </ion-item>
-        <ion-item :lines="formData.enumId ? 'none' : 'inset'">
+        <ion-item lines="none">
           <ion-input label-placement="floating" :label="translate('ID')" ref="enumIdInput" v-model="formData.enumId" @ionInput="validateEnumId" @ionBlur="markEnumIdTouched" :error-text="translate('ID cannot be more than 20 characters.')" />
         </ion-item>
         <ion-item>
