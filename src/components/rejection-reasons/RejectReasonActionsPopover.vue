@@ -7,9 +7,9 @@
       <ion-item button @click="openEditRejectionReasonModal()">
         {{ translate("Edit name and description") }}
       </ion-item>
-      <!-- <ion-item button lines="none" @click="removeRejectionReason()">
+      <ion-item button lines="none" @click="removeRejectionReason()">
         {{ translate("Remove reason") }}
-      </ion-item> -->
+      </ion-item>
     </ion-list>
   </ion-content>
 </template>
