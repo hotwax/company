@@ -1,6 +1,5 @@
 import { ref } from "vue";
 import { api, commonUtil, logger } from "@common";
-import { resyncDomain } from "@/services/appCacheBootstrap";
 
 export function useRejectionReasons() {
   const rejectReasons = ref<any[]>([]);
@@ -109,82 +108,34 @@ export function useRejectionReasons() {
   }
 
   async function createEnumeration(payload: any) {
-    const resp: any = await api({
+    return await api({
       url: "/admin/enums",
       method: "POST",
       data: payload,
     });
-    if (!commonUtil.hasError(resp)) {
-      try {
-        await resyncDomain("enum");
-      } catch (err) {
-        logger.error("Failed to resync enum domain", err);
-      }
-    }
-    return resp;
   }
 
   async function updateEnumeration(payload: any) {
-    const resp: any = await api({
+    return await api({
       url: `/admin/enums/${payload.enumId}`,
       method: "PUT",
       data: payload,
     });
-    if (!commonUtil.hasError(resp)) {
-      try {
-        await resyncDomain("enum");
-      } catch (err) {
-        logger.error("Failed to resync enum domain", err);
-      }
-    }
-    return resp;
-  }
-
-  async function createEnumerationGroupMember(payload: any) {
-    const resp: any = await api({
-      url: `/admin/enumGroups/${payload.enumerationGroupId}/members`,
-      method: "POST",
-      data: payload,
-    });
-    if (!commonUtil.hasError(resp)) {
-      try {
-        await resyncDomain("enumGroupMember");
-      } catch (err) {
-        logger.error("Failed to resync enumGroupMember domain", err);
-      }
-    }
-    return resp;
   }
 
   async function updateEnumerationGroupMember(payload: any) {
-    const resp: any = await api({
+    return await api({
       url: `/admin/enumGroups/${payload.enumerationGroupId}/members`,
       method: "POST",
       data: payload,
     });
-    if (!commonUtil.hasError(resp)) {
-      try {
-        await resyncDomain("enumGroupMember");
-      } catch (err) {
-        logger.error("Failed to resync enumGroupMember domain", err);
-      }
-    }
-    return resp;
   }
 
   async function deleteEnumeration(enumId: string) {
-    const resp: any = await api({
+    return await api({
       url: `/admin/enums/${enumId}`,
       method: "DELETE",
     });
-    if (!commonUtil.hasError(resp)) {
-      try {
-        await resyncDomain("enum");
-      } catch (err) {
-        logger.error("Failed to resync enum domain", err);
-      }
-    }
-    return resp;
   }
 
   return {
@@ -198,8 +149,6 @@ export function useRejectionReasons() {
     createEnumeration,
     updateEnumeration,
     deleteEnumeration,
-    createEnumerationGroupMember,
     updateEnumerationGroupMember
   };
 }
-

@@ -32,7 +32,7 @@
 
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonText, IonTextarea, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { defineProps, onBeforeMount, ref } from "vue";
+import { onBeforeMount, ref } from "vue";
 import { closeOutline, saveOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";

@@ -109,7 +109,6 @@ const {
   fetchRejectReasonEnumTypes,
   fetchEnumGroupMembers,
   updateEnumeration,
-  createEnumerationGroupMember,
   updateEnumerationGroupMember
 } = useRejectionReasons();
 
@@ -173,9 +172,20 @@ const openCreateRejectionReasonModal = async () => {
 };
 
 const openRejectionReasonActionsPopover = async (event: Event, reason: any) => {
+  const linkedGroups: string[] = [];
+  if (groupRejectReasons.value.FF_REJ_RSN_GRP?.[reason.enumId]) linkedGroups.push(translate("Fulfillment"));
+  if (groupRejectReasons.value.BOPIS_REJ_RSN_GRP?.[reason.enumId]) linkedGroups.push(translate("BOPIS"));
+
   const popover = await popoverController.create({
     component: RejectReasonActionsPopover,
-    componentProps: { reason },
+    componentProps: {
+      reason,
+      linkedGroups,
+      groupMembers: {
+        FF_REJ_RSN_GRP: groupRejectReasons.value.FF_REJ_RSN_GRP?.[reason.enumId],
+        BOPIS_REJ_RSN_GRP: groupRejectReasons.value.BOPIS_REJ_RSN_GRP?.[reason.enumId]
+      }
+    },
     showBackdrop: false,
     event
   });
@@ -184,6 +194,12 @@ const openRejectionReasonActionsPopover = async (event: Event, reason: any) => {
     if (result.data?.isRemoved) {
       filteredReasons.value = filteredReasons.value.filter((rejectionReason: any) => rejectionReason.enumId !== result.data.removedEnumId);
       rejectReasons.value = rejectReasons.value.filter((rejectionReason: any) => rejectionReason.enumId !== result.data.removedEnumId);
+      if (groupRejectReasons.value.FF_REJ_RSN_GRP?.[result.data.removedEnumId]) {
+        delete groupRejectReasons.value.FF_REJ_RSN_GRP[result.data.removedEnumId];
+      }
+      if (groupRejectReasons.value.BOPIS_REJ_RSN_GRP?.[result.data.removedEnumId]) {
+        delete groupRejectReasons.value.BOPIS_REJ_RSN_GRP[result.data.removedEnumId];
+      }
     } else if (result.data?.isUpdated && result.data.updatedReason) {
       const idx = filteredReasons.value.findIndex((rejectionReason: any) => rejectionReason.enumId === result.data.updatedReason.enumId);
       if (idx !== -1) {
@@ -242,7 +258,7 @@ const doReorder = async (event: CustomEvent) => {
             text: translate("Save"),
             handler: () => {
               toast.value = null;
-              void saveReasonsOrder();
+              saveReasonsOrder();
             }
           }
         ],
@@ -294,25 +310,19 @@ const toggleReasonStatusForCurrentSegment = async (event: any, reason: any) => {
   let resp: any;
   const currentMember = groupRejectReasons.value[groupId]?.[reason.enumId];
 
-  const payload = {
+  const payload: any = {
     enumerationId: reason.enumId,
     enumerationGroupId: groupId,
-    sequenceNum: reason.sequenceNum
+    sequenceNum: reason.sequenceNum,
+    fromDate: currentMember?.fromDate || DateTime.now().toMillis()
   };
 
+  if (currentMember?.fromDate) {
+    payload.thruDate = DateTime.now().toMillis();
+  }
+
   try {
-    if (currentMember?.fromDate) {
-      resp = await updateEnumerationGroupMember({
-        ...payload,
-        fromDate: currentMember.fromDate,
-        thruDate: DateTime.now().toMillis()
-      });
-    } else {
-      resp = await createEnumerationGroupMember({
-        ...payload,
-        fromDate: DateTime.now().toMillis()
-      });
-    }
+    resp = await updateEnumerationGroupMember(payload);
 
     if (!commonUtil.hasError(resp)) {
       await fetchEnumGroupMembers(groupId);
@@ -362,5 +372,9 @@ onBeforeRouteLeave(async () => {
 <style scoped>
 .list-item {
   --columns-desktop: 5;
+}
+
+ion-content {
+  --padding-bottom: 80px;
 }
 </style>

@@ -14,20 +14,20 @@
     <form>
       <ion-list>
         <ion-item>
-          <ion-input @ionBlur="formData.enumId ? null : setEnumId(formData.enumName)" v-model="formData.enumName">
+          <ion-input label-placement="floating" @ionBlur="formData.enumId ? null : setEnumId(formData.enumName)" v-model="formData.enumName">
             <div slot="label">{{ translate('Name') }} <ion-text color="danger">*</ion-text></div>
           </ion-input>
         </ion-item>
-        <ion-item>
-          <ion-input :label="translate('ID')" v-model="formData.enumId" @ionChange="validateEnumId" @ionBlur="markEnumIdTouched" :errorText="translate('ID cannot be more than 20 characters.')" />
+        <ion-item :lines="formData.enumId ? 'none' : 'inset'">
+          <ion-input label-placement="floating" :label="translate('ID')" ref="enumIdInput" v-model="formData.enumId" @ionInput="validateEnumId" @ionBlur="markEnumIdTouched" :error-text="translate('ID cannot be more than 20 characters.')" />
         </ion-item>
         <ion-item>
-          <ion-input :label="translate('Description')" v-model="formData.description" />
+          <ion-input label-placement="floating" :label="translate('Description')" v-model="formData.description" />
         </ion-item>
       </ion-list>
 
       <ion-list>
-        <ion-item>
+        <ion-item lines="none">
           <ion-select :label="translate('Variance type')" interface="popover" v-model="formData.enumTypeId">
             <ion-select-option v-for="type in rejectReasonEnumTypes" :key="type.enumTypeId" :value="type.enumTypeId">{{ type.enumTypeId }}</ion-select-option>
           </ion-select>
@@ -50,7 +50,7 @@
 
 <script setup lang="ts">
 import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonSelect, IonSelectOption, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
-import { defineProps, ref } from "vue";
+import { ref } from "vue";
 import { checkmarkDoneOutline, closeOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
@@ -61,6 +61,8 @@ const props = defineProps<{
 }>();
 
 const { createEnumeration } = useRejectionReasons();
+
+const enumIdInput = ref<any>(null);
 
 const formData = ref<any>({
   description: "",
@@ -75,6 +77,34 @@ const closeModal = () => {
 
 const setEnumId = (enumName: any) => {
   formData.value.enumId = commonUtil.generateInternalId(enumName);
+  validateEnumIdDirect(formData.value.enumId);
+};
+
+const validateEnumId = (event: any) => {
+  validateEnumIdDirect(event.target.value);
+};
+
+const validateEnumIdDirect = (value: string) => {
+  if (!enumIdInput.value) return;
+  const el = enumIdInput.value.$el || enumIdInput.value;
+  el.classList.remove("ion-valid");
+  el.classList.remove("ion-invalid");
+
+  if (!value) return;
+
+  if (value.length <= 20) {
+    el.classList.add("ion-valid");
+  } else {
+    el.classList.add("ion-invalid");
+    el.classList.add("ion-touched");
+  }
+};
+
+const markEnumIdTouched = () => {
+  if (enumIdInput.value) {
+    const el = enumIdInput.value.$el || enumIdInput.value;
+    el.classList.add("ion-touched");
+  }
 };
 
 const createReason = async () => {
@@ -112,21 +142,6 @@ const createReason = async () => {
     commonUtil.showToast(translate("Failed to create rejection reason."));
     logger.error(err);
   }
-};
-
-const validateEnumId = (event: any) => {
-  const input = event.target;
-  const value = input.value;
-  input.classList.remove("ion-valid");
-  input.classList.remove("ion-invalid");
-
-  if (value === "") return;
-
-  formData.value.enumId.length <= 20 ? input.classList.add("ion-valid") : input.classList.add("ion-invalid");
-};
-
-const markEnumIdTouched = (event: any) => {
-  event.target.classList.add("ion-touched");
 };
 
 const getDescription = () => {

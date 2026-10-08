@@ -13,7 +13,6 @@
 
 <script setup lang="ts">
 import { IonContent, IonItem, IonList, IonListHeader, popoverController } from "@ionic/vue";
-import { defineProps } from "vue";
 import { commonUtil, logger, translate } from "@common";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
 

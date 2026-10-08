@@ -14,10 +14,6 @@ vi.mock("@common", () => ({
   translate: (k: string) => k,
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
-  resyncDomain: vi.fn().mockResolvedValue(undefined),
-}));
-
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
 
 describe("useRejectionReasons composable", () => {
@@ -132,6 +128,30 @@ describe("useRejectionReasons composable", () => {
       expect.objectContaining({
         url: "/admin/enums/REJ_RSN_DAMAGED",
         method: "DELETE",
+      })
+    );
+  });
+
+  it("updates enumeration group member via POST API", async () => {
+    apiMock.mockResolvedValueOnce({ data: { success: true } });
+
+    const { updateEnumerationGroupMember } = rejectionReasonsComposable;
+    const resp = await updateEnumerationGroupMember({
+      enumerationGroupId: "FF_REJ_RSN_GRP",
+      enumerationId: "REJ_RSN_DAMAGED",
+      sequenceNum: 1,
+      fromDate: 123456789,
+    });
+
+    expect(resp.data.success).toBe(true);
+    expect(apiMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/admin/enumGroups/FF_REJ_RSN_GRP/members",
+        method: "POST",
+        data: expect.objectContaining({
+          enumerationGroupId: "FF_REJ_RSN_GRP",
+          enumerationId: "REJ_RSN_DAMAGED",
+        }),
       })
     );
   });
