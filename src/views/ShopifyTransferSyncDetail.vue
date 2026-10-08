@@ -70,10 +70,16 @@
           <ShopifyTransferMappingConflict v-else-if="isMappingConflict(resolutionIssue) && resolutionIssue.productId"
             :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId" :domain="shop?.myshopifyDomain"
             @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
-          <ShopifyTransferMissingMapping v-else-if="resolutionIssue.code === 'missing-product-mapping' && resolutionIssue.productId"
-            :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId"
-            :product-store-id="shop?.productStoreId" :domain="shop?.myshopifyDomain"
-            @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
+          <ShopifyTransferMissingMapping
+            v-else-if="resolutionIssue.code === 'missing-product-mapping' && resolutionIssue.productId"
+            :key="`${resolutionIssue.key}:${mappingVersion}`"
+            :shop-id="id"
+            :product-id="resolutionIssue.productId"
+            :product-store-id="shop?.productStoreId"
+            :domain="shop?.myshopifyDomain"
+            @busy="setMappingBusy(resolutionIssue.key, $event)"
+            @ready="mappingReady[resolutionIssue.key] = $event"
+          />
           <ShopifyTransferUpdateBlocker v-else-if="resolutionIssue.code === 'unmapped-shipped-item'"
             :key="resolutionIssue.key" :shop-id="id" :order-id="orderId" :order-name="order?.orderName" :domain="shop?.myshopifyDomain"
             :issue="resolutionIssue" :waiting-receipts="dependentReceipts(resolutionIssue, selectedEntry.stage.issues)"

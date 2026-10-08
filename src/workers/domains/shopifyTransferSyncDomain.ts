@@ -197,6 +197,8 @@ registerSyncDomain({
           url: PENDING_SEGMENT_ENDPOINTS[segment],
           params: { shopId },
           batchSize,
+          strictCollection: true,
+          requireComplete: true,
           label: `transferSync:${segment}`,
           signal,
         }), SEGMENT_TIMEOUT_MS);

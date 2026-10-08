@@ -203,9 +203,16 @@ export function useShopifyNativeTransferSync() {
   const loading = ref(false);
   const saving = ref(false);
   const loadFailed = ref(false);
+  let loadVersion = 0;
 
   async function load(shopId: string) {
-    if(!shopId) { return; }
+    const version = ++loadVersion;
+    if(!shopId) {
+      loading.value = false;
+      loadFailed.value = true;
+
+      return;
+    }
     loading.value = true;
     loadFailed.value = false;
     try {
@@ -214,15 +221,21 @@ export function useShopifyNativeTransferSync() {
         method: "GET",
         params: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, pageSize: 1 },
       });
-      const rows = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : []);
+      if(version !== loadVersion) { return; }
+      const rows = resp?.data ?? resp;
+      if(commonUtil.hasError(resp) || !Array.isArray(rows)) {
+        loadFailed.value = true;
+
+        return;
+      }
       const value = String(rows[0]?.settingValue ?? "").trim().toLowerCase();
       // Mirrors the connector: only an explicit false/N turns it off.
       enabled.value = value !== "false" && value !== "n";
     } catch {
       // Never show a default the server did not confirm; the toggle stays disabled until a reload works.
-      loadFailed.value = true;
+      if(version === loadVersion) { loadFailed.value = true; }
     } finally {
-      loading.value = false;
+      if(version === loadVersion) { loading.value = false; }
     }
   }
 
@@ -235,7 +248,7 @@ export function useShopifyNativeTransferSync() {
         method: "POST",
         data: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, settingValue: next ? "true" : "false" },
       });
-      if(commonUtil.hasError(resp)) { return false; }
+      if(!resp || resp.data == null || commonUtil.hasError(resp)) { return false; }
       enabled.value = next;
 
       return true;

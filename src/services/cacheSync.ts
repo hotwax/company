@@ -21,10 +21,6 @@ export interface CacheSyncStatus {
 }
 
 /**
- * The sync lifecycle without a component attached. `useCacheSync` binds it to a view; a service that
- * outlives any one view (the inventory sync area) owns one directly and stops it itself.
- */
-/**
  * Domain names activated identically in both sets (same name, same args). Such a domain is still
  * doing the same work, so its last failure still describes it.
  */
@@ -40,6 +36,10 @@ function unchangedDomains(before: ActiveDomain[], after: ActiveDomain[]): Set<st
   return new Set([...keysByName(after)].filter(([name, keys]) => previous.get(name) === keys).map(([name]) => name));
 }
 
+/**
+ * The sync lifecycle without a component attached. `useCacheSync` binds it to a view; a service that
+ * outlives any one view (the inventory sync area) owns one directly and stops it itself.
+ */
 export function createCacheSync() {
   const ready = ref(false);
   const busy = ref(false);

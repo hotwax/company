@@ -85,7 +85,9 @@
                 <ion-item v-for="tab in SEGMENT_TABS" :key="tab.key" button :detail="true" @click="openOutstanding(tab.key)">
                   <ion-label>{{ translate(tab.key === 'create' ? 'Transfers to create' : tab.label) }}</ion-label>
                   <ion-skeleton-text v-if="!hydrated" slot="end" :animated="true" class="count-skeleton" />
-                  <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">{{ translate("Not loaded") }}</ion-label>
+                  <ion-label v-else-if="tabFailure(tab)" slot="end" color="danger">
+                    {{ translate("Not loaded") }}
+                  </ion-label>
                   <ion-label v-else slot="end">{{ tab.key === 'create' ? creationOrderCount : tabCount(tab) }}</ion-label>
                 </ion-item>
                 <ion-item>
@@ -327,25 +329,25 @@
           </template>
 
           <template v-else>
-          <!-- A segment the last pass could not read is unknown, so it must not read as empty. -->
-          <ion-card v-if="activeTabFailure">
-            <ion-card-content class="fatal-error">
-              <ion-icon :icon="warningOutline" color="danger" />
-              <ion-label class="ion-text-wrap">
-                {{ translate("This list could not be loaded") }}
-                <p>{{ activeTabFailure.message }}</p>
-                <p>{{ translate("Next automatic retry: {time}", { time: formatDateTime(activeTabFailure.retryAt) }) }}</p>
-              </ion-label>
-              <ion-button fill="outline" :disabled="retrying" @click="retry()">
-                <ion-spinner v-if="retrying" name="crescent" />
-                <template v-else>
-                  {{ translate("Retry") }}
-                </template>
-              </ion-button>
-            </ion-card-content>
-          </ion-card>
+            <!-- A segment the last pass could not read is unknown, so it must not read as empty. -->
+            <ion-card v-if="activeTabFailure">
+              <ion-card-content class="fatal-error">
+                <ion-icon :icon="warningOutline" color="danger" />
+                <ion-label class="ion-text-wrap">
+                  {{ translate("This list could not be loaded") }}
+                  <p>{{ activeTabFailure.message }}</p>
+                  <p>{{ translate("Next automatic retry: {time}", { time: formatDateTime(activeTabFailure.retryAt) }) }}</p>
+                </ion-label>
+                <ion-button fill="outline" :disabled="retrying" @click="retry()">
+                  <ion-spinner v-if="retrying" name="crescent" />
+                  <template v-else>
+                    {{ translate("Retry") }}
+                  </template>
+                </ion-button>
+              </ion-card-content>
+            </ion-card>
 
-          <ion-card v-if="!pendingTotal && !Object.keys(failedSegments).length">
+            <ion-card v-if="!pendingTotal && !Object.keys(failedSegments).length">
             <ion-card-content class="empty-state">
               <ion-icon :icon="checkmarkCircleOutline" />
               <ion-label class="ion-text-wrap">
@@ -355,7 +357,7 @@
             </ion-card-content>
           </ion-card>
 
-          <ion-card v-else-if="!presentationRows.length && !activeTabFailure">
+            <ion-card v-else-if="!presentationRows.length && !activeTabFailure">
             <ion-card-content>
               {{ translate("Nothing outstanding in this tab.") }}
             </ion-card-content>

@@ -179,7 +179,7 @@ export async function pageAll(options: {
   const identify = keyOf ?? ((record: any) => JSON.stringify(record));
 
   for (let pageIndex = 0; ; pageIndex++) {
-    if (signal?.aborted) throw signal.reason ?? new Error(`[sync] ${label}: aborted`);
+    if(signal?.aborted) {throw signal.reason ?? new Error(`[sync] ${label}: aborted`);}
     if (pageIndex >= maxPages) {
       if (requireComplete) throw new Error(`[sync] ${label}: incomplete snapshot (page limit)`);
       console.warn(
