@@ -485,6 +485,25 @@ describe("CarrierDetails", () => {
     }));
   });
 
+  it("expires a facility association by its fromDate, and creates one without it", async () => {
+    const wrapper = await mountView();
+    wrapper.getComponent(IonSegmentStub).vm.$emit("update:modelValue", "facilities");
+    await nextTick();
+    const list = wrapper.getComponent({ name: "CarrierFacilityList" });
+
+    list.vm.$emit("toggle", { facility: { facilityId: "WH_1", fromDate: 1_700_000_000_000, isConfigured: true }, enabled: false });
+    await flushPromises();
+    expect(harness.setCarrierFacilityAssociation).toHaveBeenLastCalledWith({
+      partyId: "UPS", facilityId: "WH_1", enabled: false, fromDate: 1_700_000_000_000,
+    });
+
+    list.vm.$emit("toggle", { facility: { facilityId: "WH_2", isConfigured: false }, enabled: true });
+    await flushPromises();
+    expect(harness.setCarrierFacilityAssociation).toHaveBeenLastCalledWith({
+      partyId: "UPS", facilityId: "WH_2", enabled: true,
+    });
+  });
+
   it("routes account setup intent to Klaviyo without exposing gateway edits", async () => {
     const wrapper = await mountView();
     const segment = wrapper.getComponent(IonSegmentStub);

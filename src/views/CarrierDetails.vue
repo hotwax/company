@@ -366,6 +366,9 @@ const handleFacilityToggle = async ({
         partyId: carrier.value!.partyId,
         facilityId: facility.facilityId,
         enabled,
+        // Removal expires the active FacilityParty row, which is keyed by its fromDate; the facility
+        // row carries it from the cached association it was merged with.
+        ...(enabled ? {} : { fromDate: facility.fromDate }),
       }),
     enabled
       ? "Facility associated with carrier."
