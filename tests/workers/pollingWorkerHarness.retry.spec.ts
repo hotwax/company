@@ -90,4 +90,25 @@ describe("polling worker one-shot retries", () => {
 
     expect(sync).toHaveBeenCalledTimes(2);
   });
+
+  it("forwards the structured details a domain attaches to its failure", async () => {
+    const failure = Object.assign(new Error("2 of 5 lists could not be loaded"), {
+      details: { failedSegments: { receipt: { message: "slow", retryAt: 60_000 } }, loadedSegments: ["create"] },
+    });
+    registerSyncDomain({ name: "partial-failure", intervalMs: 15_000, sync: vi.fn(async () => { throw failure; }) });
+
+    await state.exposed.start({
+      maargUrl: "https://example.test",
+      token: "token",
+      baseTickMs: 100,
+      domains: [{ name: "partial-failure" }],
+    });
+
+    expect(state.postMessage).toHaveBeenCalledWith({
+      type: "sync-error",
+      domain: "partial-failure",
+      message: "2 of 5 lists could not be loaded",
+      details: failure.details,
+    });
+  });
 });

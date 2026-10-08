@@ -81,6 +81,9 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     counts: ref({ create: 0 }), creationOrderCount: ref(0), total: ref(0), hydrated: ref(true),
   }),
   useShopifyPendingSegment: () => ({ rows: ref([]), hydrated: ref(true), count: ref(0) }),
+  useShopifyNativeTransferSync: () => ({
+    enabled: ref(true), loading: ref(false), saving: ref(false), loadFailed: ref(false), load: vi.fn(), save: vi.fn(),
+  }),
   useShopifyTransferSyncLaunch: () => ({
     currentDate: ref("2026-09-01T00:00:00.000Z"), counts: ref({}), loading: ref(false),
     saving: ref(false), error: ref(""), load: vi.fn(), save: vi.fn(),

@@ -98,4 +98,39 @@ describe("useCacheSync error scoping", () => {
     harness.options.onStatus({ type: "refetch-end", domain: "inventoryEventBounds", written: 1 });
     expect(sync.failingDomains.value).toEqual({});
   });
+
+  it("keeps a failing domain's details until that domain next succeeds", async () => {
+    const sync = useCacheSync();
+    await sync.start([{ name: "shopifyTransferSync" }]);
+    const details = { failedSegments: { receipt: { message: "slow", retryAt: 1 } }, loadedSegments: ["create"] };
+
+    harness.options.onStatus({ type: "sync-error", domain: "shopifyTransferSync", message: "partial", details });
+    expect(sync.failingDetails.value.shopifyTransferSync).toEqual(details);
+
+    // A later failure without details must not leave the earlier details describing it.
+    harness.options.onStatus({ type: "sync-error", domain: "shopifyTransferSync", message: "network" });
+    expect(sync.failingDetails.value.shopifyTransferSync).toBeUndefined();
+
+    harness.options.onStatus({ type: "sync-error", domain: "shopifyTransferSync", message: "partial", details });
+    harness.options.onStatus({ type: "sync-end", domain: "shopifyTransferSync", written: 0, at: 5 });
+    expect(sync.failingDetails.value).toEqual({});
+  });
+
+  it("keeps a failure when the same activation is sent again, and drops it when the scope changes", async () => {
+    const sync = useCacheSync();
+    const transfer = { name: "shopifyTransferSync", args: { shopId: "SHOP_A" } };
+    const details = { failedSegments: { receipt: { message: "slow", retryAt: 1 } }, loadedSegments: ["create"] };
+    await sync.start([transfer]);
+    harness.options.onStatus({ type: "sync-error", domain: "shopifyTransferSync", message: "partial", details });
+
+    // A tab switch re-sends the same transfer activation alongside another domain.
+    await sync.start([{ ...transfer, args: { shopId: "SHOP_A" } }, { name: "serviceJobRun", args: { jobNames: ["j"] } }]);
+    expect(sync.failingDomains.value.shopifyTransferSync).toBe("partial");
+    expect(sync.failingDetails.value.shopifyTransferSync).toEqual(details);
+
+    // Another shop is different work: its first pass must not inherit SHOP_A's failure.
+    await sync.start([{ name: "shopifyTransferSync", args: { shopId: "SHOP_B" } }]);
+    expect(sync.failingDomains.value).toEqual({});
+    expect(sync.failingDetails.value).toEqual({});
+  });
 });

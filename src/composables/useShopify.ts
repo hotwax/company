@@ -7205,7 +7205,20 @@ export interface ShopifyProductMappingChoice {
   status?: string;
   shopifyProductId?: string;
   imageUrl?: string;
+  /** The Online Store is the one sales channel the app token can read; other channels need read_publications. */
+  onlineStorePublished?: boolean;
   available: boolean;
+}
+
+/** One mapped variant's recent Shopify orders. */
+export interface VariantOrderActivity {
+  orders: number;
+  units: number;
+  lastOrderAt?: string;
+  /** Order count per Shopify `sourceName` (web, pos, shopify_draft_order, or an app's id). */
+  channels: Record<string, number>;
+  /** More orders exist than were read; `orders` is a lower bound. */
+  capped: boolean;
 }
 
 /** Current shop-scoped mappings, independent of a historical staging diagnostic. */
@@ -7234,7 +7247,7 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
     const batch = mappings.slice(offset, offset + 100);
     const result = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
       shopId,
-      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status } } } }",
+      queryText: "query TransferMappingChoices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id title sku barcode image { url } inventoryItem { id } product { id title status onlineStoreUrl } } } }",
       variables: { ids: batch.map(row => `gid://shopify/ProductVariant/${row.variantId}`) },
     } });
     if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(result.response?.nodes)) {
@@ -7245,11 +7258,214 @@ const fetchTransferMappingChoices = async (shopId: string, productId: string): P
       if(!variant) {continue;}
       Object.assign(row, { title: variant.product?.title, variantTitle: variant.title, sku: variant.sku, barcode: variant.barcode,
         status: variant.product?.status, shopifyProductId: variant.product?.id?.split("/").pop(), imageUrl: variant.image?.url,
+        onlineStorePublished: Boolean(variant.product?.onlineStoreUrl),
         available: variant.inventoryItem?.id === `gid://shopify/InventoryItem/${row.inventoryItemId}` });
     }
   }
 
   return mappings;
+};
+
+const RECENT_ORDER_PAGES = 5;
+const RECENT_ORDERS_QUERY = "query TransferMappingRecentOrders($query: String!, $after: String) { orders(first: 100, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) { pageInfo { hasNextPage endCursor } nodes { id createdAt sourceName lineItems(first: 50) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+const ORDER_LINE_ITEMS_QUERY = "query TransferMappingOrderLines($id: ID!, $after: String) { node(id: $id) { ... on Order { lineItems(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { sku quantity variant { id } } } } } }";
+
+function assertShopifyRead(result: any, data: any) {
+  if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !data) {
+    throw new Error(translate("Recent Shopify orders could not be loaded."));
+  }
+}
+
+/** Every line item of one order: the first page came with the order search, the rest are paged here. */
+async function allOrderLines(shopId: string, order: any): Promise<any[]> {
+  const lines = [...(order.lineItems?.nodes ?? [])];
+  let pageInfo = order.lineItems?.pageInfo;
+  while(pageInfo?.hasNextPage) {
+    const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+      shopId, queryText: ORDER_LINE_ITEMS_QUERY, variables: { id: order.id, after: pageInfo.endCursor },
+    } });
+    const page = result?.response?.node?.lineItems;
+    assertShopifyRead(result, Array.isArray(page?.nodes) ? page : undefined);
+    lines.push(...page.nodes);
+    pageInfo = page.pageInfo;
+  }
+
+  return lines;
+}
+
+/**
+ * Recent orders for each mapped variant, read from Shopify. Orders can only be searched by SKU, and
+ * duplicate listings usually share one, so each order is credited to the variant on its line item.
+ * Reads at most RECENT_ORDER_PAGES pages of 100 orders per SKU and marks the result capped beyond that.
+ * A variant without a SKU cannot be searched, so it gets no entry: its activity is unknown, not zero.
+ */
+const fetchRecentVariantOrders = async (shopId: string, choices: ShopifyProductMappingChoice[], days = 30): Promise<Record<string, VariantOrderActivity>> => {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const searchable = choices.filter(choice => choice.sku);
+  const activity: Record<string, VariantOrderActivity> = Object.fromEntries(searchable.map(choice =>
+    [choice.variantId, { orders: 0, units: 0, channels: {}, capped: false } as VariantOrderActivity]));
+  const counted = new Set<string>();
+  for(const sku of new Set(searchable.map(choice => choice.sku as string))) {
+    let after: string | null = null;
+    for(let page = 0; page < RECENT_ORDER_PAGES; page++) {
+      const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+        shopId, queryText: RECENT_ORDERS_QUERY, variables: { query: `sku:${JSON.stringify(sku)} created_at:>=${since}`, after },
+      } });
+      const orders = result?.response?.orders;
+      assertShopifyRead(result, Array.isArray(orders?.nodes) ? orders : undefined);
+      for(const order of orders.nodes) {
+        for(const line of await allOrderLines(shopId, order)) {
+          const variantId = String(line.variant?.id ?? "").split("/").pop() as string;
+          const entry = activity[variantId];
+          if(line.sku !== sku || !entry) {continue;}
+          entry.units += Number(line.quantity) || 0;
+          // One order can carry the same variant on several lines; count the order once.
+          if(counted.has(`${variantId}|${order.id}`)) {continue;}
+          counted.add(`${variantId}|${order.id}`);
+          entry.orders++;
+          const channel = String(order.sourceName || "unknown");
+          entry.channels[channel] = (entry.channels[channel] ?? 0) + 1;
+          if(!entry.lastOrderAt || order.createdAt > entry.lastOrderAt) {entry.lastOrderAt = order.createdAt;}
+        }
+      }
+      if(!orders.pageInfo?.hasNextPage) {break;}
+      after = orders.pageInfo.endCursor;
+      if(page === RECENT_ORDER_PAGES - 1) {
+        searchable.filter(choice => choice.sku === sku).forEach(choice => { activity[choice.variantId].capped = true; });
+      }
+    }
+  }
+
+  return activity;
+};
+
+/** The OMS side of an unmapped product, read from the product itself; the search index may not have it. */
+export interface OmsProductSummary {
+  productId: string;
+  name?: string;
+  internalName?: string;
+  productTypeId?: string;
+  sku?: string;
+  upc?: string;
+  imageUrl?: string;
+  createdDate?: number;
+}
+
+const fetchOmsProductSummary = async (productId: string): Promise<OmsProductSummary> => {
+  const [product, identifications] = await Promise.all([
+    requestBackend<any>({ url: `oms/products/${encodeURIComponent(productId)}`, method: "GET" }),
+    requestBackend<any>({ url: `oms/products/${encodeURIComponent(productId)}/identifications`, method: "GET", params: { pageSize: 100 } }),
+  ]);
+  if(!product || String(product.productId) !== productId) {throw new Error(translate("The OMS product could not be loaded."));}
+  const idValue = (type: string) => (Array.isArray(identifications) ? identifications : [])
+    .find((row: any) => row.goodIdentificationTypeId === type && row.idValue)?.idValue as string | undefined;
+
+  return {
+    productId, name: product.productName, internalName: product.internalName, productTypeId: product.productTypeId,
+    sku: idValue("SKU") || idValue("SHOPIFY_PROD_SKU"), upc: idValue("UPCA"),
+    imageUrl: product.mainImageUrl || product.smallImageUrl, createdDate: product.createdDate,
+  };
+};
+
+/** One Shopify variant offered as a mapping target, with the OMS products already mapped to it. */
+export interface ShopifyVariantCandidate {
+  variantId: string;
+  inventoryItemId: string;
+  shopifyProductId: string;
+  title?: string;
+  variantTitle?: string;
+  sku?: string;
+  barcode?: string;
+  status?: string;
+  imageUrl?: string;
+  tracked: boolean;
+  onlineStorePublished: boolean;
+  /** OMS products already mapped to this variant in the shop's product store. */
+  mappedProductIds: string[];
+}
+
+const VARIANT_SEARCH_QUERY = "query TransferMappingVariantSearch($query: String!) { productVariants(first: 20, query: $query) { nodes { id title sku barcode image { url } inventoryItem { id tracked } product { id title status onlineStoreUrl featuredMedia { preview { image { url } } } } } } }";
+
+/**
+ * Existing OMS mappings for these variants. PRODUCT_STORE_PRODUCT is the only reverse lookup by
+ * Shopify variant, and it is scoped by product store rather than shop, so it can over-report in a
+ * store with several shops. That only blocks a mapping, which is the safe direction.
+ */
+const fetchVariantMappings = async (productStoreId: string, variantIds: string[]): Promise<Map<string, string[]>> => {
+  const byVariant = new Map<string, string[]>();
+  if(!variantIds.length) {return byVariant;}
+  const response: any = await requestBackend<any>({ url: "oms/dataDocumentView", method: "POST", data: {
+    dataDocumentId: "PRODUCT_STORE_PRODUCT", pageIndex: 0, pageSize: 250,
+    customParametersMap: { productStoreId, shopifyProductId: variantIds }, fieldsToSelect: "productId,shopifyProductId",
+  } });
+  if(!Array.isArray(response?.entityValueList)) {throw new Error(translate("Existing product mappings could not be checked."));}
+  for(const row of response.entityValueList) {
+    const variantId = String(row.shopifyProductId);
+    byVariant.set(variantId, [...new Set([...(byVariant.get(variantId) ?? []), String(row.productId)])]);
+  }
+
+  return byVariant;
+};
+
+/** Search the shop's Shopify catalog for variants to map an OMS product to. */
+const searchShopifyVariants = async (shopId: string, productStoreId: string, query: string): Promise<ShopifyVariantCandidate[]> => {
+  if(!query.trim()) {return [];}
+  const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+    shopId, queryText: VARIANT_SEARCH_QUERY, variables: { query: query.trim() },
+  } });
+  const nodes = result?.response?.productVariants?.nodes;
+  if((result.statusCode && result.statusCode !== 200) || result.graphqlErrors?.length || result.response?.errors?.length || !Array.isArray(nodes)) {
+    throw new Error(translate("Shopify could not be searched. Try again."));
+  }
+  const candidates: ShopifyVariantCandidate[] = nodes.filter(Boolean).map((node: any) => ({
+    variantId: String(node.id).split("/").pop() as string,
+    inventoryItemId: String(node.inventoryItem?.id ?? "").split("/").pop() as string,
+    shopifyProductId: String(node.product?.id ?? "").split("/").pop() as string,
+    title: node.product?.title, variantTitle: node.title, sku: node.sku, barcode: node.barcode, status: node.product?.status,
+    imageUrl: node.image?.url || node.product?.featuredMedia?.preview?.image?.url,
+    tracked: node.inventoryItem?.tracked === true, onlineStorePublished: Boolean(node.product?.onlineStoreUrl),
+    mappedProductIds: [],
+  }));
+  const mappings = await fetchVariantMappings(productStoreId, candidates.map(row => row.variantId));
+  candidates.forEach(row => { row.mappedProductIds = mappings.get(row.variantId) ?? []; });
+
+  return candidates;
+};
+
+/**
+ * Map an unmapped OMS product to one Shopify variant. The store endpoint upserts on
+ * (shopId, shopifyProductId), so a variant already mapped to another OMS product would be silently
+ * re-pointed; every precondition is re-read from the server immediately before the write.
+ */
+const addTransferProductMapping = async (shopId: string, productId: string, productStoreId: string, variantId: string) => {
+  if((await fetchTransferProductMappings(shopId, productId)).length) {
+    throw new Error(translate("This product was mapped since you opened this page. Recheck before changing it."));
+  }
+  if((await fetchVariantMappings(productStoreId, [variantId])).get(variantId)?.length) {
+    throw new Error(translate("That Shopify variant is already mapped to another OMS product. Resolve that mapping first."));
+  }
+  const result: any = await requestBackend<any>({ url: "shopify/graphql", method: "POST", data: {
+    shopId, queryText: "query TransferMappingVariant($id: ID!) { productVariant(id: $id) { id inventoryItem { id tracked } } }",
+    variables: { id: `gid://shopify/ProductVariant/${variantId}` },
+  } });
+  const variant = result?.response?.productVariant;
+  const inventoryItemId = String(variant?.inventoryItem?.id ?? "").split("/").pop();
+  if(!variant || !inventoryItemId) {throw new Error(translate("That Shopify variant no longer exists. Search again."));}
+  if(variant.inventoryItem?.tracked !== true) {
+    throw new Error(translate("Shopify doesn't track inventory for that variant, so it can't be on a transfer. Turn on tracking in Shopify first."));
+  }
+  try {
+    const response: any = await api({ url: `sob/products/${encodeURIComponent(productId)}/shopifyShopProducts`, method: "POST",
+      data: { shopId, productId, shopifyProductId: variantId, shopifyInventoryItemId: inventoryItemId } });
+    if(!response || response.data == null || commonUtil.hasError(response)) {throw new Error("Mapping creation was rejected");}
+    const mappings = await fetchTransferProductMappings(shopId, productId);
+    if(mappings.length !== 1 || mappings[0].variantId !== variantId || mappings[0].inventoryItemId !== inventoryItemId) {
+      throw new Error("Unverified mapping change");
+    }
+  } catch {
+    // A lost response may follow a committed write; never invite blind replay of this action.
+    throw new Error(translate("The mapping could not be verified. Recheck the current mapping before trying again."));
+  }
 };
 
 const mappingFingerprint = (rows: ShopifyProductMappingChoice[]): string => {
@@ -7280,7 +7496,10 @@ const keepTransferProductMapping = async (shopId: string, productId: string, kee
 
 /** On-demand catalog evidence and explicit mapping corrections for transfer diagnostics. */
 export function useTransferMappingResolution() {
-  return { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping };
+  return {
+    fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders: fetchRecentVariantOrders,
+    fetchOmsProduct: fetchOmsProductSummary, searchVariants: searchShopifyVariants, addMapping: addTransferProductMapping,
+  };
 }
 
 /** Read every variant and its existing OMS mapping without re-running an import. */
