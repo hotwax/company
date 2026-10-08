@@ -10,17 +10,21 @@ import { isShopifyObjectId, shopifyAdminHostname } from "@/utils/shopifyAdminUrl
 
 /**
  * A warm cache is immediately usable, but a cold empty cache is not authoritative until this
- * view-scoped domain has completed its first live pass.
+ * view-scoped domain has completed its first live pass. A pass that loaded some segments and failed
+ * others also counts: the loaded segments are authoritative, and the page marks the rest as not loaded.
  */
 export function isTransferSyncMonitoringLoaded(options: {
   cacheHydrated: boolean;
   cachedRowCount: number;
   liveSyncAt: number;
   viewSyncBaselineAt: number;
+  loadedSegmentCount?: number;
 }): boolean {
   const liveSyncCompleted = options.liveSyncAt > options.viewSyncBaselineAt;
 
-  return options.cacheHydrated && (options.cachedRowCount > 0 || liveSyncCompleted);
+  const segmentsLoaded = (options.loadedSegmentCount ?? 0) > 0;
+
+  return options.cacheHydrated && (options.cachedRowCount > 0 || liveSyncCompleted || segmentsLoaded);
 }
 
 /**
@@ -60,4 +64,10 @@ export function transfersAppOrderUrl(orderId: unknown): string {
   if(!id) { return ""; }
 
   return buildAppUrl("transfers", `/order-detail/${encodeURIComponent(id)}`) ?? "";
+}
+
+/** The search a missing mapping starts with: the product's SKU or barcode, exact. */
+export function initialVariantQuery(product: { sku?: string; upc?: string }): string {
+  return [product.sku ? `sku:${JSON.stringify(product.sku)}` : "", product.upc ? `barcode:${JSON.stringify(product.upc)}` : ""]
+    .filter(Boolean).join(" OR ");
 }

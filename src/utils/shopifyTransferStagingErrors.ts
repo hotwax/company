@@ -66,6 +66,10 @@ function issue(message: string, code: string, key: string, orderId?: string): Tr
     row.code = "multiple-product-mappings";
     row.title = "Multiple Shopify variants mapped to one product";
     row.action = "Ask your catalog administrator to keep only the correct Shopify variant mapping for this product in this shop, then run the creation stager again.";
+  } else if(/has no ShopifyShopProduct mapping/.test(message)) {
+    row.code = "missing-product-mapping";
+    row.title = "Product not mapped to Shopify";
+    row.action = "Map this product to its Shopify variant, or create it in Shopify with inventory tracking on and run the product sync. Then run the creation stager again.";
   } else if(code === "unmapped-shipped-item") {
     row.title = "Shipment item cannot be matched to Shopify";
     row.action = "Check that this item exists on the Shopify transfer, has one Shopify inventory item mapping, and has a positive whole-number shipped quantity. If it was added after the transfer synced, ask your integration administrator to reconcile the transfer lines before rerunning the update stager.";
