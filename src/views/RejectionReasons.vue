@@ -1,6 +1,6 @@
 <template>
   <ion-page>
-    <ion-header :translucent="true">
+    <ion-header>
       <ion-toolbar>
         <ion-menu-button slot="start" />
         <ion-title slot="start">{{ translate("Rejection reasons") }}</ion-title>
@@ -39,8 +39,8 @@
                 </ion-chip>
               </div>
 
-              <div class="tablet" v-if="currentGroupId">
-                <ion-toggle :checked="isReasonEnabledForCurrentSegment(reason)" @click.prevent="toggleReasonStatusForCurrentSegment($event, reason)" />
+              <div class="tablet">
+                <ion-toggle v-if="currentGroupId" :checked="isReasonEnabledForCurrentSegment(reason)" @click.prevent="toggleReasonStatusForCurrentSegment($event, reason)" />
               </div>
 
               <ion-reorder />
@@ -163,13 +163,9 @@ const openCreateRejectionReasonModal = async () => {
   });
 
   modal.onDidDismiss().then((result) => {
-    if (result.data?.isUpdated) {
-      if (result.data.newReason) {
-        filteredReasons.value.push(result.data.newReason);
-        rejectReasons.value.push(result.data.newReason);
-      } else {
-        void loadData();
-      }
+    if (result.data?.isUpdated && result.data.newReason) {
+      filteredReasons.value.push(result.data.newReason);
+      rejectReasons.value.push(result.data.newReason);
     }
   });
 
@@ -186,10 +182,10 @@ const openRejectionReasonActionsPopover = async (event: Event, reason: any) => {
 
   popover.onDidDismiss().then((result) => {
     if (result.data?.isRemoved) {
-      filteredReasons.value = filteredReasons.value.filter((r: any) => r.enumId !== result.data.removedEnumId);
-      rejectReasons.value = rejectReasons.value.filter((r: any) => r.enumId !== result.data.removedEnumId);
+      filteredReasons.value = filteredReasons.value.filter((rejectionReason: any) => rejectionReason.enumId !== result.data.removedEnumId);
+      rejectReasons.value = rejectReasons.value.filter((rejectionReason: any) => rejectionReason.enumId !== result.data.removedEnumId);
     } else if (result.data?.isUpdated && result.data.updatedReason) {
-      const idx = filteredReasons.value.findIndex((r: any) => r.enumId === result.data.updatedReason.enumId);
+      const idx = filteredReasons.value.findIndex((rejectionReason: any) => rejectionReason.enumId === result.data.updatedReason.enumId);
       if (idx !== -1) {
         filteredReasons.value[idx].enumName = result.data.updatedReason.enumName;
         filteredReasons.value[idx].description = result.data.updatedReason.description;
@@ -213,7 +209,7 @@ const openVarianceTypeActionsPopover = async (event: Event, reason: any) => {
 
   popover.onDidDismiss().then((result) => {
     if (result.data?.isUpdated && result.data.newEnumTypeId) {
-      const idx = filteredReasons.value.findIndex((r: any) => r.enumId === reason.enumId);
+      const idx = filteredReasons.value.findIndex((rejectionReason: any) => rejectionReason.enumId === reason.enumId);
       if (idx !== -1) {
         filteredReasons.value[idx].enumTypeId = result.data.newEnumTypeId;
       }

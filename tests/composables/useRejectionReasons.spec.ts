@@ -72,18 +72,27 @@ describe("useRejectionReasons composable", () => {
     );
   });
 
-  it("fetches active fulfillment reject reasons", async () => {
+  it("fetches active enum group members", async () => {
     const mockGroupMembers = [
       { enumId: "REJ_RSN_DAMAGED", enumerationGroupId: "FF_REJ_RSN_GRP" },
       { enumId: "REJ_RSN_EXPIRED", enumerationGroupId: "FF_REJ_RSN_GRP", thruDate: 1700000000 },
     ];
     apiMock.mockResolvedValueOnce({ data: mockGroupMembers });
 
-    const { fetchFulfillmentRejectReasons, groupRejectReasons } = rejectionReasonsComposable;
-    const activeMembers = await fetchFulfillmentRejectReasons();
+    const { fetchEnumGroupMembers, groupRejectReasons } = rejectionReasonsComposable;
+    const activeMembers = await fetchEnumGroupMembers("FF_REJ_RSN_GRP");
 
     expect(Object.keys(activeMembers)).toEqual(["REJ_RSN_DAMAGED"]);
     expect(groupRejectReasons.value.FF_REJ_RSN_GRP["REJ_RSN_DAMAGED"]).toBeDefined();
+    expect(apiMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/admin/enumGroups/FF_REJ_RSN_GRP/members",
+        method: "GET",
+        params: expect.objectContaining({
+          enumerationGroupId: "FF_REJ_RSN_GRP",
+        }),
+      })
+    );
   });
 
   it("creates and updates enumerations via API", async () => {

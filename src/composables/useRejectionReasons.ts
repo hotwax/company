@@ -80,8 +80,7 @@ export function useRejectionReasons() {
     let groupMembers: Record<string, any> = {};
     try {
       const payload = {
-        enumerationGroupId: [enumerationGroupId],
-        enumerationGroupId_op: "in",
+        enumerationGroupId,
         pageSize: 200,
         orderByField: "sequenceNum"
       };
@@ -107,14 +106,6 @@ export function useRejectionReasons() {
 
     groupRejectReasons.value[enumerationGroupId] = groupMembers;
     return groupMembers;
-  }
-
-  async function fetchFulfillmentRejectReasons() {
-    return fetchEnumGroupMembers("FF_REJ_RSN_GRP");
-  }
-
-  async function fetchBopisRejectReasons() {
-    return fetchEnumGroupMembers("BOPIS_REJ_RSN_GRP");
   }
 
   async function createEnumeration(payload: any) {
@@ -204,8 +195,6 @@ export function useRejectionReasons() {
     fetchRejectReasons,
     fetchRejectReasonEnumTypes,
     fetchEnumGroupMembers,
-    fetchFulfillmentRejectReasons,
-    fetchBopisRejectReasons,
     createEnumeration,
     updateEnumeration,
     deleteEnumeration,
