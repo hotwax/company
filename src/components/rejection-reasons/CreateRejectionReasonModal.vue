@@ -24,18 +24,10 @@
         <ion-item>
           <ion-input label-placement="floating" :label="translate('Description')" v-model="formData.description" />
         </ion-item>
-      </ion-list>
-
-      <ion-list>
         <ion-item lines="none">
-          <ion-select :label="translate('Variance type')" interface="popover" v-model="formData.enumTypeId">
+          <ion-select :label="translate('Variance type')" interface="popover" v-model="formData.enumTypeId" :helper-text="getDescription()">
             <ion-select-option v-for="type in rejectReasonEnumTypes" :key="type.enumTypeId" :value="type.enumTypeId">{{ type.enumTypeId }}</ion-select-option>
           </ion-select>
-        </ion-item>
-        <ion-item lines="none">
-          <ion-label>
-            <p>{{ getDescription() }}</p>
-          </ion-label>
         </ion-item>
       </ion-list>
 
@@ -49,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonLabel, IonList, IonSelect, IonSelectOption, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
+import { IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonInput, IonItem, IonList, IonSelect, IonSelectOption, IonText, IonTitle, IonToolbar, modalController } from "@ionic/vue";
 import { ref } from "vue";
 import { checkmarkDoneOutline, closeOutline } from "ionicons/icons";
 import { commonUtil, logger, translate } from "@common";
