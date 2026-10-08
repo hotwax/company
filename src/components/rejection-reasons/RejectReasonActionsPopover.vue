@@ -17,17 +17,14 @@
 <script setup lang="ts">
 import { IonContent, IonItem, IonList, IonListHeader, alertController, modalController, popoverController } from "@ionic/vue";
 import { commonUtil, logger, translate } from "@common";
-import { DateTime } from "luxon";
 import EditRejectionReasonModal from "@/components/rejection-reasons/EditRejectionReasonModal.vue";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
 
 const props = defineProps<{
   reason: any;
-  linkedGroups?: string[];
-  groupMembers?: Record<string, any>;
 }>();
 
-const { deleteEnumeration, updateEnumerationGroupMember } = useRejectionReasons();
+const { deleteEnumeration } = useRejectionReasons();
 
 const openEditRejectionReasonModal = async () => {
   const editRejectionReasonModal = await modalController.create({
@@ -45,41 +42,15 @@ const openEditRejectionReasonModal = async () => {
 };
 
 const removeRejectionReason = async () => {
-  let message = translate("Are you sure you want to remove this rejection reason?");
-  if (props.linkedGroups && props.linkedGroups.length > 0) {
-    const groupNames = props.linkedGroups.join(", ");
-    message = translate("This rejection reason is linked to {groupNames} group(s). Removing it will also unlink it from these groups. Are you sure you want to remove this rejection reason?", { groupNames });
-  }
-
   const alert = await alertController.create({
     header: translate("Remove rejection reason"),
-    message,
+    message: translate("Are you sure you want to remove this rejection reason?"),
     buttons: [
       { text: translate("Cancel"), role: "cancel" },
       {
         text: translate("Confirm"),
         handler: async () => {
           try {
-            if (props.groupMembers) {
-              const unlinkPromises: any[] = [];
-              for (const [groupId, member] of Object.entries(props.groupMembers)) {
-                if (member?.fromDate) {
-                  unlinkPromises.push(
-                    updateEnumerationGroupMember({
-                      enumerationGroupId: groupId,
-                      enumerationId: props.reason.enumId,
-                      sequenceNum: props.reason.sequenceNum,
-                      fromDate: member.fromDate,
-                      thruDate: DateTime.now().toMillis()
-                    })
-                  );
-                }
-              }
-              if (unlinkPromises.length) {
-                await Promise.all(unlinkPromises);
-              }
-            }
-
             const resp: any = await deleteEnumeration(props.reason.enumId);
             if (!commonUtil.hasError(resp)) {
               commonUtil.showToast(translate("Rejection reason removed successfully."));

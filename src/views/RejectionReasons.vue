@@ -172,20 +172,9 @@ const openCreateRejectionReasonModal = async () => {
 };
 
 const openRejectionReasonActionsPopover = async (event: Event, reason: any) => {
-  const linkedGroups: string[] = [];
-  if (groupRejectReasons.value.FF_REJ_RSN_GRP?.[reason.enumId]) linkedGroups.push(translate("Fulfillment"));
-  if (groupRejectReasons.value.BOPIS_REJ_RSN_GRP?.[reason.enumId]) linkedGroups.push(translate("BOPIS"));
-
   const popover = await popoverController.create({
     component: RejectReasonActionsPopover,
-    componentProps: {
-      reason,
-      linkedGroups,
-      groupMembers: {
-        FF_REJ_RSN_GRP: groupRejectReasons.value.FF_REJ_RSN_GRP?.[reason.enumId],
-        BOPIS_REJ_RSN_GRP: groupRejectReasons.value.BOPIS_REJ_RSN_GRP?.[reason.enumId]
-      }
-    },
+    componentProps: { reason },
     showBackdrop: false,
     event
   });
