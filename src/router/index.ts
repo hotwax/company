@@ -52,6 +52,7 @@ const ResetPassword = () => import("@/views/ResetPassword.vue")
 const AppVersion = () => import("@/views/AppVersion.vue")
 const Organizations = () => import("@/views/Organizations.vue")
 const OrganizationDetails = () => import("@/views/OrganizationDetails.vue")
+const RejectionReasons = () => import("@/views/RejectionReasons.vue")
 
 const authGuard = () => {
   if(!useAuth().isAuthenticated.value) {
@@ -213,6 +214,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/login", name: "Login", component: Login },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/settings", name: "Settings", component: Settings, beforeEnter: authGuard },
+  { path: "/rejection-reasons", name: "RejectionReasons", component: RejectionReasons, beforeEnter: authGuard },
   { path: "/app-version", name: "AppVersion", component: AppVersion, beforeEnter: authGuard },
   { path: "/clone-product-store", name: "CloneProductStore", component: CloneProductStore, beforeEnter: authGuard },
   { path: "/mcp-setup", name: "McpSetup", component: McpSetup, beforeEnter: authGuard },
