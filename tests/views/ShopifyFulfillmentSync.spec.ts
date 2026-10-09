@@ -97,7 +97,10 @@ vi.mock("@/services/appDbSync", () => ({
 
 const shipmentContexts = new Map<string, any>();
 
-vi.mock("@/composables/useShopify", () => ({
+vi.mock("@/composables/useShopify", async () => ({
+  // Real request composables: their api calls land on the @common mock, which the Diagnosis and
+  // order-search cases assert against.
+  ...await vi.importActual<any>("@/composables/useShopifyFulfillment").then(({ useFulfillmentDiagnosis, useShopOrderSearch }) => ({ useFulfillmentDiagnosis, useShopOrderSearch })),
   useFulfillmentSyncHealth: () => ({ health: healthRow, hydrated: ref(true) }),
   useOmsShipmentContext: () => ({
     getShipmentContext: (query: { shipmentId?: string; orderId?: string }) =>

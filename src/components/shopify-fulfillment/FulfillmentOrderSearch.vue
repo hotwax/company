@@ -60,7 +60,7 @@ import { translate } from '@common';
 import { IonCard, IonCardHeader, IonCardTitle, IonSearchbar, IonSelect, IonSelectOption, IonInput, IonItem, IonList, IonLabel, IonCheckbox, IonNote, IonButton, IonChip, IonIcon, IonSkeletonText, IonModal, IonHeader, IonToolbar, IonTitle, IonButtons, IonContent, IonFooter } from '@ionic/vue';
 import { closeCircle, closeOutline } from 'ionicons/icons';
 import { useStatuses } from '@/composables/useSeed';
-import { useShopOrderSearch } from '@/composables/useShopifyFulfillment';
+import { useShopOrderSearch } from '@/composables/useShopify';
 import { formatDateTime, hasError } from '@/utils';
 
 export interface SearchOrder { orderId: string; orderName?: string; shopifyOrderId?: string; orderDate?: number; statusId?: string }

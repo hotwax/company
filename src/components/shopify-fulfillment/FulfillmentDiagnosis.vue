@@ -68,7 +68,7 @@ import { translate, commonUtil } from "@common";
 import { formatDateTime } from "@/utils";
 import Image from "@/components/common/Image.vue";
 import type { FulfillmentOrderItem } from "./FulfillmentShipmentCard.types";
-import { useFulfillmentDiagnosis } from "@/composables/useShopifyFulfillment";
+import { useFulfillmentDiagnosis } from "@/composables/useShopify";
 const props = defineProps<{ shopId: string; shipmentId: string; mode?: 'pending' | 'queued' | 'synced'; items?: FulfillmentOrderItem[]; facility?: string; messageId?: string; version?: string; retryLabel?: string; busy?: boolean }>();
 const emit = defineEmits<{ (event: 'retry'): void; (event: 'diagnosed', diagnosis: any): void }>();
 const { getDiagnosis, releaseHold } = useFulfillmentDiagnosis();
