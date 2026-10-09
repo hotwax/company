@@ -266,7 +266,7 @@ async function runAudit() {
   try {
     // Shopify is remote truth so it is fetched; the OMS side is the cached `shopifyLocation`
     // domain this page already subscribes to, so the audit costs ONE request instead of two.
-    const nodes = await fetchLocationsFromShopify(props.id)
+    const nodes = await fetchLocationsFromShopify(props.id, { includeLegacy: true })
     const omsMappings = shopifyShopLocations.value || []
     const mappedIds = new Set(omsMappings.map((m: any) => String(m.shopifyLocationId)))
     const nodeById = new Map(nodes.map((n: any) => [String(n.id).split('/').pop(), n]))
