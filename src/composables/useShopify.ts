@@ -7633,14 +7633,18 @@ export async function fetchProductFacilityActivations(shopId: string, params: {
 // implementation remains split into a focused submodule, but callers import it through this owner
 // so a screen does not assemble Shopify state from unrelated composable entry points.
 export {
+  useFulfillmentDiagnosis,
   useFulfillmentSyncHealth,
   useOmsShipmentContext,
   usePendingFulfillments,
   useQueuedFulfillments,
   useShopifyFulfillmentDetails,
+  useShopOrderSearch,
   useSyncedFulfillments,
 } from "./useShopifyFulfillment";
 export type {
+  FulfillmentDiagnosisQuery,
+  FulfillmentHoldRelease,
   OmsShipmentContext,
   QueuedFulfillmentRow,
   SyncedFulfillmentRow,
