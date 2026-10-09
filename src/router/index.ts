@@ -220,6 +220,10 @@ const routes: Array<RouteRecordRaw> = [
   { path: "/mcp-setup", name: "McpSetup", component: McpSetup, beforeEnter: authGuard },
   { path: "/composer", name: "Composer", component: Composer, beforeEnter: authGuard },
   { path: "/workforce", name: "Workforce", component: Workforce, beforeEnter: authGuard },
+  // An unknown path matches nothing and renders an empty outlet; send it to the default page instead.
+  // Through "/" so the default lives in one place; its own guard still sends a signed-out user to login.
+  // The bad URL's query and hash are dropped: a redirect carries them over unless told otherwise.
+  { path: "/:pathMatch(.*)*", redirect: () => ({ path: "/", query: {}, hash: "" }) },
 ]
 
 const router = createRouter({
