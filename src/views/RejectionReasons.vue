@@ -40,7 +40,7 @@
               </div>
 
               <div class="tablet">
-                <ion-toggle v-if="currentGroupId" :checked="isReasonEnabledForCurrentSegment(reason)" @click.prevent="toggleReasonStatusForCurrentSegment($event, reason)" />
+                <ion-toggle v-if="currentGroupId" :checked="isReasonEnabledForCurrentSegment(reason)" @click.stop.prevent="toggleReasonStatusForCurrentSegment(reason, currentGroupId)" />
               </div>
 
               <ion-reorder />
@@ -109,10 +109,13 @@ const {
   fetchRejectReasonEnumTypes,
   fetchEnumGroupMembers,
   updateEnumeration,
-  updateEnumerationGroupMember
+  updateEnumerationGroupMember,
+  filteredReasons,
+  findReasonsDiff,
+  saveReasonsOrder,
+  toggleReasonStatusForCurrentSegment
 } = useRejectionReasons();
 
-const filteredReasons = ref<any[]>([]);
 const toast = ref<any>(null);
 const selectedSegment = ref("fulfillment");
 
@@ -259,70 +262,6 @@ const doReorder = async (event: CustomEvent) => {
   }
 };
 
-const findReasonsDiff = (previousSeq: any, updatedSeq: any) => {
-  const diffSeq: any = Object.keys(previousSeq).reduce((diff, key) => {
-    if (updatedSeq[key].enumId === previousSeq[key].enumId && updatedSeq[key].sequenceNum === previousSeq[key].sequenceNum) return diff;
-    return {
-      ...diff,
-      [key]: updatedSeq[key]
-    };
-  }, {});
-  return diffSeq;
-};
-
-const saveReasonsOrder = async () => {
-  const diffReasons = filteredReasons.value.filter((reason: any) =>
-    rejectReasons.value.some((rejectReason: any) => rejectReason.enumId === reason.enumId && rejectReason.sequenceNum !== reason.sequenceNum)
-  );
-
-  const responses = await Promise.allSettled(
-    diffReasons.map(async (reason: any) => {
-      await updateEnumeration(reason);
-    })
-  );
-
-  const isFailedToUpdateSomeReason = responses.some((response) => response.status === "rejected");
-  if (isFailedToUpdateSomeReason) {
-    commonUtil.showToast(translate("Failed to update sequence for some rejection reasons."));
-  } else {
-    commonUtil.showToast(translate("Sequence for rejection reasons updated successfully."));
-    rejectReasons.value = JSON.parse(JSON.stringify(filteredReasons.value));
-  }
-};
-
-const toggleReasonStatusForCurrentSegment = async (event: any, reason: any) => {
-  event.stopImmediatePropagation();
-  const groupId = currentGroupId.value;
-  if (!groupId) return;
-
-  // Fulfillment or BOPIS group association toggle
-  let resp: any;
-  const currentMember = groupRejectReasons.value[groupId]?.[reason.enumId];
-
-  const payload: any = {
-    enumerationId: reason.enumId,
-    enumerationGroupId: groupId,
-    sequenceNum: reason.sequenceNum,
-    fromDate: currentMember?.fromDate || DateTime.now().toMillis()
-  };
-
-  if (currentMember?.fromDate) {
-    payload.thruDate = DateTime.now().toMillis();
-  }
-
-  try {
-    resp = await updateEnumerationGroupMember(payload);
-
-    if (!commonUtil.hasError(resp)) {
-      await fetchEnumGroupMembers(groupId);
-    } else {
-      throw resp.data;
-    }
-  } catch (error: any) {
-    logger.error(error);
-    commonUtil.showToast(translate("Failed to update reason association with group."));
-  }
-};
 
 onIonViewWillEnter(async () => {
   await loadData();

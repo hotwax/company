@@ -142,7 +142,7 @@ const submit = async () => {
 
   isSubmitting.value = true;
   try {
-    const resp = await submitResetPassword({
+    await submitResetPassword({
       userId,
       username,
       oldPassword: resetPassword.value,
@@ -150,14 +150,8 @@ const submit = async () => {
       newPasswordVerify: newPasswordVerify.value
     }, maarg);
 
-    // update#Password reports failures (wrong/missing old password, no permission, weak password) as a public
-    // "danger" message with updateSuccessful: false, not as commonUtil.hasError's generic error shape.
-    if (!commonUtil.hasError(resp) && resp.data?.updateSuccessful) {
-      commonUtil.showToast(translate("Password reset successful. Please login with your new password."));
-      router.replace("/login");
-    } else {
-      throw resp.data;
-    }
+    commonUtil.showToast(translate("Password reset successful. Please login with your new password."));
+    router.replace("/login");
   } catch (error) {
     commonUtil.showToast(translate("Failed to reset password. Please check your reset password and try again."));
     logger.error(error);
