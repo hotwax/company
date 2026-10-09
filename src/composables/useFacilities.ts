@@ -358,11 +358,15 @@ export function useFacilityProductStores(facilityId?: string) {
   );
 
   /** facilityId → productStoreId[] — the index the facility list filters on. */
-  const storesByFacility = computed<Record<string, string[]>>(() =>
-    records.value.reduce((map: Record<string, string[]>, row: any) => {
-      (map[row.facilityId] ||= []).push(row.productStoreId);
+  const storesByFacility = computed<Record<string, string[]>>(() => {
+    const now = Date.now();
+    return records.value.reduce((map: Record<string, string[]>, row: any) => {
+      if (row.facilityId && row.productStoreId && isEffectiveNow(row, now)) {
+        (map[row.facilityId] ||= []).push(row.productStoreId);
+      }
       return map;
-    }, {}));
+    }, {});
+  });
 
   return { associations: records, storesByFacility, records, hydrated };
 }
