@@ -173,7 +173,7 @@
 import {
   useFacilities, useFacilityGroups, useFacilityTypes, useGroupMembershipIndex,
   useFacilityMutations, useFacilityOrderCounts, useFacilitySearchQuery, useFacilityGroupMembershipReader,
-  useFacilitySellOnline,
+  useFacilitySellOnline, useFacilityProductStores,
 } from "@/composables/useFacilities";
 import { useProductStores } from "@/composables/useProductStores";
 import {
@@ -223,6 +223,7 @@ const { facilityTypes } = useFacilityTypes({ excludeVirtual: true });
 const { facilityGroups: allCachedGroups } = useFacilityGroups();
 const { productStores } = useProductStores();
 const { groupsByFacility, facilityIdsByGroup } = useGroupMembershipIndex();
+const { storesByFacility } = useFacilityProductStores();
 
 const { query, setQuery, resetQuery } = useFacilitySearchQuery();
 const { fetchOrderCounts } = useFacilityOrderCounts();
@@ -251,7 +252,7 @@ const filteredFacilities = computed(() => {
   const q = query.value;
   const keyword = searchText.value?.trim().toLowerCase();
   return allFacilities.value.filter((facility: any) => {
-    if (q.productStoreId && facility.productStoreId !== q.productStoreId) return false;
+    if (q.productStoreId && !storesByFacility.value[facility.facilityId]?.includes(q.productStoreId)) return false;
     if (q.facilityTypeId && facility.facilityTypeId !== q.facilityTypeId) return false;
     if (groupFacilityIds.value && !groupFacilityIds.value.has(facility.facilityId)) return false;
     if (keyword && !facility.facilityName?.toLowerCase().includes(keyword)) return false;
