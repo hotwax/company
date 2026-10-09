@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
 
 const apiMock = vi.fn();
 let maargUrl = "https://oms.example.com/rest/s1/";
@@ -20,25 +20,39 @@ vi.mock("@common", () => ({
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
+  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    error: ref(""),
-    domainStatus: ref({ shopifyTransferSync: { at: 100 } }),
-    syncNow: vi.fn(),
+// `vi.mock` factories run lazily -- only when the mocked module is actually imported, by which
+// point "vue"'s own import has long since resolved -- so building the ref here and stashing it in
+// this outer binding is safe. `vi.hoisted(() => ref(""))` is NOT: that callback runs immediately,
+// at hoist time, before the top-of-file `import { ref } from "vue"` has initialized, and throws
+// "Cannot access '__vi_import_1__' before initialization".
+let syncDomainsErrorRef: ReturnType<typeof ref<string>>;
+
+vi.mock("@/services/appDbSync", () => {
+  syncDomainsErrorRef = ref("");
+  return {
+    activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+    deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+    createSyncDomainOwner: (label: string) => label,
+    syncNow: vi.fn().mockResolvedValue(undefined),
+    syncDomainsError: syncDomainsErrorRef,
+    refreshAfterMutation: vi.fn(),
+  };
+});
+
+vi.mock("@common/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  serviceState: reactive({
+    running: false,
+    lastSyncAt: 0,
+    syncedAt: { shopifyTransferSync: 100 },
+    written: {},
+    errors: {},
   }),
 }));
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
-    records: ref([]),
-    rows: ref([]),
-    hydrated: ref(true),
-  }),
-}));
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({
@@ -172,6 +186,9 @@ const STUBS = {
 describe("ShopifyTransferSync - Summary Cards", () => {
   beforeEach(() => {
     maargUrl = "https://oms.example.com/rest/s1/";
+    // Not yet created before the first dynamic `import("@/views/ShopifyTransferSync.vue")` runs the
+    // (lazy) mock factory above.
+    if (syncDomainsErrorRef) syncDomainsErrorRef.value = "";
     vi.clearAllMocks();
   });
 
@@ -288,5 +305,25 @@ describe("ShopifyTransferSync - Summary Cards", () => {
     expect(webhookItem?.exists()).toBe(true);
     await webhookItem?.trigger("click");
     expect(wrapper.vm.showWebhooksModal).toBe(true);
+  });
+
+  it("shows the stale banner when the transfer sync domain is failing, and not for a stager read", async () => {
+    const { serviceState } = await import("@common/db");
+    const ShopifyTransferSync = (await import("@/views/ShopifyTransferSync.vue")).default;
+    const wrapper = mount(ShopifyTransferSync, { props: { id: "1000" }, global: { stubs: STUBS } });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".stale-banner").exists()).toBe(false);
+
+    // Stager-read failures belong in the Errors tab; they do not make the activity ledger unavailable.
+    serviceState.errors.serviceJobRun = "job runs unavailable";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".stale-banner").exists()).toBe(false);
+
+    serviceState.errors.shopifyTransferSync = "429 from Shopify";
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".stale-banner").text()).toContain("429 from Shopify");
+    delete serviceState.errors.serviceJobRun;
+    delete serviceState.errors.shopifyTransferSync;
   });
 });

@@ -1,0 +1,1114 @@
+/**
+ * Company's own tables, each declared exactly once.
+ *
+ * Keyed by IndexedDB store name. Replaces the split between `COMPANY_SCHEMA`'s hand-written Dexie
+ * strings in `companyDb.ts` and legacy projections — the two could
+ * disagree, and nothing checked them against each other.
+ *
+ * This file covers the 29 tables whose primary key is a single stored field. Composite-key tables
+ * (whose PK is a synthetic `*Key` field) are declared separately in a later module.
+ *
+ * Deep imports, never the `@common/db` barrel: the sync worker reaches this file and Vite must emit
+ * that chunk as a single iife.
+ */
+
+import { defineEntity } from "@common/db/schema/defineEntity";
+import { defineSchema } from "@common/db/schema/defineSchema";
+
+/**
+ * The columns both Shopify inventory ledgers store; the event model reads them in
+ * `src/utils/inventoryEvents.ts`. The two `*LastUpdatedStamp` aliases are the pollers' cursors.
+ */
+const INVENTORY_LEDGER_FIELDS = {
+  eventTypeId: "text",
+  eventReferenceId: "text",
+  eventTypeDescription: "text",
+  shopifyReason: "text",
+  shopId: "text",
+  shopifyLocationId: "text",
+  shopifyInventoryItemId: "text",
+  computedInventoryChange: "count",
+  decisionComment: "text",
+  systemMessageId: "text",
+  systemMessageStatusId: "text",
+  systemMessageInitDate: "date",
+  systemMessageProcessedDate: "date",
+  createdDate: "date",
+  detailLastUpdatedStamp: "date",
+  systemMessageLastUpdatedStamp: "date",
+} as const;
+
+const INVENTORY_LEDGER_INDEXES = [
+  "shopId",
+  "systemMessageId",
+  "createdDate",
+  "[shopId+createdDate]",
+  "[shopId+detailLastUpdatedStamp]",
+  "[shopId+systemMessageLastUpdatedStamp]",
+];
+
+export const companySchema = defineSchema({
+  // --- class A: live, append-mostly (incremental cursor sync) ---
+  //
+  // COMPOUND INDEXES here are load-bearing for sync monitoring, which always asks a two-part
+  // question — "this remote's messages OF THIS TYPE, newest first". A single-field index answers
+  // only half and leaves the rest to a scan-and-sort. Dexie names them `[a+b]`; adding one here is
+  // picked up by Dexie's own schema patch on the next open (verified against a database built
+  // without them: the index was created and `where('[configId+createdDate]')` worked).
+
+  /** DataManagerLog — class A (live, append-mostly). Cursor: `createdDate`. */
+  dataManagerLogs: defineEntity({
+    primaryKey: "logId",
+    fields: {
+      logId: "text",
+      configId: "text",
+      systemMessageId: "text",
+      statusId: "text",
+      totalRecordCount: "count",
+      failedRecordCount: "count",
+      successRecordCount: "count",
+      createdDate: "date",
+      startDateTime: "date",
+      finishDateTime: "date",
+      cancelDateTime: "date",
+      lastUpdatedStamp: "date",
+
+      // --- Shopify transfer delivery (`shopifyTransferDelivery` domain) ---
+      logContentId: "text",
+      fileSize: "count",
+      /** Stamped by the delivery domain: the shop whose transfer file this log delivered. */
+      transferShopId: "text",
+      /** The transfers in the retained source file — never inferred from a successful shop run. */
+      transferOrderIds: "structured",
+      transferMembershipChecked: "text",
+      transferMembershipError: "text",
+
+      // --- the import's files: the import history links its error file and names its source ---
+      errorLogContentId: "text",
+      fileName: "text",
+      createdByJobRunId: "text",
+      createdStamp: "date",
+    },
+    indexes: [
+      "configId",
+      "transferShopId",
+      "systemMessageId",
+      "statusId",
+      "createdDate",
+      "startDateTime",
+      "finishDateTime",
+      "cancelDateTime",
+      "lastUpdatedStamp",
+      "[configId+createdDate]",
+      "[configId+finishDateTime]",
+    ],
+  }),
+
+  /** SystemMessage — class A (live, append-mostly). Cursor: `initDate`. */
+  systemMessages: defineEntity({
+    primaryKey: "systemMessageId",
+    fields: {
+      systemMessageId: "text",
+      systemMessageTypeId: "text",
+      systemMessageRemoteId: "text",
+      statusId: "text",
+      initDate: "date",
+      processedDate: "date",
+      lastAttemptDate: "date",
+      /**
+       * Delivery attempts so far. The fulfillment sync screen renders it, and SmsgError only means
+       * anything next to it — the sweep sets that status when failCount reaches the retry limit,
+       * while a retrying message stays SmsgProduced with a rising count. Projected as a count so the
+       * string the server may send ("3") never leaks into arithmetic.
+       */
+      failCount: "count",
+      // ⚠️ The response does NOT carry `lastUpdatedStamp` (verified live) — it stays declared
+      // because the table indexes it, but expect `undefined`. `initDate` is the usable cursor.
+      lastUpdatedStamp: "date",
+
+      // --- fields the sync-monitoring screens read; without these a cached message is unusable ---
+      /**
+       * The Shopify BulkOperation gid, e.g. `gid://shopify/BulkOperation/7001295421693`. This is the
+       * message → bulk-operation link that `getSystemMessageBulkOperationId` resolves, so the sync
+       * cards cannot associate a message with its operation without it.
+       */
+      remoteMessageId: "text",
+      /** Also part of the bulk-operation resolution chain (see utils/shopifyBulkOperation.ts). */
+      parentMessageId: "text",
+      /**
+       * The produced request body — for Shopify bulk queries this is the whole GraphQL mutation, so
+       * it is by far the largest field here (~1KB per message). Kept because the product-sync run
+       * view and history both display it; at the configured 200-message window that is ~200KB.
+       */
+      messageText: "text",
+      /** The order a message is about, where the producer stamps one — the order-sync screens link it. */
+      orderId: "text",
+      /** The job run that produced the message — order-sync history's "Job run" and its `?jobRunId=` link. */
+      createdByJobRunId: "text",
+    },
+    indexes: [
+      "systemMessageTypeId",
+      "systemMessageRemoteId",
+      "statusId",
+      "initDate",
+      "processedDate",
+      "lastAttemptDate",
+      "lastUpdatedStamp",
+      "[systemMessageRemoteId+initDate]",
+      "[systemMessageRemoteId+systemMessageTypeId]",
+      "[systemMessageRemoteId+systemMessageTypeId+initDate]",
+      "[systemMessageRemoteId+statusId]",
+    ],
+  }),
+
+  /**
+   * ServiceJobRun (`moqui.service.job.ServiceJobRun`) — one execution of a scheduled job.
+   *
+   * `results`, `parameters` and `messages` are stored as the server sends them (`structured` passes
+   * a value through untouched): the transfer sync Errors tab and the inventory reset view read
+   * `results`, order sync links a run through its `parameters`, and onboarding correlates a run to
+   * the job it launched through them. A stored row carries only declared fields, so leaving them out
+   * made every one of those reads come back empty. Only the host/thread diagnostics are dropped.
+   */
+  serviceJobRuns: defineEntity({
+    primaryKey: "jobRunId",
+    fields: {
+      jobRunId: "text",
+      jobName: "text",
+      hasError: "text",
+      errors: "text",
+      startTime: "date",
+      endTime: "date",
+      results: "structured",
+      parameters: "structured",
+      messages: "structured",
+    },
+    indexes: ["jobName", "startTime", "endTime", "hasError", "[jobName+startTime]"],
+  }),
+
+  /**
+   * SyncRun — the SHOP-SCOPED CURSOR (spine) for sync monitoring. Not a data table.
+   *
+   * ⚠️ IT EXISTS BECAUSE LOGS CANNOT BE KEYED BY SHOP AND MESSAGES CAN.
+   *
+   * `systemMessages` partition cleanly per shop: `SystemMessage.systemMessageRemoteId` → remote →
+   * `internalId` = shopId, and a remote belongs to exactly one shop, so each (remote, type) gets its
+   * own window and cursor and adding a shop takes nothing from the others.
+   *
+   * `dataManagerLogs` do not. Probed live: `admin/dataManager/details` ignores every shop filter (a
+   * nonexistent shop id returns the full unfiltered set) and `DATA_MANAGER_LOG_AND_PARAMETER`, which
+   * DOES scope by shop, omits `systemMessageId` — the join key — so it cannot be tied to a message.
+   * One `configId` window is therefore shared by every shop, and depth is the only lever: ample for
+   * one shop, structurally insufficient combined.
+   *
+   * `SYSTEM_MESSAGE_DATA_MANAGER_LOG` breaks the deadlock. It is scoped by `remoteInternalId` (the
+   * shop) + `systemMessageTypeId` and returns the PAIRING — `systemMessageId` alongside `logId` — which
+   * is precisely the join no other feed can produce. So rows here are identity, not detail: which runs
+   * belong to this shop and which import each became. The full message and log records are then
+   * ENRICHED by id into their own tables (see `syncRunDomain`), which is per-id and therefore always
+   * possible. That removes the window-alignment problem: a shop's log is fetched because its run says
+   * it exists, not because it happened to fall inside a shared window.
+   *
+   * `[shopId+systemMessageTypeId+initDate]` is the read every sync screen makes.
+   *
+   * The document is a SPARSE projection: log-side fields are simply absent on a run that never imported
+   * (verified live — M227136 carries `logId`/`totalRecordCount`, M228375 carries neither). `logId`
+   * being absent IS the meaning of "consumed but imported nothing", so it must not coerce to 0 or "".
+   */
+  syncRuns: defineEntity({
+    primaryKey: "systemMessageId",
+    fields: {
+      systemMessageId: "text",
+      systemMessageTypeId: "text",
+      systemMessageRemoteId: "text",
+      statusId: "text",
+      initDate: "date",
+      processedDate: "date",
+      remoteMessageId: "text",
+      /** `remoteInternalId` from the document — the HotWax shop id. What makes this table shop-scoped. */
+      shopId: "text",
+      configId: "text",
+      logId: "text",
+      logStatusId: "text",
+      totalRecordCount: "count",
+      failedRecordCount: "count",
+      lastUpdatedStamp: "date",
+    },
+    indexes: [
+      "shopId",
+      "configId",
+      "systemMessageTypeId",
+      "systemMessageRemoteId",
+      "statusId",
+      "logId",
+      "initDate",
+      "lastUpdatedStamp",
+      "[shopId+systemMessageTypeId+initDate]",
+      "[shopId+configId+initDate]",
+    ],
+    // Keyed by the CACHED name, valued by the SOURCE field — the direction `projectRow` looks up.
+    rename: { shopId: "remoteInternalId" },
+  }),
+
+  // --- class B: reference/config (snapshot replace + per-mutation refetch) ---
+
+  /**
+   * DataFeed — an OMS-wide routing switch for entity-feed delivery.
+   *
+   * The Shopify aggregate inventory documents currently share one DataFeed, so this record is
+   * deliberately not shop-scoped. Every Shopify connection reads the same cached server value.
+   */
+  dataFeeds: defineEntity({
+    primaryKey: "dataFeedId",
+    fields: {
+      dataFeedId: "text",
+      dataFeedTypeEnumId: "text",
+      feedName: "text",
+      feedReceiveServiceName: "text",
+      feedDeleteServiceName: "text",
+      lastFeedStamp: "date",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["dataFeedTypeEnumId", "lastUpdatedStamp"],
+  }),
+
+  /** ServiceJob definitions. Real response also carries computed `nextExecutionDateTime`. */
+  serviceJobs: defineEntity({
+    primaryKey: "jobName",
+    fields: {
+      jobName: "text",
+      description: "text",
+      serviceName: "text",
+      cronExpression: "text",
+      cronDescription: "text",
+      paused: "text",
+      nextExecutionDateTime: "date",
+      executionTimeZone: "text",
+      /**
+       * The job's bound parameters — how a job is matched to a shop.
+       *
+       * ⚠️ These come back on the LIST response, not just the detail one (verified live 2026-07-27:
+       * 144 of 156 cached jobs carry them, e.g. `sync_ShopifyProductUpdates_10000` →
+       * `shopId=10000, productStoreIds=STORE`). They were being projected away, which is why screens
+       * fetched `admin/serviceJobs/{jobName}` per job just to read a parameter that was already local.
+       *
+       * Matching MUST use these rather than the job name: `queue_ShopifyOrderSync_10010` carries
+       * `systemMessageRemoteId=HCDemoShopifyConfig`, which belongs to shop 10000 — a name-based guess
+       * picks the wrong job silently.
+       */
+      serviceJobParameters: "structured",
+      /** A child job names the job it was cloned from; the job screens group and label by it. */
+      parentJobName: "text",
+      /** Rendered by the order-sync "Queue order requests" row; kept as the server sends it. */
+      lastRunTime: "structured",
+    },
+    indexes: ["serviceName", "paused", "cronExpression", "nextExecutionDateTime"],
+  }),
+
+  /**
+   * SystemMessageRemote — the anchor that scopes a shop's messages.
+   *
+   * `oms/systemMessageRemotes` returns the full record, including the two ids that link a remote to
+   * a shop, so both are declared below. A stored row carries only its declared fields, so a field
+   * left out here is not merely unindexed — it is not stored at all, and the worker's message scope
+   * resolves to nothing.
+   *
+   *   internalId / internalIdType   → the HotWax shopId  (HOTWAX_SHOP_ID)
+   *   remoteId   / remoteIdType     → the Shopify shop id (SHOPIFY_SHOP_ID)
+   */
+  systemMessageRemotes: defineEntity({
+    primaryKey: "systemMessageRemoteId",
+    fields: {
+      systemMessageRemoteId: "text",
+      internalId: "text",
+      internalIdType: "text",
+      remoteId: "text",
+      remoteIdType: "text",
+      accessScopeEnumId: "text",
+      description: "text",
+      sendUrl: "text",
+    },
+  }),
+
+  /**
+   * InventoryChannel — one facility-group ATP pool mapped to one Shopify aggregate location.
+   * This is the missing ownership link between an aggregate reset ServiceJob parameter and a shop.
+   */
+  inventoryChannels: defineEntity({
+    primaryKey: "inventoryChannelId",
+    fields: {
+      inventoryChannelId: "text",
+      shopId: "text",
+      facilityGroupId: "text",
+      facilityGroupName: "text",
+      shopifyLocationId: "text",
+      description: "text",
+      fromDate: "date",
+      thruDate: "date",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "facilityGroupId", "shopifyLocationId", "fromDate", "thruDate", "[shopId+fromDate]"],
+  }),
+
+  /** Internal organization — Party(PARTY_GROUP) + PartyGroup + INTERNAL_ORGANIZATIO PartyRole. */
+  organizations: defineEntity({
+    primaryKey: "partyId",
+    fields: {
+      partyId: "text",
+      partyTypeId: "text",
+      groupName: "text",
+      externalId: "text",
+      statusId: "text",
+      roleTypeId: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["groupName", "externalId", "statusId"],
+  }),
+
+  /**
+   * DISAGREEMENT: `COMPANY_SCHEMA` declares `users: "partyId, userLoginId"`, but no
+   * user projection was registered — the
+   * table is listed in `appCacheDb.ts`'s `CACHE_TABLES` but nothing registers what it stores. There
+   * is no second source to copy `fields` from, so this declares only the two fields the schema
+   * string itself names; a real cache entity for `users`, if one is ever written, should replace
+   * this rather than the other way round.
+   */
+  users: defineEntity({
+    primaryKey: "partyId",
+    fields: {
+      partyId: "text",
+      userLoginId: "text",
+    },
+    indexes: ["userLoginId"],
+  }),
+
+  /** UserPermission master catalog. PK is `userPermissionId` (not `permissionId`). */
+  permissions: defineEntity({
+    primaryKey: "userPermissionId",
+    fields: { userPermissionId: "text", description: "text", lastUpdatedStamp: "date" },
+  }),
+
+  integrationTypeMappings: defineEntity({
+    primaryKey: "integrationMappingId",
+    fields: {
+      integrationMappingId: "text",
+      integrationTypeId: "text",
+      mappingKey: "text",
+      mappingValue: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["integrationTypeId"],
+  }),
+
+  // --- lookup / type reference (all bare-array endpoints; PKs verified live 2026-07-26) ---
+
+  // PK UNVERIFIED: oms/facilityGroups/types returns an empty 200 on this instance, so the field
+  // name could not be confirmed. Named for consistency with facilityTypes/roleTypes.
+  facilityGroupTypes: defineEntity({
+    primaryKey: "facilityGroupTypeId",
+    fields: { facilityGroupTypeId: "text", description: "text" },
+  }),
+
+  userGroups: defineEntity({
+    primaryKey: "userGroupId",
+    fields: { userGroupId: "text", description: "text", groupTypeEnumId: "text" },
+    indexes: ["groupTypeEnumId"],
+  }),
+
+  productTypes: defineEntity({
+    primaryKey: "productTypeId",
+    fields: { productTypeId: "text", description: "text", parentTypeId: "text" },
+    indexes: ["parentTypeId"],
+  }),
+
+  /** Currencies are UOMs of type UT_CURRENCY_MEASURE; the picker shows description + abbreviation. */
+  currencies: defineEntity({
+    primaryKey: "uomId",
+    fields: {
+      uomId: "text",
+      description: "text",
+      abbreviation: "text",
+      uomTypeEnumId: "text",
+    },
+  }),
+
+  // --- per-store aggregate used by the product-store list ---
+
+  /** Per-product-store shipment-method count (bare-array aggregate endpoint). */
+  productStoreShipmentCounts: defineEntity({
+    primaryKey: "productStoreId",
+    fields: { productStoreId: "text", shipmentMethodCount: "count" },
+  }),
+
+  /** Product-store shipping methods (per store; PK is a real single field). */
+  productStoreShippingMethods: defineEntity({
+    primaryKey: "productStoreShipMethId",
+    fields: {
+      productStoreShipMethId: "text",
+      productStoreId: "text",
+      shipmentMethodTypeId: "text",
+      partyId: "text",
+      roleTypeId: "text",
+      description: "text",
+      isTrackingRequired: "text",
+      shipmentGatewayConfigId: "text",
+      sequenceNumber: "count",
+      fromDate: "date",
+      thruDate: "date",
+      /** The NetSuite Shipment Methods screen's "orders" column, when the route returns it. */
+      orderCount: "count",
+    },
+    indexes: [
+      "productStoreId",
+      "partyId",
+      "roleTypeId",
+      "shipmentMethodTypeId",
+      "sequenceNumber",
+      "thruDate",
+      "[partyId+productStoreId]",
+    ],
+  }),
+
+  /** SystemMessageType seed data — the type catalog every sync screen labels messages with. */
+  systemMessageTypes: defineEntity({
+    primaryKey: "systemMessageTypeId",
+    fields: {
+      systemMessageTypeId: "text",
+      description: "text",
+      parentTypeId: "text",
+      lastUpdatedStamp: "date",
+      // The execution fields. The product-sync upgrade assistant decides whether a legacy type is
+      // already retired from exactly these, so without them every legacy type reads as retired and
+      // its teardown is skipped.
+      sendServiceName: "text",
+      consumeServiceName: "text",
+      sendPath: "text",
+      receivePath: "text",
+      receiveMovePath: "text",
+      receiveFilePattern: "text",
+      receiveResponseEnumId: "text",
+    },
+    indexes: ["parentTypeId"],
+  }),
+
+  // App registry (admin/apps) — the app catalog the version screen and its create modal read.
+  /**
+   * App registry (`admin/apps`) — the catalog of apps that can be version-pinned. Read-only reference
+   * data: the version screen labels rows with it and the create modal offers app + environment combos
+   * that do not yet have a pin.
+   */
+  apps: defineEntity({
+    primaryKey: "appId",
+    fields: {
+      appId: "text",
+      appName: "text",
+    },
+  }),
+
+  /**
+   * A Shopify bulk operation, keyed by its GraphQL node id.
+   *
+   * Terminal operations (COMPLETED / FAILED / CANCELED) never change again, so once cached they can
+   * be read without touching Shopify. Only RUNNING/CREATED ones need re-fetching.
+   */
+  shopifyBulkOperations: defineEntity({
+    primaryKey: "id",
+    fields: {
+      id: "text",
+      status: "text",
+      errorCode: "text",
+      systemMessageRemoteId: "text",
+      objectCount: "count",
+      rootObjectCount: "count",
+      fileSize: "count",
+      url: "text",
+      query: "text",
+      createdAt: "date",
+      completedAt: "date",
+    },
+    indexes: ["status", "systemMessageRemoteId", "completedAt"],
+  }),
+
+  // =============================================================================================
+  // NetSuite order push — the rule-group export path (co.hotwax.netsuite.OrderServices)
+  //
+  // Deepak's rule-group push replaced the single scheduled feed job with a RuleGroup of
+  // DecisionRules, each carrying RuleConditions that narrow which orders that rule exports. All
+  // three are the SHARED `co.hotwax.rule.*` model the safety-stock screens already drive through
+  // `available-to-promise/*`, so nothing here is NetSuite-specific except the
+  // `groupTypeEnumId = RG_NS_ORDER_PUSH` scope the reads apply.
+  //
+  // Rule groups and their rules are class B config: small, read constantly by the monitor, and
+  // refetched after a mutation rather than polled. Runs are class A, cursored on `startDate`.
+  // =============================================================================================
+
+  /**
+   * RuleGroup — one NetSuite order-push configuration for a product store.
+   *
+   * `jobName` is the link to the scheduled job that runs the group; the schedule itself lives on
+   * `moqui.service.job.ServiceJob` and is read through `ruleGroups/{id}/schedule`, not stored here.
+   */
+  netSuiteRuleGroups: defineEntity({
+    primaryKey: "ruleGroupId",
+    fields: {
+      ruleGroupId: "text",
+      productStoreId: "text",
+      groupName: "text",
+      groupTypeEnumId: "text",
+      statusId: "text",
+      sequenceNum: "count",
+      jobName: "text",
+      description: "text",
+      createdDate: "date",
+      lastModifiedDate: "date",
+    },
+    indexes: ["productStoreId", "groupTypeEnumId", "statusId", "jobName"],
+  }),
+
+  /**
+   * DecisionRule — one rule inside a group.
+   *
+   * The rule's conditions arrive nested on the `default` master (`ruleConditions`), so they are kept
+   * on the row as structured data rather than given their own table: a rule is never rendered
+   * without them, and the composite PK (ruleId + conditionSeqId) would otherwise need a synthetic key
+   * for no read that asks for conditions independently.
+   */
+  netSuiteDecisionRules: defineEntity({
+    primaryKey: "ruleId",
+    fields: {
+      ruleId: "text",
+      ruleGroupId: "text",
+      ruleName: "text",
+      statusId: "text",
+      sequenceNum: "count",
+      createdDate: "date",
+      ruleConditions: "structured",
+      ruleActions: "structured",
+    },
+    indexes: ["ruleGroupId", "statusId", "sequenceNum", "[ruleGroupId+sequenceNum]"],
+  }),
+
+  /**
+   * RuleGroupRun — one execution of a rule group. This is the run history the monitor renders.
+   *
+   * ⚠️ Written by `co.hotwax.rule.DecisionRuleServices`, NOT by
+   * `co.hotwax.netsuite.OrderServices.run#NetSuiteDMOrderFeed` itself — that service iterates the
+   * rules and creates a DataManagerLog per generated file, and never stamps a RuleGroupRun. So a
+   * group invoked directly as a plain ServiceJob produces job runs and MDM logs but NO rows here.
+   * Treat an empty run history as "not driven through the rule-group scheduler", never as "no syncs".
+   */
+  netSuiteRuleGroupRuns: defineEntity({
+    primaryKey: "ruleGroupRunId",
+    fields: {
+      ruleGroupRunId: "text",
+      ruleGroupId: "text",
+      productStoreId: "text",
+      hasError: "text",
+      startDate: "date",
+      endDate: "date",
+      ruleGroupRunResult: "text",
+    },
+    indexes: ["ruleGroupId", "productStoreId", "hasError", "startDate", "[ruleGroupId+startDate]"],
+  }),
+
+  /**
+   * The pending-to-sync backlog, as a single row per product store.
+   *
+   * A scalar count has no entity of its own, so it is stored keyed by `productStoreId` — that is what
+   * makes it readable through the same `live()` path as every other cached read, so the monitor card
+   * re-renders from the worker's write with no main-thread fetch.
+   *
+   * `isSupported` records whether the backing endpoint exists on this instance at all:
+   * `netsuite/orderPushPending/count` ships in mantle-netsuite-connector and an instance that has not
+   * taken that release 404s. That is a "cannot know" answer, which must render differently from a
+   * genuine zero backlog — see `useNetSuiteOrderPushBacklog`. One row per product store, not a
+   * server entity — see `netSuiteOrderPushBacklogProjection`.
+   */
+  netSuiteOrderPushBacklog: defineEntity({
+    primaryKey: "productStoreId",
+    fields: {
+      productStoreId: "text",
+      pendingCount: "count",
+      isSupported: "text",
+      checkedAt: "date",
+    },
+    indexes: ["checkedAt"],
+  }),
+
+  // =============================================================================================
+  // Composite-key tables (formerly a synthetic `*Key` field joining the fields below with `|`).
+  // Each `primaryKey` here was derived from the corresponding `buildKey` in entity definitions,
+  // in that function's join order, cross-checked against its doc comment.
+  // =============================================================================================
+
+  /**
+   * SystemMessageError — on-demand (class C), fetched when a run is inspected. Composite entity PK
+   * (systemMessageId + errorDate) — matches `systemMessageErrorProjection.buildKey` exactly.
+   *
+   * `errorDate` was a tolerated-missing trailing member (`raw?.errorDate ?? ""`) in the old
+   * `buildKey`; treated here as a required key member, since an OFBiz-style error record is always
+   * stamped with the date it occurred.
+   */
+  systemMessageErrors: defineEntity({
+    primaryKey: "systemMessageId,errorDate",
+    fields: {
+      systemMessageId: "text",
+      errorDate: "date",
+      attemptedStatusId: "text",
+      errorText: "text",
+    },
+    indexes: ["systemMessageId", "errorDate", "attemptedStatusId"],
+  }),
+
+  /**
+   * ProductUpdateHistory — what a sync actually changed, per product. Composite entity PK.
+   *
+   * ⚠️ DISAGREEMENT (order only, not field set) found while converting this table:
+   * `productUpdateHistoryProjection`'s doc comment states "PK is composite (productId + shopId)",
+   * but its `buildKey` actually joins `${shop}|${product}` — shopId FIRST. The old `COMPANY_SCHEMA`
+   * string agrees with the code (`shopId, productId, ...`), so two of three sources put shopId
+   * first and only the prose comment orders it the other way. `primaryKey` below follows the code
+   * and the old index order; the prose reads as an informal description, not a literal spec.
+   */
+  productUpdateHistories: defineEntity({
+    primaryKey: "shopId,productId",
+    fields: {
+      productId: "text",
+      shopId: "text",
+      systemMessageId: "text",
+      parentProductId: "text",
+      price: "count",
+      // Kept as the server sends them — a JSON string or an object. `text` would flatten an object to
+      // "[object Object]", and `useProductUpdateHistory`'s `parseJson` already accepts either.
+      features: "structured",
+      identifications: "structured",
+      tags: "structured",
+      assocs: "structured",
+      differenceMap: "structured",
+      lastUpdatedStamp: "date",
+      createdStamp: "date",
+      // Display names the recent-sync list prefers over the diff's own copies.
+      parentTitle: "text",
+      parentProductName: "text",
+      productTitle: "text",
+      variantTitle: "text",
+      internalName: "text",
+      sku: "text",
+    },
+    indexes: ["shopId", "productId", "systemMessageId", "lastUpdatedStamp", "[shopId+lastUpdatedStamp]"],
+  }),
+
+  /**
+   * ShopifyInventoryAdjustmentDetail — the aggregate channel ledger: one immutable OMS event
+   * contribution to one Shopify inventory item at one channel. PK is (eventTypeId, eventReferenceId,
+   * inventoryChannelId, shopifyInventoryItemId). Its view aliases `shopId` and `shopifyLocationId`
+   * from the channel, so it is shop-scoped like the location ledger and both share the same pollers:
+   * `[shopId+createdDate]` for the newest-first read, and one update cursor per poller.
+   *
+   * Never `detailStatusId`: delivery is derived from the message link and the delta
+   * (`src/utils/inventoryEvents.ts`).
+   */
+  shopifyInventoryAdjustmentDetails: defineEntity({
+    primaryKey: "eventTypeId,eventReferenceId,inventoryChannelId,shopifyInventoryItemId",
+    fields: {
+      ...INVENTORY_LEDGER_FIELDS,
+      inventoryChannelId: "text",
+      // Normally null. Set only on a delta written to drain a location the channel has stopped
+      // pointing at, so a retarget stays visible even though the publisher still targets the OLD
+      // location.
+      publishShopifyLocationId: "text",
+    },
+    indexes: INVENTORY_LEDGER_INDEXES,
+  }),
+
+  /**
+   * CarrierFacility — a date-effective carrier role at one facility. `carrierFacilityProjection`'s
+   * `buildKey` joins partyId + facilityId + roleTypeId + fromDate, tolerating a missing `fromDate`
+   * (`?? ""`); treated here as a required key member (OFBiz date-effective PKs are non-null
+   * server-side).
+   */
+  carrierFacilities: defineEntity({
+    primaryKey: "partyId,facilityId,roleTypeId,fromDate",
+    fields: {
+      partyId: "text",
+      facilityId: "text",
+      facilityName: "text",
+      facilityTypeId: "text",
+      roleTypeId: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["partyId", "facilityId", "roleTypeId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * DataDocument ⋈ its feed — which OMS changes an inventory event feed listens to. One row per
+   * (document, feed): `DataDocumentAndFeed` left-joins, so a document attached to nothing arrives
+   * with no `dataFeedId` at all, and a document on two feeds arrives twice. Both are real rows, not
+   * errors, so `dataFeedId` stays a required key member (with an empty-string value standing for
+   * "attached to nothing") rather than being dropped from the key — dropping it would collapse the
+   * two-feed case onto one row, exactly what `inventoryEventDocumentProjection`'s `buildKey` was
+   * written to avoid.
+   */
+  inventoryEventDocuments: defineEntity({
+    primaryKey: "dataDocumentId,dataFeedId",
+    fields: {
+      dataDocumentId: "text",
+      dataFeedId: "text",
+      documentName: "text",
+      primaryEntityName: "text",
+    },
+    indexes: ["dataDocumentId", "dataFeedId"],
+    // "Attached to nothing" arrives with no `dataFeedId` at all; without a stand-in the row is
+    // unkeyable and dropped, and the screen reports the document as missing.
+    keyDefaults: { dataFeedId: "" },
+  }),
+
+  /**
+   * Parent → child internal-organization edge (PartyRelationship). Date-effective composite key;
+   * `organizationRelationshipProjection.buildKey` joins partyIdFrom + partyIdTo + roleTypeIdFrom +
+   * roleTypeIdTo + partyRelationshipTypeId + fromDate, tolerating a missing `fromDate` (`?? ""`);
+   * treated here as a required key member for the same OFBiz date-effective reason as above.
+   */
+  organizationRelationships: defineEntity({
+    primaryKey: "partyIdFrom,partyIdTo,roleTypeIdFrom,roleTypeIdTo,partyRelationshipTypeId,fromDate",
+    fields: {
+      partyIdFrom: "text",
+      partyIdTo: "text",
+      roleTypeIdFrom: "text",
+      roleTypeIdTo: "text",
+      partyRelationshipTypeId: "text",
+      fromDate: "date",
+      thruDate: "date",
+      statusId: "text",
+    },
+    indexes: ["partyIdFrom", "partyIdTo", "partyRelationshipTypeId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * ShopifyLocation — a shop's Shopify location mapped to an internal facility. Tier-3 shop-scoped
+   * reference, fetched unscoped as one snapshot.
+   *
+   * Keyed on the entity PK, (shopId, facilityId). Several facilities may map to ONE Shopify
+   * location, and keying on `shopifyLocationId` collapsed them into a single row, so all but one
+   * read as unmapped. A row with no `shopifyLocationId` is a leftover of clearing by value, not a
+   * mapping — `useShopifyLocations` leaves it out.
+   */
+  shopifyLocations: defineEntity({
+    primaryKey: "shopId,facilityId",
+    fields: {
+      shopId: "text",
+      facilityId: "text",
+      shopifyLocationId: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "facilityId", "shopifyLocationId"],
+  }),
+
+  /**
+   * ShopifyTypeMapping — tier-3 shop-scoped reference. `shopifyTypeMappingProjection.buildKey`
+   * joins shopId + mappedTypeId + mappedKey, tolerating a missing `mappedKey` (`?? ""`); treated
+   * here as a required key member — there is no comment or live evidence suggesting it can be
+   * genuinely absent from a real mapping row.
+   */
+  shopifyTypeMappings: defineEntity({
+    primaryKey: "shopId,mappedTypeId,mappedKey",
+    fields: {
+      shopId: "text",
+      mappedTypeId: "text",
+      mappedKey: "text",
+      mappedValue: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "mappedTypeId", "mappedKey"],
+  }),
+
+  /**
+   * Shopify carrier → shipment-method mapping. Composite key (shop + carrier + method), matching
+   * `shopifyCarrierShipmentProjection`'s doc comment. `buildKey` requires `shopId` but tolerates a
+   * missing `carrierPartyId`/`shipmentMethodTypeId` (`?? ""`); both are treated here as required
+   * key members per the default rule, consistent with the comment's stated 3-part key. Judgment
+   * call: could not confirm live whether an unscoped "applies to all carriers/methods" row exists;
+   * if one does, it would need a real (non-synthetic) sentinel value rather than an absent field.
+   */
+  shopifyCarrierShipments: defineEntity({
+    primaryKey: "shopId,carrierPartyId,shipmentMethodTypeId",
+    fields: {
+      shopId: "text",
+      carrierPartyId: "text",
+      shipmentMethodTypeId: "text",
+      shopifyShippingMethod: "text",
+      lastUpdatedStamp: "date",
+    },
+    indexes: ["shopId", "carrierPartyId", "shipmentMethodTypeId"],
+  }),
+
+  /**
+   * ProductStoreFacilityGroup (co.hotwax.facility.ProductStoreFacilityGroup) — facility group ↔
+   * product store, date-effective.
+   *
+   * ⚠️ DISAGREEMENT (order only, not field set) found while converting this table:
+   * `facilityGroupProductStoreProjection`'s doc comment states the natural key as "(productStoreId
+   * + facilityGroupId + fromDate)", but its `buildKey` actually joins
+   * `${facilityGroupId}|${productStoreId}|${fromDate}` — facilityGroupId FIRST. The old
+   * `COMPANY_SCHEMA` string agrees with the code (`facilityGroupId, productStoreId, ...`), so
+   * `primaryKey` below follows the code and the old index order, same reasoning as
+   * `productUpdateHistories` above.
+   *
+   * `fromDate` was a tolerated-missing trailing member (`?? ""`); treated here as a required key
+   * member for the same OFBiz date-effective reason as `carrierFacilities`.
+   */
+  facilityGroupProductStores: defineEntity({
+    primaryKey: "facilityGroupId,productStoreId,fromDate",
+    fields: {
+      facilityGroupId: "text",
+      productStoreId: "text",
+      sequenceNumber: "count",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["facilityGroupId", "productStoreId", "fromDate", "thruDate"],
+  }),
+
+  /**
+   * EnumerationGroupMember — date-effective, keyed (enumerationGroupId, enumId, fromDate), the
+   * entity's own PK.
+   *
+   * Removing a reason stamps a `thruDate` and re-adding it inserts a NEW row with a later `fromDate`,
+   * so the members endpoint returns the expired row alongside its replacement. Keyed on group + enum
+   * alone those two collapsed into one and whichever came first won — the expired one, leaving the
+   * re-added reason unchecked. Readers pick the live row with `isEffectiveNow`.
+   */
+  enumGroupMembers: defineEntity({
+    primaryKey: "enumerationGroupId,enumId,fromDate",
+    fields: {
+      enumerationGroupId: "text",
+      enumId: "text",
+      description: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["enumerationGroupId", "enumId"],
+  }),
+
+  /**
+   * FacilityIdentification — date-effective, keyed (facilityId, facilityIdenTypeId, fromDate).
+   *
+   * `oms/facilities/identifications` returns thru-dated rows alongside the live one, so the key MUST
+   * include `fromDate`: keyed on facility + type alone, the expired row and its replacement collapse
+   * into one, and whichever the response lists last wins. `fromDate` is also what an edit or a
+   * remove targets — sent without it, the server inserts a new identification and leaves the old one
+   * in force — and `thruDate` is what lets `isEffectiveNow` hide a removed one.
+   */
+  facilityIdentifications: defineEntity({
+    primaryKey: "facilityId,facilityIdenTypeId,fromDate",
+    fields: {
+      facilityId: "text",
+      facilityIdenTypeId: "text",
+      idValue: "text",
+      description: "text",
+      fromDate: "date",
+      thruDate: "date",
+    },
+    indexes: ["facilityId", "facilityIdenTypeId", "thruDate"],
+  }),
+
+  /**
+   * App version pin (admin/appVersion) — which build of each app is served per environment.
+   * Composite natural key (appId + environmentTypeId), matching `appVersionProjection`'s doc
+   * comment and its `buildKey` exactly, with no tolerated members.
+   */
+  appVersions: defineEntity({
+    primaryKey: "appId,environmentTypeId",
+    fields: {
+      appId: "text",
+      appName: "text",
+      environmentTypeId: "text",
+      currentVersion: "text",
+      enumDesc: "text",
+    },
+    indexes: ["appId", "environmentTypeId"],
+  }),
+
+  /**
+   * Outstanding transfer work — one row per ARTIFACT Shopify has not been told about yet.
+   *
+   * Five server resources feed this one table, discriminated by `segment`. An order has many
+   * artifacts per segment (receipts, shipment statuses, item changes, unpushed items), so the key is
+   * (segment, shopId, orderId, artifactId); keyed on the order alone, every artifact of an order
+   * collapsed into one row. `artifactId` and `occurredAt` are stamped by the sync domain.
+   */
+  shopifyTransferPending: defineEntity({
+    primaryKey: "segment,shopId,orderId,artifactId",
+    fields: {
+      segment: "text",
+      shopId: "text",
+      orderId: "text",
+      artifactId: "text",
+      shopifyInventoryTransferId: "text",
+      orderItemSeqId: "text",
+      productId: "text",
+      quantity: "text",
+      // Exactly one of these identifies the artifact, according to `segment`.
+      shipmentId: "text",
+      shipmentStatusId: "text",
+      receiptId: "text",
+      orderStatusId: "text",
+      orderItemChangeId: "text",
+      occurredAt: "date",
+      lastUpdatedStamp: "date",
+      // Read by the Receipts tab, which matches it against the live receipts' own value as a string,
+      // so it is kept exactly as sent; `occurredAt` is the millis copy used for ordering.
+      datetimeReceived: "structured",
+      quantityAccepted: "count",
+      quantityRejected: "count",
+      changedCancelQuantity: "count",
+      cancelQuantity: "count",
+    },
+    indexes: ["shopId", "segment", "orderId", "[shopId+segment]"],
+  }),
+
+  /**
+   * ShopifyLocationInventoryAdjustmentDetail — the physical ledger: one source event applied to one
+   * Shopify inventory level. PK is (eventTypeId, eventReferenceId, shopId, shopifyLocationId,
+   * shopifyInventoryItemId). Indexed identically to the aggregate ledger, for the same pollers.
+   */
+  shopifyLocationInventoryAdjustmentDetails: defineEntity({
+    primaryKey: "eventTypeId,eventReferenceId,shopId,shopifyLocationId,shopifyInventoryItemId",
+    fields: { ...INVENTORY_LEDGER_FIELDS },
+    indexes: INVENTORY_LEDGER_INDEXES,
+  }),
+
+  /** Class C: the inventory items the ledgers name, as Shopify describes them, per shop. */
+  shopifyInventoryItems: defineEntity({
+    primaryKey: "shopId,shopifyInventoryItemId",
+    fields: {
+      shopId: "text",
+      shopifyInventoryItemId: "text",
+      sku: "text",
+      shopifyVariantId: "text",
+      variantTitle: "text",
+      shopifyProductId: "text",
+      productTitle: "text",
+      imageUrl: "text",
+    },
+    indexes: ["shopId"],
+  }),
+
+  /**
+   * One row per (kind, shopId): where the server's copy of a ledger starts, so the history can reach
+   * it. An absent `oldestCreatedDate` means the server has none.
+   */
+  inventoryLedgerBounds: defineEntity({
+    primaryKey: "kind,shopId",
+    fields: { kind: "text", shopId: "text", oldestCreatedDate: "date" },
+    indexes: ["shopId"],
+  }),
+
+  // --- Shopify fulfillment sync ---
+  //
+  // The queued half is plain SystemMessages (type CreateShopifyFulfillment) and needs nothing new.
+  // The synced half reads `sob/shopify/fulfillmentHistories`, a Moqui entity-list endpoint over
+  // ShopifyFulfillmentHistory added by a connector release rolling out IN PARALLEL with the screen —
+  // an instance that has not taken it answers 404, which is a "cannot know", not an error.
+
+  /**
+   * ShopifyFulfillmentHistory — one fulfillment the OMS knows Shopify holds, per shop. The key is
+   * COMPOSITE: `fulfillmentId` is Shopify's legacy numeric id, only unique WITHIN a shop.
+   *
+   * `processedDate` is null on rows the OMS itself pushed (the connector only stamps it on rows it
+   * ingested), so its absence is a meaning, not a gap. `[shopId+lastUpdatedStamp]` serves both the
+   * per-shop incremental cursor and the screen's newest-first read; `shipmentId`/`omsOrderId` are the
+   * joins back to the OMS side.
+   */
+  shopifyFulfillmentHistories: defineEntity({
+    primaryKey: "shopId,fulfillmentId",
+    fields: {
+      shopId: "text",
+      shopifyOrderId: "text",
+      fulfillmentId: "text",
+      processedDate: "date",
+      lastUpdatedStamp: "date",
+      omsOrderId: "text",
+      orderDate: "date",
+      shipmentId: "text",
+      originFacilityId: "text",
+      shippedDate: "date",
+    },
+    indexes: ["shopId", "shopifyOrderId", "fulfillmentId", "shipmentId", "omsOrderId", "processedDate", "lastUpdatedStamp", "[shopId+lastUpdatedStamp]"],
+  }),
+
+  /**
+   * Whether `sob/shopify/fulfillmentHistories` exists on this instance, per shop. "The OMS cannot
+   * tell me" must render differently from "no fulfillments have synced", and the worker and the
+   * screen are different realms — this row is how the 404 verdict crosses to the screen reactively.
+   */
+  shopifyFulfillmentHistorySupport: defineEntity({
+    primaryKey: "shopId",
+    fields: {
+      shopId: "text",
+      /** "Y" / "N". Absent means never probed this login. */
+      isSupported: "text",
+      /** When the verdict last CHANGED — the domain skips the write while the answer holds. */
+      checkedAt: "date",
+    },
+    indexes: ["checkedAt"],
+  }),
+
+  /** Fulfillments Shopify still owes per shop, from `sob/shopify/fulfillmentHistories`. */
+  shopifyPendingFulfillments: defineEntity({
+    primaryKey: "shopId,shipmentId",
+    fields: {
+      shopId: "text",
+      shipmentId: "text",
+      orderId: "text",
+      orderName: "text",
+      orderDate: "date",
+      statusDate: "date",
+      facilityName: "text",
+      originFacilityId: "text",
+    },
+    indexes: ["shopId", "statusDate"],
+  }),
+
+  /** One row per shop: how the last pending-fulfillment read went. */
+  shopifyPendingFulfillmentStatus: defineEntity({
+    primaryKey: "shopId",
+    fields: { shopId: "text", state: "text", error: "text", hasMore: "text", checkedAt: "date" },
+  }),
+
+  /** One row per shop: the fulfillment sync health counters. */
+  shopifyFulfillmentHealth: defineEntity({
+    primaryKey: "shopId",
+    fields: {
+      shopId: "text",
+      state: "text",
+      checkedAt: "date",
+      shippedSince: "date",
+      syncedSince: "date",
+      shippedCount: "count",
+      syncedCount: "count",
+      unsyncedErrorCount: "count",
+      pendingCount: "count",
+      sendingCount: "count",
+      syncedLastHourCount: "count",
+    },
+  }),
+
+  /** One row per (shopId, orderId): the order sync screen's per-order fulfillment verdict. */
+  shopifyOrderSyncHistory: defineEntity({
+    primaryKey: "shopId,orderId",
+    fields: {
+      shopId: "text",
+      orderId: "text",
+      state: "text",
+      checkedAt: "date",
+      // Each read whole from `sob/shopify/orderFulfillmentHistory`, all pages.
+      pending: "structured",
+      messages: "structured",
+      synced: "structured",
+      errors: "structured",
+    },
+    indexes: ["shopId", "orderId"],
+  }),
+});

@@ -40,6 +40,7 @@
           </ion-select-option>
         </ion-select>
         <ion-select
+          v-if="hasSubscriberData"
           :value="state.filters.userId"
           interface="popover"
           :label="translate('User')"
@@ -59,7 +60,7 @@
       <section class="summary-grid ion-margin-top">
         <ion-card>
           <ion-card-header>
-            <ion-card-subtitle>{{ translate("Topics with subscribers") }}</ion-card-subtitle>
+            <ion-card-subtitle>{{ hasSubscriberData ? translate("Topics with subscribers") : translate("Notification topics") }}</ion-card-subtitle>
             <ion-card-title>
               <!--
                 Three states, never collapsed into one: a real number, "unavailable" when the read
@@ -84,7 +85,11 @@
           </ion-card-header>
         </ion-card>
 
-        <ion-card>
+        <!--
+          Omitted when the response holds topic metadata only (no userId on any row): there is
+          no subscriber data to count, and a 0 would read as "nobody subscribed".
+        -->
+        <ion-card v-if="state.loading || !state.subscriptions || hasSubscriberData">
           <ion-card-header>
             <ion-card-subtitle>{{ translate("Users subscribed") }}</ion-card-subtitle>
             <ion-card-title>
@@ -124,7 +129,7 @@
 
       <ion-list v-if="filteredTopics.length">
         <ion-list-header>
-          <ion-label>{{ translate("Subscriptions by topic") }}</ion-label>
+          <ion-label>{{ hasSubscriberData ? translate("Subscriptions by topic") : translate("Notification topics") }}</ion-label>
         </ion-list-header>
         <ion-item v-for="topic in filteredTopics" :key="topic.topic" lines="full">
           <ion-label class="ion-text-wrap">
@@ -134,14 +139,14 @@
               {{ topic.facilityName || translate("unknown") }}<span v-if="topic.facilityName !== topic.facilityId"> ({{ topic.facilityId }})</span>,
               {{ translate("Instance") }}: {{ topic.omsInstance || translate("unknown") }}
             </p>
-            <p class="subscribers">{{ topic.userNames.join(", ") }}</p>
+            <p v-if="hasSubscriberData" class="subscribers">{{ topic.userNames.join(", ") }}</p>
             <!--
               A name that did not end in a known event id was split by position, so the facility
               and instance shown are a guess. Say so rather than presenting them as read values.
             -->
             <ion-badge v-if="!topic.recognised" color="warning">{{ translate("Name not recognised") }}</ion-badge>
           </ion-label>
-          <ion-note slot="end">
+          <ion-note v-if="hasSubscriberData" slot="end">
             {{ topic.userIds.length }} {{ topic.userIds.length === 1 ? translate("user") : translate("users") }}
           </ion-note>
         </ion-item>
@@ -194,7 +199,7 @@ import { useUserStore } from "@/store/user";
 
 const apps = NOTIFICATION_APPS;
 const {
-  state, topics, filteredTopics, facilityCount, userCount, unsubscribedEvents,
+  state, topics, filteredTopics, facilityCount, userCount, hasSubscriberData, unsubscribedEvents,
   facilityOptions, userOptions, hasActiveFilters, clearFilters, load
 } = useNotificationSubscriptions();
 

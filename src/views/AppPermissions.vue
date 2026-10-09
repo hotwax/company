@@ -169,6 +169,13 @@
                   <ion-spinner name="crescent" />
                 </div>
 
+                <div v-else-if="failedUserGroups.includes(group.groupId)" class="error-state">
+                  <p>{{ translate("Unable to load users") }}</p>
+                  <ion-button fill="outline" size="small" @click="loadUsersForGroup(group.groupId)">
+                    {{ translate("Retry") }}
+                  </ion-button>
+                </div>
+
                 <ion-list v-else>
                   <ion-item v-for="user in filteredUsers(group.groupId)" :key="user.userId || user.partyId">
                     <ion-label>
@@ -322,6 +329,9 @@ const usersGroups = ref<any[]>([])
 const usersQuery = ref("")
 const expandedUserGroups = ref<string[]>([])
 const loadingUserGroups = ref<string[]>([])
+// Groups whose users request failed — kept apart from "loaded, zero users" so a 404/403 is not
+// shown as "No users found".
+const failedUserGroups = ref<string[]>([])
 
 const filteredSecurityGroups = computed(() => {
   const queryString = manageQuery.value.trim().toLowerCase()
@@ -454,9 +464,11 @@ const openUsers = (permission: AppPermissionDefinition) => {
 const loadUsersForGroup = async (groupId: string) => {
   if(usersForGroup(groupId) || loadingUserGroups.value.includes(groupId)) {return}
   loadingUserGroups.value = [...loadingUserGroups.value, groupId]
+  failedUserGroups.value = failedUserGroups.value.filter((id) => id !== groupId)
   try {
     await loadGroupUsers(groupId)
   } catch (error) {
+    failedUserGroups.value = [...failedUserGroups.value, groupId]
     logger.error("Failed to load users with app permission access.", error instanceof Error ? error.message : String(error))
     commonUtil.showToast(translate("Something went wrong."))
   } finally {

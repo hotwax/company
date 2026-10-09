@@ -8,13 +8,13 @@ const state = vi.hoisted(() => ({
   /** Per url: an error to throw, or "hang" for a request the server never answers. */
   failures: {} as Record<string, any>,
   signals: {} as Record<string, AbortSignal | undefined>,
-  fetched: [] as Array<{ url: string; params: any }>,
+  fetched: [] as Array<{ url: string; params: any; requireComplete?: boolean }>,
   snapshots: [] as Array<{ rows: any[]; scope: any }>,
 }));
 
-vi.mock("@/workers/domains/workerFetch", () => ({
-  pageAll: vi.fn(async ({ url, params, signal }: any) => {
-    state.fetched.push({ url, params });
+vi.mock("@common/core/workerRemoteApi", () => ({
+  pageAll: vi.fn(async ({ url, params, requireComplete, signal }: any) => {
+    state.fetched.push({ url, params, requireComplete });
     state.signals[url] = signal;
     const failure = state.failures[url];
     if(failure === "hang") {return new Promise(() => undefined);}
@@ -24,26 +24,23 @@ vi.mock("@/workers/domains/workerFetch", () => ({
   }),
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  shopifyTransferPendingCache: {
-    snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
-      state.snapshots.push({ rows, scope });
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: () => ({
+      snapshotReplace: vi.fn(async (rows: any[], scope: any) => {
+        state.snapshots.push({ rows, scope });
 
-      return { written: rows.length, pruned: 0 };
+        return { written: rows.length, pruned: 0 };
+      }),
     }),
   },
 }));
 
-vi.mock("@/workers/syncRegistry", () => ({
-  registerSyncDomain: (domain: any) => { state.domains.push(domain); },
-}));
-
 async function loadDomain() {
+  // A fresh module per test: per-segment failures and their backoff are worker-lifetime state.
   vi.resetModules();
-  state.domains = [];
-  await import("@/workers/domains/shopifyTransferSyncDomain");
-
-  return state.domains.find((domain) => domain.name === "shopifyTransferSync");
+  const { shopifyTransferSyncDomain } = await import("@/workers/domains/shopifyTransferSyncDomain");
+  return shopifyTransferSyncDomain;
 }
 
 const CTX = { maargUrl: "https://example.test", token: "token" };
@@ -71,6 +68,16 @@ describe("Shopify transfer sync worker domain", () => {
     ]);
     // Every read is shop-scoped: an unscoped one would cache another shop's work as this shop's.
     expect(state.fetched.every((call) => call.params.shopId === "SHOP_A")).toBe(true);
+  });
+
+  // The snapshot prunes every cached row the read did not return, so a short read must fail the
+  // pass instead of pruning outstanding work.
+  it("requires every segment read to be complete before snapshotting", async () => {
+    const domain = await loadDomain();
+
+    await domain.sync(CTX, { shopId: "SHOP_A" });
+
+    expect(state.fetched.every((call) => call.requireComplete === true)).toBe(true);
   });
 
   it("tags each row with its segment and normalises the segment's own timestamp", async () => {

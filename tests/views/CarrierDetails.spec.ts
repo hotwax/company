@@ -96,6 +96,9 @@ vi.mock("@/composables/useFacilities", () => ({
 }));
 
 vi.mock("@/composables/useProductStores", () => ({
+  addProductStoreShipmentMethod: (...args: any[]) => harness.addShipmentMethod(...args),
+  updateProductStoreShipmentMethod: (...args: any[]) => harness.updateShipmentMethod(...args),
+  expireProductStoreShipmentMethod: (...args: any[]) => harness.expireShipmentMethod(...args),
   useProductStoreMutations: () => ({
     addShipmentMethod: (...args: any[]) => harness.addShipmentMethod(...args),
     updateShipmentMethod: (...args: any[]) => harness.updateShipmentMethod(...args),
@@ -463,6 +466,42 @@ describe("CarrierDetails", () => {
     const expected = "Failed to rename the carrier. Details: " +
       "Committed IDs: UPS_GROUND; failed ID: UPS_TWO_DAY";
     expect(harness.showToast).toHaveBeenLastCalledWith(expected);
+  });
+
+  it("associates a store shipment method with a Y/N tracking indicator, not a boolean", async () => {
+    const wrapper = await mountView();
+
+    await wrapper.get("[data-testid=\"select-store-a\"]").trigger("click");
+    await nextTick();
+    wrapper.getComponent({ name: "CarrierStoreMethodList" }).vm.$emit("toggle-association", {
+      method: TWO_DAY,
+      enabled: true,
+    });
+    await flushPromises();
+
+    expect(harness.addShipmentMethod).toHaveBeenCalledWith("STORE_A", expect.objectContaining({
+      shipmentMethodTypeId: "TWO_DAY",
+      isTrackingRequired: "N",
+    }));
+  });
+
+  it("expires a facility association by its fromDate, and creates one without it", async () => {
+    const wrapper = await mountView();
+    wrapper.getComponent(IonSegmentStub).vm.$emit("update:modelValue", "facilities");
+    await nextTick();
+    const list = wrapper.getComponent({ name: "CarrierFacilityList" });
+
+    list.vm.$emit("toggle", { facility: { facilityId: "WH_1", fromDate: 1_700_000_000_000, isConfigured: true }, enabled: false });
+    await flushPromises();
+    expect(harness.setCarrierFacilityAssociation).toHaveBeenLastCalledWith({
+      partyId: "UPS", facilityId: "WH_1", enabled: false, fromDate: 1_700_000_000_000,
+    });
+
+    list.vm.$emit("toggle", { facility: { facilityId: "WH_2", isConfigured: false }, enabled: true });
+    await flushPromises();
+    expect(harness.setCarrierFacilityAssociation).toHaveBeenLastCalledWith({
+      partyId: "UPS", facilityId: "WH_2", enabled: true,
+    });
   });
 
   it("routes account setup intent to Klaviyo without exposing gateway edits", async () => {

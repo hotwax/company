@@ -64,6 +64,7 @@ vi.mock("@common", () => ({
     products: resolvedProducts,
     resolve: (...args: any[]) => harness.resolveProductNames(...args),
   }),
+  useDb: () => ({ records: ref([]), first: ref(undefined), count: ref(0), hydrated: ref(true) }),
 }));
 
 // Only the alert overlay is replaced: ion-alert cannot be presented in jsdom, so the controller
@@ -82,19 +83,16 @@ vi.mock("@ionic/vue", async (importOriginal) => {
   };
 });
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn(),
-    syncNow: vi.fn().mockResolvedValue(undefined),
-    ready: ref(true),
-    error: ref(""),
-    afterMutation: (...args: any[]) => {
-      harness.afterMutation(...args);
+vi.mock("@/services/appDbSync", () => ({
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  refreshAfterMutation: (...args: any[]) => {
+    harness.afterMutation(...args);
 
-      return Promise.resolve();
-    },
-  }),
+    return Promise.resolve();
+  },
 }));
 
 const shipmentContexts = new Map<string, any>();

@@ -1,6 +1,8 @@
-import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
-import { registerSyncDomain } from "../syncRegistry";
-import { pageAll } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import { pageAll } from "@common/core/workerRemoteApi";
+
+const shopifyTransferPendingEntity = companyDb.entity("shopifyTransferPending" as any);
 
 /**
  * Shopify transfer sync — what has not reached Shopify yet.
@@ -158,12 +160,19 @@ function tagRows(rows: any[], segment: PendingSegment): any[] {
   return rows.map((row: any) => ({
     ...row,
     segment,
+    // The artifact's own PK; the create segment has no artifact, so its identity is the unpushed
+    // order item.
+    artifactId: row?.shipmentStatusId ?? row?.receiptId ?? row?.orderStatusId
+      ?? row?.orderItemChangeId ?? row?.orderItemSeqId,
     occurredAt: dateField ? row?.[dateField] : undefined,
   }));
 }
 
-registerSyncDomain({
+export const shopifyTransferSyncDomain = defineSyncDomain({
   name: "shopifyTransferSync",
+  table: "shopifyTransferPending",
+  label: "Shopify transfer sync",
+  syncClass: "A",
   intervalMs: 15_000,
   async sync(ctx, args: ShopifyTransferSyncArgs = {}, options: { force?: boolean } = {}) {
     const shopId = String(args.shopId ?? "").trim();
@@ -191,7 +200,8 @@ registerSyncDomain({
 
       try {
         // Entity resources return a bare array, so no collectionKey. pageAll stops on the first
-        // empty page and has its own page backstop.
+        // empty page and has its own page backstop. requireComplete: the snapshot below prunes
+        // whatever a short read missed, so a read that hits the backstop fails the segment instead.
         const rows = await withTimeout((signal) => pageAll({
           ctx,
           url: PENDING_SEGMENT_ENDPOINTS[segment],
@@ -206,7 +216,7 @@ registerSyncDomain({
         // Snapshot, scoped to this shop AND segment: a segment that has drained to empty must lose
         // its cached rows, or resolved work keeps rendering as outstanding and the tab count stays
         // wrong. The scope leaves other shops and this shop's unread segments alone.
-        const result = await shopifyTransferPendingCache.snapshotReplace(
+        const result = await shopifyTransferPendingEntity.snapshotReplace(
           tagRows(rows, segment),
           { field: "[shopId+segment]", value: [shopId, segment] },
         );

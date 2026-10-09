@@ -22,6 +22,7 @@
     "@ionic/vue-router": "catalog:",
     "axios": "catalog:",
     "axios-cache-adapter": "catalog:",
+    "comlink": "catalog:",
     "cron-parser": "catalog:",
     "cronstrue": "catalog:",
     "dexie": "^4.4.2",

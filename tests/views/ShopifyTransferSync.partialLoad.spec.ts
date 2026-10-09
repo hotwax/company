@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
+import { serviceState } from "@common/db";
 
 const apiMock = vi.fn();
 const maargUrl = "https://oms.example.com/rest/s1/";
@@ -20,34 +21,40 @@ vi.mock("@common", () => ({
   },
   translate: (k: string, v: Record<string, any> = {}) =>
     Object.entries(v).reduce((m, [key, val]) => m.replace(`{${key}}`, String(val)), k),
+  buildAppUrl: () => null,
+  useDb: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
 }));
 
-const syncState = vi.hoisted(() => ({ failing: {} as Record<string, string>, details: {} as Record<string, unknown> }));
+vi.mock("@/services/appDbSync", () => ({
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
+  refreshAfterMutation: vi.fn(),
+}));
 
-vi.mock("@/composables/useCacheSync", async () => {
-  const { ref: vueRef } = await vi.importActual<typeof import("vue")>("vue");
-
-  return {
-    useCacheSync: () => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-      error: vueRef(""),
-      failingDomains: vueRef(syncState.failing),
-      failingDetails: vueRef(syncState.details),
-      // No completed pass this visit: only the partial result can make the page usable.
-      domainStatus: vueRef({}),
-      syncNow: vi.fn(),
-    }),
-  };
-});
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
-    records: ref([]),
-    rows: ref([]),
-    hydrated: ref(true),
+// The page reads sync failures and their details from the shared `serviceState`. No completed
+// pass this visit (empty `syncedAt`): only the partial result can make the page usable.
+vi.mock("@common/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  serviceState: reactive({
+    running: false,
+    lastSyncAt: 0,
+    syncedAt: {},
+    written: {},
+    errors: {} as Record<string, string>,
+    details: {} as Record<string, unknown>,
   }),
 }));
+
+/** Replace the mocked service state's failures for one test. */
+function setFailure(errors: Record<string, string>, details: Record<string, unknown>) {
+  for(const key of Object.keys(serviceState.errors)) {delete serviceState.errors[key];}
+  for(const key of Object.keys(serviceState.details)) {delete serviceState.details[key];}
+  Object.assign(serviceState.errors, errors);
+  Object.assign(serviceState.details, details);
+}
 
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJobs: () => ({
@@ -188,8 +195,10 @@ async function mountPage() {
 describe("ShopifyTransferSync - partially loaded pass", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    syncState.failing = { shopifyTransferSync: "2 of 5 transfer sync lists could not be loaded (shipment, receipt): slow" };
-    syncState.details = { shopifyTransferSync: FAILURE };
+    setFailure(
+      { shopifyTransferSync: "2 of 5 transfer sync lists could not be loaded (shipment, receipt): slow" },
+      { shopifyTransferSync: FAILURE },
+    );
   });
 
   it("renders the segments that loaded instead of skeletons, and marks the ones that did not", async () => {
@@ -223,7 +232,10 @@ describe("ShopifyTransferSync - partially loaded pass", () => {
   });
 
   it("falls back to the blocking error when no segment loaded", async () => {
-    syncState.details = { shopifyTransferSync: { ...FAILURE, loadedSegments: [] } };
+    setFailure(
+      { shopifyTransferSync: "5 of 5 transfer sync lists could not be loaded" },
+      { shopifyTransferSync: { ...FAILURE, loadedSegments: [] } },
+    );
     const wrapper = await mountPage();
 
     expect(wrapper.text()).toContain("Transfer sync data could not be loaded");

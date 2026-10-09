@@ -134,7 +134,7 @@ import { shouldPopHistoryOnBack } from "@/utils/navigation";
 import { useShopifyShopMutations, useShopifyTypeMappings } from "@/composables/useShopify";
 import { createPaymentMethodType } from "@/composables/useSeed";
 import { usePaymentMethodTypes } from '@/composables/useSeed';
-import { refreshAfterMutation, resyncDomain } from '@/services/appCacheBootstrap';
+import { refreshAfterMutation, resyncDomain } from '@/services/appDbSync';
 
 const props = defineProps(['id']);
 const shopMutations = useShopifyShopMutations(props.id);

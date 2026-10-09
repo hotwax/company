@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 const harness = vi.hoisted(() => ({
   api: vi.fn(),
@@ -11,33 +12,25 @@ vi.mock("@common", () => ({
   commonUtil: { hasError: (response: any) => harness.hasError(response), showToast: vi.fn() },
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   translate: (value: string) => value,
-}));
-
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({
+  useDb: () => ({
     rows: { value: [] },
     records: { value: [] },
+    first: { value: undefined },
+    count: { value: 0 },
     hydrated: { value: true },
   }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  dataManagerLogCache: { __kind: "logs" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyShopCache: { __kind: "shops" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: {
-    __kind: "remotes",
-    all: vi.fn(() => harness.remotes.map((raw) => ({ raw }))),
+vi.mock("@/db/companyDb", () => ({
+  companyDb: {
+    entity: (table: string) => {
+      if (table === "systemMessageRemotes") {
+        return {
+          all: vi.fn(() => harness.remotes),
+        };
+      }
+      return { all: vi.fn(async () => []) };
+    },
   },
 }));
 
@@ -62,17 +55,17 @@ vi.mock("@/composables/useSeed", () => ({
   useStatuses: () => ({ labelFor: (statusId: string) => statusId }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }),
-}));
-
 vi.mock("@/composables/useServiceJobs", () => ({
   useServiceJob: () => ({ updateJob: vi.fn(), runNow: vi.fn() }),
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: vi.fn(),
   bootstrapState: { running: false },
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
 }));
 
 import {

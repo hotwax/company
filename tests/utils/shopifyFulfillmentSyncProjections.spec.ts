@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
-  shopifyFulfillmentHistoryProjection,
-  shopifyFulfillmentHistorySupportProjection,
-  systemMessageProjection,
-} from "@/utils/cacheEntities";
-import { projectRow } from "@/utils/cacheProjection";
+import { companyDb } from "@/db/companyDb";
+import { entityKeyOf, projectRow } from "@common/db/storage/projection";
+
+const shopifyFulfillmentHistoryProjection = companyDb.entities.shopifyFulfillmentHistories;
+const shopifyFulfillmentHistorySupportProjection = companyDb.entities.shopifyFulfillmentHistorySupport;
+const systemMessageProjection = companyDb.entities.systemMessages;
 
 /**
- * L1 unit — the fulfillment sync projections, against the REAL definitions in `cacheEntities`.
+ * L1 unit — the fulfillment sync projections, against the REAL definitions in `companySchema`.
  *
- * The synthesized key is the part worth locking: Shopify's numeric `fulfillmentId` is only unique
+ * The compound key is the part worth locking: Shopify's numeric `fulfillmentId` is only unique
  * per shop, so a key built from it alone would let two shops' rows overwrite each other, and a key
  * that tolerates a missing half would collide rows onto `"undefined"`. The projector drops keyless
  * rows silently (that is the `isUnkeyableFetch` contract), so these tests are the loud version of
@@ -19,7 +19,7 @@ import { projectRow } from "@/utils/cacheProjection";
 const CACHED_AT = 1_800_000_000_000;
 
 describe("shopifyFulfillmentHistory projection", () => {
-  it("synthesizes `${shopId}:${fulfillmentId}` and keeps every contract alias", () => {
+  it("keys on (shopId, fulfillmentId) and keeps every contract alias", () => {
     const row = projectRow({
       shopId: "10000",
       shopifyOrderId: "5734893781",
@@ -33,8 +33,8 @@ describe("shopifyFulfillmentHistory projection", () => {
       shippedDate: 1755765660000,
     }, shopifyFulfillmentHistoryProjection, CACHED_AT);
 
+    expect(entityKeyOf(row!, shopifyFulfillmentHistoryProjection)).toEqual(["10000", "4471301884"]);
     expect(row).toMatchObject({
-      fulfillmentKey: "10000:4471301884",
       shopId: "10000",
       shopifyOrderId: "5734893781",
       fulfillmentId: "4471301884",
@@ -44,7 +44,7 @@ describe("shopifyFulfillmentHistory projection", () => {
       lastUpdatedStamp: 1755771300000,
       orderDate: 1755680000000,
       shippedDate: 1755765660000,
-      cachedAt: CACHED_AT,
+      syncedAt: CACHED_AT,
     });
     // ISO date strings are normalized to millis so the cursor and sort never compare strings.
     expect(row?.processedDate).toBe(Date.parse("2026-08-21T10:15:00Z"));
@@ -87,9 +87,8 @@ describe("shopifyFulfillmentHistory projection", () => {
       CACHED_AT,
     );
 
-    expect(first?.fulfillmentKey).toBe("10000:77");
-    expect(second?.fulfillmentKey).toBe("10010:77");
-    expect(first?.fulfillmentKey).not.toBe(second?.fulfillmentKey);
+    expect(entityKeyOf(first!, shopifyFulfillmentHistoryProjection)).toEqual(["10000", "77"]);
+    expect(entityKeyOf(second!, shopifyFulfillmentHistoryProjection)).toEqual(["10010", "77"]);
   });
 });
 

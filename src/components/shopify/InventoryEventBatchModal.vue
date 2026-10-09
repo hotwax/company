@@ -131,7 +131,7 @@ import { useStatuses } from "@/composables/useSeed";
 import { useSystemMessage } from "@/composables/useSystemMessage";
 import { useInventorySyncArea } from "@/services/inventorySyncArea";
 import { formatDateTime } from "@/utils";
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import { translateMutationError } from "@/utils/errorPresentation";
 import type { InventoryEventBatch } from "@/utils/inventoryEvents";
 

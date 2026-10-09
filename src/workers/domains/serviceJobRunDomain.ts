@@ -1,6 +1,9 @@
-import { serviceJobRunCache } from "@/utils/cacheEntities";
-import { type SyncContext, registerSyncDomain } from "../syncRegistry";
-import { pageNewestFirst, workerGet } from "./workerFetch";
+import { companyDb } from "@/db/companyDb";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import type { SyncContext } from "@common/db/types";
+import { pageNewestFirst, workerGet } from "@common/core/workerRemoteApi";
+
+const serviceJobRunEntity = companyDb.entity("serviceJobRuns");
 
 /**
  * ServiceJobRun — class A (live), fetched PER JOB.
@@ -35,7 +38,7 @@ export interface ServiceJobRunArgs {
 const terminalBoundaryByJob = new Map<string, number>();
 
 async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArgs): Promise<number> {
-  const cursor = await serviceJobRunCache.newestCursor("startTime", {
+  const cursor = await serviceJobRunEntity.newestCursor("startTime", {
     field: "jobName",
     value: jobName,
   });
@@ -71,7 +74,7 @@ async function syncJob(ctx: SyncContext, jobName: string, args: ServiceJobRunArg
 
   // `jobName` is only in the URL, not echoed per row, so stamp it in — otherwise the rows cannot be
   // scoped back to their job and the per-job cursor above would see every job at once.
-  return serviceJobRunCache.upsertMany(runs.map((run: any) => ({ ...run, jobName })));
+  return serviceJobRunEntity.upsertMany(runs.map((run: any) => ({ ...run, jobName })));
 }
 
 function exactRunUrl(jobName: string, jobRunId: string): string {
@@ -104,7 +107,7 @@ async function refreshUnfinished(
   const maxPerJob = Math.max(0, args.refreshMaxPerJob ?? DEFAULT_REFRESH_MAX_PER_JOB);
   if(maxPerJob === 0) {return 0;}
 
-  const candidates = (await serviceJobRunCache.all()).filter((row: any) =>
+  const candidates = (await serviceJobRunEntity.all()).filter((row: any) =>
     watched.has(String(row?.jobName ?? "")) &&
     row?.endTime === undefined &&
     typeof row?.startTime === "number" && row.startTime > cutoff &&
@@ -129,11 +132,14 @@ async function refreshUnfinished(
     }
   }
 
-  return serviceJobRunCache.upsertMany(refreshed);
+  return serviceJobRunEntity.upsertMany(refreshed);
 }
 
-registerSyncDomain({
+export const serviceJobRunDomain = defineSyncDomain({
   name: "serviceJobRun",
+  table: "serviceJobRuns",
+  label: "Service job runs",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: ServiceJobRunArgs = {}) {
     const jobNames = [...new Set((args.jobNames ?? []).filter(Boolean))];
@@ -152,6 +158,6 @@ registerSyncDomain({
     if(!jobRunId || !jobName) {return 0;}
     const run = await fetchRun(ctx, String(jobName), String(jobRunId));
 
-    return run ? serviceJobRunCache.upsertMany([run]) : 0;
+    return run ? serviceJobRunEntity.upsertMany([run]) : 0;
   },
 });

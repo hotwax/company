@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -22,10 +22,11 @@ vi.mock("@common", () => ({
   translate: (k: string) => k,
   buildAppUrl: (appId: string, path = "") =>
     (appId === "transfers" ? `https://transfers.example.test${path}` : null),
+  useDb: () => ({ records: ref([]), rows: ref([]), first: computed(() => undefined), count: computed(() => 0), hydrated: ref(true) }),
 }));
 
-// Mirrors useCachedRecord's unwrapping, so a view that passes a raw prop instead of a reactive
-// shopId genuinely fails the re-scope test below rather than being papered over by the mock.
+// Mirrors how `useShopifyShop` unwraps its argument, so a view that passes a raw prop instead of a
+// reactive shopId genuinely fails the re-scope test below rather than being papered over by the mock.
 vi.mock("@/composables/useShopify", () => ({
   useShopifyShop: (shopId: any) => ({
     record: computed(() => {
@@ -39,18 +40,24 @@ vi.mock("@/composables/useShopify", () => ({
   }),
 }));
 
-vi.mock("@/composables/useCacheSync", () => ({
-  useCacheSync: () => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    error: ref(""),
-    domainStatus: ref({ shopifyTransferSync: { at: 100 } }),
-    syncNow: vi.fn(),
-  }),
+vi.mock("@/services/appDbSync", () => ({
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  createSyncDomainOwner: (label: string) => label,
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
+  refreshAfterMutation: vi.fn(),
 }));
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: () => ({ records: ref([]), rows: ref([]), hydrated: ref(true) }),
+vi.mock("@common/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  serviceState: reactive({
+    running: false,
+    lastSyncAt: 0,
+    syncedAt: { shopifyTransferSync: 100 },
+    written: {},
+    errors: {},
+  }),
 }));
 
 vi.mock("@/composables/useServiceJobs", () => ({

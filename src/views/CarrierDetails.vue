@@ -220,7 +220,7 @@ import {
   translateMutationError,
   translateReferenceDataError,
 } from "@/utils/errorPresentation";
-import { isCacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { isCacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import router from "@/router";
 
 const props = defineProps<{
@@ -366,6 +366,9 @@ const handleFacilityToggle = async ({
         partyId: carrier.value!.partyId,
         facilityId: facility.facilityId,
         enabled,
+        // Removal expires the active FacilityParty row, which is keyed by its fromDate; the facility
+        // row carries it from the cached association it was merged with.
+        ...(enabled ? {} : { fromDate: facility.fromDate }),
       }),
     enabled
       ? "Facility associated with carrier."
@@ -396,7 +399,7 @@ const handleStoreAssociationToggle = async ({
           shipmentMethodTypeId: method.shipmentMethodTypeId,
           partyId: carrier.value!.partyId,
           roleTypeId: "CARRIER",
-          isTrackingRequired: false,
+          isTrackingRequired: "N",
         });
       } else if (association?.productStoreShipMethId) {
         await expireProductStoreShipmentMethod(
