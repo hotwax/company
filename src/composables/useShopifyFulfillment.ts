@@ -11,6 +11,7 @@ import {
   mapFulfillmentDetails,
   parseFulfillmentMessageText,
 } from "@/utils/shopifyFulfillment";
+import { scheduleDiagnosis } from "@/services/diagnosisQueue";
 import { onSessionCleared } from "./sessionScope";
 import { type ShopIdSource, useShopifySyncContext } from "./useShopify";
 import { useSystemMessages } from "./useSystemMessage";
@@ -403,6 +404,70 @@ export function useOmsShipmentContext() {
   };
 
   return { getShipmentContext };
+}
+
+export interface FulfillmentDiagnosisQuery {
+  shopId: string;
+  shipmentId: string;
+  systemMessageId?: string;
+  /** Asks the service to read Shopify's fulfillment holds too; the hold modal needs them. */
+  inspectHolds?: boolean;
+}
+
+export interface FulfillmentHoldRelease {
+  shopId: string;
+  shipmentId: string;
+  fulfillmentOrderId: string;
+  holdId: string;
+}
+
+/**
+ * Live, per-shipment reads against Shopify — nothing here is cached, each card asks when it mounts
+ * or the operator rechecks. Diagnosis reads go through `scheduleDiagnosis` so a page full of cards
+ * cannot fan out unbounded Shopify calls. Both return the raw response; the card owns how a
+ * failure reads.
+ */
+export function useFulfillmentDiagnosis() {
+  const getDiagnosis = (query: FulfillmentDiagnosisQuery) => scheduleDiagnosis(() => api({
+    url: "sob/shopify/fulfillmentDiagnosis",
+    method: "get",
+    params: {
+      shopId: query.shopId,
+      shipmentId: query.shipmentId,
+      ...(query.systemMessageId ? { systemMessageId: query.systemMessageId } : {}),
+      ...(query.inspectHolds === true ? { inspectHolds: true } : {}),
+    },
+  }) as Promise<any>);
+
+  const releaseHold = (hold: FulfillmentHoldRelease) => api({
+    url: "sob/shopify/fulfillmentHold",
+    method: "post",
+    data: { shopId: hold.shopId, shipmentId: hold.shipmentId, fulfillmentOrderId: hold.fulfillmentOrderId, holdId: hold.holdId },
+  }) as Promise<any>;
+
+  return { getDiagnosis, releaseHold };
+}
+
+const SHOP_ORDER_SEARCH_DOCUMENT_ID = "SHOPIFY_SHOP_ORDER_SEARCH";
+
+/**
+ * Order search for one shop, through the generic `oms/dataDocumentView` over the
+ * SHOPIFY_SHOP_ORDER_SEARCH DataDocument. `customParametersMap` is Moqui's own search-form
+ * parameters (`<field>_op`, `<field>_ic`, `orderDate_from/_thru`, ...); the caller builds it.
+ */
+export function useShopOrderSearch() {
+  const searchOrders = (customParametersMap: Record<string, any>, pageSize: number) => api({
+    url: "oms/dataDocumentView",
+    method: "POST",
+    data: {
+      dataDocumentId: SHOP_ORDER_SEARCH_DOCUMENT_ID,
+      pageIndex: 0,
+      pageSize,
+      customParametersMap,
+    },
+  }) as Promise<any>;
+
+  return { searchOrders };
 }
 
 export function usePendingFulfillments(shopIdSource: ShopIdSource) {
