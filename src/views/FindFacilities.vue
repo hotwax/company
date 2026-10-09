@@ -38,7 +38,7 @@
             :checked="allVisibleSelected"
             :indeterminate="someVisibleSelected && !allVisibleSelected"
             :aria-label="translate('Select all')"
-            @ion-change="toggleVisibleSelection($event.detail.checked)"
+            @ionChange="toggleVisibleSelection(Boolean($event.detail.checked))"
           />
         </span>
         <ion-label>{{ facilities.length }} / {{ filteredFacilities.length }} {{ translate("facilities") }}</ion-label>
@@ -61,7 +61,6 @@
               slot="start"
               :checked="selectedFacilityIds.includes(facility.facilityId)"
               :aria-label="translate('Select facility')"
-              style="pointer-events: none;"
             />
             <ion-icon v-else slot="start" :icon="businessOutline" />
             <ion-label class="ion-text-wrap">
