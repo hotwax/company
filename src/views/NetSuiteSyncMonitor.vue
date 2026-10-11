@@ -5,13 +5,7 @@
         <ion-buttons slot="start">
           <ion-back-button default-href="/netsuite" />
         </ion-buttons>
-        <ion-title>{{ translate("NetSuite sync monitoring") }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button :disabled="!activeGroupId || isRunning" @click="runSelectedGroupNow()">
-            <ion-icon slot="start" :icon="playOutline" />
-            {{ translate("Run now") }}
-          </ion-button>
-        </ion-buttons>
+        <ion-title>{{ translate("NetSuite sync") }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -30,63 +24,70 @@
         <section class="summary-grid ion-margin-top">
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Orders pending sync") }}</ion-card-subtitle>
-              <ion-card-title>
-                <!--
-                  Three distinct states, never collapsed: a real number, "unavailable" when the OMS
-                  cannot answer, and a skeleton while the first worker tick lands. Rendering the
-                  unavailable case as 0 would read as a healthy empty backlog.
-                -->
-                <template v-if="!backlogHydrated">
-                  <ion-skeleton-text :animated="true" class="count-skeleton" />
-                </template>
-                <template v-else-if="pendingCount !== undefined">{{ pendingCount }}</template>
-                <template v-else>{{ translate("Unavailable") }}</template>
-              </ion-card-title>
+              <ion-card-subtitle>{{ translate("Sales orders") }}</ion-card-subtitle>
+              <ion-card-title>{{ translate("Order export") }}</ion-card-title>
             </ion-card-header>
             <ion-card-content>
-              <p v-if="pendingCount !== undefined">
-                {{ translate("Sales orders in this store with no NetSuite order ID yet.") }}
+              <p>{{ translate("Target flow") }}: {{ translate("Customer → sales order → deposit") }}</p>
+              <p v-if="!backlogHydrated"><ion-skeleton-text :animated="true" class="count-skeleton" /></p>
+              <p v-else-if="pendingCount !== undefined">
+                <strong>{{ pendingCount }}</strong> {{ translate("sales orders have no NetSuite ID") }}
               </p>
-              <p v-else-if="backlogHydrated">
-                {{ translate("This OMS does not expose the pending order count. It ships in mantle-netsuite-connector; until that release is deployed the backlog cannot be read.") }}
-              </p>
-              <p v-if="backlogCheckedAt" class="overline">
-                {{ translate("Checked") }} {{ formatDateTime(backlogCheckedAt) }}
-              </p>
+              <p v-else>{{ translate("The count of orders without a NetSuite ID is unavailable.") }}</p>
+              <p>{{ translate("This is not a count of failed or eligible orders.") }}</p>
+              <p v-if="backlogCheckedAt" class="overline">{{ translate("Checked") }} {{ formatDateTime(backlogCheckedAt) }}</p>
             </ion-card-content>
           </ion-card>
 
           <ion-card>
             <ion-card-header>
-              <ion-card-subtitle>{{ translate("Recent failures") }}</ion-card-subtitle>
-              <ion-card-title>{{ failedRuns.length }}</ion-card-title>
+              <ion-card-subtitle>{{ translate("Returns") }}</ion-card-subtitle>
+              <ion-card-title>{{ translate("Return processing") }}</ion-card-title>
             </ion-card-header>
             <ion-card-content>
-              <p>{{ translate("Rule group runs that reported an error.") }}</p>
-              <p v-if="latestRun" class="overline">
-                {{ translate("Last run") }} {{ formatDateTime(latestRun.startDate) }}
-              </p>
-            </ion-card-content>
-          </ion-card>
-
-          <ion-card>
-            <ion-card-header>
-              <ion-card-subtitle>{{ translate("Active rules") }}</ion-card-subtitle>
-              <ion-card-title>{{ activeRules.length }}</ion-card-title>
-            </ion-card-header>
-            <ion-card-content>
-              <p>{{ translate("Rules deciding which orders are exported.") }}</p>
-              <p v-if="archivedRules.length" class="overline">
-                {{ archivedRules.length }} {{ translate("archived") }}
-              </p>
+              <p>{{ translate("Target records") }}: {{ translate("RMA · item receipt · credit memo · settlement") }}</p>
+              <p v-if="!jobsHydrated"><ion-skeleton-text :animated="true" class="count-skeleton" /></p>
+              <template v-else-if="returnJobs.length">
+                <p>{{ returnJobs.length }} {{ translate("NetSuite return jobs in this OMS") }}</p>
+                <p>{{ activeReturnJobs.length }} {{ translate("active") }},
+                  {{ returnJobs.length - activeReturnJobs.length }} {{ translate("paused") }}</p>
+              </template>
+              <p v-else>{{ translate("No NetSuite return jobs found in this OMS job list.") }}</p>
+              <p>{{ translate("Job configuration alone does not confirm return completion.") }}</p>
             </ion-card-content>
           </ion-card>
         </section>
 
-        <!-- Rule groups -->
-        <h1>{{ translate("Order push rule groups") }}</h1>
+        <h1>{{ translate("Data Manager activity") }}</h1>
+        <ion-card>
+          <ion-card-header>
+            <ion-card-title>{{ translate("Sales order processing") }}</ion-card-title>
+            <ion-card-subtitle>{{ translate("MDM_NS_SO_RESTLET, across all stores") }}</ion-card-subtitle>
+          </ion-card-header>
+          <ion-card-content>
+            <p>{{ translate("A finished file can still contain failed orders. Open a run to read its failed records.") }}</p>
+            <p v-if="!mdmHydrated">{{ translate("Loading activity") }}</p>
+            <p v-else-if="!recentMdmLogs.length">{{ translate("No Data Manager runs loaded for this configuration.") }}</p>
+          </ion-card-content>
+          <ion-list v-if="recentMdmLogs.length" lines="full">
+            <ion-item v-for="log in recentMdmLogs" :key="log.logId" button detail @click="openMdmLog(log)">
+              <ion-icon slot="start" :icon="logIcon(log)" :color="logColor(log)" />
+              <ion-label class="ion-text-wrap">
+                {{ translate("Run") }} #{{ log.logId }}
+                <p>{{ formatDateTime(log.createdDate) }}<template v-if="isMdmTerminal(log)"> — {{ logStateLabel(log) }}</template></p>
+              </ion-label>
+              <ion-note slot="end">
+                <template v-if="logOutcome(log).state === 'pending' || logOutcome(log).state === 'active'">{{ logStateLabel(log) }}</template>
+                <template v-else>{{ logOutcome(log).failed }} / {{ logOutcome(log).total }} {{ translate("failed") }}</template>
+              </ion-note>
+            </ion-item>
+          </ion-list>
+        </ion-card>
 
+        <h1>{{ translate("Order queue rules") }}</h1>
+        <p>{{ translate("Rules decide which eligible orders are picked first. They do not decide whether an order is valid for NetSuite.") }}</p>
+
+        <!-- Rule groups -->
         <ion-card v-if="groupsHydrated && !groups.length">
           <ion-card-content>
             {{ translate("No NetSuite order push rule group is configured for this product store.") }}
@@ -118,7 +119,13 @@
 
         <!-- Rules in the selected group -->
         <template v-if="activeGroupId">
-          <h1>{{ translate("Rules") }}</h1>
+          <div class="ion-margin-top">
+            <ion-button size="small" fill="outline" :disabled="isRunning" @click="runSelectedGroupNow()">
+              <ion-icon slot="start" :icon="playOutline" />
+              {{ translate("Run selected group now") }}
+            </ion-button>
+          </div>
+          <h2>{{ translate("Rules") }}</h2>
           <ion-card v-if="rulesHydrated && !activeRules.length && !archivedRules.length">
             <ion-card-content>
               {{ translate("This rule group has no rules, so the order push exports nothing.") }}
@@ -174,7 +181,7 @@
           </ion-list>
 
           <!-- Run history -->
-          <h1>{{ translate("Recent runs") }}</h1>
+          <h2>{{ translate("Rule group runs") }}</h2>
           <ion-card v-if="runsHydrated && !runs.length">
             <ion-card-content>
               <p>{{ translate("No rule group runs recorded.") }}</p>
@@ -207,21 +214,51 @@
         </template>
       </template>
     </ion-content>
+
+    <ion-modal :is-open="mdmModalOpen" @didDismiss="resetMdmLog">
+      <ion-header>
+        <ion-toolbar>
+          <ion-buttons slot="start"><ion-button :aria-label="translate('Close')" @click="closeMdmLog"><ion-icon slot="icon-only" :icon="closeOutline" /></ion-button></ion-buttons>
+          <ion-title>{{ translate("Data Manager run") }} #{{ selectedMdmLog?.logId }}</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content class="ion-padding">
+        <p>{{ translate("Sales order processing across all stores") }}</p>
+        <p>{{ logStateLabel(selectedMdmLog) }} — {{ formatDateTime(selectedMdmLog?.createdDate) }}</p>
+        <p>{{ logOutcome(selectedMdmLog).success }} {{ translate("succeeded") }},
+          {{ logOutcome(selectedMdmLog).failed }} {{ translate("failed") }}</p>
+        <h2>{{ translate("Failed records") }}</h2>
+        <p v-if="hasTestOrderHold" class="ion-padding-bottom">
+          {{ translate("These orders have an active TEST_ORDER_HOLD task. Review the task on each order. If the hold is intentional, leave it in place; otherwise resolve it before retrying the order push.") }}
+        </p>
+        <p v-if="isMdmDetailLoading">{{ translate("Loading failed records") }}</p>
+        <p v-else-if="mdmDetailError">{{ mdmDetailError }}</p>
+        <p v-else-if="!errorLogs.length">{{ translate("No failed-record details are attached to this run.") }}</p>
+        <ion-list v-else lines="full">
+          <ion-item v-for="(record, index) in errorLogs" :key="index">
+            <ion-label class="ion-text-wrap">
+              {{ record.orderId || record.OrderId || translate("Record") }}
+              <p>{{ record.ErrorMessage || record.errorMessage || JSON.stringify(record) }}</p>
+            </ion-label>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+    </ion-modal>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { commonUtil, logger, translate } from "@common";
 import {
   IonBackButton, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle,
-  IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonNote,
+  IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonItemDivider, IonLabel, IonList, IonModal, IonNote,
   IonPage, IonSkeletonText, IonText, IonTitle, IonToggle, IonToolbar, onIonViewDidLeave,
   onIonViewWillEnter,
 } from "@ionic/vue";
-import { alertCircleOutline, checkmarkCircleOutline, playOutline } from "ionicons/icons";
-import { commonUtil, logger, translate } from "@common";
-import { useNetSuiteProductStore } from "@/composables/useProductStores";
+import { alertCircleOutline, checkmarkCircleOutline, closeOutline, playOutline, timeOutline } from "ionicons/icons";
+import { computed, ref, watch } from "vue";
 import { useCacheSync } from "@/composables/useCacheSync";
+import { useDataManager, useDataManagerLogs } from "@/composables/useDataManager";
 import {
   describeConditions,
   describeSortBy,
@@ -229,12 +266,14 @@ import {
   runDurationMs,
   useNetSuiteDecisionRules,
   useNetSuiteOrderPushBacklog,
-  useNetSuiteRecentRuns,
   useNetSuiteRuleGroupMutations,
   useNetSuiteRuleGroupRuns,
   useNetSuiteRuleGroups,
   useNetSuiteRulesByGroup,
 } from "@/composables/useNetSuiteSync";
+import { useNetSuiteProductStore } from "@/composables/useProductStores";
+import { useServiceJobs } from "@/composables/useServiceJobs";
+import { logOutcome } from "@/utils/dataManagerLog";
 
 const { netSuiteProductStore } = useNetSuiteProductStore();
 const productStoreId = computed<string | undefined>(() => netSuiteProductStore.value?.productStoreId);
@@ -244,12 +283,25 @@ const pendingRuleId = ref<string | undefined>(undefined);
 const isRunning = ref(false);
 
 const { groups, hydrated: groupsHydrated } = useNetSuiteRuleGroups(() => productStoreId.value);
+const { jobs, hydrated: jobsHydrated } = useServiceJobs();
+const returnJobs = computed(() => jobs.value.filter((job: any) => {
+  const name = `${job.jobName || ""} ${job.serviceName || ""}`;
+
+  return /netsuite/i.test(name) && /return|rma|credit.?memo|refund/i.test(name);
+}));
+const activeReturnJobs = computed(() => returnJobs.value.filter((job: any) => job.paused !== "Y"));
+const { logs: mdmLogs, hydrated: mdmHydrated } = useDataManagerLogs("MDM_NS_SO_RESTLET");
+const recentMdmLogs = computed(() => mdmLogs.value.slice(0, 5));
+const selectedMdmLog = ref<any>(null);
+const mdmModalOpen = ref(false);
+const mdmDetailError = ref("");
+const { fetchLogDetails, errorLogs, loading: isMdmDetailLoading } = useDataManager();
+const hasTestOrderHold = computed(() => errorLogs.value.some((record: any) =>
+  String(record.ErrorMessage || record.errorMessage || "").includes("TEST_ORDER_HOLD")));
 const { rules: activeRules, archivedRules, hydrated: rulesHydrated } =
   useNetSuiteDecisionRules(() => activeGroupId.value);
-const { runs, hydrated: runsHydrated, latest: latestRun } =
+const { runs, hydrated: runsHydrated } =
   useNetSuiteRuleGroupRuns(() => activeGroupId.value);
-const { failed: failedRuns } =
-  useNetSuiteRecentRuns(() => groups.value.map((group: any) => group.ruleGroupId));
 const { pendingCount, checkedAt: backlogCheckedAt, hydrated: backlogHydrated } =
   useNetSuiteOrderPushBacklog(() => productStoreId.value);
 
@@ -261,16 +313,71 @@ const { countFor: ruleCountFor } = useNetSuiteRulesByGroup();
 
 /** Select the first group once they land, so the page is never empty with a group available. */
 watch(groups, (list) => {
-  if (!activeGroupId.value && list.length) activeGroupId.value = list[0].ruleGroupId;
+  if(!activeGroupId.value && list.length) { activeGroupId.value = list[0].ruleGroupId; }
 });
 
 function formatDateTime(value: any): string {
-  return value ? commonUtil.getDateAndTime(Number(value)) : "-";
+  if(!value) { return "-"; }
+
+  const timestamp = typeof value === "number" ? value : Number(value) || Date.parse(value);
+
+  return Number.isFinite(timestamp) ? commonUtil.getDateAndTime(timestamp) : "-";
+}
+
+function logStateLabel(log: any): string {
+  const state = logOutcome(log).state;
+
+  return translate(state === "active" ? "Running" : state === "completed" ? "Completed"
+    : state === "partial" ? "Partially completed" : state === "failed" ? "Failed" : "Pending");
+}
+
+function isMdmTerminal(log: any): boolean {
+  const state = logOutcome(log).state;
+
+  return state === "completed" || state === "partial" || state === "failed";
+}
+
+function logIcon(log: any) {
+  const state = logOutcome(log).state;
+
+  return state === "active" || state === "pending" ? timeOutline
+    : state === "completed" ? checkmarkCircleOutline : alertCircleOutline;
+}
+
+function logColor(log: any) {
+  const state = logOutcome(log).state;
+
+  return state === "completed" ? "success" : state === "active" || state === "pending" ? "medium" : "danger";
+}
+
+async function openMdmLog(log: any) {
+  selectedMdmLog.value = log;
+  mdmModalOpen.value = true;
+  mdmDetailError.value = "";
+  errorLogs.value = [];
+  try {
+    await fetchLogDetails(String(log.logId));
+  } catch (error) {
+    logger.error("Failed to load NetSuite Data Manager run", log.logId, error);
+    mdmDetailError.value = translate("Failed to load failed-record details.");
+  }
+}
+
+function closeMdmLog() {
+  mdmModalOpen.value = false;
+}
+
+function resetMdmLog() {
+  mdmModalOpen.value = false;
+  selectedMdmLog.value = null;
+  errorLogs.value = [];
 }
 
 function durationOf(run: any): string {
   const ms = runDurationMs(run);
-  if (ms === undefined) return "";
+
+  if(ms === undefined) { return ""; }
+
   return ms < 1000 ? `${ms} ms` : `${Math.round(ms / 100) / 10} s`;
 }
 
@@ -289,7 +396,8 @@ async function setRuleEnabled(rule: any, enabled: boolean) {
 }
 
 async function runSelectedGroupNow() {
-  if (!activeGroupId.value) return;
+  if(!activeGroupId.value) { return; }
+
   isRunning.value = true;
   try {
     await runNow(activeGroupId.value);
@@ -305,7 +413,10 @@ function activeSyncDomains() {
   // Skipped entirely without a store: an unscoped read would cache another store's rule groups as
   // this one's. See the guard in the domain itself.
   return productStoreId.value
-    ? [{ name: "netSuiteOrderPush", args: { productStoreId: productStoreId.value, runsPerGroup: 25 } }]
+    ? [
+      { name: "netSuiteOrderPush", args: { productStoreId: productStoreId.value, runsPerGroup: 25 } },
+      { name: "dataManagerLog", args: { configId: "MDM_NS_SO_RESTLET", total: 25, batchSize: 25, refreshMax: 5 } },
+    ]
     : [];
 }
 
