@@ -172,7 +172,7 @@ async function loadSubscriptions(applicationId: string, currentUserId?: string) 
  *
  * NOTE: subscriptions carry `userId`, while `oms/users` filters on `userLoginId` (the username).
  * On instances where those differ, a lookup simply misses and the raw id is shown rather than a
- * wrong name. Matching the established bulk pattern in `useShopifyTransferSyncEnrichment`.
+ * wrong name. Matching the established bulk pattern in `useShopifyTransferSync`.
  */
 async function fetchUserNames(ids: string[]): Promise<Record<string, string>> {
   if (!ids.length) return {};

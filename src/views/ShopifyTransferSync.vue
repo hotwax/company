@@ -656,7 +656,6 @@ import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, sync
 import ShopifyTransferStagingErrors from "@/components/shopify/ShopifyTransferStagingErrors.vue";
 import { useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
-import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import {
   registerMissingTransferWebhook,
   useShopifyNativeTransferSync,
@@ -666,8 +665,9 @@ import {
   useShopifyTransferSyncJobs,
   useShopifyTransferSyncLaunch,
   useShopifyWebhookReconciliation,
+  useShopifyTransferDelivery,
+  useShopifyTransferSyncEnrichment,
 } from "@/composables/useShopifyTransferSync";
-import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
 import { formatDateTime } from "@/utils";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 import { transferSyncIssuePath } from "@/utils/shopifyTransferStagingErrors";
