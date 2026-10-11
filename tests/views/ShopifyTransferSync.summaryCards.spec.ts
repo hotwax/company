@@ -125,13 +125,11 @@ vi.mock("@/composables/useShopifyTransferSync", () => ({
     error: ref(""),
     refresh: vi.fn(),
   }),
-}));
-
-vi.mock("@/composables/useShopifyTransferSyncEnrichment", () => ({
   useShopifyTransferSyncEnrichment: () => ({
     enrichment: ref({}),
     load: vi.fn(),
   }),
+  useShopifyTransferDelivery: () => ({ logsFor: () => [] }),
 }));
 
 // Only the readiness gate is stubbed; the rest of the module (including the admin-link builder the
