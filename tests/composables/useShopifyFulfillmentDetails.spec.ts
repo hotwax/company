@@ -25,8 +25,9 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: vi.fn(),
+  bootstrapState: { running: false },
 }));
 
 import { useShopifyFulfillmentDetails } from "@/composables/useShopifyFulfillment";

@@ -1,11 +1,7 @@
-import { companyDb } from "@/db/companyDb";
-import { hasSyncedThisLogin, markSyncedThisLogin } from "@common/db/storage/baseDb";
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import type { SyncContext } from "@common/db/types";
-import { pageAll, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
-
-const dataFeedEntity = companyDb.entity("dataFeeds");
-const inventoryChannelEntity = companyDb.entity("inventoryChannels");
+import { dataFeedCache, inventoryChannelCache } from "@/utils/cacheEntities";
+import { hasSyncedThisLogin, markSyncedThisLogin } from "@/utils/appCacheDb";
+import { registerSyncDomain, type SyncContext } from "../syncRegistry";
+import { pageAll, unwrapCollection, workerGet } from "./workerFetch";
 
 /**
  * Dedicated read resource over ShopifyInventoryChannelView, NOT a DataDocument.
@@ -35,20 +31,17 @@ async function fetchInventoryEventFeed(ctx: SyncContext, feedId: string = SHOPIF
   return response?.dataFeedId ? response : null;
 }
 
-export const shopifyInventoryEventFeedDomain = defineSyncDomain({
+registerSyncDomain({
   name: "shopifyInventoryEventFeed",
-  table: "dataFeeds",
-  label: "Shopify inventory event feed",
-  syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed")) return 0;
+    if (!options?.force && await hasSyncedThisLogin("shopifyInventoryEventFeed")) return 0;
     const [channelFeed, locationFeed] = await Promise.all([
       fetchInventoryEventFeed(ctx, SHOPIFY_INVENTORY_EVENT_FEED_ID),
       fetchInventoryEventFeed(ctx, SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID),
     ]);
     const feeds = [channelFeed, locationFeed].filter(Boolean);
-    const result = await dataFeedEntity.snapshotReplace(feeds);
-    await markSyncedThisLogin(companyDb.raw(), "shopifyInventoryEventFeed");
+    const result = await dataFeedCache.snapshotReplace(feeds);
+    await markSyncedThisLogin("shopifyInventoryEventFeed");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -56,20 +49,17 @@ export const shopifyInventoryEventFeedDomain = defineSyncDomain({
     if (feedId !== SHOPIFY_INVENTORY_EVENT_FEED_ID && feedId !== SHOPIFY_LOCATION_INVENTORY_EVENT_FEED_ID) return 0;
     const feed = await fetchInventoryEventFeed(ctx, feedId);
     if (!feed) {
-      await dataFeedEntity.remove(feedId);
+      await dataFeedCache.remove(feedId);
       return 0;
     }
-    return dataFeedEntity.upsertMany([feed]);
+    return dataFeedCache.upsertMany([feed]);
   },
 });
 
-export const inventoryChannelDomain = defineSyncDomain({
+registerSyncDomain({
   name: "inventoryChannel",
-  table: "inventoryChannels",
-  label: "Shopify inventory channels",
-  syncClass: "B",
   async sync(ctx, _args, options) {
-    if (!options?.force && await hasSyncedThisLogin(companyDb.raw(), "inventoryChannel")) return 0;
+    if (!options?.force && await hasSyncedThisLogin("inventoryChannel")) return 0;
     const rows = await pageAll({
       ctx,
       url: CHANNEL_ENDPOINT,
@@ -78,8 +68,8 @@ export const inventoryChannelDomain = defineSyncDomain({
       keyOf: (row: any) => row?.inventoryChannelId ? String(row.inventoryChannelId) : undefined,
       label: CHANNEL_ENDPOINT,
     });
-    const result = await inventoryChannelEntity.snapshotReplace(rows);
-    await markSyncedThisLogin(companyDb.raw(), "inventoryChannel");
+    const result = await inventoryChannelCache.snapshotReplace(rows);
+    await markSyncedThisLogin("inventoryChannel");
     return result.written;
   },
   async refetchOne(ctx, pk) {
@@ -91,6 +81,6 @@ export const inventoryChannelDomain = defineSyncDomain({
       pageSize: 1,
     });
     const rows = unwrapCollection(response, DETAIL_COLLECTION);
-    return rows.length ? inventoryChannelEntity.upsertMany(rows) : 0;
+    return rows.length ? inventoryChannelCache.upsertMany(rows) : 0;
   },
 });

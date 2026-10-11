@@ -1,12 +1,11 @@
-import { companyDb } from "@/db/companyDb";
-import { keepNewerThan } from "@common/db/storage/projection";
-import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
-import type { SyncContext } from "@common/db/types";
-import { pageNewestFirst, unwrapCollection, workerGet } from "@common/core/workerRemoteApi";
-import { FULFILLMENT_HISTORY_ENDPOINT_MISSING } from "@/utils/shopifyFulfillment";
-
-const fulfillmentHistoryEntity = companyDb.entity("shopifyFulfillmentHistories");
-const fulfillmentHistorySupportEntity = companyDb.entity("shopifyFulfillmentHistorySupport");
+import {
+  FULFILLMENT_HISTORY_ENDPOINT_MISSING,
+  shopifyFulfillmentHistoryCache,
+  shopifyFulfillmentHistorySupportCache,
+} from "@/utils/cacheEntities";
+import { keepNewerThan } from "@/utils/cacheProjection";
+import { type SyncContext, registerSyncDomain } from "../syncRegistry";
+import { pageNewestFirst, unwrapCollection, workerGet } from "./workerFetch";
 
 /**
  * ShopifyFulfillmentHistory — class A (live, append-mostly), the "Synced" feed of the fulfillment
@@ -21,7 +20,8 @@ const fulfillmentHistorySupportEntity = companyDb.entity("shopifyFulfillmentHist
  * ⚠️ THE ENDPOINT MAY NOT EXIST YET. It ships in a connector release that deploys independently of
  * this app, and an instance without it answers 404. That is a "cannot know", not a failure to
  * retry: the first 404 of a worker session raises ONE recognizable error
- * (`FULFILLMENT_HISTORY_ENDPOINT_MISSING`, surfaced through `serviceState.errors.shopifyFulfillmentHistory`), records the verdict on the shop's
+ * (`FULFILLMENT_HISTORY_ENDPOINT_MISSING`, surfaced by `useCacheSync().error` as
+ * `shopifyFulfillmentHistory: <message>`), records the verdict on the shop's
  * `shopifyFulfillmentHistorySupport` row — the durable state `useSyncedFulfillments` renders — and
  * every later scheduled tick returns without touching the network. A FORCED pass (manual refresh)
  * deliberately re-probes: it costs one request, it is user-initiated, and it is how the screen
@@ -44,7 +44,7 @@ export interface ShopifyFulfillmentHistoryArgs {
  * The 404 verdict for THIS worker's lifetime — what keeps a scheduled tick from re-probing a
  * missing endpoint every 10 seconds. Module-level on purpose: the worker is terminated on view
  * exit, so re-entering the screen re-probes exactly once. The cross-realm, login-lifetime copy of
- * the verdict lives on the `shopifyFulfillmentHistorySupport` row.
+ * the verdict lives on the `shopifyFulfillmentHistorySupport` cache row.
  */
 let endpointMissingThisSession = false;
 
@@ -73,19 +73,17 @@ function isEndpointMissing(err: any): boolean {
  * answer costs no write (and no liveQuery re-emit) per tick.
  */
 async function markEndpointSupport(shopId: string, isSupported: "Y" | "N"): Promise<number> {
-  const existing = await fulfillmentHistorySupportEntity.get(shopId);
+  const existing = (await shopifyFulfillmentHistorySupportCache.all())
+    .find((row: any) => String(row?.shopId ?? "") === shopId);
   if(existing?.isSupported === isSupported) {return 0;}
 
-  return fulfillmentHistorySupportEntity.upsertMany([
+  return shopifyFulfillmentHistorySupportCache.upsertMany([
     { shopId, isSupported, checkedAt: Date.now() },
   ]);
 }
 
-export const shopifyFulfillmentHistoryDomain = defineSyncDomain({
+registerSyncDomain({
   name: "shopifyFulfillmentHistory",
-  table: "shopifyFulfillmentHistories",
-  label: "Shopify fulfillment history",
-  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx: SyncContext, args: ShopifyFulfillmentHistoryArgs = {}, options) {
     const shopId = String(args.shopId ?? "").trim();
@@ -103,11 +101,11 @@ export const shopifyFulfillmentHistoryDomain = defineSyncDomain({
     // A shallow window is DEEPENED, not just topped up — same rule as the message domain: with a
     // cursor, paging stops at the first cached row, so a window first synced shallow would stay
     // shallow forever and raising `total` later would do nothing.
-    const cached = await fulfillmentHistoryEntity.count({ scope });
+    const cached = await shopifyFulfillmentHistoryCache.count(scope);
     const isShallow = cached < target;
     const cursor = isShallow
       ? undefined
-      : await fulfillmentHistoryEntity.newestCursor("lastUpdatedStamp", scope);
+      : await shopifyFulfillmentHistoryCache.newestCursor("lastUpdatedStamp", scope);
 
     let rows: any[];
     try {
@@ -124,7 +122,7 @@ export const shopifyFulfillmentHistoryDomain = defineSyncDomain({
       if(isEndpointMissing(err)) {
         endpointMissingThisSession = true;
         await markEndpointSupport(shopId, "N");
-        // One recognizable throw — the sync-error channel carries it to `serviceState.errors`.
+        // One recognizable throw — the sync-error channel carries it to `useCacheSync().error`.
         throw new Error(FULFILLMENT_HISTORY_ENDPOINT_MISSING, { cause: err });
       }
       throw err;
@@ -133,11 +131,11 @@ export const shopifyFulfillmentHistoryDomain = defineSyncDomain({
     // The endpoint answered — it exists, including on the re-probe after a 404 verdict.
     endpointMissingThisSession = false;
     let written = await markEndpointSupport(shopId, "Y");
-    // `shopId` IS an alias on the view, so this fill is normally a no-op — but the compound key
-    // (shopId, fulfillmentId) silently drops any row without one, so it costs nothing and
+    // `shopId` IS an alias on the view, so this fill is normally a no-op — but the synthetic key
+    // (`${shopId}:${fulfillmentId}`) silently drops any row without one, so it costs nothing and
     // keeps a trimmed future master from emptying the feed.
     const stamped = rows.map((row: any) => ({ ...row, shopId: row?.shopId ?? shopId }));
-    written += await fulfillmentHistoryEntity.upsertMany(stamped);
+    written += await shopifyFulfillmentHistoryCache.upsertMany(stamped);
 
     return written;
   },
@@ -156,6 +154,6 @@ export const shopifyFulfillmentHistoryDomain = defineSyncDomain({
     if(!rows.length) {return 0;}
     const stamped = rows.map((row: any) => ({ ...row, shopId: row?.shopId ?? shopId }));
 
-    return fulfillmentHistoryEntity.upsertMany(stamped);
+    return shopifyFulfillmentHistoryCache.upsertMany(stamped);
   },
 });

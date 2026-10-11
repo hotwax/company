@@ -662,9 +662,10 @@ import {
 } from "@/utils/shopifyProductSyncWizard";
 import { downloadTextFile, formatDateTime, getDownloadFileContent, parseDateTimeValue } from "@/utils";
 import { getSafeSyncRunQueryId } from "@/utils/syncRunRoute";
-import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, refreshAfterMutation } from "@/services/appDbSync";
+import { refreshAfterMutation } from "@/services/appCacheBootstrap";
 import { useServiceJob, useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useDataManager, useRecentDataManagerLogs } from "@/composables/useDataManager";
+import { useCacheSync } from "@/composables/useCacheSync";
 import { useProductUpdateHistories } from "@/composables/useProductUpdateHistory";
 import {
   cancelSystemMessage,
@@ -924,7 +925,7 @@ const isWebhookSupported = ref(false);
 const currentTimeMs = ref(Date.now());
 let labelClock: number | undefined;
 
-const SYNC_OWNER = createSyncDomainOwner("shopifyProductSyncView");
+const { start: startSyncDomains, stop: stopSyncDomains } = useCacheSync();
 
 const { shops: cachedShops, hydrated: shopsHydrated } = useShopifyShops();
 const { record: shopRecord } = useShopifyShop(props.id);
@@ -3226,7 +3227,7 @@ function productSyncPageDomains(jobNames: readonly string[]) {
  */
 async function startNextSyncRefreshPolling() {
   labelClock = window.setInterval(() => { currentTimeMs.value = Date.now(); }, 15000);
-  await activateSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)), SYNC_OWNER);
+  await startSyncDomains(productSyncPageDomains(getTrackedRefreshJobs().map((job: any) => job.jobName)));
 }
 
 function stopNextSyncRefreshPolling() {
@@ -3234,7 +3235,7 @@ function stopNextSyncRefreshPolling() {
     window.clearInterval(labelClock);
     labelClock = undefined;
   }
-  void deactivateSyncDomains(SYNC_OWNER);
+  stopSyncDomains();
 }
 
 /**
@@ -3246,7 +3247,7 @@ function stopNextSyncRefreshPolling() {
 watch(() => getTrackedRefreshJobs().map((job: any) => job.jobName).join(","), (names) => {
   if (!names) return;
   // Same single builder — `start` swaps the domain set on the running worker rather than respawning.
-  void activateSyncDomains(productSyncPageDomains(names.split(",")), SYNC_OWNER);
+  void startSyncDomains(productSyncPageDomains(names.split(",")));
 });
 
 function getTrackedRefreshJobs() {

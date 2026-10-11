@@ -36,9 +36,7 @@ async function addLocationModal() {
     component: AddLocationModal,
     componentProps: { location: props.location, facilityId: props.location.facilityId }
   });
-  // The opener reloads locations when this popover dismisses, so it must stay open until the edit
-  // modal has saved — dismissing first reloaded before the save and left the card stale.
-  modal.onDidDismiss().then(() => popoverController.dismiss());
+  await popoverController.dismiss();
   modal.present();
 }
 

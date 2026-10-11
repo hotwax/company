@@ -12,7 +12,7 @@ vi.mock("@common", () => ({
   translate: (k: string) => k,
 }));
 
-vi.mock("@/services/appDbSync", () => ({
+vi.mock("@/services/appCacheBootstrap", () => ({
   refreshAfterMutation: vi.fn().mockResolvedValue(undefined),
 }));
 

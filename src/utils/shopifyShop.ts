@@ -32,11 +32,3 @@ export function isInShop(
   if (!record || !shopId) return false;
   return record.shopId === shopId;
 }
-
-/**
- * A stored `ShopifyShopLocation` row is a mapping only when it names a Shopify location. One without
- * is a leftover of clearing by value, so every reader of the table leaves it out.
- */
-export function isShopifyLocationMapping(row: Record<string, unknown>): boolean {
-  return !!row?.shopifyLocationId;
-}

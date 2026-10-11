@@ -124,21 +124,6 @@ export const INVENTORY_EVENT_DOMAINS = {
   bounds: "inventoryEventBounds",
 } as const;
 
-/**
- * Status-card text for the inventory sync area's domains (and the monitor's job runs beside them),
- * shared by the worker's domain declarations and the toolbar's `SyncStatusButton`.
- */
-export const INVENTORY_SYNC_DOMAIN_LABELS: Record<string, string> = {
-  [INVENTORY_EVENT_DOMAINS.channelRows]: "Shopify channel inventory events",
-  [INVENTORY_EVENT_DOMAINS.channelMessages]: "Shopify channel inventory event deliveries",
-  [INVENTORY_EVENT_DOMAINS.locationRows]: "Shopify location inventory events",
-  [INVENTORY_EVENT_DOMAINS.locationMessages]: "Shopify location inventory event deliveries",
-  [INVENTORY_EVENT_DOMAINS.systemMessages]: "Unsettled inventory event batches",
-  [INVENTORY_EVENT_DOMAINS.products]: "Shopify products for inventory events",
-  [INVENTORY_EVENT_DOMAINS.bounds]: "Oldest inventory events on the server",
-  serviceJobRun: "Service job runs",
-};
-
 /** `bounds` is not polled: each history page asks for it once when it loads. */
 export function inventoryEventAreaDomains(shopId: string): Array<{ name: string; args: { shopId: string } }> {
   return Object.values(INVENTORY_EVENT_DOMAINS)

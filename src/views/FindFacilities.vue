@@ -61,6 +61,7 @@
               slot="start"
               :checked="selectedFacilityIds.includes(facility.facilityId)"
               :aria-label="translate('Select facility')"
+              @click.stop="toggleFacilitySelection(facility.facilityId)"
             />
             <ion-icon v-else slot="start" :icon="businessOutline" />
             <ion-label class="ion-text-wrap">
