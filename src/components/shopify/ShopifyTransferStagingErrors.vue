@@ -85,8 +85,7 @@ import {
 import { checkmarkCircleOutline, timeOutline, warningOutline } from "ionicons/icons";
 import { computed, watch } from "vue";
 import { useServiceJobRunsByJob } from "@/composables/useServiceJobs";
-import type { TransferSyncJobCard } from "@/composables/useShopifyTransferSync";
-import { useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSyncEnrichment";
+import { type TransferSyncJobCard, useShopifyTransferSyncEnrichment } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { type TransferStager, groupTransferStagingIssues, latestCompletedStagingRun, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
 import ShopifyTransferDeliveryStatus from "./ShopifyTransferDeliveryStatus.vue";

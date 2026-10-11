@@ -34,7 +34,7 @@ import { IonButton, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonSpinn
 import { checkmarkCircleOutline, timeOutline } from "ionicons/icons";
 import { computed, ref } from "vue";
 import DataManagerLogModal from "@/components/shopify-order-sync/ShopifyOrderSyncMdmLogModal.vue";
-import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
+import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferSync";
 import { formatDateTime } from "@/utils";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 

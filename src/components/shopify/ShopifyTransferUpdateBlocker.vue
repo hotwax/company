@@ -42,7 +42,7 @@ import { translate } from "@common";
 import { IonButton, IonIcon, IonItem, IonLabel, IonSpinner } from "@ionic/vue";
 import { timeOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
-import type { TransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
+import type { TransferUpdateCheck } from "@/composables/useShopifyTransferSync";
 import type { TransferStagingIssue } from "@/utils/shopifyTransferStagingErrors";
 
 const props = defineProps<{ shopId: string; orderId: string; orderName?: string; domain?: string; issue: TransferStagingIssue; waitingReceipts: string[]; result?: TransferUpdateCheck; loading: boolean; error?: string }>();
