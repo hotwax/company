@@ -154,7 +154,9 @@ import router from '@/router'
 import { openOutline, syncOutline, checkmarkCircle, closeCircle } from "ionicons/icons"
 
 import { getCurrentTime } from "../utils"
-import { useCacheStatus } from "@/composables/useCacheStatus";
+import { catalogFrom, useDbStatus } from "@common/db";
+import { companyDb } from "@/db/companyDb";
+import { resyncDomain, resyncReferenceData } from "@/services/appDbSync";
 import { useMaargConfig } from "@/composables/useSeed";
 import Actions from "@/authorization/actions";
 const userStore = useUserStore();
@@ -176,7 +178,17 @@ const userFetchStatus = computed(() => userStore.fetchStatus)
 // Live IndexedDB state: per-domain row counts + last sync, and the force-refresh actions.
 const {
   domains, refreshing, totalRows, oldestSyncedAt, lastSyncedAt, refreshDomain, refreshAll,
-} = useCacheStatus();
+} = useDbStatus(
+  companyDb.raw(),
+  // The domains the worker registers, read from the same list rather than asked of the worker: on a
+  // reload here, or after sync failed to start, there is no worker to answer, and this card's
+  // per-domain Refresh is the way back. Imported on demand to keep the domain code out of startup.
+  async () => catalogFrom((await import("@/workers/appSyncDomains")).appSyncDomains),
+  {
+    resyncDomain,
+    resyncAll: resyncReferenceData,
+  },
+);
 
 const formatSyncTime = (millis: number) =>
   DateTime.fromMillis(millis).toLocaleString(DateTime.DATETIME_MED);

@@ -64,7 +64,7 @@ vi.mock("@ionic/vue", () => ({
 
 import PickerStub from "@/components/shopify-product-sync/CalendarMetafieldPickerModal.vue"
 import ProductCalendarMappingsCard from "@/components/shopify-product-sync/ProductCalendarMappingsCard.vue"
-import { CACHE_RECONCILIATION_ERROR_MESSAGE, CacheReconciliationError } from "@/utils/cacheReconciliationError"
+import { CACHE_RECONCILIATION_ERROR_MESSAGE, CacheReconciliationError } from "@/utils/db/cacheReconciliationError"
 
 const row = (wrapper: any, field: string) => wrapper.get(`[data-testid="calendar-mapping-${field}"]`)
 const picker = (wrapper: any) => wrapper.getComponent(PickerStub)

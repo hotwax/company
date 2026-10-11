@@ -91,7 +91,7 @@ import {
 import { computed, ref } from 'vue';
 import { translate } from "@common";
 import { useFacilityGroups, useFacilityGroupTypes } from '@/composables/useFacilities';
-import { resyncDomain } from '@/services/appCacheBootstrap';
+import { resyncDomain } from '@/services/appDbSync';
 import CreateFacilityGroupModal from '@/components/facility/CreateFacilityGroupModal.vue';
 import SearchFilterCard from '@/components/common/SearchFilterCard.vue';
 import UniformFilterLayout from '@/components/common/UniformFilterLayout.vue';

@@ -619,7 +619,7 @@ const productStoreId = computed(() => String(
   productStore.value?.productStoreId || shop.value?.productStoreId || translate("Not linked")
 ));
 const productStoreName = computed(() => String(
-  productStore.value?.name || productStoreId.value
+  productStore.value?.storeName || productStore.value?.name || productStoreId.value
 ));
 const remoteLabel = computed(() => String(
   remote.value?.systemMessageRemoteId || remote.value?.description || translate("Unavailable")

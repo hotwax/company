@@ -866,7 +866,7 @@ const editJobDisabledReason = computed(() => canEditJobFromModal.value
 const shopName = computed(() => orderSync.shop?.name || translate("Shopify instance {id}", { id: props.id }));
 const shopifyShopId = computed(() => orderSync.shop?.shopifyShopId || "");
 const productStoreId = computed(() => orderSync.productStore?.productStoreId || orderSync.shop?.productStoreId || "");
-const productStoreName = computed(() => orderSync.productStore?.name || orderSync.shop?.productStoreName || translate("Not linked"));
+const productStoreName = computed(() => orderSync.productStore?.storeName || orderSync.productStore?.name || orderSync.shop?.productStoreName || translate("Not linked"));
 const latestBatch = computed(() => summary.value.latestBatch);
 const latestCompletedBatchId = computed(() => summary.value.latestCompletedBatch?.systemMessageId || translate("None"));
 const progressRows = computed<readonly [SyncProgressRow, SyncProgressRow]>(() => summary.value.progressRows);

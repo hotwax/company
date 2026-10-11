@@ -31,8 +31,21 @@
       </ion-item>
       <ion-item v-if="duplicateSku">
         <ion-label class="ion-text-wrap">
-          {{ translate("These Shopify variants share a SKU") }}
+          {{ sharedSku ? translate("These Shopify variants share SKU {sku}", { sku: sharedSku }) : translate("These Shopify variants share a SKU") }}
           <p>{{ translate("Check duplicate SKUs in Shopify before importing products again, so the conflicting mapping is not recreated.") }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item v-if="sellingCount > 1">
+        <ion-icon slot="start" :icon="warningOutline" color="warning" />
+        <ion-label class="ion-text-wrap">
+          {{ translate("More than one of these listings is selling") }}
+          <p>{{ translate("Keeping one mapping means the OMS updates inventory and transfers for that listing only. Decide how the other listing should be handled in Shopify before choosing.") }}</p>
+        </ion-label>
+      </ion-item>
+      <ion-item v-if="activityError">
+        <ion-label class="ion-text-wrap">
+          {{ translate("Recent orders could not be loaded") }}
+          <p>{{ activityError }}</p>
         </ion-label>
       </ion-item>
       <ion-radio-group v-model="selected">
@@ -56,13 +69,29 @@
           </ion-thumbnail>
           <ion-label class="ion-text-wrap">
             <h2>{{ choice.title || translate("Shopify variant {id}", { id: choice.variantId }) }}</h2>
-            <p>{{ choice.variantTitle }}{{ choice.sku ? ' / ' + choice.sku : '' }}</p>
-            <p v-if="choice.barcode">
+            <p>{{ choice.variantTitle }}{{ choice.sku && !sharedSku ? ' / ' + choice.sku : '' }}</p>
+            <p v-if="choice.barcode && !sharedBarcode">
               {{ translate("Barcode: {id}", { id: choice.barcode }) }}
             </p>
             <p v-if="!choice.available">
               {{ translate("This variant is unavailable or its inventory item no longer matches. Review it in Shopify.") }}
             </p>
+            <p v-if="choice.onlineStorePublished === false">
+              {{ translate("Not on the Online Store") }}
+            </p>
+            <p v-if="!choice.sku && activityLoaded">
+              {{ translate("Recent orders can't be checked without a SKU") }}
+            </p>
+            <div v-if="activity[choice.variantId]?.orders">
+              <ion-chip v-for="channel in channelBreakdown(activity[choice.variantId])" :key="channel.label" outline>
+                <ion-label>{{ channel.label }} {{ channel.count }}</ion-label>
+              </ion-chip>
+            </div>
+          </ion-label>
+          <ion-spinner v-if="activityLoading" slot="end" name="dots" :aria-label="translate('Checking recent orders')" />
+          <ion-label v-else-if="activity[choice.variantId]" slot="end" class="ion-text-end">
+            {{ orderCount(activity[choice.variantId]) }}
+            <p>{{ orderWindow(activity[choice.variantId]) }}</p>
           </ion-label>
           <ion-badge v-if="choice.status" slot="end" :color="choice.status === 'ACTIVE' ? 'success' : 'medium'">
             {{ translate(choice.status) }}
@@ -101,13 +130,16 @@
 
 <script setup lang="ts">
 import { translate } from "@common";
-import { IonBadge, IonButton, IonIcon, IonImg, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonSpinner, IonThumbnail, alertController } from "@ionic/vue";
+import { IonBadge, IonButton, IonChip, IonIcon, IonImg, IonItem, IonLabel, IonList, IonListHeader, IonRadio, IonRadioGroup, IonSpinner, IonThumbnail, alertController } from "@ionic/vue";
 import { checkmarkCircleOutline, openOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
-import { type ShopifyProductMappingChoice, useTransferMappingResolution } from "@/composables/useShopify";
+import { type ShopifyProductMappingChoice, type VariantOrderActivity, useTransferMappingResolution } from "@/composables/useShopify";
+import { formatDateTime } from "@/utils";
 import { isShopifyObjectId, shopifyAdminHostname } from "@/utils/shopifyAdminUrl";
 
-const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping } = useTransferMappingResolution();
+const { fetchChoices: fetchTransferMappingChoices, keepMapping: keepTransferProductMapping, fetchRecentOrders } = useTransferMappingResolution();
+const ACTIVITY_DAYS = 30;
+const CHANNEL_LABELS: Record<string, string> = { web: "Online Store", pos: "POS", shopify_draft_order: "Draft orders" };
 const props = defineProps<{ shopId: string; productId: string; domain?: string }>();
 const emit = defineEmits<{ busy: [value: boolean]; ready: [value: boolean] }>();
 const choices = ref<ShopifyProductMappingChoice[]>([]);
@@ -116,7 +148,50 @@ const saving = ref(false);
 const error = ref("");
 const selected = ref("");
 let version = 0;
+const activity = ref<Record<string, VariantOrderActivity>>({});
+const activityLoading = ref(false);
+const activityError = ref("");
+/** Set once a lookup finished, so a variant with no entry reads as "unknown" only after the lookup ran. */
+const activityLoaded = ref(false);
 const ready = computed(() => choices.value.length === 1 && choices.value[0].available);
+const sellingCount = computed(() => choices.value.filter(choice => (activity.value[choice.variantId]?.orders ?? 0) > 0).length);
+function orderCount(entry: VariantOrderActivity) {
+  return translate("{orders} orders", { orders: entry.capped ? `${entry.orders}+` : String(entry.orders) });
+}
+function orderWindow(entry: VariantOrderActivity) {
+  return entry.lastOrderAt
+    ? translate("{days} days, last {date}", { days: ACTIVITY_DAYS, date: formatDateTime(entry.lastOrderAt, "LLL d") })
+    : translate("Last {days} days", { days: ACTIVITY_DAYS });
+}
+/** Largest channel first; app-created orders only carry an app id, so they are grouped as Other. */
+function channelBreakdown(entry: VariantOrderActivity) {
+  let other = 0;
+  const named: Array<{ label: string; count: number }> = [];
+  for(const [channel, count] of Object.entries(entry.channels)) {
+    if(CHANNEL_LABELS[channel]) {named.push({ label: translate(CHANNEL_LABELS[channel]), count });} else {other += count;}
+  }
+  named.sort((a, b) => b.count - a.count);
+  if(other) {named.push({ label: translate("Other"), count: other });}
+
+  return named;
+}
+async function loadActivity(token: number, rows: ShopifyProductMappingChoice[]) {
+  activityLoading.value = true;
+  try {
+    const result = await fetchRecentOrders(props.shopId, rows, ACTIVITY_DAYS);
+    if(token === version) {activity.value = result; activityLoaded.value = true;}
+  } catch (cause: any) {
+    if(token === version) {activityError.value = cause.message || translate("Recent Shopify orders could not be loaded.");}
+  } finally {if(token === version) {activityLoading.value = false;}}
+}
+/** The one value every choice carries, so it is said once instead of on each row. */
+function sharedValue(field: "sku" | "barcode") {
+  const values = choices.value.map(row => row[field]);
+
+  return choices.value.length > 1 && values[0] && values.every(value => value === values[0]) ? values[0] : "";
+}
+const sharedSku = computed(() => sharedValue("sku"));
+const sharedBarcode = computed(() => sharedValue("barcode"));
 const duplicateSku = computed(() => {
   const skus = choices.value.map(row => row.sku).filter(Boolean);
 
@@ -134,10 +209,18 @@ async function load() {
   error.value = "";
   selected.value = "";
   choices.value = [];
+  activity.value = {};
+  activityLoaded.value = false;
+  activityError.value = "";
   emit("ready", false);
   try {
     const rows = await fetchTransferMappingChoices(props.shopId, props.productId);
-    if(token === version) {choices.value = rows; emit("ready", ready.value);}
+    if(token === version) {
+      choices.value = rows;
+      emit("ready", ready.value);
+      // Order history only informs the choice; it loads after the mappings so a slow or failed read never blocks the repair.
+      if(rows.length > 1) {void loadActivity(token, rows);}
+    }
   } catch (cause: any) {
     if(token === version) {error.value = cause.message || translate("Current product mappings could not be verified.");}
   } finally {if(token === version) {loading.value = false;}}

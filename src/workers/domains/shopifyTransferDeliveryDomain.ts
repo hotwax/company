@@ -1,18 +1,23 @@
-import { dataManagerLogCache } from "@/utils/cacheEntities";
-import { toMillis } from "@/utils/cacheProjection";
+import { companyDb } from "@/db/companyDb";
+import { toMillis } from "@common/db/storage/projection";
+import { defineSyncDomain } from "@common/db/sync/defineSyncDomain";
+import { workerGet, workerPost } from "@common/core/workerRemoteApi";
 import { TRANSFER_DELIVERY_CONFIGS, transferOrdersInFile } from "@/utils/shopifyTransferDelivery";
-import { registerSyncDomain } from "../syncRegistry";
-import { workerGet, workerPost } from "./workerFetch";
+
+const dataManagerLogEntity = companyDb.entity("dataManagerLogs");
 
 // A bounded shop-scoped window. In-flight logs are rechecked; immutable source membership is
 // loaded once. The parameter document also finds update logs whose job result has logIds:[null].
-registerSyncDomain({
+export const shopifyTransferDeliveryDomain = defineSyncDomain({
   name: "shopifyTransferDelivery",
+  table: "dataManagerLogs",
+  label: "Shopify transfer deliveries",
+  syncClass: "A",
   intervalMs: 10_000,
   async sync(ctx, args: { shopId?: string } = {}) {
     const shopId = String(args.shopId || "").trim();
     if(!shopId) {return 0;}
-    const cached = await dataManagerLogCache.all();
+    const cached = await dataManagerLogEntity.query({ scope: { field: "transferShopId", value: shopId } });
     let written = 0;
     for(const configId of Object.values(TRANSFER_DELIVERY_CONFIGS)) {
       const response = await workerPost(ctx, "oms/dataDocumentView", {
@@ -31,15 +36,15 @@ registerSyncDomain({
       }
       // Recheck up to five recent in-flight logs even after they leave the discovery window.
       const discovered = new Set(rows.map((row: any) => String(row.logId)));
-      const unfinished = cached.map(row => row.raw as any).filter(log =>
+      const unfinished = cached.filter((log: any) =>
         log.transferShopId === shopId && log.configId === configId && log.logId &&
         !discovered.has(String(log.logId)) && !log.finishDateTime &&
         ["DmlsPending", "DmlsQueued", "DmlsRunning"].includes(log.statusId) &&
         (toMillis(log.createdDate) ?? 0) > Date.now() - 6 * 60 * 60 * 1000)
-        .sort((left, right) => (toMillis(right.createdDate) ?? 0) - (toMillis(left.createdDate) ?? 0))
+        .sort((left: any, right: any) => (toMillis(right.createdDate) ?? 0) - (toMillis(left.createdDate) ?? 0))
         .slice(0, 5);
       for(const row of [...rows, ...unfinished]) {
-        const previous = cached.find(log => log.logId === String(row.logId))?.raw as any;
+        const previous = cached.find((log: any) => log.logId === String(row.logId)) as any;
         if(previous?.transferShopId === shopId && previous.finishDateTime && previous.transferMembershipChecked && !previous.transferMembershipError &&
           toMillis(previous.finishDateTime) === toMillis(row.finishDateTime) &&
           Number(previous.failedRecordCount) === Number(row.failedRecordCount)) {continue;}
@@ -57,7 +62,7 @@ registerSyncDomain({
             orderIds = transferOrdersInFile(file?.csvData ?? file, shopId);
           } catch {membershipError = "Individual transfers in this file could not be verified.";}
         }
-        written += await dataManagerLogCache.upsertMany([{ ...log, transferShopId: shopId, transferOrderIds: orderIds, transferMembershipChecked: true, transferMembershipError: membershipError }]);
+        written += await dataManagerLogEntity.upsertMany([{ ...log, transferShopId: shopId, transferOrderIds: orderIds, transferMembershipChecked: "Y", transferMembershipError: membershipError }]);
       }
     }
 

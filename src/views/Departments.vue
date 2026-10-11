@@ -93,8 +93,14 @@ const getShopifyShopLocation = computed(() => (facilityId: string) =>
   shopifyLocations.value.find((l: any) => l.facilityId === facilityId)?.shopifyLocationId)
 
 
+const NETSUITE_DEPARTMENT_IDEN_TYPE_ID = "ORDR_ORGN_DPT";
+
+// A facility can carry identifications of other types too; only ORDR_ORGN_DPT is the NetSuite
+// department ID, so every read, prefill and removal here goes through this filter.
 function getFacilityInFacilityIdentification(facility: any) {
-  return facilitiesIdentifications.value.find((identification: any) => identification.facilityId === facility.facilityId);
+  return facilitiesIdentifications.value.find((identification: any) =>
+    identification.facilityId === facility.facilityId &&
+    identification.facilityIdenTypeId === NETSUITE_DEPARTMENT_IDEN_TYPE_ID);
 }
 
 async function editNetSuiteId(facility: any) {
@@ -131,7 +137,7 @@ async function editNetSuiteId(facility: any) {
           try {
 
             const payload = {
-              facilityIdenTypeId: "ORDR_ORGN_DPT",
+              facilityIdenTypeId: NETSUITE_DEPARTMENT_IDEN_TYPE_ID,
               facilityId: facility.facilityId,
               idValue: netSuiteId,
               fromDate: facilityIdentification ? facilityIdentification.fromDate : DateTime.now().toMillis()

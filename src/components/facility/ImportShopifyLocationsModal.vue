@@ -118,7 +118,7 @@ import { computed, onMounted, ref } from "vue"
 import { useFacilityProductStores } from "@/composables/useFacilities";
 import { useProductStoreMutations } from "@/composables/useProductStores";
 import { fetchLocationsFromShopify, fetchShopifyShopLocations, importShopifyFacilities } from "@/composables/useShopify";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
+import { refreshAfterMutation } from "@/services/appDbSync";
 
 const props = defineProps<{ shopId: string, productStoreId?: string }>()
 const isLoading = ref(true)

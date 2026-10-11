@@ -93,13 +93,13 @@ export async function loadGroupUsers(groupId: string, force = false): Promise<an
 
   const request = (async () => {
     const resp = await api({
-      url: `admin/groups/${encodeURIComponent(groupId)}/users`,
+      url: `admin/userGroups/${encodeURIComponent(groupId)}/users`,
       method: "get",
       params: { pageSize: 1000 },
     }) as any;
 
     if(commonUtil.hasError(resp)) {throw resp.data;}
-    const users = Array.isArray(resp.data) ? resp.data : (resp.data?.users || resp.data?.docs || []);
+    const users = resp.data?.userList ?? (Array.isArray(resp.data) ? resp.data : []);
     if(requestGeneration === sessionGeneration) {
       state.usersByGroup[groupId] = users;
     }
@@ -184,7 +184,7 @@ export async function savePermissionGroups(
   };
 }
 
-/** Resolves once a cached table can be trusted (see the `hydrated` note in useCachedList.ts). */
+/** Resolves once a cached table can be trusted (see the `hydrated` note in common/db/composables/useDb.ts). */
 const untilHydrated = (hydrated: Ref<boolean>) => new Promise<void>((resolve) => {
   if(hydrated.value) {
     resolve();

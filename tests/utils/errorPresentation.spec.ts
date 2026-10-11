@@ -9,7 +9,7 @@ const translate = vi.hoisted(() =>
 
 vi.mock("@common", () => ({ translate }));
 
-import { CacheReconciliationError } from "@/utils/cacheReconciliationError";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 import {
   CARRIER_ACCOUNT_VERIFICATION_ERROR_KEY,
   ERROR_WITH_DETAILS_KEY,

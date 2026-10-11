@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 
 /**
  * L1 unit — what an Order Sync mutation RESOLVES TO.
@@ -19,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * strictly `false`, and — as the regression lock — that the resolved object is NOT the axios envelope.
  *
  * The api client is stubbed at `@common` (importing the composable otherwise pulls `useAuth` →
- * `cookieHelper`, which has no browser context here) and the Dexie layer at `useCachedList`, which is
+ * `cookieHelper`, which has no browser context here) and the Dexie layer at `useDb`, which is
  * the read seam every cached entity in this composable goes through. `useServiceJobs` is deliberately
  * NOT stubbed: `updateJob`/`runNow` are the functions that produce the axios envelope, so leaving them
  * real is what makes "the envelope is unwrapped" a genuine end-to-end assertion rather than a
@@ -31,25 +32,6 @@ const harness = vi.hoisted(() => ({
   refreshAfterMutation: vi.fn(),
 }));
 
-vi.mock("@common", () => ({
-  api: (...args: any[]) => harness.api(...args),
-  commonUtil: { hasError: () => false, showToast: vi.fn() },
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
-  translate: (value: string) => value,
-}));
-
-vi.mock("@/services/appCacheBootstrap", () => ({
-  refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
-  bootstrapState: { running: false },
-}));
-
-/**
- * The cached rows this session resolves from, in the shapes the live instance holds.
- *
- * The job is named `_10010` while its `systemMessageRemoteId` parameter belongs to shop 10000 — the
- * real record, kept because it is the reason a mutation must resolve its job through the cache rather
- * than from the shop id in its own arguments.
- */
 const SHOP_ID = "10000";
 const OTHER_SHOP_ID = "10010";
 const JOB_NAME = "queue_ShopifyOrderSync_10010";
@@ -84,31 +66,60 @@ const CACHE: Record<string, any[]> = {
   jobs: [JOB],
 };
 
-vi.mock("@/composables/useCachedList", () => ({
-  useCachedList: (entity: any) => ({
-    rows: { value: [] },
-    records: { value: CACHE[entity?.__kind] ?? [] },
-    hydrated: { value: true },
-  }),
-  useCachedRecord: () => ({ record: { value: undefined }, hydrated: { value: true } }),
-  byDescription: () => 0,
+const TABLE_TO_CACHE_KEY: Record<string, string> = {
+  shopifyShops: "shops",
+  productStores: "stores",
+  systemMessageRemotes: "remotes",
+  serviceJobs: "jobs",
+  shops: "shops",
+  stores: "stores",
+  remotes: "remotes",
+  jobs: "jobs",
+};
+
+vi.mock("@common", () => ({
+  api: (...args: any[]) => harness.api(...args),
+  commonUtil: { hasError: () => false, showToast: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  translate: (value: string) => value,
+  useDb: (entity: any, selectorOrOptions?: any) => {
+    const raw = typeof entity === "string" ? entity : String(entity?.name ?? entity?.__kind ?? "");
+    const key = TABLE_TO_CACHE_KEY[raw] || raw;
+    let records = CACHE[key] ?? [];
+    if (typeof selectorOrOptions === "function") {
+      const criteria = selectorOrOptions();
+      if (criteria?.equals) {
+        records = records.filter((row: any) =>
+          Object.entries(criteria.equals).every(([k, v]) => String(row?.[k]) === String(v))
+        );
+      }
+    } else if (selectorOrOptions?.equals) {
+      records = records.filter((row: any) =>
+        Object.entries(selectorOrOptions.equals).every(([k, v]) => String(row?.[k]) === String(v))
+      );
+    } else if (selectorOrOptions?.scope) {
+      const { field, value } = selectorOrOptions.scope;
+      records = records.filter((row: any) => String(row?.[field]) === String(value));
+    }
+    return {
+      rows: { value: [] },
+      records: { value: records },
+      first: { value: records[0] },
+      count: { value: records.length },
+      hydrated: { value: true },
+    };
+  },
 }));
 
-vi.mock("@/utils/cacheEntities", () => ({
-  dataManagerLogCache: { __kind: "logs" },
-  productStoreCache: { __kind: "stores" },
-  serviceJobCache: { __kind: "jobs" },
-  serviceJobRunCache: { __kind: "jobRuns" },
-  shopifyBulkOperationCache: { __kind: "bulkOps" },
-  shopifyCarrierShipmentCache: { __kind: "carrierShipments" },
-  shopifyLocationCache: { __kind: "locations" },
-  shopifyShopCache: { __kind: "shops" },
-  shopifyTypeMappingCache: { __kind: "typeMappings" },
-  syncRunCache: { __kind: "syncRuns" },
-  systemMessageCache: { __kind: "messages" },
-  systemMessageErrorCache: { __kind: "errors" },
-  systemMessageRemoteCache: { __kind: "remotes" },
+vi.mock("@/services/appDbSync", () => ({
+  refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
+  bootstrapState: { running: false },
+  activateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  deactivateSyncDomains: vi.fn().mockResolvedValue(undefined),
+  syncNow: vi.fn().mockResolvedValue(undefined),
+  syncDomainsError: ref(""),
 }));
+
 
 vi.mock("@/composables/useSystemMessage", () => ({
   useSystemMessage: () => ({
@@ -124,9 +135,8 @@ vi.mock("@/composables/useDataManager", () => ({
   }),
 }));
 vi.mock("@/composables/useSeed", () => ({ useStatuses: () => ({ labelFor: (s: string) => s }) }));
-vi.mock("@/composables/useCacheSync", () => ({ useCacheSync: () => ({ start: vi.fn(), stop: vi.fn() }) }));
-
 import { useShopifyOrderSync } from "@/composables/useShopify";
+import { CacheReconciliationError } from "@/utils/db/cacheReconciliationError";
 
 /** What `api()` really resolves to — the envelope whose `.data` the callers were reading through. */
 function axiosResponse(data: any, config: Record<string, any> = {}) {
@@ -312,6 +322,27 @@ describe("runNow", () => {
     await orderSync.runNow({ shopId: SHOP_ID });
 
     expect(callsTo(/runNow/)[0].url).toBe(`admin/serviceJobs/${JOB_NAME}/runNow`);
+  });
+
+  // A run cannot be taken back: reporting it failed because only the cache refresh after it failed
+  // invites the user to run the job a second time.
+  it("resolves the queued run when only the cache refresh after it fails", async () => {
+    respondWith([[/runNow/, { systemMessageId: "M228601" }]]);
+    harness.refreshAfterMutation.mockRejectedValue(new CacheReconciliationError("serviceJob", { jobName: JOB_NAME }));
+    const orderSync = boundOrderSync();
+
+    const result = await orderSync.runNow({ shopId: SHOP_ID });
+
+    expect(result.systemMessageId).toBe("M228601");
+    expect(orderSync.error).toBe("");
+  });
+
+  it("still rejects when the run itself is refused", async () => {
+    harness.api.mockRejectedValue(new Error("run refused"));
+    const orderSync = boundOrderSync();
+
+    await expect(orderSync.runNow({ shopId: SHOP_ID })).rejects.toThrow(/run refused/);
+    expect(harness.refreshAfterMutation).not.toHaveBeenCalled();
   });
 });
 
@@ -521,6 +552,24 @@ describe("targeted retry — the fromDate window replay", () => {
       fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
     })).rejects.toThrow(/run refused/);
 
+    const jobWrites = callsTo(jobRoute);
+    expect(jobWrites).toHaveLength(2);
+    expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
+  });
+
+  // The swap's write landed even when the cache refresh after it failed. Aborting there skipped the
+  // run AND the restore, leaving the replay window pinned to the job for every scheduled run.
+  it("runs and restores when only the cache refreshes fail", async () => {
+    respondWith([[runRoute, { jobRunId: "M2399240" }], [jobRoute, {}]]);
+    harness.refreshAfterMutation.mockRejectedValue(new CacheReconciliationError("serviceJob", { jobName: JOB_NAME }));
+    const orderSync = boundOrderSync();
+
+    const result = await orderSync.replayOrdersFromDate({
+      fromDate: "2026-07-01T00:00:00.000Z", shopId: SHOP_ID,
+    });
+
+    expect(result.jobRunId).toBe("M2399240");
+    expect(callsTo(runRoute)).toHaveLength(1);
     const jobWrites = callsTo(jobRoute);
     expect(jobWrites).toHaveLength(2);
     expect(jobWrites[1].data.serviceJobParameters).toEqual(paramsWithFromDate(null));
