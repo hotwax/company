@@ -70,6 +70,16 @@
           <ShopifyTransferMappingConflict v-else-if="isMappingConflict(resolutionIssue) && resolutionIssue.productId"
             :key="`${resolutionIssue.key}:${mappingVersion}`" :shop-id="id" :product-id="resolutionIssue.productId" :domain="shop?.myshopifyDomain"
             @busy="setMappingBusy(resolutionIssue.key, $event)" @ready="mappingReady[resolutionIssue.key] = $event" />
+          <ShopifyTransferMissingMapping
+            v-else-if="resolutionIssue.code === 'missing-product-mapping' && resolutionIssue.productId"
+            :key="`${resolutionIssue.key}:${mappingVersion}`"
+            :shop-id="id"
+            :product-id="resolutionIssue.productId"
+            :product-store-id="shop?.productStoreId"
+            :domain="shop?.myshopifyDomain"
+            @busy="setMappingBusy(resolutionIssue.key, $event)"
+            @ready="mappingReady[resolutionIssue.key] = $event"
+          />
           <ShopifyTransferUpdateBlocker v-else-if="resolutionIssue.code === 'unmapped-shipped-item'"
             :key="resolutionIssue.key" :shop-id="id" :order-id="orderId" :order-name="order?.orderName" :domain="shop?.myshopifyDomain"
             :issue="resolutionIssue" :waiting-receipts="dependentReceipts(resolutionIssue, selectedEntry.stage.issues)"
@@ -95,16 +105,17 @@
 </template>
 
 <script setup lang="ts">
-import { commonUtil, translate, useProducts } from "@common";
+import { commonUtil, translate, useDb, useProducts } from "@common";
 import { IonAccordion, IonAccordionGroup, IonBackButton, IonButton, IonButtons, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonNote, IonPage, IonRadio, IonRadioGroup, IonSpinner, IonTitle, IonToolbar, onIonViewDidLeave, onIonViewWillEnter } from "@ionic/vue";
 import { checkmarkCircleOutline, openOutline, refreshOutline, warningOutline } from "ionicons/icons";
 import { computed, ref, watch } from "vue";
 import ServiceJobDetailsModal from "@/components/common/ServiceJobDetailsModal.vue";
 import ShopifyTransferDeliveryStatus from "@/components/shopify/ShopifyTransferDeliveryStatus.vue";
 import ShopifyTransferMappingConflict from "@/components/shopify/ShopifyTransferMappingConflict.vue";
+import ShopifyTransferMissingMapping from "@/components/shopify/ShopifyTransferMissingMapping.vue";
 import ShopifyTransferUpdateBlocker from "@/components/shopify/ShopifyTransferUpdateBlocker.vue";
-import { useCachedList } from "@/composables/useCachedList";
-import { useCacheSync } from "@/composables/useCacheSync";
+import { serviceState } from "@common/db";
+import { activateSyncDomains, createSyncDomainOwner, deactivateSyncDomains, syncDomainsError as syncError, syncNow } from "@/services/appDbSync";
 import { useServiceJobRunsByJob, useServiceJobs } from "@/composables/useServiceJobs";
 import { useShopifyShop } from "@/composables/useShopify";
 import { type TransferSyncJobCard, useShopifyTransferSyncJobs } from "@/composables/useShopifyTransferSync";
@@ -112,7 +123,6 @@ import { fetchTransferSyncSummary, useShopifyTransferSyncEnrichment } from "@/co
 import { type TransferUpdateCheck, useShopifyTransferUpdateCheck } from "@/composables/useShopifyTransferUpdateCheck";
 import { useShopifyTransferDelivery } from "@/composables/useShopifyTransferDelivery";
 import { formatDateTime } from "@/utils";
-import { facilityCache } from "@/utils/cacheEntities";
 import { transferDeliveryState } from "@/utils/shopifyTransferDelivery";
 import { type TransferStager, type TransferStagingIssue, latestCompletedStagingRun, resolveTransferStagingIssue, transferStagingIssues } from "@/utils/shopifyTransferStagingErrors";
 import { shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTransferSync";
@@ -120,7 +130,7 @@ import { shopifyTransferAdminUrl, transfersAppOrderUrl } from "@/utils/shopifyTr
 const props = defineProps<{ id: string; orderId: string }>();
 const shopId = computed(() => props.id);
 const { record: shop } = useShopifyShop(shopId);
-const { jobs } = useServiceJobs();
+const { jobs, hydrated: jobsHydrated } = useServiceJobs();
 const { cards } = useShopifyTransferSyncJobs(() => props.id, () => jobs.value);
 const stagingCards = computed(() => cards.value.filter(card => ["create", "update"].includes(card.definition.key)));
 const jobNames = computed(() => stagingCards.value.filter(card => card.job).map(card => card.jobName));
@@ -148,7 +158,7 @@ watch(issueEntries, entries => {
 const { enrichment, load, loading: orderLoading, error: orderError } = useShopifyTransferSyncEnrichment();
 const order = computed(() => enrichment.value.ordersById[props.orderId]);
 const { products, resolve } = useProducts();
-const { records: facilities } = useCachedList<any>(facilityCache);
+const { records: facilities } = useDb<any>("facilities");
 function facilityName(id?: string) {return facilities.value.find(row => row.facilityId === id)?.facilityName || id || translate("Not available");}
 const transfersUrl = computed(() => transfersAppOrderUrl(props.orderId));
 const summary = ref<Awaited<ReturnType<typeof fetchTransferSyncSummary>>>();
@@ -197,7 +207,10 @@ const workingFacts = computed(() => {
 });
 function resolvedIssue(issue: TransferStagingIssue) {
   const resolved = resolveTransferStagingIssue(issue, checks.value[issue.key]);
-  return mappingReady.value[issue.key] && isMappingConflict(resolved) ? { ...resolved, title: "Mapping repaired; ready to stage" } : resolved;
+  if(!mappingReady.value[issue.key]) {return resolved;}
+  if(isMappingConflict(resolved)) {return { ...resolved, title: "Mapping repaired; ready to stage" };}
+
+  return resolved.code === "missing-product-mapping" ? { ...resolved, title: "Mapped to Shopify; ready to stage" } : resolved;
 }
 const resolutionIssue = computed(() => resolvedIssue(selectedEntry.value!.issue));
 const mappingReady = ref<Record<string, boolean>>({});
@@ -219,15 +232,19 @@ function itemLabel(issue: TransferStagingIssue) {
     issue.shipmentId ? translate("Shipment {id}", { id: issue.shipmentId }) : "", issue.orderItemSeqId ? translate("Item {id}", { id: issue.orderItemSeqId }) : ""].filter(Boolean).join(" — ");
 }
 watch(order, value => {void resolve((value?.items || []).map(item => item.productId || "").filter(Boolean));});
-const { start, stop, syncNow, error: syncError, domainStatus, failingDomains } = useCacheSync();
+const SYNC_OWNER = createSyncDomainOwner("shopifyTransferSyncDetail");
+const failingDomains = computed<Record<string, string>>(() => serviceState.errors);
 const baseline = ref(0);
-const checked = computed(() => Number(domainStatus.value.serviceJobRun?.at || 0) > baseline.value);
-const deliveryChecked = computed(() => Number(domainStatus.value.shopifyTransferDelivery?.at || 0) > baseline.value);
+// With no configured stager there is no `serviceJobRun` to activate (see `startRuns`), so waiting for
+// one would spin forever: once the job cache has loaded, an empty job list is itself the answer.
+const checked = computed(() => (jobsHydrated.value && !jobNames.value.length)
+  || (serviceState.syncedAt.serviceJobRun ?? 0) > baseline.value);
+const deliveryChecked = computed(() => (serviceState.syncedAt.shopifyTransferDelivery ?? 0) > baseline.value);
 const active = ref(false);
 const refreshing = ref(false);
 function startRuns() {
-  baseline.value = Number(domainStatus.value.serviceJobRun?.at || 0);
-  void start([{ name: "shopifyTransferDelivery", args: { shopId: props.id } }, ...(jobNames.value.length ? [{ name: "serviceJobRun", args: { jobNames: jobNames.value, total: 5, batchSize: 5 } }] : [])]).catch(() => undefined);
+  baseline.value = serviceState.syncedAt.serviceJobRun ?? 0;
+  void activateSyncDomains([{ name: "shopifyTransferDelivery", args: { shopId: props.id } }, ...(jobNames.value.length ? [{ name: "serviceJobRun", args: { jobNames: jobNames.value, total: 5, batchSize: 5 } }] : [])], SYNC_OWNER).catch(() => undefined);
 }
 async function refresh() {
   if(mappingBusy.value) {return;}
@@ -239,7 +256,7 @@ function enter() {active.value = true; startRuns(); void load([{ orderId: props.
 watch(() => `${props.id}|${props.orderId}`, () => {mappingReady.value = {}; busyByIssue.value = {}; checks.value = {}; checkVersion++; summaryVersion++; if(active.value) {enter(); void recheckSelected();}});
 watch(jobNames, () => {if(active.value) {startRuns();}});
 onIonViewWillEnter(enter);
-onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; stop();});
+onIonViewDidLeave(() => {active.value = false; checkVersion++; summaryVersion++; void deactivateSyncDomains(SYNC_OWNER);});
 const showJob = ref(false);
 const selectedJob = ref<TransferSyncJobCard>();
 function openJob(card?: TransferSyncJobCard) {if(card?.job) {selectedJob.value = card; showJob.value = true;}}

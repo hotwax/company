@@ -857,7 +857,7 @@ const { fetchFacilityOrderHistory } = useFacilityOrderCounts();
 const { geocode } = useGeocode();
 
 // Lookups, all from the login-time cache — no fetch on entry.
-const { facilityTypes } = useFacilityTypes();
+const { facilityTypes ,  hydrated: facilityTypesHydrated} = useFacilityTypes();
 const { facilityGroupTypes } = useFacilityGroupTypes();
 const { facilityGroups: allFacilityGroups } = useFacilityGroups();
 const { descriptionById: partyRoles } = useRoleTypes();
@@ -914,7 +914,7 @@ function getImageUrl(imageUrl: string) {
  */
 let seededFromCache = false;
 function seedFromCachedFacility() {
-  if (seededFromCache || !current.value?.facilityTypeId) return;
+  if (seededFromCache || !current.value?.facilityTypeId || !facilityTypesHydrated.value) return;
   parentFacilityTypeId.value = getParentFacilityTypeId(current.value.facilityTypeId);
   initialParentFacilityTypeId.value = parentFacilityTypeId.value;
   facilityTypeId.value = current.value.facilityTypeId;
@@ -922,7 +922,7 @@ function seedFromCachedFacility() {
   defaultDaysToShip.value = current.value.defaultDaysToShip;
   seededFromCache = true;
 }
-watch(current, seedFromCachedFacility, { immediate: true, deep: true });
+watch([current, facilityTypes], seedFromCachedFacility, { immediate: true, deep: true });
 
 onIonViewWillEnter(async () => {
   seededFromCache = false;
@@ -1278,11 +1278,14 @@ async function associateCalendarToFacility() {
   emitter.emit('dismissLoader');
 }
 
+// The calendar is live per visit, so every schedule write is followed by a reload on dismiss —
+// the modals and popover only dismiss once their write has settled.
 async function addCustomSchedule() {
   const modal = await modalController.create({
     component: CustomScheduleModal,
     componentProps: { facilityId: props.facilityId }
   });
+  modal.onDidDismiss().then(() => reloadAssociations());
   return modal.present();
 }
 
@@ -1291,6 +1294,7 @@ async function addOperatingHours() {
     component: AddOperatingHoursModal,
     componentProps: { facilityId: props.facilityId }
   });
+  modal.onDidDismiss().then(() => reloadAssociations());
   return modal.present();
 }
 
@@ -1301,6 +1305,7 @@ async function openOperatingHoursPopover(event: Event) {
     event,
     showBackdrop: false
   });
+  popover.onDidDismiss().then(() => reloadAssociations());
   return popover.present();
 }
 
@@ -1959,7 +1964,7 @@ async function saveContact() {
       if (address.value.contactMechId) {
         resp = await mutations.updatePostalAddress({ ...address.value, facilityId: props.facilityId, contactMechPurposeTypeId: 'PRIMARY_LOCATION' });
       } else {
-        resp = await mutations.createPostalAddress({ ...address.value, facilityId: props.facilityId });
+        resp = await mutations.createPostalAddress({ ...address.value, facilityId: props.facilityId, contactMechPurposeTypeId: 'PRIMARY_LOCATION' });
       }
 
       if (!commonUtil.hasError(resp)) {
@@ -1970,8 +1975,12 @@ async function saveContact() {
         throw resp.data;
       }
     } catch (err) {
+      // Keep the modal open with the entered values so the user can correct and retry; closing it
+      // here made a rejected address look like it had been dropped silently.
       commonUtil.showToast(translate("Failed to update facility contact."));
       logger.error(err);
+      emitter.emit('dismissLoader');
+      return;
     }
   }
 

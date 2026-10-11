@@ -5,6 +5,7 @@ import { useAuth } from "@common/composables/useAuth"
 import { useSolrSearch } from "@common/composables/useSolrSearch"
 import { useServiceJob } from "@/composables/useServiceJobs"
 import { useMaargConfig } from "@/composables/useSeed"
+import { startAppDbSync, stopAppDbSync } from "@/services/appDbSync"
 
 export const useUserStore = defineStore("user", {
   state: () => ({
@@ -443,8 +444,8 @@ export const useUserStore = defineStore("user", {
          * rather than the retired util store. The old code also fetched roles here and never read
          * them — dropped with the store.
          */
-        const { productStoreCache } = await import("@/utils/cacheEntities")
-        const cachedStores = await productStoreCache.all().catch(() => [])
+        const { useSeedData } = await import("@common/db")
+        const cachedStores = await useSeedData().getProductStores().catch(() => [])
 
         if(!commonUtil.hasError(resp)) {
           const now = Date.now()
@@ -937,6 +938,15 @@ export const useUserStore = defineStore("user", {
 
     // Called by @common's initialiseConfig after successful login
     async postLogin() {
+      // Start every login from an empty local database. The logout wipe does not always run: a
+      // session that expires while nothing is requesting (a closed tab, a sleeping laptop) lands on
+      // /login without a 401 and so without `postLogout`, leaving the previous session's rows and its
+      // once-per-login sync markers behind. The next login — the same user or another one — would
+      // then skip the seed and read them. This hook runs exactly once per real login (never on a
+      // reload), and before anything below reads the database. It also stops a sync the
+      // `isAuthenticated` watcher may already have started against the old rows.
+      await stopAppDbSync().catch((error) => logger.error("Failed to clear the local database on login", error))
+
       const cookieOms = (cookieHelper().get("oms") as string) || ""
       if (cookieOms) {
         this.oms = cookieOms
@@ -959,12 +969,11 @@ export const useUserStore = defineStore("user", {
       // app runs on an empty cache until the user reloads. Verified from a session recording: no
       // seed request at all between login and a manual Cmd-R.
       //
-      // This hook runs exactly once per login, after the profile and permissions exist (which the
-      // cache identity check needs). `startReferenceSync` is idempotent, so the watcher still
-      // covering the page-refresh case is harmless.
+      // This hook runs exactly once per login, after the profile and permissions exist.
+      // `startAppDbSync` is idempotent, so the watcher still covering the page-refresh case is
+      // harmless.
       try {
-        const { startReferenceSync } = await import("@/services/appCacheBootstrap")
-        void startReferenceSync()
+        void startAppDbSync()
       } catch (error) {
         logger.error("Failed to start the reference cache sync after login", error)
       }
@@ -978,12 +987,8 @@ export const useUserStore = defineStore("user", {
       this.$reset()
       useAuth().clearAuth()
 
-      // Wipe the local read cache (IndexedDB). It is intentionally not persisted across
-      // sessions yet, so one user's cached data can never surface in another's session.
-      const { stopReferenceSync } = await import("@/services/appCacheBootstrap")
-      stopReferenceSync()
-      const { clearAllCaches } = await import("@/utils/appCacheDb")
-      await clearAllCaches().catch(() => { /* never block logout on cache cleanup */ })
+      // Stop worker and wipe the local read cache (IndexedDB)
+      await stopAppDbSync().catch(() => { /* never block logout on cache cleanup */ })
       // Maarg config lives in localStorage, not the cache, so it is cleared separately.
       const { useMaargConfig } = await import("@/composables/useSeed")
       useMaargConfig().clear()

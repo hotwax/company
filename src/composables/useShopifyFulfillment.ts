@@ -1,15 +1,8 @@
-import { api, logger } from "@common";
+import { api, logger, useDb } from "@common";
+import { toMillis } from "@common/db";
 import { computed, toValue } from "vue";
 import {
   FULFILLMENT_HISTORY_ENDPOINT_MISSING,
-  shopifyPendingFulfillmentCache,
-  shopifyFulfillmentHealthCache,
-  shopifyPendingFulfillmentStatusCache,
-  shopifyFulfillmentHistoryCache,
-  shopifyFulfillmentHistorySupportCache,
-} from "@/utils/cacheEntities";
-import { toMillis } from "@/utils/cacheProjection";
-import {
   type ParsedFulfillmentMessage,
   QUEUED_FULFILLMENT_MESSAGE_TYPE_ID,
   QUEUED_FULFILLMENT_STATUS_IDS,
@@ -18,8 +11,8 @@ import {
   mapFulfillmentDetails,
   parseFulfillmentMessageText,
 } from "@/utils/shopifyFulfillment";
+import { scheduleDiagnosis } from "@/services/diagnosisQueue";
 import { onSessionCleared } from "./sessionScope";
-import { useCachedList } from "./useCachedList";
 import { type ShopIdSource, useShopifySyncContext } from "./useShopify";
 import { useSystemMessages } from "./useSystemMessage";
 
@@ -36,7 +29,7 @@ import { useSystemMessages } from "./useSystemMessage";
  *                 synced row is opened (`useShopifyFulfillmentDetails`) — never polled, cached for
  *                 the session because a fulfillment's record only grows.
  *
- * Everything list-shaped reads from IndexedDB through `useCachedList`; the worker owns all
+ * Everything list-shaped reads from IndexedDB through `useDb`; the worker owns all
  * cadence (activate `fulfillmentSyncDomains(...)` from `@/utils/shopifyFulfillment` to run it).
  * The one live read is the expand-time GraphQL call, which has no OMS-side cache to serve it. The
  * pure halves — payload parsing, detail mapping, the domain factory — live in
@@ -98,7 +91,9 @@ export function useQueuedFulfillments(shopIdSource: ShopIdSource) {
         messageText: String(message?.messageText ?? ""),
         orderId: String(message?.orderId ?? ""),
         parsed: parseFulfillmentMessageText(message?.messageText),
-      }));
+      }))
+      // Newest first here: an `equals` read comes back in index order, not by `initDate`.
+      .sort((a, b) => (b.initDate ?? 0) - (a.initDate ?? 0));
   });
 
   return { rows, hydrated };
@@ -134,10 +129,11 @@ export interface SyncedFulfillmentRow {
  */
 export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
-  const { rows: cachedRows, hydrated: historyHydrated } =
-    useCachedList<any>(shopifyFulfillmentHistoryCache);
+  const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
+  const { records: cachedRows, hydrated: historyHydrated } =
+    useDb<any>("shopifyFulfillmentHistories", shopScope);
   const { records: supportRecords, hydrated: supportHydrated } =
-    useCachedList<any>(shopifyFulfillmentHistorySupportCache);
+    useDb<any>("shopifyFulfillmentHistorySupport", shopScope);
 
   const hydrated = computed(() => historyHydrated.value && supportHydrated.value);
 
@@ -150,7 +146,9 @@ export function useSyncedFulfillments(shopIdSource: ShopIdSource) {
       // instead of silently vanishing from an index-ordered read.
       .sort((a: any, b: any) => (Number(b?.lastUpdatedStamp) || 0) - (Number(a?.lastUpdatedStamp) || 0))
       .map((row: any) => ({
-        fulfillmentKey: String(row?.fulfillmentKey ?? ""),
+        // The key the expand-time Shopify detail cache uses too, so a row and its enrichment address
+        // each other directly.
+        fulfillmentKey: `${row?.shopId ?? ""}:${row?.fulfillmentId ?? ""}`,
         shopId: String(row?.shopId ?? ""),
         fulfillmentId: String(row?.fulfillmentId ?? ""),
         shopifyOrderId: String(row?.shopifyOrderId ?? ""),
@@ -408,52 +406,86 @@ export function useOmsShipmentContext() {
   return { getShipmentContext };
 }
 
+export interface FulfillmentDiagnosisQuery {
+  shopId: string;
+  shipmentId: string;
+  systemMessageId?: string;
+  /** Asks the service to read Shopify's fulfillment holds too; the hold modal needs them. */
+  inspectHolds?: boolean;
+}
+
+export interface FulfillmentHoldRelease {
+  shopId: string;
+  shipmentId: string;
+  fulfillmentOrderId: string;
+  holdId: string;
+}
+
+/**
+ * Live, per-shipment reads against Shopify — nothing here is cached, each card asks when it mounts
+ * or the operator rechecks. Diagnosis reads go through `scheduleDiagnosis` so a page full of cards
+ * cannot fan out unbounded Shopify calls. Both return the raw response; the card owns how a
+ * failure reads.
+ */
+export function useFulfillmentDiagnosis() {
+  const getDiagnosis = (query: FulfillmentDiagnosisQuery) => scheduleDiagnosis(() => api({
+    url: "sob/shopify/fulfillmentDiagnosis",
+    method: "get",
+    params: {
+      shopId: query.shopId,
+      shipmentId: query.shipmentId,
+      ...(query.systemMessageId ? { systemMessageId: query.systemMessageId } : {}),
+      ...(query.inspectHolds === true ? { inspectHolds: true } : {}),
+    },
+  }) as Promise<any>);
+
+  const releaseHold = (hold: FulfillmentHoldRelease) => api({
+    url: "sob/shopify/fulfillmentHold",
+    method: "post",
+    data: { shopId: hold.shopId, shipmentId: hold.shipmentId, fulfillmentOrderId: hold.fulfillmentOrderId, holdId: hold.holdId },
+  }) as Promise<any>;
+
+  return { getDiagnosis, releaseHold };
+}
+
+const SHOP_ORDER_SEARCH_DOCUMENT_ID = "SHOPIFY_SHOP_ORDER_SEARCH";
+
+/**
+ * Order search for one shop, through the generic `oms/dataDocumentView` over the
+ * SHOPIFY_SHOP_ORDER_SEARCH DataDocument. `customParametersMap` is Moqui's own search-form
+ * parameters (`<field>_op`, `<field>_ic`, `orderDate_from/_thru`, ...); the caller builds it.
+ */
+export function useShopOrderSearch() {
+  const searchOrders = (customParametersMap: Record<string, any>, pageSize: number) => api({
+    url: "oms/dataDocumentView",
+    method: "POST",
+    data: {
+      dataDocumentId: SHOP_ORDER_SEARCH_DOCUMENT_ID,
+      pageIndex: 0,
+      pageSize,
+      customParametersMap,
+    },
+  }) as Promise<any>;
+
+  return { searchOrders };
+}
+
 export function usePendingFulfillments(shopIdSource: ShopIdSource) {
   const shopId = computed(() => String(toValue(shopIdSource) ?? ""));
-  const { rows } = useCachedList<any>(shopifyPendingFulfillmentCache);
-  const { rows: statuses } = useCachedList<any>(shopifyPendingFulfillmentStatusCache);
+  const shopScope = () => ({ scope: { field: "shopId", value: shopId.value } });
+  const { records: rows } = useDb<any>("shopifyPendingFulfillments", shopScope);
+  const { first: status } = useDb<any>("shopifyPendingFulfillmentStatus", shopScope);
   return {
-    rows: computed(() => rows.value.filter((row: any) => row.shopId === shopId.value).sort((a: any, b: any) => Number(a.statusDate) - Number(b.statusDate))),
-    status: computed(() => statuses.value.find((row: any) => row.shopId === shopId.value)),
+    rows: computed(() => rows.value
+      .map((row: any) => ({ ...row, pendingKey: `${row.shopId}:${row.shipmentId}` }))
+      .sort((a: any, b: any) => Number(a.statusDate) - Number(b.statusDate))),
+    status,
   };
 }
 
 export function useFulfillmentSyncHealth(shopIdSource: ShopIdSource) {
-  const { records, hydrated } = useCachedList<any>(shopifyFulfillmentHealthCache);
-  const health = computed(() => records.value.find(row => row.shopId === String(toValue(shopIdSource) ?? "")));
+  const { first: health, hydrated } = useDb<any>("shopifyFulfillmentHealth", () => ({
+    scope: { field: "shopId", value: String(toValue(shopIdSource) ?? "") },
+  }));
   return { health, hydrated };
-}
-
-export async function releaseFulfillmentHold(shopId: string, shipmentId: string, fulfillmentOrderId: string, holdId: string) {
-  const response: any = await api({
-    url: "sob/shopify/fulfillmentHold",
-    method: "post",
-    data: { shopId, shipmentId, fulfillmentOrderId, holdId },
-  });
-  return response;
-}
-
-export async function scheduleFulfillmentDiagnosis(shopId: string, shipmentId: string, systemMessageId?: string, inspectHolds?: boolean) {
-  const params: any = { shopId, shipmentId };
-  if (systemMessageId) {
-    params.systemMessageId = systemMessageId;
-  }
-  if (inspectHolds) {
-    params.inspectHolds = true;
-  }
-  const response: any = await api({
-    url: "sob/shopify/fulfillmentDiagnosis",
-    method: "get",
-    params,
-  });
-  return response;
-}
-
-export async function searchFulfillmentOrders(dataDocumentId: string, pageIndex: number, pageSize: number, customParametersMap: any) {
-  const response: any = await api({
-    url: "oms/dataDocumentView",
-    method: "POST",
-    data: { dataDocumentId, pageIndex, pageSize, customParametersMap },
-  });
-  return response;
 }

@@ -66,12 +66,12 @@ import { IonItem, IonItemDivider, IonLabel, IonList, IonButton, IonIcon, IonSpin
 import { checkmarkCircleOutline, informationCircleOutline, closeOutline } from "ionicons/icons";
 import { translate, commonUtil } from "@common";
 import { formatDateTime } from "@/utils";
-import { releaseFulfillmentHold, scheduleFulfillmentDiagnosis } from "@/composables/useShopifyFulfillment";
 import Image from "@/components/common/Image.vue";
 import type { FulfillmentOrderItem } from "./FulfillmentShipmentCard.types";
-import { scheduleDiagnosis } from "./diagnosisQueue";
+import { useFulfillmentDiagnosis } from "@/composables/useShopify";
 const props = defineProps<{ shopId: string; shipmentId: string; mode?: 'pending' | 'queued' | 'synced'; items?: FulfillmentOrderItem[]; facility?: string; messageId?: string; version?: string; retryLabel?: string; busy?: boolean }>();
 const emit = defineEmits<{ (event: 'retry'): void; (event: 'diagnosed', diagnosis: any): void }>();
+const { getDiagnosis, releaseHold } = useFulfillmentDiagnosis();
 const diagnosis = ref<any>();
 const loading = ref(false);
 const releasingHold = ref('');
@@ -100,7 +100,7 @@ async function dismissSelectedHolds() {
   for (const hold of selected) {
     delete holdErrors.value[hold.id];
     try {
-      const response: any = await releaseFulfillmentHold(props.shopId, props.shipmentId, hold.fulfillmentOrderId, hold.id);
+      const response: any = await releaseHold({ shopId: props.shopId, shipmentId: props.shipmentId, fulfillmentOrderId: hold.fulfillmentOrderId, holdId: hold.id });
       if (commonUtil.hasError(response) || !response.data?.released) { throw new Error(response.data?.errors || response.data?.error || translate('Shopify did not confirm the hold release. Check again.')); }
       dismissed++;
       dismissedHolds.value.push({ ...hold, dismissed: true });
@@ -125,7 +125,7 @@ async function refresh(inspectHolds = false) {
   if(!props.shipmentId) {return;}
   loading.value = true;
   try {
-    const response: any = await scheduleDiagnosis(() => scheduleFulfillmentDiagnosis(props.shopId, props.shipmentId, props.messageId, inspectHolds === true));
+    const response: any = await getDiagnosis({ shopId: props.shopId, shipmentId: props.shipmentId, systemMessageId: props.messageId, inspectHolds: inspectHolds === true });
     if(current === generation && response.data?.lines) {diagnosis.value = response.data; emit("diagnosed", response.data);}
   } catch { /* Keep unknown quantities explicit; manual sending is a separate action. */ }
   finally {if(current === generation) {loading.value = false;}}

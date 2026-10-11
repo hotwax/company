@@ -2,9 +2,7 @@ import { ref } from 'vue';
 import { describe, it, expect, vi } from 'vitest';
 import { useOrderSyncHistory } from '@/composables/useOrderSyncHistory';
 const rows = ref<any[]>([]);
-vi.mock('@/composables/useCachedList', () => ({ useCachedList: () => ({ records: rows }) }));
-vi.mock('@/utils/cacheEntities', () => ({ shopifyOrderSyncHistoryCache: {} }));
-vi.mock('@common', () => ({ api: vi.fn(), logger: {} }));
+vi.mock('@common', () => ({ api: vi.fn(), logger: {}, useDb: () => ({ records: rows }) }));
 
 describe('selected order sync history', () => {
   it('uses exact shop/order records outside the recent window and responds to selection changes', () => {

@@ -32,8 +32,6 @@ it('searches the chosen field through the DataDocument and selects whole rows', 
     data: {
       dataDocumentId: 'SHOPIFY_SHOP_ORDER_SEARCH',
       customParametersMap: { shopId: 'shop', orderName_op: 'contains', orderName_ic: 'Y', orderName: '#10', orderByField: '-orderDate' },
-      pageIndex: 0,
-      pageSize: 21,
     },
   });
   const more = w.findAllComponents(IonButton).find(row => row.text() === 'More results')!;

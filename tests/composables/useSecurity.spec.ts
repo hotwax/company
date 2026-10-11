@@ -16,7 +16,7 @@ import { clearSessionScopedState } from "@/composables/sessionScope";
  *  2. MUTATION + write-through — `updateUserGroup` must PUT the group AND re-sync the cached
  *     `userGroups` lookup via `resyncDomain("userGroup")`, NOT `refreshAfterMutation`. The
  *     userGroup domain registers neither `byPk` nor `refetchScope` (referenceDomains.ts:155,
- *     lookup loop), so `refetchOne` silently returns 0 for it (snapshotDomain.ts:256) — with
+ *     lookup loop), so `refetchOne` silently returns 0 for it (defineSnapshotDomain.ts:256) — with
  *     `refreshAfterMutation` the rename would sit stale in every cached reader until next login.
  */
 
@@ -36,7 +36,7 @@ vi.mock("@common", () => ({
   translate: (value: string) => value,
 }));
 
-vi.mock("@/services/appCacheBootstrap", () => ({
+vi.mock("@/services/appDbSync", () => ({
   refreshAfterMutation: (...args: any[]) => harness.refreshAfterMutation(...args),
   resyncDomain: (...args: any[]) => harness.resyncDomain(...args),
   bootstrapState: { running: false },

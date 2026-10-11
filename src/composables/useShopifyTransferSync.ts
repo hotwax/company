@@ -1,14 +1,12 @@
-import { api, commonUtil } from "@common";
+import { api, commonUtil, useDb } from "@common";
 import { computed, ref } from "vue";
-import { refreshAfterMutation } from "@/services/appCacheBootstrap";
-import { shopifyTransferPendingCache } from "@/utils/cacheEntities";
+import { refreshAfterMutation } from "@/services/appDbSync";
 import { PENDING_SEGMENT_ENDPOINTS, type PendingSegment, SYNCED_SEGMENT_ENDPOINTS } from "@/workers/domains/shopifyTransferSyncDomain";
 import {
   type ReconciliationSummary,
   type WebhookReconciliationRow,
   reconcileWebhookTopics,
 } from "@/utils/shopifyWebhookReconciliation";
-import { useCachedList } from "./useCachedList";
 
 /**
  * Shopify transfer sync — order-scoped inventory transfer monitoring.
@@ -40,7 +38,7 @@ import { useCachedList } from "./useCachedList";
  * artifact timestamp (the create segment) fall back to order id, which is stable and monotonic.
  */
 export function useShopifyPendingSegment(shopId: () => string | undefined, segment: () => PendingSegment) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
+  const { records, hydrated } = useDb<any>("shopifyTransferPending");
 
   const rows = computed<any[]>(() => {
     const wantedShop = String(shopId() ?? "");
@@ -66,7 +64,7 @@ export function useShopifyPendingSegment(shopId: () => string | undefined, segme
  * than one query per tab, because they all live in the same table.
  */
 export function useShopifyPendingCounts(shopId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(shopifyTransferPendingCache);
+  const { records, hydrated } = useDb<any>("shopifyTransferPending");
 
   const counts = computed<Record<string, number>>(() => {
     const wanted = String(shopId() ?? "");
@@ -189,6 +187,77 @@ export function useShopifyTransferSyncLaunch() {
   }
 
   return { currentDate, counts, loading, saving, error, load, save };
+}
+
+/**
+ * Per-shop Native Inventory Transfer Sync switch (`SHPFY_NATIVE_TO_SYNC`). Off means the shop's
+ * transfer orders are not pushed as Shopify transfers, even with the transfer jobs running; their
+ * inventory changes reach Shopify as inventory events instead. No row means on.
+ */
+const NATIVE_SYNC_SETTING = "SHPFY_NATIVE_TO_SYNC";
+
+export function useShopifyNativeTransferSync() {
+  const enabled = ref(true);
+  const loading = ref(false);
+  const saving = ref(false);
+  const loadFailed = ref(false);
+  let loadVersion = 0;
+
+  async function load(shopId: string) {
+    const version = ++loadVersion;
+    if(!shopId) {
+      loading.value = false;
+      loadFailed.value = true;
+
+      return;
+    }
+    loading.value = true;
+    loadFailed.value = false;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "GET",
+        params: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, pageSize: 1 },
+      });
+      if(version !== loadVersion) { return; }
+      const rows = resp?.data ?? resp;
+      if(commonUtil.hasError(resp) || !Array.isArray(rows)) {
+        loadFailed.value = true;
+
+        return;
+      }
+      const value = String(rows[0]?.settingValue ?? "").trim().toLowerCase();
+      // Mirrors the connector: only an explicit false/N turns it off.
+      enabled.value = value !== "false" && value !== "n";
+    } catch {
+      // Never show a default the server did not confirm; the toggle stays disabled until a reload works.
+      if(version === loadVersion) { loadFailed.value = true; }
+    } finally {
+      if(version === loadVersion) { loading.value = false; }
+    }
+  }
+
+  async function save(shopId: string, next: boolean): Promise<boolean> {
+    if(!shopId) { return false; }
+    saving.value = true;
+    try {
+      const resp: any = await api({
+        url: SHOP_SETTING_ENDPOINT,
+        method: "POST",
+        data: { shopId, settingTypeEnumId: NATIVE_SYNC_SETTING, settingValue: next ? "true" : "false" },
+      });
+      if(!resp || resp.data == null || commonUtil.hasError(resp)) { return false; }
+      enabled.value = next;
+
+      return true;
+    } catch {
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return { enabled, loading, saving, loadFailed, load, save };
 }
 
 /** Newest-synced-first ordering per segment. `syncedDate` is aliased on every synced view. */

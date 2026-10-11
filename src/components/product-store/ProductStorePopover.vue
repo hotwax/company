@@ -45,7 +45,7 @@ const { shops } = useShopifyShops();
 // All three came from stores that are no longer populated for this screen; the facility, the store
 // list and the shop<->store link are all in the login-time cache already.
 const { record } = useFacilityRecord(props.facilityId);
-const current = computed<any>(() => (record.value as any)?.raw ?? record.value ?? {});
+const current = computed<any>(() => record.value ?? {});
 const getProductStoreById = computed(() => (id: string) =>
   productStores.value.find((store: any) => store.productStoreId === id));
 // NOTE: `shopifyShopId`, not `shopId`. The two differ (10000 vs 6973849727) and it is the

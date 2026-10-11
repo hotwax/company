@@ -98,7 +98,7 @@ import {
   IonTitle,
   IonToolbar,
 } from "@ionic/vue";
-import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
+import { airplaneOutline, albumsOutline, appsOutline, briefcaseOutline, businessOutline, carOutline, cartOutline, closeCircleOutline, earthOutline, keyOutline, layersOutline, linkOutline, mailOutline, notificationsOutline, peopleOutline, schoolOutline, settingsOutline, shieldCheckmarkOutline, storefrontOutline, walletOutline } from "ionicons/icons";
 import { computed, onMounted } from "vue";
 import { useAuth as useAppAuth } from "@/composables/useSecurity";
 import { useMaargConfig } from "@/composables/useSeed";
@@ -285,6 +285,12 @@ const agentPages = [
 ];
 
 const settingsPages = [
+  {
+    title: "Rejection Reasons",
+    url: "/rejection-reasons",
+    iosIcon: closeCircleOutline,
+    mdIcon: closeCircleOutline,
+  },
   {
     title: "App Version",
     url: "/app-version",

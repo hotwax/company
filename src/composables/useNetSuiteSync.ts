@@ -1,12 +1,5 @@
 import { computed, type Ref } from "vue";
-import { api, commonUtil, logger } from "@common";
-import {
-  netSuiteDecisionRuleCache,
-  netSuiteOrderPushBacklogCache,
-  netSuiteRuleGroupCache,
-  netSuiteRuleGroupRunCache,
-} from "@/utils/cacheEntities";
-import { useCachedList } from "./useCachedList";
+import { api, commonUtil, logger, useDb } from "@common";
 
 /**
  * NetSuite order-push monitoring and rule-group management.
@@ -64,7 +57,7 @@ export const FEED_HONOURED_SORT_TYPE = "ENTCT_SORT_BY";
  * integer and mean opposite things to whoever is on call.
  */
 export function useNetSuiteOrderPushBacklog(productStoreId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(netSuiteOrderPushBacklogCache);
+  const { records, hydrated } = useDb<any>("netSuiteOrderPushBacklog");
 
   const row = computed<any>(() => {
     const wanted = String(productStoreId() ?? "");
@@ -83,9 +76,14 @@ export function useNetSuiteOrderPushBacklog(productStoreId: () => string | undef
   };
 }
 
-/** NetSuite order-push rule groups for a store, sequence order. */
+/**
+ * NetSuite order-push rule groups for a store, sequence order.
+ *
+ * The worker prunes groups the active-group read no longer returns; the status check here is the
+ * reader's own guard, so a row that is not active never renders even before that prune lands.
+ */
 export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupCache);
+  const { records, hydrated } = useDb<any>("netSuiteRuleGroups");
 
   const groups = computed<any[]>(() => {
     const wanted = String(productStoreId() ?? "");
@@ -93,7 +91,8 @@ export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) 
     return records.value
       .filter((group: any) =>
         String(group?.productStoreId ?? "") === wanted
-        && group?.groupTypeEnumId === NETSUITE_ORDER_PUSH_GROUP_TYPE)
+        && group?.groupTypeEnumId === NETSUITE_ORDER_PUSH_GROUP_TYPE
+        && (group?.statusId ?? RULE_GROUP_ACTIVE) === RULE_GROUP_ACTIVE)
       .sort((a: any, b: any) => Number(a?.sequenceNum ?? 0) - Number(b?.sequenceNum ?? 0));
   });
 
@@ -108,7 +107,7 @@ export function useNetSuiteRuleGroups(productStoreId: () => string | undefined) 
  * separates them.
  */
 export function useNetSuiteDecisionRules(ruleGroupId: () => string | undefined) {
-  const { records, hydrated } = useCachedList<any>(netSuiteDecisionRuleCache);
+  const { records, hydrated } = useDb<any>("netSuiteDecisionRules");
 
   const all = computed<any[]>(() => {
     const wanted = String(ruleGroupId() ?? "");
@@ -133,7 +132,7 @@ export function useNetSuiteDecisionRules(ruleGroupId: () => string | undefined) 
  * correctly returns nothing when given no id, so it cannot double as an "all groups" read.
  */
 export function useNetSuiteRulesByGroup() {
-  const { records, hydrated } = useCachedList<any>(netSuiteDecisionRuleCache);
+  const { records, hydrated } = useDb<any>("netSuiteDecisionRules");
 
   const byGroup = computed<Record<string, any[]>>(() => {
     const grouped: Record<string, any[]> = {};
@@ -159,7 +158,7 @@ export function useNetSuiteRulesByGroup() {
  * MDM logs instead. The monitor says so rather than rendering a bare "no runs".
  */
 export function useNetSuiteRuleGroupRuns(ruleGroupId: () => string | undefined, limit = 25) {
-  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupRunCache, { dateField: "startDate" });
+  const { records, hydrated } = useDb<any>("netSuiteRuleGroupRuns", { dateField: "startDate" });
 
   const runs = computed<any[]>(() => {
     const wanted = String(ruleGroupId() ?? "");
@@ -179,7 +178,7 @@ export function useNetSuiteRuleGroupRuns(ruleGroupId: () => string | undefined, 
 
 /** Every cached run across the store's groups, newest first — the monitor's activity feed. */
 export function useNetSuiteRecentRuns(ruleGroupIds: () => string[], limit = 25) {
-  const { records, hydrated } = useCachedList<any>(netSuiteRuleGroupRunCache, { dateField: "startDate" });
+  const { records, hydrated } = useDb<any>("netSuiteRuleGroupRuns", { dateField: "startDate" });
 
   const runs = computed<any[]>(() => {
     const wanted = new Set(ruleGroupIds().filter(Boolean).map(String));

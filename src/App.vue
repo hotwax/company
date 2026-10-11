@@ -17,7 +17,7 @@ import { emitter, FastTravel, translate } from '@common'
 import { Settings } from 'luxon'
 import { useAuth } from '@common/composables/useAuth'
 import { useUserStore } from '@/store/user'
-import { startReferenceSync } from '@/services/appCacheBootstrap'
+import { startAppDbSync } from '@/services/appDbSync'
 import router from "@/router"
 
 const userStore = useUserStore()
@@ -60,7 +60,41 @@ function dismissLoader() {
   })
 }
 
+/*
+ * Workaround for an Ionic 8 overlay bug (@ionic/core 8.8 overlays: present/dismiss).
+ *
+ * A backdrop overlay sets aria-hidden="true" on ion-router-outlet when it presents, and only the
+ * dismiss that sees itself as the LAST presented overlay removes it. That count includes overlays
+ * that are already dismissing but still animating out (Ionic only adds `overlay-hidden` after the
+ * leave animation). Two overlapping dismissals therefore each see two overlays and neither clears
+ * it, leaving the main content out of the accessibility tree. This app hits that whenever a save
+ * shows the global loader on top of an alert or modal and closes both together:
+ *   - an alert button handler presenting/dismissing the loader (Ionic awaits the handler, then
+ *     dismisses the alert while the loader is still leaving), e.g. useNetSuite.editNetSuiteId;
+ *   - a modal closed inside the loader's try/finally, e.g. ShopifyShipmentMethods
+ *     createShipmentMethod.
+ * After every overlay dismissal, once no overlay is still presented, clear the stale attribute.
+ */
+const OVERLAY_SELECTOR = 'ion-alert,ion-action-sheet,ion-loading,ion-modal,ion-picker-legacy,ion-popover'
+const OVERLAY_DID_DISMISS_EVENTS = [
+  'ionAlertDidDismiss', 'ionActionSheetDidDismiss', 'ionLoadingDidDismiss',
+  'ionModalDidDismiss', 'ionPickerDidDismiss', 'ionPopoverDidDismiss'
+]
+
+function restoreRouterOutletAria() {
+  // didDismiss is emitted before Ionic marks the overlay hidden, so check once that has run.
+  setTimeout(() => {
+    const outlet = (document.querySelector('ion-app') || document.body).querySelector('ion-router-outlet')
+    if(!outlet?.hasAttribute('aria-hidden')) {return}
+    // `presented` is the overlay's own state (custom-elements build: the element is the component).
+    const stillOpen = Array.from(document.querySelectorAll(OVERLAY_SELECTOR)).some((el: any) =>
+      el.overlayIndex > 0 && !el.classList.contains('overlay-hidden') && el.presented !== false)
+    if(!stillOpen) {outlet.removeAttribute('aria-hidden')}
+  })
+}
+
 onMounted(() => {
+  OVERLAY_DID_DISMISS_EVENTS.forEach((name) => document.addEventListener(name, restoreRouterOutletAria))
   loader = createLoader()
   emitter.on('presentLoader', presentLoader)
   emitter.on('dismissLoader', dismissLoader)
@@ -79,10 +113,11 @@ onMounted(() => {
 // `isAuthenticated` is false at mount and flips true a moment later — the sync then never ran.
 // Watching also makes the trigger literally "on login". Fire-and-forget: never gates app start.
 watch(useAuth().isAuthenticated, (authenticated) => {
-  if (authenticated) void startReferenceSync()
+  if (authenticated) void startAppDbSync()
 }, { immediate: true })
 
 onUnmounted(() => {
+  OVERLAY_DID_DISMISS_EVENTS.forEach((name) => document.removeEventListener(name, restoreRouterOutletAria))
   emitter.off('presentLoader', presentLoader)
   emitter.off('dismissLoader', dismissLoader)
 })
