@@ -40,7 +40,7 @@
               </div>
 
               <div class="tablet">
-                <ion-toggle v-if="currentGroupId" :checked="isReasonEnabledForCurrentSegment(reason)" @click.stop.prevent="toggleReasonStatusForCurrentSegment(reason, currentGroupId)" />
+                <ion-toggle v-if="currentGroupId" :checked="isReasonEnabledForCurrentSegment(reason)" @click.prevent="toggleReason($event, reason)" />
               </div>
 
               <ion-reorder />
@@ -93,12 +93,11 @@ import {
 import { computed, ref } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { addOutline, caretDownOutline, ellipsisVerticalOutline } from "ionicons/icons";
-import { commonUtil, logger, translate } from "@common";
+import { commonUtil, translate } from "@common";
 import CreateRejectionReasonModal from "@/components/rejection-reasons/CreateRejectionReasonModal.vue";
 import RejectReasonActionsPopover from "@/components/rejection-reasons/RejectReasonActionsPopover.vue";
 import VarianceTypeActionsPopover from "@/components/rejection-reasons/VarianceTypeActionsPopover.vue";
 import { useRejectionReasons } from "@/composables/useRejectionReasons";
-import { DateTime } from "luxon";
 
 const {
   rejectReasons,
@@ -108,8 +107,6 @@ const {
   fetchRejectReasons,
   fetchRejectReasonEnumTypes,
   fetchEnumGroupMembers,
-  updateEnumeration,
-  updateEnumerationGroupMember,
   filteredReasons,
   findReasonsDiff,
   saveReasonsOrder,
@@ -132,6 +129,13 @@ const isReasonEnabledForCurrentSegment = (reason: any) => {
   }
   // For Order Manager: active if thruDate is not set
   return !reason.thruDate;
+};
+
+const toggleReason = (event: Event, reason: any) => {
+  // Stop ion-toggle's own click handler on this element from flipping the switch; the checked state
+  // must only change when the refreshed group members confirm the update.
+  event.stopImmediatePropagation();
+  toggleReasonStatusForCurrentSegment(reason, currentGroupId.value);
 };
 
 const updateSegment = async (event: CustomEvent) => {
@@ -261,7 +265,6 @@ const doReorder = async (event: CustomEvent) => {
     toast.value?.present?.();
   }
 };
-
 
 onIonViewWillEnter(async () => {
   await loadData();
